@@ -373,6 +373,20 @@ static const int8_t CORE_SKIP_CHARS[256] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 };
 
+/* By kind value, the per-line traits of the kind's structure
+ * (markdown_core_node_traits), projected from the structure tables. */
+const uint8_t markdown_core_block_traits[22] = {
+    0, 0, 0, 0, 0, 1, 1, 42, 10, 0, 0, 16, 16, 16, 4, 20,
+    4, 0, 0, 0, 0, 16,
+};
+const size_t markdown_core_block_traits_count = 22;
+
+const uint8_t markdown_core_inline_traits[24] = {
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 20, 20, 4,
+    0, 0, 0, 0, 0, 0, 0, 0,
+};
+const size_t markdown_core_inline_traits_count = 24;
+
 static const markdown_core_registry CORE_REGISTRY = {
     .elements = CORE_ELEMENTS,
     .element_count = CORE_ELEMENT_COUNT,
@@ -394,6 +408,7 @@ static const markdown_core_registry CORE_REGISTRY = {
     .block_owner_sets = {CORE_BLOCK_SCAN_OWNERS, CORE_BLOCK_INTERRUPT_OWNERS, CORE_BLOCK_OPEN_OWNERS,
                          CORE_BLOCK_PARAGRAPH_OWNERS, 1},
     .inline_hooks = {CORE_INLINE_HOOKS, 1, 1, 4},
+    .inline_completion_walk = false,
     .special_chars = CORE_SPECIAL_CHARS,
     .skip_chars = CORE_SKIP_CHARS,
     .storage = NULL,

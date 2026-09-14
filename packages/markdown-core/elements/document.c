@@ -18,9 +18,10 @@ static void dispose_document(markdown_core_parser *parser) {
     markdown_core_block_dispose_headings(parser, &parser->headings);
     markdown_core_parser_release_key_index(parser, &parser->anchors.index);
     markdown_core_parser_release_key_index(parser, &parser->anchors.resources);
-    parser->mem->free(parser->footnotes.values);
+    markdown_core_mem_release(parser->mem, parser->footnotes.values);
     parser->footnotes.values = NULL;
-    parser->mem->free(parser->specimens.values);
+    parser->footnotes.last_completed = NULL;
+    markdown_core_mem_release(parser->mem, parser->specimens.values);
     parser->specimens.values = NULL;
     markdown_core_parser_release_key_index(parser, &parser->specimen_ids);
     if (parser->refmap) {
@@ -37,14 +38,14 @@ static void prepare_document(markdown_core_parser *parser) {
     if (parser->oom) {
         return;
     }
-    markdown_core_block_prepare_headings(parser, &parser->headings);
-    if (parser->oom) {
-        return;
-    }
+    /* The anchor indexes exist before any inline root completes: a heading
+     * finishing below reserves the explicit anchor its tail attached. */
     if (!markdown_core_key_index_init(&parser->anchors.index, parser->mem, parser->headings.count) ||
         !markdown_core_key_index_init(&parser->anchors.resources, parser->mem, 0)) {
         parser->oom = true;
+        return;
     }
+    markdown_core_block_prepare_headings(parser, &parser->headings);
 }
 static void observe_inline(markdown_core_parser *parser, markdown_core_node *node) {
     if (parser->headings.count) {
@@ -75,6 +76,9 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .read_document_prefix = markdown_core_properties_parse,
     .prepare_document = prepare_document,
     .finish_document = finish_document,
+    /* Delivered by the completion walk of a root whose parse attached an
+     * anchor, and at a block's EXIT for attributes its lines attached. */
     .observe_inline = observe_inline,
+    .complete_inline_on_request = true,
     .open_text_block = markdown_core_paragraph_open_text,
 };

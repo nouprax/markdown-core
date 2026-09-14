@@ -263,8 +263,12 @@ void markdown_core_attributes_free(markdown_core_mem *mem, markdown_core_attribu
         markdown_core_chunk_free(mem, &v->records[i].name);
         markdown_core_chunk_free(mem, &v->records[i].value);
     }
-    mem->free(v->classes);
-    mem->free(v->records);
+    if (v->classes) {
+        mem->free(v->classes);
+    }
+    if (v->records) {
+        mem->free(v->records);
+    }
     memset(v, 0, sizeof(*v));
 }
 
@@ -546,6 +550,9 @@ void markdown_core_inline_attach_inline_attributes(markdown_core_inline_state *i
         }
         markdown_core_attributes_free(inline_state->mem, owned);
         *owned = value;
+        if (owned->anchor.len) {
+            markdown_core_inline_request_completion(inline_state);
+        }
         inline_state->pos = end;
         markdown_core_inline_state_place(inline_state, node, from, end - 1);
     }

@@ -29,6 +29,9 @@ markdown_core_bracket_match markdown_core_span_close(markdown_core_parser *parse
                 return BRACKET_MATCHED;
             }
             *owned = attributes;
+            if (owned->anchor.len) {
+                markdown_core_inline_request_completion(inline_state);
+            }
             inline_state->pos = end;
             markdown_core_inline_state_place(inline_state, inl, opener->position - 1, end - 1);
             markdown_core_inline_finish_citation_tokens(inline_state, &opener->citations);

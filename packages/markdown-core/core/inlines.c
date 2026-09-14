@@ -44,15 +44,61 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void place_trimmed_run(markdown_core_
     node->content_mark_offset = inline_state->owner->content_mark_offset + from;
 }
 
+/* The common placement, answered by one forward walk of the shared cursor:
+ * both ends of the span lie in the run the cursor stands on, or in one run
+ * ahead of it. The cursor moves to that run; it never moves back. An end
+ * behind the cursor, ends in different runs, or no map at all is left to
+ * the general projection, which answers the same and moves the cursor the
+ * same way; a walk that reached the run of the first end but not the last
+ * leaves the cursor there for it. */
+static bool place_in_one_run(markdown_core_inline_state *inline_state, markdown_core_node *node, int from, int to,
+                             int *run) {
+    markdown_core_parser *parser = inline_state->owner_parser;
+    const markdown_core_node *owner = inline_state->owner;
+    if (owner->content_mark_count <= 0 || from < 0 || to < from) {
+        return false;
+    }
+    bufsize_t at = from + owner->content_mark_offset, end_at = to + owner->content_mark_offset;
+    int lo = owner->content_mark, hi = lo + owner->content_mark_count - 1;
+    int cursor = inline_state->content_mark_cursor;
+    if (cursor < lo || cursor > hi) {
+        cursor = lo;
+    }
+    const markdown_core_line_mark *marks = parser->line_marks;
+    if (at < marks[cursor].content_offset) {
+        return false;
+    }
+    MARKDOWN_CORE_DIAGNOSTIC(int start = cursor;)
+    while (cursor < hi && marks[cursor + 1].content_offset <= at) {
+        cursor++;
+    }
+    MARKDOWN_CORE_DIAGNOSTIC(parser->content_map_work += 1 + (size_t)(cursor - start) + (cursor < hi);)
+    inline_state->content_mark_cursor = cursor;
+    if (cursor < hi && marks[cursor + 1].content_offset <= end_at) {
+        return false;
+    }
+    const markdown_core_line_mark *mark = &marks[cursor];
+    node->start_line = node->end_line = mark->line;
+    node->start_column = mark->column + (int)(at - mark->content_offset) * mark->source_step;
+    node->end_column = mark->column + (int)(end_at - mark->content_offset) * mark->source_step + mark->source_width - 1;
+    *run = cursor;
+    return true;
+}
+
 void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
                                       int to) {
     markdown_core_parser *parser = inline_state->owner_parser;
     markdown_core_node *owner = inline_state->owner;
-    int first = markdown_core_parser_project_content(parser, owner, from, false, &inline_state->content_mark_cursor,
+    int first, last, cursor_at_start;
+    if (place_in_one_run(inline_state, node, from, to, &first)) {
+        last = cursor_at_start = first;
+    } else {
+        first = markdown_core_parser_project_content(parser, owner, from, false, &inline_state->content_mark_cursor,
                                                      &node->start_line, &node->start_column);
-    int cursor_at_start = inline_state->content_mark_cursor;
-    int last = markdown_core_parser_project_content(parser, owner, to, true, &inline_state->content_mark_cursor,
+        cursor_at_start = inline_state->content_mark_cursor;
+        last = markdown_core_parser_project_content(parser, owner, to, true, &inline_state->content_mark_cursor,
                                                     &node->end_line, &node->end_column);
+    }
     if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0 && first >= 0 && last >= 0) {
         if (node->as.literal->data != inline_state->input.data + from) {
             node->content_mark_count = 0;
@@ -399,7 +445,9 @@ static void complete_inline_token(markdown_core_parser *parser, markdown_core_in
     if (!entry || entry->kind != DELIMITER_FIELD) {
         return;
     }
+    parser->nested_inline_depth++;
     bool whitespace = markdown_core_parse_inline_subtrees(parser, entry->node, inline_state->refmap);
+    parser->nested_inline_depth--;
     if (whitespace) {
         entry->kind = DELIMITER_BOUNDARY;
         entry->node = NULL;
@@ -907,9 +955,32 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
         }
         markdown_core_inline_process_delimiters(parser, inline_state, 0, NULL);
     }
+    if (!parser->oom && !inline_state->oom) {
+        markdown_core_inline_complete_root(parser, inline_state);
+    }
     bool whitespace = inline_state->last_delim && inline_state->last_delim->kind == DELIMITER_BOUNDARY;
     markdown_core_inline_clear_inlines(inline_state);
     return whitespace;
+}
+
+void markdown_core_inline_request_completion(markdown_core_inline_state *inline_state) {
+    inline_state->completion_requests++;
+}
+
+/* A root parsed within another root's parse -- a field entered from the
+ * inline parser -- is walked among that root's fields, at the depth it has
+ * there: its requests are the enclosing root's. The outermost root walks
+ * when its own or its fields' parses asked. */
+void markdown_core_inline_complete_root(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
+    if (parser->nested_inline_depth) {
+        parser->nested_completion_requests += inline_state->completion_requests;
+        return;
+    }
+    unsigned requests = inline_state->completion_requests + parser->nested_completion_requests;
+    parser->nested_completion_requests = 0;
+    if (requests) {
+        markdown_core_block_complete_inline_root(parser, inline_state->owner);
+    }
 }
 
 bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap) {

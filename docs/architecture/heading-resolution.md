@@ -81,10 +81,14 @@ heading's attributes do not become inherited reference attributes, and the
 anchor itself is a terminated copy in the parse arena that the node's
 attributes borrow, so no heading owns a heap string for it.
 
-The existing inline-completion walk reserves effective explicit anchors while
-it discovers owned label/title fields. It visits only completed child trees,
-after bracket reductions and occurrence attributes have settled; a temporary
-inline later discarded by a footnote call cannot reserve an anchor. Field
+The inline-completion walk of a root reserves effective explicit anchors while
+it discovers owned label/title fields. It runs as the root's parse ends, and
+only for a root whose parse attached an anchor (an occurrence attribute, a
+heading tail, a reference resource carrying one): it visits only completed
+child trees, after bracket reductions and occurrence attributes have settled;
+a temporary inline later discarded by a footnote call cannot reserve an
+anchor. A block's own attributes, attached while its lines were read, are
+observed at the block's EXIT of the inline pass instead. Field
 parsing has already appended inline footnotes, which the completion loop also
 visits. Block footnotes are still attached to the content tree during this
 walk. No additional anchor-specific whole-tree traversal is needed. The
@@ -94,8 +98,9 @@ is hashed only on its first emitted inheriting occurrence. This identity index
 is necessary to avoid repeatedly hashing a long definition anchor for every
 short reference; unreferenced or fully overridden definitions reserve nothing.
 
-The same completion walk resolves contextual script-space escape tokens after
-bracket/delimiter ownership is final. Heading projection and all later consumers
+The same per-root completion walk resolves contextual script-space escape
+tokens after bracket/delimiter ownership is final; a text run that carries one
+asks for the walk when it is made, so a root without one is not walked. Heading projection and all later consumers
 therefore read decoded literals; it never reinterprets authored escape spellings.
 Script depth follows child and owned-field edges; document-owned footnotes
 begin their own context. Failed enclosing candidates therefore leave field

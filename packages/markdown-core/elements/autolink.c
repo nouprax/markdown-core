@@ -2,6 +2,7 @@
 #include "inline_internal.h"
 #include "attributes.h"
 #include "autolink.h"
+#include "link.h"
 #include "element.h"
 #include <parser.h>
 #include <string.h>
@@ -28,9 +29,14 @@ static markdown_core_node *make_str_with_entities(markdown_core_inline_state *in
     }
 }
 
+/* The destination cleaned into the parser's scratch and copied into the
+ * arena, when the state has both; a chunk-built state hands out the
+ * allocator's bytes. */
 static markdown_core_chunk markdown_core_clean_autolink(markdown_core_inline_state *inline_state,
                                                         markdown_core_chunk *url, int is_email) {
-    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(inline_state->mem);
+    markdown_core_strbuf own = MARKDOWN_CORE_BUF_INIT(inline_state->mem);
+    markdown_core_strbuf *buf =
+        inline_state->arena && inline_state->owner_parser ? &inline_state->owner_parser->url_scratch : &own;
 
     markdown_core_chunk_trim(url);
 
@@ -39,15 +45,24 @@ static markdown_core_chunk markdown_core_clean_autolink(markdown_core_inline_sta
         return result;
     }
 
+    markdown_core_strbuf_clear(buf);
     if (is_email) {
-        markdown_core_strbuf_puts(&buf, "mailto:");
+        markdown_core_strbuf_puts(buf, "mailto:");
     }
 
-    houdini_unescape_html_f(&buf, url->data, url->len);
-    if (buf.oom) {
+    houdini_unescape_html_f(buf, url->data, url->len);
+    if (buf->oom) {
+        inline_state->oom = 1;
+        return markdown_core_chunk_buf_detach(buf);
+    }
+    if (buf == &own) {
+        return markdown_core_chunk_buf_detach(buf);
+    }
+    markdown_core_chunk copy = markdown_core_arena_copy_chunk(inline_state->arena, buf);
+    if (!copy.data) {
         inline_state->oom = 1;
     }
-    return markdown_core_chunk_buf_detach(&buf);
+    return copy;
 }
 
 static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inline_state *inline_state,
@@ -65,8 +80,8 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
         // `elements.txt` records both spellings of one construct on one line
         // disagreeing about it three columns apart.
         markdown_core_chunk destination = markdown_core_clean_autolink(inline_state, &url, is_email);
-        link->as.link->resource =
-            markdown_core_resource_new(inline_state->mem, destination, markdown_core_optional_chunk_absent());
+        link->as.link->resource = markdown_core_resource_create(inline_state->arena, inline_state->mem, destination,
+                                                                markdown_core_optional_chunk_absent());
         if (!link->as.link->resource) {
             inline_state->oom = 1;
             markdown_core_chunk_free(inline_state->mem, &destination);
@@ -350,14 +365,16 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
         return NULL;
     }
 
-    markdown_core_strbuf buf;
-    markdown_core_strbuf_init(parser->mem, &buf, 10);
-    markdown_core_strbuf_puts(&buf, "http://");
-    markdown_core_strbuf_put(&buf, data, (bufsize_t)link_end);
+    markdown_core_strbuf *buf = &parser->url_scratch;
+    markdown_core_strbuf_clear(buf);
+    markdown_core_strbuf_puts(buf, "http://");
+    markdown_core_strbuf_put(buf, data, (bufsize_t)link_end);
     {
-        markdown_core_chunk url = markdown_core_chunk_buf_detach(&buf);
-        node->as.link->resource =
-            url.data ? markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent()) : NULL;
+        markdown_core_chunk url =
+            buf->oom ? markdown_core_chunk_buf_detach(buf) : markdown_core_arena_copy_chunk(parser->arena, buf);
+        node->as.link->resource = url.data ? markdown_core_resource_create(parser->arena, parser->mem, url,
+                                                                           markdown_core_optional_chunk_absent())
+                                           : NULL;
         if (!node->as.link->resource) {
             markdown_core_chunk_free(parser->mem, &url);
             parser->oom = true;
@@ -428,7 +445,8 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     }
 
     markdown_core_chunk url = markdown_core_chunk_dup(chunk, max_rewind - rewind, (bufsize_t)(link_end + rewind));
-    node->as.link->resource = markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent());
+    node->as.link->resource =
+        markdown_core_resource_create(parser->arena, parser->mem, url, markdown_core_optional_chunk_absent());
     if (!node->as.link->resource) {
         parser->oom = true;
     }
@@ -697,16 +715,19 @@ static markdown_core_node *postprocess_text(markdown_core_parser *parser, markdo
         size_t link_start = start + offset + max_rewind - rewind;
         size_t link_len = link_end + rewind;
         size_t post_start = start + offset + max_rewind + link_end;
-        markdown_core_strbuf buf;
-        markdown_core_strbuf_init(parser->mem, &buf, 10);
+        markdown_core_strbuf *buf = &parser->url_scratch;
+        markdown_core_strbuf_clear(buf);
         if (auto_mailto) {
-            markdown_core_strbuf_puts(&buf, "mailto:");
+            markdown_core_strbuf_puts(buf, "mailto:");
         }
-        markdown_core_strbuf_put(&buf, data + start + offset + max_rewind - rewind, (bufsize_t)(link_end + rewind));
+        markdown_core_strbuf_put(buf, data + start + offset + max_rewind - rewind, (bufsize_t)(link_end + rewind));
         {
-            markdown_core_chunk url = markdown_core_chunk_buf_detach(&buf);
-            link_node->as.link->resource =
-                url.data ? markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent()) : NULL;
+            markdown_core_chunk url =
+                buf->oom ? markdown_core_chunk_buf_detach(buf) : markdown_core_arena_copy_chunk(parser->arena, buf);
+            link_node->as.link->resource = url.data
+                                               ? markdown_core_resource_create(parser->arena, parser->mem, url,
+                                                                               markdown_core_optional_chunk_absent())
+                                               : NULL;
             if (!link_node->as.link->resource) {
                 markdown_core_chunk_free(parser->mem, &url);
                 parser->oom = true;

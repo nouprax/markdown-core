@@ -184,7 +184,7 @@ static void dispose_inline(markdown_core_inline_state *inline_state) {
     if (inline_state->backticks && inline_state->arena) {
         markdown_core_arena_recycle(inline_state->arena, inline_state->backticks,
                                     ((size_t)inline_state->backtick_capacity + 1) * sizeof(*inline_state->backticks));
-    } else {
+    } else if (inline_state->backticks) {
         inline_state->mem->free(inline_state->backticks);
     }
     inline_state->backticks = NULL;

@@ -178,6 +178,39 @@ int normalize_map_label_into(markdown_core_strbuf *normalized, markdown_core_chu
     if (!ref || !ref->len) {
         return 0;
     }
+    /* An ASCII label folds, trims and collapses its whitespace in one pass
+     * over its bytes into room reserved once: only a capital letter changes
+     * and only the ASCII whitespace bytes collapse, so no byte needs
+     * decoding to know what becomes of it. A byte above ASCII sends the
+     * label through the scalar-aware passes. */
+    bufsize_t ascii = 0;
+    while (ascii < ref->len && ref->data[ascii] < 0x80) {
+        ascii++;
+    }
+    if (ascii == ref->len) {
+        markdown_core_strbuf__grow_by(normalized, ref->len);
+        if (normalized->oom) {
+            return 0;
+        }
+        unsigned char *out = normalized->ptr;
+        bufsize_t written = 0;
+        bool pending_space = false;
+        for (bufsize_t at = 0; at < ref->len; at++) {
+            unsigned char byte = ref->data[at];
+            if (markdown_core_isspace((char)byte)) {
+                pending_space = written > 0;
+                continue;
+            }
+            if (pending_space) {
+                out[written++] = ' ';
+                pending_space = false;
+            }
+            out[written++] = (unsigned char)(byte >= 'A' && byte <= 'Z' ? byte + ('a' - 'A') : byte);
+        }
+        normalized->size = written;
+        out[written] = '\0';
+        return written > 0;
+    }
     markdown_core_utf8proc_case_fold(normalized, ref->data, ref->len);
     markdown_core_strbuf_trim(normalized);
     markdown_core_strbuf_normalize_whitespace(normalized);

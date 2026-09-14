@@ -48,6 +48,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, markdo
             /* Contextual escape token: inline completion decodes it once the
              * delimiter/bracket engine has established its semantic owner. */
             escaped->flags |= MARKDOWN_CORE_NODE__ESCAPED_SPACE;
+            markdown_core_inline_request_completion(inline_state);
         }
         return escaped;
     }
@@ -222,6 +223,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TEXT = {
     .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
     .parse_text = markdown_core_text_parse,
     .complete_inline = complete_inline,
+    .complete_inline_on_request = true,
 
     .name = "text",
     .match_inline = match,

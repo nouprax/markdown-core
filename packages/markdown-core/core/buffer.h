@@ -58,6 +58,11 @@ static MARKDOWN_CORE_INLINE void markdown_core_strbuf__grow_by(markdown_core_str
         buf->oom = 1;
         return;
     }
+    /* Room for the bytes and their terminator, the common case, is answered
+     * here; only growth (and a caller's zero-length ask) calls out. */
+    if (add > 0 && buf->size + add < buf->asize) {
+        return;
+    }
     markdown_core_strbuf_grow(buf, buf->size + add);
 }
 

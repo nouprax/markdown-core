@@ -1666,11 +1666,70 @@ static void strbuf_borrowed_storage(test_batch_runner *runner) {
        "freeing a borrowed buffer releases nothing");
 }
 
+static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind);
+
+/* A link's resource and the destination and title it cleans are arena
+ * storage, like the nodes: a parse of many links, autolinks or references
+ * allocates only the arena's blocks and the fixed few. */
+static void links_allocate_nothing_per_link(test_batch_runner *runner) {
+    markdown_core_mem mem = {borrow_calloc, borrow_realloc, free};
+    static const struct {
+        const char *unit, *tail;
+    } shapes[] = {
+        {"[a](/u \"t\") ", "\n"}, {"[a](/u&amp;v) ", "\n"},    {"<http://x.y/z> ", "\n"},       {"<a@b.co> ", "\n"},
+        {"www.x.y/z ", "\n"},     {"see http://x.y/z ", "\n"}, {"[r] ", "\n\n[r]: /u \"t\"\n"}, {"![a](/i) ", "\n"},
+    };
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+        for (size_t i = 0; i < 4096; i++) {
+            markdown_core_strbuf_puts(&source, shapes[shape].unit);
+        }
+        markdown_core_strbuf_puts(&source, shapes[shape].tail);
+        borrow_allocations = 0;
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
+        OK(runner, root != NULL, "the link shape parses: shape=%zu", shape);
+        OK(runner,
+           root && count_kind(root, MARKDOWN_CORE_NODE_LINK) + count_kind(root, MARKDOWN_CORE_NODE_EMBEDDED) == 4096,
+           "every unit produced its link: shape=%zu", shape);
+        OK(runner, borrow_allocations <= 64,
+           "4096 links cost the arena's blocks and the fixed few, not one allocation each: shape=%zu allocations=%zu",
+           shape, borrow_allocations);
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
+/* Releasing a tree frees what was allocated and nothing else: no release
+ * path hands the allocator a null pointer for a field that was never set. */
+static size_t null_frees;
+static void counting_free(void *pointer) {
+    null_frees += pointer == NULL;
+    free(pointer);
+}
+static void release_frees_only_allocations(test_batch_runner *runner) {
+    markdown_core_mem mem = {borrow_calloc, borrow_realloc, counting_free};
+    static const char *const sources[] = {
+        "# h {#i}\n\npara [a](/u) `c` *e* ^s^ ~b~\n\n- item\n\n> quote\n",
+        "text[^n] and [@k, p. 1] and :d[label]{.c}\n\n[^n]: note\n\n| a |\n|---|\n| b |\n",
+        "```c\ncode\n```\n\n<div>\nhtml\n</div>\n\nterm\n: def\n\n[r]: /u \"t\" {#x}\n\n[r] [R]\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); i++) {
+        null_frees = 0;
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem(sources[i], strlen(sources[i]), &mem, NULL, NULL);
+        OK(runner, root != NULL, "the mixed document parses: source=%zu", i);
+        markdown_core_node_free(root);
+        INT_EQ(runner, null_frees, 0, "releasing the tree frees no null pointer: source=%zu", i);
+    }
+}
+
 /* The content of the blocks of a document is arena storage: a parse of
  * many short blocks allocates only the arena's blocks and the fixed few. */
 static void block_content_allocates_nothing_per_block(test_batch_runner *runner) {
     markdown_core_mem mem = {borrow_calloc, borrow_realloc, free};
-    static const char *const units[] = {"- item\n", "# heading\n\n", "one line\n\n", "two\nlines\n\n"};
+    static const char *const units[] = {"- item\n",       "# heading\n\n",           "one line\n\n",
+                                        "two\nlines\n\n", "<div>\nhtml\n</div>\n\n", "```\ncode\n```\n\n"};
     for (size_t shape = 0; shape < sizeof(units) / sizeof(*units); shape++) {
         markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
         for (size_t i = 0; i < 4096; i++) {
@@ -1683,6 +1742,20 @@ static void block_content_allocates_nothing_per_block(test_batch_runner *runner)
         OK(runner, borrow_allocations <= 64,
            "4096 blocks cost the arena's blocks and the fixed few, not one allocation each: shape=%zu allocations=%zu",
            shape, borrow_allocations);
+        /* A literal borrowed from the arena reads as the block's bytes. */
+        if (root && shape >= 4) {
+            static const char *const literals[] = {"<div>\nhtml\n</div>\n", "code\n"};
+            markdown_core_node *block = root->first_child;
+            OK(runner,
+               block && markdown_core_node_get_literal(block) &&
+                   strcmp(markdown_core_node_get_literal(block), literals[shape - 4]) == 0,
+               "the block's literal is its content: shape=%zu literal=%s", shape,
+               block && markdown_core_node_get_literal(block) ? markdown_core_node_get_literal(block) : "(null)");
+            OK(runner,
+               markdown_core_node_set_literal(block, "replaced") &&
+                   strcmp(markdown_core_node_get_literal(block), "replaced") == 0,
+               "a borrowed literal is replaced by an owned one: shape=%zu", shape);
+        }
         markdown_core_node_free(root);
         markdown_core_strbuf_free(&source);
     }
@@ -3344,6 +3417,7 @@ typedef struct {
     size_t key_index_branches, key_index_operations;
     size_t block_dispatch, reference_probes;
     size_t completion, finishing, finishers, lifecycle, text_run_extensions, code_block_moves;
+    size_t content_map;
     size_t reference_folds, footnote_folds;
     size_t table_row_scans, table_row_work, table_geometry_allocations, table_scratch_growth;
     size_t html_scans;
@@ -3376,6 +3450,7 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
     work->lifecycle = parser->inline_lifecycle_work;
     work->text_run_extensions = parser->text_run_extensions;
     work->code_block_moves = parser->code_block_move_work;
+    work->content_map = parser->content_map_work;
     work->reference_folds = parser->refmap ? parser->refmap->fold_work : 0;
     work->table_row_scans = parser->table_row_scans;
     work->table_row_work = parser->table_row_work;
@@ -3877,11 +3952,13 @@ static void finishing_walk_work(test_batch_runner *runner) {
             markdown_core_node *again = markdown_core_parse_document_with_mem(
                 (const char *)source.ptr, source.size, mem, measure_inline_work_with_finisher, &probed);
             OK(runner, root != NULL && again != NULL, "finishing shape parses: shape=%zu units=%zu", shape, units);
-            size_t bound = shapes[shape].completed * units + 16;
-            OK(runner, work.completion <= bound, "completion delivers one hook per node: shape=%zu units=%zu hooks=%zu",
-               shape, units, work.completion);
-            OK(runner, work.finishing <= work.completion,
-               "finishing delivers at most one EXIT per completed node: shape=%zu units=%zu hooks=%zu", shape, units,
+            /* No root of these shapes asks for a completion walk -- no
+             * escaped space, no anchor -- so none is walked for it; the
+             * finishing walk still delivers one EXIT per node. */
+            INT_EQ(runner, work.completion, 0, "completion walks only the roots that asked: shape=%zu units=%zu", shape,
+                   units);
+            OK(runner, work.finishing <= shapes[shape].completed * units + 16,
+               "finishing delivers at most one EXIT per node: shape=%zu units=%zu hooks=%zu", shape, units,
                work.finishing);
             OK(runner, probed.completion == work.completion && probed.finishing == work.finishing,
                "an extra finishing element adds no walk: shape=%zu units=%zu", shape, units);
@@ -4175,13 +4252,199 @@ static void table_row_geometry_reuse(test_batch_runner *runner) {
         if (root) {
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_ROW), rows, "every grid row is a row: rows=%zu",
                    rows);
-            INT_EQ(runner, work.table_geometry_allocations, work.table_geometry_lines,
-                   "a line's column map is one allocation: rows=%zu", rows);
+            OK(runner, work.table_geometry_allocations <= 16,
+               "the geometry regions grow to their peak in bounded steps: rows=%zu steps=%zu", rows,
+               work.table_geometry_allocations);
             OK(runner, work.table_scratch_growth <= 8,
                "the grid scratch region grows to its peak once: rows=%zu steps=%zu", rows, work.table_scratch_growth);
             markdown_core_node_free(root);
         }
         markdown_core_strbuf_free(&source);
+    }
+}
+
+/* Column maps and dash intervals are carved from two regions the parser keeps
+ * between queries: the second of two tables of one shape grows neither. */
+static void table_geometry_regions_reused(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const char *tables[] = {
+        "+---+---+\n| a | b |\n+---+---+\n| c | d |\n+---+---+\n",
+        "a   b\n--- ---\nc   d\ne   f\n\n",
+        "-----------\na       b\n---- ------\nc       d\n\ne       f\n-----------\n",
+    };
+    for (size_t shape = 0; shape < sizeof(tables) / sizeof(*tables); shape++) {
+        size_t steps[2] = {0}, lines[2] = {0};
+        for (size_t count = 1; count <= 2; count++) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < count; i++) {
+                if (i) {
+                    markdown_core_strbuf_putc(&source, '\n');
+                }
+                markdown_core_strbuf_puts(&source, tables[shape]);
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "table parses: shape=%zu count=%zu", shape, count);
+            if (root) {
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), count, "each table is one: shape=%zu",
+                       shape);
+                markdown_core_node_free(root);
+            }
+            steps[count - 1] = work.table_geometry_allocations;
+            lines[count - 1] = work.table_geometry_lines;
+            markdown_core_strbuf_free(&source);
+        }
+        OK(runner, lines[0] > 0 && lines[1] >= 2 * lines[0], "each table maps its own lines: shape=%zu lines=%zu,%zu",
+           shape, lines[0], lines[1]);
+        OK(runner, steps[0] > 0 && steps[1] == steps[0],
+           "the second table reuses the first table's geometry regions: shape=%zu steps=%zu,%zu", shape, steps[0],
+           steps[1]);
+    }
+}
+
+/* A dash or grid line above a blank line, or above nothing, opens no table:
+ * its next raw line says so before any lookahead, dash scan or column map,
+ * and the line is what it is without one -- a break, or text. */
+static void thematic_break_lines_skip_table_probe(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *unit;
+        markdown_core_node_type kind;
+    } shapes[] = {
+        {"---\n\n", MARKDOWN_CORE_NODE_THEMATIC_BREAK},       {" -  -  -  -  -\n\n", MARKDOWN_CORE_NODE_THEMATIC_BREAK},
+        {" ________\n\n", MARKDOWN_CORE_NODE_THEMATIC_BREAK}, {" * * * * *\n\n", MARKDOWN_CORE_NODE_THEMATIC_BREAK},
+        {"-----\n \t \n", MARKDOWN_CORE_NODE_THEMATIC_BREAK}, {"---\r\n\r\n", MARKDOWN_CORE_NODE_THEMATIC_BREAK},
+        {"+---+---+\n\n", MARKDOWN_CORE_NODE_PARAGRAPH},      {"+---+---+\n\t\n", MARKDOWN_CORE_NODE_PARAGRAPH},
+    };
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        for (size_t n = 64; n <= 1024; n *= 4) {
+            const char *unit = shapes[shape].unit;
+            const char *eol = strchr(unit, '\n');
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            /* A leading paragraph: a document opening with a dash line opens
+             * front matter, not a break. */
+            markdown_core_strbuf_puts(&source, "text\n\n");
+            for (size_t i = 0; i + 1 < n; i++) {
+                markdown_core_strbuf_puts(&source, unit);
+            }
+            /* The last line ends the input, with or without its terminator. */
+            markdown_core_strbuf_put(&source, (const unsigned char *)unit, (bufsize_t)(eol - unit) + (int)(shape % 2));
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "lines above blank lines parse: shape=%zu n=%zu", shape, n);
+            if (root) {
+                INT_EQ(runner, count_kind(root, shapes[shape].kind),
+                       n + (shapes[shape].kind == MARKDOWN_CORE_NODE_PARAGRAPH ? 1 : 0),
+                       "every line is its own block: shape=%zu n=%zu", shape, n);
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "no table opens above a blank line");
+                markdown_core_node_free(root);
+            }
+            OK(runner,
+               work.tables == 0 && work.table_separator_scans == 0 && work.table_workspace_growth == 0 &&
+                   work.table_geometry_lines == 0 && work.table_geometry_allocations == 0,
+               "a dash or grid line above a blank line is refused by its raw next line: shape=%zu n=%zu scans=%zu "
+               "separators=%zu workspace=%zu lines=%zu steps=%zu",
+               shape, n, work.tables, work.table_separator_scans, work.table_workspace_growth,
+               work.table_geometry_lines, work.table_geometry_allocations);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+/* A line that begins with a letter is prose unless its first bytes are the
+ * shape of a marker (`a.`, `A)`, a roman numeral before `.` or `)`): the
+ * list element reads those bytes and parses no marker otherwise, and every
+ * letter or numeral marker it accepted before it still accepts. */
+static void letter_led_lines_parse_no_marker(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const char *const prose[] = {
+        "lorem ipsum dolor sit amet\n", "I am here\n",       "mix of words\n", "Vivid colors\n",
+        "x marks the spot\n",           "civic duty calls\n"};
+    for (size_t shape = 0; shape < sizeof(prose) / sizeof(*prose); shape++) {
+        for (size_t n = 64; n <= 1024; n *= 4) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < n; i++) {
+                markdown_core_strbuf_puts(&source, prose[shape]);
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "letter-led prose parses: shape=%zu n=%zu", shape, n);
+            if (root) {
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_PARAGRAPH), 1,
+                       "letter-led lines continue one paragraph: shape=%zu n=%zu", shape, n);
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LIST), 0, "and open no list: shape=%zu", shape);
+                markdown_core_node_free(root);
+            }
+            INT_EQ(runner, work.list_markers, 0, "a letter-led prose line parses no list marker: shape=%zu n=%zu",
+                   shape, n);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+    static const struct {
+        const char *source;
+        size_t items;
+    } markers[] = {
+        {"a. one\nb. two\n", 2},
+        {"A) one\nB) two\n", 2},
+        {"iv. four\nv. five\n", 2},
+        {"(a) one\n(b) two\n", 2},
+        {"I.  one\nII. two\n", 2},
+        {"mix. roman\n", 1},
+        {"I. one\n", 0},
+        {"#. one\n#. two\n", 2},
+        {"ab. not\n", 0},
+        {"a.b\n", 0},
+        {"i am\n", 0},
+        {"x) marks\n", 1},
+    };
+    for (size_t shape = 0; shape < sizeof(markers) / sizeof(*markers); shape++) {
+        inline_work work = {0};
+        markdown_core_node *root = markdown_core_parse_document_with_mem(
+            markers[shape].source, strlen(markers[shape].source), mem, measure_inline_work, &work);
+        OK(runner, root != NULL, "marker shape parses: shape=%zu", shape);
+        if (root) {
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LIST_ITEM), markers[shape].items,
+                   "letter and numeral markers are accepted as before: shape=%zu source=%s", shape,
+                   markers[shape].source);
+            markdown_core_node_free(root);
+        }
+    }
+}
+
+/* Placing an inline node walks the owner's map forward from the shared
+ * cursor to the run both ends lie in: a paragraph of many short lines costs
+ * a constant per node, not a search per end. */
+static void inline_placement_walks_the_map_once(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const char *const units[] = {"line of text\n", "*em* and `code`\n", "[a](/u) b\n"};
+    for (size_t shape = 0; shape < sizeof(units) / sizeof(*units); shape++) {
+        for (size_t n = 500; n <= 2000; n *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < n; i++) {
+                markdown_core_strbuf_puts(&source, units[shape]);
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "the long paragraph parses: shape=%zu n=%zu", shape, n);
+            if (root) {
+                size_t nodes = 0;
+                markdown_core_iter *iter = markdown_core_iter_new(root);
+                while (markdown_core_iter_next(iter) != MARKDOWN_CORE_EVENT_DONE) {
+                    nodes += markdown_core_iter_get_event_type(iter) == MARKDOWN_CORE_EVENT_ENTER;
+                }
+                markdown_core_iter_free(iter);
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_PARAGRAPH), 1, "one paragraph: shape=%zu", shape);
+                OK(runner, nodes >= 2 * n && work.content_map <= 4 * nodes + 16,
+                   "placement inspects a constant number of runs per node: shape=%zu n=%zu nodes=%zu work=%zu", shape,
+                   n, nodes, work.content_map);
+                markdown_core_node_free(root);
+            }
+            markdown_core_strbuf_free(&source);
+        }
     }
 }
 
@@ -5137,6 +5400,14 @@ static void core_registry_is_its_own_projection(test_batch_runner *runner) {
     }
     for (size_t i = 0; same && i < built.block_owner_count; i++) {
         same = built.block_owners[i] == core->block_owners[i];
+    }
+    same = same && markdown_core_block_traits_count == markdown_core_block_structure_count &&
+           markdown_core_inline_traits_count == markdown_core_inline_structure_count;
+    for (size_t i = 0; same && i < markdown_core_block_structure_count; i++) {
+        same = markdown_core_block_traits[i] == markdown_core_structure_traits(markdown_core_block_structure[i]);
+    }
+    for (size_t i = 0; same && i < markdown_core_inline_structure_count; i++) {
+        same = markdown_core_inline_traits[i] == markdown_core_structure_traits(markdown_core_inline_structure[i]);
     }
     same = same && memcmp(built.block_owner_sets.scan, core->block_owner_sets.scan, 256 * sizeof(uint64_t)) == 0 &&
            memcmp(built.block_owner_sets.interrupt, core->block_owner_sets.interrupt, 256 * sizeof(uint64_t)) == 0 &&
@@ -6449,6 +6720,51 @@ static void terms_and_headers_from_the_line_below(test_batch_runner *runner) {
     }
 }
 
+/* A heading a mapped input holds -- a grid table's cell -- is finalized
+ * after the blocks below its owner, so it registers behind them; the
+ * collection sorts itself by the keys the entries recorded and the anchors
+ * follow the source. Every other document registers its headings in source
+ * order and is prepared without a sort. */
+static void heading_registration_order(test_batch_runner *runner) {
+    static const struct {
+        const char *source;
+        const char *anchors[4];
+    } cases[] = {
+        {"+-----+\n| # h |\n+-----+\n\n# h\n\n# h\n", {"h", "h-1", "h-2", NULL}},
+        {"# h\n\n+-----+\n| # h |\n+-----+\n\n# h\n", {"h", "h-1", "h-2", NULL}},
+        {"# h\n\n# h {#h-1}\n\n# h\n", {"h", "h-1", "h-2", NULL}},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        markdown_core_node *root = parse(cases[i].source);
+        OK(runner, root != NULL, "the heading order case parses: case=%zu", i);
+        if (!root) {
+            continue;
+        }
+        markdown_core_iter *iter = markdown_core_iter_new(root);
+        size_t seen = 0;
+        markdown_core_event_type event;
+        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            markdown_core_node *node = markdown_core_iter_get_node(iter);
+            if (event != MARKDOWN_CORE_EVENT_ENTER || node->kind != MARKDOWN_CORE_NODE_HEADING) {
+                continue;
+            }
+            const char *expected = seen < 3 ? cases[i].anchors[seen] : NULL;
+            OK(runner,
+               expected && node->attributes && node->attributes->anchor.data &&
+                   strcmp((const char *)node->attributes->anchor.data, expected) == 0,
+               "headings take their anchors in source order whatever order they registered in: case=%zu heading=%zu "
+               "anchor=%s",
+               i, seen,
+               node->attributes && node->attributes->anchor.data ? (const char *)node->attributes->anchor.data
+                                                                 : "(none)");
+            seen++;
+        }
+        markdown_core_iter_free(iter);
+        INT_EQ(runner, seen, 3, "every heading of the case was visited: case=%zu", i);
+        markdown_core_node_free(root);
+    }
+}
+
 static void heading_completion_invariants(test_batch_runner *runner) {
     static const struct {
         const char *source, *anchor;
@@ -7729,6 +8045,7 @@ int main(int argc, char **argv) {
     attribute_linear_work(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
+    heading_registration_order(runner);
     heading_registry_invariants(runner);
     heading_reference_resource_lifetime(runner);
     heading_label_length_boundary(runner);
@@ -7747,6 +8064,10 @@ int main(int argc, char **argv) {
     literal_run_growth(runner);
     bracket_owner_triage(runner);
     table_row_geometry_reuse(runner);
+    table_geometry_regions_reused(runner);
+    thematic_break_lines_skip_table_probe(runner);
+    letter_led_lines_parse_no_marker(runner);
+    inline_placement_walks_the_map_once(runner);
     unicode_predicate_paths(runner);
     inline_construction_allocations(runner);
     table_dash_suffixes(runner);
@@ -7825,6 +8146,8 @@ int main(int argc, char **argv) {
     strbuf_overflow(runner);
     strbuf_borrowed_storage(runner);
     block_content_allocates_nothing_per_block(runner);
+    links_allocate_nothing_per_link(runner);
+    release_frees_only_allocations(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
     inline_predicate_arbitration(runner);

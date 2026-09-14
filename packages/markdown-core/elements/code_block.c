@@ -121,7 +121,7 @@ static void finalize_code(markdown_core_parser *parser, markdown_core_node *b) {
     /* A fenced body is its literal as written: the info string was taken
      * at the fence, so no byte is relocated here. */
     MARKDOWN_CORE_DIAGNOSTIC(parser->code_block_move_work += 0;)
-    b->as.code->literal = markdown_core_chunk_buf_detach(node_content);
+    b->as.code->literal = markdown_core_block_take_literal(b);
     if (!b->as.code->literal.data) {
         parser->oom = true;
     }

@@ -86,6 +86,9 @@ struct markdown_core_resource {
      * occurrence holds only its own normalized attributes on the node. */
     markdown_core_attributes attributes;
     size_t holders;
+    /* The record is a parse arena's, released with the tree that holds it
+     * rather than returned to the allocator by its last holder. */
+    bool arena_owned;
 };
 #ifndef MARKDOWN_CORE_RESOURCE_TYPEDEF
 #define MARKDOWN_CORE_RESOURCE_TYPEDEF
@@ -229,10 +232,23 @@ enum markdown_core_node__internal_flags {
     // (markdown_core_inline_state_make_literal_run).
     MARKDOWN_CORE_NODE__LITERAL_RUN = (1 << 7),
 
+    // The node owns an inline field tree beside its children -- a
+    // definition's term, a callout's title, a cite's items -- set where the
+    // field is attached, so a walk asks the node rather than its payload
+    // before it visits owned subtrees.
+    MARKDOWN_CORE_NODE__OWNS_FIELDS = (1 << 8),
+
+    // A finalized block queued for its element's complete_block, or a
+    // reference-only paragraph queued to be discarded, once block parsing
+    // ends. Cleared when the queue is served; a record released while it is
+    // queued is not recycled (S_free_nodes), so a stale entry never meets a
+    // reused record and finds the flag clear.
+    MARKDOWN_CORE_NODE__COMPLETION_QUEUED = (1 << 9),
+
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 8),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 10),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -374,6 +390,11 @@ static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_c
 /* Takes ownership of `url` and `title` and answers a resource with one holder,
  * or NULL having taken nothing -- the caller still owns both chunks and frees
  * them. */
+/* A resource in the parse arena when `arena` is given (a link's, an
+ * autolink's, a definition's: the document that keeps the tree keeps it),
+ * otherwise the allocator's. */
+markdown_core_resource *markdown_core_resource_create(markdown_core_arena *arena, markdown_core_mem *mem,
+                                                      markdown_core_chunk url, markdown_core_optional_chunk title);
 markdown_core_resource *markdown_core_resource_new(markdown_core_mem *mem, markdown_core_chunk url,
                                                    markdown_core_optional_chunk title);
 void markdown_core_resource_retain(markdown_core_resource *resource);

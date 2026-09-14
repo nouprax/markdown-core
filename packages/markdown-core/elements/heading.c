@@ -31,8 +31,16 @@ void markdown_core_block_register_heading(markdown_core_parser *parser, markdown
         headings->values = values;
         headings->capacity = capacity;
     }
-    headings->values[headings->count++] = (markdown_core_heading_parse){.node = node};
+    uint64_t key = ((uint64_t)(uint32_t)node->start_line << 32) | (uint32_t)node->start_column;
+    if (headings->count && headings->values[headings->count - 1].key > key) {
+        headings->unordered = true;
+    }
+    headings->values[headings->count++] = (markdown_core_heading_parse){.node = node, .key = key};
 }
+
+/* The key an entry recorded at registration: the sort reads the entries it
+ * moves, never the nodes they name. */
+static uint64_t heading_entry_key(const void *entry) { return ((const markdown_core_heading_parse *)entry)->key; }
 
 static markdown_core_key_index_slot *anchor_slot(markdown_core_parser *parser, anchor_registry *registry,
                                                  markdown_core_chunk key) {
@@ -73,11 +81,15 @@ void markdown_core_block_reserve_node_anchor(markdown_core_parser *parser, ancho
 }
 
 void markdown_core_block_prepare_headings(markdown_core_parser *parser, markdown_core_heading_collection *headings) {
-    if (!markdown_core_order_source_entries(parser->mem, headings->values, headings->count, sizeof(*headings->values),
-                                            markdown_core_source_key)) {
+    /* Headings are finalized in source order; only a mapped input's heading
+     * arrives behind the blocks below its owner, and only then is the
+     * collection sorted -- by the keys the entries carry. */
+    if (headings->unordered && !markdown_core_order_source_entries(parser->mem, headings->values, headings->count,
+                                                                   sizeof(*headings->values), heading_entry_key)) {
         parser->oom = true;
         return;
     }
+    headings->unordered = false;
     /* The reference map compares explicitness and original source positions,
      * independently of mapped-input scheduling and declaration closure order. */
     for (size_t i = 0; i < headings->count && !parser->oom; i++) {
@@ -95,8 +107,8 @@ void markdown_core_block_dispose_headings(markdown_core_parser *parser, markdown
     for (size_t i = 0; i < headings->count; i++) {
         markdown_core_dispose_heading(&headings->values[i]);
     }
-    parser->mem->free(headings->values);
-    parser->mem->free(headings->projection_stack);
+    markdown_core_mem_release(parser->mem, headings->values);
+    markdown_core_mem_release(parser->mem, headings->projection_stack);
     *headings = (markdown_core_heading_collection){0};
 }
 
@@ -350,6 +362,7 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
     if (!parser->oom && !inline_state.oom) {
         markdown_core_inline_finish_citation_tokens(&inline_state, &inline_state.citations);
         markdown_core_inline_process_delimiters(parser, &inline_state, 0, NULL);
+        markdown_core_inline_complete_root(parser, &inline_state);
         markdown_core_chunk label = {inline_state.input.data, inline_state.heading_label_end, 0};
         if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
@@ -455,6 +468,9 @@ bool markdown_core_heading_claim_tail(markdown_core_inline_state *inline_state, 
             }
             markdown_core_attributes_free(inline_state->mem, owned);
             *owned = value;
+            if (owned->anchor.len) {
+                markdown_core_inline_request_completion(inline_state);
+            }
             inline_state->heading_label_end = inline_state->text_end;
             inline_state->pos = inline_state->input.len;
         }

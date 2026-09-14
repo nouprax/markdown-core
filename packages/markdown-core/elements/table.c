@@ -692,7 +692,7 @@ static int visit_owned_subtrees(const markdown_core_element *self, markdown_core
 
 /* Source candidates own geometry only. Public nodes are allocated after a
  * complete candidate has passed validation; failed candidates consume nothing. */
-typedef struct {
+typedef struct markdown_core_table_interval {
     int start, end;
 } table_interval;
 
@@ -700,10 +700,11 @@ typedef struct markdown_core_table_source_line {
     const unsigned char *data, *after;
     markdown_core_parser *parser;
     int length, input_length, offset, first, first_column, indent, line, blanks;
-    bool dashes_scanned, full_boundary;
+    bool dashes_scanned, full_boundary, dashes_placed, columns_mapped;
     size_t dash_count;
-    table_interval *dashes;
-    int *bytes;
+    /* Where the line's dash intervals and column map begin in the parser's
+     * regions, once placed (table_dashes, table_line_bytes). */
+    size_t dashes_at, bytes_at;
     int columns;
 } table_source_line;
 
@@ -808,64 +809,98 @@ static bool table_source_get(table_source *source, size_t index) {
 
 static void table_source_free(table_source *source) {
     markdown_core_parser_lookahead_end(&source->lookahead);
-    for (size_t i = 0; i < source->count; i++) {
-        source->parser->mem->free(source->lines[i].bytes);
-        source->parser->mem->free(source->lines[i].dashes);
-    }
+    /* The query's column maps and intervals are gone; the regions stay. */
+    source->parser->table_columns_used = 0;
+    source->parser->table_dashes_used = 0;
 }
 
 static void table_candidate_free(markdown_core_parser *parser, table_candidate *candidate) {
-    parser->mem->free(candidate->columns);
-    parser->mem->free(candidate->rows);
-    parser->mem->free(candidate->cells);
+    markdown_core_mem_release(parser->mem, candidate->columns);
+    markdown_core_mem_release(parser->mem, candidate->rows);
+    markdown_core_mem_release(parser->mem, candidate->cells);
     *candidate = (table_candidate){0};
+}
+
+/* The two regions a query's geometry is carved from grow in place for the
+ * geometry being placed -- it is the region's last -- and may move what was
+ * placed before: a pointer into a region is taken after the last placement
+ * that can precede its use (table_dashes says how). */
+static bool table_region_reserve(markdown_core_parser *parser, void **values, size_t *capacity, size_t count,
+                                 size_t size) {
+    MARKDOWN_CORE_DIAGNOSTIC(size_t before = *capacity;)
+    if (!table_reserve(parser, values, capacity, count, size)) {
+        return false;
+    }
+    MARKDOWN_CORE_DIAGNOSTIC(parser->table_geometry_allocations += *capacity != before;)
+    return true;
+}
+
+static bool table_columns_reserve(markdown_core_parser *parser, size_t count) {
+    return table_region_reserve(parser, (void **)&parser->table_columns, &parser->table_columns_capacity, count,
+                                sizeof(*parser->table_columns));
+}
+
+/* A mapped line's column map: column -> the byte that authored it. */
+static const int *table_line_bytes(const table_source_line *line) {
+    return line->parser->table_columns + line->bytes_at;
 }
 
 /* Grid columns count scalars, with tabs expanded at four-column stops. Each
  * position retains the input byte that authored it; slicing never loses tabs
- * or UTF-8 provenance and never consults terminal display width. */
+ * or UTF-8 provenance and never consults terminal display width. A line has
+ * at most one column per byte plus tab expansion, so its map is reserved at
+ * the end of the column region once, and only a tab asks for more; a byte
+ * below 0x80 is its own scalar and is not decoded. */
 static bool table_source_columns(table_source *source, size_t index) {
     if (!table_source_get(source, index)) {
         return false;
     }
     table_source_line *line = &source->lines[index];
-    if (line->bytes) {
+    if (line->columns_mapped) {
         return true;
     }
-    MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_geometry_lines++;)
-    /* A line has at most one column per byte plus tab expansion, so the map
-     * is sized by the line once; only tabs can ask for more. */
-    size_t capacity = 0;
-    if (!table_reserve(source->parser, (void **)&line->bytes, &capacity, (size_t)(line->length - line->offset) + 5,
-                       sizeof(*line->bytes))) {
+    markdown_core_parser *parser = source->parser;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->table_geometry_lines++;)
+    size_t at = parser->table_columns_used;
+    if (!table_columns_reserve(parser, at + (size_t)(line->length - line->offset) + 5)) {
         return false;
     }
-    MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_geometry_allocations++;)
-    for (int byte = line->offset, column = 0;;) {
-        MARKDOWN_CORE_DIAGNOSTIC(size_t before = capacity;)
-        if (!table_reserve(source->parser, (void **)&line->bytes, &capacity, (size_t)column + 5,
-                           sizeof(*line->bytes))) {
-            return false;
-        }
-        MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_geometry_allocations += capacity != before;)
-        if (byte == line->length) {
-            line->bytes[column] = byte;
-            line->columns = column;
-            return true;
-        }
-        if (line->data[byte] == '\t') {
+    size_t room = parser->table_columns_capacity - at;
+    int *bytes = parser->table_columns + at;
+    int byte = line->offset, column = 0;
+    while (byte < line->length) {
+        unsigned char c = line->data[byte];
+        if (c < 0x80 && c != '\t') {
+            bytes[column++] = byte++;
+        } else if (c == '\t') {
+            /* Up to four columns for this byte, at most one for each byte
+             * after it, and one for the terminator. */
+            size_t need = (size_t)column + 4 + (size_t)(line->length - byte);
+            if (need > room) {
+                if (!table_columns_reserve(parser, at + need)) {
+                    return false;
+                }
+                room = parser->table_columns_capacity - at;
+                bytes = parser->table_columns + at;
+            }
             int spaces = 4 - column % 4;
             while (spaces--) {
-                line->bytes[column++] = byte;
+                bytes[column++] = byte;
             }
             byte++;
         } else {
             int32_t scalar;
             int width = markdown_core_utf8proc_iterate(line->data + byte, line->length - byte, &scalar);
-            line->bytes[column++] = byte;
+            bytes[column++] = byte;
             byte += width > 0 ? width : 1;
         }
     }
+    bytes[column] = byte;
+    line->columns = column;
+    line->bytes_at = at;
+    line->columns_mapped = true;
+    parser->table_columns_used = at + (size_t)column + 1;
+    return true;
 }
 
 static int table_character(const table_source_line *line, int column) {
@@ -873,19 +908,20 @@ static int table_character(const table_source_line *line, int column) {
     if (column < 0 || column >= line->columns) {
         return 0;
     }
-    int c = line->data[line->bytes[column]];
+    int c = line->data[table_line_bytes(line)[column]];
     return c == '\t' ? ' ' : c;
 }
 
 static int table_byte(const table_source_line *line, int column) {
-    return column >= line->columns ? line->length : line->bytes[column < 0 ? 0 : column];
+    return column >= line->columns ? line->length : table_line_bytes(line)[column < 0 ? 0 : column];
 }
 
 static int table_column(const table_source_line *line, int byte) {
+    const int *bytes = table_line_bytes(line);
     int low = 0, high = line->columns;
     while (low < high) {
         int middle = low + (high - low) / 2;
-        if (line->bytes[middle] < byte) {
+        if (bytes[middle] < byte) {
             low = middle + 1;
         } else {
             high = middle;
@@ -926,18 +962,24 @@ static size_t table_dash_count(table_source *source, size_t index) {
     return line->dash_count;
 }
 
+/* A line's authored dash intervals, placed once at the end of the parser's
+ * interval region. Placing them may move intervals placed earlier: a caller
+ * that holds intervals across another line's placement takes them again
+ * afterwards, which places nothing and cannot move anything. */
 static const table_interval *table_dashes(table_source *source, size_t index) {
     size_t count = table_dash_count(source, index);
     if (!count) {
         return NULL;
     }
     table_source_line *line = &source->lines[index];
-    if (!line->dashes) {
-        line->dashes = source->parser->mem->calloc(count, sizeof(*line->dashes));
-        if (!line->dashes) {
-            source->parser->oom = true;
+    markdown_core_parser *parser = source->parser;
+    if (!line->dashes_placed) {
+        size_t at = parser->table_dashes_used;
+        if (!table_region_reserve(parser, (void **)&parser->table_dashes, &parser->table_dashes_capacity, at + count,
+                                  sizeof(*parser->table_dashes))) {
             return NULL;
         }
+        table_interval *dashes = parser->table_dashes + at;
         const unsigned char *p = line->data + line->offset, *from = p, *before = p;
         int column = 0;
         for (size_t i = 0; i < count; i++) {
@@ -947,12 +989,15 @@ static const table_interval *table_dashes(table_source *source, size_t index) {
             }
             int start = column;
             column += (int)(p - from);
-            line->dashes[i] = (table_interval){start, column};
+            dashes[i] = (table_interval){start, column};
             before = p;
         }
-        MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work += (size_t)(p - line->data - line->offset);)
+        MARKDOWN_CORE_DIAGNOSTIC(parser->table_scan_work += (size_t)(p - line->data - line->offset);)
+        line->dashes_at = at;
+        line->dashes_placed = true;
+        parser->table_dashes_used = at + count;
     }
-    return line->dashes;
+    return parser->table_dashes + line->dashes_at;
 }
 
 static bool table_full_boundary(table_source *source, size_t index) {
@@ -1140,10 +1185,11 @@ static bool table_same_dashes(table_source *source, size_t left, size_t right) {
     if (count < 2 || table_dash_count(source, right) != count) {
         return false;
     }
-    const table_interval *a = table_dashes(source, left), *b = table_dashes(source, right);
-    if (!a || !b) {
+    if (!table_dashes(source, left) || !table_dashes(source, right)) {
         return false;
     }
+    /* Both placed: taking them again moves neither. */
+    const table_interval *a = table_dashes(source, left), *b = table_dashes(source, right);
     for (size_t i = 0; i < count; i++) {
         MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work++;)
         if (a[i].start != b[i].start || a[i].end != b[i].end) {
@@ -1154,7 +1200,7 @@ static bool table_same_dashes(table_source *source, size_t left, size_t right) {
 }
 
 typedef struct {
-    const table_interval *runs;
+    size_t at; /* The line's intervals, by their place in the interval region. */
     size_t count, line;
 } table_separator_key;
 
@@ -1171,7 +1217,7 @@ static unsigned table_separator_digit(table_source *source, table_separator_key 
     if (digit / 16 >= key.count) {
         return 0;
     }
-    table_interval run = key.runs[digit / 16];
+    table_interval run = source->parser->table_dashes[key.at + digit / 16];
     uint32_t position = (uint32_t)(digit % 16 < 8 ? run.start : run.end);
     return 1 + ((position >> (28 - 4 * (digit % 8))) & 15);
 }
@@ -1194,11 +1240,10 @@ static void table_simple_search_finish(table_source *source, size_t first, size_
     for (size_t i = first; i <= last; i++) {
         size_t columns = table_dash_count(source, i);
         if (columns > 1) {
-            const table_interval *runs = table_dashes(source, i);
-            if (!runs) {
+            if (!table_dashes(source, i)) {
                 return;
             }
-            keys[count++] = (table_separator_key){runs, columns, i};
+            keys[count++] = (table_separator_key){source->lines[i].dashes_at, columns, i};
         }
     }
     size_t pending = 1;
@@ -1287,6 +1332,9 @@ static bool table_parse_simple(table_source *source, size_t start, table_candida
     if (!table_source_columns(source, start) || !table_source_columns(source, body)) {
         goto failed;
     }
+    /* The footer comparison and the failed search placed other lines'
+     * intervals: the delimiter's are taken again. */
+    runs = table_dashes(source, delimiter);
     if (!table_set_columns(source, candidate, runs, count, headerless ? body : start, false)) {
         goto failed;
     }
@@ -2112,6 +2160,19 @@ static bool table_after_caption(table_source *source, size_t *caption_last, tabl
            table_parse_candidate(source, next, candidate, true);
 }
 
+/* Whether the raw line below the parser's current one is blank, or there is
+ * none. Every grammar a dash or grid line can begin reads on past that line,
+ * so such a line opens nothing when this holds, and the answer costs no
+ * lookahead: a container prefix keeps a line from reading blank here, and
+ * the lookahead then reads the line properly. */
+static bool table_next_line_blank(const markdown_core_parser *parser) {
+    const unsigned char *next = parser->lookahead_cursor, *end = parser->lookahead_end;
+    while (next < end && (*next == ' ' || *next == '\t' || *next == '\r')) {
+        next++;
+    }
+    return next == end || *next == '\n';
+}
+
 bool markdown_core_table_caption_probe(markdown_core_block_lookahead *lookahead, markdown_core_chunk *input, int first,
                                        int indent) {
     markdown_core_parser *parser = lookahead->parser;
@@ -2156,10 +2217,14 @@ markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, m
      * lazy continuation -- nothing opened on the line, and the open
      * paragraph of a container it left unmatched would take it -- and its
      * separator would find that paragraph, not this line, so it alone
-     * still looks ahead for one. */
+     * still looks ahead for one. A grid or dash line needs a line below
+     * it that is not blank, read raw before any lookahead. */
     unsigned char first = input[parser->first_nonspace];
-    if (first != '+' && first != '-' &&
-        table_caption_start(input, length, parser->first_nonspace, parser->indent) < 0) {
+    if (first == '+' || first == '-') {
+        if (table_next_line_blank(parser)) {
+            return NULL;
+        }
+    } else if (table_caption_start(input, length, parser->first_nonspace, parser->indent) < 0) {
         if (parent != parser->matched_container || parser->current == parent ||
             parser->current->kind != MARKDOWN_CORE_NODE_PARAGRAPH) {
             return NULL;
@@ -2342,6 +2407,11 @@ static markdown_core_node *try_interrupting_block(markdown_core_parser *parser, 
     if (parser->first_nonspace < parser->table_separator_kill_pos) {
         return NULL;
     }
+    /* A separator has rows below it, and a boundary a table: the raw line
+     * below settles that before the dash scan. */
+    if (table_next_line_blank(parser)) {
+        return NULL;
+    }
     const unsigned char *cursor = input->data + parser->first_nonspace, *from;
     const unsigned char *end = input->data + input->len;
     while (end > cursor && (end[-1] == '\n' || end[-1] == '\r')) {
@@ -2366,16 +2436,22 @@ static markdown_core_node *try_interrupting_block(markdown_core_parser *parser, 
 }
 
 static void dispose_parser(markdown_core_parser *parser) {
-    parser->mem->free(parser->table_lines);
+    markdown_core_mem_release(parser->mem, parser->table_lines);
     parser->table_lines = NULL;
     if (parser->table_row) {
-        parser->mem->free(parser->table_row->cells);
+        markdown_core_mem_release(parser->mem, parser->table_row->cells);
         parser->mem->free(parser->table_row);
         parser->table_row = NULL;
     }
-    parser->mem->free(parser->table_scratch);
+    markdown_core_mem_release(parser->mem, parser->table_scratch);
     parser->table_scratch = NULL;
     parser->table_scratch_capacity = 0;
+    markdown_core_mem_release(parser->mem, parser->table_columns);
+    parser->table_columns = NULL;
+    parser->table_columns_capacity = parser->table_columns_used = 0;
+    markdown_core_mem_release(parser->mem, parser->table_dashes);
+    parser->table_dashes = NULL;
+    parser->table_dashes_capacity = parser->table_dashes_used = 0;
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {

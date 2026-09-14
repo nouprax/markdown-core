@@ -89,8 +89,9 @@ kind conversion.
 
 HTML blocks keep their recognition state and eventual literal in distinct
 fields of one data record throughout parsing. Converting a closed HTML comment
-to Comment transfers its owned literal only after the new record can be
-created. Setext headings also use the shared kind conversion operation.
+to Comment transfers its literal, owned or borrowed from the arena content,
+only after the new record can be created. Setext headings also use the shared
+kind conversion operation.
 
 Construction and kind conversion have different ownership constraints: an
 unpublished node and its initial record can share an allocation, while a
@@ -150,8 +151,12 @@ record written per event. At a node's EXIT it first absorbs the Text run
 that follows a Text into it, releases a Text that owns no bytes, and then
 hands the surviving node to each element's `finish_node` hook in registry
 order: autolink splits addresses and formula unwraps wrappers there, so the
-number of walks after inline parsing is two (completion and finishing)
-however many elements are attached. An element names the node kinds its
+whole tree is walked once after inline parsing, for finishing, however many
+elements are attached. The completion walk runs over one inline root at a
+time, as that root's parse ends, and only for a root whose parse asked for it
+(an escaped space to decode, an anchor to reserve); block completion serves a
+queue the blocks joined as they were finalized, children before their
+container, instead of walking the tree for the few kinds that complete. An element names the node kinds its
 hook acts on (`finish_node_kinds`) and is offered only those, as a bit per
 kind tested at each node: autolink sees each Text, formula each paragraph,
 code block and formula block, and a paragraph's Emph never reaches either.
@@ -200,7 +205,9 @@ lines of one block; a reservation the arena cannot extend moves to the
 allocator by the buffer's ordinary growth. So a block costs no allocation of
 its own and nothing to release: the literal runs that borrow its bytes, the
 buffer and the node go with the arena. A literal an element takes out of a
-content buffer (a code block's) is copied into storage of its own.
+content buffer -- a code block's, an HTML block's -- borrows the arena bytes
+the same way; only content the arena could not hold is taken over as storage
+of the literal's own, and a literal a caller replaces is owned by the node.
 
 The bracket scanner tracks the most recent non-SP/TAB byte over disjoint
 consumed token ranges, so rejecting empty bodies never rescans nested bodies.
@@ -228,7 +235,7 @@ occupied-coordinate matrix becomes part of the public AST.
 
 Multiline and grid cell bodies enqueue mapped inputs on their owning nodes.
 The parser drains that queue, including newly discovered nested cells, before
-running document-wide completion and inline parsing. Each input uses the same
+serving the block completion queue and parsing inlines. Each input uses the same
 block parser, reference map, heading registry and definition owner. The active
 block root bounds finalization without creating a second Document or recursing
 into the document parser. Content marks compose through nested slices when
@@ -251,11 +258,14 @@ Both scanner families are reproducible raw output of the pinned re2c version.
 
 A table query borrows its current line, immutable input lines and the parser's
 normalized EOF line until commitment finishes. One parser-owned line workspace
-is reused between queries; per-query column geometry and separator intervals
-are released before the next query. Deferred cell parsing starts after this
-borrow ends. Dash-run facts are scanned once per captured line and reused by
-all candidate grammars. Intervals are materialized only when needed; paragraph
-header precedence is queried only after its separator grammar matches.
+is reused between queries, and a query's column maps and separator intervals
+are carved from two parser-owned regions that every query starts empty, so no
+line allocates geometry of its own. Deferred cell parsing starts after this
+borrow ends. A dash or grid line whose next raw line is blank, or absent,
+begins no query at all: every grammar it could begin reads past that line.
+Dash-run facts are scanned once per captured line and reused by all candidate
+grammars. Intervals are materialized only when needed; paragraph header
+precedence is queried only after its separator grammar matches.
 
 Streaming block opening and captured table/caption queries share one core
 prefix recognizer. It returns borrowed marker facts; only streaming commitment
