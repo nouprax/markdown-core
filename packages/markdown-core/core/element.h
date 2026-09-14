@@ -77,6 +77,13 @@ struct markdown_core_element {
     void (*finish_inline)(markdown_core_inline_state *);
     void (*dispose_inline)(markdown_core_inline_state *);
     void (*complete_inline)(markdown_core_parser *, markdown_core_node *, int);
+    /* complete_inline -- and a document structure's observe_inline -- is
+     * delivered by a walk over an inline root once its delimiters and
+     * brackets are resolved. An element that sets this asks for that walk
+     * itself, through markdown_core_inline_request_completion, for the roots
+     * that need it; one that does not makes every root of the document pay
+     * the walk. */
+    bool complete_inline_on_request;
     markdown_core_node *(*open_lazy)(markdown_core_parser *, markdown_core_node *);
     bool (*accepts_lazy)(markdown_core_parser *, markdown_core_node *);
     unsigned speculative_flags;
@@ -176,12 +183,13 @@ struct markdown_core_element {
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;
 };
 
-/* Whether `node` can hold node-valued fields at all: the core kinds that do,
- * or an element that declares a field visitor. Every other node is passed
- * over without a visitor call. */
+/* Whether `node` holds node-valued fields at all: a node a core kind attached
+ * a field to (MARKDOWN_CORE_NODE__OWNS_FIELDS), or one of an element that
+ * declares a field visitor. Every other node is passed over without a
+ * visitor call, and without reading its payload. */
 static MARKDOWN_CORE_INLINE bool markdown_core_node_may_own_inline_subtrees(const markdown_core_node *node) {
-    return node->kind == MARKDOWN_CORE_NODE_DEFINITION || node->kind == MARKDOWN_CORE_NODE_CALLOUT ||
-           node->kind == MARKDOWN_CORE_NODE_CITE || (node->element && node->element->visit_owned_subtrees_func);
+    return (node->flags & MARKDOWN_CORE_NODE__OWNS_FIELDS) != 0 ||
+           (node->element && node->element->visit_owned_subtrees_func);
 }
 
 #endif

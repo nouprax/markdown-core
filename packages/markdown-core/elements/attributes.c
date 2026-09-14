@@ -546,6 +546,9 @@ void markdown_core_inline_attach_inline_attributes(markdown_core_inline_state *i
         }
         markdown_core_attributes_free(inline_state->mem, owned);
         *owned = value;
+        if (owned->anchor.len) {
+            markdown_core_inline_request_completion(inline_state);
+        }
         inline_state->pos = end;
         markdown_core_inline_state_place(inline_state, node, from, end - 1);
     }

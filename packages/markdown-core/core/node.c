@@ -456,8 +456,13 @@ static void S_free_nodes(markdown_core_node *e, markdown_core_arena *pool) {
         next = e->next;
         if (!e->arena_owned) {
             NODE_MEM(e)->free(e);
-        } else if (pool) {
+        } else if (pool && !(e->flags & MARKDOWN_CORE_NODE__COMPLETION_QUEUED)) {
             markdown_core_arena_recycle(pool, e, e->record_size);
+        } else if (pool) {
+            /* Queued for block completion: the record stays dead in the arena
+             * until the arena goes, so the queue's entry, which finds the
+             * flag cleared, never meets a reused record. */
+            e->flags = 0;
         }
         e = next;
     }

@@ -515,6 +515,11 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
         } else {
             markdown_core_resource_retain(resource);
             inl->as.link->resource = resource;
+            /* The occurrence reads the definition's anchor: the document
+             * reserves it once, from the completion walk this asks for. */
+            if (resource->attributes.anchor.len) {
+                markdown_core_inline_request_completion(inline_state);
+            }
         }
     } else if (inl) {
         inl->as.link->resource = markdown_core_resource_new(inline_state->mem, url, title);

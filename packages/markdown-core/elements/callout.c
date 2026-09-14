@@ -82,6 +82,7 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *par
             return true;
         }
         node->as.callout->title = title;
+        node->flags |= MARKDOWN_CORE_NODE__OWNS_FIELDS;
         title->start_line = title->end_line = parser->line_number;
         title->start_column = markdown_core_parser_source_column(parser, parser->line_number, pos + 1);
         title->end_column = markdown_core_parser_source_column(parser, parser->line_number, end);

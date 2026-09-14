@@ -150,8 +150,12 @@ record written per event. At a node's EXIT it first absorbs the Text run
 that follows a Text into it, releases a Text that owns no bytes, and then
 hands the surviving node to each element's `finish_node` hook in registry
 order: autolink splits addresses and formula unwraps wrappers there, so the
-number of walks after inline parsing is two (completion and finishing)
-however many elements are attached. An element names the node kinds its
+whole tree is walked once after inline parsing, for finishing, however many
+elements are attached. The completion walk runs over one inline root at a
+time, as that root's parse ends, and only for a root whose parse asked for it
+(an escaped space to decode, an anchor to reserve); block completion serves a
+queue the blocks joined as they were finalized, children before their
+container, instead of walking the tree for the few kinds that complete. An element names the node kinds its
 hook acts on (`finish_node_kinds`) and is offered only those, as a bit per
 kind tested at each node: autolink sees each Text, formula each paragraph,
 code block and formula block, and a paragraph's Emph never reaches either.
@@ -228,7 +232,7 @@ occupied-coordinate matrix becomes part of the public AST.
 
 Multiline and grid cell bodies enqueue mapped inputs on their owning nodes.
 The parser drains that queue, including newly discovered nested cells, before
-running document-wide completion and inline parsing. Each input uses the same
+serving the block completion queue and parsing inlines. Each input uses the same
 block parser, reference map, heading registry and definition owner. The active
 block root bounds finalization without creating a second Document or recursing
 into the document parser. Content marks compose through nested slices when

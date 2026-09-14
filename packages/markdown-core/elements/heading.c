@@ -350,6 +350,7 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
     if (!parser->oom && !inline_state.oom) {
         markdown_core_inline_finish_citation_tokens(&inline_state, &inline_state.citations);
         markdown_core_inline_process_delimiters(parser, &inline_state, 0, NULL);
+        markdown_core_inline_complete_root(parser, &inline_state);
         markdown_core_chunk label = {inline_state.input.data, inline_state.heading_label_end, 0};
         if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
@@ -455,6 +456,9 @@ bool markdown_core_heading_claim_tail(markdown_core_inline_state *inline_state, 
             }
             markdown_core_attributes_free(inline_state->mem, owned);
             *owned = value;
+            if (owned->anchor.len) {
+                markdown_core_inline_request_completion(inline_state);
+            }
             inline_state->heading_label_end = inline_state->text_end;
             inline_state->pos = inline_state->input.len;
         }

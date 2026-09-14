@@ -211,6 +211,7 @@ static void S_parser_free(markdown_core_parser *parser) {
     markdown_core_strbuf_free(&parser->paragraph_line_copy);
     markdown_core_strbuf_free(&parser->line_scratch);
     markdown_core_strbuf_free(&parser->lookahead_last_line);
+    mem->free(parser->completions);
     mem->free(parser);
 }
 
@@ -623,6 +624,33 @@ bool markdown_core_block_ends_with_blank_line(markdown_core_node *node) {
     }
 }
 
+/* A finalized block its element completes once block parsing ends joins the
+ * queue in finalization order, which puts every block after the blocks it
+ * contains -- the order a post-order walk of the finished tree would visit
+ * them in, without the walk. A queued record is never recycled while the
+ * queue stands (S_free_nodes), so an entry always finds its own node. */
+void markdown_core_block_queue_completion(markdown_core_parser *parser, markdown_core_node *b) {
+    if (b->flags & MARKDOWN_CORE_NODE__COMPLETION_QUEUED) {
+        return;
+    }
+    if (parser->completion_count == parser->completion_capacity) {
+        size_t capacity = parser->completion_capacity ? 2 * parser->completion_capacity : 64;
+        if (capacity > SIZE_MAX / sizeof(*parser->completions)) {
+            parser->oom = true;
+            return;
+        }
+        markdown_core_node **grown = parser->mem->realloc(parser->completions, capacity * sizeof(*grown));
+        if (!grown) {
+            parser->oom = true;
+            return;
+        }
+        parser->completions = grown;
+        parser->completion_capacity = capacity;
+    }
+    b->flags |= MARKDOWN_CORE_NODE__COMPLETION_QUEUED;
+    parser->completions[parser->completion_count++] = b;
+}
+
 markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, markdown_core_node *b) {
     markdown_core_node *parent;
 
@@ -668,6 +696,12 @@ markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, m
     const markdown_core_element *structure = markdown_core_node_structure(b);
     if (structure && structure->finalize_block) {
         structure->finalize_block(parser, b);
+    }
+    /* The block's completion, and the discarding of a paragraph reference
+     * definitions consumed, wait for block parsing to end: the block keeps
+     * its place among its siblings until then (S_complete_blocks). */
+    if ((structure && structure->complete_block) || (b->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY)) {
+        markdown_core_block_queue_completion(parser, b);
     }
 
     return parent;
@@ -846,6 +880,7 @@ bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_
         prepared.inline_hooks.init_count += element->init_inline != NULL;
         prepared.inline_hooks.finish_count += element->finish_inline != NULL;
         prepared.inline_hooks.dispose_count += element->dispose_inline != NULL;
+        prepared.inline_completion_walk |= element->complete_inline && !element->complete_inline_on_request;
         if (S_owns_block_starts(element)) {
             /* The owner's bit joins the set of every byte it accepts, for
              * each hook it implements. */
@@ -951,7 +986,19 @@ static bool process_inline_tree(markdown_core_parser *parser, markdown_core_node
                 }
                 markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
             }
-            whitespace |= markdown_core_parse_inline_subtrees(parser, cur, refmap);
+            if (markdown_core_node_may_own_inline_subtrees(cur)) {
+                whitespace |= markdown_core_parse_inline_subtrees(parser, cur, refmap);
+            }
+            /* A block's own attributes, attached while its lines were read,
+             * are observed here, the way the completion walk observes an
+             * inline node of a root that asked for it; a root's own tail
+             * attributes were observed by that walk already. The reset above
+             * consumed the root's EXIT, so ENTER is the one event a block
+             * is seen at. */
+            if (cur->attributes && parser->document_structure->observe_inline &&
+                parser->document_structure->complete_inline_on_request) {
+                parser->document_structure->observe_inline(parser, cur);
+            }
         }
     }
 
@@ -1165,13 +1212,43 @@ static int complete_independent_inlines(markdown_core_node **slot, void *context
     return parser->oom ? 0 : process_inline_fields(parser, *slot, NULL, 0);
 }
 
-// Parse each source buffer with its owned fields, then complete final owners.
+void markdown_core_block_complete_inline_root(markdown_core_parser *parser, markdown_core_node *root) {
+    markdown_core_node *slot = root;
+    walk_owned_trees(parser, &slot, complete_inline_node, NULL, NULL, NULL, 0);
+    /* The bodies this root's parse handed to the document -- inline
+     * footnotes -- are independent contexts, walked from depth 0 as the
+     * document-wide walk did; the collection remembers where the last such
+     * walk stopped, so each body is walked once. */
+    markdown_core_definition_collection *footnotes = &parser->footnotes;
+    markdown_core_node *definition = footnotes->last_completed ? footnotes->last_completed->next
+                                     : parser->root && parser->root->kind == MARKDOWN_CORE_NODE_DOCUMENT
+                                         ? parser->root->as.document->footnotes
+                                         : NULL;
+    for (; definition && !parser->oom; definition = definition->next) {
+        markdown_core_node *body = definition;
+        walk_owned_trees(parser, &body, complete_inline_node, NULL, NULL, NULL, 0);
+        footnotes->last_completed = definition;
+    }
+}
+
+/* Whether some hook is delivered by walking the whole document rather than
+ * the roots whose parse asked for a completion walk. */
+static bool S_completion_walks_whole_tree(const markdown_core_parser *parser) {
+    const markdown_core_element *document = parser->document_structure;
+    return parser->registry->inline_completion_walk ||
+           (document->observe_inline && !document->complete_inline_on_request);
+}
+
+/* Parse each source buffer with its owned fields. A root's completion walk
+ * runs as its parse ends (markdown_core_inline_finish_inlines), for the
+ * roots that asked for it; only an element that does not ask makes the
+ * whole document walk. */
 static void process_inlines(markdown_core_parser *parser, markdown_core_map *refmap, void *context) {
     process_inline_tree(parser, parser->root, refmap);
-    if (!parser->oom) {
-        process_inline_fields(parser, parser->root, context, 0);
+    if (parser->oom || !S_completion_walks_whole_tree(parser)) {
+        return;
     }
-
+    process_inline_fields(parser, parser->root, context, 0);
     markdown_core_visit_block_subtrees(parser->root, complete_independent_inlines, parser);
 }
 
@@ -1179,25 +1256,28 @@ static void process_inlines(markdown_core_parser *parser, markdown_core_map *ref
  * Walk in postorder so list layout sees the cleaned children. Each tree edge
  * is followed at most once in each direction, with no recursion or extra allocation;
  * the document owns every pending definition even if parsing fails earlier. */
-static void S_complete_block_tree(markdown_core_parser *parser, markdown_core_node *root) {
-    markdown_core_node *node = root;
-    while (node->first_child) {
-        node = node->first_child;
-    }
-    while (node) {
-        markdown_core_node *parent = node->parent;
-        markdown_core_node *next = node->next;
+/* Serve the completion queue: every block its element completes, and every
+ * paragraph consumed entirely by reference definitions, which retained block
+ * adjacency until now and leaves before list layout and inline parsing
+ * observe the semantic children. Finalization order puts a block after the
+ * blocks it contains, so a container completes over completed children. */
+static void S_complete_blocks(markdown_core_parser *parser) {
+    for (size_t i = 0; i < parser->completion_count && !parser->oom; i++) {
+        markdown_core_node *node = parser->completions[i];
+        if (!(node->flags & MARKDOWN_CORE_NODE__COMPLETION_QUEUED)) {
+            continue;
+        }
+        node->flags &= ~MARKDOWN_CORE_NODE__COMPLETION_QUEUED;
+        if (node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY) {
+            markdown_core_node_recycle(parser->arena, node);
+            continue;
+        }
         const markdown_core_element *structure = markdown_core_node_structure(node);
         if (structure && structure->complete_block) {
             structure->complete_block(parser, node);
         }
-        node = next ? next : parent;
-        if (next) {
-            while (node->first_child) {
-                node = node->first_child;
-            }
-        }
     }
+    parser->completion_count = 0;
 }
 
 static markdown_core_node *finalize_document(markdown_core_parser *parser) {
@@ -2683,7 +2763,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     S_PHASE(parser, blocks);
     finalize_document(parser);
     S_parse_block_inputs(parser);
-    S_complete_block_tree(parser, parser->root);
+    S_complete_blocks(parser);
     if (!parser->oom) {
         parser->document_structure->prepare_document(parser);
     }
@@ -2731,6 +2811,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     return res;
 
 failed:
+    parser->completion_count = 0;
     parser->document_structure->dispose_document(parser);
     parser->arena = NULL;
     markdown_core_node_free(parser->root);

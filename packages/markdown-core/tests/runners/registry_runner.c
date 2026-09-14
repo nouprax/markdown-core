@@ -155,6 +155,7 @@ static int emit(FILE *out) {
             words);
     fprintf(out, "    .inline_hooks = {CORE_INLINE_HOOKS, %zu, %zu, %zu},\n", hooks->init_count, hooks->finish_count,
             hooks->dispose_count);
+    fprintf(out, "    .inline_completion_walk = %s,\n", registry.inline_completion_walk ? "true" : "false");
     fputs("    .special_chars = CORE_SPECIAL_CHARS,\n"
           "    .skip_chars = CORE_SKIP_CHARS,\n"
           "    .storage = NULL,\n"

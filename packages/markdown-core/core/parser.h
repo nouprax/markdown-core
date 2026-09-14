@@ -51,6 +51,9 @@ typedef struct {
     size_t count;
     size_t capacity;
     struct markdown_core_node *last_inline;
+    /* The last inline-registered definition an inline root's completion walk
+     * covered: the walk after the next root starts at its successor. */
+    struct markdown_core_node *last_completed;
 } markdown_core_definition_collection;
 
 /* One byte may terminate text and/or dispatch to this owner. The roles are
@@ -106,6 +109,9 @@ typedef struct markdown_core_registry {
     /* Implementers of the inline root lifecycle hooks, so a root visits
      * implementers only. */
     markdown_core_inline_hooks inline_hooks;
+    /* Some element delivers complete_inline without asking for it per root,
+     * so every inline root of a document is walked for completion. */
+    bool inline_completion_walk;
     /* 256 entries each: the bytes that end a text run, and the bytes
      * delimiter flanking looks through. */
     const int8_t *special_chars;
@@ -173,6 +179,14 @@ struct markdown_core_parser {
     struct markdown_core_node *matched_container;
     struct markdown_core_node **block_inputs;
     size_t block_input_count, block_input_capacity, block_input_cursor;
+    /* Finalized blocks their element completes once block parsing ends, in
+     * the order they were finalized: a block after every block it contains. */
+    struct markdown_core_node **completions;
+    size_t completion_count, completion_capacity;
+    /* Completion requests of inline roots parsed within another root's
+     * parse (a field root entered from the inline parser), which the
+     * enclosing root collects; and how deep that nesting currently is. */
+    unsigned nested_completion_requests, nested_inline_depth;
     bufsize_t *input_line_offsets;
     size_t input_line_count, input_line_capacity;
     int input_first_line;
@@ -449,6 +463,16 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
  * parser. No nested parse transaction, document, registry or C recursion. */
 void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser);
 bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_node *owner);
+/* The inline completion walk over one root: complete_inline and
+ * observe_inline for every node of the root's tree and owned fields. */
+void markdown_core_block_complete_inline_root(markdown_core_parser *parser, markdown_core_node *root);
+/* Queue a finalized block for completion once block parsing ends; a block
+ * finalized outside markdown_core_block_finalize (a table's lead paragraph)
+ * queues itself where it is finalized. */
+void markdown_core_block_queue_completion(markdown_core_parser *parser, markdown_core_node *b);
+/* The completion walk a root asked for, run as its parse ends
+ * (markdown_core_inline_finish_inlines and the heading's own loop). */
+void markdown_core_inline_complete_root(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
 /* Project a byte column in the active input to its original source column.
  * Line numbers already name physical source lines. Column zero stays a
  * line-ending sentinel. Producers call this when assigning node scopes. */

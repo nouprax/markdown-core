@@ -394,6 +394,7 @@ static const markdown_core_registry CORE_REGISTRY = {
     .block_owner_sets = {CORE_BLOCK_SCAN_OWNERS, CORE_BLOCK_INTERRUPT_OWNERS, CORE_BLOCK_OPEN_OWNERS,
                          CORE_BLOCK_PARAGRAPH_OWNERS, 1},
     .inline_hooks = {CORE_INLINE_HOOKS, 1, 1, 4},
+    .inline_completion_walk = false,
     .special_chars = CORE_SPECIAL_CHARS,
     .skip_chars = CORE_SKIP_CHARS,
     .storage = NULL,

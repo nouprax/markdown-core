@@ -72,6 +72,9 @@ struct markdown_core_inline_state {
     const int8_t *skip_chars;
     /* Sticky allocation-failure flag, copied to the parser after the inline
      * pass so a lossy parse is reported instead of silently truncated. */
+    /* markdown_core_inline_request_completion calls made while this root was
+     * parsed; the root is walked for completion only when there were any. */
+    unsigned completion_requests;
     int oom;
 };
 

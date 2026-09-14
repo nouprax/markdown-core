@@ -360,6 +360,10 @@ int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markd
 int markdown_core_parser_append_content_marks(markdown_core_parser *parser, markdown_core_node *owner,
                                               markdown_core_node *node, bufsize_t from, bufsize_t length,
                                               bufsize_t offset);
+/** Ask for the completion walk over the root being parsed: complete_inline
+ * and observe_inline delivered to every node of the root once its delimiters
+ * and brackets are resolved. A root nobody asked for is not walked. */
+void markdown_core_inline_request_completion(markdown_core_inline_state *inline_state);
 /** Project a logical inline range, including its Text literal mapping. */
 void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
                                       int to);

@@ -185,6 +185,7 @@ static bool open_definition_after_term(markdown_core_parser *parser, markdown_co
     definition->start_column = term->start_column;
     definition->as.definition->compact = compact;
     definition->as.definition->term = term;
+    definition->flags |= MARKDOWN_CORE_NODE__OWNS_FIELDS;
     *container = definition;
     return markdown_core_definition_list_open(parser, container, input, start);
 }
@@ -216,6 +217,7 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_par
         return definition;
     }
     definition->as.definition->term = term;
+    definition->flags |= MARKDOWN_CORE_NODE__OWNS_FIELDS;
     int begin = parser->first_nonspace, end = input->len;
     while (end > begin && (markdown_core_block_is_space_or_tab(input->data[end - 1]) ||
                            markdown_core_is_line_end(input->data[end - 1]))) {

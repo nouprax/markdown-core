@@ -6,6 +6,7 @@
 void markdown_core_parser_finalize_paragraph(markdown_core_parser *parser, markdown_core_node *paragraph) {
     if (!markdown_core_block_resolve_reference_link_definitions(parser, paragraph)) {
         paragraph->flags |= MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY;
+        markdown_core_block_queue_completion(parser, paragraph);
         return;
     }
     markdown_core_block_attach_paragraph_identifier(parser, paragraph);
@@ -15,16 +16,10 @@ static int continue_paragraph(const markdown_core_element *self, markdown_core_p
                               int length, markdown_core_node *container) {
     return !parser->blank;
 }
-static void complete_block(markdown_core_parser *parser, markdown_core_node *node) {
-    if (node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY) {
-        markdown_core_node_recycle(parser->arena, node);
-    }
-}
 static bool accepts_lazy(markdown_core_parser *parser, markdown_core_node *node) { return true; }
 static markdown_core_node *open_lazy(markdown_core_parser *parser, markdown_core_node *node) { return node; }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
-    .complete_block = complete_block,
     .accepts_lazy = accepts_lazy,
     .open_lazy = open_lazy,
 

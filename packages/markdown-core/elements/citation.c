@@ -316,6 +316,7 @@ markdown_core_node *markdown_core_inline_new_citation(markdown_core_inline_state
             last->next = item;
         } else {
             cite->as.cite->citations = item;
+            cite->flags |= MARKDOWN_CORE_NODE__OWNS_FIELDS;
         }
     }
     return item;

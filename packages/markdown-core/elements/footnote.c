@@ -105,6 +105,7 @@ static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core
         return NULL;
     }
     cite->as.cite->citations = citation;
+    cite->flags |= MARKDOWN_CORE_NODE__OWNS_FIELDS;
     citation->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE;
     markdown_core_inline_state_place(inline_state, cite, opener->position - (opener->kind == BRACKET_FOOTNOTE ? 2 : 1),
                                      after_close - 1);

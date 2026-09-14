@@ -399,7 +399,9 @@ static void complete_inline_token(markdown_core_parser *parser, markdown_core_in
     if (!entry || entry->kind != DELIMITER_FIELD) {
         return;
     }
+    parser->nested_inline_depth++;
     bool whitespace = markdown_core_parse_inline_subtrees(parser, entry->node, inline_state->refmap);
+    parser->nested_inline_depth--;
     if (whitespace) {
         entry->kind = DELIMITER_BOUNDARY;
         entry->node = NULL;
@@ -907,9 +909,32 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
         }
         markdown_core_inline_process_delimiters(parser, inline_state, 0, NULL);
     }
+    if (!parser->oom && !inline_state->oom) {
+        markdown_core_inline_complete_root(parser, inline_state);
+    }
     bool whitespace = inline_state->last_delim && inline_state->last_delim->kind == DELIMITER_BOUNDARY;
     markdown_core_inline_clear_inlines(inline_state);
     return whitespace;
+}
+
+void markdown_core_inline_request_completion(markdown_core_inline_state *inline_state) {
+    inline_state->completion_requests++;
+}
+
+/* A root parsed within another root's parse -- a field entered from the
+ * inline parser -- is walked among that root's fields, at the depth it has
+ * there: its requests are the enclosing root's. The outermost root walks
+ * when its own or its fields' parses asked. */
+void markdown_core_inline_complete_root(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
+    if (parser->nested_inline_depth) {
+        parser->nested_completion_requests += inline_state->completion_requests;
+        return;
+    }
+    unsigned requests = inline_state->completion_requests + parser->nested_completion_requests;
+    parser->nested_completion_requests = 0;
+    if (requests) {
+        markdown_core_block_complete_inline_root(parser, inline_state->owner);
+    }
 }
 
 bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap) {

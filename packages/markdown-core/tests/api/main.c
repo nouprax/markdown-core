@@ -3877,11 +3877,13 @@ static void finishing_walk_work(test_batch_runner *runner) {
             markdown_core_node *again = markdown_core_parse_document_with_mem(
                 (const char *)source.ptr, source.size, mem, measure_inline_work_with_finisher, &probed);
             OK(runner, root != NULL && again != NULL, "finishing shape parses: shape=%zu units=%zu", shape, units);
-            size_t bound = shapes[shape].completed * units + 16;
-            OK(runner, work.completion <= bound, "completion delivers one hook per node: shape=%zu units=%zu hooks=%zu",
-               shape, units, work.completion);
-            OK(runner, work.finishing <= work.completion,
-               "finishing delivers at most one EXIT per completed node: shape=%zu units=%zu hooks=%zu", shape, units,
+            /* No root of these shapes asks for a completion walk -- no
+             * escaped space, no anchor -- so none is walked for it; the
+             * finishing walk still delivers one EXIT per node. */
+            INT_EQ(runner, work.completion, 0, "completion walks only the roots that asked: shape=%zu units=%zu", shape,
+                   units);
+            OK(runner, work.finishing <= shapes[shape].completed * units + 16,
+               "finishing delivers at most one EXIT per node: shape=%zu units=%zu hooks=%zu", shape, units,
                work.finishing);
             OK(runner, probed.completion == work.completion && probed.finishing == work.finishing,
                "an extra finishing element adds no walk: shape=%zu units=%zu", shape, units);

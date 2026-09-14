@@ -229,10 +229,23 @@ enum markdown_core_node__internal_flags {
     // (markdown_core_inline_state_make_literal_run).
     MARKDOWN_CORE_NODE__LITERAL_RUN = (1 << 7),
 
+    // The node owns an inline field tree beside its children -- a
+    // definition's term, a callout's title, a cite's items -- set where the
+    // field is attached, so a walk asks the node rather than its payload
+    // before it visits owned subtrees.
+    MARKDOWN_CORE_NODE__OWNS_FIELDS = (1 << 8),
+
+    // A finalized block queued for its element's complete_block, or a
+    // reference-only paragraph queued to be discarded, once block parsing
+    // ends. Cleared when the queue is served; a record released while it is
+    // queued is not recycled (S_free_nodes), so a stale entry never meets a
+    // reused record and finds the flag clear.
+    MARKDOWN_CORE_NODE__COMPLETION_QUEUED = (1 << 9),
+
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 8),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 10),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;

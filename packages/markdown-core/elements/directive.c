@@ -490,6 +490,9 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
             return NULL;
         }
         *owned = attributes;
+        if (owned->anchor.len) {
+            markdown_core_inline_request_completion(inline_state);
+        }
     }
 
     if (has_label) {
