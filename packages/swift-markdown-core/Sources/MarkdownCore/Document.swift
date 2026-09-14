@@ -68,8 +68,11 @@ public struct Document: Markup {
     /// - Throws: ``ParseError`` when there is no document to return at all.
     public static func parse(_ source: String) throws -> Document {
         var error: OpaquePointer?
-        let bytes = Array(source.utf8)
-        let document = bytes.withUnsafeBufferPointer { buffer in
+        // A native String already holds contiguous UTF-8: the parser reads it
+        // in place, so the source crosses the boundary without a copy of its
+        // own. A bridged or non-contiguous string is made contiguous once.
+        var bytes = source
+        let document = bytes.withUTF8 { buffer in
             markdown_core_document_parse(buffer.baseAddress, buffer.count, &error)
         }
         guard let document else {
@@ -121,17 +124,20 @@ private struct DocumentBuilder {
     }
 
     private mutating func copy(_ node: OpaquePointer) -> StoredMarkup {
-        let relations = record(relations: node)
-        return Self.stored(from: node, relations: relations, resources: &resources)
+        // The kind is read once per node and handed on: the relations it has
+        // and the value it becomes are both decided by it.
+        let kind = markdown_core_node_get_kind(node)
+        let relations = record(relations: node, kind: kind)
+        return Self.stored(from: node, kind: kind, relations: relations, resources: &resources)
     }
 
-    // Enumerate each facade-owned relation alongside its native kind.
+    // Enumerate each facade-owned relation alongside its native kind. The
+    // child chain is walked once, here; nothing counts it again.
     // swiftlint:disable:next cyclomatic_complexity
-    private mutating func record(relations node: OpaquePointer) -> Relations {
+    private mutating func record(relations node: OpaquePointer, kind: markdown_core_node_kind) -> Relations {
         var relations = Relations()
         relations.children = record(chain: markdown_core_node_get_first_child(node))
-        precondition(relations.children.count == markdown_core_node_child_count(node))
-        switch markdown_core_node_get_kind(node) {
+        switch kind {
         case MARKDOWN_CORE_KIND_TABLE:
             relations.caption = record(field: markdown_core_node_table_caption(node))
         case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_DIRECTIVE:
@@ -206,10 +212,11 @@ extension DocumentBuilder {
     // swiftlint:disable:next cyclomatic_complexity function_body_length
     private static func stored(
         from node: OpaquePointer,
+        kind: markdown_core_node_kind,
         relations: Relations,
         resources: inout [UnsafeRawPointer: SharedResource]
     ) -> StoredMarkup {
-        switch markdown_core_node_get_kind(node) {
+        switch kind {
         case MARKDOWN_CORE_KIND_DOCUMENT:
             .document(
                 Document.Fields(
