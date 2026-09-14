@@ -2595,25 +2595,16 @@ uint64_t markdown_core_source_key(const void *entry) {
     return ((uint64_t)(uint32_t)node->start_line << 32) | (uint32_t)node->start_column;
 }
 
-/* The entries a small sort moves are copied through this much stack; a wider
- * entry takes the byte passes whatever its count. Every caller's entry is far
- * below it (the widest is a grid region's five size_t). */
-#define MARKDOWN_CORE_ORDER_SMALL_STRIDE 64
-/* Above this many entries the byte passes cost less than the moves an
- * insertion sort makes. A pass is two reads of every key and a full copy of
- * every entry; below the bound the passes' own per-pass setup (a 256-bucket
- * histogram and its prefix sum) is the larger number, whatever the count. */
-#define MARKDOWN_CORE_ORDER_SMALL_COUNT 32
-
 /* Stable ordering by a 64-bit source key, in as few byte passes as the keys
- * need. One read of every key first answers three questions: whether the
- * entries are ordered already (the common case for keys produced in source
- * order -- nothing is moved then), which byte positions differ between keys
- * (a position where every key agrees is an identity pass for a stable sort,
- * so it is skipped -- a key built from two grid coordinates leaves six of the
- * eight constant), and whether the entries are few enough to move directly.
- * What remains is the same least-significant-byte-first radix sort, and its
- * result is what all eight passes would produce. */
+ * need. One read of every key first answers two questions about the keys
+ * themselves, neither of them about how many there are: whether the entries
+ * are ordered already (the case for keys produced in source order, and
+ * nothing is moved then), and which byte positions differ between keys (a
+ * position where every key agrees is an identity pass for a stable sort, so
+ * it is skipped -- a key built from two grid coordinates leaves six of the
+ * eight constant). What remains is the same least-significant-byte-first
+ * radix sort over the bytes that differ, and its result is what all eight
+ * passes would produce. */
 int markdown_core_order_source_entries(markdown_core_mem *mem, void *entries, size_t count, size_t stride,
                                        uint64_t (*key)(const void *)) {
     if (count < 2) {
@@ -2632,23 +2623,6 @@ int markdown_core_order_source_entries(markdown_core_mem *mem, void *entries, si
         previous = current;
     }
     if (ordered) {
-        return 1;
-    }
-    if (count <= MARKDOWN_CORE_ORDER_SMALL_COUNT && stride <= MARKDOWN_CORE_ORDER_SMALL_STRIDE) {
-        unsigned char carried[MARKDOWN_CORE_ORDER_SMALL_STRIDE];
-        for (size_t i = 1; i < count; i++) {
-            uint64_t current = key(values + i * stride);
-            size_t at = i;
-            while (at && key(values + (at - 1) * stride) > current) {
-                at--;
-            }
-            if (at == i) {
-                continue;
-            }
-            memcpy(carried, values + i * stride, stride);
-            memmove(values + (at + 1) * stride, values + at * stride, (i - at) * stride);
-            memcpy(values + at * stride, carried, stride);
-        }
         return 1;
     }
     unsigned char *scratch = mem->realloc(NULL, count * stride);

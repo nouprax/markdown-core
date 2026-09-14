@@ -26,8 +26,11 @@ struct markdown_core_arena {
     markdown_core_mem *mem;
     arena_block *current;
     size_t next_capacity;
-    /* The slab the next unaligned text ask is cut from, and its end. */
-    unsigned char *text_at, *text_end;
+    /* The slab the next unaligned text ask is cut from, and what is left of
+     * it. A count rather than an end pointer: an arena that has served no
+     * text yet has no slab, and there is no pointer to compare against. */
+    unsigned char *text_at;
+    size_t text_left;
     free_record *pools[ARENA_CLASSES];
 };
 
@@ -130,17 +133,18 @@ void *markdown_core_arena_text(markdown_core_arena *arena, size_t size) {
     if (!size) {
         size = 1;
     }
-    if ((size_t)(arena->text_end - arena->text_at) < size) {
+    if (arena->text_left < size) {
         size_t slab = size > ARENA_TEXT_SLAB ? size : ARENA_TEXT_SLAB;
         unsigned char *fresh = markdown_core_arena_alloc(arena, slab);
         if (!fresh) {
             return NULL;
         }
         arena->text_at = fresh;
-        arena->text_end = fresh + round_up(slab);
+        arena->text_left = round_up(slab);
     }
     unsigned char *record = arena->text_at;
     arena->text_at += size;
+    arena->text_left -= size;
     return record;
 }
 

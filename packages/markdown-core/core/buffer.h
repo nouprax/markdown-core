@@ -137,39 +137,11 @@ static MARKDOWN_CORE_INLINE void markdown_core_strbuf_putc(markdown_core_strbuf 
     buf->ptr[buf->size] = '\0';
 }
 
-/* What a short append moves. Appends are short by nature: a block line's net
- * content, a decoded token, a marker's bytes. The C library's copy chooses a
- * strategy before it moves anything, and at these lengths that choice costs
- * more than the move -- the tracked samples average under 6 bytes per block
- * line. Sixteen is where the two meet here: below it two overlapping machine
- * words (or three bytes under eight) place every byte with no branch on the
- * exact length, at and above it the library's copy wins back its entry. */
-#define MARKDOWN_CORE_STRBUF_SHORT_PUT 16
-
-/* `len` is in 1..MARKDOWN_CORE_STRBUF_SHORT_PUT, and `to` and `from` never
- * overlap: an append writes past the buffer's size. Each `memcpy` below has a
- * constant size and compiles to one load and one store. */
-static MARKDOWN_CORE_INLINE void markdown_core_strbuf__put_short(unsigned char *to, const unsigned char *from,
-                                                                 bufsize_t len) {
-    if (len >= 8) {
-        uint64_t head, tail;
-        memcpy(&head, from, 8);
-        memcpy(&tail, from + len - 8, 8);
-        memcpy(to, &head, 8);
-        memcpy(to + len - 8, &tail, 8);
-    } else if (len >= 4) {
-        uint32_t head, tail;
-        memcpy(&head, from, 4);
-        memcpy(&tail, from + len - 4, 4);
-        memcpy(to, &head, 4);
-        memcpy(to + len - 4, &tail, 4);
-    } else {
-        to[0] = from[0];
-        to[len >> 1] = from[len >> 1];
-        to[len - 1] = from[len - 1];
-    }
-}
-
+/* An append writes past the buffer's size, so its source and target never
+ * overlap whatever their lengths: this is a copy, not a move, and saying so
+ * is what lets the C library take its copy path rather than the one that
+ * first has to establish the two do not overlap. One algorithm at every
+ * length -- the length decides nothing here. */
 static MARKDOWN_CORE_INLINE void markdown_core_strbuf_put(markdown_core_strbuf *buf, const unsigned char *data,
                                                           bufsize_t len) {
     if (len <= 0) {
@@ -179,11 +151,7 @@ static MARKDOWN_CORE_INLINE void markdown_core_strbuf_put(markdown_core_strbuf *
     if (buf->oom) {
         return;
     }
-    if (len <= MARKDOWN_CORE_STRBUF_SHORT_PUT) {
-        markdown_core_strbuf__put_short(buf->ptr + buf->size, data, len);
-    } else {
-        memmove(buf->ptr + buf->size, data, len);
-    }
+    memcpy(buf->ptr + buf->size, data, len);
     buf->size += len;
     buf->ptr[buf->size] = '\0';
 }

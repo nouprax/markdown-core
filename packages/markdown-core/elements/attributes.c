@@ -48,67 +48,30 @@ typedef struct markdown_core_attribute_arena {
     attribute_fact facts[];
 } attribute_arena;
 
-/* One block holds every fact an ordinary container asks about, and a parse
- * transaction takes it from the arena that already outlives the parser. */
+/* One block holds every fact an ordinary container asks about. Facts are the
+ * parser's scratch: they answer queries about one input extent while it is
+ * being read and mean nothing once it has been, so a transaction's blocks are
+ * taken from its arena's recycling pools and handed straight back when the
+ * parser ends -- the storage is the transaction's, the lifetime the parser's.
+ * Only a committed value is carried by the document. */
 #define MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK 4
 
-/* Below this many facts a query scans them: the walk is shorter than a radix
- * descent and costs no table. The index is built, once, from the facts already
- * recorded when a parser outgrows the bound, so adversarial extents keep it. */
-#define MARKDOWN_CORE_ATTRIBUTE_FACTS_SCANNED 16
-
-static attribute_fact *scan_facts(markdown_core_attribute_parser *p, bufsize_t at) {
-    MARKDOWN_CORE_DIAGNOSTIC(size_t work = 0;)
-    attribute_fact *found = NULL;
-    for (attribute_arena *block = p->arena; block && !found; block = block->next) {
-        for (size_t i = 0; i < block->size; i++) {
-            MARKDOWN_CORE_DIAGNOSTIC(work++;)
-            if (block->facts[i].at == at) {
-                found = &block->facts[i];
-                break;
-            }
-        }
-    }
-    MARKDOWN_CORE_DIAGNOSTIC(p->work += work;)
-    return found;
-}
-
-static int index_facts(markdown_core_attribute_parser *p) {
-    if (!markdown_core_key_index_init(&p->facts, p->mem, p->fact_count)) {
-        return 0;
-    }
-    for (attribute_arena *block = p->arena; block; block = block->next) {
-        for (size_t i = 0; i < block->size; i++) {
-            attribute_fact *fact = &block->facts[i];
-            markdown_core_key_index_slot *slot =
-                markdown_core_key_index_entry(&p->facts, (const unsigned char *)&fact->at, sizeof(fact->at));
-            if (!slot) {
-                return 0;
-            }
-            slot->value.pointer = fact;
-            markdown_core_key_index_commit(&p->facts, slot, (const unsigned char *)&fact->at);
-        }
-    }
-    return 1;
-}
+static size_t fact_block_bytes(size_t capacity) { return sizeof(attribute_arena) + capacity * sizeof(attribute_fact); }
 
 static attribute_fact *fact_at(markdown_core_attribute_parser *p, bufsize_t at) {
     MARKDOWN_CORE_DIAGNOSTIC(p->work++;)
-    markdown_core_key_index_slot *slot = NULL;
-    if (p->facts.mem) {
-        slot = markdown_core_key_index_entry(&p->facts, (const unsigned char *)&at, sizeof(at));
-        if (!slot) {
-            p->oom = 1;
-            return NULL;
-        }
-        if (slot->key) {
-            return slot->value.pointer;
-        }
-    } else {
-        attribute_fact *found = scan_facts(p, at);
-        if (found) {
-            return found;
-        }
+    if (!p->facts.mem && !markdown_core_key_index_init(&p->facts, p->mem, 0)) {
+        p->oom = 1;
+        return NULL;
+    }
+    markdown_core_key_index_slot *slot =
+        markdown_core_key_index_entry(&p->facts, (const unsigned char *)&at, sizeof(at));
+    if (!slot) {
+        p->oom = 1;
+        return NULL;
+    }
+    if (slot->key) {
+        return slot->value.pointer;
     }
     attribute_arena *arena = p->arena;
     if (!arena || arena->size == arena->capacity) {
@@ -117,28 +80,21 @@ static attribute_fact *fact_at(markdown_core_attribute_parser *p, bufsize_t at) 
             p->oom = 1;
             return NULL;
         }
-        size_t bytes = sizeof(*arena) + capacity * sizeof(attribute_fact);
-        arena = p->store ? markdown_core_arena_alloc(p->store, bytes) : p->mem->calloc(1, bytes);
+        arena = p->store ? markdown_core_arena_take(p->store, fact_block_bytes(capacity))
+                         : p->mem->calloc(1, fact_block_bytes(capacity));
         if (!arena) {
             p->oom = 1;
             return NULL;
         }
         arena->next = p->arena;
-        arena->size = 0;
         arena->capacity = capacity;
         p->arena = arena;
     }
     attribute_fact *fact = &arena->facts[arena->size++];
     *fact = (attribute_fact){.at = at, .end = -1, .unquoted_end = -1};
     p->fact_count++;
-    if (slot) {
-        slot->value.pointer = fact;
-        markdown_core_key_index_commit(&p->facts, slot, (const unsigned char *)&fact->at);
-    } else if (p->fact_count > MARKDOWN_CORE_ATTRIBUTE_FACTS_SCANNED && !index_facts(p)) {
-        markdown_core_key_index_free(&p->facts);
-        p->oom = 1;
-        return NULL;
-    }
+    slot->value.pointer = fact;
+    markdown_core_key_index_commit(&p->facts, slot, (const unsigned char *)&fact->at);
     return fact;
 }
 
@@ -333,8 +289,8 @@ void markdown_core_attributes_free(markdown_core_mem *mem, markdown_core_attribu
 }
 
 void markdown_core_attribute_parser_free(markdown_core_attribute_parser *p) {
-    /* A parser whose facts stayed within the scanned bound never built an
-     * index, and an uninitialized one has nothing to clear. */
+    /* A parser that asked about no fact never built an index, and an
+     * uninitialized one has nothing to clear. */
     if (p->facts.mem) {
         markdown_core_key_index_free(&p->facts);
     }
@@ -343,15 +299,17 @@ void markdown_core_attribute_parser_free(markdown_core_attribute_parser *p) {
     if (p->decoded.mem) {
         markdown_core_strbuf_free(&p->decoded);
     }
-    /* A transaction's fact blocks are its arena's and outlive the parser. */
-    if (!p->store) {
-        while (p->arena) {
-            attribute_arena *next = p->arena->next;
+    /* The index borrowed a key out of every fact, and it has just been
+     * released, so the blocks are free to go back. */
+    while (p->arena) {
+        attribute_arena *next = p->arena->next;
+        if (p->store) {
+            markdown_core_arena_recycle(p->store, p->arena, fact_block_bytes(p->arena->capacity));
+        } else {
             p->mem->free(p->arena);
-            p->arena = next;
         }
+        p->arena = next;
     }
-    p->arena = NULL;
     p->fact_count = 0;
 }
 
@@ -373,8 +331,10 @@ static int copy(markdown_core_attribute_parser *p, markdown_core_chunk *into, co
 }
 
 /* The vector a value's occurrences land in. A transaction takes it from the
- * arena and copies the occurrences forward, so growth costs bytes the document
- * already owns rather than an allocation; the value then releases neither. */
+ * arena's recycling pools and copies the occurrences forward, so growth costs
+ * bytes the document already owns rather than an allocation, and the vector it
+ * supersedes goes straight back to the pool it came from rather than sitting
+ * dead in the arena for the document's life. The value releases neither. */
 static int reserve(markdown_core_attribute_parser *p, markdown_core_attributes *v, void **items, uint32_t count,
                    uint32_t *capacity, size_t size) {
     if (count < *capacity) {
@@ -389,9 +349,15 @@ static int reserve(markdown_core_attribute_parser *p, markdown_core_attributes *
     }
     void *data;
     if (p->store) {
-        data = markdown_core_arena_alloc(p->store, (size_t)grown * size);
-        if (data && count) {
+        data = markdown_core_arena_take(p->store, (size_t)grown * size);
+        if (!data) {
+            return 0;
+        }
+        if (count) {
             memcpy(data, *items, (size_t)count * size);
+        }
+        if (*capacity) {
+            markdown_core_arena_recycle(p->store, *items, (size_t)*capacity * size);
         }
     } else {
         data = p->mem->realloc(*items, (size_t)grown * size);

@@ -1820,39 +1820,44 @@ static void strbuf_borrowed_storage(test_batch_runner *runner) {
 static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind);
 
 /* The bytes of every attribute value, and the vectors that hold them, come
- * from the transaction's arena: attaching `{#id .class k=v}` to a node costs
- * the same allocations as leaving it off, whatever else the shape costs. */
+ * from the transaction's arena. Two statements follow, and the test makes
+ * both: a node's values cost no allocation at all, so six of them on a node
+ * cost what one does; and what an attributed node still costs over a plain
+ * one is its attribute parser's own recognition memo, one vector, never a
+ * count that grows with the values. */
 static void attributes_allocate_nothing_per_attribute(test_batch_runner *runner) {
     markdown_core_mem mem = {borrow_calloc, borrow_realloc, free};
     static const struct {
-        const char *plain, *attributed;
+        const char *plain, *one, *many;
     } shapes[] = {
-        {"# h\n\n", "# h {#a-1 .c k=v}\n\n"},
-        {":d[label]\n\n", ":d[label]{#a-2 .c .d k=v}\n\n"},
-        {"para\n\n", "para{#a-3}\n\n"},
-        {"`code`\n\n", "`code`{.c}\n\n"},
-        {"[a](/u)\n\n", "[a](/u){#a-4 .c k=v}\n\n"},
-        {"term\n: def\n\n", "term\n: def{#a-5 .c}\n\n"},
+        {"# h\n\n", "# h {#a-1}\n\n", "# h {#a-1 .c .d .e k=v j=w}\n\n"},
+        {":d[label]\n\n", ":d[label]{#a-2}\n\n", ":d[label]{#a-2 .c .d .e k=v j=w}\n\n"},
+        {"para\n\n", "para{#a-3}\n\n", "para{#a-3 .c .d .e k=v j=w}\n\n"},
+        {"`code`\n\n", "`code`{#a-4}\n\n", "`code`{#a-4 .c .d .e k=v j=w}\n\n"},
+        {"[a](/u)\n\n", "[a](/u){#a-5}\n\n", "[a](/u){#a-5 .c .d .e k=v j=w}\n\n"},
+        {"term\n: def\n\n", "term\n: def{#a-6}\n\n", "term\n: def{#a-6 .c .d .e k=v j=w}\n\n"},
     };
+    enum { NODES = 4096 };
     for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
-        size_t cost[2] = {0, 0};
-        for (size_t attributed = 0; attributed < 2; attributed++) {
-            const char *unit = attributed ? shapes[shape].attributed : shapes[shape].plain;
+        size_t cost[3] = {0, 0, 0};
+        for (size_t form = 0; form < 3; form++) {
+            const char *unit = form == 0 ? shapes[shape].plain : form == 1 ? shapes[shape].one : shapes[shape].many;
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
-            for (size_t i = 0; i < 4096; i++) {
+            for (size_t i = 0; i < NODES; i++) {
                 markdown_core_strbuf_puts(&source, unit);
             }
             borrow_allocations = 0;
             markdown_core_node *root =
                 markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
-            OK(runner, root != NULL, "the shape parses: shape=%zu attributed=%zu", shape, attributed);
-            cost[attributed] = borrow_allocations;
+            OK(runner, root != NULL, "the shape parses: shape=%zu form=%zu", shape, form);
+            cost[form] = borrow_allocations;
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
         }
-        OK(runner, cost[1] <= cost[0] + 64,
-           "4096 attributed nodes cost the arena's bytes and the fixed few, not one allocation per value: "
-           "shape=%zu plain=%zu attributed=%zu",
+        OK(runner, cost[2] <= cost[1] + 64, "six values on a node cost what one does: shape=%zu one=%zu six=%zu", shape,
+           cost[1], cost[2]);
+        OK(runner, cost[1] <= cost[0] + NODES + 64,
+           "an attributed node costs its parser's memo and nothing per value: shape=%zu plain=%zu attributed=%zu",
            shape, cost[0], cost[1]);
     }
     /* The values themselves are unchanged by where their bytes live. */
@@ -6407,9 +6412,7 @@ static void attribute_sparse_memory(test_batch_runner *runner) {
                 for (int repeat = 0; repeat < 1024; repeat++) {
                     markdown_core_attributes_end(&parser, (bufsize_t)at);
                 }
-                /* A memoized query costs its own step plus the scan that finds
-                 * the fact: constant per query, never the extent. */
-                INT_EQ(runner, parser.work - work, valid ? 3072 : 1024,
+                INT_EQ(runner, parser.work - work, valid ? 2048 : 1024,
                        "repeated success and failure query facts without rescanning");
                 INT_EQ(runner, properties_requested_bytes, requested, "memoized queries allocate nothing");
                 markdown_core_attribute_parser_free(&parser);
@@ -7003,18 +7006,18 @@ static void source_entry_ordering(test_batch_runner *runner) {
                "ordering succeeds: shape=%zu count=%zu", shape, count);
             OK(runner, order_is_stable_sort(values, count), "ordering is stable and sorted: shape=%zu count=%zu", shape,
                count);
-            /* Eight passes read every key twice, so 17 reads per entry is
-             * what the fixed schedule cost. Below the small bound the moves
-             * are direct and the reads are the comparisons they need; above
-             * it, one read to plan plus two per byte position that differs. */
-            size_t allowed = count <= 32 ? count * (count + 3) / 2 : 9 * count;
-            OK(runner, order_key_calls <= allowed + 16,
+            /* One read of every key to plan, then two per entry for each
+             * byte position that differs. Eight positions differing is the
+             * fixed schedule this replaced, so 17 reads per entry is its
+             * cost and nothing may exceed it, whatever the count. */
+            OK(runner, order_key_calls <= 17 * count,
                "ordering reads keys for the bytes that differ, not all eight: shape=%zu count=%zu reads=%zu", shape,
                count, order_key_calls);
             /* Shape 0 is a grid region's key: two coordinates, so only two
-             * byte positions differ and only two passes may run. */
-            if (shape == 0 && count > 32) {
-                OK(runner, order_key_calls <= 5 * count + 16,
+             * byte positions differ and only two passes may run -- five reads
+             * per entry, at every count. */
+            if (shape == 0) {
+                OK(runner, order_key_calls <= 5 * count,
                    "a two-coordinate key takes two passes, not eight: count=%zu reads=%zu", count, order_key_calls);
             }
         }
