@@ -512,7 +512,7 @@ test("ast: a title is decoded from the auxiliary range before the content and du
     // title is the text `T` and whose content is empty.
     const nodeSize = 160;
     const strings = Uint8Array.from("noteT", (character) => character.charCodeAt(0));
-    const nodesOffset = 64;
+    const nodesOffset = 80;
     const edgesOffset = nodesOffset + 3 * nodeSize;
     const stringsOffset = edgesOffset + 2 * 4;
     const total = stringsOffset + strings.length;
@@ -528,7 +528,8 @@ test("ast: a title is decoded from the auxiliary range before the content and du
         [48, stringsOffset],
         [52, stringsOffset],
         [56, stringsOffset],
-        [60, strings.length]
+        [60, strings.length],
+        [64, strings.length]
     ]) {
         view.setUint32(offset, value, true);
     }
@@ -544,8 +545,9 @@ test("ast: a title is decoded from the auxiliary range before the content and du
         for (const [offset, value] of Object.entries(fields)) view.setUint32(at + Number(offset), value, true);
     };
     node(0, 1, [1, 1, 1, 8], { 24: 0, 28: 1 });
-    node(1, 2, [1, 1, 1, 8], { 24: 1, 28: 0, 36: 1, 40: 1, 44: 1, 64: stringsOffset, 68: 4 });
-    node(2, 13, [1, 10, 1, 10], { 64: stringsOffset + 4, 68: 1 });
+    // A string reference is a start and a length in UTF-16 units of the blob.
+    node(1, 2, [1, 1, 1, 8], { 24: 1, 28: 0, 36: 1, 40: 1, 44: 1, 64: 0, 68: 4 });
+    node(2, 13, [1, 10, 1, 10], { 64: 4, 68: 1 });
     view.setUint32(edgesOffset, 1, true);
     view.setUint32(edgesOffset + 4, 2, true);
     bytes.set(strings, stringsOffset);
@@ -872,19 +874,29 @@ test("errors: malformed native values are rejected before they enter the AST", (
     const badMagic = nativeResult("text\n");
     badMagic[0] = 0;
     assert.throws(() => new Decoder(badMagic).decode(), /invalid native result/u);
+
+    // Every string reference is measured in UTF-16 units of the one decoded
+    // blob, whose total the header states; a blob that decodes to any other
+    // length would slice every string wrong, so it is refused as a whole.
+    const badUnits = nativeResult("中文 🚀\n");
+    new DataView(badUnits.buffer).setUint32(64, new DataView(badUnits.buffer).getUint32(64, true) + 1, true);
+    assert.throws(() => new Decoder(badUnits).decode(), /does not decode to the units/u);
+    const units = nativeResult("中文 🚀\n");
+    assert.equal(new DataView(units.buffer).getUint32(64, true), "中文 🚀".length);
+    assert.equal(new Decoder(units).decode().content[0].content[0].literal, "中文 🚀");
 });
 
 function errorResult(code, message) {
     const encoded = new globalThis.TextEncoder().encode(message);
-    const result = new Uint8Array(64 + encoded.length);
+    const result = new Uint8Array(80 + encoded.length);
     const view = new DataView(result.buffer);
     result.set([0x4d, 0x43, 0x42, 0x31]);
     view.setUint32(4, result.length, true);
     view.setUint32(8, 1, true);
     view.setInt32(12, code, true);
-    view.setUint32(16, 64, true);
+    view.setUint32(16, 80, true);
     view.setUint32(20, encoded.length, true);
-    result.set(encoded, 64);
+    result.set(encoded, 80);
     return result;
 }
 
@@ -1086,7 +1098,7 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
         ""
     ];
     const encoded = strings.map((value) => new globalThis.TextEncoder().encode(value));
-    const nodes = 64,
+    const nodes = 80,
         edges = nodes + 8 * 160,
         attributes = edges + 6 * 4,
         blob = attributes + 2 * 16;
@@ -1104,14 +1116,19 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
         [48, attributes],
         [52, blob],
         [56, blob],
-        [60, bytes.length - blob]
+        [60, bytes.length - blob],
+        [64, strings.reduce((n, value) => n + value.length, 0)]
     ])
         put(offset, value);
+    // A reference is a start and a length in UTF-16 units of the decoded
+    // blob; the bytes land at their byte cursor.
     let cursor = blob;
-    const refs = encoded.map((value) => {
-        const ref = [cursor, value.length];
+    let units = 0;
+    const refs = encoded.map((value, index) => {
+        const ref = [units, strings[index].length];
         bytes.set(value, cursor);
         cursor += value.length;
+        units += strings[index].length;
         return ref;
     });
     const string = (offset, index) => {
@@ -1393,7 +1410,10 @@ test("errors: definition body values cannot leak into markup or accept markup in
         assert.throws(() => new Decoder(bytes).decode(), pattern);
     };
     malformed((v) => v.setUint32(body, kinds.indexOf("paragraph"), true), /invalid definition body/);
-    malformed((v) => v.setUint32(definition, kinds.indexOf("paragraph"), true), /not uniquely owned|non-markup/);
+    malformed((v) => {
+        v.setUint32(definition, kinds.indexOf("paragraph"), true);
+        v.setUint32(definition + 4, 0, true);
+    }, /not uniquely owned|not ordinary content/);
     malformed((v) => v.setUint32(definition + 4, 2, true), /flags/);
     malformed(
         (v) => v.setUint32(findNode(original, kinds.indexOf("definitionList")), 0x101, true),

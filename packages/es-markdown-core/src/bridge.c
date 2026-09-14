@@ -10,11 +10,13 @@
  * ES receives one immutable result in WebAssembly linear memory. The ABI is
  * deliberately table-shaped rather than a recursive byte stream: every node
  * is a fixed-width record, relationships are indexes, and strings occupy one
- * trailing UTF-8 blob. JavaScript can therefore build the value tree without
- * another Wasm call, a native object handle, or recursion in the decoder.
+ * trailing UTF-8 blob that a reference addresses in the UTF-16 code units it
+ * decodes to. JavaScript can therefore build the value tree without another
+ * Wasm call, a native object handle, or recursion in the decoder, and decode
+ * the strings once.
  */
 
-enum { ES_HEADER_SIZE = 64, ES_NODE_SIZE = 160, ES_ATTRIBUTE_SIZE = 16, ES_COLUMN_SIZE = 16 };
+enum { ES_HEADER_SIZE = 80, ES_NODE_SIZE = 160, ES_ATTRIBUTE_SIZE = 16, ES_COLUMN_SIZE = 16 };
 static const uint32_t ES_NO_INDEX = UINT32_MAX;
 
 enum es_header_offset {
@@ -32,7 +34,10 @@ enum es_header_offset {
     ES_HEADER_ATTRIBUTES_OFFSET = 48,
     ES_HEADER_COLUMNS_OFFSET = 52,
     ES_HEADER_STRINGS_OFFSET = 56,
-    ES_HEADER_STRINGS_LENGTH = 60
+    ES_HEADER_STRINGS_LENGTH = 60,
+    /* The UTF-16 code units the whole blob decodes to: what every string
+     * reference is measured in, so the decoder can check its one decode. */
+    ES_HEADER_STRING_UNITS = 64
 };
 
 enum es_node_offset {
@@ -972,18 +977,40 @@ static uint8_t *error_result(markdown_core_error_code code, markdown_core_string
     return output;
 }
 
+/* The UTF-16 code units the UTF-8 bytes decode to: every byte that starts a
+ * code point is one unit, and a four-byte code point is a surrogate pair. */
+static size_t utf16_units(const uint8_t *data, size_t length) {
+    size_t units = 0;
+    size_t index;
+    for (index = 0; index < length; ++index) {
+        units += (data[index] & 0xC0) != 0x80;
+        units += data[index] >= 0xF0;
+    }
+    return units;
+}
+
+/* A string reference is where the string starts and how long it is in UTF-16
+ * code units of the decoded blob, so the decoder decodes the blob once and
+ * slices it; `cursor` tracks the bytes written and `unit_cursor` the units
+ * they decode to. */
+typedef struct es_string_cursor {
+    size_t bytes;
+    size_t units;
+} es_string_cursor;
+
 static void write_string_reference(uint8_t *output, size_t reference_offset, markdown_core_optional_string value,
-                                   size_t *cursor) {
+                                   es_string_cursor *cursor) {
     if (!value.has_value) {
         put_u32(output, reference_offset, ES_NO_INDEX);
         put_u32(output, reference_offset + 4, 0);
         return;
     }
-    put_u32(output, reference_offset, (uint32_t)*cursor);
-    put_u32(output, reference_offset + 4, (uint32_t)value.value.length);
+    put_u32(output, reference_offset, (uint32_t)cursor->units);
+    put_u32(output, reference_offset + 4, (uint32_t)utf16_units(value.value.data, value.value.length));
     if (value.value.length != 0) {
-        memcpy(output + *cursor, value.value.data, value.value.length);
-        *cursor += value.value.length;
+        memcpy(output + cursor->bytes, value.value.data, value.value.length);
+        cursor->bytes += value.value.length;
+        cursor->units += utf16_units(value.value.data, value.value.length);
     }
 }
 
@@ -995,7 +1022,7 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
     size_t columns_offset;
     size_t strings_offset;
     size_t total_size;
-    size_t string_cursor;
+    es_string_cursor string_cursor;
     size_t index;
     uint8_t *output;
 
@@ -1032,7 +1059,8 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
     put_u32(output, ES_HEADER_STRINGS_OFFSET, (uint32_t)strings_offset);
     put_u32(output, ES_HEADER_STRINGS_LENGTH, (uint32_t)build->strings_length);
 
-    string_cursor = strings_offset;
+    string_cursor.bytes = strings_offset;
+    string_cursor.units = 0;
     for (index = 0; index < build->node_count; ++index) {
         const es_source_node *source = &build->nodes[index];
         markdown_core_scope scope = markdown_core_node_scope(source->node);
@@ -1104,11 +1132,12 @@ static uint8_t *success_result(const es_build *build, es_build_failure *failure)
         put_u32(output, offset + 4, column.relative.has_value ? 1 : 0);
         put_i64(output, offset + 8, bits);
     }
-    if (string_cursor != total_size) {
+    if (string_cursor.bytes != total_size) {
         free(output);
         *failure = ES_BUILD_INTERNAL;
         return NULL;
     }
+    put_u32(output, ES_HEADER_STRING_UNITS, (uint32_t)string_cursor.units);
     return output;
 }
 
