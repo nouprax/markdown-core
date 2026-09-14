@@ -24,7 +24,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     bool part_empty = false, block_id = false;
     markdown_core_node *node;
     markdown_core_cross_reference *cross;
-    parser->cross_link_scan_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->cross_link_scan_work++;)
     if (input->len - start < opener_length) {
         return NULL;
     }
@@ -34,7 +34,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     }
     for (i = body; i < input->len; i++) {
         unsigned char c = s[i];
-        parser->cross_link_scan_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->cross_link_scan_work++;)
         if (c == '[' || c == '\n' || c == '\r') {
             return NULL;
         }
@@ -51,7 +51,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
                 dimension_separator = i;
                 dimension_separator_length = c == '|' ? 1 : 2;
                 i += dimension_separator_length - 1;
-                parser->cross_link_scan_work += (size_t)dimension_separator_length - 1;
+                MARKDOWN_CORE_DIAGNOSTIC(parser->cross_link_scan_work += (size_t)dimension_separator_length - 1;)
             }
             continue;
         }
@@ -86,8 +86,9 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     }
     /* A lone ^ is an ordinary nonempty heading part, not a block identifier. */
     block_id = block_id && target_end > hash + 2;
-    node = markdown_core_node_new_with_mem_and_ext(
-        embedded ? MARKDOWN_CORE_NODE_CROSS_EMBEDDED : MARKDOWN_CORE_NODE_CROSS_LINK, parser->mem, element);
+    node = markdown_core_node_create(parser->arena, parser->mem,
+                                     embedded ? MARKDOWN_CORE_NODE_CROSS_EMBEDDED : MARKDOWN_CORE_NODE_CROSS_LINK,
+                                     element);
     if (!node) {
         parser->oom = true;
         return NULL;
@@ -102,20 +103,15 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     if (label >= 0) {
         cross->label = markdown_core_optional_chunk_present(markdown_core_chunk_dup(input, label, i - label));
         bufsize_t suffix = dimension_separator >= 0 ? dimension_separator - label : 0;
-        if (embedded &&
-            markdown_core_parse_dimensions(cross->label.value, suffix, dimension_separator_length,
-                                           &node->as.cross_embedded->dimensions.value, &parser->dimension_work)) {
+        if (embedded && markdown_core_parse_dimensions(cross->label.value, suffix, dimension_separator_length,
+                                                       &node->as.cross_embedded->dimensions.value,
+                                                       MARKDOWN_CORE_DIAGNOSTIC_ADDRESS(parser->dimension_work))) {
             node->as.cross_embedded->dimensions.has_value = true;
             cross->label.value.len = suffix;
         }
     }
-    if (!markdown_core_chunk_to_cstr(parser->mem, &cross->path) ||
-        (cross->anchor.has_value && !markdown_core_chunk_to_cstr(parser->mem, &cross->anchor.value)) ||
-        (cross->label.has_value && !markdown_core_chunk_to_cstr(parser->mem, &cross->label.value))) {
-        parser->oom = true;
-        markdown_core_node_free(node);
-        return NULL;
-    }
+    /* Path, anchor and label borrow the content the node's tree keeps alive,
+     * like a Text; nothing is copied to terminate them. */
     markdown_core_parser_content_place(parser, parent, start, &node->start_line, &node->start_column);
     markdown_core_parser_content_end_place(parser, parent, i + 1, &node->end_line, &node->end_column);
     markdown_core_inline_state_set_offset(inline_state, i + 2);

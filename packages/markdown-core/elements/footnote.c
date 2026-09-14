@@ -6,9 +6,6 @@
 #include "inline_internal.h"
 #include "block_internal.h"
 
-static bool markdown_core_inline_footnote_label_is_defined(markdown_core_parser *parser,
-                                                           markdown_core_inline_state *inline_state,
-                                                           bufsize_t label_start, bufsize_t after_close);
 static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
                                                                    bracket *opener, bufsize_t after_close);
 static bool markdown_core_footnote_scan(markdown_core_parser *parser, block_start_context *context, block_start *start);
@@ -58,26 +55,42 @@ void markdown_core_block_finalize_footnotes(markdown_core_parser *parser) {
 failed:
     parser->oom = true;
 done:
-    markdown_core_key_index_free(&ids);
+    markdown_core_parser_release_key_index(parser, &ids);
     parser->mem->free(collection->values);
     memset(collection, 0, sizeof(*collection));
 }
 
-static bool markdown_core_inline_footnote_label_is_defined(markdown_core_parser *parser,
-                                                           markdown_core_inline_state *inline_state,
-                                                           bufsize_t label_start, bufsize_t after_close) {
+/* The definition record the call names, or NULL. Its normalized label is the
+ * id the call copies, so the label is folded once, by this lookup. */
+static markdown_core_map_record *markdown_core_inline_footnote_definition(markdown_core_parser *parser,
+                                                                          markdown_core_inline_state *inline_state,
+                                                                          bufsize_t label_start,
+                                                                          bufsize_t after_close) {
     markdown_core_chunk label;
-    bool defined;
 
     if (after_close - label_start < 2) {
-        return false;
+        return NULL;
     }
     /* A borrowed slice of the block's own content: `markdown_core_chunk_dup`
      * aliases, so the only allocation in here is the map's own normalization,
      * and that one reports itself through the map's sticky flag. */
     label = markdown_core_chunk_dup(&inline_state->input, label_start + 1, after_close - label_start - 2);
-    defined = markdown_core_map_lookup(parser->footnote_defs, &label) != NULL;
-    return defined;
+    return markdown_core_map_lookup(parser->footnote_defs, &label);
+}
+
+/* An owned copy of a record's normalized label, for a node that outlives the
+ * map. */
+static bool copy_map_label(markdown_core_mem *mem, const markdown_core_map_record *record, markdown_core_chunk *id) {
+    size_t length = strlen((const char *)record->label);
+    unsigned char *bytes = mem->calloc(length + 1, 1);
+    if (!bytes) {
+        return false;
+    }
+    memcpy(bytes, record->label, length + 1);
+    id->data = bytes;
+    id->len = (bufsize_t)length;
+    id->alloc = 1;
+    return true;
 }
 
 static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
@@ -86,7 +99,7 @@ static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core
     markdown_core_node *citation = cite ? markdown_core_inline_new_citation(inline_state, cite, NULL) : NULL;
     if (!citation) {
         if (cite) {
-            markdown_core_node_free(cite);
+            markdown_core_node_recycle(inline_state->arena, cite);
         }
         inline_state->oom = 1;
         return NULL;
@@ -109,13 +122,13 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(markdown_core_par
         !markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_CITE)) {
         inline_state->no_link_openers = opener->outer_no_link_openers;
         markdown_core_inline_pop_bracket(inline_state);
-        return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("]"));
+        return markdown_core_inline_state_make_literal_run(inline_state, inline_state->pos - 1, inline_state->pos - 1);
     }
     cite = markdown_core_inline_make_footnote_cite(inline_state, opener, inline_state->pos);
-    footnote = cite ? markdown_core_inline_make_simple(inline_state->mem, MARKDOWN_CORE_NODE_FOOTNOTE) : NULL;
+    footnote = cite ? markdown_core_inline_make_simple(inline_state, MARKDOWN_CORE_NODE_FOOTNOTE) : NULL;
     if (!footnote) {
         if (cite) {
-            markdown_core_node_free(cite);
+            markdown_core_node_recycle(inline_state->arena, cite);
         }
         inline_state->oom = 1;
         markdown_core_inline_pop_bracket(inline_state);
@@ -128,10 +141,10 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(markdown_core_par
     markdown_core_node_attach_owned(opener->inl_text->parent, cite, opener->inl_text);
     if (!markdown_core_parser_register_definition(parser, &parser->footnotes, footnote, cite->as.cite->citations,
                                                   &parser->root->as.document->footnotes)) {
-        markdown_core_node_free(footnote);
+        markdown_core_node_recycle(inline_state->arena, footnote);
         inline_state->oom = 1;
     }
-    markdown_core_node_free(opener->inl_text);
+    markdown_core_node_recycle(inline_state->arena, opener->inl_text);
     inline_state->no_link_openers = opener->outer_no_link_openers;
     markdown_core_inline_pop_bracket(inline_state);
     return NULL;
@@ -145,7 +158,7 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
     }
     inline_state->pos += 2;
     markdown_core_node *node =
-        make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1, markdown_core_chunk_literal("^["));
+        markdown_core_inline_state_make_source_text(inline_state, inline_state->pos - 2, inline_state->pos - 1);
     if (node) {
         markdown_core_inline_push_bracket(inline_state, BRACKET_FOOTNOTE, node);
     }
@@ -155,11 +168,17 @@ static bool continue_container(markdown_core_parser *parser, markdown_core_node 
                                const markdown_core_node *joining, bool *taken) {
     return markdown_core_footnote_continue(parser, node, input);
 }
+static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
+    return at + 1 < state->input.len && state->input.data[at + 1] == '[';
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
+    .can_start = can_start,
     .name = "footnote",
     .continue_container = continue_container,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_footnote_scan,
+    .block_start_bytes = "[",
 
     .match_inline = match,
     .terminates_text = "^",
@@ -215,8 +234,11 @@ bool markdown_core_footnote_close_reference(markdown_core_parser *parser, markdo
         bool caret_written = opener->position < inline_state->input.len &&
                              inline_state->input.data[opener->position] == '^' &&
                              (literal->len > 1 || opener->inl_text->next->next);
-        if (caret_written &&
-            markdown_core_inline_footnote_label_is_defined(parser, inline_state, opener->position, initial_pos)) {
+        markdown_core_map_record *definition =
+            caret_written
+                ? markdown_core_inline_footnote_definition(parser, inline_state, opener->position, initial_pos)
+                : NULL;
+        if (definition) {
             if (!markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_CITE)) {
                 return false;
             }
@@ -232,20 +254,12 @@ bool markdown_core_footnote_close_reference(markdown_core_parser *parser, markdo
                 markdown_core_inline_pop_bracket(inline_state);
                 return true;
             }
-            markdown_core_chunk label =
-                markdown_core_chunk_dup(&inline_state->input, opener->position + 1, initial_pos - opener->position - 2);
-            int lost = 0;
-            unsigned char *id = normalize_map_label(inline_state->mem, &label, &lost);
-            if (!id) {
+            if (!copy_map_label(inline_state->mem, definition, &fnref->as.cite->citations->as.citation->value)) {
                 inline_state->oom = 1;
-                markdown_core_node_free(fnref);
+                markdown_core_node_recycle(inline_state->arena, fnref);
                 markdown_core_inline_pop_bracket(inline_state);
                 return true;
             }
-            markdown_core_chunk *value = &fnref->as.cite->citations->as.citation->value;
-            value->data = id;
-            value->len = (bufsize_t)strlen((const char *)id);
-            value->alloc = 1;
 
             markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
             // sometimes, the footnote reference text gets parsed into multiple nodes
@@ -268,7 +282,7 @@ bool markdown_core_footnote_close_reference(markdown_core_parser *parser, markdo
             markdown_core_node *current_node = opener->inl_text->next;
             while (current_node) {
                 next_node = current_node->next;
-                markdown_core_node_free(current_node);
+                markdown_core_node_recycle(inline_state->arena, current_node);
                 current_node = next_node;
             }
 
@@ -284,20 +298,14 @@ static bool markdown_core_footnote_open(markdown_core_parser *parser, markdown_c
                                         markdown_core_chunk *input, block_start *start) {
     bufsize_t matched = start->matched;
 
+    /* The label is read straight off the line: it is folded once, into the
+     * definition map's record, and the id below copies that spelling. */
     markdown_core_chunk c = markdown_core_chunk_dup(input, parser->first_nonspace + 2, matched - 2);
-    unsigned char *id;
-    int lost = 0;
 
     while (c.data[c.len - 1] != ']') {
         --c.len;
     }
     --c.len;
-
-    if (!markdown_core_chunk_to_cstr(parser->mem, &c)) {
-        /* The label would keep borrowing the transient line buffer. */
-        parser->oom = true;
-        return false;
-    }
 
     markdown_core_block_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
     /* THE ANCHOR RULE (§5.1): a definition is a block node at the byte
@@ -310,25 +318,6 @@ static bool markdown_core_footnote_open(markdown_core_parser *parser, markdown_c
     *container =
         markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_FOOTNOTE, parser->first_nonspace + 1);
     if (!*container) {
-        markdown_core_chunk_free(parser->mem, &c);
-        return false;
-    }
-    /* The id is the label under the map's own normalization and
-     * WITHOUT a caret (M4): the key every call's referent names. The
-     * caret that kept a footnote apart from a link definition in a
-     * consumer's single map went with the association -- a
-     * `Footnote` and a resolved `Link` are different values now. */
-    id = normalize_map_label(parser->mem, &c, &lost);
-    if (!id) {
-        parser->oom = true;
-        markdown_core_chunk_free(parser->mem, &c);
-        return false;
-    }
-    (*container)->as.footnote->id.data = id;
-    (*container)->as.footnote->id.len = (bufsize_t)strlen((const char *)id);
-    (*container)->as.footnote->id.alloc = 1;
-    if (!markdown_core_parser_register_definition(parser, &parser->footnotes, *container, NULL, NULL)) {
-        markdown_core_chunk_free(parser->mem, &c);
         return false;
     }
 
@@ -345,8 +334,19 @@ static bool markdown_core_footnote_open(markdown_core_parser *parser, markdown_c
      * one was freed with everything written in it (D11). A set of
      * labels owns no node and picks no winner, so order decides
      * nothing left to get wrong. */
-    markdown_core_footnote_definition_create(parser->footnote_defs, &c);
-    markdown_core_chunk_free(parser->mem, &c);
+    markdown_core_map_record *record = markdown_core_footnote_definition_create(parser->footnote_defs, &c);
+    /* The id is the label under the map's own normalization and
+     * WITHOUT a caret (M4): the key every call's referent names. The
+     * caret that kept a footnote apart from a link definition in a
+     * consumer's single map went with the association -- a
+     * `Footnote` and a resolved `Link` are different values now. */
+    if (!record || !copy_map_label(parser->mem, record, &(*container)->as.footnote->id)) {
+        parser->oom = true;
+        return false;
+    }
+    if (!markdown_core_parser_register_definition(parser, &parser->footnotes, *container, NULL, NULL)) {
+        return false;
+    }
 
     (*container)->internal_offset = matched;
     return true;

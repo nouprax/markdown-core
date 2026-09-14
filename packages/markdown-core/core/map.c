@@ -2,134 +2,142 @@
 #include "utf8.h"
 #include "parser.h"
 
-#define KEY_INDEX_MIN_CAPACITY 16
+#define KEY_INDEX_MIN_CAPACITY 1
 
-static uint64_t hash_key(const unsigned char *key, bufsize_t key_len) {
-    uint64_t hash = UINT64_C(1469598103934665603);
-    bufsize_t i;
-    for (i = 0; i < key_len; i++) {
-        hash ^= key[i];
-        hash *= UINT64_C(1099511628211);
-    }
-    hash ^= hash >> 33;
-    hash *= UINT64_C(0xff51afd7ed558ccd);
-    hash ^= hash >> 33;
-    hash *= UINT64_C(0xc4ceb9fe1a85ec53);
-    hash ^= hash >> 33;
-    return hash ? hash : 1;
+/* A compressed binary radix tree over length-delimited bytes. Each byte has
+ * a presence bit before its eight value bits, so a prefix differs from its
+ * extension even when that extension is NUL. Branch tests strictly advance
+ * (byte, descending mask): at most 9 * key_len + 1 tests per search, regardless
+ * of insertion order or common prefixes. No hash, entropy, or collision path.
+ *
+ * References encode (record index + 1) << 1, with the low bit marking leaves.
+ * Each inserted key owns one leaf and (except the first) one branch in the
+ * same dense allocation. Moving that allocation does not change references.
+ */
+static size_t leaf_ref(size_t position) { return ((position + 1) << 1) | 1; }
+static size_t branch_ref(size_t position) { return (position + 1) << 1; }
+static size_t ref_position(size_t ref) { return (ref >> 1) - 1; }
+
+static unsigned key_direction(const unsigned char *key, bufsize_t length, bufsize_t byte, uint16_t mask) {
+    return byte < length && (mask == 256 || (key[byte] & mask) != 0);
 }
 
-static markdown_core_key_index_slot *find_key_slot(markdown_core_key_index_slot *slots, size_t capacity, uint64_t hash,
-                                                   const unsigned char *key, bufsize_t key_len) {
-    size_t position = (size_t)hash & (capacity - 1);
-    size_t probe;
-    for (probe = 0; probe < capacity; probe++) {
-        markdown_core_key_index_slot *slot = &slots[position];
-        if (!slot->key ||
-            (slot->hash == hash && slot->key_len == key_len && memcmp(slot->key, key, (size_t)key_len) == 0)) {
-            return slot;
+static size_t find_leaf(markdown_core_key_index *index, const unsigned char *key, bufsize_t length) {
+    size_t ref = index->root;
+    MARKDOWN_CORE_DIAGNOSTIC(index->operations++;)
+    while (ref && !(ref & 1)) {
+        const markdown_core_key_index_node *node = &index->nodes[ref_position(ref)];
+        MARKDOWN_CORE_DIAGNOSTIC(index->branch_visits++;)
+        /* All keys below this branch share the preceding bytes. A shorter
+         * query cannot occur here; use its resident leaf for the final check
+         * (and for the insertion split) without walking an unrelated suffix. */
+        if (node->byte > length || (node->byte == length && node->mask < 256)) {
+            return leaf_ref(ref_position(ref));
         }
-        position = (position + 1) & (capacity - 1);
+        ref = node->children[key_direction(key, length, node->byte, node->mask)];
     }
-    return NULL;
+    return ref;
 }
 
-static int grow_key_index(markdown_core_key_index *index) {
-    markdown_core_key_index_slot *slots;
-    size_t capacity;
-    size_t i;
-    if (index->capacity > SIZE_MAX / 2) {
-        return 0;
-    }
-    capacity = index->capacity ? index->capacity * 2 : KEY_INDEX_MIN_CAPACITY;
-    if (capacity > SIZE_MAX / sizeof(*slots)) {
-        return 0;
-    }
-    slots = (markdown_core_key_index_slot *)index->mem->calloc(capacity, sizeof(*slots));
-    if (!slots) {
-        return 0;
-    }
-    for (i = 0; i < index->capacity; i++) {
-        markdown_core_key_index_slot *source = &index->slots[i];
-        markdown_core_key_index_slot *destination;
-        if (!source->key) {
-            continue;
-        }
-        destination = find_key_slot(slots, capacity, source->hash, source->key, source->key_len);
-        if (!destination) {
-            index->mem->free(slots);
-            return 0;
-        }
-        *destination = *source;
-    }
-    index->mem->free(index->slots);
-    index->slots = slots;
-    index->capacity = capacity;
-    return 1;
-}
-
-int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_mem *mem, size_t expected_size) {
-    size_t capacity = KEY_INDEX_MIN_CAPACITY;
-    memset(index, 0, sizeof(*index));
-    index->mem = mem;
-    if (!expected_size) {
+static int reserve_key_index(markdown_core_key_index *index, size_t needed) {
+    if (needed <= index->capacity) {
         return 1;
     }
-    if (expected_size > SIZE_MAX / 2) {
-        return 0;
-    }
-    while (capacity < expected_size * 2) {
+    size_t capacity = index->capacity ? index->capacity : KEY_INDEX_MIN_CAPACITY;
+    while (capacity < needed) {
         if (capacity > SIZE_MAX / 2) {
             return 0;
         }
         capacity *= 2;
     }
-    if (capacity > SIZE_MAX / sizeof(*index->slots)) {
+    if (capacity > SIZE_MAX / sizeof(*index->nodes)) {
         return 0;
     }
-    index->slots = (markdown_core_key_index_slot *)mem->calloc(capacity, sizeof(*index->slots));
-    if (!index->slots) {
+    markdown_core_key_index_node *nodes = index->mem->realloc(index->nodes, capacity * sizeof(*nodes));
+    if (!nodes) {
         return 0;
     }
+    index->nodes = nodes;
     index->capacity = capacity;
     return 1;
 }
 
+int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_mem *mem, size_t expected_size) {
+    memset(index, 0, sizeof(*index));
+    index->mem = mem;
+    return reserve_key_index(index, expected_size);
+}
+
 void markdown_core_key_index_free(markdown_core_key_index *index) {
-    if (index->slots) {
-        index->mem->free(index->slots);
+    if (index->nodes) {
+        index->mem->free(index->nodes);
     }
     memset(index, 0, sizeof(*index));
 }
 
 markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_index *index, const unsigned char *key,
                                                             bufsize_t key_len) {
-    uint64_t hash = hash_key(key, key_len);
-    if (!index->capacity && !grow_key_index(index)) {
+    /* A prepared edge borrows the vector. Reject reentry before overwriting
+     * that edge or reallocating it, also in Release builds. Checking only in
+     * commit cannot distinguish two entries that reuse nodes[size]. */
+    if (index->pending_link) {
+        abort();
+    }
+    size_t ref = find_leaf(index, key, key_len);
+    bufsize_t byte = 0;
+    uint16_t mask = 256;
+    if (ref) {
+        markdown_core_key_index_slot *found = &index->nodes[ref_position(ref)].slot;
+        bufsize_t limit = (key_len < found->key_len ? key_len : found->key_len);
+        while (byte < limit && key[byte] == found->key[byte]) {
+            byte++;
+        }
+        if (byte == limit && key_len == found->key_len) {
+            return found;
+        }
+        if (byte < limit) {
+            unsigned difference = key[byte] ^ found->key[byte];
+            mask = 128;
+            while (!(difference & mask)) {
+                mask >>= 1;
+            }
+        }
+    }
+    if (!reserve_key_index(index, index->size + 1)) {
         return NULL;
     }
-    markdown_core_key_index_slot *slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
-    if (!slot || slot->key) {
-        return slot;
-    }
-    if (index->size + 1 > index->capacity / 2) {
-        if (!grow_key_index(index)) {
-            return NULL;
+    markdown_core_key_index_node *added = &index->nodes[index->size];
+    memset(added, 0, sizeof(*added));
+    added->slot.key_len = key_len;
+    added->byte = byte;
+    added->mask = mask;
+
+    /* Find the incoming edge at the first differing bit. Reserve before
+     * borrowing this edge: growth may relocate all of the existing nodes.
+     * Publication is deferred until commit, including the first leaf. */
+    size_t *link = &index->root;
+    while (*link && !(*link & 1)) {
+        markdown_core_key_index_node *node = &index->nodes[ref_position(*link)];
+        if (node->byte > byte || (node->byte == byte && node->mask <= mask)) {
+            break;
         }
-        slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
-        if (!slot) {
-            return NULL;
-        }
+        link = &node->children[key_direction(key, key_len, node->byte, node->mask)];
     }
-    slot->hash = hash;
-    slot->key_len = key_len;
-    return slot;
+    unsigned direction = key_direction(key, key_len, byte, mask);
+    added->children[direction] = leaf_ref(index->size);
+    added->children[!direction] = *link;
+    index->pending_link = link;
+    return &added->slot;
 }
 
 void markdown_core_key_index_commit(markdown_core_key_index *index, markdown_core_key_index_slot *entry,
                                     const unsigned char *key) {
-    assert(!entry->key && key);
+    if (!index->pending_link || entry != &index->nodes[index->size].slot || entry->key || !key) {
+        abort();
+    }
     entry->key = key;
+    *index->pending_link = index->size ? branch_ref(index->size) : leaf_ref(index->size);
+    index->pending_link = NULL;
     index->size++;
 }
 
@@ -151,27 +159,13 @@ int markdown_core_key_index_insert(markdown_core_key_index *index, const unsigne
     return 1;
 }
 
-void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key,
-                                     bufsize_t key_len) {
-    uint64_t hash;
-    size_t position;
-    size_t probe;
-    if (!index || !index->slots || !index->capacity) {
+void *markdown_core_key_index_lookup(markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len) {
+    if (!index || !index->root) {
         return NULL;
     }
-    hash = hash_key(key, key_len);
-    position = (size_t)hash & (index->capacity - 1);
-    for (probe = 0; probe < index->capacity; probe++) {
-        const markdown_core_key_index_slot *slot = &index->slots[position];
-        if (!slot->key) {
-            return NULL;
-        }
-        if (slot->hash == hash && slot->key_len == key_len && memcmp(slot->key, key, (size_t)key_len) == 0) {
-            return slot->value.pointer;
-        }
-        position = (position + 1) & (index->capacity - 1);
-    }
-    return NULL;
+    size_t ref = find_leaf(index, key, key_len);
+    const markdown_core_key_index_slot *slot = &index->nodes[ref_position(ref)].slot;
+    return slot->key_len == key_len && !memcmp(slot->key, key, (size_t)key_len) ? slot->value.pointer : NULL;
 }
 
 // normalize map label:  collapse internal whitespace to single space,
@@ -230,10 +224,35 @@ static int index_map(markdown_core_map *map) {
     return 1;
 }
 
+/* Normalization trims leading whitespace and folds case, and folds an ASCII
+ * letter to its lowercase byte, so a label's folded first significant byte is
+ * its key's first byte. When no key begins with that byte the label cannot
+ * match, and the lookup ends here without folding a thing. A label whose
+ * first significant scalar is not ASCII takes the full normalization. */
+static int map_may_hold(const markdown_core_map *map, const markdown_core_chunk *label) {
+    const unsigned char *at = label->data, *end = label->data + label->len;
+    while (at < end && markdown_core_isspace((char)*at)) {
+        at++;
+    }
+    if (at == end) {
+        return 0;
+    }
+    unsigned char first = *at;
+    if (first >= 0x80) {
+        return 1;
+    }
+    if (first >= 'A' && first <= 'Z') {
+        first = (unsigned char)(first + ('a' - 'A'));
+    }
+    return (map->first_bytes[first >> 6] >> (first & 63)) & 1;
+}
+
 markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label) {
-    if (label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH || !map || !map->size || map->oom) {
+    if (label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH || !map || !map->size || map->oom ||
+        !map_may_hold(map, label)) {
         return NULL;
     }
+    MARKDOWN_CORE_DIAGNOSTIC(map->fold_work += (size_t)label->len;)
     if (!normalize_map_label_into(&map->label_buffer, label)) {
         map->oom = map->label_buffer.oom;
         return NULL;

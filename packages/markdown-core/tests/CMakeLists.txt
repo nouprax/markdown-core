@@ -131,6 +131,11 @@ add_executable(facade_test facade.c)
 target_include_directories(facade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(facade_test ${MARKDOWN_CORE_TEST_LIBRARIES})
 
+# Compile-time accounting must not change the facade's canonical semantics.
+add_executable(facade_diagnostics_test facade.c)
+target_include_directories(facade_diagnostics_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+target_link_libraries(facade_diagnostics_test markdown-core-diagnostics)
+
 add_executable(facade_cplusplus_test facade_cplusplus.cpp)
 target_include_directories(facade_cplusplus_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(facade_cplusplus_test ${MARKDOWN_CORE_TEST_LIBRARIES})
@@ -148,6 +153,9 @@ endfunction()
 
 # api: legacy engine API harness (native C/C++).
 markdown_core_add_test(api_engine api 120 api_test)
+foreach(operation reentry wrong-slot null-key double-commit)
+    markdown_core_add_test(api_key_index_${operation} api 10 api_test --key-index-misuse ${operation})
+endforeach()
 
 # conformance: public facade/schema shape and every manifest-owned canonical dump.
 markdown_core_add_test(
@@ -155,6 +163,14 @@ markdown_core_add_test(
     conformance
     120
     facade_test
+    --fixtures
+    "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
+    ${MARKDOWN_CORE_CANONICAL_NAMES})
+markdown_core_add_test(
+    facade_diagnostics
+    regression
+    120
+    facade_diagnostics_test
     --fixtures
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
     ${MARKDOWN_CORE_CANONICAL_NAMES})
@@ -314,6 +330,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     comment_nested_item_blank_runs
     tables
     reference_collisions
+    reference_unresolved_scale
     reference_expansion_bound
     directive_unclosed_labels
     directive_unclosed_attributes
@@ -403,10 +420,24 @@ markdown_core_add_test(packaging_corpus_guard packaging 60 corpus_guard --root "
 # enables this block and reports measurements without wall-clock assertions.
 if(MARKDOWN_CORE_BENCHMARKS)
     set(MARKDOWN_CORE_BENCH_SAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks/samples")
+    # The deterministic workload inputs both lanes measure: tracked samples
+    # and in-process generators, each input identified by its SHA-256.
+    add_library(markdown-core-bench-workloads STATIC support/bench_workloads.c support/bench_workloads.h)
+    target_include_directories(markdown-core-bench-workloads PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/support")
     # The public flavour on purpose: the PR benchmark times the product library
     # and reports the size of the shared library this target therefore builds.
     markdown_core_add_runner(bench_runner runners/bench_runner.c)
     target_include_directories(bench_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+    target_link_libraries(bench_runner markdown-core-bench-workloads)
+    # The work-invariant lane reads the engine's deterministic work counters
+    # through the diagnostics build and an injected allocator, like oom_runner
+    # links the engine directly; its counts are an exact contract, never a
+    # timing.
+    add_executable(work_runner runners/work_runner.c)
+    target_include_directories(
+        work_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
+                            "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}" "${MARKDOWN_CORE_ELEMENTS_BINARY_DIR}")
+    target_link_libraries(work_runner markdown-core-diagnostics markdown-core-bench-workloads)
     markdown_core_add_test(benchmark_corpus_guard benchmark 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
     set(MARKDOWN_CORE_BENCH_WORKLOADS
         binding_baseline
@@ -415,7 +446,12 @@ if(MARKDOWN_CORE_BENCHMARKS)
         deep_nesting
         elements
         tables
-        adversarial)
+        adversarial
+        long_fence
+        long_paragraph
+        trailing_definitions
+        leading_blank_lines
+        deep_wide)
     foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
         markdown_core_add_test(
             benchmark_${workload}
@@ -428,6 +464,18 @@ if(MARKDOWN_CORE_BENCHMARKS)
             "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}")
         set_tests_properties(benchmark_${workload} PROPERTIES RUN_SERIAL TRUE)
     endforeach()
+    markdown_core_add_test(
+        benchmark_work_invariants
+        benchmark
+        600
+        work_runner
+        --all
+        --samples
+        "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}"
+        --expect
+        "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks/work-invariants.txt"
+        --max-ratio
+        2.25)
 endif()
 
 if(WIN32 AND MARKDOWN_CORE_SHARED)

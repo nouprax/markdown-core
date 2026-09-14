@@ -75,60 +75,52 @@ static int continue_code(const markdown_core_element *self, markdown_core_parser
     return res;
 }
 
+/* The rest of the fence line is the info string, read once at the fence:
+ * it never enters the content buffer, so closing the block does not move
+ * its body to take the first line back out. */
+static void read_fence_info(markdown_core_parser *parser, markdown_core_node *b, const unsigned char *line,
+                            bufsize_t length) {
+    markdown_core_strbuf tmp = MARKDOWN_CORE_BUF_INIT(parser->mem);
+    bufsize_t info_end = markdown_core_attributes_attach_tail(parser, b, line, length);
+    houdini_unescape_html_f(&tmp, line, info_end);
+    markdown_core_strbuf_trim(&tmp);
+    markdown_core_strbuf_unescape(&tmp);
+    /* WHETHER THE SOURCE WROTE AN INFO STRING IS DECIDED HERE, ONCE.
+     * A fence with nothing but whitespace after it wrote none, and
+     * this is the only place that still knows the difference between
+     * that and the `js` in ```` ```js ````. The facade used to decide
+     * it again by testing the length, which is the fold requirement 14
+     * forbids. */
+    if (tmp.oom) {
+        /* A buffer that could not be grown has `size == 0` and it is
+         * NOT an absent info string -- it is an info string the parse
+         * lost. The strict OOM sweep requires that loss to terminate
+         * the parse. */
+        parser->oom = true;
+        markdown_core_strbuf_free(&tmp);
+        b->as.code->info = markdown_core_optional_chunk_absent();
+    } else if (tmp.size == 0) {
+        markdown_core_strbuf_free(&tmp);
+        b->as.code->info = markdown_core_optional_chunk_absent();
+    } else {
+        markdown_core_chunk info = markdown_core_chunk_buf_detach(&tmp);
+        if (!info.data) {
+            parser->oom = true;
+        }
+        b->as.code->info = markdown_core_optional_chunk_present(info);
+    }
+}
+
 static void finalize_code(markdown_core_parser *parser, markdown_core_node *b) {
-    bufsize_t pos;
-    markdown_core_strbuf *node_content = &b->content;
+    markdown_core_strbuf *node_content = b->content;
 
     if (!b->as.code->fenced) { // indented code
         remove_trailing_blank_lines(node_content);
         markdown_core_strbuf_putc(node_content, '\n');
-    } else {
-        // first line of contents becomes info
-        for (pos = 0; pos < node_content->size; ++pos) {
-            if (markdown_core_is_line_end(node_content->ptr[pos])) {
-                break;
-            }
-        }
-        assert(pos < node_content->size);
-
-        markdown_core_strbuf tmp = MARKDOWN_CORE_BUF_INIT(parser->mem);
-        bufsize_t info_end = markdown_core_attributes_attach_tail(parser, b, node_content->ptr, pos);
-        houdini_unescape_html_f(&tmp, node_content->ptr, info_end);
-        markdown_core_strbuf_trim(&tmp);
-        markdown_core_strbuf_unescape(&tmp);
-        /* WHETHER THE SOURCE WROTE AN INFO STRING IS DECIDED HERE, ONCE.
-         * A fence with nothing but whitespace after it wrote none, and
-         * this is the only place that still knows the difference between
-         * that and the `js` in ```` ```js ````. The facade used to decide
-         * it again by testing the length, which is the fold requirement 14
-         * forbids. */
-        if (tmp.oom) {
-            /* A buffer that could not be grown has `size == 0` and it is
-             * NOT an absent info string -- it is an info string the parse
-             * lost. The strict OOM sweep requires that loss to terminate
-             * the parse. */
-            parser->oom = true;
-            markdown_core_strbuf_free(&tmp);
-            b->as.code->info = markdown_core_optional_chunk_absent();
-        } else if (tmp.size == 0) {
-            markdown_core_strbuf_free(&tmp);
-            b->as.code->info = markdown_core_optional_chunk_absent();
-        } else {
-            markdown_core_chunk info = markdown_core_chunk_buf_detach(&tmp);
-            if (!info.data) {
-                parser->oom = true;
-            }
-            b->as.code->info = markdown_core_optional_chunk_present(info);
-        }
-
-        if (node_content->ptr[pos] == '\r') {
-            pos += 1;
-        }
-        if (node_content->ptr[pos] == '\n') {
-            pos += 1;
-        }
-        markdown_core_strbuf_drop(node_content, pos);
     }
+    /* A fenced body is its literal as written: the info string was taken
+     * at the fence, so no byte is relocated here. */
+    MARKDOWN_CORE_DIAGNOSTIC(parser->code_block_move_work += 0;)
     b->as.code->literal = markdown_core_chunk_buf_detach(node_content);
     if (!b->as.code->literal.data) {
         parser->oom = true;
@@ -154,6 +146,14 @@ static bool open_fenced(markdown_core_parser *parser, markdown_core_node **conta
      * the source had written one. */
     (*container)->as.code->info = markdown_core_optional_chunk_absent();
     markdown_core_block_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
+
+    bufsize_t line_end = input->len;
+    while (line_end > parser->offset && markdown_core_is_line_end(input->data[line_end - 1])) {
+        line_end--;
+    }
+    read_fence_info(parser, *container, input->data + parser->offset, line_end - parser->offset);
+    /* The whole fence line is consumed; the body starts on the next line. */
+    markdown_core_block_advance_offset(parser, input, input->len - parser->offset, false);
 
     return true;
 }

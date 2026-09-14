@@ -39,6 +39,7 @@ let package = Package(
                 "core/buffer.c",
                 "core/references.c",
                 "core/map.c",
+                "core/arena.c",
                 "core/houdini_html_u.c",
                 "core/markdown_core_ctype.c",
                 "core/linked_list.c",
@@ -98,6 +99,7 @@ let package = Package(
                 .headerSearchPath("core/include"),
                 .define("MARKDOWN_CORE_STATIC_DEFINE"),
                 .define("MARKDOWN_CORE_ELEMENTS_STATIC_DEFINE"),
+                .define("NDEBUG", .when(configuration: .release)),
             ]
         ),
         .target(

@@ -98,7 +98,10 @@ grep -Fq 'name: PR Benchmark' "$pr_benchmark"
 grep -Fq 'workflows: [PR Benchmark]' "$pr_benchmark_comment"
 grep -Fq 'pr-benchmark-baseline-${{ github.sha }}' "$pr_benchmark"
 grep -Fq 'name: pr-benchmark-head' "$pr_benchmark"
-grep -Fq 'path: build/pr-benchmark/head.json' "$pr_benchmark"
+# The head measurement is the contract and, next to it, the same measurement's
+# detail sidecar, both from the head job's own result directory.
+grep -Fq 'build/pr-benchmark/head.json' "$pr_benchmark"
+grep -Fq 'build/pr-benchmark/head.detail.json' "$pr_benchmark"
 if [ "$(grep -Fc 'mkdir -p build/pr-benchmark' "$pr_benchmark")" -ne 2 ]; then
     echo "main and PR-head benchmark producers must create their result directory" >&2
     exit 1

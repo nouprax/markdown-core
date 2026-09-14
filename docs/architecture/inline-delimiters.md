@@ -114,12 +114,13 @@ Allocation failure frees continuations independently of the AST they borrow.
 
 Each populated affix owns a private inline root, exposed through the public
 Citation's prefix/suffix collections. Source trimming only changes raw edge
-whitespace; nested markup keeps its authored scope. Completion, consolidation,
-validation and element postprocessing traverse all owned inline roots using
-one explicit stack. Field order and inherited script depth are retained, and a
-phase may replace its root only after its nested fields finish. Definition
-families start independent contexts. Disposal splices the same owned roots into
-the existing iterative node release path.
+whitespace; nested markup keeps its authored scope. Completion, and then the
+finishing walk that consolidates Text runs and delivers every element's
+per-node hook, traverse all owned inline roots using one explicit stack each;
+only a node that can own fields is asked for them. Field order and inherited
+script depth are retained, and a hook may replace its root only after its
+nested fields finish. Definition families start independent contexts. Disposal
+splices the same owned roots into the existing iterative node release path.
 
 Bare keys and balanced braced keys use a single lexical operation. Braced
 candidates share a lazy source index with the ordinary code and HTML token

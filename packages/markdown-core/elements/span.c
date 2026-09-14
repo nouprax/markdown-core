@@ -21,7 +21,14 @@ markdown_core_bracket_match markdown_core_span_close(markdown_core_parser *parse
                 markdown_core_inline_pop_bracket(inline_state);
                 return BRACKET_MATCHED;
             }
-            inl->attributes = attributes;
+            markdown_core_attributes *owned = markdown_core_node_attributes_mut(inl, inline_state->arena);
+            if (!owned) {
+                markdown_core_attributes_free(inline_state->mem, &attributes);
+                inline_state->oom = 1;
+                markdown_core_inline_pop_bracket(inline_state);
+                return BRACKET_MATCHED;
+            }
+            *owned = attributes;
             inline_state->pos = end;
             markdown_core_inline_state_place(inline_state, inl, opener->position - 1, end - 1);
             markdown_core_inline_finish_citation_tokens(inline_state, &opener->citations);

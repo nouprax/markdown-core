@@ -454,7 +454,6 @@ bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_st
 
 bool markdown_core_node_formula_properties(const markdown_core_node *node, markdown_core_placement *mode,
                                            markdown_core_string *literal) {
-    const char *value;
     markdown_core_formula_mode native_mode;
     if (!node || !mode || !literal ||
         (node->kind != MARKDOWN_CORE_NODE_FORMULA && node->kind != MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
@@ -463,9 +462,11 @@ bool markdown_core_node_formula_properties(const markdown_core_node *node, markd
     native_mode = markdown_core_elements_get_formula_mode((markdown_core_node *)node);
     *mode = native_mode == MARKDOWN_CORE_FORMULA_MODE_EMBEDDED ? MARKDOWN_CORE_PLACEMENT_EMBEDDED
                                                                : MARKDOWN_CORE_PLACEMENT_STANDALONE;
-    value = markdown_core_elements_get_formula_literal((markdown_core_node *)node);
-    literal->data = (const uint8_t *)value;
-    literal->length = value ? strlen(value) : 0;
+    /* The literal as bytes: a borrowed slice is read in place, so the read
+     * neither copies nor can fail. */
+    const markdown_core_chunk *bytes = markdown_core_elements_formula_literal((markdown_core_node *)node);
+    literal->data = bytes && bytes->len ? bytes->data : (const uint8_t *)"";
+    literal->length = bytes ? (size_t)bytes->len : 0;
     return true;
 }
 
@@ -514,8 +515,9 @@ bool markdown_core_node_directive_properties(const markdown_core_node *node, mar
     if (!node || !name || !is_directive(node)) {
         return false;
     }
-    const char *value = markdown_core_elements_get_directive_name((markdown_core_node *)node);
-    *name = (markdown_core_optional_string){value != NULL, {(const uint8_t *)value, value ? strlen(value) : 0}};
+    const markdown_core_chunk *bytes = markdown_core_elements_directive_name((markdown_core_node *)node);
+    bool present = bytes && bytes->len;
+    *name = (markdown_core_optional_string){present, {present ? bytes->data : NULL, present ? (size_t)bytes->len : 0}};
     return true;
 }
 
@@ -547,7 +549,7 @@ static markdown_core_string chunk_string(markdown_core_chunk value) {
     return (markdown_core_string){value.data, (size_t)value.len};
 }
 const markdown_core_attribute_value *markdown_core_node_primary_attributes(const markdown_core_node *node) {
-    return node ? &node->attributes : NULL;
+    return node ? node->attributes : NULL;
 }
 const markdown_core_attribute_value *markdown_core_node_inherited_attributes(const markdown_core_node *node) {
     const markdown_core_resource *resource = markdown_core_node_resource(node);
@@ -1105,16 +1107,19 @@ static void dump_metadata_value(dump_buffer *buffer, const markdown_core_metadat
 static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, markdown_core_node_kind kind) {
     markdown_core_string a = {NULL, 0}, c = {NULL, 0};
     markdown_core_optional_string oa = {false, {NULL, 0}}, ob = {false, {NULL, 0}};
-    markdown_core_optional_i64 start;
-    markdown_core_optional_bool collapsed;
-    markdown_core_ordered_list_variant variant;
-    markdown_core_ordered_list_delimiter delimiter;
-    markdown_core_list_flavor flavor;
-    markdown_core_placement mode;
-    markdown_core_destination destination;
-    bool x, y;
-    size_t count, i;
-    int32_t level;
+    /* Every accessor below reports a failed lookup through its result and
+     * leaves its outputs alone, so each output starts at its neutral value:
+     * the dump then prints that value rather than reading an unset local. */
+    markdown_core_optional_i64 start = {false, 0};
+    markdown_core_optional_bool collapsed = {false, false};
+    markdown_core_ordered_list_variant variant = {MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT, false};
+    markdown_core_ordered_list_delimiter delimiter = {MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT, false};
+    markdown_core_list_flavor flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
+    markdown_core_placement mode = MARKDOWN_CORE_PLACEMENT_EMBEDDED;
+    markdown_core_destination destination = {0};
+    bool x = false, y = false;
+    size_t count = 0, i;
+    int32_t level = 0;
     switch (kind) {
     case MARKDOWN_CORE_KIND_CITATION: {
         markdown_core_referent referent;
@@ -1269,7 +1274,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         markdown_core_node_table_properties(node, &count, &head, &content, &foot);
         buffer_cstr(buffer, " columns=[");
         for (i = 0; i < count; i++) {
-            markdown_core_table_column column;
+            markdown_core_table_column column = {MARKDOWN_CORE_FLOW_LEFT, {false, 0.0}};
             markdown_core_node_table_column_at(node, i, &column);
             if (i) {
                 buffer_cstr(buffer, ",");
@@ -1286,7 +1291,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         break;
     }
     case MARKDOWN_CORE_KIND_TABLE_CELL: {
-        int64_t rowspan, colspan;
+        int64_t rowspan = 0, colspan = 0;
         markdown_core_node_table_cell_spans(node, &rowspan, &colspan);
         buffer_cstr(buffer, " rowspan=");
         buffer_i64(buffer, rowspan);
@@ -1635,7 +1640,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
         }
     }
     for (size_t i = 0; i < records; i++) {
-        markdown_core_string name, value;
+        markdown_core_string name = {NULL, 0}, value = {NULL, 0};
         markdown_core_node_attribute_record_at(node, i, &name, &value);
         if (i || classes) {
             buffer_cstr(buffer, " ");

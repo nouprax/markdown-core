@@ -1,18 +1,44 @@
 # Node storage and lifetime
 
-The engine node contains its tree links, source mapping, attributes, element
-state, and a union of typed node data pointers. Every union arm is a pointer;
-adding fields to one kind cannot enlarge the common node. A kind with no
-kind-specific fields has no data record. Field-bearing kinds own a
-record containing their ordinary typed fields. Construction allocates the node
-and its record together, with the typed pointer referring directly to that
-record. A C99 allocation header provides scalar alignment for both objects;
-allocation-header padding is included in measured memory costs.
+The engine node contains its allocator, tree links, source mapping, element
+state, and a union of typed node data pointers: sixteen words on a 64-bit
+target, which a layout test pins. Every union arm is a pointer; adding fields
+to one kind cannot enlarge the common node. A kind with no kind-specific
+fields has no data record. Field-bearing kinds own a record containing their
+ordinary typed fields. The attribute value is a pointer that stays NULL until
+an author declared attributes or synthesis reserved an anchor, and the block
+content buffer is a pointer into the record region that only block kinds and
+inline roots (the directive label) carry; ordinary inline kinds have neither.
+Construction allocates the node, its content buffer and its record together,
+with the typed pointer referring directly to that record. A C99 allocation
+header provides scalar alignment for all three; allocation-header padding is
+included in measured memory costs. The node has no user data slot: element
+state travels in `opaque`, owned by the element that allocated it.
 
 All block, inline, and manual construction uses the same node constructor.
 It makes one allocation for the node and its kind's record, establishes
 defaults, and only then exposes the node. Failure releases all acquired storage.
 Node data and its strings use the node's allocator.
+
+## Transaction storage
+
+A parse transaction owns one arena (`core/arena.h`). Every node the parse
+constructs, with its initial record, and the parser's fixed-size records
+(delimiter stack entries, bracket records) are carved out of arena blocks that
+the transaction's allocator supplies; the blocks double up to a bound, so the
+allocator is called once per block rather than once per node. A record the
+parse gives back — a delimiter text node absorbed by its emphasis, a bracket
+that closed, a text run merged into its neighbour — joins a size-class pool of
+the arena and is handed out again, so the arena holds the peak live records
+plus at most one partially filled block. The root document node carries the
+arena; `markdown_core_node_free` on that root first lets every node release
+what it owns separately (attribute values, content buffers, transformed
+literals, shared resources, element state), then releases the arena. Nodes of
+one transaction therefore share one lifetime: a node may be unlinked and
+released before its tree, never kept after it. A node constructed without an
+arena is an ordinary allocation and is freed individually, so manual trees and
+tests keep the previous behaviour. Growth failure of the arena is the same
+terminal failure as any other allocation failure of the transaction.
 
 `CrossLink` stores a `markdown_core_cross_reference` record containing its raw
 path, optional anchor, and optional label. `CrossEmbedded` stores a
@@ -48,8 +74,11 @@ validation, it allocates a replacement record before releasing the old fields.
 The original record shares the node's allocation and is reclaimed with the
 node; replacement records are freed when replaced or when the node dies.
 The typed view and allocation ownership are explicit: `as` points to the
-current record, while `node_data_allocation` owns a replacement allocation, if
-any. Ownership is never inferred by comparing potentially adjacent addresses.
+current record, and the node's `owned` bits say which of the record, the
+content buffer and the attribute value it allocated separately (a replacement
+record, a content buffer a conversion into a block kind had to add, an
+attribute value declared on a node built without an arena). Ownership is never
+inferred by comparing potentially adjacent addresses.
 `markdown_core_node_set_kind` distinguishes containment rejection from allocation
 failure. Parser callers decline rejected conversions and set the OOM flag only
 for allocation failure. Either failure leaves the original kind and all owned
@@ -113,12 +142,52 @@ namespaces, so their total is bounded by F plus the authored-id count.
 After every allocation succeeds, finalization moves the values into one
 source-ordered document chain and discards the parser collection.
 
-Consolidation and element postprocessing begin only after finalization.
-Their common tree-phase walker visits Document.footnotes and element-owned
-fields from their live owner slots. Callbacks receive resolved ids and the
-completed ownership model; removing a document value cannot leave a pointer
-in a parser index. OOM cleanup uses the document's existing ownership graph,
-and semantic reference cycles never become object cycles.
+Consolidation and element finishing begin only after finalization, in one
+post-order walk over Document.footnotes, Document.specimens and every
+element-owned field, each entered from its live owner slot. At a node's EXIT
+the walk first absorbs the Text run that follows a Text into it, releases a
+Text that owns no bytes, and then hands the surviving node to each element's
+`finish_node` hook in registry order: autolink splits addresses and formula
+unwraps wrappers there, so the number of walks after inline parsing is two
+(completion and finishing) however many elements are attached. The walk
+counts the enclosing nodes that claim their text as their own (the node
+model's `markdown_core_node_type_claims_text`: a link's text is the link's)
+and hands each hook that count, so autolink leaves a link's own text alone
+in constant time per node and the engine never names an element's kind. Hooks receive
+resolved ids and the completed ownership model; removing a document value
+cannot leave a pointer in a parser index. OOM cleanup uses the document's
+existing ownership graph, and semantic reference cycles never become object
+cycles. The whole-tree `postprocess_func` remains a tooling hook that no
+built-in element declares.
+
+A node of a parse transaction lives exactly as long as its arena, which the
+transaction's document owns. The reparenting API therefore moves such a node
+only within that document's tree and refuses every other destination -- a tree
+built without an arena or another transaction's -- because freeing either tree
+would otherwise leave the other pointing into released storage; the arena is
+asked by address, so a node already unlinked still names its transaction.
+
+An inline construct is built from transaction records and borrowed bytes.
+The arena holds its nodes, delimiters, brackets, citation tokens, the backtick
+cache of an inline root and a heading's suspended inline state; a formula's
+and a directive's fixed payload lives in the node's own record (the element
+declares `opaque_size` and claims the reservation for the kinds it carries a
+payload on, through `markdown_core_node_opaque_take`, which allocates only
+for a node converted from another kind and then frees with the node); and a
+literal that repeats the source -- a formula body, a code span that
+normalization leaves unchanged, a directive name, a comment, a cross link's
+path, anchor and label, a citation key -- is a slice of the block's content,
+terminated by the facade only when a C string is asked for. Only bytes that
+a transformation changes are copied.
+
+Few runs reach that merge. A literal run is a borrowed slice of its block's
+content, and a candidate byte that produces no token is a byte of the run
+around it: when the last child is the literal run that ends where the next
+one starts, the scanner grows that node in place instead of splitting it, so
+only line endings and real tokens divide a paragraph's text. The block phase
+copies each source line once into its block's content buffer, finding line
+endings with vector searches, and a fenced code block reads its info string
+at the fence line, so closing the block never relocates its body.
 
 The bracket scanner tracks the most recent non-SP/TAB byte over disjoint
 consumed token ranges, so rejecting empty bodies never rescans nested bodies.
@@ -161,6 +230,10 @@ facts so later candidates do not repeatedly scan the same suffix.
 Generated scanners accept exact read-only slices. Their cursor and marker
 are offsets; a virtual NUL at the slice limit handles termination without
 writing a sentinel, requiring padding or forming an out-of-bounds pointer.
+The bound is load-bearing for block scanners too: the block-start lookahead
+and the table's line source hand the same scanners lines borrowed from the
+immutable document, where the byte after a line is the next line's first or
+lies past the caller's buffer, so no scanner family assumes a terminator.
 Both scanner families are reproducible raw output of the pinned re2c version.
 
 A table query borrows its current line, immutable input lines and the parser's

@@ -15,6 +15,7 @@ if(MARKDOWN_CORE_KOTLIN_JNI)
                    C_EXTENSIONS NO
                    C_VISIBILITY_PRESET hidden
                    POSITION_INDEPENDENT_CODE ON)
+    markdown_core_apply_build_flags(markdown_core_kotlin_jni)
     if(APPLE)
         target_link_options(markdown_core_kotlin_jni PRIVATE
                             "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/markdown_core_kotlin.exports")

@@ -128,15 +128,24 @@ static void skip(decoder *d) {
 static bool single_line(markdown_core_string s) {
     return !memchr(s.data, '\n', s.length) && !memchr(s.data, '\r', s.length);
 }
+/* YAML's printable set: ASCII is answered by the byte, only a scalar above
+ * ASCII is decoded. */
 static bool printable(properties *p, size_t start, size_t end) {
     for (size_t i = start; i < end;) {
+        unsigned char byte = p->source[i];
+        if (byte < 0x80) {
+            if (!(byte == 9 || byte == 10 || byte == 13 || (byte >= 0x20 && byte <= 0x7e))) {
+                return false;
+            }
+            i++;
+            continue;
+        }
         int32_t c;
         int n = markdown_core_utf8proc_iterate(p->source + i, (bufsize_t)(end - i), &c);
         if (n <= 0) {
             return false; /* Valid UTF-8 remains the public precondition. */
         }
-        if (!(c == 9 || c == 10 || c == 13 || (c >= 0x20 && c <= 0x7e) || c == 0x85 || (c >= 0xa0 && c <= 0xd7ff) ||
-              (c >= 0xe000 && c <= 0xfffd) || c >= 0x10000)) {
+        if (!(c == 0x85 || (c >= 0xa0 && c <= 0xd7ff) || (c >= 0xe000 && c <= 0xfffd) || c >= 0x10000)) {
             return false;
         }
         i += (size_t)n;
@@ -230,7 +239,9 @@ static bool quoted(decoder *d, markdown_core_string *value) {
     markdown_core_strbuf_free(&buf);
     return valid;
 }
-static bool plain(decoder *d, bool delimited, bool key, markdown_core_string *value) {
+/* A plain scalar's span on the source: its trimmed bytes, copied by plain()
+ * for a value and matched in place for a key. */
+static bool plain_span(decoder *d, bool delimited, bool key, size_t *span_start, size_t *span_length) {
     const unsigned char *s = d->owner->source;
     size_t start = d->pos, last = start;
     if (!plain_start(s, start, d->end) || newline(s[start])) {
@@ -254,43 +265,56 @@ static bool plain(decoder *d, bool delimited, bool key, markdown_core_string *va
             last = d->pos;
         }
     }
-    *value = copy(d->owner, s + start, last - start);
+    *span_start = start;
+    *span_length = last - start;
+    return true;
+}
+static bool plain(decoder *d, bool delimited, bool key, markdown_core_string *value) {
+    size_t start, length;
+    if (!plain_span(d, delimited, key, &start, &length)) {
+        return false;
+    }
+    *value = copy(d->owner, d->owner->source + start, length);
     return value->data != NULL;
 }
-static bool equals(markdown_core_string s, const char *text) {
+static bool key_equals(const unsigned char *key, size_t length, const char *text) {
     size_t n = strlen(text);
-    return s.length == n && memcmp(s.data, text, n) == 0;
+    return length == n && memcmp(key, text, n) == 0;
 }
-/* Resolve the source name directly to its optional destination field. */
-static markdown_core_metadata_value *field_slot(markdown_core_metadata_fields *metadata, markdown_core_string name) {
-    if (equals(name, "name")) {
+static bool equals(markdown_core_string s, const char *text) { return key_equals(s.data, s.length, text); }
+/* Resolve the source name directly to its optional destination field. The
+ * name is compared where it lies; a known key is the only one whose value
+ * is decoded, and no key is copied. */
+static markdown_core_metadata_value *field_slot(markdown_core_metadata_fields *metadata, const unsigned char *key,
+                                                size_t length) {
+    if (key_equals(key, length, "name")) {
         return &metadata->name;
     }
-    if (equals(name, "title")) {
+    if (key_equals(key, length, "title")) {
         return &metadata->title;
     }
-    if (equals(name, "subtitle")) {
+    if (key_equals(key, length, "subtitle")) {
         return &metadata->subtitle;
     }
-    if (equals(name, "time")) {
+    if (key_equals(key, length, "time")) {
         return &metadata->time;
     }
-    if (equals(name, "date")) {
+    if (key_equals(key, length, "date")) {
         return &metadata->date;
     }
-    if (equals(name, "authors")) {
+    if (key_equals(key, length, "authors")) {
         return &metadata->authors;
     }
-    if (equals(name, "keywords")) {
+    if (key_equals(key, length, "keywords")) {
         return &metadata->keywords;
     }
-    if (equals(name, "abstract")) {
+    if (key_equals(key, length, "abstract")) {
         return &metadata->abstract;
     }
-    if (equals(name, "state")) {
+    if (key_equals(key, length, "state")) {
         return &metadata->state;
     }
-    if (equals(name, "comment")) {
+    if (key_equals(key, length, "comment")) {
         return &metadata->comment;
     }
     return NULL;
@@ -521,17 +545,28 @@ static bool field(decoder *d) {
     properties *p = d->owner;
     const unsigned char *s = p->source;
     size_t start = d->pos;
-    p->parser->metadata_decoded_bytes += d->end - start;
+    MARKDOWN_CORE_DIAGNOSTIC(p->parser->metadata_decoded_bytes += d->end - start;)
     markdown_core_string name = {0};
     markdown_core_metadata_value value = {0};
-    bool quoted_key = d->pos < d->end && (s[d->pos] == '\'' || s[d->pos] == '"');
-    bool valid = quoted_key ? quoted(d, &name) : plain(d, false, true, &name);
-    valid = valid && name.length && single_line(name) && !memchr(s + start, '\n', d->pos - start) &&
-            !memchr(s + start, '\r', d->pos - start);
+    const unsigned char *key = NULL;
+    size_t key_length = 0;
+    bool valid;
+    if (d->pos < d->end && (s[d->pos] == '\'' || s[d->pos] == '"')) {
+        /* A quoted key is decoded; it may not span lines. */
+        valid = quoted(d, &name) && name.length && single_line(name) && !memchr(s + start, '\n', d->pos - start) &&
+                !memchr(s + start, '\r', d->pos - start);
+        key = name.data;
+        key_length = name.length;
+    } else {
+        /* A plain key ends on its line; it is matched on the source. */
+        size_t key_start;
+        valid = plain_span(d, false, true, &key_start, &key_length) && key_length;
+        key = s + key_start;
+    }
     while (d->pos < d->end && space(s[d->pos])) {
         d->pos++;
     }
-    markdown_core_metadata_value *slot = field_slot(p->metadata, name);
+    markdown_core_metadata_value *slot = valid ? field_slot(p->metadata, key, key_length) : NULL;
     if (!valid || !slot || slot->kind || d->pos == d->end || s[d->pos++] != ':') {
         goto failed;
     }
@@ -543,7 +578,8 @@ static bool field(decoder *d) {
     if (d->pos == d->end) {
         value.kind = MARKDOWN_CORE_METADATA_SCALAR;
         value.as.scalar.kind = MARKDOWN_CORE_METADATA_NULL;
-    } else if (d->pos < value_line_end && s[d->pos] == '|' && (equals(name, "abstract") || equals(name, "comment"))) {
+    } else if (d->pos < value_line_end && s[d->pos] == '|' &&
+               (slot == &p->metadata->abstract || slot == &p->metadata->comment)) {
         if (!literal(d, start, &value)) {
             goto failed;
         }
@@ -743,7 +779,7 @@ size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsign
         return 0;
     }
     properties p = {.parser = parser, .source = source};
-    markdown_core_node *node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_METADATA, parser->mem);
+    markdown_core_node *node = markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_METADATA, NULL);
     if (!node) {
         parser->oom = true;
         return 0;
@@ -756,7 +792,7 @@ size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsign
     node->end_column = 3;
     payload(&p, start, close);
     if (parser->oom) {
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(parser->arena, node);
         return 0;
     }
     parser->root->as.document->metadata = node;

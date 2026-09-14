@@ -7,6 +7,7 @@ set(MARKDOWN_CORE_ROOT
 get_filename_component(MARKDOWN_CORE_ROOT "${MARKDOWN_CORE_ROOT}" ABSOLUTE)
 set(MARKDOWN_CORE_CORE_DIR "${MARKDOWN_CORE_ROOT}/packages/markdown-core/core")
 set(MARKDOWN_CORE_ELEMENTS_DIR "${MARKDOWN_CORE_ROOT}/packages/markdown-core/elements")
+include("${MARKDOWN_CORE_ROOT}/packages/markdown-core/cmake/MarkdownCoreBuildFlags.cmake")
 
 add_library(
     markdown_core_kotlin SHARED
@@ -19,6 +20,7 @@ add_library(
     "${MARKDOWN_CORE_CORE_DIR}/buffer.c"
     "${MARKDOWN_CORE_CORE_DIR}/references.c"
     "${MARKDOWN_CORE_CORE_DIR}/map.c"
+    "${MARKDOWN_CORE_CORE_DIR}/arena.c"
     "${MARKDOWN_CORE_CORE_DIR}/houdini_html_u.c"
     "${MARKDOWN_CORE_CORE_DIR}/markdown_core_ctype.c"
     "${MARKDOWN_CORE_CORE_DIR}/linked_list.c"
@@ -97,3 +99,4 @@ set_target_properties(
                C_VISIBILITY_PRESET hidden
                POSITION_INDEPENDENT_CODE ON
                OUTPUT_NAME "markdown_core_kotlin")
+markdown_core_apply_build_flags(markdown_core_kotlin)

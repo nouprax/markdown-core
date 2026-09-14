@@ -7,7 +7,6 @@
 
 #include <buffer.h>
 #include <chunk.h>
-#include <iterator.h>
 #include <markdown_core_ctype.h>
 #include <node.h>
 #include <parser.h>
@@ -59,6 +58,11 @@ static int is_standalone_formula_node(markdown_core_node *node) {
     return formula->mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
 }
 
+const markdown_core_chunk *markdown_core_elements_formula_literal(markdown_core_node *node) {
+    node_formula *formula = get_formula(node);
+    return formula ? &formula->literal : NULL;
+}
+
 const char *markdown_core_elements_get_formula_literal(markdown_core_node *node) {
     node_formula *formula = get_formula(node);
     if (!formula) {
@@ -105,12 +109,14 @@ int markdown_core_elements_set_formula_mode(markdown_core_node *node, markdown_c
     return 1;
 }
 
+/* The payload lives in the node's record (opaque_size), claimed here for
+ * the formula kinds; a node that came from a kind conversion takes one
+ * through markdown_core_node_opaque_take. Only the literal it owns is
+ * released. */
 static void formula_opaque_alloc(const markdown_core_element *element, markdown_core_mem *mem,
                                  markdown_core_node *node) {
-    /* A NULL payload is tolerated: every accessor goes through get_formula
-     * and treats the node as formula-less. */
     if (is_formula_node(node)) {
-        node->opaque = mem->calloc(1, sizeof(node_formula));
+        markdown_core_node_opaque_take(node, sizeof(node_formula));
     }
 }
 
@@ -122,9 +128,23 @@ static void formula_opaque_free(const markdown_core_element *element, markdown_c
     }
 
     markdown_core_chunk_free(mem, &formula->literal);
-    mem->free(formula);
 }
 
+/* A literal that borrows bytes living as long as the node: a slice of the
+ * block content the inline scanner read, or of the block's own buffer. */
+static int set_formula_literal_borrowed(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
+    node_formula *formula = get_formula(node);
+    if (!formula) {
+        return 0;
+    }
+    markdown_core_chunk_free(markdown_core_node_mem(node), &formula->literal);
+    formula->literal.data = (unsigned char *)data;
+    formula->literal.len = len;
+    formula->literal.alloc = 0;
+    return 1;
+}
+
+/* A literal whose bytes belong to the caller and die at once: copied. */
 static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
     node_formula *formula = get_formula(node);
     if (!formula) {
@@ -139,7 +159,7 @@ static int set_formula_literal_bytes(markdown_core_node *node, const unsigned ch
         /* THE BORROW MUST NOT SURVIVE THE COPY FAILING. `data` belongs to the
          * caller and dies immediately: `make_backslash_delimited_formula` frees
          * its strbuf on the next statement, `replace_with_formula_block` frees
-         * the whole old code block, and `postprocess_node` clears the node's own
+         * the whole old code block, and `finish_node` clears the node's own
          * content. Keeping a borrowed pointer past that is a use-after-free that
          * every later read of the literal walks into -- ASan: heap-use-after-free
          * in markdown_core_elements_get_formula_literal -- and `parser->oom`
@@ -236,7 +256,7 @@ static markdown_core_node *try_opening_formula_block(const markdown_core_element
     }
 
     markdown_core_node_set_element(node, element);
-    node->opaque = parser->mem->calloc(1, sizeof(node_formula));
+    markdown_core_node_opaque_take(node, sizeof(node_formula));
 
     formula = get_formula(node);
     if (!formula) {
@@ -277,7 +297,7 @@ static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, mar
     /* The cursor is at the run's FIRST byte here, and at its last in
      * `strikethrough` -- which is why each of them used to compute the columns
      * from a different end. The shared constructor is told the range. */
-    node = markdown_core_inline_state_make_delimiter_text(inline_state, (int)offset, (int)(offset + len - 1));
+    node = markdown_core_inline_state_make_source_text(inline_state, (int)offset, (int)(offset + len - 1));
     if (!node) {
         return NULL;
     }
@@ -460,12 +480,12 @@ static int is_backslash_delim(markdown_core_delimiter_rule delim_char) {
     return delim_char == FORMULA_DELIM_LATEX_BACKSLASH_INLINE || delim_char == FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY;
 }
 
-static void free_nodes_through(markdown_core_node *first, markdown_core_node *last) {
+static void free_nodes_through(markdown_core_arena *arena, markdown_core_node *first, markdown_core_node *last) {
     markdown_core_node *node = first;
 
     while (node) {
         markdown_core_node *next = markdown_core_node_next(node);
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(arena, node);
         if (node == last) {
             break;
         }
@@ -524,27 +544,27 @@ static void strip_formula_padding(const unsigned char **literal, bufsize_t *len)
     *len = size;
 }
 
+/* `literal` is either a slice of the inline input, which the node borrows
+ * like every Text does, or an owned chunk the caller hands over. */
 static markdown_core_node *make_formula_node(const markdown_core_element *element, markdown_core_parser *parser,
-                                             markdown_core_formula_mode mode, const unsigned char *literal,
-                                             bufsize_t literal_len) {
+                                             markdown_core_formula_mode mode, markdown_core_chunk literal) {
     markdown_core_node *node =
-        markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_FORMULA, parser->mem, element);
+        markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_FORMULA, element);
     if (!node) {
         parser->oom = true;
+        markdown_core_chunk_free(parser->mem, &literal);
         return NULL;
     }
-    if (!get_formula(node)) {
+    node_formula *formula = get_formula(node);
+    if (!formula) {
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_chunk_free(parser->mem, &literal);
+        markdown_core_node_recycle(parser->arena, node);
         return NULL;
     }
 
-    get_formula(node)->mode = mode;
-    if (!set_formula_literal_bytes(node, literal, literal_len)) {
-        parser->oom = true;
-        markdown_core_node_free(node);
-        return NULL;
-    }
+    formula->mode = mode;
+    formula->literal = literal;
     return node;
 }
 
@@ -605,8 +625,19 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
      * `\(...\)` and `\[...\]` too, and no oracle row covered that until the
      * step that added two. */
     strip_formula_padding(&body, &body_len);
-    formula = unescaped.oom ? NULL : make_formula_node(element, parser, mode, body, body_len);
-    markdown_core_strbuf_free(&unescaped);
+    if (unescaped.oom) {
+        formula = NULL;
+        markdown_core_strbuf_free(&unescaped);
+    } else if (is_backslash_delim(rule)) {
+        /* The unescaped bytes are the literal: trimmed in place and handed
+         * over, not copied a second time. */
+        markdown_core_strbuf_drop(&unescaped, (bufsize_t)(body - unescaped.ptr));
+        markdown_core_strbuf_truncate(&unescaped, body_len);
+        markdown_core_chunk owned = markdown_core_chunk_buf_detach(&unescaped);
+        formula = owned.data ? make_formula_node(element, parser, mode, owned) : NULL;
+    } else {
+        formula = make_formula_node(element, parser, mode, (markdown_core_chunk){(unsigned char *)body, body_len, 0});
+    }
     if (!formula) {
         parser->oom = true;
         goto done;
@@ -622,9 +653,9 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
          * the bytes between them are its content. `free_nodes_through` below
          * frees EVERY node the span was built from, so without these claims the
          * whole construct would fall back to the block. */
-        free_nodes_through(opener_node, closer_node);
+        free_nodes_through(parser->arena, opener_node, closer_node);
     } else {
-        markdown_core_node_free(formula);
+        markdown_core_node_recycle(parser->arena, formula);
     }
 
 done:
@@ -661,16 +692,16 @@ static int info_is_formula(const markdown_core_optional_chunk *info) {
     return info->has_value && info->value.len == 7 && memcmp(info->value.data, "formula", 7) == 0;
 }
 
-static markdown_core_node *new_formula_block_from_literal(const markdown_core_element *element, markdown_core_mem *mem,
-                                                          markdown_core_node *oldnode, const unsigned char *literal,
-                                                          bufsize_t literal_len) {
+static markdown_core_node *new_formula_block_from_literal(const markdown_core_element *element,
+                                                          markdown_core_parser *parser, markdown_core_node *oldnode,
+                                                          const unsigned char *literal, bufsize_t literal_len) {
     markdown_core_node *formula =
-        markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_FORMULA_BLOCK, mem, element);
+        markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_FORMULA_BLOCK, element);
     if (!formula) {
         return NULL;
     }
     if (!get_formula(formula)) {
-        markdown_core_node_free(formula);
+        markdown_core_node_recycle(parser->arena, formula);
         return NULL;
     }
 
@@ -680,7 +711,7 @@ static markdown_core_node *new_formula_block_from_literal(const markdown_core_el
     formula->end_line = oldnode->end_line;
     formula->end_column = oldnode->end_column;
     if (!set_formula_literal_trimmed(formula, literal, literal_len)) {
-        markdown_core_node_free(formula);
+        markdown_core_node_recycle(parser->arena, formula);
         return NULL;
     }
     return formula;
@@ -689,7 +720,7 @@ static markdown_core_node *new_formula_block_from_literal(const markdown_core_el
 static markdown_core_node *replace_with_formula_block(const markdown_core_element *element,
                                                       markdown_core_parser *parser, markdown_core_node *oldnode,
                                                       const unsigned char *literal, bufsize_t literal_len) {
-    markdown_core_node *formula = new_formula_block_from_literal(element, parser->mem, oldnode, literal, literal_len);
+    markdown_core_node *formula = new_formula_block_from_literal(element, parser, oldnode, literal, literal_len);
     if (!formula) {
         return NULL;
     }
@@ -697,28 +728,34 @@ static markdown_core_node *replace_with_formula_block(const markdown_core_elemen
     if (markdown_core_node_attach_owned(oldnode->parent, formula, oldnode)) {
         /* The bytes did not change hands, the node did. Said before the free,
          * because after it there is nothing left to name. */
-        markdown_core_node_free(oldnode);
+        markdown_core_node_recycle(parser->arena, oldnode);
         return formula;
     }
-    markdown_core_node_free(formula);
+    markdown_core_node_recycle(parser->arena, formula);
     return NULL;
 }
 
-/* Process one node and return the node that now occupies its position. The
- * caller owns traversal: keeping it iterative makes enabled formula syntax
- * safe for an arbitrarily deep tree even when the tree contains no formula. */
-static markdown_core_node *postprocess_node(const markdown_core_element *element, markdown_core_parser *parser,
-                                            markdown_core_node *node) {
+/* Finish one node at its EXIT and return the node that now occupies its
+ * position. The parser's finishing walk owns traversal, so enabled formula
+ * syntax is safe for an arbitrarily deep tree even when it holds no formula. */
+static markdown_core_node *finish_node(const markdown_core_element *element, markdown_core_parser *parser,
+                                       markdown_core_node *node, int claim_depth) {
+    (void)claim_depth;
     if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
         if (formula && !formula->literal.data) {
-            /* The literal is copied OUT of `node->content` and the content is
-             * then cleared, so a failed copy would leave the chunk borrowing a
-             * buffer this very statement empties. */
-            if (!set_formula_literal_trimmed(node, node->content.ptr, node->content.size)) {
-                parser->oom = true;
+            /* The literal is the trimmed body in the block's own content
+             * buffer, which lives as long as the node: borrowed, not copied. */
+            const unsigned char *data = node->content->ptr;
+            bufsize_t len = node->content->size;
+            while (len > 0 && markdown_core_isspace(data[0])) {
+                data++;
+                len--;
             }
-            markdown_core_strbuf_clear(&node->content);
+            while (len > 0 && markdown_core_isspace(data[len - 1])) {
+                len--;
+            }
+            set_formula_literal_borrowed(node, data, len);
         }
         return node;
     }
@@ -735,8 +772,10 @@ static markdown_core_node *postprocess_node(const markdown_core_element *element
     /* Only an anonymous paragraph is a removable wrapper. A declared anchor
      * or attributes belong to that paragraph, even when its only remaining
      * content is a standalone formula. */
-    if (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && !node->attributes.anchor.len && !node->attributes.class_count &&
-        !node->attributes.record_count && node->first_child && node->first_child == node->last_child &&
+    if (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH &&
+        (!node->attributes ||
+         (!node->attributes->anchor.len && !node->attributes->class_count && !node->attributes->record_count)) &&
+        node->first_child && node->first_child == node->last_child &&
         node->first_child->kind == MARKDOWN_CORE_NODE_FORMULA && is_standalone_formula_node(node->first_child)) {
         node_formula *formula = get_formula(node->first_child);
         if (formula) {
@@ -752,46 +791,26 @@ static markdown_core_node *postprocess_node(const markdown_core_element *element
     return node;
 }
 
-static markdown_core_node *postprocess(const markdown_core_element *element, markdown_core_parser *parser,
-                                       markdown_core_node *root) {
-    markdown_core_iter *iter = markdown_core_iter_new(root);
-    markdown_core_event_type event;
-
-    if (!iter) {
-        parser->oom = true;
-        return NULL;
-    }
-    while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node;
-        markdown_core_node *processed;
-        bool is_root;
-
-        /* At EXIT the iterator has already selected the parent or following
-         * sibling as its next node, so replacing and freeing this node cannot
-         * invalidate traversal state. */
-        if (event != MARKDOWN_CORE_EVENT_EXIT) {
-            continue;
-        }
-        node = markdown_core_iter_get_node(iter);
-        is_root = node == root;
-        processed = postprocess_node(element, parser, node);
-        if (!processed) {
-            break;
-        }
-        if (is_root) {
-            root = processed;
-        }
-    }
-    markdown_core_iter_free(iter);
-    return root;
-}
-
 /* `$` and `\\` open a formula, and that is the whole set. `\\` is in the dispatch
  * set and NOT the terminator set: `is_core_special_character` refuses it there
  * anyway, and it must stay in dispatch because `handle_backslash` asks whether any
  * element claims `\\` before taking a core fast path. */
 
+static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
+    markdown_core_chunk *input = markdown_core_inline_state_get_chunk(state);
+    if (input->data[at] != '$') {
+        return true; /* Backslash forms have their own bounded scanners. */
+    }
+    if (at + 1 < input->len && input->data[at + 1] == '$') {
+        return true;
+    }
+    return dollar_inline_can_open(input, at) ||
+           (markdown_core_inline_state_has_unmatched_opener(state, FORMULA_DELIM_DOLLAR_INLINE) &&
+            dollar_inline_can_close(input, at));
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
+    .can_start = can_start,
     .interrupts_paragraph = true,
 
     .name = "formula",
@@ -799,11 +818,13 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .last_block_matches = formula_block_matches,
     .maximum_block_indent = 3,
     .try_opening_block = try_opening_formula_block,
+    .block_start_bytes = "$\\",
     .probe_block = probe_formula_block,
-    .postprocess_func = postprocess,
+    .finish_node = finish_node,
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,
     .accepts_lines_func = accepts_lines,
+    .opaque_size = sizeof(node_formula),
     .opaque_alloc_func = formula_opaque_alloc,
     .opaque_free_func = formula_opaque_free,
     .insert_inline_from_delim = insert_formula,

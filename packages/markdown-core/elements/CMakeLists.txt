@@ -97,6 +97,7 @@ if(MARKDOWN_CORE_SHARED)
     target_include_directories(${LIBRARY} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
                                                  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
     set_target_properties(${LIBRARY} PROPERTIES EXPORT_NAME markdown-core)
+    markdown_core_apply_build_flags(${LIBRARY})
 
     # The engine and element implementation retain private legacy symbols
     # internally, but the installed facade DSO exports only the reviewed
@@ -128,6 +129,7 @@ if(MARKDOWN_CORE_STATIC OR MARKDOWN_CORE_SHARED)
     target_compile_definitions(${STATICLIBRARY} PUBLIC MARKDOWN_CORE_STATIC_DEFINE MARKDOWN_CORE_ELEMENTS_STATIC_DEFINE)
     set_target_properties(${STATICLIBRARY} PROPERTIES DEFINE_SYMBOL "MARKDOWN_CORE_ELEMENTS_EXPORTS"
                                                       POSITION_INDEPENDENT_CODE ON)
+    markdown_core_apply_build_flags(${STATICLIBRARY})
 
     if(MSVC)
         set_target_properties(${STATICLIBRARY} PROPERTIES OUTPUT_NAME "markdown-core-elements_static"
@@ -156,12 +158,24 @@ if(MARKDOWN_CORE_STATIC OR MARKDOWN_CORE_SHARED)
         PRIVATE ${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
         PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
                $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    markdown_core_apply_build_flags(${PUBLIC_STATIC_LIBRARY})
     if(MARKDOWN_CORE_STATIC)
         list(APPEND MARKDOWN_CORE_INSTALL ${PUBLIC_STATIC_LIBRARY})
     endif()
     if(NOT MARKDOWN_CORE_SHARED)
         set(MARKDOWN_CORE_EXPORT_TARGET ${PUBLIC_STATIC_LIBRARY})
     endif()
+endif()
+
+# Complexity tests and the private experiment probe use the same source graph
+# with compile-time accounting. No installed target links this archive; PUBLIC
+# propagates the private structure layout to every diagnostic consumer.
+if(MARKDOWN_CORE_TESTS)
+    add_library(markdown-core-diagnostics STATIC EXCLUDE_FROM_ALL ${MARKDOWN_CORE_ENGINE_SOURCES} ${LIBRARY_SOURCES})
+    target_compile_definitions(markdown-core-diagnostics PUBLIC MARKDOWN_CORE_DIAGNOSTICS=1 MARKDOWN_CORE_STATIC_DEFINE
+                                                                MARKDOWN_CORE_ELEMENTS_STATIC_DEFINE)
+    set_target_properties(markdown-core-diagnostics PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    markdown_core_apply_build_flags(markdown-core-diagnostics)
 endif()
 
 set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_NO_WARNINGS ON)

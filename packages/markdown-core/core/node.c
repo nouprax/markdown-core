@@ -1,8 +1,10 @@
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "config.h"
 #include "node.h"
+#include "arena.h"
 #include "references.h"
 #include "element.h"
 #include "../elements/markdown-core-elements.h"
@@ -72,14 +74,23 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
     }
     /* Arbitrary reparenting must reject cycles. Parser construction instead
      * transfers an independently owned subtree through attach_owned. */
-    {
-        markdown_core_node *cur = node;
-        do {
-            if (cur == child) {
-                return false;
-            }
-            cur = cur->parent;
-        } while (cur != NULL);
+    markdown_core_node *root = node;
+    for (markdown_core_node *cur = node; cur != NULL; cur = cur->parent) {
+        if (cur == child) {
+            return false;
+        }
+        root = cur;
+    }
+    /* A node of a parse transaction lives exactly as long as its arena, which
+     * the transaction's document owns: it may move within that document's
+     * tree and nowhere else, or freeing either tree would leave the other
+     * pointing into released storage. The arena is asked by address, so a
+     * node already unlinked from its tree still names its transaction. */
+    if (child->arena_owned) {
+        markdown_core_arena *arena = root->kind == MARKDOWN_CORE_NODE_DOCUMENT ? root->as.document->arena : NULL;
+        if (!arena || !markdown_core_arena_owns(arena, child)) {
+            return false;
+        }
     }
 
     return markdown_core_node_can_contain_type(node, (markdown_core_node_type)child->kind);
@@ -94,7 +105,20 @@ typedef union {
     int64_t integer_alignment;
 } markdown_core_node_allocation;
 
-static void *S_initial_payload(markdown_core_node *node) { return (markdown_core_node_allocation *)node + 1; }
+/* Block kinds and inline roots keep their content buffer right after the
+ * node, ahead of the kind's record; other inline kinds have no buffer. */
+/* The record size the ordinary inline kinds (text runs, emphasis, links) share. */
+#define MARKDOWN_CORE_NODE_COMMON_RECORD 160
+
+static size_t S_node_content_size(markdown_core_node_type type) {
+    return MARKDOWN_CORE_NODE_TYPE_BLOCK_P(type) || type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL
+               ? sizeof(markdown_core_strbuf)
+               : 0;
+}
+
+static unsigned char *S_record_start(markdown_core_node *node) {
+    return (unsigned char *)((markdown_core_node_allocation *)node + 1);
+}
 
 /* Record size is a property of the kind, independent of the input shape. */
 static size_t S_node_payload_size(markdown_core_node_type type) {
@@ -167,8 +191,14 @@ static size_t S_node_payload_size(markdown_core_node_type type) {
 }
 
 /* Establish defaults over zero-initialized storage. */
-static void S_init_node_as(markdown_core_node_type type, markdown_core_node_data *as) {
+/* The payload's initial values; `arena` is the parse arena the node was made
+ * in, which a document made in one owns and releases after its tree (see
+ * S_free_nodes). */
+static void S_init_node_as(markdown_core_node_type type, markdown_core_node_data *as, markdown_core_arena *arena) {
     switch ((uint16_t)type) {
+    case MARKDOWN_CORE_NODE_DOCUMENT:
+        as->document->arena = arena;
+        break;
     case MARKDOWN_CORE_NODE_HEADING:
         as->heading->level = 1;
         break;
@@ -181,26 +211,82 @@ static void S_init_node_as(markdown_core_node_type type, markdown_core_node_data
     }
 }
 
-markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
-                                                            const markdown_core_element *element) {
-    /* Construction gives the node and its record one aligned allocation. */
-    size_t payload_size = S_node_payload_size(type);
-    markdown_core_node *node =
-        (markdown_core_node *)mem->calloc(1, sizeof(markdown_core_node_allocation) + payload_size);
+markdown_core_node *markdown_core_node_create(markdown_core_arena *arena, markdown_core_mem *mem,
+                                              markdown_core_node_type type, const markdown_core_element *element) {
+    /* Construction gives the node, its content buffer and its record one
+     * aligned allocation. Records below the common inline size take that
+     * size and larger ones are measured in 32-byte steps, so the kinds the
+     * delimiter algorithm exchanges (text runs for emphasis nodes) share one
+     * arena pool whatever their payload. */
+    size_t content_size = S_node_content_size(type), payload_size = S_node_payload_size(type);
+    /* An element's fixed payload follows the kind's record at the next
+     * 8-byte boundary; seven bytes of slack cover that alignment. */
+    size_t opaque_size = element && element->opaque_size ? element->opaque_size + 7 : 0;
+    size_t record_size =
+        (sizeof(markdown_core_node_allocation) + content_size + payload_size + opaque_size + 31) & ~(size_t)31;
+    markdown_core_node *node;
+    if (record_size < MARKDOWN_CORE_NODE_COMMON_RECORD) {
+        record_size = MARKDOWN_CORE_NODE_COMMON_RECORD;
+    }
+    assert(record_size <= UINT16_MAX);
+    if (arena) {
+        mem = markdown_core_arena_mem(arena);
+        node = (markdown_core_node *)markdown_core_arena_take(arena, record_size);
+    } else {
+        node = (markdown_core_node *)mem->calloc(1, record_size);
+    }
     if (!node) {
         return NULL;
     }
-    markdown_core_strbuf_init(mem, &node->content, 0);
+    node->record_size = (uint16_t)record_size;
+    node->arena_owned = arena != NULL;
+    node->mem = mem;
+    if (content_size) {
+        node->content = (markdown_core_strbuf *)S_record_start(node);
+        markdown_core_strbuf_init(mem, node->content, 0);
+    }
     node->kind = (uint16_t)type;
     node->element = element;
-    node->as.data = payload_size ? S_initial_payload(node) : NULL;
-    S_init_node_as(type, &node->as);
+    node->as.data = payload_size ? S_record_start(node) + content_size : NULL;
+    S_init_node_as(type, &node->as, arena);
+    /* The reservation is claimed by the element's opaque_alloc_func through
+     * markdown_core_node_opaque_take, for the kinds it carries a payload on;
+     * `opaque` stays NULL on every other node it creates. */
+    if (opaque_size) {
+        node->owned |= MARKDOWN_CORE_NODE_OPAQUE_IN_RECORD;
+    }
 
     if (node->element && node->element->opaque_alloc_func) {
         node->element->opaque_alloc_func(node->element, mem, node);
     }
 
     return node;
+}
+
+void *markdown_core_node_opaque_take(markdown_core_node *node, size_t size) {
+    if (node->opaque && (node->owned & (MARKDOWN_CORE_NODE_OPAQUE_IN_RECORD | MARKDOWN_CORE_NODE_OWNS_OPAQUE))) {
+        return node->opaque;
+    }
+    /* A reservation is claimed at creation, before any kind conversion, so
+     * the creation kind's record sizes locate it. */
+    if ((node->owned & MARKDOWN_CORE_NODE_OPAQUE_IN_RECORD) && node->element && node->element->opaque_size >= size) {
+        size_t offset = (S_node_content_size((markdown_core_node_type)node->kind) +
+                         S_node_payload_size((markdown_core_node_type)node->kind) + 7) &
+                        ~(size_t)7;
+        node->opaque = S_record_start(node) + offset;
+        return node->opaque;
+    }
+    void *payload = NODE_MEM(node)->calloc(1, size);
+    if (payload) {
+        node->opaque = payload;
+        node->owned |= MARKDOWN_CORE_NODE_OWNS_OPAQUE;
+    }
+    return payload;
+}
+
+markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
+                                                            const markdown_core_element *element) {
+    return markdown_core_node_create(NULL, mem, type, element);
 }
 
 markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
@@ -270,11 +356,12 @@ static void free_node_as(markdown_core_node *node) {
     default:
         break;
     }
-    /* Free only the allocation this node owns separately. Pointer equality
-     * cannot establish ownership: an allocator may place a replacement right
-     * after a fieldless node's allocation. */
-    NODE_MEM(node)->free(node->node_data_allocation);
-    node->node_data_allocation = NULL;
+    /* Free only a replacement record the node owns separately; the initial
+     * record is part of the node's own allocation. */
+    if (node->owned & MARKDOWN_CORE_NODE_OWNS_PAYLOAD) {
+        NODE_MEM(node)->free(node->as.data);
+        node->owned &= (uint8_t)~MARKDOWN_CORE_NODE_OWNS_PAYLOAD;
+    }
     node->as.data = NULL;
 }
 
@@ -327,21 +414,45 @@ static void S_splice_owned_fields(markdown_core_node *owner, markdown_core_node 
     }
 }
 
-static void S_free_nodes(markdown_core_node *e) {
+/* Release everything the nodes own, then their storage: allocator nodes go
+ * back to the allocator, arena nodes to `pool` when the caller named it and
+ * otherwise stay in their arena. The root of a parse transaction carries
+ * that arena and releases it last, after the walk has left every node. */
+static void S_free_nodes(markdown_core_node *e, markdown_core_arena *pool) {
     markdown_core_node *next;
+    markdown_core_arena *owned = NULL;
     while (e != NULL) {
-        markdown_core_attributes_free(NODE_MEM(e), &e->attributes);
-        markdown_core_strbuf_free(&e->content);
-
-        if (e->user_data && e->user_data_free_func) {
-            e->user_data_free_func(NODE_MEM(e), e->user_data);
+        if (e->kind == MARKDOWN_CORE_NODE_DOCUMENT && e->as.document && e->as.document->arena) {
+            owned = e->as.document->arena;
+            e->as.document->arena = NULL;
+        }
+        if (e->attributes) {
+            markdown_core_attributes_free(NODE_MEM(e), e->attributes);
+            if (e->owned & MARKDOWN_CORE_NODE_OWNS_ATTRIBUTES) {
+                NODE_MEM(e)->free(e->attributes);
+            } else if (pool && e->arena_owned) {
+                markdown_core_arena_recycle(pool, e->attributes, sizeof(*e->attributes));
+            }
+            e->attributes = NULL;
+        }
+        if (e->content) {
+            markdown_core_strbuf_free(e->content);
+            if (e->owned & MARKDOWN_CORE_NODE_OWNS_CONTENT) {
+                NODE_MEM(e)->free(e->content);
+            }
+            e->content = NULL;
         }
 
         if (e->element && e->element->visit_owned_subtrees_func) {
             e->element->visit_owned_subtrees_func(e->element, e, S_release_owned_subtree, e);
         }
-        if (e->opaque && e->element && e->element->opaque_free_func) {
-            e->element->opaque_free_func(e->element, NODE_MEM(e), e);
+        if (e->opaque) {
+            if (e->element && e->element->opaque_free_func) {
+                e->element->opaque_free_func(e->element, NODE_MEM(e), e);
+            }
+            if (e->owned & MARKDOWN_CORE_NODE_OWNS_OPAQUE) {
+                NODE_MEM(e)->free(e->opaque);
+            }
         }
 
         S_splice_owned_fields(e, e);
@@ -353,15 +464,28 @@ static void S_free_nodes(markdown_core_node *e) {
             e->next = e->first_child;
         }
         next = e->next;
-        NODE_MEM(e)->free(e);
+        if (!e->arena_owned) {
+            NODE_MEM(e)->free(e);
+        } else if (pool) {
+            markdown_core_arena_recycle(pool, e, e->record_size);
+        }
         e = next;
+    }
+    if (owned) {
+        markdown_core_arena_free(owned);
     }
 }
 
 void markdown_core_node_free(markdown_core_node *node) {
     S_node_unlink(node);
     node->next = NULL;
-    S_free_nodes(node);
+    S_free_nodes(node, NULL);
+}
+
+void markdown_core_node_recycle(markdown_core_arena *arena, markdown_core_node *node) {
+    S_node_unlink(node);
+    node->next = NULL;
+    S_free_nodes(node, arena);
 }
 
 markdown_core_node_type markdown_core_node_get_type(markdown_core_node *node) {
@@ -383,19 +507,36 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     }
 
     /* Allocate before releasing anything. A failed conversion preserves the
-     * old kind, data, and owned subtrees, with stable node identity. */
+     * old kind, data, and owned subtrees, with stable node identity. A kind
+     * that carries content converts from one that did not by owning a
+     * separate buffer; an existing buffer stays with the node. */
     size_t size = S_node_payload_size(kind);
     markdown_core_node_data replacement = {.data = size ? NODE_MEM(node)->calloc(1, size) : NULL};
     if (size && !replacement.data) {
         return MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED;
     }
-    S_init_node_as(kind, &replacement);
+    markdown_core_strbuf *content = NULL;
+    if (!node->content && S_node_content_size(kind)) {
+        content = NODE_MEM(node)->calloc(1, sizeof(*content));
+        if (!content) {
+            NODE_MEM(node)->free(replacement.data);
+            return MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED;
+        }
+        markdown_core_strbuf_init(NODE_MEM(node), content, 0);
+    }
+    S_init_node_as(kind, &replacement, NULL);
     markdown_core_node fields = {0};
     S_splice_owned_fields(node, &fields);
-    S_free_nodes(fields.next);
+    S_free_nodes(fields.next, NULL);
     free_node_as(node);
     node->as = replacement;
-    node->node_data_allocation = replacement.data;
+    if (size) {
+        node->owned |= MARKDOWN_CORE_NODE_OWNS_PAYLOAD;
+    }
+    if (content) {
+        node->content = content;
+        node->owned |= MARKDOWN_CORE_NODE_OWNS_CONTENT;
+    }
     node->kind = (uint16_t)kind;
     return MARKDOWN_CORE_NODE_SET_KIND_OK;
 }
@@ -525,30 +666,6 @@ markdown_core_node *markdown_core_node_last_child(markdown_core_node *node) {
     }
 }
 
-void *markdown_core_node_get_user_data(markdown_core_node *node) {
-    if (node == NULL) {
-        return NULL;
-    } else {
-        return node->user_data;
-    }
-}
-
-int markdown_core_node_set_user_data(markdown_core_node *node, void *user_data) {
-    if (node == NULL) {
-        return 0;
-    }
-    node->user_data = user_data;
-    return 1;
-}
-
-int markdown_core_node_set_user_data_free_func(markdown_core_node *node, markdown_core_free_func free_func) {
-    if (node == NULL) {
-        return 0;
-    }
-    node->user_data_free_func = free_func;
-    return 1;
-}
-
 const char *markdown_core_node_get_literal(markdown_core_node *node) {
     if (node == NULL) {
         return NULL;
@@ -599,11 +716,25 @@ int markdown_core_node_set_literal(markdown_core_node *node, const char *content
     return 0;
 }
 
-const char *markdown_core_node_get_string_content(markdown_core_node *node) { return (char *)node->content.ptr; }
+const char *markdown_core_node_get_string_content(markdown_core_node *node) {
+    return node->content ? (char *)node->content->ptr : "";
+}
 
 int markdown_core_node_set_string_content(markdown_core_node *node, const char *content) {
-    markdown_core_strbuf_sets(&node->content, content);
-    return true;
+    if (!node->content) {
+        /* An inline kind carries no buffer in its record; the first write
+         * gives it one the node owns and frees with itself. */
+        markdown_core_mem *mem = NODE_MEM(node);
+        markdown_core_strbuf *buffer = (markdown_core_strbuf *)mem->calloc(1, sizeof(*buffer));
+        if (!buffer) {
+            return false;
+        }
+        markdown_core_strbuf_init(mem, buffer, 0);
+        node->content = buffer;
+        node->owned |= MARKDOWN_CORE_NODE_OWNS_CONTENT;
+    }
+    markdown_core_strbuf_sets(node->content, content);
+    return !node->content->oom;
 }
 
 int markdown_core_node_get_heading_level(markdown_core_node *node) {
@@ -1100,13 +1231,30 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
     return errors;
 }
 
+static const markdown_core_chunk NO_ANCHOR = {NULL, 0, 0};
+
 const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_node *node) {
-    if (!node->attributes.anchor.len &&
-        (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED) &&
+    const markdown_core_chunk *own = node->attributes ? &node->attributes->anchor : &NO_ANCHOR;
+    if (!own->len && (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED) &&
         node->as.link->resource) {
         return &node->as.link->resource->attributes.anchor;
     }
-    return &node->attributes.anchor;
+    return own;
+}
+
+markdown_core_attributes *markdown_core_node_attributes_mut(markdown_core_node *node, markdown_core_arena *arena) {
+    if (node->attributes) {
+        return node->attributes;
+    }
+    if (arena && node->arena_owned) {
+        node->attributes = markdown_core_arena_take(arena, sizeof(*node->attributes));
+    } else {
+        node->attributes = NODE_MEM(node)->calloc(1, sizeof(*node->attributes));
+        if (node->attributes) {
+            node->owned |= MARKDOWN_CORE_NODE_OWNS_ATTRIBUTES;
+        }
+    }
+    return node->attributes;
 }
 
 int markdown_core_visit_inline_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,

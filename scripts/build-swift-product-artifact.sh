@@ -6,8 +6,11 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 output=${1:-"$root/build/ci-artifacts/swift-product"}
 
 cd "$root"
+# The product is the release configuration: it is what ships and what any
+# measurement of the Swift package must come from. The test producers keep
+# their own scratch paths and configurations.
 CLANG_MODULE_CACHE_PATH="$root/build/swift-module-cache" \
-    swift build --target MarkdownCore --disable-sandbox
+    swift build --target MarkdownCore -c release --disable-sandbox
 rm -rf "$output"
 mkdir -p "$output"
 tar -czf "$output/swift-product-tree.tar.gz" .build

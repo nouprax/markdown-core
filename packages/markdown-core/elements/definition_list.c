@@ -14,7 +14,7 @@ bool markdown_core_block_definition_body_blank_continues(markdown_core_parser *p
     if (body->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY) {
         return true;
     }
-    parser->definition_list_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->definition_list_work++;)
     if (body->as.definition_body->continuation_line > parser->line_number) {
         return true;
     }
@@ -40,39 +40,47 @@ static bool markdown_core_block_definition_marker(markdown_core_chunk *input, in
 
 static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, markdown_core_node *parent,
                                                   markdown_core_chunk *input, bool *compact) {
-    parser->definition_list_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->definition_list_work++;)
     if (parser->blank || parser->indent >= 4 ||
         markdown_core_block_definition_marker(input, parser->first_nonspace, parser->indent)) {
         return false;
     }
+    const markdown_core_block_peek *peek =
+        markdown_core_parser_peek_block_line(parser, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST);
+    markdown_core_chunk next = peek->input;
+    int first = peek->first, indent = peek->indent, blanks = peek->blanks;
+    if (!peek->available || blanks > 1 || !markdown_core_block_definition_marker(&next, first, indent)) {
+        return false;
+    }
     markdown_core_chunk term = {input->data + parser->first_nonspace, input->len - parser->first_nonspace, 0};
-    if (term.data[0] == '[') {
-        parser->definition_list_work += term.len;
+    if (term.data[0] == '[' && markdown_core_reference_definition_possible(term.data, term.len)) {
+        MARKDOWN_CORE_DIAGNOSTIC(parser->definition_list_work += term.len;)
         markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = term.data, .length = term.len};
+        MARKDOWN_CORE_DIAGNOSTIC(parser->reference_probe_work++;)
         bool reference = markdown_core_parse_reference_inline(parser->mem, &term, NULL, &attributes, 0) != 0;
-        parser->attribute_work += attributes.work;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->attribute_work += attributes.work;)
         parser->oom |= attributes.oom;
         markdown_core_attribute_parser_free(&attributes);
         if (reference || parser->oom) {
             return false;
         }
     }
-    markdown_core_block_lookahead lookahead;
-    if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST, &lookahead)) {
-        return false;
+    if (next.data[first] == ':') {
+        /* A caption candidate needs the remaining stream. Resume through the
+         * shared lookahead algorithm only after the marker is established. */
+        markdown_core_block_lookahead lookahead;
+        if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST, &lookahead)) {
+            return false;
+        }
+        bool caption = markdown_core_parser_lookahead_next(&lookahead, &next, &first, &indent, &blanks) &&
+                       markdown_core_table_caption_probe(&lookahead, &next, first, indent);
+        markdown_core_parser_lookahead_end(&lookahead);
+        if (caption || parser->oom) {
+            return false;
+        }
     }
-    markdown_core_chunk next;
-    int first, indent, blanks;
-    bool matched = markdown_core_parser_lookahead_next(&lookahead, &next, &first, &indent, &blanks) && blanks <= 1 &&
-                   markdown_core_block_definition_marker(&next, first, indent);
-    if (matched && next.data[first] == ':') {
-        matched = !markdown_core_table_caption_probe(&lookahead, &next, first, indent);
-    }
-    if (matched) {
-        *compact = blanks == 0;
-    }
-    markdown_core_parser_lookahead_end(&lookahead);
-    return matched;
+    *compact = blanks == 0;
+    return true;
 }
 
 static markdown_core_node *markdown_core_block_open_definition(markdown_core_parser *parser, markdown_core_node *parent,
@@ -95,7 +103,8 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_par
         return NULL;
     }
     definition->as.definition->compact = compact;
-    markdown_core_node *term = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+    markdown_core_node *term =
+        markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_PARAGRAPH, NULL);
     if (!term) {
         parser->oom = true;
         return definition;
@@ -106,13 +115,13 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_par
                            markdown_core_is_line_end(input->data[end - 1]))) {
         end--;
     }
-    parser->definition_list_work += end - begin;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->definition_list_work += end - begin;)
     term->start_line = term->end_line = parser->line_number;
     term->start_column = markdown_core_parser_source_column(parser, parser->line_number, begin + 1);
     term->end_column = markdown_core_parser_source_column(parser, parser->line_number, end);
-    markdown_core_strbuf_put(&term->content, input->data + begin, end - begin);
-    if (term->content.oom || !markdown_core_parser_append_source_marks(parser, term, parser->line_number, begin + 1,
-                                                                       term->content.size, 0)) {
+    markdown_core_strbuf_put(term->content, input->data + begin, end - begin);
+    if (term->content->oom || !markdown_core_parser_append_source_marks(parser, term, parser->line_number, begin + 1,
+                                                                        term->content->size, 0)) {
         parser->oom = true;
     }
     markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);

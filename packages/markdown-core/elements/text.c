@@ -5,7 +5,8 @@
 
 static int any_element_dispatches(markdown_core_parser *parser, unsigned char c) {
     for (size_t i = parser->inline_dispatch_offsets[c]; i < parser->inline_dispatch_offsets[c + 1]; i++) {
-        if (parser->inline_dispatch[i] != &MARKDOWN_CORE_ELEMENT_TEXT) {
+        if (parser->inline_dispatch[i].dispatches &&
+            parser->inline_dispatch[i].element != &MARKDOWN_CORE_ELEMENT_TEXT) {
             return 1;
         }
     }
@@ -32,16 +33,16 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, markdo
                !markdown_core_is_line_end(markdown_core_inline_peek_at(inline_state, end)) &&
                markdown_core_isspace(markdown_core_inline_peek_at(inline_state, end))) {
             end++;
-            parser->whitespace_work++;
+            MARKDOWN_CORE_DIAGNOSTIC(parser->whitespace_work++;)
         }
         if ((end == inline_state->input.len && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->kind)) ||
             (end < inline_state->input.len &&
              markdown_core_is_line_end(markdown_core_inline_peek_at(inline_state, end)))) {
-            return make_str(inline_state, start, start, markdown_core_chunk_literal("\\"));
+            return markdown_core_inline_state_make_literal_run(inline_state, start, start);
         }
         advance(inline_state);
         markdown_core_node *escaped =
-            make_str(inline_state, start, inline_state->pos - 1, markdown_core_chunk_literal("\\ "));
+            markdown_core_inline_state_make_source_text(inline_state, start, inline_state->pos - 1);
         if (escaped) {
             /* Contextual escape token: inline completion decodes it once the
              * delimiter/bracket engine has established its semantic owner. */
@@ -103,7 +104,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, markdo
         }
         return hard;
     } else {
-        return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("\\"));
+        return markdown_core_inline_state_make_literal_run(inline_state, inline_state->pos - 1, inline_state->pos - 1);
     }
 }
 
@@ -118,7 +119,7 @@ static markdown_core_node *handle_entity(markdown_core_inline_state *inline_stat
 
     if (len == 0) {
         markdown_core_node *literal =
-            make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("&"));
+            markdown_core_inline_state_make_literal_run(inline_state, inline_state->pos - 1, inline_state->pos - 1);
         /* Not an entity: the `&` IS the literal, so it is content. */
         return literal;
     }
@@ -146,17 +147,29 @@ markdown_core_node *markdown_core_text_parse(markdown_core_parser *parser, markd
                                              bufsize_t endpos) {
     markdown_core_chunk contents;
     bufsize_t startpos;
-    /* Disjoint ordinary text slices alone contribute whitespace barriers.
-     * Escapes, entities, and opaque tokens have their own token owners. */
-    for (bufsize_t at = inline_state->pos; at < endpos;) {
-        int32_t scalar = 0;
-        int width = markdown_core_utf8proc_iterate(inline_state->input.data + at, endpos - at, &scalar);
-        parser->whitespace_work++;
+    /* No token/delimiter is inserted inside an ordinary text slice. Its
+     * whitespace barriers therefore coalesce to the last one. Find that
+     * boundary backwards, decoding only non-ASCII scalars in the suffix.
+     * This preserves the dialect's exact Zs + LF/CR/TAB/FF set (not C isspace,
+     * which also includes VT), and never scans preceding words needlessly. */
+    const unsigned char *data = inline_state->input.data;
+    bufsize_t at = endpos;
+    while (at > inline_state->pos) {
+        bufsize_t after = at--;
+        int32_t scalar = data[at];
+        int width = 1;
+        if (scalar >= 128) {
+            while (at > inline_state->pos && (data[at] & 0xC0) == 0x80) {
+                at--;
+            }
+            width = markdown_core_utf8proc_iterate(data + at, after - at, &scalar);
+        }
         if (markdown_core_utf8proc_is_space(scalar)) {
             markdown_core_inline_push_boundary(inline_state, at + width);
+            break;
         }
-        at += width > 0 ? width : 1;
     }
+    MARKDOWN_CORE_DIAGNOSTIC(parser->whitespace_work += (size_t)(endpos - at);)
     /* Text runs are disjoint, so recording separators costs at most one
      * extra visit per byte, regardless of bracket nesting or digit-run
      * length. No image closer scans its label again. */
@@ -168,6 +181,13 @@ markdown_core_node *markdown_core_text_parse(markdown_core_parser *parser, markd
     // if we're at a newline, strip trailing spaces.
     if (markdown_core_is_line_end(markdown_core_inline_peek_char(inline_state))) {
         markdown_core_chunk_rtrim(&contents);
+    }
+
+    /* An untrimmed run is literal text of its surroundings and may continue
+     * the run before it, or be continued; a run trimmed at a line ending is
+     * a fresh node, as before. */
+    if (contents.len == endpos - startpos) {
+        return markdown_core_inline_state_make_literal_run(inline_state, startpos, endpos - 1);
     }
 
     markdown_core_node *new_inl = make_str(inline_state, startpos, endpos - 1, contents);
@@ -188,7 +208,16 @@ static void complete_inline(markdown_core_parser *parser, markdown_core_node *no
     }
 }
 
+static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
+    if (state->input.data[at] != '&') {
+        return true;
+    }
+    return at + 1 < state->input.len &&
+           (state->input.data[at + 1] == '#' || markdown_core_isalpha(state->input.data[at + 1]));
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TEXT = {
+    .can_start = can_start,
     .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
     .parse_text = markdown_core_text_parse,
     .complete_inline = complete_inline,

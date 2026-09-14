@@ -33,7 +33,15 @@ typedef struct {
     bufsize_t attributes_start;
     bufsize_t attributes_len;
     bufsize_t end;
+    /* The recognized source and its facts survive through value commitment. */
+    markdown_core_attribute_parser attributes;
 } parsed_directive;
+
+static void free_parsed_directive(markdown_core_parser *parser, parsed_directive *parsed) {
+    parser->oom |= parsed->attributes.oom;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->attribute_work += parsed->attributes.work;)
+    markdown_core_attribute_parser_free(&parsed->attributes);
+}
 
 static int is_directive_node(markdown_core_node *node) {
     return node && (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE || node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK);
@@ -149,6 +157,11 @@ static int set_chunk_bytes(markdown_core_mem *mem, markdown_core_chunk *chunk, c
     return 1;
 }
 
+const markdown_core_chunk *markdown_core_elements_directive_name(markdown_core_node *node) {
+    node_directive *directive = get_directive(node);
+    return directive ? &directive->name : NULL;
+}
+
 const char *markdown_core_elements_get_directive_name(markdown_core_node *node) {
     node_directive *directive = get_directive(node);
     if (!directive || !directive->name.len) {
@@ -194,10 +207,14 @@ int markdown_core_elements_set_directive_name(markdown_core_node *node, const ch
     return 1;
 }
 
+/* The payload lives in the node's record (opaque_size), claimed here for
+ * the directive kinds and never for a label; a block directive converted
+ * from a paragraph takes one through markdown_core_node_opaque_take. Owned
+ * roots are released by the shared iterative node destructor. */
 static void directive_opaque_alloc(const markdown_core_element *element, markdown_core_mem *mem,
                                    markdown_core_node *node) {
     if (is_directive_node(node)) {
-        node->opaque = mem->calloc(1, sizeof(node_directive));
+        markdown_core_node_opaque_take(node, sizeof(node_directive));
     }
 }
 
@@ -207,22 +224,16 @@ static void directive_opaque_free(const markdown_core_element *element, markdown
     if (!directive) {
         return;
     }
-
-    /* Owned roots are released by the shared iterative node destructor. */
     markdown_core_chunk_free(mem, &directive->name);
-    mem->free(directive);
-    node->opaque = NULL;
 }
 
 /* Recognize the shared attribute grammar without constructing semantic
  * strings or records. The parser owns and accounts for recognition work. */
 static int scan_directive_attributes(markdown_core_parser *parser, unsigned char *data, bufsize_t len, bufsize_t *pos,
                                      parsed_directive *parsed) {
-    markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = data, .length = len};
-    bufsize_t end = markdown_core_attributes_end(&attributes, *pos);
-    parser->oom |= attributes.oom;
-    parser->attribute_work += attributes.work;
-    markdown_core_attribute_parser_free(&attributes);
+    parsed->attributes = (markdown_core_attribute_parser){.mem = parser->mem, .data = data, .length = len};
+    bufsize_t end = markdown_core_attributes_end(&parsed->attributes, *pos);
+    parser->oom |= parsed->attributes.oom;
     if (!end) {
         return 0;
     }
@@ -257,18 +268,18 @@ static int parse_directive_suffix(markdown_core_parser *parser, unsigned char *d
     return 1;
 }
 
-static markdown_core_node *make_label_node(const markdown_core_element *element, markdown_core_mem *mem,
+static markdown_core_node *make_label_node(const markdown_core_element *element, markdown_core_parser *parser,
                                            const unsigned char *label, bufsize_t label_len, int start_line,
                                            int start_column, int end_column) {
     markdown_core_node *label_node =
-        markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_DIRECTIVE_LABEL, mem, element);
+        markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL, element);
     if (!label_node) {
         return NULL;
     }
 
-    markdown_core_strbuf_put(&label_node->content, label, label_len);
-    if (label_node->content.oom) {
-        markdown_core_node_free(label_node);
+    markdown_core_strbuf_put(label_node->content, label, label_len);
+    if (label_node->content->oom) {
+        markdown_core_node_recycle(parser->arena, label_node);
         return NULL;
     }
     label_node->start_line = label_node->end_line = start_line;
@@ -282,20 +293,19 @@ static markdown_core_node *make_label_node(const markdown_core_element *element,
     return label_node;
 }
 
-static int attach_label_node(const markdown_core_element *element, markdown_core_node *directive_node,
-                             const unsigned char *label, bufsize_t label_len, int start_line, int start_column,
-                             int end_column) {
+static int attach_label_node(const markdown_core_element *element, markdown_core_parser *parser,
+                             markdown_core_node *directive_node, const unsigned char *label, bufsize_t label_len,
+                             int start_line, int start_column, int end_column) {
     markdown_core_node *label_node;
 
-    label_node = make_label_node(element, markdown_core_node_mem(directive_node), label, label_len, start_line,
-                                 start_column, end_column);
+    label_node = make_label_node(element, parser, label, label_len, start_line, start_column, end_column);
     if (!label_node) {
         return 0;
     }
 
     node_directive *directive = get_directive(directive_node);
     if (!directive || directive->label) {
-        markdown_core_node_free(label_node);
+        markdown_core_node_recycle(parser->arena, label_node);
         return 0;
     }
 
@@ -319,23 +329,25 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
     }
     if (parsed->attributes_len) {
         const unsigned char *source = data + parsed->attributes_start;
+        markdown_core_attributes *attributes = markdown_core_node_attributes_mut(node, parser->arena);
+        if (!attributes) {
+            return 0;
+        }
         if (*source == '{') {
-            markdown_core_attribute_parser attributes = {.mem = mem, .data = source, .length = parsed->attributes_len};
             bufsize_t end;
-            int matched = markdown_core_attributes_parse(&attributes, 0, &node->attributes, &end);
-            parser->attribute_work += attributes.work;
-            parser->oom |= attributes.oom;
-            markdown_core_attribute_parser_free(&attributes);
-            if (!matched) {
+            markdown_core_attributes value = {0};
+            if (!markdown_core_attributes_parse(&parsed->attributes, parsed->attributes_start, &value, &end)) {
                 return 0;
             }
+            markdown_core_attributes_free(mem, attributes);
+            *attributes = value;
         } else {
-            node->attributes.classes = mem->calloc(1, sizeof(markdown_core_chunk));
-            if (!node->attributes.classes) {
+            attributes->classes = mem->calloc(1, sizeof(markdown_core_chunk));
+            if (!attributes->classes) {
                 return 0;
             }
-            node->attributes.class_count = node->attributes.class_capacity = 1;
-            if (!set_chunk_bytes(mem, node->attributes.classes, source, parsed->attributes_len)) {
+            attributes->class_count = attributes->class_capacity = 1;
+            if (!set_chunk_bytes(mem, attributes->classes, source, parsed->attributes_len)) {
                 return 0;
             }
         }
@@ -350,7 +362,7 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
         int label_start_column = start_column + (int)parsed->label_start;
         int label_end_column = label_start_column + (int)parsed->label_len + 1;
 
-        if (!attach_label_node(element, node, data + parsed->label_start, parsed->label_len, start_line,
+        if (!attach_label_node(element, parser, node, data + parsed->label_start, parsed->label_len, start_line,
                                label_start_column, label_end_column)) {
             return 0;
         }
@@ -363,7 +375,7 @@ static markdown_core_node *make_directive_node(const markdown_core_element *elem
                                                const unsigned char *name, bufsize_t name_len, int start_line,
                                                int start_column, int end_line, int end_column) {
     markdown_core_node *node =
-        markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_DIRECTIVE, parser->mem, element);
+        markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_DIRECTIVE, element);
     node_directive *directive;
 
     if (!node) {
@@ -374,14 +386,12 @@ static markdown_core_node *make_directive_node(const markdown_core_element *elem
     directive = get_directive(node);
     if (!directive) {
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(parser->arena, node);
         return NULL;
     }
-    if (!set_chunk_bytes(parser->mem, &directive->name, name, name_len)) {
-        parser->oom = true;
-        markdown_core_node_free(node);
-        return NULL;
-    }
+    /* The name is a slice of the inline input the node's tree keeps alive,
+     * borrowed like a Text; the facade terminates it when it is asked for. */
+    directive->name = (markdown_core_chunk){(unsigned char *)name, name_len, 0};
     node->start_line = start_line;
     node->end_line = end_line;
     node->start_column = start_column;
@@ -471,7 +481,16 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
         return NULL;
     }
     directive = get_directive(node);
-    node->attributes = attributes;
+    if (attributes.anchor.data || attributes.classes || attributes.records) {
+        markdown_core_attributes *owned = markdown_core_node_attributes_mut(node, parser->arena);
+        if (!owned) {
+            markdown_core_attributes_free(parser->mem, &attributes);
+            markdown_core_node_recycle(parser->arena, node);
+            parser->oom = true;
+            return NULL;
+        }
+        *owned = attributes;
+    }
 
     if (has_label) {
         /* Consume to the `]` first and read the label's end back from the
@@ -481,17 +500,17 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
         int label_line = start_line;
         int label_column = start_column + (int)(label_open - offset);
         markdown_core_inline_state_set_offset(inline_state, (int)(label_start + label_len + 1));
-        label_node = make_label_node(element, parser->mem, chunk->data + label_start, label_len, label_line,
-                                     label_column, markdown_core_inline_state_get_column(inline_state) - 1);
+        label_node = make_label_node(element, parser, chunk->data + label_start, label_len, label_line, label_column,
+                                     markdown_core_inline_state_get_column(inline_state) - 1);
         if (!label_node) {
-            markdown_core_node_free(node);
+            markdown_core_node_recycle(parser->arena, node);
             parser->oom = true;
             return NULL;
         }
         label_node->end_line = markdown_core_inline_state_get_line(inline_state);
         if (directive->label) {
-            markdown_core_node_free(label_node);
-            markdown_core_node_free(node);
+            markdown_core_node_recycle(parser->arena, label_node);
+            markdown_core_node_recycle(parser->arena, node);
             parser->oom = true;
             return NULL;
         }
@@ -592,7 +611,7 @@ static int probe_directive_block(markdown_core_parser *parser, markdown_core_chu
     (void)reader;
     parsed_directive parsed;
     bool matched = scan_directive_block(parser, input->data, input->len, first, indent, &parsed) != 0;
-
+    free_parsed_directive(parser, &parsed);
     return matched;
 }
 
@@ -607,31 +626,33 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
     markdown_core_node *node;
     node_directive *directive;
     if (!colon_count) {
-
+        free_parsed_directive(parser, &parsed);
         return NULL;
     }
 
     node = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
                                           (int)first_nonspace + 1);
     if (!node) {
-
+        free_parsed_directive(parser, &parsed);
         return NULL;
     }
 
     markdown_core_node_set_element(node, element);
-    node->opaque = parser->mem->calloc(1, sizeof(node_directive));
-    if (!node->opaque) {
+    if (!markdown_core_node_opaque_take(node, sizeof(node_directive))) {
+        free_parsed_directive(parser, &parsed);
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(parser->arena, node);
 
         return NULL;
     }
 
-    if (!apply_parsed_directive(element, parser, node, input, &parsed, markdown_core_parser_get_line_number(parser),
-                                (int)first_nonspace)) {
+    int applied = apply_parsed_directive(element, parser, node, input, &parsed,
+                                         markdown_core_parser_get_line_number(parser), (int)first_nonspace);
+    free_parsed_directive(parser, &parsed);
+    if (!applied) {
         /* The suffix already validated; failure here is allocation loss. */
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_node_recycle(parser->arena, node);
 
         return NULL;
     }
@@ -749,7 +770,18 @@ static int visit_owned_subtrees(const markdown_core_element *element, markdown_c
 /* The opener consumes the complete token; the shared inline parser parses its
  * owned label before continuing beyond it. No close-bracket dispatch exists. */
 
+static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
+    markdown_core_chunk *input = markdown_core_inline_state_get_chunk(state);
+    if (at + 1 >= input->len) {
+        return false;
+    }
+    int32_t cp;
+    markdown_core_utf8proc_iterate(input->data + at + 1, input->len - at - 1, &cp);
+    return markdown_core_utf8proc_is_letter(cp);
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
+    .can_start = can_start,
     .interrupts_paragraph = true,
 
     .pending_close = true,
@@ -760,11 +792,13 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .continues_block = directive_block_continues,
     .maximum_block_indent = 3,
     .try_opening_block = open_directive_block,
+    .block_start_bytes = ":",
     .probe_block = probe_directive_block,
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,
     .contains_inlines_func = contains_inlines,
     .accepts_lines_func = accepts_lines,
+    .opaque_size = sizeof(node_directive),
     .opaque_alloc_func = directive_opaque_alloc,
     .opaque_free_func = directive_opaque_free,
     .visit_owned_subtrees_func = visit_owned_subtrees,

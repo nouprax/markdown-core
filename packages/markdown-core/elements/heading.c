@@ -36,7 +36,7 @@ void markdown_core_block_register_heading(markdown_core_parser *parser, markdown
 
 static markdown_core_key_index_slot *anchor_slot(markdown_core_parser *parser, anchor_registry *registry,
                                                  markdown_core_chunk key) {
-    parser->anchor_work += (size_t)key.len + 1;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->anchor_work += (size_t)key.len + 1;)
     markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&registry->index, key.data, key.len);
     if (!slot) {
         parser->oom = true;
@@ -50,8 +50,10 @@ void markdown_core_block_reserve_node_anchor(markdown_core_parser *parser, ancho
     if (!anchor->len) {
         return;
     }
-    parser->anchor_work++;
-    if (anchor != &node->attributes.anchor) {
+    MARKDOWN_CORE_DIAGNOSTIC(parser->anchor_work++;)
+    bool shared = (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED) &&
+                  node->as.link->resource && anchor == &node->as.link->resource->attributes.anchor;
+    if (shared) {
         const unsigned char *identity = (const unsigned char *)&node->as.link->resource;
         void *existing = NULL;
         if (!markdown_core_key_index_insert(&registry->resources, identity, sizeof(node->as.link->resource),
@@ -94,12 +96,28 @@ void markdown_core_block_dispose_headings(markdown_core_parser *parser, markdown
         markdown_core_dispose_heading(&headings->values[i]);
     }
     parser->mem->free(headings->values);
+    parser->mem->free(headings->projection_stack);
     *headings = (markdown_core_heading_collection){0};
+}
+
+/* A suspended inline state is a transaction record: taken from the parse
+ * arena's pool and handed back when the heading resumes or is disposed. */
+static markdown_core_inline_state *take_pending_state(markdown_core_parser *parser) {
+    return parser->arena ? markdown_core_arena_take(parser->arena, sizeof(markdown_core_inline_state))
+                         : parser->mem->calloc(1, sizeof(markdown_core_inline_state));
+}
+
+static void release_pending_state(markdown_core_inline_state *pending) {
+    if (pending->arena) {
+        markdown_core_arena_recycle(pending->arena, pending, sizeof(*pending));
+    } else {
+        pending->mem->free(pending);
+    }
 }
 
 static void project_anchor_literal(markdown_core_parser *parser, markdown_core_strbuf *base, const unsigned char *text,
                                    bufsize_t length) {
-    parser->anchor_work += (size_t)length;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->anchor_work += (size_t)length;)
     markdown_core_utf8proc_anchor(base, text, length);
 }
 
@@ -127,12 +145,15 @@ static bool push_anchor_projection(markdown_core_parser *parser, anchor_projecti
 }
 
 static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node *heading, markdown_core_strbuf *base) {
-    anchor_projection_stack stack = {0};
+    /* One stack serves every heading of the parse; it is kept at its peak on
+     * the collection and released with it. */
+    anchor_projection_stack stack = {.values = parser->headings.projection_stack,
+                                     .capacity = parser->headings.projection_capacity};
     push_anchor_projection(parser, &stack, heading->first_child, ANCHOR_CONTENT);
     while (stack.count && !parser->oom && !base->oom) {
         anchor_projection projection = stack.values[--stack.count];
         markdown_core_node *node = projection.node;
-        parser->anchor_work++;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->anchor_work++;)
         if (projection.kind == ANCHOR_KEY) {
             project_anchor_literal(parser, base, (const unsigned char *)"@", 1);
             project_anchor_literal(parser, base, node->as.citation->value.data, node->as.citation->value.len);
@@ -156,8 +177,12 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node
             project_anchor_literal(parser, base, node->as.literal->data, node->as.literal->len);
             break;
         case MARKDOWN_CORE_NODE_FORMULA: {
-            const char *literal = markdown_core_elements_get_formula_literal(node);
-            project_anchor_literal(parser, base, (const unsigned char *)literal, (bufsize_t)strlen(literal));
+            /* The literal as bytes: a borrowed slice needs no terminator and
+             * no copy that could fail here. */
+            const markdown_core_chunk *literal = markdown_core_elements_formula_literal(node);
+            if (literal) {
+                project_anchor_literal(parser, base, literal->data, literal->len);
+            }
             break;
         }
         case MARKDOWN_CORE_NODE_SOFT_BREAK:
@@ -203,7 +228,8 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node
             break;
         }
     }
-    parser->mem->free(stack.values);
+    parser->headings.projection_stack = stack.values;
+    parser->headings.projection_capacity = stack.capacity;
     if (!base->size) {
         markdown_core_strbuf_puts(base, "section");
     }
@@ -229,7 +255,12 @@ void markdown_core_block_finalize_heading_anchors(markdown_core_parser *parser,
     markdown_core_strbuf base = MARKDOWN_CORE_BUF_INIT(parser->mem);
     for (size_t i = 0; i < headings->count && !parser->oom; i++) {
         markdown_core_heading_parse *heading = &headings->values[i];
-        markdown_core_chunk *anchor = &heading->node->attributes.anchor;
+        markdown_core_attributes *attributes = markdown_core_node_attributes_mut(heading->node, parser->arena);
+        if (!attributes) {
+            parser->oom = true;
+            break;
+        }
+        markdown_core_chunk *anchor = &attributes->anchor;
         if (!anchor->len) {
             markdown_core_strbuf_clear(&base);
             heading_anchor_base(parser, heading->node, &base);
@@ -298,7 +329,7 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
             (inline_state.pos != inline_state.text_end && inline_state.pos >= inline_state.opaque_end &&
              (c == '[' || c == ']' ||
               ((c == '!' || c == '^') && markdown_core_inline_peek_char_n(&inline_state, 1) == '[')))) {
-            heading->pending = parser->mem->calloc(1, sizeof(inline_state));
+            heading->pending = take_pending_state(parser);
             if (heading->pending) {
                 *heading->pending = inline_state;
                 return;
@@ -339,16 +370,15 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
 void markdown_core_finish_heading(markdown_core_parser *parser, markdown_core_heading_parse *heading) {
     if (heading->pending) {
         markdown_core_inline_finish_inlines(parser, heading->pending);
-        parser->mem->free(heading->pending);
+        release_pending_state(heading->pending);
         heading->pending = NULL;
     }
 }
 
 void markdown_core_dispose_heading(markdown_core_heading_parse *heading) {
     if (heading->pending) {
-        markdown_core_mem *mem = heading->pending->mem;
         markdown_core_inline_clear_inlines(heading->pending);
-        mem->free(heading->pending);
+        release_pending_state(heading->pending);
         heading->pending = NULL;
     }
 }
@@ -357,13 +387,18 @@ void markdown_core_heading_begin_inlines(markdown_core_parser *parser, markdown_
                                          markdown_core_node *parent) {
     if (parent->kind == MARKDOWN_CORE_NODE_HEADING) {
         bufsize_t line = inline_state->input.len;
-        while (line > 0 && !markdown_core_is_line_end(inline_state->input.data[line - 1])) {
-            line--;
-        }
         inline_state->attributes = (markdown_core_attribute_parser){
             .mem = parser->mem, .data = inline_state->input.data, .length = inline_state->input.len};
-        inline_state->heading_attributes_start =
-            markdown_core_attributes_tail(&inline_state->attributes, line, inline_state->input.len);
+        inline_state->heading_attributes_start = -1;
+        /* Only a heading whose content ends in `}` can carry a tail; no other
+         * heading is walked back to its last line or offered to the scanner. */
+        if (line && inline_state->input.data[line - 1] == '}') {
+            while (line > 0 && !markdown_core_is_line_end(inline_state->input.data[line - 1])) {
+                line--;
+            }
+            inline_state->heading_attributes_start =
+                markdown_core_attributes_tail(&inline_state->attributes, line, inline_state->input.len);
+        }
         if (inline_state->heading_attributes_start >= 0) {
             bufsize_t end = inline_state->heading_attributes_start;
             while (end > line &&
@@ -407,8 +442,17 @@ void markdown_core_heading_begin_inlines(markdown_core_parser *parser, markdown_
 bool markdown_core_heading_claim_tail(markdown_core_inline_state *inline_state, markdown_core_node *parent) {
     if (inline_state->pos == inline_state->text_end) {
         bufsize_t end;
-        if (markdown_core_attributes_parse(&inline_state->attributes, inline_state->heading_attributes_start,
-                                           &parent->attributes, &end)) {
+        markdown_core_attributes value = {0};
+        if (markdown_core_attributes_parse(&inline_state->attributes, inline_state->heading_attributes_start, &value,
+                                           &end)) {
+            markdown_core_attributes *owned = markdown_core_node_attributes_mut(parent, inline_state->arena);
+            if (!owned) {
+                markdown_core_attributes_free(inline_state->mem, &value);
+                inline_state->oom = 1;
+                return false;
+            }
+            markdown_core_attributes_free(inline_state->mem, owned);
+            *owned = value;
             inline_state->heading_label_end = inline_state->text_end;
             inline_state->pos = inline_state->input.len;
         }
@@ -424,8 +468,6 @@ bool markdown_core_heading_claim_tail(markdown_core_inline_state *inline_state, 
 static bool open_atx(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,
                      block_start *start) {
     bufsize_t matched = start->matched;
-
-    bufsize_t hashpos;
     int level = 0;
     bufsize_t heading_startpos = parser->first_nonspace;
 
@@ -435,11 +477,10 @@ static bool open_atx(markdown_core_parser *parser, markdown_core_node **containe
         return false;
     }
 
-    hashpos = markdown_core_chunk_strchr(input, '#', parser->first_nonspace);
-
-    while (peek_at(input, hashpos) == '#') {
+    /* The scanner matched the `#` run and the byte that ends it; the level
+     * is the run, read from the match rather than searched for again. */
+    while (level < (int)matched && peek_at(input, heading_startpos + level) == '#') {
         level++;
-        hashpos++;
     }
 
     (*container)->as.heading->level = level;
@@ -495,6 +536,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .name = "heading",
     .maximum_block_indent = 3,
     .scan_block_start = scan_heading,
+    .block_start_bytes = "#=-",
     .last_block_matches = continue_heading,
     .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
     .inline_content = true,

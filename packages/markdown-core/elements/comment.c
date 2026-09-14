@@ -132,7 +132,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     if (character != '%') {
         return NULL;
     }
-    parser->comment_scan_work++;
+    MARKDOWN_CORE_DIAGNOSTIC(parser->comment_scan_work++;)
     if (start + 1 >= input->len || input->data[start + 1] != '%') {
         return NULL;
     }
@@ -141,17 +141,13 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     if (close < 0) {
         return NULL;
     }
-    node = markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_COMMENT, parser->mem, element);
+    node = markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_COMMENT, element);
     if (!node) {
         parser->oom = true;
         return NULL;
     }
+    /* Borrowed from the content the node's tree keeps alive, like a Text. */
     *node->as.literal = markdown_core_chunk_dup(input, start + 2, close - start - 2);
-    if (!markdown_core_chunk_to_cstr(parser->mem, node->as.literal)) {
-        parser->oom = true;
-        markdown_core_node_free(node);
-        return NULL;
-    }
     /* The scope covers both delimiters and the body. */
     markdown_core_parser_content_place(parser, parent, start, &node->start_line, &node->start_column);
     markdown_core_parser_content_end_place(parser, parent, close + 1, &node->end_line, &node->end_column);
@@ -166,7 +162,12 @@ static const char *type_string(const markdown_core_element *element, markdown_co
 /* `%` ends a text run and is offered to the scanner, and that is the whole set. */
 static void finalize_comment(markdown_core_parser *, markdown_core_node *);
 
+static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
+    return at + 1 < state->input.len && state->input.data[at + 1] == '%';
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
+    .can_start = can_start,
     .interrupts_paragraph = true,
 
     .finalize_block = finalize_comment,
@@ -176,6 +177,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .last_block_matches = block_matches,
     .maximum_block_indent = 3,
     .try_opening_block = open_block,
+    .block_start_bytes = "%",
     .probe_block = probe_comment_block,
     .get_type_string_func = type_string,
     .accepts_lines_func = comment_accepts_lines,
@@ -249,7 +251,7 @@ markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state
 }
 
 static void finalize_comment(markdown_core_parser *parser, markdown_core_node *b) {
-    markdown_core_strbuf *node_content = &b->content;
+    markdown_core_strbuf *node_content = b->content;
 
     /* O3: a `%%` block comment arrives here with its lines in `content`:
      * the opener line contributed nothing, because the element that
@@ -276,6 +278,7 @@ bool markdown_core_comment_scan_html(markdown_core_inline_state *inline_state, b
     } else if (inline_state->input.data[pos + 3] == '-' && inline_state->input.data[pos + 4] == '>') {
         *length = 5;
     } else {
+        MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->html_scan_work++;)
         *length = scan_html_comment(inline_state->input.data, inline_state->input.len, pos + 1);
         if (*length > 0) {
             *length += 1; // prefix "<"

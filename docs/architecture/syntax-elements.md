@@ -72,7 +72,10 @@ expose the shared parser services and the single `markdown_core_inline_state`
 type, whose parameters are named `inline_state`; they do not
 create another parser or transfer AST ownership. Citation, bracket and heading
 state records live beside their grammar owners. Inline state resources are released
-through their owners' disposal hooks, including on allocation failure.
+through their owners' disposal hooks, including on allocation failure. The
+implementers of `init_inline`, `finish_inline` and `dispose_inline` are
+projected from the registry whenever it is set or extended, so an inline root
+calls exactly those elements rather than consulting the whole registry.
 
 The immutable registry projects node kinds to element structure descriptors separately
 from scanner precedence. Structure follows a node's current kind; its existing
@@ -106,9 +109,12 @@ cached lookahead.
 Inline descriptors declare protected-token, ordinary-alternative or literal-
 fallback precedence. One ordered dispatch loop handles all three. Its byte index
 is built once per parse, preserving candidate order and set membership without
-walking unrelated descriptors for each token. Inline state lifecycle and block
-alternative lists likewise include only participating descriptors, in registry
-order. A successful
+walking unrelated descriptors for each token. Block owners are projected the
+same way: each element with block hooks declares `block_start_bytes`, the
+first non-space bytes at which any of its hooks can accept (NULL for every
+byte), and a line's block-start arbitration visits only the owners of its
+byte, in registry order. Inline state lifecycle and block alternative lists
+likewise include only participating descriptors, in registry order. A successful
 alternative may consume input without emitting a node, as bracket commitment
 does. Ordinary elements, including test probes, still run before the literal
 `!`, `[` and backslash fallbacks. Every text-terminating byte comes from a
@@ -133,7 +139,15 @@ runs do not create unnecessary Text nodes or get rescanned at dispatch.
 
 Link's shared bracket owner arbitrates explicit Link/Embedded tails, Span, citation
 tails/groups, shortcut links and named footnotes. Each alternative consumes
-the existing parsed range; none reparses bracket contents. Heading suspension,
+the existing parsed range; none reparses bracket contents. A bracket that no
+link tail follows is a shortcut candidate whose label is looked up only after
+Span, citation and bibliography have declined it by shape, and a map refuses
+a label whose folded first byte begins none of its keys before normalizing
+it, so a `[@key]`, `[^note]` or `[text]{.c}` in a document with headings
+folds nothing on the reference map. A named footnote's label is folded once,
+by the definition lookup, and the call's id copies the record's spelling; a
+definition folds its label once into its record and copies it back the same
+way. Heading suspension,
 field completion, ordinary whitespace boundaries and source positions use
 the same services as ordinary inline parsing.
 
@@ -159,7 +173,42 @@ The entry rejects invalid or empty ranges before forming any pointers, then
 recognizes only that borrowed slice without allocation, sentinel writes or
 padding. The generated functions own this boundary; there is no shared scanner
 wrapper, callback dispatch or forwarding macro. Table's cursor-based dash
-scanner additionally reports matched spans for its geometry pass.
+scanner additionally reports matched spans for its geometry pass. Every scanner
+has a caller; a grammar's bounded repeats -- the autolink scheme of 2..32
+bytes, domain labels of 1..63 -- are length checks on the recognized span
+rather than automaton states, and the kind-7 HTML block start is the inline
+tag scanner followed by a check of the line's tail, so each automaton exists
+once.
+
+An ATX heading's level is read from the `#` run the block scanner matched,
+and only a heading whose content ends in `}` is walked back to its last line
+and offered to the attribute tail scanner. A front-matter member's plain key
+is matched against the field names where it lies on the source, so an unknown
+member is decoded no further and copies nothing; the printable check answers
+ASCII by the byte and decodes only scalars above it.
+
+The citation brace prescan, which runs once per inline root at its first
+`@{`, shares the inline scan's HTML skip state: an unclosed comment, CDATA
+section, declaration or instruction is scanned to the end of the root by
+whichever pass meets it first and by neither again. A `<` is offered to the
+tag and autolink scanners only when the byte after it can begin one of them,
+and an opaque span inside a key is decoded only while the key is still valid.
+
+The Unicode category predicates (letter, number, mark, punctuation,
+punctuation-or-symbol, space) answer ASCII inline from the dialect's ctype
+classes and reach a generated Unicode 17 range table, by binary search, only
+for a scalar above ASCII; `scripts/generate-unicode-categories.mjs` emits every
+table from the pinned runtime, so no predicate is a hand-written comparison
+chain and an ASCII document searches no table at all.
+
+A pipe row is recognized once per line: the open table's matcher keeps the
+geometry it read, with the row's cells, on the parser, and the row opener
+that the block-start pass reaches on the same line reuses it. A header is the
+last line of its paragraph and is located from the buffer's end, so the
+paragraph in front of it is never walked. Grid, multiline and simple searches
+carve their scratch arrays from one parser region sized to the peak a
+candidate asked for, and a line's column map is one allocation sized by the
+line.
 
 The generator retains each grammar's encoding, and the Makefile and
 reproducibility check use the same pinned re2c command. Ordinary builds consume

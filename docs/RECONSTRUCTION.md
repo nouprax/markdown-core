@@ -203,9 +203,10 @@ own natural foreign-function boundary:
   fixed-width node records, relation indexes, and UTF-8 bytes from linear
   memory before freeing it; bottom-up reconstruction is iterative.
 
-The parser's element postprocessing is depth-independent as well. In
-particular, enabling formulas must not recursively visit every node in a deep
-document that contains no formula. Correctness tests parse and inspect 10,000
+The parser's node finishing is depth-independent as well: elements finish
+nodes through a per-node hook of the core's one explicit-stack walk, so
+enabling formulas never visits a deep document that contains no formula a
+second time, let alone recursively. Correctness tests parse and inspect 10,000
 nested lists through every binding boundary.
 
 The JNI payload is not the Kotlin/Native adapter, and neither is the ES Wasm
@@ -247,6 +248,7 @@ ctest --preset correctness-tsan
 sh scripts/format-c.sh --check
 sh scripts/format-cmake.sh --check
 bash scripts/audit-public-surface.sh
+sh scripts/audit-build-flags.sh
 bash scripts/audit-package-contents.sh
 bash scripts/audit-test-topology.sh
 node scripts/audit-source-lists.mjs
@@ -284,6 +286,29 @@ to the versioned native C workload and binary size described above.
 Binding conformance and packaging tests remain part of the product boundary;
 they must parse through the same one-shot semantics rather than reproduce C
 parser behavior independently.
+
+Every target that carries the engine is built under one release policy,
+`packages/markdown-core/cmake/MarkdownCoreBuildFlags.cmake`: hidden
+visibility with the export list as the only public surface, `NDEBUG` in the
+optimized configurations, and interprocedural optimization there when the
+toolchain supports it (`MARKDOWN_CORE_LTO`, on by default). The CMake
+archives and facade library, the diagnostics archive, the CLI and both Kotlin
+JNI payloads apply it, and every program the tree links against an engine
+archive (the runners, tests and benchmarks) links across units in the same
+configurations, since clang loads its LTO linker plugin only for a link that
+asks for it. The objects are fat where the compiler can make them, native
+code beside the intermediate code, so an installed archive links under any
+toolchain (Kotlin/Native links the engine with its own clang) and `nm` still
+tells its constants from its variables; where it cannot, an archive is
+compiled per unit and only the shared library and the programs optimize
+across units; the Swift package defines `NDEBUG` in its release
+configuration and its product artifact is a release build; the Wasm build
+optimizes across all of its units with `-flto`. Sanitizer configurations keep
+assertions and stay per-unit. Trivial kind-to-descriptor lookups and buffer
+primitives are defined in headers, so every build inlines them without link
+time optimization. `scripts/audit-build-flags.sh` holds each producer to this
+policy; any performance measurement of a binding comes from its release
+configuration only.
 
 ## 9. Change discipline
 

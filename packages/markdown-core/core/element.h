@@ -43,8 +43,23 @@ typedef enum {
     MARKDOWN_CORE_CONTENT_PROSE,
     MARKDOWN_CORE_CONTENT_LITERAL
 } markdown_core_content_mode;
-const markdown_core_element *markdown_core_structure_for_kind(markdown_core_node_type kind);
-const markdown_core_element *markdown_core_node_structure(const markdown_core_node *node);
+/* The immutable kind -> structure projections, indexed by the kind's value
+ * bits. Defined with the element registry; looked up inline everywhere. */
+extern const markdown_core_element *const markdown_core_block_structure[];
+extern const markdown_core_element *const markdown_core_inline_structure[];
+extern const size_t markdown_core_block_structure_count, markdown_core_inline_structure_count;
+
+static MARKDOWN_CORE_INLINE const markdown_core_element *
+markdown_core_structure_for_kind(markdown_core_node_type kind) {
+    unsigned index = kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+    if (MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind)) {
+        return index < markdown_core_inline_structure_count ? markdown_core_inline_structure[index] : NULL;
+    }
+    return index < markdown_core_block_structure_count ? markdown_core_block_structure[index] : NULL;
+}
+static MARKDOWN_CORE_INLINE const markdown_core_element *markdown_core_node_structure(const markdown_core_node *node) {
+    return node ? markdown_core_structure_for_kind((markdown_core_node_type)node->kind) : NULL;
+}
 
 struct markdown_core_element {
     /* Negative/zero/positive precedence separates protected tokens, ordinary
@@ -83,6 +98,12 @@ struct markdown_core_element {
     void (*finalize_block)(markdown_core_parser *, markdown_core_node *);
     void (*complete_block)(markdown_core_parser *, markdown_core_node *);
 
+    /* The bytes at a line's first non-space position at which any of this
+     * element's block hooks (scan_block_start, try_interrupting_block,
+     * try_opening_block, try_opening_paragraph) can accept. NULL means every
+     * byte, including a line end; an element whose grammar begins with a
+     * known byte is not consulted for lines that begin otherwise. */
+    const char *block_start_bytes;
     bool (*scan_block_start)(markdown_core_parser *, struct markdown_core_block_start_context *,
                              struct markdown_core_block_start *);
     /* Last refusal before an ordinary paragraph, after opaque blocks/tables. */
@@ -101,10 +122,11 @@ struct markdown_core_element {
     markdown_core_delimiter_rule delimiter_rule;
     unsigned char delimiter_character;
     delimiter_rule_spec delimiter;
-    /* Optional non-consuming token predicate. Text scanning consults the
-     * parser's byte-indexed projection; all owners of a shared byte must
-     * agree, otherwise that byte always reaches ordinary element dispatch. */
-    bool (*is_inline_start)(markdown_core_inline_state *, bufsize_t);
+    /* Optional non-consuming candidate predicate. False rules this owner out;
+     * true still requires a full match. Text scanning consults the parser's
+     * byte-indexed projection: any eligible owner can terminate text, and a
+     * missing predicate accepts unconditionally. */
+    bool (*can_start)(markdown_core_inline_state *, bufsize_t);
     markdown_core_match_inline_func match_inline;
     markdown_core_inline_from_delim_func insert_inline_from_delim;
     /* THREE byte sets, not one list.
@@ -132,9 +154,25 @@ struct markdown_core_element {
     markdown_core_contains_inlines_func contains_inlines_func;
     markdown_core_accepts_lines_func accepts_lines_func;
     markdown_core_postprocess_func postprocess_func;
+    markdown_core_finish_node_func finish_node;
+    /* Bytes of element payload every node created with this element carries
+     * inside its own record, zeroed, with `opaque` pointing at them: a
+     * formula's or a directive's fixed-size record costs no allocation of
+     * its own. `opaque_free_func` releases what the payload owns, never the
+     * payload storage, which is the node's -- in its record, or freed by
+     * the core when markdown_core_node_opaque_take had to allocate it. */
+    size_t opaque_size;
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;
 };
+
+/* Whether `node` can hold node-valued fields at all: the core kinds that do,
+ * or an element that declares a field visitor. Every other node is passed
+ * over without a visitor call. */
+static MARKDOWN_CORE_INLINE bool markdown_core_node_may_own_inline_subtrees(const markdown_core_node *node) {
+    return node->kind == MARKDOWN_CORE_NODE_DEFINITION || node->kind == MARKDOWN_CORE_NODE_CALLOUT ||
+           node->kind == MARKDOWN_CORE_NODE_CITE || (node->element && node->element->visit_owned_subtrees_func);
+}
 
 #endif

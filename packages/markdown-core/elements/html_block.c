@@ -29,7 +29,7 @@ static int continue_html(const markdown_core_element *self, markdown_core_parser
 }
 
 static void finalize_html(markdown_core_parser *parser, markdown_core_node *b) {
-    markdown_core_strbuf *node_content = &b->content;
+    markdown_core_strbuf *node_content = b->content;
 
     int html_block_type = b->as.html_block->block_type;
     b->as.html_block->literal = markdown_core_chunk_buf_detach(node_content);
@@ -90,6 +90,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML_BLOCK = {
     .name = "html_block",
     .maximum_block_indent = 3,
     .scan_block_start = scan_html,
+    .block_start_bytes = "<",
     .last_block_matches = continue_html,
     .content_mode = MARKDOWN_CORE_CONTENT_LITERAL,
     .finalize_block = finalize_html,

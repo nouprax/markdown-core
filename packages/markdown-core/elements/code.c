@@ -36,8 +36,11 @@ bufsize_t markdown_core_inline_scan_to_closing_backticks(markdown_core_inline_st
     if (!inline_state->backticks) {
         inline_state->backtick_capacity =
             inline_state->input.len < MAXBACKTICKS ? inline_state->input.len : MAXBACKTICKS;
-        inline_state->backticks =
-            inline_state->mem->calloc((size_t)inline_state->backtick_capacity + 1, sizeof(*inline_state->backticks));
+        size_t bytes = ((size_t)inline_state->backtick_capacity + 1) * sizeof(*inline_state->backticks);
+        /* A transaction record: from the parse arena's pool, back to it at
+         * disposal, so the first backtick of a root costs no allocation. */
+        inline_state->backticks = inline_state->arena ? markdown_core_arena_take(inline_state->arena, bytes)
+                                                      : inline_state->mem->calloc(1, bytes);
         if (!inline_state->backticks) {
             inline_state->oom = 1;
             return 0;
@@ -123,14 +126,31 @@ static markdown_core_node *handle_backticks(markdown_core_inline_state *inline_s
          * the run, so the literal was placed one column right -- and
          * consolidation then carried that end onto the whole merged text run:
          * `hi`lo` reported Text 1:5..1:8 inside a seven-byte paragraph. */
-        return make_str(inline_state, inline_state->pos - openticks.len, inline_state->pos - 1, openticks);
+        return markdown_core_inline_state_make_literal_run(inline_state, inline_state->pos - openticks.len,
+                                                           inline_state->pos - 1);
     } else {
-        markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(inline_state->mem);
-
-        markdown_core_strbuf_set(&buf, inline_state->input.data + startpos, endpos - startpos - openticks.len);
-        S_normalize_code(&buf);
-        if (buf.oom) {
-            inline_state->oom = 1;
+        const unsigned char *body = inline_state->input.data + startpos;
+        bufsize_t body_len = endpos - startpos - openticks.len;
+        markdown_core_chunk literal;
+        /* Normalization changes bytes only when the span holds a line ending
+         * or is padded by one space on each side; every other span borrows
+         * its slice of the content, like a Text. */
+        bool normalized = false, nonspace = false;
+        for (bufsize_t i = 0; i < body_len && !normalized; i++) {
+            normalized = body[i] == '\n' || body[i] == '\r';
+            nonspace |= body[i] != ' ';
+        }
+        normalized |= body_len >= 2 && nonspace && body[0] == ' ' && body[body_len - 1] == ' ';
+        if (!normalized) {
+            literal = markdown_core_chunk_dup(&inline_state->input, startpos, body_len);
+        } else {
+            markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(inline_state->mem);
+            markdown_core_strbuf_set(&buf, body, body_len);
+            S_normalize_code(&buf);
+            if (buf.oom) {
+                inline_state->oom = 1;
+            }
+            literal = markdown_core_chunk_buf_detach(&buf);
         }
 
         /* A CODE SPAN COVERS ITS BACKTICKS (Q45, answered 2026-08-23). Every
@@ -144,9 +164,8 @@ static markdown_core_node *handle_backticks(markdown_core_inline_state *inline_s
          * that make it one. Reporting the content alone also produced a start
          * that is not a place: `` `` `` alone on a line put the span at column
          * 3 of a two-byte line. */
-        markdown_core_node *node =
-            markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_CODE, startpos - openticks.len,
-                                              endpos - 1, markdown_core_chunk_buf_detach(&buf));
+        markdown_core_node *node = markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_CODE,
+                                                                     startpos - openticks.len, endpos - 1, literal);
         if (!node) {
             return NULL;
         }
@@ -162,7 +181,12 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
     return character == '`' ? handle_backticks(inline_state) : NULL;
 }
 static void dispose_inline(markdown_core_inline_state *inline_state) {
-    inline_state->mem->free(inline_state->backticks);
+    if (inline_state->backticks && inline_state->arena) {
+        markdown_core_arena_recycle(inline_state->arena, inline_state->backticks,
+                                    ((size_t)inline_state->backtick_capacity + 1) * sizeof(*inline_state->backticks));
+    } else {
+        inline_state->mem->free(inline_state->backticks);
+    }
     inline_state->backticks = NULL;
 }
 

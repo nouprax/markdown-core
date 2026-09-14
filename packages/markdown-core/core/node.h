@@ -12,6 +12,7 @@ extern "C" {
 #include "markdown-core-element-api.h"
 #include "buffer.h"
 #include "chunk.h"
+#include "arena.h"
 #include "attributes.h"
 #include "metadata.h"
 
@@ -189,6 +190,9 @@ typedef struct {
     struct markdown_core_node *metadata;
     struct markdown_core_node *footnotes;
     struct markdown_core_node *specimens;
+    /* The parse transaction's storage, owned by the root and released after
+     * every node it holds has released what it owns. NULL outside a parse. */
+    markdown_core_arena *arena;
 } markdown_core_document_value;
 
 /* A link reference definition is not a node (M2). The block phase reads it off
@@ -219,10 +223,16 @@ enum markdown_core_node__internal_flags {
     // Deferred contextual escape token, decoded when inline ownership is final.
     MARKDOWN_CORE_NODE__ESCAPED_SPACE = (1 << 6),
 
+    // A Text that is a borrowed, untrimmed slice of its block's content and
+    // nothing else refers to: the literal run the scanner may grow in place
+    // when the next literal continues where it ends
+    // (markdown_core_inline_state_make_literal_run).
+    MARKDOWN_CORE_NODE__LITERAL_RUN = (1 << 7),
+
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 7),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 8),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -264,9 +274,27 @@ typedef union {
     markdown_core_table_cell *table_cell;
 } markdown_core_node_data;
 
+/* Storage a node holds outside its arena record: a replacement payload, a
+ * content buffer or an attribute value that a kind conversion or a manual
+ * construction had to allocate separately. */
+enum {
+    MARKDOWN_CORE_NODE_OWNS_PAYLOAD = 1,
+    MARKDOWN_CORE_NODE_OWNS_CONTENT = 2,
+    MARKDOWN_CORE_NODE_OWNS_ATTRIBUTES = 4,
+    /* The element payload was allocated by markdown_core_node_opaque_take
+     * and the core frees it; otherwise it lives inside the record. */
+    MARKDOWN_CORE_NODE_OWNS_OPAQUE = 8,
+    MARKDOWN_CORE_NODE_OPAQUE_IN_RECORD = 16,
+};
+
 struct markdown_core_node {
-    markdown_core_attributes attributes;
-    markdown_core_strbuf content;
+    markdown_core_mem *mem;
+    /* Present only on a node that declared attributes or received a
+     * synthesized anchor; most nodes carry none. */
+    markdown_core_attributes *attributes;
+    /* The block content buffer: block kinds and inline roots carry one in
+     * their record, other inline kinds have none. */
+    markdown_core_strbuf *content;
 
     struct markdown_core_node *next;
     struct markdown_core_node *prev;
@@ -274,9 +302,6 @@ struct markdown_core_node {
     /* Intrusive list of content children. */
     struct markdown_core_node *first_child;
     struct markdown_core_node *last_child;
-
-    void *user_data;
-    markdown_core_free_func user_data_free_func;
 
     int start_line;
     int start_column;
@@ -291,17 +316,39 @@ struct markdown_core_node {
     int content_mark_offset;
     uint16_t kind;
     markdown_core_node_internal_flags flags;
+    /* The bytes this node and its initial record occupy, and whether they
+     * belong to a parse arena instead of the allocator. */
+    uint16_t record_size;
+    uint8_t arena_owned;
+    uint8_t owned;
 
     const markdown_core_element *element;
     /* Element-owned data, allocated by opaque_alloc_func and released by
      * opaque_free_func. It survives kind changes independently of `as`. */
     void *opaque;
 
-    /* Owns a replacement record, when present. The initial record belongs to
-     * the node allocation instead. `as` is the typed view in either case. */
-    void *node_data_allocation;
+    /* The typed view of the current record: the initial one inside the node's
+     * allocation, or a replacement the node owns (MARKDOWN_CORE_NODE_OWNS_PAYLOAD). */
     markdown_core_node_data as;
 };
+
+/* ONE constructor for every kind. A node made inside a parse transaction
+ * takes its storage from the transaction's arena and is recycled into it;
+ * one made without an arena is an ordinary allocation that `markdown_core_node_free`
+ * returns to the allocator. Either way the node releases what it owns
+ * (attributes, content, payload strings, resources) exactly once. */
+markdown_core_node *markdown_core_node_create(markdown_core_arena *arena, markdown_core_mem *mem,
+                                              markdown_core_node_type type, const markdown_core_element *element);
+/* Unlink and release a node and its subtree; arena-owned records return to
+ * `arena`'s pools. With a NULL arena this is `markdown_core_node_free`. */
+void markdown_core_node_recycle(markdown_core_arena *arena, markdown_core_node *node);
+/* The element payload of `size` bytes: the record's own when the node was
+ * created with an element declaring `opaque_size`, otherwise one allocated
+ * now and freed with the node. NULL on allocation failure. */
+void *markdown_core_node_opaque_take(markdown_core_node *node, size_t size);
+/* The node's attribute value, created on first use from `arena` (or from the
+ * node's allocator without one). NULL only when that allocation failed. */
+markdown_core_attributes *markdown_core_node_attributes_mut(markdown_core_node *node, markdown_core_arena *arena);
 
 /* The effective declaration is occurrence-local, then inherited from its
  * shared definition. All consumers, including synthesis reservation, use it. */
@@ -322,9 +369,7 @@ static inline markdown_core_cross_reference *markdown_core_node_cross_reference(
     return NULL;
 }
 
-static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_core_node *node) {
-    return node->content.mem;
-}
+static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_core_node *node) { return node->mem; }
 
 /* Takes ownership of `url` and `title` and answers a resource with one holder,
  * or NULL having taken nothing -- the caller still owns both chunks and frees
@@ -346,6 +391,14 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_BLOCK_P(markdown_core_node *
 
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_TYPE_INLINE_P(markdown_core_node_type node_type) {
     return (node_type & MARKDOWN_CORE_NODE_TYPE_MASK) == MARKDOWN_CORE_NODE_TYPE_INLINE;
+}
+
+/* Whether a node of `node_type` claims the text it encloses as its own: a
+ * link's text names what the link is, so a finisher that recognizes plain
+ * text (an address, say) leaves it be. The finishing walk asks this of every
+ * node event, which is why it is a kind test and not a descriptor lookup. */
+static MARKDOWN_CORE_INLINE bool markdown_core_node_type_claims_text(markdown_core_node_type node_type) {
+    return node_type == MARKDOWN_CORE_NODE_LINK;
 }
 
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_INLINE_P(markdown_core_node *node) {
