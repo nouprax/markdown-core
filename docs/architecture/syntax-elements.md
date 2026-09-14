@@ -115,7 +115,11 @@ bytes at which any of its hooks can accept (NULL for every byte), and the
 projection keeps, per first byte and per hook, the set of owners accepting it
 as one bit per owner, so a line's block-start arbitration visits only the
 owners of its byte that implement the hook, in registry order, and examines
-no other.
+no other. An owner whose bytes are broad narrows them itself before it
+parses: the list claims every letter for alphabetic and roman markers, and
+reads the few bytes that make a letter a marker (`a.`, `A)`, a numeral before
+`.` or `)`) before parsing one, so a line of prose that begins with a letter
+parses no marker.
 Inline state lifecycle and block alternative lists likewise include only
 participating descriptors, in registry order. These projections, with the
 text-terminating and flanking-transparent byte sets and the delimiter owners,

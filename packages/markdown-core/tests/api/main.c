@@ -3417,6 +3417,7 @@ typedef struct {
     size_t key_index_branches, key_index_operations;
     size_t block_dispatch, reference_probes;
     size_t completion, finishing, finishers, lifecycle, text_run_extensions, code_block_moves;
+    size_t content_map;
     size_t reference_folds, footnote_folds;
     size_t table_row_scans, table_row_work, table_geometry_allocations, table_scratch_growth;
     size_t html_scans;
@@ -3449,6 +3450,7 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
     work->lifecycle = parser->inline_lifecycle_work;
     work->text_run_extensions = parser->text_run_extensions;
     work->code_block_moves = parser->code_block_move_work;
+    work->content_map = parser->content_map_work;
     work->reference_folds = parser->refmap ? parser->refmap->fold_work : 0;
     work->table_row_scans = parser->table_row_scans;
     work->table_row_work = parser->table_row_work;
@@ -4346,6 +4348,101 @@ static void thematic_break_lines_skip_table_probe(test_batch_runner *runner) {
                "separators=%zu workspace=%zu lines=%zu steps=%zu",
                shape, n, work.tables, work.table_separator_scans, work.table_workspace_growth,
                work.table_geometry_lines, work.table_geometry_allocations);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+/* A line that begins with a letter is prose unless its first bytes are the
+ * shape of a marker (`a.`, `A)`, a roman numeral before `.` or `)`): the
+ * list element reads those bytes and parses no marker otherwise, and every
+ * letter or numeral marker it accepted before it still accepts. */
+static void letter_led_lines_parse_no_marker(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const char *const prose[] = {
+        "lorem ipsum dolor sit amet\n", "I am here\n",       "mix of words\n", "Vivid colors\n",
+        "x marks the spot\n",           "civic duty calls\n"};
+    for (size_t shape = 0; shape < sizeof(prose) / sizeof(*prose); shape++) {
+        for (size_t n = 64; n <= 1024; n *= 4) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < n; i++) {
+                markdown_core_strbuf_puts(&source, prose[shape]);
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "letter-led prose parses: shape=%zu n=%zu", shape, n);
+            if (root) {
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_PARAGRAPH), 1,
+                       "letter-led lines continue one paragraph: shape=%zu n=%zu", shape, n);
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LIST), 0, "and open no list: shape=%zu", shape);
+                markdown_core_node_free(root);
+            }
+            INT_EQ(runner, work.list_markers, 0, "a letter-led prose line parses no list marker: shape=%zu n=%zu",
+                   shape, n);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+    static const struct {
+        const char *source;
+        size_t items;
+    } markers[] = {
+        {"a. one\nb. two\n", 2},
+        {"A) one\nB) two\n", 2},
+        {"iv. four\nv. five\n", 2},
+        {"(a) one\n(b) two\n", 2},
+        {"I.  one\nII. two\n", 2},
+        {"mix. roman\n", 1},
+        {"I. one\n", 0},
+        {"#. one\n#. two\n", 2},
+        {"ab. not\n", 0},
+        {"a.b\n", 0},
+        {"i am\n", 0},
+        {"x) marks\n", 1},
+    };
+    for (size_t shape = 0; shape < sizeof(markers) / sizeof(*markers); shape++) {
+        inline_work work = {0};
+        markdown_core_node *root = markdown_core_parse_document_with_mem(
+            markers[shape].source, strlen(markers[shape].source), mem, measure_inline_work, &work);
+        OK(runner, root != NULL, "marker shape parses: shape=%zu", shape);
+        if (root) {
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LIST_ITEM), markers[shape].items,
+                   "letter and numeral markers are accepted as before: shape=%zu source=%s", shape,
+                   markers[shape].source);
+            markdown_core_node_free(root);
+        }
+    }
+}
+
+/* Placing an inline node walks the owner's map forward from the shared
+ * cursor to the run both ends lie in: a paragraph of many short lines costs
+ * a constant per node, not a search per end. */
+static void inline_placement_walks_the_map_once(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const char *const units[] = {"line of text\n", "*em* and `code`\n", "[a](/u) b\n"};
+    for (size_t shape = 0; shape < sizeof(units) / sizeof(*units); shape++) {
+        for (size_t n = 500; n <= 2000; n *= 2) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < n; i++) {
+                markdown_core_strbuf_puts(&source, units[shape]);
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "the long paragraph parses: shape=%zu n=%zu", shape, n);
+            if (root) {
+                size_t nodes = 0;
+                markdown_core_iter *iter = markdown_core_iter_new(root);
+                while (markdown_core_iter_next(iter) != MARKDOWN_CORE_EVENT_DONE) {
+                    nodes += markdown_core_iter_get_event_type(iter) == MARKDOWN_CORE_EVENT_ENTER;
+                }
+                markdown_core_iter_free(iter);
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_PARAGRAPH), 1, "one paragraph: shape=%zu", shape);
+                OK(runner, nodes >= 2 * n && work.content_map <= 4 * nodes + 16,
+                   "placement inspects a constant number of runs per node: shape=%zu n=%zu nodes=%zu work=%zu", shape,
+                   n, nodes, work.content_map);
+                markdown_core_node_free(root);
+            }
             markdown_core_strbuf_free(&source);
         }
     }
@@ -7969,6 +8066,8 @@ int main(int argc, char **argv) {
     table_row_geometry_reuse(runner);
     table_geometry_regions_reused(runner);
     thematic_break_lines_skip_table_probe(runner);
+    letter_led_lines_parse_no_marker(runner);
+    inline_placement_walks_the_map_once(runner);
     unicode_predicate_paths(runner);
     inline_construction_allocations(runner);
     table_dash_suffixes(runner);

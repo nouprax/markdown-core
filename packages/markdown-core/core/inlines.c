@@ -44,15 +44,61 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void place_trimmed_run(markdown_core_
     node->content_mark_offset = inline_state->owner->content_mark_offset + from;
 }
 
+/* The common placement, answered by one forward walk of the shared cursor:
+ * both ends of the span lie in the run the cursor stands on, or in one run
+ * ahead of it. The cursor moves to that run; it never moves back. An end
+ * behind the cursor, ends in different runs, or no map at all is left to
+ * the general projection, which answers the same and moves the cursor the
+ * same way; a walk that reached the run of the first end but not the last
+ * leaves the cursor there for it. */
+static bool place_in_one_run(markdown_core_inline_state *inline_state, markdown_core_node *node, int from, int to,
+                             int *run) {
+    markdown_core_parser *parser = inline_state->owner_parser;
+    const markdown_core_node *owner = inline_state->owner;
+    if (owner->content_mark_count <= 0 || from < 0 || to < from) {
+        return false;
+    }
+    bufsize_t at = from + owner->content_mark_offset, end_at = to + owner->content_mark_offset;
+    int lo = owner->content_mark, hi = lo + owner->content_mark_count - 1;
+    int cursor = inline_state->content_mark_cursor;
+    if (cursor < lo || cursor > hi) {
+        cursor = lo;
+    }
+    const markdown_core_line_mark *marks = parser->line_marks;
+    if (at < marks[cursor].content_offset) {
+        return false;
+    }
+    MARKDOWN_CORE_DIAGNOSTIC(int start = cursor;)
+    while (cursor < hi && marks[cursor + 1].content_offset <= at) {
+        cursor++;
+    }
+    MARKDOWN_CORE_DIAGNOSTIC(parser->content_map_work += 1 + (size_t)(cursor - start) + (cursor < hi);)
+    inline_state->content_mark_cursor = cursor;
+    if (cursor < hi && marks[cursor + 1].content_offset <= end_at) {
+        return false;
+    }
+    const markdown_core_line_mark *mark = &marks[cursor];
+    node->start_line = node->end_line = mark->line;
+    node->start_column = mark->column + (int)(at - mark->content_offset) * mark->source_step;
+    node->end_column = mark->column + (int)(end_at - mark->content_offset) * mark->source_step + mark->source_width - 1;
+    *run = cursor;
+    return true;
+}
+
 void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
                                       int to) {
     markdown_core_parser *parser = inline_state->owner_parser;
     markdown_core_node *owner = inline_state->owner;
-    int first = markdown_core_parser_project_content(parser, owner, from, false, &inline_state->content_mark_cursor,
+    int first, last, cursor_at_start;
+    if (place_in_one_run(inline_state, node, from, to, &first)) {
+        last = cursor_at_start = first;
+    } else {
+        first = markdown_core_parser_project_content(parser, owner, from, false, &inline_state->content_mark_cursor,
                                                      &node->start_line, &node->start_column);
-    int cursor_at_start = inline_state->content_mark_cursor;
-    int last = markdown_core_parser_project_content(parser, owner, to, true, &inline_state->content_mark_cursor,
+        cursor_at_start = inline_state->content_mark_cursor;
+        last = markdown_core_parser_project_content(parser, owner, to, true, &inline_state->content_mark_cursor,
                                                     &node->end_line, &node->end_column);
+    }
     if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0 && first >= 0 && last >= 0) {
         if (node->as.literal->data != inline_state->input.data + from) {
             node->content_mark_count = 0;

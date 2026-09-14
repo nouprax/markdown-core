@@ -241,9 +241,27 @@ static bool markdown_core_list_open(markdown_core_parser *parser, markdown_core_
     return true;
 }
 
+/* A letter begins a marker only as `a.`, `A)` or a roman numeral before
+ * `.` or `)`. Most lines begin with a letter and are prose: those few bytes
+ * are read here, the shape the marker parser reads for a letter, before a
+ * marker is parsed at all, and no marker the parser accepts is refused. */
+static bool letter_marker_shape(const markdown_core_chunk *input, bufsize_t at) {
+    if (!markdown_core_isalpha(BLOCK_PEEK(input, at))) {
+        return true;
+    }
+    at++;
+    while (strchr("ivxlcdmIVXLCDM", BLOCK_PEEK(input, at)) && BLOCK_PEEK(input, at)) {
+        at++;
+    }
+    return BLOCK_PEEK(input, at) == '.' || BLOCK_PEEK(input, at) == ')';
+}
+
 static bool markdown_core_list_scan(markdown_core_parser *parser, block_start_context *context, block_start *start) {
     markdown_core_chunk *input = context->input;
     int first = context->first;
+    if (!letter_marker_shape(input, first)) {
+        return false;
+    }
     if (!((start->matched = markdown_core_block_parse_list_marker(
                parser, input, first, context->container, context->column, context->paragraph, &start->list)))) {
         return false;
