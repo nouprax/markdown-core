@@ -255,11 +255,14 @@ Both scanner families are reproducible raw output of the pinned re2c version.
 
 A table query borrows its current line, immutable input lines and the parser's
 normalized EOF line until commitment finishes. One parser-owned line workspace
-is reused between queries; per-query column geometry and separator intervals
-are released before the next query. Deferred cell parsing starts after this
-borrow ends. Dash-run facts are scanned once per captured line and reused by
-all candidate grammars. Intervals are materialized only when needed; paragraph
-header precedence is queried only after its separator grammar matches.
+is reused between queries, and a query's column maps and separator intervals
+are carved from two parser-owned regions that every query starts empty, so no
+line allocates geometry of its own. Deferred cell parsing starts after this
+borrow ends. A dash or grid line whose next raw line is blank, or absent,
+begins no query at all: every grammar it could begin reads past that line.
+Dash-run facts are scanned once per captured line and reused by all candidate
+grammars. Intervals are materialized only when needed; paragraph header
+precedence is queried only after its separator grammar matches.
 
 Streaming block opening and captured table/caption queries share one core
 prefix recognizer. It returns borrowed marker facts; only streaming commitment

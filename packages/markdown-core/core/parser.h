@@ -334,10 +334,16 @@ struct markdown_core_parser {
      * terminator, or NULL for a line the parser rewrote. */
     const unsigned char *line_source;
     bufsize_t line_source_length;
-    /* One active table query borrows this reusable line workspace. Per-line
-     * geometry is released by the query; the allocation dies with the parser. */
+    /* One active table query borrows this reusable line workspace, and
+     * carves its lines' column maps and separator intervals from the two
+     * regions below, which every query starts empty (table.c). The
+     * allocations die with the parser. */
     struct markdown_core_table_source_line *table_lines;
     size_t table_lines_capacity;
+    int *table_columns;
+    size_t table_columns_capacity, table_columns_used;
+    struct markdown_core_table_interval *table_dashes;
+    size_t table_dashes_capacity, table_dashes_used;
     /* The pipe row geometry recognized on the current line, kept from the
      * open table's matcher for the row opener that follows on the same line;
      * and one scratch region every table search carves its arrays from,

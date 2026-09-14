@@ -4235,13 +4235,104 @@ static void table_row_geometry_reuse(test_batch_runner *runner) {
         if (root) {
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_ROW), rows, "every grid row is a row: rows=%zu",
                    rows);
-            INT_EQ(runner, work.table_geometry_allocations, work.table_geometry_lines,
-                   "a line's column map is one allocation: rows=%zu", rows);
+            OK(runner, work.table_geometry_allocations <= 16,
+               "the geometry regions grow to their peak in bounded steps: rows=%zu steps=%zu", rows,
+               work.table_geometry_allocations);
             OK(runner, work.table_scratch_growth <= 8,
                "the grid scratch region grows to its peak once: rows=%zu steps=%zu", rows, work.table_scratch_growth);
             markdown_core_node_free(root);
         }
         markdown_core_strbuf_free(&source);
+    }
+}
+
+/* Column maps and dash intervals are carved from two regions the parser keeps
+ * between queries: the second of two tables of one shape grows neither. */
+static void table_geometry_regions_reused(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const char *tables[] = {
+        "+---+---+\n| a | b |\n+---+---+\n| c | d |\n+---+---+\n",
+        "a   b\n--- ---\nc   d\ne   f\n\n",
+        "-----------\na       b\n---- ------\nc       d\n\ne       f\n-----------\n",
+    };
+    for (size_t shape = 0; shape < sizeof(tables) / sizeof(*tables); shape++) {
+        size_t steps[2] = {0}, lines[2] = {0};
+        for (size_t count = 1; count <= 2; count++) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            for (size_t i = 0; i < count; i++) {
+                if (i) {
+                    markdown_core_strbuf_putc(&source, '\n');
+                }
+                markdown_core_strbuf_puts(&source, tables[shape]);
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "table parses: shape=%zu count=%zu", shape, count);
+            if (root) {
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), count, "each table is one: shape=%zu",
+                       shape);
+                markdown_core_node_free(root);
+            }
+            steps[count - 1] = work.table_geometry_allocations;
+            lines[count - 1] = work.table_geometry_lines;
+            markdown_core_strbuf_free(&source);
+        }
+        OK(runner, lines[0] > 0 && lines[1] >= 2 * lines[0], "each table maps its own lines: shape=%zu lines=%zu,%zu",
+           shape, lines[0], lines[1]);
+        OK(runner, steps[0] > 0 && steps[1] == steps[0],
+           "the second table reuses the first table's geometry regions: shape=%zu steps=%zu,%zu", shape, steps[0],
+           steps[1]);
+    }
+}
+
+/* A dash or grid line above a blank line, or above nothing, opens no table:
+ * its next raw line says so before any lookahead, dash scan or column map,
+ * and the line is what it is without one -- a break, or text. */
+static void thematic_break_lines_skip_table_probe(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const struct {
+        const char *unit;
+        markdown_core_node_type kind;
+    } shapes[] = {
+        {"---\n\n", MARKDOWN_CORE_NODE_THEMATIC_BREAK},       {" -  -  -  -  -\n\n", MARKDOWN_CORE_NODE_THEMATIC_BREAK},
+        {" ________\n\n", MARKDOWN_CORE_NODE_THEMATIC_BREAK}, {" * * * * *\n\n", MARKDOWN_CORE_NODE_THEMATIC_BREAK},
+        {"-----\n \t \n", MARKDOWN_CORE_NODE_THEMATIC_BREAK}, {"---\r\n\r\n", MARKDOWN_CORE_NODE_THEMATIC_BREAK},
+        {"+---+---+\n\n", MARKDOWN_CORE_NODE_PARAGRAPH},      {"+---+---+\n\t\n", MARKDOWN_CORE_NODE_PARAGRAPH},
+    };
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        for (size_t n = 64; n <= 1024; n *= 4) {
+            const char *unit = shapes[shape].unit;
+            const char *eol = strchr(unit, '\n');
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            /* A leading paragraph: a document opening with a dash line opens
+             * front matter, not a break. */
+            markdown_core_strbuf_puts(&source, "text\n\n");
+            for (size_t i = 0; i + 1 < n; i++) {
+                markdown_core_strbuf_puts(&source, unit);
+            }
+            /* The last line ends the input, with or without its terminator. */
+            markdown_core_strbuf_put(&source, (const unsigned char *)unit, (bufsize_t)(eol - unit) + (int)(shape % 2));
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            OK(runner, root != NULL, "lines above blank lines parse: shape=%zu n=%zu", shape, n);
+            if (root) {
+                INT_EQ(runner, count_kind(root, shapes[shape].kind),
+                       n + (shapes[shape].kind == MARKDOWN_CORE_NODE_PARAGRAPH ? 1 : 0),
+                       "every line is its own block: shape=%zu n=%zu", shape, n);
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "no table opens above a blank line");
+                markdown_core_node_free(root);
+            }
+            OK(runner,
+               work.tables == 0 && work.table_separator_scans == 0 && work.table_workspace_growth == 0 &&
+                   work.table_geometry_lines == 0 && work.table_geometry_allocations == 0,
+               "a dash or grid line above a blank line is refused by its raw next line: shape=%zu n=%zu scans=%zu "
+               "separators=%zu workspace=%zu lines=%zu steps=%zu",
+               shape, n, work.tables, work.table_separator_scans, work.table_workspace_growth,
+               work.table_geometry_lines, work.table_geometry_allocations);
+            markdown_core_strbuf_free(&source);
+        }
     }
 }
 
@@ -7853,6 +7944,8 @@ int main(int argc, char **argv) {
     literal_run_growth(runner);
     bracket_owner_triage(runner);
     table_row_geometry_reuse(runner);
+    table_geometry_regions_reused(runner);
+    thematic_break_lines_skip_table_probe(runner);
     unicode_predicate_paths(runner);
     inline_construction_allocations(runner);
     table_dash_suffixes(runner);
