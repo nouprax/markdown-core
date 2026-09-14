@@ -6456,6 +6456,66 @@ static void attribute_sparse_memory(test_batch_runner *runner) {
 /* A tail scan asks every unescaped `{` of a line. A brace that no member can
  * follow is refused by its next byte alone, so `{{{...` allocates nothing;
  * a candidate a letter follows records one fact and a bounded record. */
+/* `id` is single-valued: a container may write it many times and the grammar
+ * keeps the last spelling, in the `id=` form and the `#` shorthand alike. A
+ * class or a record is the other case -- the grammar keeps every occurrence.
+ * The document's storage must follow that difference: writing the anchor two
+ * hundred times per heading costs one anchor per heading, because each write
+ * hands the copy it supersedes back to the pool the next one takes from,
+ * while writing two hundred classes costs two hundred. Without it every
+ * superseded spelling would sit in the document arena until the root was
+ * released.
+ *
+ * Each anchor spelling is measured against the accumulating spelling of its
+ * own length rather than a constant, so everything the two share -- the
+ * member count, the recognition facts, the input the headings carry -- is on
+ * both sides of the comparison and only the kept values differ. What each
+ * pair reports is how much the document grew when the members per heading
+ * went from one to two hundred. */
+static void anchor_storage_is_one_spelling(test_batch_runner *runner) {
+    markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
+    enum { HEADINGS = 300, KINDS = 2, STEPS = 2 };
+    static const struct {
+        const char *single, *accumulating;
+    } pairs[] = {{"#value-%04zu", ".value-%04zu"}, {"id=value-%04zu", "ck=value-%04zu"}};
+    static const size_t counts[STEPS] = {1, 200};
+    for (size_t pair = 0; pair < sizeof(pairs) / sizeof(*pairs); pair++) {
+        size_t grew[KINDS] = {0, 0};
+        for (size_t kind = 0; kind < KINDS; kind++) {
+            const char *form = kind ? pairs[pair].accumulating : pairs[pair].single;
+            size_t retained[STEPS] = {0, 0};
+            for (size_t step = 0; step < STEPS; step++) {
+                markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+                for (size_t heading = 0; heading < HEADINGS; heading++) {
+                    markdown_core_strbuf_puts(&source, "# T {");
+                    for (size_t i = 0; i < counts[step]; i++) {
+                        char one[32];
+                        snprintf(one, sizeof one, form, i);
+                        if (i) {
+                            markdown_core_strbuf_putc(&source, ' ');
+                        }
+                        markdown_core_strbuf_puts(&source, one);
+                    }
+                    markdown_core_strbuf_puts(&source, "}\n\n");
+                }
+                properties_live_bytes = 0;
+                markdown_core_node *root =
+                    markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
+                OK(runner, root != NULL, "the shape parses: pair=%zu kind=%zu count=%zu", pair, kind, counts[step]);
+                retained[step] = properties_live_bytes;
+                markdown_core_node_free(root);
+                INT_EQ(runner, properties_live_bytes, 0, "the document releases every allocation");
+                markdown_core_strbuf_free(&source);
+            }
+            grew[kind] = retained[1] - retained[0];
+        }
+        OK(runner, 5 * grew[0] <= 2 * grew[1],
+           "a repeated anchor costs one value where a repeated class costs all of them: pair=%zu anchor=%zu "
+           "accumulating=%zu",
+           pair, grew[0], grew[1]);
+    }
+}
+
 static void attribute_dense_tail_memory(test_batch_runner *runner) {
     markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
     for (size_t count = 1024; count <= 65536; count *= 4) {
@@ -8425,6 +8485,7 @@ int main(int argc, char **argv) {
     reference_definition_lifetime(runner);
     attribute_sparse_memory(runner);
     attribute_dense_tail_memory(runner);
+    anchor_storage_is_one_spelling(runner);
     parse_transaction_storage(runner);
     arena_recycling(runner);
     attribute_linear_work(runner);

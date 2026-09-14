@@ -319,18 +319,41 @@ void markdown_core_attribute_parser_free(markdown_core_attribute_parser *p) {
     p->fact_count = 0;
 }
 
+/* Whether a field can be written more than once. `id` keeps the last spelling
+ * the grammar reads, so an assignment to it replaces the bytes an earlier one
+ * stored; classes and records accumulate every occurrence and nothing ever
+ * replaces theirs. */
+enum { ATTRIBUTE_ACCUMULATES = 0, ATTRIBUTE_REPLACES = 1 };
+
 /* A value's normalized bytes. The arena's are borrowed by the chunk and go
  * with the document; without an arena the chunk owns the allocator's, which
  * is what a node built outside a parse gets. The terminator is written
- * either way: every value reads back as a C string. */
-static int copy(markdown_core_attribute_parser *p, markdown_core_chunk *into, const unsigned char *s, bufsize_t n) {
-    unsigned char *data =
-        p->store ? markdown_core_arena_text(p->store, (size_t)n + 1) : p->mem->calloc((size_t)n + 1, 1);
+ * either way: every value reads back as a C string.
+ *
+ * Where in the arena the bytes come from follows from that first property. A
+ * field nothing replaces is packed into the arena's text, where it costs its
+ * length; a field a later assignment can replace is taken from the recycling
+ * pools instead, so the copy the replacement supersedes goes back for it to
+ * take rather than lying dead in the document arena. Pooled storage costs the
+ * granule it rounds to, which is why only a field that needs it pays it. */
+static int copy(markdown_core_attribute_parser *p, markdown_core_chunk *into, const unsigned char *s, bufsize_t n,
+                int replaces) {
+    unsigned char *data;
+    if (!p->store) {
+        data = p->mem->calloc((size_t)n + 1, 1);
+    } else if (replaces) {
+        data = markdown_core_arena_take(p->store, (size_t)n + 1);
+    } else {
+        data = markdown_core_arena_text(p->store, (size_t)n + 1);
+    }
     if (!data) {
         return 0;
     }
     memcpy(data, s, (size_t)n);
     data[n] = '\0';
+    if (replaces && p->store && into->data) {
+        markdown_core_arena_recycle(p->store, into->data, (size_t)into->len + 1);
+    }
     markdown_core_chunk_free(p->mem, into);
     *into = (markdown_core_chunk){data, n, p->store ? 0 : 1};
     return 1;
@@ -383,7 +406,7 @@ static int append_class(markdown_core_attribute_parser *p, markdown_core_attribu
         return 0;
     }
     markdown_core_chunk item = {0};
-    if (!copy(p, &item, s, n)) {
+    if (!copy(p, &item, s, n, ATTRIBUTE_ACCUMULATES)) {
         return 0;
     }
     v->classes[v->class_count++] = item;
@@ -393,7 +416,7 @@ static int append_class(markdown_core_attribute_parser *p, markdown_core_attribu
 static int normalize(markdown_core_attribute_parser *p, markdown_core_attributes *v, const unsigned char *name,
                      bufsize_t length, const unsigned char *value, bufsize_t size) {
     if (length == 2 && memcmp(name, "id", 2) == 0) {
-        return copy(p, &v->anchor, value, size);
+        return copy(p, &v->anchor, value, size, ATTRIBUTE_REPLACES);
     }
     if (length == 5 && memcmp(name, "class", 5) == 0) {
         bufsize_t word = 0, at = 0;
@@ -414,7 +437,8 @@ static int normalize(markdown_core_attribute_parser *p, markdown_core_attributes
         return 0;
     }
     markdown_core_record item = {0};
-    if (!copy(p, &item.name, name, length) || !copy(p, &item.value, value, size)) {
+    if (!copy(p, &item.name, name, length, ATTRIBUTE_ACCUMULATES) ||
+        !copy(p, &item.value, value, size, ATTRIBUTE_ACCUMULATES)) {
         markdown_core_chunk_free(p->mem, &item.name);
         markdown_core_chunk_free(p->mem, &item.value);
         return 0;
@@ -506,7 +530,7 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
             unsigned char marker = s[at++];
             bufsize_t from = at;
             at = scan_name(p, finish, at);
-            if (marker == '#' ? !copy(p, &value.anchor, s + from, at - from)
+            if (marker == '#' ? !copy(p, &value.anchor, s + from, at - from, ATTRIBUTE_REPLACES)
                               : !append_class(p, &value, s + from, at - from)) {
                 goto oom;
             }
