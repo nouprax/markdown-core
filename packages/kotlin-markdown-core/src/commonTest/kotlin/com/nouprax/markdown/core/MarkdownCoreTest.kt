@@ -72,6 +72,130 @@ class ApiTest {
     }
 
     @Test
+    fun everyExitIsPairedWithTheEnterOfTheSameNodeKind() {
+        // The walker finds a node's kind once, on enter, and reports the exit
+        // from what it found, so a document holding every container kind
+        // must produce enter and exit events that nest as a stack, each exit
+        // naming the kind of the innermost open enter, with a leaf's exit
+        // right after its enter.
+        val source =
+            listOf(
+                "---",
+                "title: T",
+                "---",
+                "",
+                "# Head *em* **strong** ~~del~~ ==mark== ++ins++ [span]{.s} ^sup^ ~sub~ `code` <b>html</b>",
+                "text \$x\$ [link](/u) ![img](/i) [[x#y|label]] ![[x|20x30]] :dir[label] [@key] [^n] <!-- c -->\\",
+                "hard break above",
+                "soft break above",
+                "",
+                "> [!note]- Title",
+                "> Quote",
+                "",
+                "- [x] item",
+                "",
+                "```",
+                "fence",
+                "```",
+                "",
+                "<div>",
+                "</div>",
+                "",
+                "$$",
+                "block",
+                "$$",
+                "",
+                "---",
+                "",
+                "Term",
+                ": body one",
+                ": body two",
+                "",
+                ":::note[Label]",
+                "Directive body",
+                ":::",
+                "",
+                "| a |",
+                "| - |",
+                "| 1 |",
+                "",
+                "[^n]: note",
+                "",
+                "(@sample) A numbered example.",
+                "",
+            ).joinToString("\n")
+        val document = Document.parse(source)
+        val visitor = RecordingWalkingVisitor()
+        document.walk(visitor)
+        val open = ArrayDeque<String>()
+        val kinds = mutableSetOf<String>()
+        for (event in visitor.events) {
+            val (phase, kind) = event.split(":")
+            kinds += kind
+            if (phase == "enter") {
+                open.addLast(kind)
+            } else {
+                assertEquals(kind, open.removeLast(), "exit out of order at $event")
+            }
+        }
+        assertTrue(open.isEmpty())
+        assertEquals(visitor.entered, visitor.exited)
+        for (
+        kind in listOf(
+            "Document",
+            "Metadata",
+            "Heading",
+            "Emphasis",
+            "Strong",
+            "Strikethrough",
+            "Mark",
+            "Insertion",
+            "Span",
+            "Superscript",
+            "Subscript",
+            "Code",
+            "HTML",
+            "LineBreak",
+            "Paragraph",
+            "Text",
+            "Formula",
+            "Link",
+            "Embedded",
+            "CrossLink",
+            "CrossEmbedded",
+            "Directive",
+            "DirectiveLabel",
+            "Cite",
+            "Citation",
+            "Comment",
+            "Callout",
+            "List",
+            "ListItem",
+            "CodeBlock",
+            "HTMLBlock",
+            "FormulaBlock",
+            "ThematicBreak",
+            "DefinitionList",
+            "Definition",
+            "DirectiveBlock",
+            "Table",
+            "TableRow",
+            "TableCell",
+            "Footnote",
+            "Specimen",
+            "SoftBreak",
+        )
+        ) {
+            assertTrue(kind in kinds, "the walk never reached $kind")
+        }
+        // A leaf's exit follows its enter with nothing between.
+        val events = visitor.events
+        for ((index, event) in events.withIndex()) {
+            if (event == "enter:Text") assertEquals("exit:Text", events[index + 1])
+        }
+    }
+
+    @Test
     fun walkerControlsCallbackPhases() {
         val document = Document.parse("text")
         val visitor = RecordingWalkingVisitor()
