@@ -36,8 +36,7 @@ typedef struct {
 
 extern const unsigned char markdown_core_strbuf__initbuf[];
 
-#define MARKDOWN_CORE_BUF_INIT(mem)                                                                                    \
-    { mem, (unsigned char *)markdown_core_strbuf__initbuf, 0, 0, 0, false }
+#define MARKDOWN_CORE_BUF_INIT(mem) {mem, (unsigned char *)markdown_core_strbuf__initbuf, 0, 0, 0, false}
 
 /**
  * Grow the buffer to hold at least `target_size` bytes.
