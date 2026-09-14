@@ -1149,7 +1149,7 @@ private class Scratch(
 
 private fun CValue<markdown_core_scope>.toScope(): Scope =
     useContents {
-        Scope(Position(start.line, start.column), Position(end.line, end.column))
+        Scope(start.line, start.column, end.line, end.column)
     }
 
 private fun markdown_core_optional_string.string(): String? = if (has_value) value.string() else null

@@ -33,6 +33,7 @@ private fun JniPayloadReader.error(): ParseException {
     return ParseException(code, message)
 }
 
+/** Little-endian fixed-width fields and length-prefixed UTF-8 strings, read in place. */
 internal class JniPayloadReader(
     private val bytes: ByteArray,
 ) {
@@ -40,35 +41,51 @@ internal class JniPayloadReader(
     val finished: Boolean get() = offset == bytes.size
 
     fun byte(): Byte {
-        require(offset < bytes.size) { "truncated JNI payload" }
-        return bytes[offset++]
+        val at = offset
+        require(at < bytes.size) { "truncated JNI payload" }
+        offset = at + 1
+        return bytes[at]
     }
 
     fun int(): Int {
-        require(offset <= bytes.size - Int.SIZE_BYTES) { "truncated JNI payload" }
-        var value = 0
-        repeat(4) { shift -> value = value or ((bytes[offset++].toInt() and 0xff) shl (shift * 8)) }
-        return value
+        val at = offset
+        require(at <= bytes.size - Int.SIZE_BYTES) { "truncated JNI payload" }
+        offset = at + Int.SIZE_BYTES
+        return (bytes[at].toInt() and 0xff) or
+            ((bytes[at + 1].toInt() and 0xff) shl 8) or
+            ((bytes[at + 2].toInt() and 0xff) shl 16) or
+            ((bytes[at + 3].toInt() and 0xff) shl 24)
     }
 
     fun long(): Long {
-        require(offset <= bytes.size - Long.SIZE_BYTES) { "truncated JNI payload" }
-        var value = 0L
-        repeat(8) { shift -> value = value or ((bytes[offset++].toLong() and 0xff) shl (shift * 8)) }
-        return value
+        val at = offset
+        require(at <= bytes.size - Long.SIZE_BYTES) { "truncated JNI payload" }
+        offset = at + Long.SIZE_BYTES
+        val low =
+            (bytes[at].toInt() and 0xff) or
+                ((bytes[at + 1].toInt() and 0xff) shl 8) or
+                ((bytes[at + 2].toInt() and 0xff) shl 16) or
+                ((bytes[at + 3].toInt() and 0xff) shl 24)
+        val high =
+            (bytes[at + 4].toInt() and 0xff) or
+                ((bytes[at + 5].toInt() and 0xff) shl 8) or
+                ((bytes[at + 6].toInt() and 0xff) shl 16) or
+                ((bytes[at + 7].toInt() and 0xff) shl 24)
+        return (low.toLong() and 0xffffffffL) or (high.toLong() shl 32)
     }
 
     fun string(): String? {
         val size = int()
         if (size == -1) return null
-        require(size >= 0 && size <= bytes.size - offset) { "invalid JNI payload string" }
-        val end = offset + size
-        return bytes.decodeToString(offset, end).also { offset = end }
+        val at = offset
+        require(size >= 0 && size <= bytes.size - at) { "invalid JNI payload string" }
+        if (size == 0) return ""
+        val end = at + size
+        offset = end
+        return bytes.decodeToString(at, end)
     }
 
     fun required(): String = requireNotNull(string()) { "missing native field" }
-
-    fun scope(): Scope = Scope(Position(int(), int()), Position(int(), int()))
 
     fun kind(): JniNodeKind = JniNodeKind.from(byte().toInt() and 0xff)
 

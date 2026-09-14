@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 private fun jniPayload(vararg parts: Any): ByteArray {
@@ -840,6 +841,111 @@ class JniPayloadDecoderTest {
     }
 
     @Test
+    fun decodingDepthIsBoundedByTheHeapAndTypedListsRejectAtTheKind() {
+        // A payload the parser cannot produce -- 200 000 nested emphasis
+        // nodes around one text -- decodes without touching the JVM stack:
+        // the decoder holds one frame per open container in arrays, so the
+        // depth costs the arrays, not a closure per level or a stack frame.
+        val depth = 200_000
+        val header = byteArrayOf(0x4d, 0x4b, 0x4a, 0x31, 0)
+        val node = { kind: Byte, tail: ByteArray -> jniPayload(kind, 1, 1, 1, 1, -1, 0, 0, *tail.toTypedArray()) }
+        val emphasis = node(19, jniPayload(1))
+        val payload =
+            ByteArray(
+                header.size +
+                    node(
+                        1,
+                        jniPayload(0.toByte(), 1),
+                    ).size + node(3, jniPayload(1)).size + depth * emphasis.size +
+                    node(13, jniPayload(1, "x")).size +
+                    8,
+            )
+        var offset = 0
+        for (part in listOf(header, node(1, jniPayload(0.toByte(), 1)), node(3, jniPayload(1)))) {
+            part.copyInto(payload, offset)
+            offset += part.size
+        }
+        repeat(depth) {
+            emphasis.copyInto(payload, offset)
+            offset += emphasis.size
+        }
+        for (part in listOf(node(13, jniPayload(1, "x")), jniPayload(0, 0))) {
+            part.copyInto(payload, offset)
+            offset += part.size
+        }
+        assertEquals(payload.size, offset)
+        val document = JniPayloadDecoder.decode(payload)
+        payload.fill(0)
+        var current: Markup = assertIs<Paragraph>(document.content.single()).content.single()
+        repeat(depth) {
+            val level = assertIs<Emphasis>(current)
+            assertSame(Attributes.empty, level.attributes)
+            assertTrue(level.content is RandomAccess)
+            current = level.content.single()
+        }
+        assertEquals("x", assertIs<Text>(current).literal)
+        val visitor = RecordingWalkingVisitor(recordEvents = false)
+        document.walk(visitor)
+        assertEquals(depth + 3, visitor.entered)
+        assertEquals(visitor.entered, visitor.exited)
+
+        // A list rejects a member of the wrong kind as its kind byte is read,
+        // before the member's fields are: each payload ends right after that
+        // byte, so a decoder that read on would report the truncation instead.
+        fun container(
+            kind: Byte,
+            scalars: Array<Any>,
+            memberKind: Byte,
+        ): ByteArray =
+            jniPayload(
+                "MKJ1",
+                0.toByte(),
+                1.toByte(),
+                1,
+                1,
+                1,
+                1,
+                -1,
+                0,
+                0,
+                0.toByte(),
+                1,
+                kind,
+                1,
+                1,
+                1,
+                1,
+                -1,
+                0,
+                0,
+                *scalars,
+                1,
+                memberKind,
+            )
+        val list = arrayOf<Any>(1, 0L, 0.toByte(), 0, 0.toByte(), 0, 0.toByte(), 1.toByte())
+        assertEquals(
+            "list contains a non-item node",
+            assertFailsWith<IllegalArgumentException> { JniPayloadDecoder.decode(container(6, list, 3)) }.message,
+        )
+        assertEquals(
+            "owned node in ordinary content",
+            assertFailsWith<IllegalArgumentException> {
+                JniPayloadDecoder.decode(
+                    container(3, emptyArray(), 41),
+                )
+            }.message,
+        )
+        assertEquals(
+            "truncated JNI payload",
+            assertFailsWith<IllegalArgumentException> {
+                JniPayloadDecoder.decode(
+                    container(3, emptyArray(), 13),
+                )
+            }.message,
+        )
+    }
+
+    @Test
     fun corruptedPayloadFailsInsteadOfProducingAPartialTree() {
         assertFailsWith<IllegalArgumentException> {
             JniPayloadDecoder.decode(byteArrayOf(0x4d, 0x4b, 0x4a))
@@ -849,6 +955,8 @@ class JniPayloadDecoderTest {
     @Test
     fun malformedJniPayloadValuesAreRejectedBeforeTheyEnterTheAst() {
         assertFailsWith<IllegalArgumentException> { JniNodeKind.from(0) }
+        assertFailsWith<IllegalArgumentException> { JniNodeKind.from(-1) }
+        assertFailsWith<IllegalArgumentException> { JniNodeKind.from(255) }
         assertFailsWith<IllegalArgumentException> { JniNodeKind.from(JniNodeKind.entries.maxOf { it.rawValue } + 1) }
         assertEquals(JniNodeKind.COMMENT, JniNodeKind.from(29))
         assertEquals(JniNodeKind.CROSS_LINK, JniNodeKind.from(30))

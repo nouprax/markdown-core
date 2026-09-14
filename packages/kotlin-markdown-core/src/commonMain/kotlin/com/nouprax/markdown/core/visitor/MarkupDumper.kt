@@ -801,7 +801,7 @@ private class DumpVisitor(
 }
 
 private fun scope(value: Scope): String =
-    "scope=${value.start.line}:${value.start.column}..${value.end.line}:${value.end.column}"
+    "scope=${value.startLine}:${value.startColumn}..${value.endLine}:${value.endColumn}"
 
 private fun optional(value: String?): String = value?.let(::escaped) ?: "null"
 

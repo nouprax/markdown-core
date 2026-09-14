@@ -767,6 +767,39 @@ class OwnershipTest {
             (content as MutableList<Markup>).clear()
         }
     }
+
+    @Test
+    fun emptyAttributesAreOneValueAndListsAreIndexedInPlace() {
+        // A node without attributes shares the one empty value instead of
+        // wrapping two empty lists of its own, every list a node carries is
+        // random access over the array the decoder filled, and a scope is one
+        // object holding its four coordinates, which the position views read.
+        val document = Document.parse("plain *text*\n")
+        val paragraph = assertIs<Paragraph>(document.content.single())
+        val emphasis = assertIs<Emphasis>(paragraph.content[1])
+        for (node in listOf<Markup>(document, paragraph, paragraph.content[0], emphasis)) {
+            assertSame(Attributes.empty, node.attributes)
+        }
+        assertTrue(document.content is RandomAccess)
+        assertTrue(emphasis.content is RandomAccess)
+        assertTrue(Attributes.empty.classes is RandomAccess)
+        assertEquals(Scope(1, 1, 1, 12), paragraph.scope)
+        assertEquals(Scope(Position(1, 1), Position(1, 12)), paragraph.scope)
+        assertEquals(Position(1, 12), paragraph.scope.end)
+        assertEquals(
+            listOf(1, 1, 1, 12),
+            paragraph.scope.let {
+                listOf(it.startLine, it.startColumn, it.endLine, it.endColumn)
+            },
+        )
+
+        // The public constructor still takes its own copy of caller lists.
+        val classes = mutableListOf("a")
+        val attributes = Attributes(classes, emptyList())
+        classes += "b"
+        assertEquals(listOf("a"), attributes.classes)
+        assertTrue(attributes.classes is RandomAccess)
+    }
 }
 
 class RobustnessTest {

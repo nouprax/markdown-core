@@ -2,83 +2,157 @@ package com.nouprax.markdown.core
 
 internal fun JniPayloadReader.document(): Document = Decoder(this).decode()
 
-/** Decodes the depth-first JNI payload with heap-backed actions, never the JVM stack. */
+private const val INITIAL_FRAMES = 32
+private const val OBJECT_SLOTS = 4
+private const val NUMBER_SLOTS = 3
+
+// What the list a frame is filling admits, checked as each node's kind is
+// read, before its fields are: a list of one shape holds nodes of one class,
+// so the full array is that list by a cast, not by a check per element.
+private const val EXPECT_ROOT = 0
+private const val EXPECT_CONTENT = 1
+private const val EXPECT_METADATA = 2
+private const val EXPECT_FOOTNOTE = 3
+private const val EXPECT_SPECIMEN = 4
+private const val EXPECT_CITATION = 5
+private const val EXPECT_LIST_ITEM = 6
+private const val EXPECT_TABLE_ROW = 7
+private const val EXPECT_TABLE_CELL = 8
+private const val EXPECT_DEFINITION = 9
+private const val EXPECT_TABLE_CAPTION = 10
+private const val EXPECT_DIRECTIVE_LABEL = 11
+
+private val noElements: Array<Any?> = arrayOfNulls(0)
+
+/**
+ * Decodes the depth-first JNI payload with one explicit stack of frames,
+ * never the JVM stack and never a closure per node.
+ *
+ * A leaf becomes its node as its fields are read. A container is a frame --
+ * its header and scalars in parallel arrays -- that reads its lists in
+ * payload order: each list is an array the nodes that follow fill, and the
+ * frame becomes its node when its last list is full. A node therefore costs
+ * the node, its scope, and the arrays its lists wrap once.
+ */
 private class Decoder(
     private val reader: JniPayloadReader,
 ) {
-    private val actions = ArrayDeque<() -> Unit>()
+    private var kinds = arrayOfNulls<JniNodeKind>(INITIAL_FRAMES)
+    private var phases = IntArray(INITIAL_FRAMES)
+    private var scopes = arrayOfNulls<Scope>(INITIAL_FRAMES)
+    private var anchors = arrayOfNulls<String>(INITIAL_FRAMES)
+    private var attributes = arrayOfNulls<Attributes>(INITIAL_FRAMES)
+    private var objects = arrayOfNulls<Any>(INITIAL_FRAMES * OBJECT_SLOTS)
+    private var numbers = LongArray(INITIAL_FRAMES * NUMBER_SLOTS)
+
+    // The list each frame is filling: its elements, how many are in, and
+    // what it admits.
+    private var elements = arrayOfNulls<Array<Any?>>(INITIAL_FRAMES)
+    private var filled = IntArray(INITIAL_FRAMES)
+    private var expectations = IntArray(INITIAL_FRAMES)
+    private var depth = 0
+
     private var nodesStarted = 0
+    private var root: Markup? = null
 
     fun decode(): Document {
-        var root: Markup? = null
-        actions.addLast { node { root = it } }
-        while (actions.isNotEmpty()) actions.removeLast().invoke()
+        // The root frame holds the one document as a list of one.
+        elements[0] = arrayOfNulls(1)
+        expectations[0] = EXPECT_ROOT
+        depth = 1
+        while (depth > 0) {
+            node()
+            settle()
+        }
         require(reader.finished) { "JNI payload contains trailing data" }
         return requireNotNull(root as? Document) { "JNI payload contains an invalid document tree" }
     }
 
-    private fun node(consume: (Markup) -> Unit) {
+    /** Reads one node: a leaf into the open list, a container as a new frame with its first list open. */
+    private fun node() {
         val kind = reader.kind()
         val isRoot = nodesStarted++ == 0
         require((kind == JniNodeKind.DOCUMENT) == isRoot) {
             "JNI payload must contain exactly one document at its root"
         }
-        val scope = reader.scope()
-        val anchor = reader.string().also { require(it != "") { "empty normalized anchor" } }
+        expect(expectations[depth - 1], kind)
+        val scope = Scope(reader.int(), reader.int(), reader.int(), reader.int())
+        val anchor = reader.string()
+        require(anchor != "") { "empty normalized anchor" }
         val attributes = attributes()
         when (kind) {
             JniNodeKind.DOCUMENT -> {
-                document(scope, anchor, attributes, consume)
-            }
-
-            JniNodeKind.CITATION -> {
-                citation(scope, anchor, attributes, consume)
-            }
-
-            JniNodeKind.FOOTNOTE -> {
-                val id = reader.required()
-                children { consume(Footnote(id, it, scope, anchor, attributes)) }
-            }
-
-            JniNodeKind.SPECIMEN -> {
-                val id = reader.string()
-                val startValue = reader.long()
-                val start = if (reader.boolean()) startValue else null
-                children { consume(Specimen(id, start, it, scope, anchor, attributes)) }
-            }
-
-            JniNodeKind.METADATA -> {
-                consume(metadata(scope, anchor, attributes))
+                val hasMetadata = reader.boolean()
+                val frame = push(kind, scope, anchor, attributes)
+                if (hasMetadata) {
+                    field(frame, EXPECT_METADATA)
+                } else {
+                    phases[frame] = 1
+                    counted(frame, EXPECT_CONTENT, "child")
+                }
             }
 
             JniNodeKind.CALLOUT -> {
-                callout(scope, anchor, attributes, consume)
+                val variant = reader.string()
+                val collapsed =
+                    when (reader.nullableBoolean()) {
+                        null -> -1L
+                        false -> 0L
+                        true -> 1L
+                    }
+                val titleCount = reader.int()
+                require(titleCount >= 0) { "invalid native callout title count" }
+                val frame = push(kind, scope, anchor, attributes)
+                objects[frame * OBJECT_SLOTS] = variant
+                numbers[frame * NUMBER_SLOTS] = collapsed
+                if (titleCount == 0) {
+                    objects[frame * OBJECT_SLOTS + 1] = null
+                    phases[frame] = 1
+                    counted(frame, EXPECT_CONTENT, "child")
+                } else {
+                    open(frame, titleCount, EXPECT_CONTENT)
+                }
             }
 
-            JniNodeKind.PARAGRAPH -> {
-                children { consume(Paragraph(it, scope, anchor, attributes)) }
+            JniNodeKind.PARAGRAPH,
+            JniNodeKind.EMPHASIS,
+            JniNodeKind.STRONG,
+            JniNodeKind.STRIKETHROUGH,
+            JniNodeKind.MARK,
+            JniNodeKind.INSERTION,
+            JniNodeKind.SPAN,
+            JniNodeKind.SUPERSCRIPT,
+            JniNodeKind.SUBSCRIPT,
+            JniNodeKind.TABLE_CAPTION,
+            JniNodeKind.DIRECTIVE_LABEL,
+            -> {
+                counted(push(kind, scope, anchor, attributes), EXPECT_CONTENT, "child")
             }
 
             JniNodeKind.HEADING -> {
                 val level = reader.int()
-                children { consume(Heading(level, it, scope, anchor, attributes)) }
+                val frame = push(kind, scope, anchor, attributes)
+                numbers[frame * NUMBER_SLOTS] = level.toLong()
+                counted(frame, EXPECT_CONTENT, "child")
             }
 
             JniNodeKind.THEMATIC_BREAK -> {
-                consume(ThematicBreak(scope, anchor, attributes))
+                deliver(ThematicBreak(scope, anchor, attributes))
             }
 
             JniNodeKind.LIST -> {
-                list(scope, anchor, attributes, consume)
+                list(scope, anchor, attributes)
             }
 
             JniNodeKind.LIST_ITEM -> {
                 val marker = reader.string()
-                children { consume(ListItem(marker, it, scope, anchor, attributes)) }
+                val frame = push(kind, scope, anchor, attributes)
+                objects[frame * OBJECT_SLOTS] = marker
+                counted(frame, EXPECT_CONTENT, "child")
             }
 
             JniNodeKind.CODE_BLOCK -> {
-                consume(
+                deliver(
                     CodeBlock(
                         reader.string(),
                         reader.string(),
@@ -93,64 +167,71 @@ private class Decoder(
             }
 
             JniNodeKind.HTML_BLOCK -> {
-                consume(HTMLBlock(reader.required(), scope, anchor, attributes))
+                deliver(HTMLBlock(reader.required(), scope, anchor, attributes))
             }
 
             JniNodeKind.FORMULA_BLOCK -> {
-                consume(FormulaBlock(reader.required(), scope, anchor, attributes))
+                deliver(FormulaBlock(reader.required(), scope, anchor, attributes))
             }
 
             JniNodeKind.TABLE -> {
-                table(scope, anchor, attributes, consume)
+                table(scope, anchor, attributes)
             }
 
             JniNodeKind.DEFINITION_LIST -> {
-                children { children ->
-                    require(children.isNotEmpty()) { "empty definition list" }
-                    val definitions =
-                        immutableList(children.size) { index ->
-                            val child = children[index]
-                            require(child is Definition) { "invalid definition list child" }
-                            child
-                        }
-                    consume(DefinitionList(definitions, scope, anchor, attributes))
-                }
+                val frame = push(kind, scope, anchor, attributes)
+                val count = count("child")
+                require(count > 0) { "empty definition list" }
+                open(frame, count, EXPECT_DEFINITION)
             }
 
             JniNodeKind.DEFINITION -> {
                 val compact = reader.boolean()
-                var term: kotlin.collections.List<Markup>? = null
-                actions.addLast {
-                    values("definition body", ::children) { bodies ->
-                        require(bodies.isNotEmpty()) { "definition has no bodies" }
-                        consume(Definition(requireNotNull(term), bodies, compact, scope, anchor, attributes))
-                    }
-                }
-                actions.addLast { children { term = it } }
+                val frame = push(kind, scope, anchor, attributes)
+                numbers[frame * NUMBER_SLOTS] = if (compact) 1L else 0L
+                counted(frame, EXPECT_CONTENT, "child")
             }
 
-            JniNodeKind.DIRECTIVE_BLOCK -> {
-                directiveBlock(scope, anchor, attributes, consume)
+            JniNodeKind.DIRECTIVE_BLOCK, JniNodeKind.DIRECTIVE -> {
+                val name = if (kind == JniNodeKind.DIRECTIVE) reader.required() else reader.string()
+                val hasLabel = reader.boolean()
+                val frame = push(kind, scope, anchor, attributes)
+                objects[frame * OBJECT_SLOTS] = name
+                if (hasLabel) {
+                    field(frame, EXPECT_DIRECTIVE_LABEL)
+                } else {
+                    objects[frame * OBJECT_SLOTS + 1] = null
+                    phases[frame] = 1
+                    directiveContent(frame)
+                }
             }
 
             JniNodeKind.TEXT -> {
-                consume(Text(reader.required(), scope, anchor, attributes))
+                deliver(Text(reader.required(), scope, anchor, attributes))
             }
 
             JniNodeKind.SOFT_BREAK -> {
-                consume(SoftBreak(scope, anchor, attributes))
+                deliver(SoftBreak(scope, anchor, attributes))
             }
 
             JniNodeKind.LINE_BREAK -> {
-                consume(LineBreak(scope, anchor, attributes))
+                deliver(LineBreak(scope, anchor, attributes))
             }
 
             JniNodeKind.CODE -> {
-                consume(Code(reader.required(), scope, anchor, attributes))
+                deliver(Code(reader.required(), scope, anchor, attributes))
             }
 
             JniNodeKind.HTML -> {
-                consume(HTML(reader.required(), scope, anchor, attributes))
+                deliver(HTML(reader.required(), scope, anchor, attributes))
+            }
+
+            JniNodeKind.COMMENT -> {
+                deliver(Comment(reader.required(), scope, anchor, attributes))
+            }
+
+            JniNodeKind.FORMULA -> {
+                deliver(Formula(placement(), reader.required(), scope, anchor, attributes))
             }
 
             JniNodeKind.CROSS_LINK, JniNodeKind.CROSS_EMBEDDED -> {
@@ -158,260 +239,631 @@ private class Decoder(
                 require(dest is Destination.Cross) { "cross reference requires a cross destination" }
                 val label = reader.string()
                 if (kind == JniNodeKind.CROSS_EMBEDDED) {
-                    consume(CrossEmbedded(dest, label, dimensions(), scope, anchor, attributes))
+                    deliver(CrossEmbedded(dest, label, dimensions(), scope, anchor, attributes))
                 } else {
-                    consume(CrossLink(dest, label, scope, anchor, attributes))
+                    deliver(CrossLink(dest, label, scope, anchor, attributes))
                 }
-            }
-
-            JniNodeKind.COMMENT -> {
-                consume(Comment(reader.required(), scope, anchor, attributes))
-            }
-
-            JniNodeKind.FORMULA -> {
-                consume(Formula(placement(), reader.required(), scope, anchor, attributes))
-            }
-
-            JniNodeKind.EMPHASIS -> {
-                children { consume(Emphasis(it, scope, anchor, attributes)) }
-            }
-
-            JniNodeKind.STRONG -> {
-                children { consume(Strong(it, scope, anchor, attributes)) }
-            }
-
-            JniNodeKind.STRIKETHROUGH -> {
-                children { consume(Strikethrough(it, scope, anchor, attributes)) }
-            }
-
-            JniNodeKind.MARK -> {
-                children { consume(Mark(it, scope, anchor, attributes)) }
-            }
-
-            JniNodeKind.INSERTION -> {
-                children { consume(Insertion(it, scope, anchor, attributes)) }
-            }
-
-            JniNodeKind.SPAN -> {
-                children { consume(Span(it, scope, anchor, attributes)) }
-            }
-
-            JniNodeKind.SUPERSCRIPT -> {
-                children { consume(Superscript(it, scope, anchor, attributes)) }
-            }
-
-            JniNodeKind.SUBSCRIPT -> {
-                children { consume(Subscript(it, scope, anchor, attributes)) }
             }
 
             JniNodeKind.LINK -> {
                 val resource = resource()
-                children {
-                    consume(
-                        Link(
-                            resource.dest,
-                            resource.title,
-                            it,
-                            scope,
-                            anchor ?: resource.anchor,
-                            attributes.inheriting(resource.attributes),
-                        ),
-                    )
-                }
+                val frame = push(kind, scope, anchor, attributes)
+                objects[frame * OBJECT_SLOTS] = resource
+                counted(frame, EXPECT_CONTENT, "child")
             }
 
             JniNodeKind.EMBEDDED -> {
                 val resource = resource()
                 val dimensions = dimensions()
-                children {
-                    consume(
-                        Embedded(
-                            resource.dest,
-                            resource.title,
-                            dimensions,
-                            it,
-                            scope,
-                            anchor ?: resource.anchor,
-                            attributes.inheriting(resource.attributes),
-                        ),
-                    )
-                }
-            }
-
-            JniNodeKind.DIRECTIVE -> {
-                directive(scope, anchor, attributes, consume)
+                val frame = push(kind, scope, anchor, attributes)
+                objects[frame * OBJECT_SLOTS] = resource
+                objects[frame * OBJECT_SLOTS + 1] = dimensions
+                counted(frame, EXPECT_CONTENT, "child")
             }
 
             JniNodeKind.CITE -> {
-                values("citation", ::node) { values ->
-                    require(values.isNotEmpty()) { "invalid native citation count" }
-                    consume(
-                        Cite(
-                            values.immutableMap {
-                                requireNotNull(it as? Citation) { "invalid citation node" }
-                            },
-                            scope,
-                            anchor,
-                            attributes,
-                        ),
-                    )
-                }
+                val frame = push(kind, scope, anchor, attributes)
+                val count = count("citation")
+                require(count > 0) { "invalid native citation count" }
+                open(frame, count, EXPECT_CITATION)
             }
 
-            JniNodeKind.TABLE_CAPTION -> {
-                children { consume(TableCaption(it, scope, anchor, attributes)) }
+            JniNodeKind.CITATION -> {
+                val referent =
+                    when (val branch = reader.byte().toInt()) {
+                        1 -> CitationReferent.Bib(reader.required(), bibMode())
+                        2 -> CitationReferent.Footnote(reader.required())
+                        3 -> CitationReferent.Specimen(reader.required())
+                        else -> error("invalid native citation referent $branch")
+                    }
+                val frame = push(kind, scope, anchor, attributes)
+                objects[frame * OBJECT_SLOTS] = referent
+                counted(frame, EXPECT_CONTENT, "child")
             }
 
             JniNodeKind.TABLE_ROW -> {
-                tableRow(scope, anchor, attributes, consume)
+                counted(push(kind, scope, anchor, attributes), EXPECT_TABLE_CELL, "child")
             }
 
             JniNodeKind.TABLE_CELL -> {
                 val rowspan = reader.long().toTableSpan()
                 val colspan = reader.long().toTableSpan()
-                children { consume(TableCell(rowspan, colspan, it, scope, anchor, attributes)) }
+                val frame = push(kind, scope, anchor, attributes)
+                numbers[frame * NUMBER_SLOTS] = rowspan.toLong()
+                numbers[frame * NUMBER_SLOTS + 1] = colspan.toLong()
+                counted(frame, EXPECT_CONTENT, "child")
             }
 
-            JniNodeKind.DIRECTIVE_LABEL -> {
-                children { consume(DirectiveLabel(it, scope, anchor, attributes)) }
+            JniNodeKind.FOOTNOTE -> {
+                val id = reader.required()
+                val frame = push(kind, scope, anchor, attributes)
+                objects[frame * OBJECT_SLOTS] = id
+                counted(frame, EXPECT_CONTENT, "child")
+            }
+
+            JniNodeKind.SPECIMEN -> {
+                val id = reader.string()
+                val startValue = reader.long()
+                val start = if (reader.boolean()) startValue else null
+                val frame = push(kind, scope, anchor, attributes)
+                objects[frame * OBJECT_SLOTS] = id
+                objects[frame * OBJECT_SLOTS + 1] = start
+                counted(frame, EXPECT_CONTENT, "child")
+            }
+
+            JniNodeKind.METADATA -> {
+                deliver(metadata(scope, anchor, attributes))
             }
         }
     }
 
-    private fun children(consume: (kotlin.collections.List<Markup>) -> Unit) {
-        val count = reader.int()
-        require(count >= 0) { "invalid native child count" }
-        nodes(count, consume)
-    }
-
-    /** Schedules `count` nodes and then the list they form, in payload order. */
-    private fun nodes(
-        count: Int,
-        consume: (kotlin.collections.List<Markup>) -> Unit,
-    ) {
-        val values = arrayOfNulls<Markup>(count)
-        actions.addLast {
-            consume(
-                immutableList(count) { index ->
-                    requireNotNull(values[index]) { "JNI child was not decoded" }.also {
-                        require(
-                            it !is Citation && it !is Footnote && it !is Specimen && it !is Metadata,
-                        ) { "owned node in ordinary content" }
-                    }
-                },
-            )
-        }
-        for (index in count - 1 downTo 0) {
-            actions.addLast { node { values[index] = it } }
+    /** Completes every frame whose open list is full, from the top down. */
+    private fun settle() {
+        while (depth > 0) {
+            val top = depth - 1
+            val list = elements[top]!!
+            if (filled[top] < list.size) return
+            val node = advance(top, list) ?: continue
+            if (depth == 0) {
+                root = node
+                return
+            }
+            deliver(node)
         }
     }
 
     /**
-     * The document's content leads, as the walk visits it; its footnotes
-     * follow as a counted list of values, each its scope, its id, and its
-     * content.
+     * Takes the full list of the frame at [top]: the frame opens its next
+     * list and answers null, or becomes its node, which is then the caller's
+     * to deliver.
      */
-    private fun document(
-        scope: Scope,
-        anchor: String?,
-        attributes: Attributes,
-        consume: (Markup) -> Unit,
-    ) {
-        val hasMetadata = reader.boolean()
-        var metadata: Metadata? = null
-        var content: kotlin.collections.List<Markup>? = null
-        var footnotes: kotlin.collections.List<Footnote>? = null
-        actions.addLast {
-            values("specimen", ::node) { specimenNodes ->
-                val specimens =
-                    specimenNodes.immutableMap {
-                        requireNotNull(
-                            it as? Specimen,
-                        ) { "invalid specimen node" }
+    private fun advance(
+        top: Int,
+        list: Array<Any?>,
+    ): Markup? {
+        val objects = top * OBJECT_SLOTS
+        val numbers = top * NUMBER_SLOTS
+        val phase = phases[top]
+        val kind = kinds[top]
+        if (kind == null) {
+            pop(top)
+            return list[0] as Markup
+        }
+        val scope = scopes[top]!!
+        val anchor = anchors[top]
+        val attributes = this.attributes[top]!!
+        when (kind) {
+            JniNodeKind.DOCUMENT -> {
+                when (phase) {
+                    0 -> {
+                        this.objects[objects] = list[0]
+                        phases[top] = 1
+                        counted(top, EXPECT_CONTENT, "child")
                     }
-                consume(
-                    Document(
-                        requireNotNull(content),
-                        metadata,
-                        requireNotNull(footnotes),
-                        specimens,
+
+                    1 -> {
+                        this.objects[objects + 1] = wrap<Markup>(list)
+                        phases[top] = 2
+                        counted(top, EXPECT_FOOTNOTE, "footnote")
+                    }
+
+                    2 -> {
+                        this.objects[objects + 2] = wrap<Footnote>(list)
+                        phases[top] = 3
+                        counted(top, EXPECT_SPECIMEN, "specimen")
+                    }
+
+                    else -> {
+                        return finish(
+                            top,
+                            Document(
+                                slot(objects + 1),
+                                this.objects[objects] as Metadata?,
+                                slot(objects + 2),
+                                wrap(list),
+                                scope,
+                                anchor,
+                                attributes,
+                            ),
+                        )
+                    }
+                }
+                return null
+            }
+
+            JniNodeKind.CALLOUT -> {
+                if (phase == 0) {
+                    this.objects[objects + 1] = wrap<Markup>(list)
+                    phases[top] = 1
+                    counted(top, EXPECT_CONTENT, "child")
+                    return null
+                }
+                val collapsed = this.numbers[numbers]
+                return finish(
+                    top,
+                    Callout(
+                        this.objects[objects] as String?,
+                        if (collapsed == -1L) null else collapsed == 1L,
+                        this.objects[objects + 1]?.let { slot(objects + 1) },
+                        wrap(list),
                         scope,
                         anchor,
                         attributes,
                     ),
                 )
             }
-        }
-        actions.addLast {
-            values("footnote", ::node) { nodes ->
-                footnotes =
-                    nodes.immutableMap { requireNotNull(it as? Footnote) { "invalid footnote node" } }
+
+            JniNodeKind.PARAGRAPH -> {
+                return finish(top, Paragraph(wrap(list), scope, anchor, attributes))
             }
-        }
-        actions.addLast { children { content = it } }
-        if (hasMetadata) {
-            actions.addLast {
-                node {
-                    metadata =
-                        requireNotNull(
-                            it as? Metadata,
-                        ) { "invalid metadata node" }
+
+            JniNodeKind.EMPHASIS -> {
+                return finish(top, Emphasis(wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.STRONG -> {
+                return finish(top, Strong(wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.STRIKETHROUGH -> {
+                return finish(top, Strikethrough(wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.MARK -> {
+                return finish(top, Mark(wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.INSERTION -> {
+                return finish(top, Insertion(wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.SPAN -> {
+                return finish(top, Span(wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.SUPERSCRIPT -> {
+                return finish(top, Superscript(wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.SUBSCRIPT -> {
+                return finish(top, Subscript(wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.TABLE_CAPTION -> {
+                return finish(top, TableCaption(wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.DIRECTIVE_LABEL -> {
+                return finish(top, DirectiveLabel(wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.HEADING -> {
+                val level = this.numbers[numbers].toInt()
+                return finish(top, Heading(level, wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.LIST -> {
+                return finish(
+                    top,
+                    List(
+                        this.objects[objects] as ListFlavor,
+                        this.objects[objects + 1] as Long?,
+                        this.objects[objects + 2] as OrderedListVariant?,
+                        this.objects[objects + 3] as OrderedListDelimiter?,
+                        this.numbers[numbers] != 0L,
+                        wrap(list),
+                        scope,
+                        anchor,
+                        attributes,
+                    ),
+                )
+            }
+
+            JniNodeKind.LIST_ITEM -> {
+                val marker = this.objects[objects] as String?
+                return finish(top, ListItem(marker, wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.TABLE -> {
+                if (phase == 0) {
+                    this.objects[objects + 1] = list[0]
+                    phases[top] = 1
+                    rows(top)
+                    return null
                 }
+                val head = this.numbers[numbers].toInt()
+                val content = this.numbers[numbers + 1].toInt()
+                return finish(
+                    top,
+                    Table(
+                        this.objects[objects + 1] as TableCaption?,
+                        slot(objects),
+                        group(list, 0, head),
+                        group(list, head, head + content),
+                        group(list, head + content, list.size),
+                        scope,
+                        anchor,
+                        attributes,
+                    ),
+                )
+            }
+
+            JniNodeKind.TABLE_ROW -> {
+                return finish(top, TableRow(wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.TABLE_CELL -> {
+                val rowspan = this.numbers[numbers].toInt()
+                val colspan = this.numbers[numbers + 1].toInt()
+                return finish(
+                    top,
+                    TableCell(rowspan, colspan, wrap(list), scope, anchor, attributes),
+                )
+            }
+
+            JniNodeKind.DEFINITION_LIST -> {
+                return finish(top, DefinitionList(wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.DEFINITION -> {
+                if (phase == 0) {
+                    this.objects[objects] = wrap<Markup>(list)
+                    val bodies = count("definition body")
+                    require(bodies > 0) { "definition has no bodies" }
+                    this.objects[objects + 1] = arrayOfNulls<Any?>(bodies)
+                    this.numbers[numbers + 1] = bodies.toLong()
+                    phases[top] = 1
+                    counted(top, EXPECT_CONTENT, "child")
+                    return null
+                }
+                @Suppress("UNCHECKED_CAST")
+                val bodies = this.objects[objects + 1] as Array<Any?>
+                bodies[phase - 1] = wrap<Markup>(list)
+                if (phase < bodies.size) {
+                    phases[top] = phase + 1
+                    counted(top, EXPECT_CONTENT, "child")
+                    return null
+                }
+                return finish(
+                    top,
+                    Definition(
+                        slot(objects),
+                        ownedList(bodies),
+                        this.numbers[numbers] != 0L,
+                        scope,
+                        anchor,
+                        attributes,
+                    ),
+                )
+            }
+
+            JniNodeKind.DIRECTIVE_BLOCK, JniNodeKind.DIRECTIVE -> {
+                if (phase == 0) {
+                    this.objects[objects + 1] = list[0]
+                    phases[top] = 1
+                    directiveContent(top)
+                    return null
+                }
+                val label = this.objects[objects + 1] as DirectiveLabel?
+                if (kind == JniNodeKind.DIRECTIVE) {
+                    val name = this.objects[objects] as String
+                    return finish(top, Directive(name, label, scope, anchor, attributes))
+                }
+                val name = this.objects[objects] as String?
+                return finish(
+                    top,
+                    DirectiveBlock(name, label, wrap(list), scope, anchor, attributes),
+                )
+            }
+
+            JniNodeKind.LINK -> {
+                val resource = this.objects[objects] as DefinitionResource
+                return finish(
+                    top,
+                    Link(
+                        resource.dest,
+                        resource.title,
+                        wrap(list),
+                        scope,
+                        anchor ?: resource.anchor,
+                        attributes.inheriting(resource.attributes),
+                    ),
+                )
+            }
+
+            JniNodeKind.EMBEDDED -> {
+                val resource = this.objects[objects] as DefinitionResource
+                return finish(
+                    top,
+                    Embedded(
+                        resource.dest,
+                        resource.title,
+                        this.objects[objects + 1] as Dimensions?,
+                        wrap(list),
+                        scope,
+                        anchor ?: resource.anchor,
+                        attributes.inheriting(resource.attributes),
+                    ),
+                )
+            }
+
+            JniNodeKind.CITE -> {
+                return finish(top, Cite(wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.CITATION -> {
+                if (phase == 0) {
+                    this.objects[objects + 1] = wrap<Markup>(list)
+                    phases[top] = 1
+                    counted(top, EXPECT_CONTENT, "child")
+                    return null
+                }
+                return finish(
+                    top,
+                    Citation(
+                        this.objects[objects] as CitationReferent,
+                        slot(objects + 1),
+                        wrap(list),
+                        scope,
+                        anchor,
+                        attributes,
+                    ),
+                )
+            }
+
+            JniNodeKind.FOOTNOTE -> {
+                val id = this.objects[objects] as String
+                return finish(top, Footnote(id, wrap(list), scope, anchor, attributes))
+            }
+
+            JniNodeKind.SPECIMEN -> {
+                val id = this.objects[objects] as String?
+                val start = this.objects[objects + 1] as Long?
+                return finish(top, Specimen(id, start, wrap(list), scope, anchor, attributes))
+            }
+
+            else -> {
+                error("invalid JNI decoder frame $kind")
             }
         }
     }
 
-    private fun <T> values(
-        name: String,
-        read: ((T) -> Unit) -> Unit,
-        consume: (kotlin.collections.List<T>) -> Unit,
-    ) {
-        val count = reader.int()
-        require(count >= 0) { "invalid native $name count" }
-        val values = MutableList<T?>(count) { null }
-        actions.addLast {
-            consume(immutableList(count) { requireNotNull(values[it]) { "JNI $name was not decoded" } })
-        }
-        for (index in count - 1 downTo 0) actions.addLast { read { values[index] = it } }
-    }
+    // -- frames --------------------------------------------------------------
 
-    private fun citation(
+    private fun push(
+        kind: JniNodeKind,
         scope: Scope,
         anchor: String?,
         attributes: Attributes,
-        consume: (Markup) -> Unit,
+    ): Int {
+        val frame = depth
+        if (frame == kinds.size) grow()
+        kinds[frame] = kind
+        phases[frame] = 0
+        scopes[frame] = scope
+        anchors[frame] = anchor
+        this.attributes[frame] = attributes
+        depth = frame + 1
+        return frame
+    }
+
+    private fun grow() {
+        val capacity = kinds.size * 2
+        kinds = kinds.copyOf(capacity)
+        phases = phases.copyOf(capacity)
+        scopes = scopes.copyOf(capacity)
+        anchors = anchors.copyOf(capacity)
+        attributes = attributes.copyOf(capacity)
+        objects = objects.copyOf(capacity * OBJECT_SLOTS)
+        numbers = numbers.copyOf(capacity * NUMBER_SLOTS)
+        elements = elements.copyOf(capacity)
+        filled = filled.copyOf(capacity)
+        expectations = expectations.copyOf(capacity)
+    }
+
+    /** The frame at [top] is [node]; the frame is gone. */
+    private fun finish(
+        top: Int,
+        node: Markup,
+    ): Markup {
+        pop(top)
+        return node
+    }
+
+    private fun pop(top: Int) {
+        kinds[top] = null
+        scopes[top] = null
+        anchors[top] = null
+        attributes[top] = null
+        elements[top] = null
+        objects.fill(null, top * OBJECT_SLOTS, top * OBJECT_SLOTS + OBJECT_SLOTS)
+        depth = top
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <Element> slot(index: Int): kotlin.collections.List<Element> =
+        objects[index] as kotlin.collections.List<Element>
+
+    // -- lists ---------------------------------------------------------------
+
+    private fun deliver(node: Markup) {
+        val top = depth - 1
+        elements[top]!![filled[top]++] = node
+    }
+
+    private fun open(
+        frame: Int,
+        count: Int,
+        expectation: Int,
     ) {
-        val referent =
-            when (val branch = reader.byte().toInt()) {
-                1 -> CitationReferent.Bib(reader.required(), bibMode())
-                2 -> CitationReferent.Footnote(reader.required())
-                3 -> CitationReferent.Specimen(reader.required())
-                else -> error("invalid native citation referent $branch")
-            }
-        var prefix: kotlin.collections.List<Markup>? = null
-        actions.addLast {
-            children { suffix ->
-                consume(Citation(referent, requireNotNull(prefix), suffix, scope, anchor, attributes))
-            }
-        }
-        actions.addLast {
-            children { prefix = it }
+        elements[frame] = if (count == 0) noElements else arrayOfNulls(count)
+        filled[frame] = 0
+        expectations[frame] = expectation
+    }
+
+    /** Opens a list whose count the payload states next. */
+    private fun counted(
+        frame: Int,
+        expectation: Int,
+        name: String,
+    ) {
+        open(frame, count(name), expectation)
+    }
+
+    /** Opens a node-valued field: a list of exactly one, with no count on the wire. */
+    private fun field(
+        frame: Int,
+        expectation: Int,
+    ) {
+        open(frame, 1, expectation)
+    }
+
+    private fun directiveContent(frame: Int) {
+        counted(frame, EXPECT_CONTENT, "child")
+        if (kinds[frame] == JniNodeKind.DIRECTIVE) {
+            require(elements[frame]!!.isEmpty()) { "inline directive contains block content" }
         }
     }
 
-    private fun bibMode(): BibMode =
-        when (val rawValue = reader.int()) {
-            1 -> BibMode.NORMAL
-            2 -> BibMode.AUTHOR_IN_TEXT
-            3 -> BibMode.SUPPRESS_AUTHOR
-            else -> error("invalid native bib mode $rawValue")
+    private fun rows(frame: Int) {
+        val count = count("child")
+        val numbers = frame * NUMBER_SLOTS
+        require(
+            this.numbers[numbers] + this.numbers[numbers + 1] + this.numbers[numbers + 2] == count.toLong(),
+        ) { "invalid table row groups" }
+        open(frame, count, EXPECT_TABLE_ROW)
+    }
+
+    private fun expect(
+        expectation: Int,
+        kind: JniNodeKind,
+    ) {
+        when (expectation) {
+            EXPECT_CONTENT -> {
+                require(
+                    kind != JniNodeKind.CITATION &&
+                        kind != JniNodeKind.FOOTNOTE &&
+                        kind != JniNodeKind.SPECIMEN &&
+                        kind != JniNodeKind.METADATA,
+                ) { "owned node in ordinary content" }
+            }
+
+            EXPECT_METADATA -> {
+                require(kind == JniNodeKind.METADATA) { "invalid metadata node" }
+            }
+
+            EXPECT_FOOTNOTE -> {
+                require(kind == JniNodeKind.FOOTNOTE) { "invalid footnote node" }
+            }
+
+            EXPECT_SPECIMEN -> {
+                require(kind == JniNodeKind.SPECIMEN) { "invalid specimen node" }
+            }
+
+            EXPECT_CITATION -> {
+                require(kind == JniNodeKind.CITATION) { "invalid citation node" }
+            }
+
+            EXPECT_LIST_ITEM -> {
+                require(kind == JniNodeKind.LIST_ITEM) { "list contains a non-item node" }
+            }
+
+            EXPECT_TABLE_ROW -> {
+                require(kind == JniNodeKind.TABLE_ROW) { "table contains a non-row node" }
+            }
+
+            EXPECT_TABLE_CELL -> {
+                require(kind == JniNodeKind.TABLE_CELL) { "table row contains a non-cell" }
+            }
+
+            EXPECT_DEFINITION -> {
+                require(kind == JniNodeKind.DEFINITION) { "invalid definition list child" }
+            }
+
+            EXPECT_TABLE_CAPTION -> {
+                require(kind == JniNodeKind.TABLE_CAPTION) { "invalid table caption kind" }
+            }
+
+            EXPECT_DIRECTIVE_LABEL -> {
+                require(kind == JniNodeKind.DIRECTIVE_LABEL) { "invalid directive label kind" }
+            }
+
+            else -> {
+                Unit
+            }
         }
+    }
+
+    /** The full array as the list it is; the decoder never touches it again. */
+    private fun <Element> wrap(list: Array<Any?>): kotlin.collections.List<Element> = ownedList(list)
+
+    /** The rows in `[from, to)` as one group; a group that is the whole list is the list. */
+    private fun group(
+        rows: Array<Any?>,
+        from: Int,
+        to: Int,
+    ): kotlin.collections.List<TableRow> =
+        if (from == 0 && to == rows.size) ownedList(rows) else ownedList(rows.copyOfRange(from, to))
+
+    // -- fields --------------------------------------------------------------
+
+    private fun count(name: String): Int = reader.int().also { require(it >= 0) { "invalid native $name count" } }
+
+    private fun attributes(): Attributes {
+        val classCount = count("class")
+        val classes: kotlin.collections.List<String> =
+            if (classCount == 0) {
+                emptyOwnedList()
+            } else {
+                val values = arrayOfNulls<Any?>(classCount)
+                for (index in 0 until classCount) {
+                    val value = reader.required()
+                    require(value.isNotEmpty()) { "empty normalized class" }
+                    values[index] = value
+                }
+                ownedList(values)
+            }
+        val recordCount = count("record")
+        val records: kotlin.collections.List<Record> =
+            if (recordCount == 0) {
+                emptyOwnedList()
+            } else {
+                val values = arrayOfNulls<Any?>(recordCount)
+                for (index in 0 until recordCount) {
+                    val name = reader.required()
+                    val value = reader.required()
+                    require(name.isNotEmpty() && name != "id" && name != "class") { "invalid normalized record" }
+                    values[index] = Record(name, value)
+                }
+                ownedList(values)
+            }
+        return Attributes.owned(classes, records)
+    }
 
     private fun list(
         scope: Scope,
         anchor: String?,
         attributes: Attributes,
-        consume: (Markup) -> Unit,
     ) {
         val flavor =
             when (val rawValue = reader.int()) {
@@ -443,98 +895,62 @@ private class Decoder(
                 else -> error("invalid native list delimiter $delimiterKind")
             }
         val tight = reader.boolean()
-        children { children ->
-            val items = children.immutableMap { requireNotNull(it as? ListItem) { "list contains a non-item node" } }
-            consume(List(flavor, start, variant, delimiter, tight, items, scope, anchor, attributes))
-        }
+        val frame = push(JniNodeKind.LIST, scope, anchor, attributes)
+        val objects = frame * OBJECT_SLOTS
+        this.objects[objects] = flavor
+        this.objects[objects + 1] = start
+        this.objects[objects + 2] = variant
+        this.objects[objects + 3] = delimiter
+        numbers[frame * NUMBER_SLOTS] = if (tight) 1L else 0L
+        counted(frame, EXPECT_LIST_ITEM, "child")
     }
 
-    private fun directiveBlock(
+    private fun table(
         scope: Scope,
         anchor: String?,
         attributes: Attributes,
-        consume: (Markup) -> Unit,
     ) {
-        val name = reader.string()
-        relations { field, children ->
-            val label = field?.let { requireNotNull(it as? DirectiveLabel) { "invalid directive label kind" } }
-            consume(DirectiveBlock(name, label, children, scope, anchor, attributes))
-        }
-    }
-
-    private fun directive(
-        scope: Scope,
-        anchor: String?,
-        attributes: Attributes,
-        consume: (Markup) -> Unit,
-    ) {
-        val name = reader.required()
-        relations { field, children ->
-            val label = field?.let { requireNotNull(it as? DirectiveLabel) { "invalid directive label kind" } }
-            require(children.isEmpty()) { "inline directive contains block content" }
-            consume(Directive(name, label, scope, anchor, attributes))
-        }
-    }
-
-    /**
-     * A callout's metadata leads, then its title -- a node-valued list that the
-     * payload sends before the content, as the walk visits it, and whose count
-     * is its presence because a present title holds at least one node -- and
-     * then the content. An absent title has a zero count.
-     */
-    private fun callout(
-        scope: Scope,
-        anchor: String?,
-        attributes: Attributes,
-        consume: (Markup) -> Unit,
-    ) {
-        val variant = reader.string()
-        val collapsed = reader.nullableBoolean()
-        val titleCount = reader.int()
-        require(titleCount >= 0) { "invalid native callout title count" }
-        if (titleCount == 0) {
-            children { consume(Callout(variant, collapsed, null, it, scope, anchor, attributes)) }
-            return
-        }
-        var title: kotlin.collections.List<Markup>? = null
-        actions.addLast {
-            children { children ->
-                consume(Callout(variant, collapsed, requireNotNull(title), children, scope, anchor, attributes))
+        val columnCount = reader.int()
+        require(columnCount > 0) { "invalid native table column count" }
+        val columns =
+            immutableList(columnCount) {
+                val flow = flow(reader.byte().toInt() and 0xff)
+                val relative = if (reader.boolean()) Double.fromBits(reader.long()) else null
+                require(relative == null || (relative.isFinite() && relative > 0)) { "invalid table column width" }
+                TableColumn(flow, relative)
             }
-        }
-        actions.addLast {
-            nodes(titleCount) { title = it }
-        }
-    }
-
-    /** Reads a singular owned field before the ordinary child chain. */
-    private fun relations(consume: (Markup?, kotlin.collections.List<Markup>) -> Unit) {
-        if (!reader.boolean()) {
-            children { consume(null, it) }
-            return
-        }
-        var field: Markup? = null
-        actions.addLast {
-            children { children -> consume(requireNotNull(field), children) }
-        }
-        actions.addLast {
-            node { node ->
-                field = node
-            }
+        val head = reader.int()
+        val content = reader.int()
+        val foot = reader.int()
+        require(head >= 0 && content >= 0 && foot >= 0) { "invalid table row groups" }
+        val hasCaption = reader.boolean()
+        val frame = push(JniNodeKind.TABLE, scope, anchor, attributes)
+        val numbers = frame * NUMBER_SLOTS
+        objects[frame * OBJECT_SLOTS] = columns
+        this.numbers[numbers] = head.toLong()
+        this.numbers[numbers + 1] = content.toLong()
+        this.numbers[numbers + 2] = foot.toLong()
+        if (hasCaption) {
+            field(frame, EXPECT_TABLE_CAPTION)
+        } else {
+            objects[frame * OBJECT_SLOTS + 1] = null
+            phases[frame] = 1
+            rows(frame)
         }
     }
 
-    private fun count(name: String): Int = reader.int().also { require(it >= 0) { "invalid native $name count" } }
-
-    private fun attributes(): Attributes {
-        val classes = immutableList(count("class")) { reader.required() }
-        val records = immutableList(count("record")) { Record(reader.required(), reader.required()) }
-        require(classes.none { it.isEmpty() }) { "empty normalized class" }
-        require(
-            records.none { it.name.isEmpty() || it.name == "id" || it.name == "class" },
-        ) { "invalid normalized record" }
-        return Attributes(classes, records)
+    private fun Long.toTableSpan(): Int {
+        require(this in 1..Int.MAX_VALUE.toLong()) { "invalid table cell span" }
+        return toInt()
     }
+
+    private fun bibMode(): BibMode =
+        when (val rawValue = reader.int()) {
+            1 -> BibMode.NORMAL
+            2 -> BibMode.AUTHOR_IN_TEXT
+            3 -> BibMode.SUPPRESS_AUTHOR
+            else -> error("invalid native bib mode $rawValue")
+        }
 
     private fun metadata(
         scope: Scope,
@@ -596,61 +1012,6 @@ private class Decoder(
         } else {
             null
         }
-
-    private fun table(
-        scope: Scope,
-        anchor: String?,
-        attributes: Attributes,
-        consume: (Markup) -> Unit,
-    ) {
-        val columnCount = reader.int()
-        require(columnCount > 0) { "invalid native table column count" }
-        val columns =
-            immutableList(columnCount) {
-                val flow = flow(reader.byte().toInt() and 0xff)
-                val relative = if (reader.boolean()) Double.fromBits(reader.long()) else null
-                require(relative == null || (relative.isFinite() && relative > 0)) { "invalid table column width" }
-                TableColumn(flow, relative)
-            }
-        val head = reader.int()
-        val content = reader.int()
-        val foot = reader.int()
-        require(head >= 0 && content >= 0 && foot >= 0) { "invalid table row groups" }
-        relations { field, children ->
-            val caption = field?.let { requireNotNull(it as? TableCaption) { "invalid table caption kind" } }
-            require(head.toLong() + content + foot == children.size.toLong()) { "invalid table row groups" }
-            val rows = children.immutableMap { requireNotNull(it as? TableRow) { "table contains a non-row node" } }
-            consume(
-                Table(
-                    caption,
-                    columns,
-                    immutableList(head) { rows[it] },
-                    immutableList(content) { rows[head + it] },
-                    immutableList(foot) { rows[head + content + it] },
-                    scope,
-                    anchor,
-                    attributes,
-                ),
-            )
-        }
-    }
-
-    private fun Long.toTableSpan(): Int {
-        require(this in 1..Int.MAX_VALUE.toLong()) { "invalid table cell span" }
-        return toInt()
-    }
-
-    private fun tableRow(
-        scope: Scope,
-        anchor: String?,
-        attributes: Attributes,
-        consume: (Markup) -> Unit,
-    ) {
-        children { children ->
-            val cells = children.immutableMap { requireNotNull(it as? TableCell) { "table row contains a non-cell" } }
-            consume(TableRow(cells, scope, anchor, attributes))
-        }
-    }
 
     /**
      * Every occurrence of one reference definition shares one resource, and the
