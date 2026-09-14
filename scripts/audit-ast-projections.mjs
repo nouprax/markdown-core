@@ -343,11 +343,12 @@ const kindSurfaces = [
         )
     },
     {
+        // The walker switches on the stored record's tag, one arm per kind.
         label: "Swift markup walker",
-        expect: [...kinds.keys()],
+        expect: [...kinds.keys()].map(camel),
         actual: namedKinds(
             "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalker.swift",
-            /case let node as ([A-Za-z]+):/g
+            /^\s+case (?:let )?\.`?([a-z][A-Za-z]*)`?(?:\(\w+\))?:/gm
         )
     },
     {

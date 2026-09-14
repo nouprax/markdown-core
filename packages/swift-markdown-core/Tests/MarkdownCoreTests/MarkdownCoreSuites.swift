@@ -44,7 +44,7 @@ import Testing
                 .init(scope: scope, anchor: nil, attributes: .empty, id: nil, start: nil, content: .init(indices: []))
             ),
         ])
-        let document = store.value(at: 0, as: Document.self)
+        let document = Document.stored(at: 0, in: store)
         #expect(document.specimens[0].start == 5)
         #expect(document.specimens[1].id == nil)
         #expect(document.dump().contains("referent=specimen(id=\"étude\")"))

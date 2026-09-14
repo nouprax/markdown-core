@@ -50,26 +50,26 @@ public struct List: Markup {
     let fields: Stored<Fields>
 
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public var scope: Scope { fields.scope }
+    public var scope: Scope { fields.read { $0.scope } }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { fields.read { $0.anchor } }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { fields.read { $0.attributes } }
     /// A list owns `ListItem`s and nothing else.
-    public var items: MarkupCollection<ListItem> { fields.items }
+    public var items: MarkupCollection<ListItem> { fields.elements { $0.items } }
     /// Bulleted or numbered.
-    public var flavor: ListFlavor { fields.flavor }
+    public var flavor: ListFlavor { fields.read { $0.flavor } }
     /// The first number an ordered list counts from, and `nil` for a bulleted
     /// one — which is the only reason it is optional.
-    public var start: Int64? { fields.start }
+    public var start: Int64? { fields.read { $0.start } }
     /// The authored numbering variant, or `nil` for a bullet list.
-    public var variant: OrderedListVariant? { fields.variant }
+    public var variant: OrderedListVariant? { fields.read { $0.variant } }
     /// The authored delimiter, or `nil` for a bullet list.
-    public var delimiter: OrderedListDelimiter? { fields.delimiter }
+    public var delimiter: OrderedListDelimiter? { fields.read { $0.delimiter } }
     /// Whether the source separated the items by blank lines. A loose list
     /// wraps each item's text in a ``Paragraph``; a tight one does not, so
     /// this is already visible in the tree and is stated here as well.
-    public var tight: Bool { fields.tight }
+    public var tight: Bool { fields.read { $0.tight } }
 }
 
 extension List.Fields {
@@ -125,15 +125,15 @@ public struct ListItem: Markup {
     let fields: Stored<Fields>
 
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public var scope: Scope { fields.scope }
+    public var scope: Scope { fields.read { $0.scope } }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { fields.read { $0.anchor } }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { fields.read { $0.attributes } }
     /// The item's blocks. Block content, not inline.
-    public var content: MarkupCollection<any Markup> { fields.content }
+    public var content: MarkupCollection<any Markup> { fields.children { $0.content } }
     /// The authored task marker, or `nil` when this is not a task item.
-    public var marker: String? { fields.marker }
+    public var marker: String? { fields.read { $0.marker } }
     /// Whether this item authored a task marker.
     public var tasked: Bool { marker != nil }
     /// Whether this item authored a completed or custom-state task marker.

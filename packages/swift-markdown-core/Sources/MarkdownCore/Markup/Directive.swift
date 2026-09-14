@@ -17,15 +17,15 @@ public struct Directive: Markup {
     let fields: Stored<Fields>
 
     /// Where it is, its leading colon included. See ``Scope``.
-    public var scope: Scope { fields.scope }
+    public var scope: Scope { fields.read { $0.scope } }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { fields.read { $0.anchor } }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { fields.read { $0.attributes } }
     /// The directive's name, without its colons.
-    public var name: String { fields.name }
+    public var name: String { fields.read { $0.name } }
     /// The bracketed label, or `nil` when the source wrote none.
-    public var label: DirectiveLabel? { fields.label }
+    public var label: DirectiveLabel? { fields.optionalElement { $0.label } }
 }
 
 extension Directive.Fields {

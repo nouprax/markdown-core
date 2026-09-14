@@ -14,17 +14,17 @@ public struct Definition: Markup {
     let fields: Stored<Fields>
 
     /// The authored source range, including the term and all bodies.
-    public var scope: Scope { fields.scope }
+    public var scope: Scope { fields.read { $0.scope } }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { fields.read { $0.anchor } }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { fields.read { $0.attributes } }
     /// The inline term, visited before the body collections.
-    public var term: MarkupCollection<any Markup> { fields.term }
+    public var term: MarkupCollection<any Markup> { fields.children { $0.term } }
     /// The nonempty ordered collection of block bodies; an individual body may be empty.
-    public var content: MarkupGroups<any Markup> { fields.content }
+    public var content: MarkupGroups<any Markup> { fields.groups { $0.content } }
     /// Whether the first body immediately follows its term without a blank line.
-    public var compact: Bool { fields.compact }
+    public var compact: Bool { fields.read { $0.compact } }
 }
 
 extension Definition.Fields {

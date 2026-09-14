@@ -24,21 +24,21 @@ public struct Table: Markup {
     let fields: Stored<Fields>
 
     /// The independently owned inline caption, visited before all rows.
-    public var caption: TableCaption? { fields.caption }
+    public var caption: TableCaption? { fields.optionalElement { $0.caption } }
     /// The non-empty logical column grid.
-    public var columns: [TableColumn] { fields.columns }
+    public var columns: [TableColumn] { fields.read { $0.columns } }
     /// Header rows in stored order.
-    public var head: MarkupCollection<TableRow> { fields.head }
+    public var head: MarkupCollection<TableRow> { fields.elements { $0.head } }
     /// Body rows in stored order.
-    public var content: MarkupCollection<TableRow> { fields.content }
+    public var content: MarkupCollection<TableRow> { fields.elements { $0.content } }
     /// Footer rows in stored order.
-    public var foot: MarkupCollection<TableRow> { fields.foot }
+    public var foot: MarkupCollection<TableRow> { fields.elements { $0.foot } }
     /// Authored source extent. See ``Scope``.
-    public var scope: Scope { fields.scope }
+    public var scope: Scope { fields.read { $0.scope } }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { fields.read { $0.anchor } }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { fields.read { $0.attributes } }
 
     /// Dispatches to this node kind's visitor callback.
 }
@@ -85,13 +85,13 @@ public struct TableRow: Markup {
     let fields: Stored<Fields>
 
     /// Cells starting in this row, in logical column order.
-    public var cells: MarkupCollection<TableCell> { fields.cells }
+    public var cells: MarkupCollection<TableCell> { fields.elements { $0.cells } }
     /// Authored source extent. See ``Scope``.
-    public var scope: Scope { fields.scope }
+    public var scope: Scope { fields.read { $0.scope } }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { fields.read { $0.anchor } }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { fields.read { $0.attributes } }
 
     /// Dispatches to this node kind's visitor callback.
 }
@@ -121,17 +121,17 @@ public struct TableCell: Markup {
     let fields: Stored<Fields>
 
     /// Number of rows occupied within this row group.
-    public var rowspan: Int { fields.rowspan }
+    public var rowspan: Int { fields.read { $0.rowspan } }
     /// Number of logical columns occupied.
-    public var colspan: Int { fields.colspan }
+    public var colspan: Int { fields.read { $0.colspan } }
     /// Inline or block content as parsed, without paragraph normalization.
-    public var content: MarkupCollection<any Markup> { fields.content }
+    public var content: MarkupCollection<any Markup> { fields.children { $0.content } }
     /// Authored source extent. See ``Scope``.
-    public var scope: Scope { fields.scope }
+    public var scope: Scope { fields.read { $0.scope } }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { fields.read { $0.anchor } }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { fields.read { $0.attributes } }
 
     /// Dispatches to this node kind's visitor callback.
 }
@@ -164,13 +164,13 @@ public struct TableCaption: Markup {
     let fields: Stored<Fields>
 
     /// Inline content after removing the caption marker.
-    public var content: MarkupCollection<any Markup> { fields.content }
+    public var content: MarkupCollection<any Markup> { fields.children { $0.content } }
     /// Authored source extent, including the caption marker.
-    public var scope: Scope { fields.scope }
+    public var scope: Scope { fields.read { $0.scope } }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { fields.read { $0.anchor } }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { fields.read { $0.attributes } }
 
     /// Dispatches to this node kind's visitor callback.
 }

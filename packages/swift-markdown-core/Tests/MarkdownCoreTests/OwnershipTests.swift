@@ -128,12 +128,17 @@ import Testing
         #expect(((groups[0].first as? Paragraph)?.content.first as? Text)?.literal == "body")
     }
 
-    @Test("container views fit the existential inline buffer without copying their fields")
+    @Test("every view fits the existential inline buffer without copying its fields")
     func inlineViews() {
         let inlineCapacity = 3 * MemoryLayout<Int>.size
         #expect(MemoryLayout<Document>.size <= inlineCapacity)
         #expect(MemoryLayout<Paragraph>.size <= inlineCapacity)
         #expect(MemoryLayout<TableCaption>.size <= inlineCapacity)
+        // Leaves are views too: a `Text` in a content collection is never boxed.
+        #expect(MemoryLayout<Text>.size <= inlineCapacity)
+        #expect(MemoryLayout<CodeBlock>.size <= inlineCapacity)
+        #expect(MemoryLayout<SoftBreak>.size <= inlineCapacity)
+        #expect(MemoryLayout<CrossEmbedded>.size <= inlineCapacity)
         #expect(MemoryLayout<MarkupReference<Metadata>>.size == MemoryLayout<Int>.size)
         #expect(MemoryLayout<MarkupReferences<any Markup>>.size == MemoryLayout<[Int]>.size)
         #expect(MemoryLayout<MarkupGroupReferences<any Markup>>.size == MemoryLayout<[[Int]]>.size)

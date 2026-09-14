@@ -19,22 +19,22 @@ public struct Callout: Markup {
     let fields: Stored<Fields>
 
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public var scope: Scope { fields.scope }
+    public var scope: Scope { fields.read { $0.scope } }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { fields.read { $0.anchor } }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { fields.read { $0.attributes } }
     /// The authored type as written, or `nil` when the container has no
     /// metadata line.
-    public var variant: String? { fields.variant }
+    public var variant: String? { fields.read { $0.variant } }
     /// The fold marker: `nil` when no `+` or `-` was authored, `false` for
     /// `+`, which opens expanded, and `true` for `-`.
-    public var collapsed: Bool? { fields.collapsed }
+    public var collapsed: Bool? { fields.read { $0.collapsed } }
     /// The title's inline content, or `nil` when no title was authored; never
     /// empty. The callout owns it as a field; it is never part of `content`.
-    public var title: MarkupCollection<any Markup>? { fields.title }
+    public var title: MarkupCollection<any Markup>? { fields.optionalChildren { $0.title } }
     /// The quoted blocks. Block content, not inline.
-    public var content: MarkupCollection<any Markup> { fields.content }
+    public var content: MarkupCollection<any Markup> { fields.children { $0.content } }
 }
 
 extension Callout.Fields {
