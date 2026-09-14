@@ -2,7 +2,7 @@ package com.nouprax.markdown.core
 
 internal actual fun parsePlatformDocument(source: ByteArray): Document {
     AndroidNativeLoader.ensureLoaded()
-    return JniPayloadDecoder.decode(JniParser.parsePayload(source))
+    return PayloadDecoder.decode(JniParser.parsePayload(source))
 }
 
 private object AndroidNativeLoader {

@@ -274,27 +274,21 @@ const kindSurfaces = [
         )
     },
     {
-        label: "Kotlin JNI node kinds",
+        label: "Kotlin payload node kinds",
         expect: [...kinds.keys()].map(snake),
         actual: namedKinds(
-            "packages/kotlin-markdown-core/src/jniMain/kotlin/com/nouprax/markdown/core/wire/JniNodeKind.kt",
+            "packages/kotlin-markdown-core/src/payloadMain/kotlin/com/nouprax/markdown/core/wire/PayloadNodeKind.kt",
             /^\s{4}([A-Z][A-Z_]*)\(\d+\),$/gm
         )
     },
     {
-        label: "Kotlin decoder",
+        // One decoder serves the JVM, Android, and Kotlin/Native: the
+        // payload is the only projection a Kotlin target reads.
+        label: "Kotlin payload decoder",
         expect: [...kinds.keys()].map(snake),
         actual: namedKinds(
-            "packages/kotlin-markdown-core/src/jniMain/kotlin/com/nouprax/markdown/core/wire/JniMarkupDecoder.kt",
-            /JniNodeKind\.([A-Z_]+)(?=\s*(?:,|->))/g
-        )
-    },
-    {
-        label: "Kotlin/Native C facade adapter",
-        expect: [...kinds.keys()].map(snake),
-        actual: namedKinds(
-            "packages/kotlin-markdown-core/src/nativePlatformMain/kotlin/com/nouprax/markdown/core/PlatformParser.native.kt",
-            /^\s+MARKDOWN_CORE_KIND_([A-Z_]+)\s*->/gm
+            "packages/kotlin-markdown-core/src/payloadMain/kotlin/com/nouprax/markdown/core/wire/PayloadMarkupDecoder.kt",
+            /PayloadNodeKind\.([A-Z_]+)(?=\s*(?:,|->))/g
         )
     },
     {

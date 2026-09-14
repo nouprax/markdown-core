@@ -1,27 +1,32 @@
 package com.nouprax.markdown.core
 
-internal object JniPayloadDecoder {
-    /** Current JVM/Android JNI payload format. */
+/**
+ * Decodes the payload the C encoder in `src/native/markdown_core_kotlin_payload.c`
+ * produces: the one wire every Kotlin target reads, whether the JNI bridge
+ * handed it over as a `byte[]` or Kotlin/Native copied it out of C.
+ */
+internal object PayloadDecoder {
+    /** The current payload format. */
     private val magic = byteArrayOf(0x4d, 0x4b, 0x4a, 0x31)
 
     fun decode(bytes: ByteArray): Document {
-        val reader = JniPayloadReader(bytes)
+        val reader = PayloadReader(bytes)
         magic.forEachIndexed { index, expected ->
             val actual = reader.byte()
             require(actual == expected) {
-                "invalid JNI payload at byte $index: expected ${expected.toUByte()}, got ${actual.toUByte()}"
+                "invalid payload at byte $index: expected ${expected.toUByte()}, got ${actual.toUByte()}"
             }
         }
         when (reader.byte().toInt()) {
             0 -> Unit
             1 -> throw reader.error()
-            else -> error("unsupported JNI payload status")
+            else -> error("unsupported payload status")
         }
         return reader.document()
     }
 }
 
-private fun JniPayloadReader.error(): ParseException {
+private fun PayloadReader.error(): ParseException {
     val code =
         when (int()) {
             1 -> ParseErrorCode.INVALID_ARGUMENT
@@ -34,7 +39,7 @@ private fun JniPayloadReader.error(): ParseException {
 }
 
 /** Little-endian fixed-width fields and length-prefixed UTF-8 strings, read in place. */
-internal class JniPayloadReader(
+internal class PayloadReader(
     private val bytes: ByteArray,
 ) {
     private var offset = 0
@@ -42,14 +47,14 @@ internal class JniPayloadReader(
 
     fun byte(): Byte {
         val at = offset
-        require(at < bytes.size) { "truncated JNI payload" }
+        require(at < bytes.size) { "truncated payload" }
         offset = at + 1
         return bytes[at]
     }
 
     fun int(): Int {
         val at = offset
-        require(at <= bytes.size - Int.SIZE_BYTES) { "truncated JNI payload" }
+        require(at <= bytes.size - Int.SIZE_BYTES) { "truncated payload" }
         offset = at + Int.SIZE_BYTES
         return (bytes[at].toInt() and 0xff) or
             ((bytes[at + 1].toInt() and 0xff) shl 8) or
@@ -59,7 +64,7 @@ internal class JniPayloadReader(
 
     fun long(): Long {
         val at = offset
-        require(at <= bytes.size - Long.SIZE_BYTES) { "truncated JNI payload" }
+        require(at <= bytes.size - Long.SIZE_BYTES) { "truncated payload" }
         offset = at + Long.SIZE_BYTES
         val low =
             (bytes[at].toInt() and 0xff) or
@@ -78,7 +83,7 @@ internal class JniPayloadReader(
         val size = int()
         if (size == -1) return null
         val at = offset
-        require(size >= 0 && size <= bytes.size - at) { "invalid JNI payload string" }
+        require(size >= 0 && size <= bytes.size - at) { "invalid payload string" }
         if (size == 0) return ""
         val end = at + size
         offset = end
@@ -87,7 +92,7 @@ internal class JniPayloadReader(
 
     fun required(): String = requireNotNull(string()) { "missing native field" }
 
-    fun kind(): JniNodeKind = JniNodeKind.from(byte().toInt() and 0xff)
+    fun kind(): PayloadNodeKind = PayloadNodeKind.from(byte().toInt() and 0xff)
 
     fun boolean(): Boolean =
         when (byte().toInt()) {

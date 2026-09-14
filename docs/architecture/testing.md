@@ -68,9 +68,10 @@ independently of correctness. ES has a separate `run-conformance.mjs` entry.
 Conformance checks field shapes, nullability, scopes, binding mappings, and
 reviewed canonical dumps. It is required even when correctness passes.
 
-Each binding tests its public API and native ownership boundary. JVM/Android
-JNI decoder tests stay in the applicable source sets; they do not become
-Kotlin/Native payload tests. ES type and runtime consumers install the actual
+Each binding tests its public API and native ownership boundary. The Kotlin
+payload decoder is one implementation for the JVM, Android, and Kotlin/Native,
+so its wire tests live in one shared test source set and run on every target;
+only the JNI transport tests stay JVM-specific. ES type and runtime consumers install the actual
 `npm pack` tarball and resolve declarations through package exports. Browser
 checks use real headless Chrome/Chromium over HTTP ESM/Wasm loading, rather than
 substituting a Node run. The C++ installed consumer and Swift consumer package

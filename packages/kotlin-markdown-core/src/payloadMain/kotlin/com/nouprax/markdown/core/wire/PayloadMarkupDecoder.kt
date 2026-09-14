@@ -1,6 +1,6 @@
 package com.nouprax.markdown.core
 
-internal fun JniPayloadReader.document(): Document = Decoder(this).decode()
+internal fun PayloadReader.document(): Document = Decoder(this).decode()
 
 private const val INITIAL_FRAMES = 32
 private const val OBJECT_SLOTS = 4
@@ -25,8 +25,8 @@ private const val EXPECT_DIRECTIVE_LABEL = 11
 private val noElements: Array<Any?> = arrayOfNulls(0)
 
 /**
- * Decodes the depth-first JNI payload with one explicit stack of frames,
- * never the JVM stack and never a closure per node.
+ * Decodes the depth-first payload with one explicit stack of frames, never
+ * the call stack and never a closure per node.
  *
  * A leaf becomes its node as its fields are read. A container is a frame --
  * its header and scalars in parallel arrays -- that reads its lists in
@@ -35,9 +35,9 @@ private val noElements: Array<Any?> = arrayOfNulls(0)
  * the node, its scope, and the arrays its lists wrap once.
  */
 private class Decoder(
-    private val reader: JniPayloadReader,
+    private val reader: PayloadReader,
 ) {
-    private var kinds = arrayOfNulls<JniNodeKind>(INITIAL_FRAMES)
+    private var kinds = arrayOfNulls<PayloadNodeKind>(INITIAL_FRAMES)
     private var phases = IntArray(INITIAL_FRAMES)
     private var scopes = arrayOfNulls<Scope>(INITIAL_FRAMES)
     private var anchors = arrayOfNulls<String>(INITIAL_FRAMES)
@@ -64,16 +64,16 @@ private class Decoder(
             node()
             settle()
         }
-        require(reader.finished) { "JNI payload contains trailing data" }
-        return requireNotNull(root as? Document) { "JNI payload contains an invalid document tree" }
+        require(reader.finished) { "payload contains trailing data" }
+        return requireNotNull(root as? Document) { "payload contains an invalid document tree" }
     }
 
     /** Reads one node: a leaf into the open list, a container as a new frame with its first list open. */
     private fun node() {
         val kind = reader.kind()
         val isRoot = nodesStarted++ == 0
-        require((kind == JniNodeKind.DOCUMENT) == isRoot) {
-            "JNI payload must contain exactly one document at its root"
+        require((kind == PayloadNodeKind.DOCUMENT) == isRoot) {
+            "payload must contain exactly one document at its root"
         }
         expect(expectations[depth - 1], kind)
         val scope = Scope(reader.int(), reader.int(), reader.int(), reader.int())
@@ -81,7 +81,7 @@ private class Decoder(
         require(anchor != "") { "empty normalized anchor" }
         val attributes = attributes()
         when (kind) {
-            JniNodeKind.DOCUMENT -> {
+            PayloadNodeKind.DOCUMENT -> {
                 val hasMetadata = reader.boolean()
                 val frame = push(kind, scope, anchor, attributes)
                 if (hasMetadata) {
@@ -92,7 +92,7 @@ private class Decoder(
                 }
             }
 
-            JniNodeKind.CALLOUT -> {
+            PayloadNodeKind.CALLOUT -> {
                 val variant = reader.string()
                 val collapsed =
                     when (reader.nullableBoolean()) {
@@ -114,44 +114,44 @@ private class Decoder(
                 }
             }
 
-            JniNodeKind.PARAGRAPH,
-            JniNodeKind.EMPHASIS,
-            JniNodeKind.STRONG,
-            JniNodeKind.STRIKETHROUGH,
-            JniNodeKind.MARK,
-            JniNodeKind.INSERTION,
-            JniNodeKind.SPAN,
-            JniNodeKind.SUPERSCRIPT,
-            JniNodeKind.SUBSCRIPT,
-            JniNodeKind.TABLE_CAPTION,
-            JniNodeKind.DIRECTIVE_LABEL,
+            PayloadNodeKind.PARAGRAPH,
+            PayloadNodeKind.EMPHASIS,
+            PayloadNodeKind.STRONG,
+            PayloadNodeKind.STRIKETHROUGH,
+            PayloadNodeKind.MARK,
+            PayloadNodeKind.INSERTION,
+            PayloadNodeKind.SPAN,
+            PayloadNodeKind.SUPERSCRIPT,
+            PayloadNodeKind.SUBSCRIPT,
+            PayloadNodeKind.TABLE_CAPTION,
+            PayloadNodeKind.DIRECTIVE_LABEL,
             -> {
                 counted(push(kind, scope, anchor, attributes), EXPECT_CONTENT, "child")
             }
 
-            JniNodeKind.HEADING -> {
+            PayloadNodeKind.HEADING -> {
                 val level = reader.int()
                 val frame = push(kind, scope, anchor, attributes)
                 numbers[frame * NUMBER_SLOTS] = level.toLong()
                 counted(frame, EXPECT_CONTENT, "child")
             }
 
-            JniNodeKind.THEMATIC_BREAK -> {
+            PayloadNodeKind.THEMATIC_BREAK -> {
                 deliver(ThematicBreak(scope, anchor, attributes))
             }
 
-            JniNodeKind.LIST -> {
+            PayloadNodeKind.LIST -> {
                 list(scope, anchor, attributes)
             }
 
-            JniNodeKind.LIST_ITEM -> {
+            PayloadNodeKind.LIST_ITEM -> {
                 val marker = reader.string()
                 val frame = push(kind, scope, anchor, attributes)
                 objects[frame * OBJECT_SLOTS] = marker
                 counted(frame, EXPECT_CONTENT, "child")
             }
 
-            JniNodeKind.CODE_BLOCK -> {
+            PayloadNodeKind.CODE_BLOCK -> {
                 deliver(
                     CodeBlock(
                         reader.string(),
@@ -166,34 +166,34 @@ private class Decoder(
                 )
             }
 
-            JniNodeKind.HTML_BLOCK -> {
+            PayloadNodeKind.HTML_BLOCK -> {
                 deliver(HTMLBlock(reader.required(), scope, anchor, attributes))
             }
 
-            JniNodeKind.FORMULA_BLOCK -> {
+            PayloadNodeKind.FORMULA_BLOCK -> {
                 deliver(FormulaBlock(reader.required(), scope, anchor, attributes))
             }
 
-            JniNodeKind.TABLE -> {
+            PayloadNodeKind.TABLE -> {
                 table(scope, anchor, attributes)
             }
 
-            JniNodeKind.DEFINITION_LIST -> {
+            PayloadNodeKind.DEFINITION_LIST -> {
                 val frame = push(kind, scope, anchor, attributes)
                 val count = count("child")
                 require(count > 0) { "empty definition list" }
                 open(frame, count, EXPECT_DEFINITION)
             }
 
-            JniNodeKind.DEFINITION -> {
+            PayloadNodeKind.DEFINITION -> {
                 val compact = reader.boolean()
                 val frame = push(kind, scope, anchor, attributes)
                 numbers[frame * NUMBER_SLOTS] = if (compact) 1L else 0L
                 counted(frame, EXPECT_CONTENT, "child")
             }
 
-            JniNodeKind.DIRECTIVE_BLOCK, JniNodeKind.DIRECTIVE -> {
-                val name = if (kind == JniNodeKind.DIRECTIVE) reader.required() else reader.string()
+            PayloadNodeKind.DIRECTIVE_BLOCK, PayloadNodeKind.DIRECTIVE -> {
+                val name = if (kind == PayloadNodeKind.DIRECTIVE) reader.required() else reader.string()
                 val hasLabel = reader.boolean()
                 val frame = push(kind, scope, anchor, attributes)
                 objects[frame * OBJECT_SLOTS] = name
@@ -206,53 +206,53 @@ private class Decoder(
                 }
             }
 
-            JniNodeKind.TEXT -> {
+            PayloadNodeKind.TEXT -> {
                 deliver(Text(reader.required(), scope, anchor, attributes))
             }
 
-            JniNodeKind.SOFT_BREAK -> {
+            PayloadNodeKind.SOFT_BREAK -> {
                 deliver(SoftBreak(scope, anchor, attributes))
             }
 
-            JniNodeKind.LINE_BREAK -> {
+            PayloadNodeKind.LINE_BREAK -> {
                 deliver(LineBreak(scope, anchor, attributes))
             }
 
-            JniNodeKind.CODE -> {
+            PayloadNodeKind.CODE -> {
                 deliver(Code(reader.required(), scope, anchor, attributes))
             }
 
-            JniNodeKind.HTML -> {
+            PayloadNodeKind.HTML -> {
                 deliver(HTML(reader.required(), scope, anchor, attributes))
             }
 
-            JniNodeKind.COMMENT -> {
+            PayloadNodeKind.COMMENT -> {
                 deliver(Comment(reader.required(), scope, anchor, attributes))
             }
 
-            JniNodeKind.FORMULA -> {
+            PayloadNodeKind.FORMULA -> {
                 deliver(Formula(placement(), reader.required(), scope, anchor, attributes))
             }
 
-            JniNodeKind.CROSS_LINK, JniNodeKind.CROSS_EMBEDDED -> {
+            PayloadNodeKind.CROSS_LINK, PayloadNodeKind.CROSS_EMBEDDED -> {
                 val dest = destination()
                 require(dest is Destination.Cross) { "cross reference requires a cross destination" }
                 val label = reader.string()
-                if (kind == JniNodeKind.CROSS_EMBEDDED) {
+                if (kind == PayloadNodeKind.CROSS_EMBEDDED) {
                     deliver(CrossEmbedded(dest, label, dimensions(), scope, anchor, attributes))
                 } else {
                     deliver(CrossLink(dest, label, scope, anchor, attributes))
                 }
             }
 
-            JniNodeKind.LINK -> {
+            PayloadNodeKind.LINK -> {
                 val resource = resource()
                 val frame = push(kind, scope, anchor, attributes)
                 objects[frame * OBJECT_SLOTS] = resource
                 counted(frame, EXPECT_CONTENT, "child")
             }
 
-            JniNodeKind.EMBEDDED -> {
+            PayloadNodeKind.EMBEDDED -> {
                 val resource = resource()
                 val dimensions = dimensions()
                 val frame = push(kind, scope, anchor, attributes)
@@ -261,14 +261,14 @@ private class Decoder(
                 counted(frame, EXPECT_CONTENT, "child")
             }
 
-            JniNodeKind.CITE -> {
+            PayloadNodeKind.CITE -> {
                 val frame = push(kind, scope, anchor, attributes)
                 val count = count("citation")
                 require(count > 0) { "invalid native citation count" }
                 open(frame, count, EXPECT_CITATION)
             }
 
-            JniNodeKind.CITATION -> {
+            PayloadNodeKind.CITATION -> {
                 val referent =
                     when (val branch = reader.byte().toInt()) {
                         1 -> CitationReferent.Bib(reader.required(), bibMode())
@@ -281,11 +281,11 @@ private class Decoder(
                 counted(frame, EXPECT_CONTENT, "child")
             }
 
-            JniNodeKind.TABLE_ROW -> {
+            PayloadNodeKind.TABLE_ROW -> {
                 counted(push(kind, scope, anchor, attributes), EXPECT_TABLE_CELL, "child")
             }
 
-            JniNodeKind.TABLE_CELL -> {
+            PayloadNodeKind.TABLE_CELL -> {
                 val rowspan = reader.long().toTableSpan()
                 val colspan = reader.long().toTableSpan()
                 val frame = push(kind, scope, anchor, attributes)
@@ -294,14 +294,14 @@ private class Decoder(
                 counted(frame, EXPECT_CONTENT, "child")
             }
 
-            JniNodeKind.FOOTNOTE -> {
+            PayloadNodeKind.FOOTNOTE -> {
                 val id = reader.required()
                 val frame = push(kind, scope, anchor, attributes)
                 objects[frame * OBJECT_SLOTS] = id
                 counted(frame, EXPECT_CONTENT, "child")
             }
 
-            JniNodeKind.SPECIMEN -> {
+            PayloadNodeKind.SPECIMEN -> {
                 val id = reader.string()
                 val startValue = reader.long()
                 val start = if (reader.boolean()) startValue else null
@@ -311,7 +311,7 @@ private class Decoder(
                 counted(frame, EXPECT_CONTENT, "child")
             }
 
-            JniNodeKind.METADATA -> {
+            PayloadNodeKind.METADATA -> {
                 deliver(metadata(scope, anchor, attributes))
             }
         }
@@ -353,7 +353,7 @@ private class Decoder(
         val anchor = anchors[top]
         val attributes = this.attributes[top]!!
         when (kind) {
-            JniNodeKind.DOCUMENT -> {
+            PayloadNodeKind.DOCUMENT -> {
                 when (phase) {
                     0 -> {
                         this.objects[objects] = list[0]
@@ -391,7 +391,7 @@ private class Decoder(
                 return null
             }
 
-            JniNodeKind.CALLOUT -> {
+            PayloadNodeKind.CALLOUT -> {
                 if (phase == 0) {
                     this.objects[objects + 1] = wrap<Markup>(list)
                     phases[top] = 1
@@ -413,56 +413,56 @@ private class Decoder(
                 )
             }
 
-            JniNodeKind.PARAGRAPH -> {
+            PayloadNodeKind.PARAGRAPH -> {
                 return finish(top, Paragraph(wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.EMPHASIS -> {
+            PayloadNodeKind.EMPHASIS -> {
                 return finish(top, Emphasis(wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.STRONG -> {
+            PayloadNodeKind.STRONG -> {
                 return finish(top, Strong(wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.STRIKETHROUGH -> {
+            PayloadNodeKind.STRIKETHROUGH -> {
                 return finish(top, Strikethrough(wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.MARK -> {
+            PayloadNodeKind.MARK -> {
                 return finish(top, Mark(wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.INSERTION -> {
+            PayloadNodeKind.INSERTION -> {
                 return finish(top, Insertion(wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.SPAN -> {
+            PayloadNodeKind.SPAN -> {
                 return finish(top, Span(wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.SUPERSCRIPT -> {
+            PayloadNodeKind.SUPERSCRIPT -> {
                 return finish(top, Superscript(wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.SUBSCRIPT -> {
+            PayloadNodeKind.SUBSCRIPT -> {
                 return finish(top, Subscript(wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.TABLE_CAPTION -> {
+            PayloadNodeKind.TABLE_CAPTION -> {
                 return finish(top, TableCaption(wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.DIRECTIVE_LABEL -> {
+            PayloadNodeKind.DIRECTIVE_LABEL -> {
                 return finish(top, DirectiveLabel(wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.HEADING -> {
+            PayloadNodeKind.HEADING -> {
                 val level = this.numbers[numbers].toInt()
                 return finish(top, Heading(level, wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.LIST -> {
+            PayloadNodeKind.LIST -> {
                 return finish(
                     top,
                     List(
@@ -479,12 +479,12 @@ private class Decoder(
                 )
             }
 
-            JniNodeKind.LIST_ITEM -> {
+            PayloadNodeKind.LIST_ITEM -> {
                 val marker = this.objects[objects] as String?
                 return finish(top, ListItem(marker, wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.TABLE -> {
+            PayloadNodeKind.TABLE -> {
                 if (phase == 0) {
                     this.objects[objects + 1] = list[0]
                     phases[top] = 1
@@ -508,11 +508,11 @@ private class Decoder(
                 )
             }
 
-            JniNodeKind.TABLE_ROW -> {
+            PayloadNodeKind.TABLE_ROW -> {
                 return finish(top, TableRow(wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.TABLE_CELL -> {
+            PayloadNodeKind.TABLE_CELL -> {
                 val rowspan = this.numbers[numbers].toInt()
                 val colspan = this.numbers[numbers + 1].toInt()
                 return finish(
@@ -521,11 +521,11 @@ private class Decoder(
                 )
             }
 
-            JniNodeKind.DEFINITION_LIST -> {
+            PayloadNodeKind.DEFINITION_LIST -> {
                 return finish(top, DefinitionList(wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.DEFINITION -> {
+            PayloadNodeKind.DEFINITION -> {
                 if (phase == 0) {
                     this.objects[objects] = wrap<Markup>(list)
                     val bodies = count("definition body")
@@ -557,7 +557,7 @@ private class Decoder(
                 )
             }
 
-            JniNodeKind.DIRECTIVE_BLOCK, JniNodeKind.DIRECTIVE -> {
+            PayloadNodeKind.DIRECTIVE_BLOCK, PayloadNodeKind.DIRECTIVE -> {
                 if (phase == 0) {
                     this.objects[objects + 1] = list[0]
                     phases[top] = 1
@@ -565,7 +565,7 @@ private class Decoder(
                     return null
                 }
                 val label = this.objects[objects + 1] as DirectiveLabel?
-                if (kind == JniNodeKind.DIRECTIVE) {
+                if (kind == PayloadNodeKind.DIRECTIVE) {
                     val name = this.objects[objects] as String
                     return finish(top, Directive(name, label, scope, anchor, attributes))
                 }
@@ -576,7 +576,7 @@ private class Decoder(
                 )
             }
 
-            JniNodeKind.LINK -> {
+            PayloadNodeKind.LINK -> {
                 val resource = this.objects[objects] as DefinitionResource
                 return finish(
                     top,
@@ -591,7 +591,7 @@ private class Decoder(
                 )
             }
 
-            JniNodeKind.EMBEDDED -> {
+            PayloadNodeKind.EMBEDDED -> {
                 val resource = this.objects[objects] as DefinitionResource
                 return finish(
                     top,
@@ -607,11 +607,11 @@ private class Decoder(
                 )
             }
 
-            JniNodeKind.CITE -> {
+            PayloadNodeKind.CITE -> {
                 return finish(top, Cite(wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.CITATION -> {
+            PayloadNodeKind.CITATION -> {
                 if (phase == 0) {
                     this.objects[objects + 1] = wrap<Markup>(list)
                     phases[top] = 1
@@ -631,19 +631,19 @@ private class Decoder(
                 )
             }
 
-            JniNodeKind.FOOTNOTE -> {
+            PayloadNodeKind.FOOTNOTE -> {
                 val id = this.objects[objects] as String
                 return finish(top, Footnote(id, wrap(list), scope, anchor, attributes))
             }
 
-            JniNodeKind.SPECIMEN -> {
+            PayloadNodeKind.SPECIMEN -> {
                 val id = this.objects[objects] as String?
                 val start = this.objects[objects + 1] as Long?
                 return finish(top, Specimen(id, start, wrap(list), scope, anchor, attributes))
             }
 
             else -> {
-                error("invalid JNI decoder frame $kind")
+                error("invalid payload decoder frame $kind")
             }
         }
     }
@@ -651,7 +651,7 @@ private class Decoder(
     // -- frames --------------------------------------------------------------
 
     private fun push(
-        kind: JniNodeKind,
+        kind: PayloadNodeKind,
         scope: Scope,
         anchor: String?,
         attributes: Attributes,
@@ -740,7 +740,7 @@ private class Decoder(
 
     private fun directiveContent(frame: Int) {
         counted(frame, EXPECT_CONTENT, "child")
-        if (kinds[frame] == JniNodeKind.DIRECTIVE) {
+        if (kinds[frame] == PayloadNodeKind.DIRECTIVE) {
             require(elements[frame]!!.isEmpty()) { "inline directive contains block content" }
         }
     }
@@ -756,60 +756,61 @@ private class Decoder(
 
     private fun expect(
         expectation: Int,
-        kind: JniNodeKind,
+        kind: PayloadNodeKind,
     ) {
         when (expectation) {
             EXPECT_CONTENT -> {
                 require(
-                    kind != JniNodeKind.CITATION &&
-                        kind != JniNodeKind.FOOTNOTE &&
-                        kind != JniNodeKind.SPECIMEN &&
-                        kind != JniNodeKind.METADATA,
+                    kind != PayloadNodeKind.CITATION &&
+                        kind != PayloadNodeKind.FOOTNOTE &&
+                        kind != PayloadNodeKind.SPECIMEN &&
+                        kind != PayloadNodeKind.METADATA,
                 ) { "owned node in ordinary content" }
             }
 
             EXPECT_METADATA -> {
-                require(kind == JniNodeKind.METADATA) { "invalid metadata node" }
+                require(kind == PayloadNodeKind.METADATA) { "invalid metadata node" }
             }
 
             EXPECT_FOOTNOTE -> {
-                require(kind == JniNodeKind.FOOTNOTE) { "invalid footnote node" }
+                require(kind == PayloadNodeKind.FOOTNOTE) { "invalid footnote node" }
             }
 
             EXPECT_SPECIMEN -> {
-                require(kind == JniNodeKind.SPECIMEN) { "invalid specimen node" }
+                require(kind == PayloadNodeKind.SPECIMEN) { "invalid specimen node" }
             }
 
             EXPECT_CITATION -> {
-                require(kind == JniNodeKind.CITATION) { "invalid citation node" }
+                require(kind == PayloadNodeKind.CITATION) { "invalid citation node" }
             }
 
             EXPECT_LIST_ITEM -> {
-                require(kind == JniNodeKind.LIST_ITEM) { "list contains a non-item node" }
+                require(kind == PayloadNodeKind.LIST_ITEM) { "list contains a non-item node" }
             }
 
             EXPECT_TABLE_ROW -> {
-                require(kind == JniNodeKind.TABLE_ROW) { "table contains a non-row node" }
+                require(kind == PayloadNodeKind.TABLE_ROW) { "table contains a non-row node" }
             }
 
             EXPECT_TABLE_CELL -> {
-                require(kind == JniNodeKind.TABLE_CELL) { "table row contains a non-cell" }
+                require(kind == PayloadNodeKind.TABLE_CELL) { "table row contains a non-cell" }
             }
 
             EXPECT_DEFINITION -> {
-                require(kind == JniNodeKind.DEFINITION) { "invalid definition list child" }
+                require(kind == PayloadNodeKind.DEFINITION) { "invalid definition list child" }
             }
 
             EXPECT_TABLE_CAPTION -> {
-                require(kind == JniNodeKind.TABLE_CAPTION) { "invalid table caption kind" }
+                require(kind == PayloadNodeKind.TABLE_CAPTION) { "invalid table caption kind" }
             }
 
             EXPECT_DIRECTIVE_LABEL -> {
-                require(kind == JniNodeKind.DIRECTIVE_LABEL) { "invalid directive label kind" }
+                require(kind == PayloadNodeKind.DIRECTIVE_LABEL) { "invalid directive label kind" }
             }
 
             else -> {
-                Unit
+                // The root admits the one document, which the caller has checked.
+                return
             }
         }
     }
@@ -895,7 +896,7 @@ private class Decoder(
                 else -> error("invalid native list delimiter $delimiterKind")
             }
         val tight = reader.boolean()
-        val frame = push(JniNodeKind.LIST, scope, anchor, attributes)
+        val frame = push(PayloadNodeKind.LIST, scope, anchor, attributes)
         val objects = frame * OBJECT_SLOTS
         this.objects[objects] = flavor
         this.objects[objects + 1] = start
@@ -924,7 +925,7 @@ private class Decoder(
         val foot = reader.int()
         require(head >= 0 && content >= 0 && foot >= 0) { "invalid table row groups" }
         val hasCaption = reader.boolean()
-        val frame = push(JniNodeKind.TABLE, scope, anchor, attributes)
+        val frame = push(PayloadNodeKind.TABLE, scope, anchor, attributes)
         val numbers = frame * NUMBER_SLOTS
         objects[frame * OBJECT_SLOTS] = columns
         this.numbers[numbers] = head.toLong()
@@ -1025,7 +1026,7 @@ private class Decoder(
     private fun resource(): DefinitionResource {
         val ordinal = reader.int()
         if (ordinal in resources.indices) return resources[ordinal]
-        require(ordinal == resources.size) { "JNI payload names an unknown resource $ordinal" }
+        require(ordinal == resources.size) { "payload names an unknown resource $ordinal" }
         val resource = DefinitionResource(destination(), reader.string(), reader.string(), attributes())
         resources += resource
         return resource

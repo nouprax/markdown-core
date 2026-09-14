@@ -17,6 +17,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+import org.jetbrains.kotlin.gradle.plugin.mpp.TestExecutable
 import org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 import java.util.zip.ZipFile
@@ -243,6 +244,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
     val archiveDirectory = layout.buildDirectory.dir("native/$name/archives")
     val coreArchive = archiveDirectory.map { it.file("libmarkdown-core.a") }
     val elementsArchive = archiveDirectory.map { it.file("libmarkdown-core-elements.a") }
+    val payloadArchive = archiveDirectory.map { it.file("libmarkdown-core-kotlin-payload.a") }
     val generatedDefinitionDirectory = layout.buildDirectory.dir("generated/cinterop/$name")
     val embedNativeLibraries = !isIdeModelImport
     val configureTask =
@@ -263,6 +265,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
                 "-DMARKDOWN_CORE_TESTS=OFF",
                 "-DMARKDOWN_CORE_SHARED=OFF",
                 "-DMARKDOWN_CORE_STATIC=ON",
+                "-DMARKDOWN_CORE_KOTLIN_PAYLOAD=ON",
                 "-DCMAKE_BUILD_TYPE=Release",
                 "-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=${archiveDirectory.get().asFile.absolutePath}",
             )
@@ -275,7 +278,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
                 repositoryRoot.dir("packages/markdown-core/elements"),
                 layout.projectDirectory.dir("src/native"),
             )
-            outputs.files(coreArchive, elementsArchive)
+            outputs.files(coreArchive, elementsArchive, payloadArchive)
             commandLine(
                 "cmake",
                 "--build",
@@ -285,6 +288,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
                 "--target",
                 "libmarkdown-core-elements_static",
                 "libmarkdown-core_static",
+                "markdown_core_kotlin_payload",
                 "--parallel",
             )
         }
@@ -306,7 +310,10 @@ fun KotlinNativeTarget.configureNativeFacade() {
 
     compilations.getByName("main").cinterops.create("markdownCoreKotlin") {
         definitionFile.set(generatedDefinitionDirectory.map { it.file("markdown_core_kotlin.def") })
-        compilerOpts("-I${repositoryRoot.dir("packages/markdown-core/include").asFile.absolutePath}")
+        compilerOpts(
+            "-I${repositoryRoot.dir("packages/markdown-core/include").asFile.absolutePath}",
+            "-I${layout.projectDirectory.dir("src/native").asFile.absolutePath}",
+        )
         tasks.named(interopProcessingTaskName).configure {
             dependsOn(generateDefinition)
             if (embedNativeLibraries) {
@@ -314,6 +321,17 @@ fun KotlinNativeTarget.configureNativeFacade() {
                 inputs.dir(archiveDirectory)
             }
         }
+    }
+}
+
+// The test executables are release builds: a debug Kotlin/Native binary runs
+// the decoder an order of magnitude slower than the one a consumer links,
+// so any timing taken from these tasks would describe a library nobody
+// ships. Correctness is the same in both.
+fun KotlinNativeTarget.configureNativeTests() {
+    binaries.withType<TestExecutable>().configureEach {
+        debuggable = false
+        optimized = true
     }
 }
 
@@ -480,10 +498,12 @@ kotlin {
     macosArm64 {
         configureNativeFacade()
         testRuns.create("conformance")
+        configureNativeTests()
     }
     linuxX64 {
         configureNativeFacade()
         testRuns.create("conformance")
+        configureNativeTests()
     }
 
     sourceSets {
@@ -492,24 +512,42 @@ kotlin {
             kotlin.srcDir(layout.buildDirectory.dir("generated/canonicalAstCommonTest/kotlin"))
             dependencies { implementation(kotlin("test")) }
         }
-        jvmMain { kotlin.srcDir("src/jniMain/kotlin") }
-        jvmTest.dependencies { implementation(kotlin("test-junit5")) }
+        // The payload decoder serves every target: the JNI bridge and the
+        // Kotlin/Native cinterop both hand it the same bytes.
+        jvmMain { kotlin.srcDir("src/payloadMain/kotlin") }
+        jvmTest {
+            kotlin.srcDir("src/payloadTest/kotlin")
+            dependencies { implementation(kotlin("test-junit5")) }
+        }
+        getByName("androidHostTest") { kotlin.srcDir("src/payloadTest/kotlin") }
         getByName("androidDeviceTest").dependencies {
             implementation("androidx.test.ext:junit:1.3.0")
             implementation("androidx.test:runner:1.7.0")
         }
         androidMain {
-            kotlin.srcDir("src/jniMain/kotlin")
+            kotlin.srcDir("src/payloadMain/kotlin")
             dependencies {
                 implementation(
                     project.dependencies.project(":packages:kotlin-markdown-core:android-runtime"),
                 )
             }
         }
-        macosArm64Main { kotlin.srcDir("src/nativePlatformMain/kotlin") }
-        linuxX64Main { kotlin.srcDir("src/nativePlatformMain/kotlin") }
-        macosArm64Test { kotlin.srcDir("src/nativePlatformTest/kotlin") }
-        linuxX64Test { kotlin.srcDir("src/nativePlatformTest/kotlin") }
+        macosArm64Main {
+            kotlin.srcDir("src/payloadMain/kotlin")
+            kotlin.srcDir("src/nativePlatformMain/kotlin")
+        }
+        linuxX64Main {
+            kotlin.srcDir("src/payloadMain/kotlin")
+            kotlin.srcDir("src/nativePlatformMain/kotlin")
+        }
+        macosArm64Test {
+            kotlin.srcDir("src/payloadTest/kotlin")
+            kotlin.srcDir("src/nativePlatformTest/kotlin")
+        }
+        linuxX64Test {
+            kotlin.srcDir("src/payloadTest/kotlin")
+            kotlin.srcDir("src/nativePlatformTest/kotlin")
+        }
     }
 }
 
