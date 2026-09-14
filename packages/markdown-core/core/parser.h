@@ -205,6 +205,9 @@ struct markdown_core_parser {
     /* Hook deliveries of the inline completion walk and of the node finishing
      * walk: one per node each, however many elements are attached. */
     size_t completion_work, finishing_work;
+    /* Finish hook calls: one per node offered to an element's hook, which
+     * is one per node of a kind the element declared. */
+    size_t finisher_work;
     /* Lifecycle hook calls made for inline roots: implementers only. */
     size_t inline_lifecycle_work;
     /* Literal runs grown in place instead of split, and body bytes a

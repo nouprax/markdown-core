@@ -921,15 +921,20 @@ bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_
 
 typedef int (*tree_phase_func)(markdown_core_parser *parser, markdown_core_node **root_slot, void *context);
 typedef void (*tree_node_func)(markdown_core_parser *parser, markdown_core_node *node, int script_depth, void *context);
-/* Runs at a node's EXIT with the frame's iterator, whose lookahead already
- * names a node outside the subtree; returns the node now in the position. */
-typedef markdown_core_node *(*tree_exit_func)(markdown_core_parser *parser, markdown_core_iter *iter,
-                                              markdown_core_node *node, int claim_depth, void *context);
+/* Runs at a node's EXIT and returns the node now in the position, or NULL
+ * once the position is released. `*successor` names the sibling the walk
+ * continues at: the node's next sibling when called, which the hook moves
+ * past any operand it merges into the node before it releases anything. */
+typedef markdown_core_node *(*tree_exit_func)(markdown_core_parser *parser, markdown_core_node *node, int claim_depth,
+                                              void *context, markdown_core_node **successor);
 
+/* One owned tree being walked: its root's slot, and the cursor -- the node
+ * whose ENTER (`entering`) or EXIT comes next. */
 typedef struct {
     markdown_core_node **slot;
-    markdown_core_iter iter;
-    bool started;
+    markdown_core_node *root;
+    markdown_core_node *cursor;
+    bool entering;
     int script_depth, claim_depth;
 } owned_tree_frame;
 
@@ -959,71 +964,100 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
         walk->frames = frames;
         walk->capacity = capacity;
     }
-    walk->frames[walk->count++] = (owned_tree_frame){.slot = slot, .script_depth = walk->script_depth};
+    walk->frames[walk->count++] = (owned_tree_frame){
+        .slot = slot, .root = *slot, .cursor = *slot, .entering = true, .script_depth = walk->script_depth};
     return 1;
 }
 
 /* Every independent inline tree uses the same explicit continuation stack.
  * Field roots remain owned by their live slots until their children finish;
  * an exit or completion phase may then replace that root. Depth never uses C
- * frames, and a node that cannot own fields costs no visitor call. */
+ * recursion, and the walk steps through the tree's own links: a node is
+ * entered, its children follow, and it is exited once they are. The frame's
+ * position is held in locals while its tree is walked and returns to the
+ * frame only when a field tree is pushed above it, so an event costs no
+ * frame traffic and no iterator record. */
 static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node **slot, tree_node_func enter,
                             tree_exit_func exit, tree_phase_func finish, void *context, int script_depth) {
     owned_tree_walk walk = {.parser = parser, .script_depth = script_depth};
     push_owned_tree(slot, &walk);
     while (walk.count && !parser->oom) {
         owned_tree_frame *frame = &walk.frames[walk.count - 1];
-        if (!frame->started) {
-            markdown_core_iter_init(&frame->iter, *frame->slot);
-            frame->started = true;
-        }
-        markdown_core_event_type event = markdown_core_iter_next(&frame->iter);
-        if (event == MARKDOWN_CORE_EVENT_DONE) {
-            markdown_core_node **completed = frame->slot;
-            walk.count--;
-            if (finish && !finish(parser, completed, context)) {
-                parser->oom = true;
+        markdown_core_node *root = frame->root;
+        markdown_core_node *node = frame->cursor;
+        bool entering = frame->entering;
+        int depth = frame->script_depth, claim = frame->claim_depth;
+        for (;;) {
+            bool word_body = node->element && node->element->delimiter.body == DELIMITER_WORD_BODY;
+            bool claims = markdown_core_node_type_claims_text((markdown_core_node_type)node->kind);
+            if (entering) {
+                depth += word_body;
+                claim += claims;
+                if (enter) {
+                    enter(parser, node, depth, context);
+                    if (parser->oom) {
+                        break;
+                    }
+                }
+                if (markdown_core_node_may_own_inline_subtrees(node)) {
+                    /* The fields finish before the node's children and its
+                     * EXIT: the frame keeps the next event, the field trees
+                     * go above it, and the top frame resumes. Settled before
+                     * pushing, because pushing may move the frames. */
+                    frame->cursor = node->first_child ? node->first_child : node;
+                    frame->entering = node->first_child != NULL;
+                    frame->script_depth = depth;
+                    frame->claim_depth = claim;
+                    walk.script_depth = depth;
+                    size_t first = walk.count;
+                    if (!markdown_core_visit_inline_subtrees(node, push_owned_tree, &walk)) {
+                        parser->oom = true;
+                    }
+                    /* The visitor reports fields in source order; a stack
+                     * consumes their reversed registration order. No field is
+                     * visited or scanned twice. */
+                    for (size_t left = first, right = walk.count; left < right && left < --right; left++) {
+                        owned_tree_frame swap = walk.frames[left];
+                        walk.frames[left] = walk.frames[right];
+                        walk.frames[right] = swap;
+                    }
+                    break;
+                }
+                if (node->first_child) {
+                    node = node->first_child;
+                } else {
+                    entering = false;
+                }
+                continue;
             }
-            continue;
-        }
-        markdown_core_node *node = markdown_core_iter_get_node(&frame->iter);
-        int step = event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
-        if (node->element && node->element->delimiter.body == DELIMITER_WORD_BODY) {
-            frame->script_depth += step;
-        }
-        if (markdown_core_node_type_claims_text((markdown_core_node_type)node->kind)) {
-            frame->claim_depth += step;
-        }
-        if (event != MARKDOWN_CORE_EVENT_ENTER) {
+            depth -= word_body;
+            claim -= claims;
+            markdown_core_node *parent = node->parent;
+            markdown_core_node *successor = node->next;
+            markdown_core_node *now = node;
             if (exit) {
+                now = exit(parser, node, claim, context, &successor);
+                if (parser->oom) {
+                    break;
+                }
+            }
+            if (node == root) {
                 /* The frame root's EXIT is its last event, so the slot may
                  * take a replacement here; a failed walk keeps the tree for
                  * the transaction's cleanup. */
-                bool root = node == frame->iter.root;
-                markdown_core_node *now = exit(parser, &frame->iter, node, frame->claim_depth, context);
-                if (root && !parser->oom) {
-                    *frame->slot = now;
+                *frame->slot = now;
+                walk.count--;
+                if (finish && !finish(parser, frame->slot, context)) {
+                    parser->oom = true;
                 }
+                break;
             }
-            continue;
-        }
-        walk.script_depth = frame->script_depth;
-        if (enter) {
-            enter(parser, node, frame->script_depth, context);
-        }
-        if (!markdown_core_node_may_own_inline_subtrees(node)) {
-            continue;
-        }
-        size_t first = walk.count;
-        if (!markdown_core_visit_inline_subtrees(node, push_owned_tree, &walk)) {
-            parser->oom = true;
-        }
-        /* The visitor reports fields in source order; a stack consumes their
-         * reversed registration order. No field is visited or scanned twice. */
-        for (size_t left = first, right = walk.count; left < right && left < --right; left++) {
-            owned_tree_frame swap = walk.frames[left];
-            walk.frames[left] = walk.frames[right];
-            walk.frames[right] = swap;
+            if (successor) {
+                node = successor;
+                entering = true;
+            } else {
+                node = parent;
+            }
         }
     }
     parser->mem->free(walk.frames);
@@ -2426,30 +2460,68 @@ void markdown_core_block_own_definitions(markdown_core_definition_collection *co
  * parsing does not depend on the attached elements. A Text first absorbs the
  * run that follows it and is released when it owns no bytes; the hooks then
  * see the run's survivor, exactly as the former whole-tree passes did. */
+/* An element with a finish hook and the kinds it acts on as a bit per kind
+ * (S_kind_bit); a hook whose kinds do not fit the mask is offered every
+ * node, which is what declaring no kinds means. */
+typedef struct {
+    const markdown_core_element *element;
+    uint64_t kinds;
+} finisher;
+
 typedef struct {
     markdown_core_parser *parser;
-    const markdown_core_element **finishers;
+    finisher *finishers;
     size_t count;
 } finishing_walk;
 
-static markdown_core_node *S_finish_node(markdown_core_parser *parser, markdown_core_iter *iter,
-                                         markdown_core_node *node, int claim_depth, void *context) {
+/* One bit per node kind: the block kinds count from 0 and the inline kinds
+ * from 32, so the dialect's kinds all fit one word. */
+static uint64_t S_kind_bit(markdown_core_node_type kind) {
+    unsigned value = markdown_core_kind_value(kind);
+    unsigned index = value + (MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind) ? 32u : 0u);
+    return value < 32 && index < 64 ? (uint64_t)1 << index : 0;
+}
+
+static uint64_t S_finished_kinds(const markdown_core_node_type *kinds) {
+    uint64_t mask = 0;
+    if (!kinds) {
+        return ~(uint64_t)0;
+    }
+    for (; *kinds != MARKDOWN_CORE_NODE_NONE; kinds++) {
+        uint64_t bit = S_kind_bit(*kinds);
+        if (!bit) {
+            return ~(uint64_t)0;
+        }
+        mask |= bit;
+    }
+    return mask;
+}
+
+static markdown_core_node *S_finish_node(markdown_core_parser *parser, markdown_core_node *node, int claim_depth,
+                                         void *context, markdown_core_node **successor) {
     const finishing_walk *walk = context;
     MARKDOWN_CORE_DIAGNOSTIC(parser->finishing_work++;)
     if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
         if (node->next && node->next->kind == MARKDOWN_CORE_NODE_TEXT &&
-            !markdown_core_consolidate_text_run(parser, iter, node)) {
+            !markdown_core_consolidate_text_run(parser, node)) {
             parser->oom = true;
             return NULL;
         }
+        /* The operands of a merged run are gone; the walk goes on after it. */
+        *successor = node->next;
         if (node->as.literal->len == 0) {
             markdown_core_chunk_free(parser->mem, node->as.literal);
             markdown_core_node_recycle(parser->arena, node);
             return NULL;
         }
     }
-    for (size_t i = 0; i < walk->count && node; i++) {
-        const markdown_core_element *element = walk->finishers[i];
+    uint64_t bit = S_kind_bit((markdown_core_node_type)node->kind);
+    for (const finisher *hook = walk->finishers, *end = hook + walk->count; hook != end && node; hook++) {
+        if (!(hook->kinds & bit)) {
+            continue;
+        }
+        const markdown_core_element *element = hook->element;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->finisher_work++;)
         node = element->finish_node(element, parser, node, claim_depth);
         if (parser->oom) {
             return NULL;
@@ -2468,23 +2540,25 @@ static int S_finish_tree(markdown_core_parser *parser) {
     for (size_t i = 0; i < parser->element_count; i++) {
         walk.count += parser->elements[i]->finish_node != NULL;
     }
+    /* The table lives in the transaction's arena for the walk: no heap
+     * allocation per parse, and its record returns to the arena's pool. */
+    size_t table_size = walk.count * sizeof(*walk.finishers);
     if (walk.count) {
-        walk.finishers = parser->mem->calloc(walk.count, sizeof(*walk.finishers));
+        walk.finishers = markdown_core_arena_take(parser->arena, table_size);
         if (!walk.finishers) {
             parser->oom = true;
             return 0;
         }
         for (size_t i = 0, at = 0; i < parser->element_count; i++) {
-            if (parser->elements[i]->finish_node) {
-                walk.finishers[at++] = parser->elements[i];
+            const markdown_core_element *element = parser->elements[i];
+            if (element->finish_node) {
+                walk.finishers[at++] = (finisher){element, S_finished_kinds(element->finish_node_kinds)};
             }
         }
     }
     int ok = markdown_core_visit_block_subtrees(parser->root, finish_independent_tree, &walk) &&
              walk_owned_trees(parser, &parser->root, NULL, S_finish_node, NULL, &walk, 0);
-    if (walk.finishers) {
-        parser->mem->free(walk.finishers);
-    }
+    markdown_core_arena_recycle(parser->arena, walk.finishers, table_size);
     return ok && !parser->oom;
 }
 

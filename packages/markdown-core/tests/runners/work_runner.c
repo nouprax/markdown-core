@@ -177,6 +177,7 @@ static markdown_core_node *record_work(const markdown_core_element *element, mar
     RECORD(reference_probe_work);
     RECORD(completion_work);
     RECORD(finishing_work);
+    RECORD(finisher_work);
     RECORD(inline_lifecycle_work);
     RECORD(text_run_extensions);
     RECORD(code_block_move_work);

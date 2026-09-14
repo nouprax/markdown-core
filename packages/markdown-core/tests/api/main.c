@@ -3277,7 +3277,7 @@ typedef struct {
         specimens;
     size_t key_index_branches, key_index_operations;
     size_t block_dispatch, reference_probes;
-    size_t completion, finishing, lifecycle, text_run_extensions, code_block_moves;
+    size_t completion, finishing, finishers, lifecycle, text_run_extensions, code_block_moves;
     size_t reference_folds, footnote_folds;
     size_t table_row_scans, table_row_work, table_geometry_allocations, table_scratch_growth;
     size_t html_scans;
@@ -3306,6 +3306,7 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
     work->reference_probes = parser->reference_probe_work;
     work->completion = parser->completion_work;
     work->finishing = parser->finishing_work;
+    work->finishers = parser->finisher_work;
     work->lifecycle = parser->inline_lifecycle_work;
     work->text_run_extensions = parser->text_run_extensions;
     work->code_block_moves = parser->code_block_move_work;
@@ -3787,14 +3788,14 @@ static void finishing_walk_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
         const char *unit;
-        size_t completed, texts;
+        size_t completed, texts, finished, tail;
         markdown_core_node_type produced;
     } shapes[] = {
-        {"a *b* c **d** e\n\n", 8, 5, MARKDOWN_CORE_NODE_STRONG},
-        {"mail x@y.zz now\n\n", 2, 3, MARKDOWN_CORE_NODE_LINK},
-        {"see www.example.com now\n\n", 6, 3, MARKDOWN_CORE_NODE_LINK},
-        {"$$x$$\n\n", 2, 0, MARKDOWN_CORE_NODE_FORMULA_BLOCK},
-        {"- item\n", 3, 1, MARKDOWN_CORE_NODE_LIST_ITEM},
+        {"a *b* c **d** e\n\n", 8, 5, 6, 2, MARKDOWN_CORE_NODE_STRONG},
+        {"mail x@y.zz now\n\n", 2, 3, 2, 2, MARKDOWN_CORE_NODE_LINK},
+        {"see www.example.com now\n\n", 6, 3, 4, 2, MARKDOWN_CORE_NODE_LINK},
+        {"$$x$$\n\n", 2, 0, 1, 2, MARKDOWN_CORE_NODE_FORMULA_BLOCK},
+        {"- item\n", 3, 1, 2, 1, MARKDOWN_CORE_NODE_LIST_ITEM},
     };
     for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
         for (size_t units = 256; units <= 4096; units *= 4) {
@@ -3817,6 +3818,15 @@ static void finishing_walk_work(test_batch_runner *runner) {
                work.finishing);
             OK(runner, probed.completion == work.completion && probed.finishing == work.finishing,
                "an extra finishing element adds no walk: shape=%zu units=%zu", shape, units);
+            /* The built-in hooks name their kinds: autolink is offered each
+             * surviving Text, a link's own included, and formula each
+             * paragraph, code block and formula block, whatever else the tree
+             * holds. The tail is one paragraph of one Text, or one Text
+             * continuing the last item's paragraph. */
+            INT_EQ(runner, work.finishers, shapes[shape].finished * units + shapes[shape].tail,
+                   "a hook is offered only the kinds it names: shape=%zu units=%zu", shape, units);
+            INT_EQ(runner, probed.finishers, work.finishers + probed.finishing,
+                   "a hook naming no kinds is offered every node: shape=%zu units=%zu", shape, units);
             if (root) {
                 OK(runner, count_kind(root, shapes[shape].produced) == units,
                    "the finishing walk produced every unit's node: shape=%zu units=%zu", shape, units);

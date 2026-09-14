@@ -49,9 +49,14 @@ extern const markdown_core_element *const markdown_core_block_structure[];
 extern const markdown_core_element *const markdown_core_inline_structure[];
 extern const size_t markdown_core_block_structure_count, markdown_core_inline_structure_count;
 
+/* The value bits of a kind: its index among the block or the inline kinds. */
+static MARKDOWN_CORE_INLINE unsigned markdown_core_kind_value(markdown_core_node_type kind) {
+    return (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+}
+
 static MARKDOWN_CORE_INLINE const markdown_core_element *
 markdown_core_structure_for_kind(markdown_core_node_type kind) {
-    unsigned index = kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+    unsigned index = markdown_core_kind_value(kind);
     if (MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind)) {
         return index < markdown_core_inline_structure_count ? markdown_core_inline_structure[index] : NULL;
     }
@@ -155,6 +160,10 @@ struct markdown_core_element {
     markdown_core_accepts_lines_func accepts_lines_func;
     markdown_core_postprocess_func postprocess_func;
     markdown_core_finish_node_func finish_node;
+    /* The node kinds `finish_node` acts on, terminated by
+     * MARKDOWN_CORE_NODE_NONE: the finishing walk offers the hook only those
+     * nodes. NULL offers it every node. */
+    const markdown_core_node_type *finish_node_kinds;
     /* Bytes of element payload every node created with this element carries
      * inside its own record, zeroed, with `opaque` pointing at them: a
      * formula's or a directive's fixed-size record costs no allocation of

@@ -144,18 +144,23 @@ source-ordered document chain and discards the parser collection.
 
 Consolidation and element finishing begin only after finalization, in one
 post-order walk over Document.footnotes, Document.specimens and every
-element-owned field, each entered from its live owner slot. At a node's EXIT
-the walk first absorbs the Text run that follows a Text into it, releases a
-Text that owns no bytes, and then hands the surviving node to each element's
-`finish_node` hook in registry order: autolink splits addresses and formula
-unwraps wrappers there, so the number of walks after inline parsing is two
-(completion and finishing) however many elements are attached. The walk
-counts the enclosing nodes that claim their text as their own (the node
-model's `markdown_core_node_type_claims_text`: a link's text is the link's)
-and hands each hook that count, so autolink leaves a link's own text alone
-in constant time per node and the engine never names an element's kind. Hooks receive
-resolved ids and the completed ownership model; removing a document value
-cannot leave a pointer in a parser index. OOM cleanup uses the document's
+element-owned field, each entered from its live owner slot. The walk steps
+through the tree's own links with one frame per owned tree, no iterator
+record written per event. At a node's EXIT it first absorbs the Text run
+that follows a Text into it, releases a Text that owns no bytes, and then
+hands the surviving node to each element's `finish_node` hook in registry
+order: autolink splits addresses and formula unwraps wrappers there, so the
+number of walks after inline parsing is two (completion and finishing)
+however many elements are attached. An element names the node kinds its
+hook acts on (`finish_node_kinds`) and is offered only those, as a bit per
+kind tested at each node: autolink sees each Text, formula each paragraph,
+code block and formula block, and a paragraph's Emph never reaches either.
+The walk counts the enclosing nodes that claim their text as their own (the
+node model's `markdown_core_node_type_claims_text`: a link's text is the
+link's) and hands each hook that count, so autolink leaves a link's own text
+alone in constant time per node and the engine never names an element's
+kind. Hooks receive resolved ids and the completed ownership model; removing
+a document value cannot leave a pointer in a parser index. OOM cleanup uses the document's
 existing ownership graph, and semantic reference cycles never become object
 cycles. The whole-tree `postprocess_func` remains a tooling hook that no
 built-in element declares.
