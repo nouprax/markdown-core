@@ -862,11 +862,11 @@ bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_
                 if (!accepts) {
                     continue;
                 }
-                uint64_t *at = sets + c * words + word;
-                at[0] |= element->scan_block_start ? bit : 0;
-                at[256 * words] |= element->try_interrupting_block ? bit : 0;
-                at[512 * words] |= element->try_opening_block ? bit : 0;
-                at[768 * words] |= element->try_opening_paragraph ? bit : 0;
+                uint64_t *slot = sets + c * words + word;
+                slot[0] |= element->scan_block_start ? bit : 0;
+                slot[256 * words] |= element->try_interrupting_block ? bit : 0;
+                slot[512 * words] |= element->try_opening_block ? bit : 0;
+                slot[768 * words] |= element->try_opening_paragraph ? bit : 0;
             }
         }
         if (!element->match_inline && !element->insert_inline_from_delim) {

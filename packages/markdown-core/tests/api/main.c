@@ -6355,10 +6355,12 @@ static bool attach_wide_owners(markdown_core_parser *parser, void *context) {
     return true;
 }
 static void block_owner_sets_grow_with_the_registry(test_batch_runner *runner) {
+    memset(wide_owners, 0, sizeof(wide_owners));
     for (size_t i = 0; i < WIDE_OWNER_COUNT; i++) {
         snprintf(wide_owner_names[i], sizeof(wide_owner_names[i]), "wide-owner-%zu", i);
-        wide_owners[i] = (markdown_core_element){
-            .name = wide_owner_names[i], .maximum_block_indent = 3, .try_opening_block = visit_wide_owner};
+        wide_owners[i].name = wide_owner_names[i];
+        wide_owners[i].maximum_block_indent = 3;
+        wide_owners[i].try_opening_block = visit_wide_owner;
     }
     static const char source[] = "text\n";
     wide_owner_projection projection = {0};
