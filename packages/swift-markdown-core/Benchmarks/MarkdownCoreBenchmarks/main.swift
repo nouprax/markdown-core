@@ -84,10 +84,24 @@ func nanoseconds() -> UInt64 {
 
 // SHA-256 as the C lane and the other lanes compute it, over the UTF-8 bytes.
 func sha256(_ text: String) -> String {
-    var h: [UInt32] = [
+    var state = SHA256.initialState
+    var message = Array(text.utf8)
+    let bitLength = UInt64(message.count) * 8
+    message.append(0x80)
+    while message.count % 64 != 56 { message.append(0) }
+    for shift in stride(from: 56, through: 0, by: -8) { message.append(UInt8((bitLength >> UInt64(shift)) & 0xff)) }
+    for chunk in stride(from: 0, to: message.count, by: 64) {
+        SHA256.compress(message[chunk..<(chunk + 64)], into: &state)
+    }
+    return state.map { String(format: "%08x", $0) }.joined()
+}
+
+enum SHA256 {
+    static let initialState: [UInt32] = [
         0x6a09_e667, 0xbb67_ae85, 0x3c6e_f372, 0xa54f_f53a, 0x510e_527f, 0x9b05_688c, 0x1f83_d9ab, 0x5be0_cd19,
     ]
-    let k: [UInt32] = [
+
+    static let roundConstants: [UInt32] = [
         0x428a_2f98, 0x7137_4491, 0xb5c0_fbcf, 0xe9b5_dba5, 0x3956_c25b, 0x59f1_11f1, 0x923f_82a4, 0xab1c_5ed5,
         0xd807_aa98, 0x1283_5b01, 0x2431_85be, 0x550c_7dc3, 0x72be_5d74, 0x80de_b1fe, 0x9bdc_06a7, 0xc19b_f174,
         0xe49b_69c1, 0xefbe_4786, 0x0fc1_9dc6, 0x240c_a1cc, 0x2de9_2c6f, 0x4a74_84aa, 0x5cb0_a9dc, 0x76f9_88da,
@@ -97,52 +111,45 @@ func sha256(_ text: String) -> String {
         0x19a4_c116, 0x1e37_6c08, 0x2748_774c, 0x34b0_bcb5, 0x391c_0cb3, 0x4ed8_aa4a, 0x5b9c_ca4f, 0x682e_6ff3,
         0x748f_82ee, 0x78a5_636f, 0x84c8_7814, 0x8cc7_0208, 0x90be_fffa, 0xa450_6ceb, 0xbef9_a3f7, 0xc671_78f2,
     ]
-    var message = Array(text.utf8)
-    let bitLength = UInt64(message.count) * 8
-    message.append(0x80)
-    while message.count % 64 != 56 { message.append(0) }
-    for shift in stride(from: 56, through: 0, by: -8) { message.append(UInt8((bitLength >> UInt64(shift)) & 0xff)) }
-    func rotate(_ value: UInt32, _ count: UInt32) -> UInt32 { (value >> count) | (value << (32 - count)) }
-    var w = [UInt32](repeating: 0, count: 64)
-    for chunk in stride(from: 0, to: message.count, by: 64) {
-        for i in 0..<16 {
-            let base = chunk + i * 4
-            w[i] =
-                UInt32(message[base]) << 24 | UInt32(message[base + 1]) << 16 | UInt32(message[base + 2]) << 8
-                | UInt32(message[base + 3])
-        }
-        for i in 16..<64 {
-            let s0 = rotate(w[i - 15], 7) ^ rotate(w[i - 15], 18) ^ (w[i - 15] >> 3)
-            let s1 = rotate(w[i - 2], 17) ^ rotate(w[i - 2], 19) ^ (w[i - 2] >> 10)
-            w[i] = w[i - 16] &+ s0 &+ w[i - 7] &+ s1
-        }
-        var (a, b, c, d, e, f, g, hh) = (h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7])
-        for i in 0..<64 {
-            let s1 = rotate(e, 6) ^ rotate(e, 11) ^ rotate(e, 25)
-            let ch = (e & f) ^ (~e & g)
-            let t1 = hh &+ s1 &+ ch &+ k[i] &+ w[i]
-            let s0 = rotate(a, 2) ^ rotate(a, 13) ^ rotate(a, 22)
-            let maj = (a & b) ^ (a & c) ^ (b & c)
-            let t2 = s0 &+ maj
-            hh = g
-            g = f
-            f = e
-            e = d &+ t1
-            d = c
-            c = b
-            b = a
-            a = t1 &+ t2
-        }
-        h[0] &+= a
-        h[1] &+= b
-        h[2] &+= c
-        h[3] &+= d
-        h[4] &+= e
-        h[5] &+= f
-        h[6] &+= g
-        h[7] &+= hh
+
+    static func rotateRight(_ value: UInt32, _ count: UInt32) -> UInt32 {
+        (value >> count) | (value << (32 - count))
     }
-    return h.map { String(format: "%08x", $0) }.joined()
+
+    static func compress(_ block: ArraySlice<UInt8>, into state: inout [UInt32]) {
+        var schedule = [UInt32](repeating: 0, count: 64)
+        for word in 0..<16 {
+            let base = block.startIndex + word * 4
+            schedule[word] =
+                UInt32(block[base]) << 24 | UInt32(block[base + 1]) << 16 | UInt32(block[base + 2]) << 8
+                | UInt32(block[base + 3])
+        }
+        for word in 16..<64 {
+            let older = schedule[word - 15]
+            let newer = schedule[word - 2]
+            let sigma0 = rotateRight(older, 7) ^ rotateRight(older, 18) ^ (older >> 3)
+            let sigma1 = rotateRight(newer, 17) ^ rotateRight(newer, 19) ^ (newer >> 10)
+            schedule[word] = schedule[word - 16] &+ sigma0 &+ schedule[word - 7] &+ sigma1
+        }
+        var work = state
+        for round in 0..<64 {
+            let sigma1 = rotateRight(work[4], 6) ^ rotateRight(work[4], 11) ^ rotateRight(work[4], 25)
+            let choice = (work[4] & work[5]) ^ (~work[4] & work[6])
+            let temp1 = work[7] &+ sigma1 &+ choice &+ roundConstants[round] &+ schedule[round]
+            let sigma0 = rotateRight(work[0], 2) ^ rotateRight(work[0], 13) ^ rotateRight(work[0], 22)
+            let majority = (work[0] & work[1]) ^ (work[0] & work[2]) ^ (work[1] & work[2])
+            let temp2 = sigma0 &+ majority
+            work[7] = work[6]
+            work[6] = work[5]
+            work[5] = work[4]
+            work[4] = work[3] &+ temp1
+            work[3] = work[2]
+            work[2] = work[1]
+            work[1] = work[0]
+            work[0] = temp1 &+ temp2
+        }
+        for index in 0..<8 { state[index] &+= work[index] }
+    }
 }
 
 func escape(_ value: String) -> String {

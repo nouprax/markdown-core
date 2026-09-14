@@ -36,7 +36,11 @@ private final class DumpState {
     private var prefixEnds: [Int] = [0]
     private var output: [UInt8] = []
 
-    var result: String { String(decoding: output, as: UTF8.self) }
+    var result: String {
+        // Every byte came from a Swift string, so the output is UTF-8 by construction.
+        guard let text = String(validating: output, as: UTF8.self) else { preconditionFailure("dump is UTF-8") }
+        return text
+    }
 
     func start() {
         guard !frames.isEmpty else { return }
