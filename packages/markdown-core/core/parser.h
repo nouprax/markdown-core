@@ -50,7 +50,11 @@ typedef struct {
     markdown_core_definition_entry *values;
     size_t count;
     size_t capacity;
-    struct markdown_core_node *last_inline;
+    /* The first and the last definition registered from an inline root, the
+     * ends of the chain their owner's value field holds: the engine walks it
+     * from `first_inline` without reading that field, which is the owning
+     * element's payload. */
+    struct markdown_core_node *first_inline, *last_inline;
     /* The last inline-registered definition an inline root's completion walk
      * covered: the walk after the next root starts at its successor. */
     struct markdown_core_node *last_completed;

@@ -28,6 +28,8 @@
  * parse without those faults: the share of the time that is memory being
  * handed back and re-faulted, on any workload, beside the default. It is a
  * measurement of the process's allocator, not a setting the library makes.
+ * Both readings reach --json too: the allocator with the run, the faults
+ * with each case.
  *
  *   bench_runner --list [--workload NAME --samples DIR]
  *   bench_runner --workload NAME --samples DIR [--case NAME] [--repeats N]
@@ -237,9 +239,17 @@ static int measure_case(const bench_case *input, void *context) {
             return 1;
         }
     }
+    /* The tree is counted here, outside the fault window and outside every
+     * reported sample: the walk would otherwise charge its own first touch
+     * -- of the walker's code and of the tree it reads -- to the parse whose
+     * faults are reported, which with one repeat is the whole measurement. */
+    if (bench_parse_once(input->data, input->length, &warm, &nodes) != 0) {
+        fprintf(stderr, "%s: parse failed\n", input->name);
+        return 1;
+    }
     faults_before = minor_faults();
     for (i = 0; i < repeats; i++) {
-        if (bench_parse_once(input->data, input->length, &samples[i], i == 0 ? &nodes : NULL) != 0) {
+        if (bench_parse_once(input->data, input->length, &samples[i], NULL) != 0) {
             fprintf(stderr, "%s: parse failed\n", input->name);
             return 1;
         }
@@ -325,11 +335,11 @@ static int measure_case(const bench_case *input, void *context) {
                 "      \"scale\": %zu,\n      \"bytes\": %zu,\n      \"inputSha256\": \"%s\",\n      \"nodes\": %zu,\n"
                 "      \"minParseNs\": %llu,\n      \"medianParseNs\": %llu,\n      \"minFreeNs\": %llu,\n"
                 "      \"medianFreeNs\": %llu,\n      \"mbPerSecond\": %.3f,\n      \"nsPerNode\": %.3f,\n"
-                "      \"rssDeltaKiB\": %ld,\n      \"samples\": [",
+                "      \"rssDeltaKiB\": %ld,\n      \"minorFaultsPerParse\": %.1f,\n      \"samples\": [",
                 run->json_cases ? ",\n" : "", input->name, input->generator, input->parameters, input->scale,
                 input->length, input->sha256, nodes, (unsigned long long)min_parse, (unsigned long long)median_parse,
                 (unsigned long long)min_free, (unsigned long long)median_free, mb_per_s, ns_per_node,
-                rss_before >= 0 && rss_after >= 0 ? rss_after - rss_before : -1L);
+                rss_before >= 0 && rss_after >= 0 ? rss_after - rss_before : -1L, faults_per_parse);
         for (i = 0; i < repeats; i++) {
             fprintf(run->json, "%s{\"parseNs\": %llu, \"freeNs\": %llu}", i ? ", " : "",
                     (unsigned long long)samples[i].parse_ns, (unsigned long long)samples[i].free_ns);
@@ -364,9 +374,10 @@ static int run_workload(const char *workload, const bench_options *options) {
         fprintf(run.json,
                 "{\n  \"schema\": 2,\n  \"runtime\": \"c\",\n  \"lane\": \"timing\",\n  \"sourceSha\": \"%s\",\n"
                 "  \"workload\": \"%s\",\n  \"workloadVersion\": %d,\n  \"warmup\": %d,\n  \"repeats\": %d,\n"
-                "  \"cases\": [\n",
+                "  \"allocator\": \"%s\",\n  \"cases\": [\n",
                 options->source_sha ? options->source_sha : "", workload, bench_workload_version(workload),
-                options->warmup, options->repeats > BENCH_MAX_REPEATS ? BENCH_MAX_REPEATS : options->repeats);
+                options->warmup, options->repeats > BENCH_MAX_REPEATS ? BENCH_MAX_REPEATS : options->repeats,
+                options->allocator ? options->allocator : "default");
     }
     result = bench_workload_visit(workload, options->samples_dir, measure_case, &run);
     if (result == -2) {

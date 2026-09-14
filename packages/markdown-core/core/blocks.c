@@ -1249,10 +1249,8 @@ void markdown_core_block_complete_inline_root(markdown_core_parser *parser, mark
      * document-wide walk did; the collection remembers where the last such
      * walk stopped, so each body is walked once. */
     markdown_core_definition_collection *footnotes = &parser->footnotes;
-    markdown_core_node *definition = footnotes->last_completed ? footnotes->last_completed->next
-                                     : parser->root && parser->root->kind == MARKDOWN_CORE_NODE_DOCUMENT
-                                         ? parser->root->as.document->footnotes
-                                         : NULL;
+    markdown_core_node *definition =
+        footnotes->last_completed ? footnotes->last_completed->next : footnotes->first_inline;
     for (; definition && !parser->oom; definition = definition->next) {
         markdown_core_node *body = definition;
         walk_owned_trees(parser, &body, complete_inline_node, NULL, NULL, NULL, 0);
@@ -2582,6 +2580,7 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
             collection->last_inline->next = definition;
         } else {
             *inline_owner = definition;
+            collection->first_inline = definition;
         }
         collection->last_inline = definition;
     }
