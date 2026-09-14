@@ -288,16 +288,21 @@ void markdown_core_block_finalize_heading_anchors(markdown_core_parser *parser,
             if (parser->oom) {
                 break;
             }
-            markdown_core_chunk_free(parser->mem, anchor);
-            *anchor = (markdown_core_chunk){base.ptr, base.size, 0};
-            if (!markdown_core_chunk_to_cstr(parser->mem, anchor)) {
+            /* The anchor lives as long as the node: a terminated copy in the
+             * parse arena that the attributes borrow rather than own. */
+            unsigned char *copy = markdown_core_arena_alloc(parser->arena, (size_t)base.size + 1);
+            if (!copy) {
                 parser->oom = true;
                 break;
             }
+            memcpy(copy, base.ptr, (size_t)base.size + 1);
+            markdown_core_chunk_free(parser->mem, anchor);
+            *anchor = (markdown_core_chunk){copy, base.size, 0};
             markdown_core_key_index_commit(&registry->index, candidate, anchor->data);
             candidate->value.counter = 1;
         }
-        markdown_core_resource *resource = heading->resource;
+        /* A heading nothing resolved to has no resource to name its anchor. */
+        markdown_core_resource *resource = heading->record ? heading->record->resource : NULL;
         if (resource && !parser->oom) {
             markdown_core_strbuf_clear(&base);
             markdown_core_strbuf_putc(&base, '#');
@@ -348,20 +353,17 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
         markdown_core_chunk label = {inline_state.input.data, inline_state.heading_label_end, 0};
         if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
-            markdown_core_resource *resource = markdown_core_resource_new(parser->mem, markdown_core_chunk_literal(""),
-                                                                          markdown_core_optional_chunk_absent());
-            if (!resource) {
-                inline_state.oom = 1;
-            } else {
-                markdown_core_map_record *record =
-                    markdown_core_reference_create(parser->mem, parser->refmap, &label, resource);
-                if (record) {
-                    record->implicit = true;
-                    record->source_key =
-                        ((uint64_t)(uint32_t)heading->node->start_line << 32) | (uint32_t)heading->node->start_column;
-                }
-                heading->resource = record ? record->resource : NULL;
+            /* The declaration has no resource until a reference resolves to
+             * it (markdown_core_reference_resource); most headings are never
+             * referenced and then never allocate one. */
+            markdown_core_map_record *record =
+                markdown_core_reference_create(parser->mem, parser->refmap, &label, NULL);
+            if (record) {
+                record->implicit = true;
+                record->source_key =
+                    ((uint64_t)(uint32_t)heading->node->start_line << 32) | (uint32_t)heading->node->start_column;
             }
+            heading->record = record;
         }
     }
     markdown_core_inline_clear_inlines(&inline_state);

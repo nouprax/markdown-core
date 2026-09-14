@@ -71,6 +71,11 @@ typedef enum {
  */
 const markdown_core_element *const *markdown_core_core_elements(size_t *count);
 
+/** The prepared projection of that registry (see markdown_core_registry):
+ * a constant generated from the descriptors, which every parse borrows. */
+struct markdown_core_registry;
+const struct markdown_core_registry *markdown_core_core_registry(void);
+
 /** Returns the literal formula payload for formula element nodes, or NULL on error.
  */
 MARKDOWN_CORE_EXPORT

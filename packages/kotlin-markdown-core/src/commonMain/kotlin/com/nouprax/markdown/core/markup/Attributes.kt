@@ -6,15 +6,27 @@ public data class Record(
 )
 
 /** Ordered immutable values, including every duplicate. */
-public class Attributes(
-    classes: kotlin.collections.List<String>,
-    records: kotlin.collections.List<Record>,
+public class Attributes private constructor(
+    public val classes: kotlin.collections.List<String>,
+    public val records: kotlin.collections.List<Record>,
+    @Suppress("UNUSED_PARAMETER") owned: Boolean,
 ) {
-    public val classes: kotlin.collections.List<String> = classes.immutableMap { it }
-    public val records: kotlin.collections.List<Record> = records.immutableMap { it }
+    public constructor(
+        classes: kotlin.collections.List<String>,
+        records: kotlin.collections.List<Record>,
+    ) : this(classes.immutableMap { it }, records.immutableMap { it }, true)
 
     public companion object {
-        public val empty: Attributes = Attributes(emptyList(), emptyList())
+        public val empty: Attributes = Attributes(emptyOwnedList(), emptyOwnedList(), true)
+
+        /**
+         * Adopts lists a decoder built and will not touch again: the lists are
+         * the fields, not copied into new ones. Empty attributes are [empty].
+         */
+        internal fun owned(
+            classes: kotlin.collections.List<String>,
+            records: kotlin.collections.List<Record>,
+        ): Attributes = if (classes.isEmpty() && records.isEmpty()) empty else Attributes(classes, records, true)
     }
 }
 
@@ -28,5 +40,6 @@ internal data class DefinitionResource(
 
 internal fun Attributes.inheriting(inherited: Attributes): Attributes {
     if (classes.isEmpty() && records.isEmpty()) return inherited
+    if (inherited.classes.isEmpty() && inherited.records.isEmpty()) return this
     return Attributes(inherited.classes + classes, inherited.records + records)
 }

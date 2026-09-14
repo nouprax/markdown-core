@@ -64,7 +64,7 @@ extension APISuite {
             )
         )
         records.append(.metadata(metadata))
-        let document = MarkupStore(records: records).value(at: 0, as: Document.self)
+        let document = Document.stored(at: 0, in: MarkupStore(records: records))
         #expect(
             [
                 document.metadata?.name, document.metadata?.title, document.metadata?.subtitle,
@@ -77,6 +77,12 @@ extension APISuite {
         var visitor = RecordingWalkingVisitor()
         document.walk(with: &visitor)
         #expect(Array(visitor.events.prefix(3)) == ["enter:Document", "enter:Metadata", "exit:Metadata"])
+        // Metadata is the one kind held as a value: walking it as the root
+        // visits it in both phases and nothing else.
+        let metadataRoot = try #require(document.metadata)
+        visitor = RecordingWalkingVisitor()
+        metadataRoot.walk(with: &visitor)
+        #expect(visitor.events == ["enter:Metadata", "exit:Metadata"])
     }
 }
 

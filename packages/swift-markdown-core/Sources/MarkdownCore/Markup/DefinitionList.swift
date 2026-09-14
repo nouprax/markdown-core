@@ -12,13 +12,13 @@ public struct DefinitionList: Markup {
     let fields: Stored<Fields>
 
     /// The authored source range, including the term and all bodies.
-    public var scope: Scope { fields.scope }
+    public var scope: Scope { fields.read { $0.scope } }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { fields.read { $0.anchor } }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { fields.read { $0.attributes } }
     /// The nonempty ordered collection of term/body associations.
-    public var definitions: MarkupCollection<Definition> { fields.definitions }
+    public var definitions: MarkupCollection<Definition> { fields.elements { $0.definitions } }
 }
 
 extension DefinitionList.Fields {

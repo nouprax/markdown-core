@@ -27,9 +27,20 @@ private final class DumpState {
 
     private var frames: [Frame] = []
     private var remainingNodes: [Int] = []
-    private var lines: [String] = []
 
-    var result: String { lines.joined(separator: "\n") + "\n" }
+    // The connector segments of every open nesting level as UTF-8, and where
+    // the segments above each depth end: a line copies its lead-in once and
+    // extends the segments by the one its own connector decides, instead of
+    // deriving every level again per line.
+    private var prefix: [UInt8] = []
+    private var prefixEnds: [Int] = [0]
+    private var output: [UInt8] = []
+
+    var result: String {
+        // Every byte came from a Swift string, so the output is UTF-8 by construction.
+        guard let text = String(validating: output, as: UTF8.self) else { preconditionFailure("dump is UTF-8") }
+        return text
+    }
 
     func start() {
         guard !frames.isEmpty else { return }
@@ -93,15 +104,27 @@ private final class DumpState {
     }
 
     private func emit(_ text: String) {
-        guard !remainingNodes.isEmpty else {
-            lines.append(text)
+        let depth = remainingNodes.count
+        guard depth > 0 else {
+            output.append(contentsOf: text.utf8)
+            output.append(0x0a)
             return
         }
-        let parent = remainingNodes.count - 1
-        let prefix = remainingNodes.dropLast().map { $0 > 0 ? "│   " : "    " }.joined()
-        let connector = remainingNodes[parent] == 1 ? "└── " : "├── "
-        lines.append(prefix + connector + text)
-        remainingNodes[parent] -= 1
+        let parent = depth - 1
+        let remaining = remainingNodes[parent] - 1
+        remainingNodes[parent] = remaining
+        let above = prefixEnds[parent]
+        output.append(contentsOf: prefix[..<above])
+        output.append(contentsOf: (remaining == 0 ? "└── " : "├── ").utf8)
+        output.append(contentsOf: text.utf8)
+        output.append(0x0a)
+        prefix.removeSubrange(above...)
+        prefix.append(contentsOf: (remaining > 0 ? "│   " : "    ").utf8)
+        if prefixEnds.count > depth {
+            prefixEnds[depth] = prefix.count
+        } else {
+            prefixEnds.append(prefix.count)
+        }
     }
 }
 
@@ -686,8 +709,9 @@ private func dump(optional value: String?) -> String {
 }
 
 /// Quotes a string and escapes its contents using JSON string-literal rules.
+private let hexDigits: [Character] = Array("0123456789abcdef")
+
 private func dump(escaped value: String) -> String {
-    let hex = Array("0123456789abcdef")
     var result = "\""
     for scalar in value.unicodeScalars {
         switch scalar.value {
@@ -699,7 +723,7 @@ private func dump(escaped value: String) -> String {
         case 0x0d: result += "\\r"
         case 0x09: result += "\\t"
         case 0..<0x20:
-            result += "\\u00\(hex[Int(scalar.value >> 4)])\(hex[Int(scalar.value & 0xf)])"
+            result += "\\u00\(hexDigits[Int(scalar.value >> 4)])\(hexDigits[Int(scalar.value & 0xf)])"
         default: result.unicodeScalars.append(scalar)
         }
     }

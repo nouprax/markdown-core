@@ -1,4 +1,4 @@
-#include "markdown_core_kotlin_jni_payload.h"
+#include "markdown_core_kotlin_payload.h"
 
 #include <jni.h>
 #include <limits.h>
@@ -31,8 +31,8 @@ static jbyteArray JNICALL native_parse(JNIEnv *environment, jobject receiver, jb
             return NULL;
         }
     }
-    if (!markdown_core_kotlin_jni_encode((const uint8_t *)source_bytes, (size_t)source_length, &output,
-                                         &output_length)) {
+    if (!markdown_core_kotlin_payload_encode((const uint8_t *)source_bytes, (size_t)source_length, &output,
+                                             &output_length)) {
         if (source_bytes != NULL) {
             (*environment)->ReleaseByteArrayElements(environment, source, source_bytes, JNI_ABORT);
         }
@@ -43,7 +43,7 @@ static jbyteArray JNICALL native_parse(JNIEnv *environment, jobject receiver, jb
         (*environment)->ReleaseByteArrayElements(environment, source, source_bytes, JNI_ABORT);
     }
     if (output_length > (size_t)INT32_MAX) {
-        markdown_core_kotlin_jni_payload_free(output);
+        markdown_core_kotlin_payload_free(output);
         throw_new(environment, "java/lang/OutOfMemoryError", "native AST exceeds the JVM array limit");
         return NULL;
     }
@@ -51,7 +51,7 @@ static jbyteArray JNICALL native_parse(JNIEnv *environment, jobject receiver, jb
     if (result != NULL) {
         (*environment)->SetByteArrayRegion(environment, result, 0, (jsize)output_length, (const jbyte *)output);
     }
-    markdown_core_kotlin_jni_payload_free(output);
+    markdown_core_kotlin_payload_free(output);
     if ((*environment)->ExceptionCheck(environment)) {
         return NULL;
     }

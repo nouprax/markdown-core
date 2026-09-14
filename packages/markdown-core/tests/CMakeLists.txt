@@ -109,6 +109,14 @@ if(MARKDOWN_CORE_STATIC)
         oom_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
                            "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}" "${MARKDOWN_CORE_ELEMENTS_BINARY_DIR}")
     target_link_libraries(oom_runner libmarkdown-core-public-static)
+    # The core registry's projection is generated from the descriptors
+    # (elements/core-registry.inc); registry_runner regenerates it and the
+    # lane checks the committed file is what the descriptors project.
+    add_executable(registry_runner runners/registry_runner.c)
+    target_include_directories(
+        registry_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
+                                "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}" "${MARKDOWN_CORE_ELEMENTS_BINARY_DIR}")
+    target_link_libraries(registry_runner libmarkdown-core-public-static)
 endif()
 markdown_core_add_runner(entity_runner runners/entity_runner.c)
 markdown_core_add_runner(dump_cli_runner runners/dump_cli_runner.c)
@@ -153,6 +161,10 @@ endfunction()
 
 # api: legacy engine API harness (native C/C++).
 markdown_core_add_test(api_engine api 120 api_test)
+if(MARKDOWN_CORE_STATIC)
+    markdown_core_add_test(api_core_registry_projection api 30 registry_runner --check
+                           "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}/core-registry.inc")
+endif()
 foreach(operation reentry wrong-slot null-key double-commit)
     markdown_core_add_test(api_key_index_${operation} api 10 api_test --key-index-misuse ${operation})
 endforeach()
@@ -429,6 +441,26 @@ if(MARKDOWN_CORE_BENCHMARKS)
     markdown_core_add_runner(bench_runner runners/bench_runner.c)
     target_include_directories(bench_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
     target_link_libraries(bench_runner markdown-core-bench-workloads)
+    # The reference lane: the pinned cmark oracle, built by
+    # `scripts/init-environment.sh --install oracle-cmark`, linked into
+    # bench_runner so that `--reference cmark` times the same bytes through it.
+    option(MARKDOWN_CORE_BENCH_CMARK "Link the pinned cmark oracle into bench_runner as a reference" OFF)
+    if(MARKDOWN_CORE_BENCH_CMARK)
+        file(STRINGS "${CMAKE_SOURCE_DIR}/scripts/init-environment.sh" cmark_version_line REGEX "^CMARK_VERSION=")
+        string(REGEX REPLACE "^CMARK_VERSION=" "" MARKDOWN_CORE_BENCH_CMARK_VERSION "${cmark_version_line}")
+        set(MARKDOWN_CORE_BENCH_CMARK_ROOT "${CMAKE_SOURCE_DIR}/.tools/cmark/${MARKDOWN_CORE_BENCH_CMARK_VERSION}")
+        if(NOT EXISTS "${MARKDOWN_CORE_BENCH_CMARK_ROOT}/build/src/libcmark.a"
+           OR NOT EXISTS "${MARKDOWN_CORE_BENCH_CMARK_ROOT}/src/cmark.h")
+            message(
+                FATAL_ERROR
+                    "MARKDOWN_CORE_BENCH_CMARK=ON needs the pinned cmark oracle ${MARKDOWN_CORE_BENCH_CMARK_VERSION}: "
+                    "scripts/init-environment.sh --install oracle-cmark")
+        endif()
+        target_compile_definitions(bench_runner PRIVATE MARKDOWN_CORE_BENCH_CMARK=1)
+        target_include_directories(bench_runner PRIVATE "${MARKDOWN_CORE_BENCH_CMARK_ROOT}/src"
+                                                        "${MARKDOWN_CORE_BENCH_CMARK_ROOT}/build/src")
+        target_link_libraries(bench_runner "${MARKDOWN_CORE_BENCH_CMARK_ROOT}/build/src/libcmark.a")
+    endif()
     # The work-invariant lane reads the engine's deterministic work counters
     # through the diagnostics build and an injected allocator, like oom_runner
     # links the engine directly; its counts are an exact contract, never a
@@ -441,6 +473,7 @@ if(MARKDOWN_CORE_BENCHMARKS)
     markdown_core_add_test(benchmark_corpus_guard benchmark 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
     set(MARKDOWN_CORE_BENCH_WORKLOADS
         binding_baseline
+        empty_document
         representative
         large_document
         deep_nesting
@@ -464,6 +497,32 @@ if(MARKDOWN_CORE_BENCHMARKS)
             "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}")
         set_tests_properties(benchmark_${workload} PROPERTIES RUN_SERIAL TRUE)
     endforeach()
+    # The instruction lane's runner contract: one case, one parse, or none.
+    markdown_core_add_test(
+        benchmark_instructions_once
+        benchmark
+        60
+        bench_runner
+        --workload
+        empty_document
+        --case
+        empty_document
+        --samples
+        "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}"
+        --instructions)
+    markdown_core_add_test(
+        benchmark_instructions_dry_run
+        benchmark
+        60
+        bench_runner
+        --workload
+        binding_baseline
+        --case
+        binding_baseline
+        --samples
+        "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}"
+        --instructions
+        --dry-run)
     markdown_core_add_test(
         benchmark_work_invariants
         benchmark

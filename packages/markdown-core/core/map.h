@@ -58,6 +58,9 @@ typedef struct markdown_core_key_index {
 
 struct markdown_core_map {
     markdown_core_mem *mem;
+    /* Every record of the map, allocated from one region that goes with the
+     * map instead of one heap allocation and one free per declaration. */
+    struct markdown_core_arena *arena;
     markdown_core_map_record *records;
     markdown_core_key_index index;
     size_t size;
@@ -76,6 +79,8 @@ typedef struct markdown_core_map markdown_core_map;
 
 /* Reuses caller-owned scratch; returns false for empty labels or OOM. */
 int normalize_map_label_into(markdown_core_strbuf *normalized, markdown_core_chunk *ref);
+/* Room for a record that lives as long as the map; NULL on allocation failure. */
+void *markdown_core_map_allocate(markdown_core_map *map, size_t size);
 unsigned char *normalize_map_label(markdown_core_mem *mem, markdown_core_chunk *ref, int *lost);
 int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_mem *mem, size_t expected_size);
 void markdown_core_key_index_free(markdown_core_key_index *index);

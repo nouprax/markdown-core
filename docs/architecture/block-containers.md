@@ -7,16 +7,28 @@ that stored column count, respecting partially consumed tabs. The remaining
 line enters the ordinary block-start parser in place. No body is copied into
 a second Markdown input and no subtree is reparsed.
 
-A definition term can open only at paragraph fallback, after higher-priority
-block starts decline. The shared lookahead carries the same container prefixes
-without committing source, and checks one optional blank line and one marker.
-A reference-shaped line uses the reference parser's non-registering recognition
-operation. Once accepted, the one-line term owns an inline root, separate from
-its ordered block-body roots. The shared owned-inline traversal reaches that
-root in every phase, including reference resolution, explicit anchor reservation,
-inline parsing and postprocessing. Destruction uses the same iterative ownership
-walk. Public models expose only DefinitionList, Definition, the term array and
-arrays of body content; private body roots never become public Markup.
+A definition's term is recognized from its marker line, as a setext underline
+makes a heading of the paragraph above it: when a marker line arrives under a
+one-line paragraph (open on the line before, or closed on the line before the
+single blank line above), that paragraph leaves its container and becomes
+the term of the definition the marker opens, with the scope a term has always
+had -- its content without trailing whitespace -- and the list and definition
+start where it did. No paragraph looks ahead at its own start; the parser
+keeps the line that opened the last paragraph, and a simple table's textual
+header is read back from the same record when its dash separator arrives.
+The one place a term still looks ahead is inside an open definition list: a
+line continuing the list is its next term only if a marker follows, and the
+list must decide then whether it goes on, through the shared lookahead that
+carries the same container prefixes without committing source and checks one
+optional blank line and one marker. A reference-shaped line uses the
+reference parser's non-registering recognition operation, and a marker line
+that opened nothing is a paragraph, not a term. Once accepted, the one-line
+term owns an inline root, separate from its ordered block-body roots. The
+shared owned-inline traversal reaches that root in every phase, including
+reference resolution, explicit anchor reservation, inline parsing and
+postprocessing. Destruction uses the same iterative ownership walk. Public
+models expose only DefinitionList, Definition, the term array and arrays of
+body content; private body roots never become public Markup.
 
 Blank runs continue an open body only when the next line carries its indentation.
 The decision occurs before closing descendants, so code, lists and the body's

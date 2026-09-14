@@ -25,6 +25,7 @@
 #include "subscript.h"
 #include <stddef.h>
 #include "element.h"
+#include "parser.h"
 
 #include "markdown-core-elements.h"
 #include "autolink.h"
@@ -78,6 +79,13 @@ const markdown_core_element *const *markdown_core_core_elements(size_t *count) {
     *count = CORE_ELEMENT_COUNT;
     return CORE_ELEMENTS;
 }
+
+/* The projection of CORE_ELEMENTS, generated from the descriptors by
+ * registry_runner and checked against the runtime builder by the api tests:
+ * a parse borrows it and prepares nothing of its own. */
+#include "core-registry.inc"
+
+const markdown_core_registry *markdown_core_core_registry(void) { return &CORE_REGISTRY; }
 
 const markdown_core_element *const markdown_core_block_structure[] = {
     [MARKDOWN_CORE_NODE_TABLE & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_TABLE,

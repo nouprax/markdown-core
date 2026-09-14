@@ -108,17 +108,27 @@ cached lookahead.
 
 Inline descriptors declare protected-token, ordinary-alternative or literal-
 fallback precedence. One ordered dispatch loop handles all three. Its byte index
-is built once per parse, preserving candidate order and set membership without
-walking unrelated descriptors for each token. Block owners are projected the
-same way: each element with block hooks declares `block_start_bytes`, the
-first non-space bytes at which any of its hooks can accept (NULL for every
-byte), and a line's block-start arbitration visits only the owners of its
-byte, in registry order. Inline state lifecycle and block alternative lists
-likewise include only participating descriptors, in registry order. A successful
-alternative may consume input without emitting a node, as bracket commitment
-does. Ordinary elements, including test probes, still run before the literal
-`!`, `[` and backslash fallbacks. Every text-terminating byte comes from a
-descriptor; the engine has no built-in byte table.
+preserves candidate order and set membership without walking unrelated
+descriptors for each token. Block owners are projected the same way: each
+element with block hooks declares `block_start_bytes`, the first non-space
+bytes at which any of its hooks can accept (NULL for every byte), and the
+projection keeps, per first byte and per hook, the set of owners accepting it
+as one bit per owner, so a line's block-start arbitration visits only the
+owners of its byte that implement the hook, in registry order, and examines
+no other.
+Inline state lifecycle and block alternative lists likewise include only
+participating descriptors, in registry order. These projections, with the
+text-terminating and flanking-transparent byte sets and the delimiter owners,
+are a pure function of the registry and are prepared once, not per parse
+(`markdown_core_registry`): the core registry's projection is a constant
+generated from the descriptors (`elements/core-registry.inc`, written by
+`registry_runner` and held to the runtime builder by the api tests), which
+every parse borrows; a registry a private setup extends gets its own, built in
+one allocation the parser owns. A successful alternative may consume input
+without emitting a node, as bracket commitment does. Ordinary elements,
+including test probes, still run before the literal `!`, `[` and backslash
+fallbacks. Every text-terminating byte comes from a descriptor; the engine has
+no built-in byte table.
 
 ## Shared algorithms and failure behavior
 

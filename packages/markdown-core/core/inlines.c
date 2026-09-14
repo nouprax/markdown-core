@@ -107,63 +107,12 @@ markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_in
     return e;
 }
 
-bool markdown_core_inlines_project_hooks_of(markdown_core_mem *mem, const markdown_core_element *const *elements,
-                                            size_t count, markdown_core_inline_hooks *projected) {
-    markdown_core_inline_hooks hooks = {0};
-    for (size_t i = 0; i < count; i++) {
-        const markdown_core_element *element = elements[i];
-        hooks.init_count += element->init_inline != NULL;
-        hooks.finish_count += element->finish_inline != NULL;
-        hooks.dispose_count += element->dispose_inline != NULL;
-    }
-    size_t total = hooks.init_count + hooks.finish_count + hooks.dispose_count;
-    if (total) {
-        hooks.elements = mem->calloc(total, sizeof(*hooks.elements));
-        if (!hooks.elements) {
-            return false;
-        }
-        const markdown_core_element **init = hooks.elements, **finish = init + hooks.init_count,
-                                    **dispose = finish + hooks.finish_count;
-        for (size_t i = 0; i < count; i++) {
-            const markdown_core_element *element = elements[i];
-            if (element->init_inline) {
-                *init++ = element;
-            }
-            if (element->finish_inline) {
-                *finish++ = element;
-            }
-            if (element->dispose_inline) {
-                *dispose++ = element;
-            }
-        }
-    }
-    *projected = hooks;
-    return true;
-}
-
-bool markdown_core_inlines_project_hooks(markdown_core_parser *parser) {
-    markdown_core_inline_hooks hooks;
-    if (!markdown_core_inlines_project_hooks_of(parser->mem, parser->elements, parser->element_count, &hooks)) {
-        return false;
-    }
-    markdown_core_inlines_release_hooks(parser);
-    parser->inline_hooks = hooks;
-    return true;
-}
-
-void markdown_core_inlines_release_hooks(markdown_core_parser *parser) {
-    if (parser->inline_hooks.elements) {
-        parser->mem->free(parser->inline_hooks.elements);
-    }
-    parser->inline_hooks = (markdown_core_inline_hooks){0};
-}
-
 void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number,
                                          markdown_core_inline_state *inline_state, markdown_core_chunk *chunk,
                                          markdown_core_map *refmap) {
     memset(inline_state, 0, sizeof(*inline_state));
-    inline_state->special_chars = parser ? parser->special_chars : EMPTY_CHAR_SET;
-    inline_state->skip_chars = parser ? parser->skip_chars : EMPTY_CHAR_SET;
+    inline_state->special_chars = parser ? parser->registry->special_chars : EMPTY_CHAR_SET;
+    inline_state->skip_chars = parser ? parser->registry->skip_chars : EMPTY_CHAR_SET;
     inline_state->mem = mem;
     inline_state->arena = parser ? parser->arena : NULL;
     inline_state->input = *chunk;
@@ -172,7 +121,7 @@ void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_
     inline_state->refmap = refmap;
     inline_state->text_end = -1;
     if (parser) {
-        const markdown_core_inline_hooks *hooks = &parser->inline_hooks;
+        const markdown_core_inline_hooks *hooks = &parser->registry->inline_hooks;
         for (size_t i = 0; i < hooks->init_count; i++) {
             MARKDOWN_CORE_DIAGNOSTIC(parser->inline_lifecycle_work++;)
             hooks->elements[i]->init_inline(inline_state);
@@ -246,7 +195,7 @@ bool markdown_core_inline_skip_line_end(markdown_core_inline_state *inline_state
 static const delimiter_rule_spec *delimiter_spec(markdown_core_inline_state *inline_state,
                                                  markdown_core_delimiter_rule rule) {
     const markdown_core_element *owner =
-        inline_state->owner_parser ? inline_state->owner_parser->delimiter_owners[rule] : NULL;
+        inline_state->owner_parser ? inline_state->owner_parser->registry->delimiter_owners[rule] : NULL;
     static const delimiter_rule_spec empty = {0};
     return owner ? &owner->delimiter : &empty;
 }
@@ -506,7 +455,8 @@ static markdown_core_node *handle_delim(markdown_core_inline_state *inline_state
     // One eligible maximal run owns one stack entry and cannot match itself.
     if (inl_text) {
         push_delimiter(inline_state,
-                       inline_state->owner_parser ? inline_state->owner_parser->delimiter_owners[run->rule] : NULL,
+                       inline_state->owner_parser ? inline_state->owner_parser->registry->delimiter_owners[run->rule]
+                                                  : NULL,
                        run->rule, run->can_open, run->can_close, inl_text);
     }
     return inl_text;
@@ -757,8 +707,9 @@ static bufsize_t inline_literal_end(markdown_core_inline_state *state, bufsize_t
     }
     unsigned char c = state->input.data[at];
     bufsize_t end = at + 1;
-    for (size_t i = parser->inline_dispatch_offsets[c]; i < parser->inline_dispatch_offsets[c + 1]; i++) {
-        const markdown_core_inline_candidate *candidate = &parser->inline_dispatch[i];
+    const markdown_core_registry *registry = parser->registry;
+    for (size_t i = registry->inline_dispatch_offsets[c]; i < registry->inline_dispatch_offsets[c + 1]; i++) {
+        const markdown_core_inline_candidate *candidate = &registry->inline_dispatch[i];
         const markdown_core_element *element = candidate->element;
         if (!candidate->terminates || (element->can_start && !element->can_start(state, at))) {
             continue;
@@ -803,30 +754,14 @@ static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inli
     return inline_state->input.len;
 }
 
-void markdown_core_inlines_reset_special_chars(markdown_core_parser *parser) {
-    memset(parser->special_chars, 0, sizeof(parser->special_chars));
-    memset(parser->skip_chars, 0, sizeof(parser->skip_chars));
-}
-void markdown_core_inlines_add_text_terminator(markdown_core_parser *parser, unsigned char c) {
-    parser->special_chars[c] = 1;
-}
-void markdown_core_inlines_remove_text_terminator(markdown_core_parser *parser, unsigned char c) {
-    parser->special_chars[c] = 0;
-}
-void markdown_core_inlines_add_flanking_transparent(markdown_core_parser *parser, unsigned char c) {
-    parser->skip_chars[c] = 1;
-}
-void markdown_core_inlines_remove_flanking_transparent(markdown_core_parser *parser, unsigned char c) {
-    parser->skip_chars[c] = 0;
-}
-
 static markdown_core_node *try_elements(markdown_core_parser *parser, markdown_core_node *parent, unsigned char c,
                                         markdown_core_inline_state *inline_state) {
     markdown_core_node *res = NULL;
     bufsize_t start = inline_state->pos;
+    const markdown_core_registry *registry = parser->registry;
 
-    for (size_t i = parser->inline_dispatch_offsets[c]; i < parser->inline_dispatch_offsets[c + 1]; i++) {
-        const markdown_core_inline_candidate *candidate = &parser->inline_dispatch[i];
+    for (size_t i = registry->inline_dispatch_offsets[c]; i < registry->inline_dispatch_offsets[c + 1]; i++) {
+        const markdown_core_inline_candidate *candidate = &registry->inline_dispatch[i];
         const markdown_core_element *element = candidate->element;
         if (!candidate->dispatches || (element->can_start && !element->can_start(inline_state, start))) {
             continue;
@@ -877,7 +812,7 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
         if (inline_state->pos < inline_state->text_end && endpos > inline_state->text_end) {
             endpos = inline_state->text_end;
         }
-        new_inl = parser->text_structure->parse_text(parser, inline_state, endpos);
+        new_inl = parser->registry->text_structure->parse_text(parser, inline_state, endpos);
     }
 append:
     endpos = inline_state->pos;
@@ -939,7 +874,7 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
 
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state) {
     markdown_core_parser *parser = inline_state->owner_parser;
-    const markdown_core_inline_hooks *hooks = &parser->inline_hooks;
+    const markdown_core_inline_hooks *hooks = &parser->registry->inline_hooks;
     /* A parser with nothing attached has no hook table at all: the counts are
      * zero and the loops index nothing, which is why the offsets are applied
      * per entry rather than to the (possibly null) table pointer up front. */
@@ -965,7 +900,7 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
         }
     }
     if (!parser->oom && !inline_state->oom) {
-        const markdown_core_inline_hooks *hooks = &parser->inline_hooks;
+        const markdown_core_inline_hooks *hooks = &parser->registry->inline_hooks;
         for (size_t i = 0; i < hooks->finish_count; i++) {
             MARKDOWN_CORE_DIAGNOSTIC(parser->inline_lifecycle_work++;)
             hooks->elements[hooks->init_count + i]->finish_inline(inline_state);

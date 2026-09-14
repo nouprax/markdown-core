@@ -578,17 +578,22 @@ static markdown_core_node *email_text_fragment(markdown_core_parser *parser, mar
 }
 
 static markdown_core_node *postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
+    /* The original Text owns the immutable source until every split is
+     * committed. A failed search neither detaches nor copies its buffer. */
+    markdown_core_chunk source = *text->as.literal;
+    uint8_t *data = source.data;
+    size_t remaining = source.len;
+    /* Most Texts hold no address at all: one scan settles them before any
+     * split state is set up. */
+    if (!remaining || !memchr(data, '@', remaining)) {
+        return text;
+    }
     size_t start = 0;
     size_t offset = 0;
     markdown_core_node source_map = {0};
     source_map.content_mark = text->content_mark;
     source_map.content_mark_count = text->content_mark_count;
     source_map.content_mark_offset = text->content_mark_offset;
-    /* The original Text owns the immutable source until every split is
-     * committed. A failed search neither detaches nor copies its buffer. */
-    markdown_core_chunk source = *text->as.literal;
-    uint8_t *data = source.data;
-    size_t remaining = source.len;
 
     while (true) {
         size_t link_end;
@@ -780,11 +785,14 @@ static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
     return markdown_core_isalnum(next) || strchr(".!#$%&'*+/=?^_`{|}~-", next) != NULL;
 }
 
+static const markdown_core_node_type FINISHED_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
     .can_start = can_start,
     .name = "autolink",
     .match_inline = match,
     .finish_node = finish_node,
+    .finish_node_kinds = FINISHED_KINDS,
     .terminates_text = "<:w",
     .dispatch = "<:w",
 };

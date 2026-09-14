@@ -47,13 +47,24 @@ void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size)
     new_size += 1;
     new_size = (new_size + 7) & ~7;
 
-    unsigned char *new_ptr = (unsigned char *)buf->mem->realloc(buf->asize ? buf->ptr : NULL, new_size);
+    unsigned char *new_ptr;
+    if (buf->borrowed) {
+        /* Borrowed storage stays where it is; the bytes move to the
+         * buffer's own. */
+        new_ptr = (unsigned char *)buf->mem->realloc(NULL, new_size);
+        if (new_ptr) {
+            memcpy(new_ptr, buf->ptr, (size_t)buf->size + 1);
+        }
+    } else {
+        new_ptr = (unsigned char *)buf->mem->realloc(buf->asize ? buf->ptr : NULL, new_size);
+    }
     if (!new_ptr) {
         buf->oom = 1;
         return;
     }
     buf->ptr = new_ptr;
     buf->asize = new_size;
+    buf->borrowed = false;
 }
 
 void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len) {
@@ -125,6 +136,15 @@ unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf) {
     if (buf->asize == 0) {
         /* return an empty string; NULL reports allocation failure */
         return (unsigned char *)buf->mem->calloc(1, 1);
+    }
+    if (buf->borrowed) {
+        /* The caller takes ownership, which borrowed storage cannot give:
+         * it takes a copy. */
+        data = (unsigned char *)buf->mem->realloc(NULL, (size_t)buf->size + 1);
+        if (!data) {
+            return NULL;
+        }
+        memcpy(data, buf->ptr, (size_t)buf->size + 1);
     }
 
     markdown_core_strbuf_init(buf->mem, buf, 0);

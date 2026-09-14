@@ -12,20 +12,23 @@ extension APISuite {
             (1.2345678901234567, "1.2345678901234567"),
         ]
         for (width, expected) in widths {
-            let table = MarkupStore(records: [
-                .table(
-                    .init(
-                        caption: nil,
-                        columns: [TableColumn(flow: .none, relative: width)],
-                        head: .init(indices: []),
-                        content: .init(indices: []),
-                        foot: .init(indices: []),
-                        scope: scope,
-                        anchor: nil,
-                        attributes: .empty
+            let table = Table.stored(
+                at: 0,
+                in: MarkupStore(records: [
+                    .table(
+                        .init(
+                            caption: nil,
+                            columns: [TableColumn(flow: .none, relative: width)],
+                            head: .init(indices: []),
+                            content: .init(indices: []),
+                            foot: .init(indices: []),
+                            scope: scope,
+                            anchor: nil,
+                            attributes: .empty
+                        )
                     )
-                )
-            ]).value(at: 0, as: Table.self)
+                ])
+            )
             #expect(table.dump().contains("columns=[none:\(expected)]"))
         }
     }
@@ -44,20 +47,23 @@ extension APISuite {
         #expect(kinds == ["enter:Heading", "enter:Paragraph", "enter:ThematicBreak"])
         #expect(table.dump().contains("columns=[left:0.1,none:null] children=3"))
         #expect(table.dump().contains("TableFoot children=1"))
-        let empty = MarkupStore(records: [
-            .table(
-                .init(
-                    caption: nil,
-                    columns: table.columns,
-                    head: .init(indices: []),
-                    content: .init(indices: []),
-                    foot: .init(indices: []),
-                    scope: table.scope,
-                    anchor: nil,
-                    attributes: .empty
+        let empty = Table.stored(
+            at: 0,
+            in: MarkupStore(records: [
+                .table(
+                    .init(
+                        caption: nil,
+                        columns: table.columns,
+                        head: .init(indices: []),
+                        content: .init(indices: []),
+                        foot: .init(indices: []),
+                        scope: table.scope,
+                        anchor: nil,
+                        attributes: .empty
+                    )
                 )
-            )
-        ]).value(at: 0, as: Table.self)
+            ])
+        )
         #expect(empty.dump().contains("TableHead children=0\n"))
         #expect(empty.dump().contains("TableFoot children=0\n"))
     }
@@ -103,5 +109,5 @@ private func groupedTable() throws -> Table {
             )
         )
     )
-    return MarkupStore(records: records).value(at: index, as: Table.self)
+    return Table.stored(at: index, in: MarkupStore(records: records))
 }

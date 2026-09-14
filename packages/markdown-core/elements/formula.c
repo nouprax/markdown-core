@@ -809,6 +809,12 @@ static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
             dollar_inline_can_close(input, at));
 }
 
+/* A formula block borrows its literal, a formula code block becomes one,
+ * and a paragraph wrapping one standalone formula gives way to it. */
+static const markdown_core_node_type FINISHED_KINDS[] = {MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+                                                         MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_PARAGRAPH,
+                                                         MARKDOWN_CORE_NODE_NONE};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .can_start = can_start,
     .interrupts_paragraph = true,
@@ -821,6 +827,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .block_start_bytes = "$\\",
     .probe_block = probe_formula_block,
     .finish_node = finish_node,
+    .finish_node_kinds = FINISHED_KINDS,
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,
     .accepts_lines_func = accepts_lines,

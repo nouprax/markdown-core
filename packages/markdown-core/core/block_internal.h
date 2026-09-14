@@ -6,6 +6,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
 #include "markdown_core_ctype.h"
 #include "utf8.h"
 #include "houdini.h"
@@ -35,11 +38,34 @@ void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_c
                                         bool columns);
 int markdown_core_block_order_definitions(markdown_core_mem *mem, markdown_core_definition_collection *collection);
 void markdown_core_block_own_definitions(markdown_core_definition_collection *collection, markdown_core_node **slot);
+/* The index of the lowest set bit; `bits` is not zero. Iterating a set of
+ * block owners visits them in registry order. */
+static MARKDOWN_CORE_INLINE unsigned markdown_core_lowest_bit(uint64_t bits) {
+#if defined(__GNUC__) || defined(__clang__)
+    return (unsigned)__builtin_ctzll(bits);
+#elif defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM64))
+    unsigned long index;
+    _BitScanForward64(&index, bits);
+    return (unsigned)index;
+#else
+    unsigned index = 0;
+    while (!(bits & 1)) {
+        bits >>= 1;
+        index++;
+    }
+    return index;
+#endif
+}
+
 typedef struct markdown_core_block_start_context {
     markdown_core_node *container;
     markdown_core_chunk *input;
     int first, column, indent;
     bool paragraph, lazy, all_matched;
+    /* A query about a line the parser has not reached (a lookahead asking
+     * whether it starts a block): no grammar may read the parser's own line
+     * back as this line's predecessor, and nothing opens. */
+    bool speculative;
     size_t depth;
     bufsize_t thematic_kill;
 } block_start_context;

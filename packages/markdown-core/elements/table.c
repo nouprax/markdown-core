@@ -2149,12 +2149,29 @@ markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, m
         return NULL;
     }
     /* Grid/dash boundaries and captions identify themselves on this line.
-     * A plain textual header instead requires an adjacent dash separator.
-     * Share its prefix-matched next line with definition/identifier owners,
-     * before allocating a table workspace or starting a table transaction. */
+     * A plain textual header is recognized from its separator line instead,
+     * once that line arrives below the paragraph the header opened
+     * (try_interrupting_block): a textual line that opens a paragraph does
+     * not look ahead. The one textual line that opens no paragraph is a
+     * lazy continuation -- nothing opened on the line, and the open
+     * paragraph of a container it left unmatched would take it -- and its
+     * separator would find that paragraph, not this line, so it alone
+     * still looks ahead for one. */
     unsigned char first = input[parser->first_nonspace];
     if (first != '+' && first != '-' &&
         table_caption_start(input, length, parser->first_nonspace, parser->indent) < 0) {
+        if (parent != parser->matched_container || parser->current == parent ||
+            parser->current->kind != MARKDOWN_CORE_NODE_PARAGRAPH) {
+            return NULL;
+        }
+        /* A separator holds a dash; a next line without one, read raw, is
+         * not worth a lookahead, and most lazy lines are followed by none. */
+        const unsigned char *next = parser->lookahead_cursor;
+        size_t rest = (size_t)(parser->lookahead_end - next);
+        const unsigned char *eol = memchr(next, '\n', rest);
+        if (!memchr(next, '-', eol ? (size_t)(eol - next) : rest)) {
+            return NULL;
+        }
         const markdown_core_block_peek *peek =
             markdown_core_parser_peek_block_line(parser, parent, MARKDOWN_CORE_NODE_TABLE);
         if (!peek->available || peek->blanks || peek->indent >= 4 || peek->input.data[peek->first] != '-') {
@@ -2228,19 +2245,100 @@ done:
     return result;
 }
 
+/* A textual header line opened a paragraph; the separator line below it is
+ * where the table it began is recognized. The header line is read back from
+ * the parser's record of that paragraph's opening line, the separator is
+ * this line, and the rows beyond come through the lookahead as for any
+ * other candidate. When the candidate holds, the paragraph gives way to
+ * the table, which starts where the paragraph did. */
+static markdown_core_node *table_try_open_after_header(markdown_core_parser *parser, markdown_core_node *paragraph,
+                                                       markdown_core_chunk *input) {
+    const markdown_core_paragraph_line *head = markdown_core_parser_paragraph_line(parser, paragraph);
+    if (!head) {
+        return NULL;
+    }
+    /* A caption-shaped line -- `: text`, `Table: text` -- leads a table or
+     * is prose; it is never a header, as it never was when a header was
+     * recognized from its own line. */
+    if (table_caption_start(head->data, head->length, head->first, head->indent) >= 0) {
+        return NULL;
+    }
+    markdown_core_node *parent = paragraph->parent;
+    table_source source = {.parser = parser, .lines = parser->table_lines};
+    table_candidate candidate = {0};
+    markdown_core_node *result = NULL;
+    if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_TABLE, &source.lookahead)) {
+        return NULL;
+    }
+    if (!table_source_push(&source, (table_source_line){.data = (unsigned char *)head->data,
+                                                        .length = head->length,
+                                                        .offset = head->offset,
+                                                        .first = head->first,
+                                                        .first_column = head->first_column,
+                                                        .indent = head->indent,
+                                                        .line = head->line,
+                                                        .after = head->after}) ||
+        !table_source_push(&source, (table_source_line){.data = input->data,
+                                                        .length = input->len,
+                                                        .offset = parser->offset,
+                                                        .first = parser->first_nonspace,
+                                                        .first_column = parser->first_nonspace_column,
+                                                        .indent = parser->indent,
+                                                        .line = parser->line_number,
+                                                        .after = parser->lookahead_cursor})) {
+        goto done;
+    }
+    bool matched = table_parse_candidate(&source, 0, &candidate, false);
+    markdown_core_parser_lookahead_end(&source.lookahead);
+    if (parser->oom || !matched) {
+        goto done;
+    }
+    /* The header line stops being a paragraph: the table begins where it
+     * began, in the container that held it. */
+    if (parser->current == paragraph) {
+        parser->current = parent;
+    }
+    if (parser->matched_container == paragraph) {
+        parser->matched_container = parent;
+    }
+    parser->paragraph_line.node = NULL;
+    markdown_core_node_recycle(parser->arena, paragraph);
+    result = table_build(&source, parent, &candidate);
+    if (result) {
+        parser->claimed_cursor = source.lines[candidate.last].after;
+        parser->claimed_line = source.lines[candidate.last].line;
+        parser->claimed_last_column =
+            markdown_core_parser_source_column(parser, parser->claimed_line, source.lines[candidate.last].length);
+    }
+done:
+    table_candidate_free(parser, &candidate);
+    table_source_free(&source);
+    return result;
+}
+
 /* A block-only element: no byte ends a text run for it, no byte is offered to an
  * inline hook it does not have, and no byte is transparent to flanking. */
 static markdown_core_node *try_interrupting_block(markdown_core_parser *parser, markdown_core_node *node,
                                                   markdown_core_chunk *input, bool lazy) {
-    if (parser->indent >= 4 || lazy || node->kind == MARKDOWN_CORE_NODE_PARAGRAPH ||
-        input->data[parser->first_nonspace] != '-') {
+    if (parser->indent >= 4 || input->data[parser->first_nonspace] != '-') {
+        return NULL;
+    }
+    /* A dash line under a one-line paragraph may be the separator of the
+     * simple table that paragraph's line is the header of; under a longer
+     * paragraph, or lazily, a dash line interrupts nothing here. */
+    markdown_core_node *header = NULL;
+    if (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
+        if (!markdown_core_parser_paragraph_line(parser, node)) {
+            return NULL;
+        }
+        header = node;
+    } else if (lazy) {
         return NULL;
     }
     /* Only a dash separator can supersede a recognized list/thematic start.
-     * A textual header is tried by try_opening_table_block after ordinary
-     * block starts have been ruled out. Reuse the scanner's rejection across
-     * nested containers: each suffix before that byte fails the same grammar.
-     * This avoids both repeated suffix scans and speculative ancestor walks. */
+     * Reuse the scanner's rejection across nested containers: each suffix
+     * before that byte fails the same grammar. This avoids both repeated
+     * suffix scans and speculative ancestor walks. */
     if (parser->first_nonspace < parser->table_separator_kill_pos) {
         return NULL;
     }
@@ -2260,6 +2358,9 @@ static markdown_core_node *try_interrupting_block(markdown_core_parser *parser, 
     if (result < 0) {
         parser->table_separator_kill_pos = (bufsize_t)(cursor - input->data);
         return NULL;
+    }
+    if (header) {
+        return table_try_open_after_header(parser, header, input);
     }
     return markdown_core_table_try_open(parser, node, input->data, input->len);
 }

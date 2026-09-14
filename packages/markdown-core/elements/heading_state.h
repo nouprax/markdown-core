@@ -4,11 +4,11 @@
 /* A heading is registered once when its block closes. Source order is settled
  * before resolution, independently of the order in which mapped inputs close.
  * Pending holds the ordinary inline cursor at its declaration dependency;
- * nodes and resources remain owned by the tree and reference map. */
+ * nodes and the record's resource remain owned by the tree and reference map. */
 typedef struct {
     markdown_core_node *node;
     markdown_core_inline_state *pending;
-    markdown_core_resource *resource;
+    markdown_core_map_record *record;
 } markdown_core_heading_parse;
 
 typedef struct {

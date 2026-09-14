@@ -1,6 +1,6 @@
 package com.nouprax.markdown.core
 
-internal enum class JniNodeKind(
+internal enum class PayloadNodeKind(
     val rawValue: Int,
 ) {
     DOCUMENT(1),
@@ -49,9 +49,16 @@ internal enum class JniNodeKind(
     ;
 
     companion object {
-        private val byRawValue = entries.associateBy(JniNodeKind::rawValue)
+        // The raw values are dense, so the table is an array indexed by the
+        // byte, with a null in the one unused slot.
+        private val byRawValue: Array<PayloadNodeKind?> =
+            arrayOfNulls<PayloadNodeKind>(entries.maxOf { it.rawValue } + 1).also { table ->
+                for (kind in entries) table[kind.rawValue] = kind
+            }
 
-        fun from(rawValue: Int): JniNodeKind =
-            requireNotNull(byRawValue[rawValue]) { "unsupported native node kind $rawValue" }
+        fun from(rawValue: Int): PayloadNodeKind {
+            val kind = if (rawValue in byRawValue.indices) byRawValue[rawValue] else null
+            return requireNotNull(kind) { "unsupported native node kind $rawValue" }
+        }
     }
 }

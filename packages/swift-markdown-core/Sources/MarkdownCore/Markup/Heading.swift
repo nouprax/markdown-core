@@ -16,15 +16,15 @@ public struct Heading: Markup {
     let fields: Stored<Fields>
 
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public var scope: Scope { fields.scope }
+    public var scope: Scope { fields.read { $0.scope } }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { fields.read { $0.anchor } }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { fields.read { $0.attributes } }
     /// The heading's inline content, its `#` markers excluded.
-    public var content: MarkupCollection<any Markup> { fields.content }
+    public var content: MarkupCollection<any Markup> { fields.children { $0.content } }
     /// 1 through 6. A `#######` line is not a heading at all.
-    public var level: Int32 { fields.level }
+    public var level: Int32 { fields.read { $0.level } }
 }
 
 extension Heading.Fields {

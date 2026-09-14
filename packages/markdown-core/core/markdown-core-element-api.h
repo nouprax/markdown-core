@@ -203,7 +203,10 @@ typedef markdown_core_node *(*markdown_core_postprocess_func)(const markdown_cor
  * a hook that recognizes plain text leaves theirs be. Returns the node now occupying the
  * position: `node` itself, a replacement already spliced in, or NULL once the
  * position is released; a failure sets `parser->oom`. Nodes inserted before
- * `node` are never revisited. */
+ * `node` are never revisited, nor are nodes inserted after it: the walk
+ * continues at the sibling `node` had when the hook was called. An element
+ * names the kinds its hook acts on in `finish_node_kinds` and is offered
+ * only those. */
 typedef markdown_core_node *(*markdown_core_finish_node_func)(const markdown_core_element *element,
                                                               markdown_core_parser *parser, markdown_core_node *node,
                                                               int claim_depth);
@@ -627,9 +630,6 @@ markdown_core_node *markdown_core_inline_state_make_literal_run(markdown_core_in
                                                                 int to);
 markdown_core_node *markdown_core_inline_state_make_source_text(markdown_core_inline_state *inline_state, int from,
                                                                 int to);
-
-MARKDOWN_CORE_EXPORT
-void markdown_core_manage_elements_special_characters(markdown_core_parser *parser, int add);
 
 #ifdef __cplusplus
 }

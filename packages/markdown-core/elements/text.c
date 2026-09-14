@@ -4,9 +4,10 @@
 #define advance(inline_state) ((inline_state)->pos += 1)
 
 static int any_element_dispatches(markdown_core_parser *parser, unsigned char c) {
-    for (size_t i = parser->inline_dispatch_offsets[c]; i < parser->inline_dispatch_offsets[c + 1]; i++) {
-        if (parser->inline_dispatch[i].dispatches &&
-            parser->inline_dispatch[i].element != &MARKDOWN_CORE_ELEMENT_TEXT) {
+    const markdown_core_registry *registry = parser->registry;
+    for (size_t i = registry->inline_dispatch_offsets[c]; i < registry->inline_dispatch_offsets[c + 1]; i++) {
+        if (registry->inline_dispatch[i].dispatches &&
+            registry->inline_dispatch[i].element != &MARKDOWN_CORE_ELEMENT_TEXT) {
             return 1;
         }
     }

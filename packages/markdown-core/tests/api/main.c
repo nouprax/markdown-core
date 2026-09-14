@@ -1271,6 +1271,67 @@ static size_t total_nodes(markdown_core_node *node) {
     return n;
 }
 
+/* The file-tree lead-in of a dump line is the segments of every open level
+ * above it: a level whose node has a following sibling keeps a vertical bar
+ * down the whole subtree below it, and the last node of a level closes with
+ * a corner. A deep chain under an item that has a sibling shows every kind of
+ * segment at once, at a depth where deriving the lead-in per line would
+ * dominate the dump. */
+static void deep_dump_prefixes(test_batch_runner *runner) {
+    enum { DEPTH = 2000 };
+    static const char tail[] = "leaf\n- tail\n";
+    size_t length = (size_t)DEPTH * 2 + sizeof(tail) - 1;
+    char *markdown = (char *)malloc(length + 1);
+    markdown_core_document *document;
+    uint8_t *dump = NULL;
+    size_t dump_length = 0, lines = 0, i;
+    const char *leaf, *start, *cursor, *last;
+    bool prefix_ok;
+    if (!markdown) {
+        OK(runner, 0, "deep dump input allocates");
+        return;
+    }
+    for (i = 0; i < DEPTH; i++) {
+        markdown[i * 2] = '-';
+        markdown[i * 2 + 1] = ' ';
+    }
+    memcpy(markdown + (size_t)DEPTH * 2, tail, sizeof(tail));
+    document = markdown_core_document_parse((const uint8_t *)markdown, length, NULL);
+    OK(runner, document && markdown_core_document_dump(document, &dump, &dump_length, NULL), "deep dump succeeds");
+    if (dump) {
+        for (i = 0; i < dump_length; i++) {
+            lines += dump[i] == '\n';
+        }
+        OK(runner, lines == (size_t)DEPTH * 2 + 6, "deep dump has one line per node");
+        leaf = strstr((const char *)dump, "literal=\"leaf\"");
+        start = leaf;
+        while (start && start > (const char *)dump && start[-1] != '\n') {
+            start--;
+        }
+        /* "    " for the list (the document's last child), "│   " for the
+         * first item (its sibling follows), "    " for every level of the
+         * chain, then the corner of the leaf text. */
+        prefix_ok = start && memcmp(start, "    │   ", 10) == 0;
+        cursor = start ? start + 10 : NULL;
+        for (i = 0; prefix_ok && i < (size_t)DEPTH * 2 - 1; i++, cursor += 4) {
+            prefix_ok = memcmp(cursor, "    ", 4) == 0;
+        }
+        OK(runner, prefix_ok && memcmp(cursor, "└── Text ", 11) == 0,
+           "every open level above the leaf contributes its own segment");
+        OK(runner, start && strstr(start, "\n    └── ListItem ") != NULL,
+           "the sibling item follows the chain at the list's level");
+        last = (const char *)dump + dump_length - 1;
+        while (last > (const char *)dump && last[-1] != '\n') {
+            last--;
+        }
+        OK(runner, strncmp(last, "            └── Text ", 25) == 0 && strstr(last, "literal=\"tail\"") != NULL,
+           "the sibling's leaf closes the dump under an unbarred lead-in");
+        markdown_core_dump_free(dump);
+    }
+    markdown_core_document_free(document);
+    free(markdown);
+}
+
 static void iterator_contract_is_total(test_batch_runner *runner) {
     static const char md[] = "---\n"
                              "\n"
@@ -1560,6 +1621,72 @@ static void *strbuf_test_realloc(void *pointer, size_t size) {
 }
 static void strbuf_test_free(void *pointer) { free(pointer); }
 static markdown_core_mem strbuf_test_mem = {strbuf_test_calloc, strbuf_test_realloc, strbuf_test_free};
+
+/* Storage a buffer borrows is never freed or reallocated by it: growth and
+ * detachment copy the bytes out to storage of the buffer's own, and until
+ * then the buffer allocates nothing. */
+static size_t borrow_allocations;
+static void *borrow_calloc(size_t count, size_t size) {
+    borrow_allocations++;
+    return calloc(count, size);
+}
+static void *borrow_realloc(void *pointer, size_t size) {
+    borrow_allocations += pointer == NULL;
+    return realloc(pointer, size);
+}
+static void strbuf_borrowed_storage(test_batch_runner *runner) {
+    markdown_core_mem mem = {borrow_calloc, borrow_realloc, free};
+    unsigned char storage[16];
+    memset(storage, 'x', sizeof(storage));
+    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(&mem);
+    borrow_allocations = 0;
+    markdown_core_strbuf_borrow(&buf, storage, (bufsize_t)sizeof(storage));
+    markdown_core_strbuf_puts(&buf, "twelve bytes");
+    OK(runner, buf.ptr == storage && buf.size == 12 && buf.borrowed && storage[12] == '\0' && borrow_allocations == 0,
+       "writes within the borrowed capacity allocate nothing and stay in place");
+    markdown_core_strbuf_puts(&buf, " and more");
+    OK(runner,
+       buf.ptr != storage && !buf.borrowed && borrow_allocations == 1 && buf.size == 21 &&
+           strcmp((const char *)buf.ptr, "twelve bytes and more") == 0 && memcmp(storage, "twelve bytes", 12) == 0,
+       "growth copies the bytes out to the buffer's own storage and leaves the borrowed bytes be");
+    markdown_core_strbuf_free(&buf);
+    markdown_core_strbuf_borrow(&buf, storage, (bufsize_t)sizeof(storage));
+    markdown_core_strbuf_puts(&buf, "kept");
+    borrow_allocations = 0;
+    unsigned char *taken = markdown_core_strbuf_detach(&buf);
+    OK(runner,
+       taken && taken != storage && strcmp((const char *)taken, "kept") == 0 && borrow_allocations == 1 &&
+           buf.asize == 0 && !buf.borrowed,
+       "detaching a borrowed buffer hands out a copy the caller owns");
+    free(taken);
+    markdown_core_strbuf_borrow(&buf, storage, (bufsize_t)sizeof(storage));
+    markdown_core_strbuf_puts(&buf, "dropped");
+    markdown_core_strbuf_free(&buf);
+    OK(runner, buf.asize == 0 && !buf.borrowed && memcmp(storage, "dropped", 7) == 0,
+       "freeing a borrowed buffer releases nothing");
+}
+
+/* The content of the blocks of a document is arena storage: a parse of
+ * many short blocks allocates only the arena's blocks and the fixed few. */
+static void block_content_allocates_nothing_per_block(test_batch_runner *runner) {
+    markdown_core_mem mem = {borrow_calloc, borrow_realloc, free};
+    static const char *const units[] = {"- item\n", "# heading\n\n", "one line\n\n", "two\nlines\n\n"};
+    for (size_t shape = 0; shape < sizeof(units) / sizeof(*units); shape++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+        for (size_t i = 0; i < 4096; i++) {
+            markdown_core_strbuf_puts(&source, units[shape]);
+        }
+        borrow_allocations = 0;
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
+        OK(runner, root != NULL, "the block shape parses: shape=%zu", shape);
+        OK(runner, borrow_allocations <= 64,
+           "4096 blocks cost the arena's blocks and the fixed few, not one allocation each: shape=%zu allocations=%zu",
+           shape, borrow_allocations);
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
 
 static void strbuf_failure_is_a_transaction(test_batch_runner *runner) {
     markdown_core_strbuf buf;
@@ -3216,7 +3343,7 @@ typedef struct {
         specimens;
     size_t key_index_branches, key_index_operations;
     size_t block_dispatch, reference_probes;
-    size_t completion, finishing, lifecycle, text_run_extensions, code_block_moves;
+    size_t completion, finishing, finishers, lifecycle, text_run_extensions, code_block_moves;
     size_t reference_folds, footnote_folds;
     size_t table_row_scans, table_row_work, table_geometry_allocations, table_scratch_growth;
     size_t html_scans;
@@ -3245,6 +3372,7 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
     work->reference_probes = parser->reference_probe_work;
     work->completion = parser->completion_work;
     work->finishing = parser->finishing_work;
+    work->finishers = parser->finisher_work;
     work->lifecycle = parser->inline_lifecycle_work;
     work->text_run_extensions = parser->text_run_extensions;
     work->code_block_moves = parser->code_block_move_work;
@@ -3302,7 +3430,7 @@ static bool measure_inline_work(markdown_core_parser *parser, void *context) {
 static void inline_content_projection(test_batch_runner *runner) {
     enum { LINES = 4096, WIDTH = 8 };
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    markdown_core_parser parser = {.mem = mem};
+    markdown_core_parser parser = {.mem = mem, .registry = markdown_core_core_registry()};
     markdown_core_node owner = {0};
     unsigned char *bytes = malloc(LINES * WIDTH);
     memset(bytes, 'x', LINES * WIDTH);
@@ -3400,7 +3528,7 @@ static bool inspect_delimiter_classes(markdown_core_parser *parser, void *contex
     markdown_core_node *owner = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
     owner->start_line = owner->start_column = 1;
     for (size_t r = 1; r < MARKDOWN_CORE_DELIM_RULE_COUNT; r++) {
-        const markdown_core_element *element = parser->delimiter_owners[r];
+        const markdown_core_element *element = parser->registry->delimiter_owners[r];
         if (!element || !element->delimiter_character || element->delimiter.body == DELIMITER_WORD_BODY) {
             continue;
         }
@@ -3408,8 +3536,8 @@ static bool inspect_delimiter_classes(markdown_core_parser *parser, void *contex
             for (size_t j = 0; j < count; j++) {
                 int32_t before = scalars[i], after = scalars[j];
                 if (before == 0 || after == 0 || before == element->delimiter_character ||
-                    after == element->delimiter_character || (before < 256 && parser->skip_chars[before]) ||
-                    (after < 256 && parser->skip_chars[after])) {
+                    after == element->delimiter_character || (before < 256 && parser->registry->skip_chars[before]) ||
+                    (after < 256 && parser->registry->skip_chars[after])) {
                     continue;
                 }
                 markdown_core_strbuf_clear(owner->content);
@@ -3624,12 +3752,13 @@ static void key_index_failure(test_batch_runner *runner) {
 
 static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind);
 
-/* A line consults only the block owners of its first non-space byte, in
- * registry order: owners that declared no byte set for every line, the rest
- * only where their grammar can begin. The bound is stated per shape and is
- * independent of the number of attached elements that declare a set. A word
- * that begins with a letter is never read past its roman-letter prefix by
- * the list marker scanner. */
+/* A line's block-start arbitration visits only the block owners of its first
+ * non-space byte with the hook, in registry order: owners that declared no
+ * byte set for every line, the rest only where their grammar can begin. The
+ * bound counts owners visited, offered or not, so it is stated per shape and
+ * is independent of the number of attached elements that declare a set. A
+ * word that begins with a letter is never read past its roman-letter prefix
+ * by the list marker scanner. */
 static void block_start_dispatch_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
@@ -3726,14 +3855,14 @@ static void finishing_walk_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
         const char *unit;
-        size_t completed, texts;
+        size_t completed, texts, finished, tail;
         markdown_core_node_type produced;
     } shapes[] = {
-        {"a *b* c **d** e\n\n", 8, 5, MARKDOWN_CORE_NODE_STRONG},
-        {"mail x@y.zz now\n\n", 2, 3, MARKDOWN_CORE_NODE_LINK},
-        {"see www.example.com now\n\n", 6, 3, MARKDOWN_CORE_NODE_LINK},
-        {"$$x$$\n\n", 2, 0, MARKDOWN_CORE_NODE_FORMULA_BLOCK},
-        {"- item\n", 3, 1, MARKDOWN_CORE_NODE_LIST_ITEM},
+        {"a *b* c **d** e\n\n", 8, 5, 6, 2, MARKDOWN_CORE_NODE_STRONG},
+        {"mail x@y.zz now\n\n", 2, 3, 2, 2, MARKDOWN_CORE_NODE_LINK},
+        {"see www.example.com now\n\n", 6, 3, 4, 2, MARKDOWN_CORE_NODE_LINK},
+        {"$$x$$\n\n", 2, 0, 1, 2, MARKDOWN_CORE_NODE_FORMULA_BLOCK},
+        {"- item\n", 3, 1, 2, 1, MARKDOWN_CORE_NODE_LIST_ITEM},
     };
     for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
         for (size_t units = 256; units <= 4096; units *= 4) {
@@ -3756,6 +3885,15 @@ static void finishing_walk_work(test_batch_runner *runner) {
                work.finishing);
             OK(runner, probed.completion == work.completion && probed.finishing == work.finishing,
                "an extra finishing element adds no walk: shape=%zu units=%zu", shape, units);
+            /* The built-in hooks name their kinds: autolink is offered each
+             * surviving Text, a link's own included, and formula each
+             * paragraph, code block and formula block, whatever else the tree
+             * holds. The tail is one paragraph of one Text, or one Text
+             * continuing the last item's paragraph. */
+            INT_EQ(runner, work.finishers, shapes[shape].finished * units + shapes[shape].tail,
+                   "a hook is offered only the kinds it names: shape=%zu units=%zu", shape, units);
+            INT_EQ(runner, probed.finishers, work.finishers + probed.finishing,
+                   "a hook naming no kinds is offered every node: shape=%zu units=%zu", shape, units);
             if (root) {
                 OK(runner, count_kind(root, shapes[shape].produced) == units,
                    "the finishing walk produced every unit's node: shape=%zu units=%zu", shape, units);
@@ -4922,9 +5060,9 @@ static void string_content_on_every_kind(test_batch_runner *runner) {
     markdown_core_node_free(paragraph);
 }
 
-/* Attaching an element publishes the registry and its inline lifecycle
- * projection together: when the projection cannot be allocated, the registry
- * the parser dispatches on is the one it had. */
+/* Attaching an element publishes the registry and its projection together,
+ * in one allocation: when it cannot be allocated, the registry the parser
+ * dispatches on, and every table projected from it, is the one it had. */
 static size_t atomic_attach_allocations_until_failure;
 static void *atomic_attach_calloc(size_t count, size_t size) {
     if (atomic_attach_allocations_until_failure && --atomic_attach_allocations_until_failure == 0) {
@@ -4937,26 +5075,104 @@ static bool atomic_attach_setup(markdown_core_parser *parser, void *context) {
     test_batch_runner *runner = (test_batch_runner *)context;
     size_t count = parser->element_count;
     const void *registry = parser->elements;
-    const void *hooks = parser->inline_hooks.elements;
-    size_t hook_count =
-        parser->inline_hooks.init_count + parser->inline_hooks.finish_count + parser->inline_hooks.dispose_count;
-    /* The registry snapshot is the first allocation; the projection is the second. */
-    atomic_attach_allocations_until_failure = 2;
+    const markdown_core_registry *projection = parser->registry;
+    const void *hooks = parser->registry->inline_hooks.elements;
+    size_t hook_count = parser->registry->inline_hooks.init_count + parser->registry->inline_hooks.finish_count +
+                        parser->registry->inline_hooks.dispose_count;
+    OK(runner, projection == markdown_core_core_registry(), "a parse starts on the prepared core registry");
+    /* The extended registry and its projection are the one allocation. */
+    atomic_attach_allocations_until_failure = 1;
     OK(runner, !markdown_core_parser_attach_element(parser, &ATOMIC_ATTACH_PROBE),
        "an attachment whose projection fails reports failure");
     atomic_attach_allocations_until_failure = 0;
-    OK(runner, parser->element_count == count && (const void *)parser->elements == registry,
+    OK(runner,
+       parser->element_count == count && (const void *)parser->elements == registry && parser->registry == projection,
        "the registry the parser dispatches on is unchanged");
     OK(runner,
-       (const void *)parser->inline_hooks.elements == hooks &&
-           parser->inline_hooks.init_count + parser->inline_hooks.finish_count + parser->inline_hooks.dispose_count ==
+       (const void *)parser->registry->inline_hooks.elements == hooks &&
+           parser->registry->inline_hooks.init_count + parser->registry->inline_hooks.finish_count +
+                   parser->registry->inline_hooks.dispose_count ==
                hook_count,
        "and so is its inline lifecycle projection");
     OK(runner, markdown_core_parser_attach_element(parser, &ATOMIC_ATTACH_PROBE), "the same attachment then succeeds");
     OK(runner, parser->element_count == count + 1 && parser->elements[count] == &ATOMIC_ATTACH_PROBE,
        "and the registry ends with the element");
+    OK(runner,
+       parser->registry == &parser->owned_registry && parser->registry->elements == parser->elements &&
+           parser->registry->element_count == count + 1 &&
+           parser->registry->inline_hooks.init_count + parser->registry->inline_hooks.finish_count +
+                   parser->registry->inline_hooks.dispose_count ==
+               hook_count,
+       "the parser now owns a projection of the extended registry");
     return true;
 }
+/* The committed core-registry.inc is what the runtime builder makes of the
+ * core descriptors: a descriptor change without a regeneration fails here. */
+static void core_registry_is_its_own_projection(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    size_t count;
+    const markdown_core_element *const *elements = markdown_core_core_elements(&count);
+    const markdown_core_registry *core = markdown_core_core_registry();
+    markdown_core_registry built;
+    OK(runner, markdown_core_registry_prepare(mem, elements, count, NULL, &built), "the core registry projects");
+    bool same = built.element_count == count && core->element_count == count && core->elements == elements &&
+                built.text_structure == core->text_structure && built.block_owner_count == core->block_owner_count &&
+                built.inline_hooks.init_count == core->inline_hooks.init_count &&
+                built.inline_hooks.finish_count == core->inline_hooks.finish_count &&
+                built.inline_hooks.dispose_count == core->inline_hooks.dispose_count &&
+                memcmp(built.inline_dispatch_offsets, core->inline_dispatch_offsets,
+                       257 * sizeof(*built.inline_dispatch_offsets)) == 0 &&
+                memcmp(built.special_chars, core->special_chars, 256) == 0 &&
+                memcmp(built.skip_chars, core->skip_chars, 256) == 0;
+    for (size_t i = 0; same && i < count; i++) {
+        same = built.elements[i] == elements[i];
+    }
+    for (size_t rule = 0; same && rule < MARKDOWN_CORE_DELIM_RULE_COUNT; rule++) {
+        same = built.delimiter_owners[rule] == core->delimiter_owners[rule];
+    }
+    for (size_t i = 0; same && i < built.inline_dispatch_offsets[256]; i++) {
+        same = built.inline_dispatch[i].element == core->inline_dispatch[i].element &&
+               built.inline_dispatch[i].dispatches == core->inline_dispatch[i].dispatches &&
+               built.inline_dispatch[i].terminates == core->inline_dispatch[i].terminates;
+    }
+    for (size_t i = 0; same && i < built.block_owner_count; i++) {
+        same = built.block_owners[i] == core->block_owners[i];
+    }
+    same = same && memcmp(built.block_owner_sets.scan, core->block_owner_sets.scan, 256 * sizeof(uint64_t)) == 0 &&
+           memcmp(built.block_owner_sets.interrupt, core->block_owner_sets.interrupt, 256 * sizeof(uint64_t)) == 0 &&
+           memcmp(built.block_owner_sets.open, core->block_owner_sets.open, 256 * sizeof(uint64_t)) == 0 &&
+           memcmp(built.block_owner_sets.paragraph, core->block_owner_sets.paragraph, 256 * sizeof(uint64_t)) == 0;
+    size_t hooks = built.inline_hooks.init_count + built.inline_hooks.finish_count + built.inline_hooks.dispose_count;
+    for (size_t i = 0; same && i < hooks; i++) {
+        same = built.inline_hooks.elements[i] == core->inline_hooks.elements[i];
+    }
+    OK(runner, same,
+       "core-registry.inc is the projection of the core descriptors (regenerate: registry_runner --write)");
+    OK(runner, core->storage == NULL && built.storage != NULL, "the constant owns nothing; a built projection does");
+    markdown_core_registry_release(mem, &built);
+}
+
+/* A parse prepares no registry projection of its own, so an empty document
+ * costs a fixed handful of allocations: the parser, its arena with the first
+ * block inside, the line buffer, and the reference and footnote maps. */
+static size_t fixed_cost_allocations;
+static void *fixed_cost_calloc(size_t count, size_t size) {
+    fixed_cost_allocations++;
+    return calloc(count, size);
+}
+static void *fixed_cost_realloc(void *pointer, size_t size) {
+    fixed_cost_allocations += pointer == NULL;
+    return realloc(pointer, size);
+}
+static void an_empty_parse_allocates_a_fixed_few(test_batch_runner *runner) {
+    markdown_core_mem mem = {fixed_cost_calloc, fixed_cost_realloc, free};
+    fixed_cost_allocations = 0;
+    markdown_core_node *root = markdown_core_parse_document_with_mem("", 0, &mem, NULL, NULL);
+    OK(runner, root != NULL, "an empty document parses");
+    INT_EQ(runner, fixed_cost_allocations, 5, "an empty document costs a fixed handful of allocations");
+    markdown_core_node_free(root);
+}
+
 static void attach_element_is_atomic(test_batch_runner *runner) {
     markdown_core_mem mem = {atomic_attach_calloc, realloc, free};
     const char *source = "a *b* [@k]\n";
@@ -5891,10 +6107,11 @@ static void arena_recycling(test_batch_runner *runner) {
     arena = markdown_core_arena_new(&payload_test_mem);
     OK(runner, arena != NULL, "arena for the failure probe");
     if (arena) {
+        /* The first block came with the arena; a request beyond it grows. */
         payload_fail_at = payload_allocations + 1;
-        OK(runner, markdown_core_arena_take(arena, 48) == NULL, "block growth failure is reported");
+        OK(runner, markdown_core_arena_take(arena, 8192) == NULL, "block growth failure is reported");
         payload_fail_at = 0;
-        OK(runner, markdown_core_arena_take(arena, 48) != NULL, "a later request grows again");
+        OK(runner, markdown_core_arena_take(arena, 8192) != NULL, "a later request grows again");
         markdown_core_arena_free(arena);
     }
     INT_EQ(runner, payload_live, 0, "a failed growth leaves nothing behind");
@@ -5985,6 +6202,253 @@ static void attribute_attachment_linear_work(test_batch_runner *runner) {
     }
 }
 
+/* An ASCII run projects and folds byte by byte without decoding; the bytes
+ * above ASCII around it still take the scalar path, and a run ending at the
+ * buffer's end or at such a byte joins its neighbours without a seam. */
+static void ascii_runs_project_like_scalars(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    markdown_core_strbuf out = MARKDOWN_CORE_BUF_INIT(mem);
+    bool bytes_ok = true;
+    for (int c = 0; c < 128; c++) {
+        uint8_t byte = (uint8_t)c;
+        const char *expected;
+        char folded[2] = {(char)(c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c), 0};
+        if (c == 9 || c == 10 || c == 11 || c == 12 || c == 13 || c == ' ') {
+            expected = "-";
+        } else if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '-' || c == '_') {
+            expected = folded;
+        } else {
+            expected = "";
+        }
+        markdown_core_strbuf_clear(&out);
+        markdown_core_utf8proc_anchor(&out, &byte, 1);
+        bytes_ok = bytes_ok && strcmp((const char *)out.ptr, expected) == 0;
+    }
+    OK(runner, bytes_ok, "every ASCII byte projects to what the scalar table says");
+    static const struct {
+        const char *input, *anchor, *folded;
+    } cases[] = {
+        {"Héllo Wörld ABC_9-x", "héllo-wörld-abc_9-x", "héllo wörld abc_9-x"},
+        {"abcdÉF", "abcdéf", "abcdéf"},
+        {"É\tA\tb", "é-a-b", "é a b"},
+        {"  Straße  DER  ", "--straße--der--", "strasse der"},
+    };
+    bool cases_ok = true;
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        markdown_core_chunk input = markdown_core_chunk_literal(cases[i].input);
+        markdown_core_strbuf_clear(&out);
+        markdown_core_utf8proc_anchor(&out, input.data, input.len);
+        cases_ok = cases_ok && strcmp((const char *)out.ptr, cases[i].anchor) == 0;
+        markdown_core_strbuf_clear(&out);
+        cases_ok =
+            cases_ok && normalize_map_label_into(&out, &input) && strcmp((const char *)out.ptr, cases[i].folded) == 0;
+    }
+    OK(runner, cases_ok, "ASCII runs and scalars above ASCII project and fold seamlessly");
+    markdown_core_strbuf_free(&out);
+}
+
+/* The canonical dump of `source`, or NULL; the caller frees it. */
+static char *facade_dump_of(const char *source) {
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    uint8_t *dump = NULL;
+    size_t length = 0;
+    if (!document) {
+        return NULL;
+    }
+    if (!markdown_core_document_dump(document, &dump, &length, NULL)) {
+        markdown_core_document_free(document);
+        return NULL;
+    }
+    char *copy = (char *)malloc(length + 1);
+    if (copy) {
+        memcpy(copy, dump, length + 1);
+    }
+    markdown_core_dump_free(dump);
+    markdown_core_document_free(document);
+    return copy;
+}
+
+/* The first dump line naming `kind` as a node, or NULL. */
+static const char *dump_line_of(const char *dump, const char *kind) {
+    const char *at = dump;
+    size_t length = strlen(kind);
+    while ((at = strstr(at, kind)) != NULL) {
+        if ((at == dump || at[-1] == ' ') && at[length] == ' ') {
+            return at;
+        }
+        at += length;
+    }
+    return NULL;
+}
+
+/* A definition's term and a simple table's header are recognized from the
+ * line below them -- the marker, the separator -- as a setext underline
+ * makes a heading of the paragraph above it. No paragraph looks ahead at
+ * its own start: a document of paragraphs or list items runs no block
+ * lookahead at all, and what the lookahead used to decide is decided the
+ * same way from the line that settles it. */
+/* A finishing hook answers the node now in the position, which may be of
+ * another kind: the core formula element turns a `$$x$$` paragraph into a
+ * formula block. A hook after it that names formula blocks is offered that
+ * block, as it would be offered any other. */
+static size_t formula_blocks_finished_after_conversion;
+static markdown_core_node *count_finished_formula_blocks(const markdown_core_element *element,
+                                                         markdown_core_parser *parser, markdown_core_node *node,
+                                                         int claim_depth) {
+    (void)element;
+    (void)parser;
+    (void)claim_depth;
+    formula_blocks_finished_after_conversion += node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK;
+    return node;
+}
+static const markdown_core_node_type FORMULA_BLOCK_KINDS[] = {MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+                                                              MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_element FORMULA_BLOCK_FINISH_PROBE = {.name = "formula-block-finish-probe",
+                                                                 .finish_node = count_finished_formula_blocks,
+                                                                 .finish_node_kinds = FORMULA_BLOCK_KINDS};
+static void finishers_see_the_node_a_hook_put_in_place(test_batch_runner *runner) {
+    static const markdown_core_element *const probes[] = {&FORMULA_BLOCK_FINISH_PROBE};
+    static const char source[] = "$$x$$\n\ntext\n";
+    formula_blocks_finished_after_conversion = 0;
+    markdown_core_node *root = parse_with_probes(source, sizeof(source) - 1, probes, 1);
+    OK(runner, root != NULL, "a parse with a typed finisher completes");
+    OK(runner, root && root->first_child && root->first_child->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+       "the formula element made a formula block of the paragraph");
+    INT_EQ(runner, (int)formula_blocks_finished_after_conversion, 1,
+           "a hook naming formula blocks is offered the block a hook before it made");
+    markdown_core_node_free(root);
+}
+
+/* A registry with more block owners than one word holds gets more words per
+ * byte, and every owner is visited: sixty more owners than the core's
+ * thirteen cross the word boundary. */
+static size_t wide_owner_visits;
+static markdown_core_node *visit_wide_owner(const markdown_core_element *self, int indented,
+                                            markdown_core_parser *parser, markdown_core_node *parent,
+                                            unsigned char *input, int len) {
+    (void)self;
+    (void)indented;
+    (void)parser;
+    (void)parent;
+    (void)input;
+    (void)len;
+    wide_owner_visits++;
+    return NULL;
+}
+#define WIDE_OWNER_COUNT 60
+static markdown_core_element wide_owners[WIDE_OWNER_COUNT];
+static char wide_owner_names[WIDE_OWNER_COUNT][24];
+typedef struct wide_owner_projection {
+    size_t words, owners;
+    uintptr_t sets;
+} wide_owner_projection;
+static bool attach_wide_owners(markdown_core_parser *parser, void *context) {
+    wide_owner_projection *projection = (wide_owner_projection *)context;
+    for (size_t i = 0; i < WIDE_OWNER_COUNT; i++) {
+        if (!markdown_core_parser_attach_element(parser, &wide_owners[i])) {
+            return false;
+        }
+    }
+    projection->words = parser->registry->block_owner_sets.words;
+    projection->owners = parser->registry->block_owner_count;
+    projection->sets = (uintptr_t)parser->registry->block_owner_sets.scan;
+    return true;
+}
+static void block_owner_sets_grow_with_the_registry(test_batch_runner *runner) {
+    memset(wide_owners, 0, sizeof(wide_owners));
+    for (size_t i = 0; i < WIDE_OWNER_COUNT; i++) {
+        snprintf(wide_owner_names[i], sizeof(wide_owner_names[i]), "wide-owner-%zu", i);
+        wide_owners[i].name = wide_owner_names[i];
+        wide_owners[i].maximum_block_indent = 3;
+        wide_owners[i].try_opening_block = visit_wide_owner;
+    }
+    static const char source[] = "text\n";
+    wide_owner_projection projection = {0};
+    wide_owner_visits = 0;
+    markdown_core_node *root = markdown_core_parse_document_with_mem(
+        source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(), attach_wide_owners, &projection);
+    OK(runner, root != NULL, "a registry with more than sixty-four block owners parses");
+    OK(runner, projection.owners > 64 && projection.words == 2, "its owner sets hold two words per byte (%zu owners)",
+       projection.owners);
+    OK(runner, projection.sets % sizeof(uint64_t) == 0,
+       "the prepared sets start at a word boundary behind the registry's pointer tables");
+    INT_EQ(runner, (int)wide_owner_visits, WIDE_OWNER_COUNT,
+           "every owner, on either side of the word boundary, is visited for the line's first byte");
+    OK(runner, markdown_core_core_registry()->block_owner_sets.words == 1, "the core registry keeps one word per byte");
+    markdown_core_node_free(root);
+}
+
+static void terms_and_headers_from_the_line_below(test_batch_runner *runner) {
+    static const struct {
+        const char *source, *kind, *expect;
+    } cases[] = {
+        {"term\n: body\n", "Definition", "compact=true"},
+        {"term  \n: body\n", "Definition", "scope=1:1..2:6"},
+        {"term\n\n: body\n", "Definition", "compact=false"},
+        {"term\n\n\n: body\n", "DefinitionList", NULL},
+        {"[r]: /u\n: body\n", "DefinitionList", NULL},
+        {"~\n~\n", "DefinitionList", NULL},
+        {"- term\n  : body\n", "Definition", "scope=1:3..2:8"},
+        {"> term\n> : body\n", "Definition", "scope=1:3..2:8"},
+        {"term\n: body\n\nnext\n: more\n", "DefinitionList", "children=2"},
+        {"term\n: body\nnext\n: more\n", "Definition", "children=2"},
+        {"a b\n--- ---\n1 2\n", "Table", "scope=1:1..3:3"},
+        {"  a b\n--- ---\n1 2\n", "Table", "scope=1:1..3:3"},
+        {"text\na b\n--- ---\n1 2\n", "Table", NULL},
+        {"text\na b\n--- ---\n1 2\n", "ThematicBreak", "scope=3:1..3:7"},
+        {"> a b\n> --- ---\n> 1 2\n", "Table", "scope=1:3..3:5"},
+        {"- a b\n  --- ---\n  1 2\n", "Table", "scope=1:3..3:5"},
+        {"a b\n---\n", "Heading", "level=2"},
+        /* The line above a marker or a separator is its term or header only
+         * when a header or term is what it was: a closed reference-only
+         * paragraph has no text left to be a term, a caption-shaped line
+         * leads a table or is prose, and a lazy continuation that a
+         * separator follows is the header of a table at the level the lazy
+         * line came out to, the containers it left closed above it. */
+        {"[x]: /u\n\n: def\n", "DefinitionList", NULL},
+        {"[x]: /u\n\n: def\n", "Paragraph", "scope=3:1..3:5"},
+        {": cap\n--- ---\na b\n", "Table", NULL},
+        {": cap\n--- ---\na b\n", "ThematicBreak", "scope=2:1..2:7"},
+        {"Table: cap\n--- ---\na b\n", "Table", NULL},
+        {"table: cap\n--- ---\na b\n", "ThematicBreak", "scope=2:1..2:7"},
+        {"- item\nheader\n--- ---\nrow\n", "Table", "scope=2:1..4:3"},
+        {"- item\nheader\n--- ---\nrow\n", "List", "scope=1:1..1:6"},
+        {"> quote\nheader\n--- ---\nrow\n", "Table", "scope=2:1..4:3"},
+        {"> quote\nheader\n--- ---\nrow\n", "Callout", "scope=1:1..1:7"},
+        {"- item\n- header\n--- ---\nrow\n", "Table", NULL},
+        {"- item\n  header\n  --- ---\n  row\n", "Table", NULL},
+        {"- item\nheader\n\n--- ---\nrow\n", "Table", NULL},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        char *dump = facade_dump_of(cases[i].source);
+        const char *line = dump ? dump_line_of(dump, cases[i].kind) : NULL;
+        if (cases[i].expect) {
+            OK(runner, line && strstr(line, cases[i].expect) && strchr(line, '\n') > strstr(line, cases[i].expect),
+               "%s from the line below: %s", cases[i].kind, cases[i].source);
+        } else {
+            OK(runner, dump && !line, "no %s: %s", cases[i].kind, cases[i].source);
+        }
+        free(dump);
+    }
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    static const char *const shapes[] = {"- item\n", "paragraph line\n\n", "# heading\n\ntext\n\n", "> quoted\n\n",
+                                         "1. ordered\n"};
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        for (int i = 0; i < 64; i++) {
+            markdown_core_strbuf_puts(&source, shapes[shape]);
+        }
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+        OK(runner, root != NULL && work.lookahead == 0 && work.definition_lists == 0,
+           "no block lookahead and no term probing at paragraph starts: %s (lookahead=%zu definitions=%zu)",
+           shapes[shape], work.lookahead, work.definition_lists);
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
 static void heading_completion_invariants(test_batch_runner *runner) {
     static const struct {
         const char *source, *anchor;
@@ -6023,8 +6487,11 @@ static void heading_completion_invariants(test_batch_runner *runner) {
                 markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
             OK(runner, root != NULL, "repeated heading declarations parse");
             INT_EQ(runner, work.definitions, count, "each heading creates its own implicit reference definition");
-            INT_EQ(runner, work.definition_resources, count,
-                   "duplicate heading definitions retain their ordinary resources");
+            /* A resource exists only for the declaration references resolved
+             * to: the first of the duplicates when there are references, and
+             * none at all when nothing refers to the headings. */
+            INT_EQ(runner, work.definition_resources, referenced ? 1 : 0,
+                   "only a resolved heading declaration holds a resource");
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
         }
@@ -7246,6 +7713,8 @@ int main(int argc, char **argv) {
     citation_affix_across_line_ending(runner);
     arena_nodes_stay_in_their_transaction(runner);
     string_content_on_every_kind(runner);
+    core_registry_is_its_own_projection(runner);
+    an_empty_parse_allocates_a_fixed_few(runner);
     attach_element_is_atomic(runner);
     properties_text_memory(runner);
     block_identifier_linear_work(runner);
@@ -7354,12 +7823,19 @@ int main(int argc, char **argv) {
     table_mapped_ownership(runner);
     table_nested_inputs(runner);
     strbuf_overflow(runner);
+    strbuf_borrowed_storage(runner);
+    block_content_allocates_nothing_per_block(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
     inline_predicate_arbitration(runner);
     inline_dispatch_ownership(runner);
     no_node_is_its_own_ancestor(runner);
     iterator_contract_is_total(runner);
+    deep_dump_prefixes(runner);
+    ascii_runs_project_like_scalars(runner);
+    terms_and_headers_from_the_line_below(runner);
+    finishers_see_the_node_a_hook_put_in_place(runner);
+    block_owner_sets_grow_with_the_registry(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

@@ -60,21 +60,66 @@ typedef struct {
     bool dispatches, terminates;
 } markdown_core_inline_candidate;
 
-/* An element with block hooks and the first-byte set they can accept at.
- * Every block-start arbitration visits only the owners of the line's byte,
- * in registry order; owners that declared no set are visited for every byte. */
+/* The block owners of one first byte, as a bit per owner in registry order
+ * (`markdown_core_registry.block_owners`): the owners with the hook that
+ * accept lines starting at the byte, so a block-start arbitration visits
+ * those and no other. An owner that declared no byte set is in every byte's
+ * set. Each set is byte-major, `words` 64-bit words per byte -- as many as
+ * the registry's owners need, one for up to 64 of them -- so owner `n` is
+ * bit `n % 64` of word `n / 64` of its byte. */
 typedef struct {
-    const markdown_core_element *element;
-    uint64_t bytes[4];
-} markdown_core_block_owner;
+    const uint64_t *scan, *interrupt, *open, *paragraph; /* 256 * words entries each */
+    size_t words;
+} markdown_core_block_owner_sets;
 
 /* The elements that implement an inline root's `init_inline`, then
  * `finish_inline`, then `dispose_inline`, each list in registry order and the
- * three stored back to back in one allocation. */
+ * three stored back to back. */
 typedef struct {
-    const markdown_core_element **elements;
+    const markdown_core_element *const *elements;
     size_t init_count, finish_count, dispose_count;
 } markdown_core_inline_hooks;
+
+/* The projection of one element registry: everything a parse dispatches on
+ * that the registry alone determines, so nothing of it is rebuilt per parse.
+ * The core registry's projection is a constant prepared with the elements
+ * (see core-registry.inc and registry_runner); a registry a private setup
+ * extends gets its own, built by markdown_core_registry_prepare in one
+ * allocation the parser owns. */
+typedef struct markdown_core_registry {
+    const markdown_core_element *const *elements;
+    size_t element_count;
+    /* The element whose `parse_text` makes plain text, and the owner of each
+     * delimiter rule. */
+    const markdown_core_element *text_structure;
+    const markdown_core_element *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
+    /* Stable descriptor order projected by byte: the candidates of byte `c`
+     * are inline_dispatch[offsets[c] .. offsets[c + 1]), so each token visits
+     * only its possible owners. 257 offsets, the last an end sentinel. */
+    const size_t *inline_dispatch_offsets;
+    const markdown_core_inline_candidate *inline_dispatch;
+    /* The elements with block hooks in registry order, and by first byte
+     * the ones each arbitration loop visits (markdown_core_block_owner_sets). */
+    const markdown_core_element *const *block_owners;
+    size_t block_owner_count;
+    markdown_core_block_owner_sets block_owner_sets;
+    /* Implementers of the inline root lifecycle hooks, so a root visits
+     * implementers only. */
+    markdown_core_inline_hooks inline_hooks;
+    /* 256 entries each: the bytes that end a text run, and the bytes
+     * delimiter flanking looks through. */
+    const int8_t *special_chars;
+    const int8_t *skip_chars;
+    /* The one allocation an owned projection lives in; NULL for a constant. */
+    void *storage;
+} markdown_core_registry;
+
+/* Project `elements` (with `extra` appended when not NULL) into one owned
+ * allocation. Returns false on allocation failure, leaving `registry` as it
+ * was; success replaces every field. */
+bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_element *const *elements, size_t count,
+                                    const markdown_core_element *extra, markdown_core_registry *registry);
+void markdown_core_registry_release(markdown_core_mem *mem, markdown_core_registry *registry);
 
 /* First nonblank line under one prospective block parent. Shared by block
  * owners during a single block-start arbitration; no speculative state or
@@ -85,6 +130,21 @@ typedef struct {
     int first, indent, blanks;
     bool available;
 } markdown_core_block_peek;
+
+/* The line that opened the paragraph opened last. A grammar that can only
+ * decide at its second line what its first line was -- a simple table's
+ * header, a definition's term -- reads that first line back from here when
+ * the second one arrives, instead of every paragraph looking ahead at its
+ * own start. The bytes are the source's own, or the parser's copy when the
+ * source line was rewritten (line_scratch); `after` is where the next raw
+ * line begins, as a lookahead would have reported it. */
+typedef struct {
+    struct markdown_core_node *node;
+    const unsigned char *data;
+    bufsize_t length;
+    int offset, first, first_column, indent, line;
+    const unsigned char *after;
+} markdown_core_paragraph_line;
 
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
@@ -103,7 +163,7 @@ struct markdown_core_parser {
     markdown_core_key_index specimen_ids;
     markdown_core_heading_collection headings;
     anchor_registry anchors;
-    const markdown_core_element *document_structure, *text_structure;
+    const markdown_core_element *document_structure;
     /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
     struct markdown_core_node *root;
     /* The active block grammar boundary. The document and mapped cell inputs
@@ -184,12 +244,17 @@ struct markdown_core_parser {
     size_t html_scan_work;
     size_t block_lookahead_work;
     /* Block hook invocations: one per owner consulted for a line. */
+    /* Block owners visited by a line's block-start arbitration: the owners
+     * of the line's first byte with the hook, and no other. */
     size_t block_dispatch_work;
     /* Reference definition parses attempted on a block front or a term. */
     size_t reference_probe_work;
     /* Hook deliveries of the inline completion walk and of the node finishing
      * walk: one per node each, however many elements are attached. */
     size_t completion_work, finishing_work;
+    /* Finish hook calls: one per node offered to an element's hook, which
+     * is one per node of a kind the element declared. */
+    size_t finisher_work;
     /* Lifecycle hook calls made for inline roots: implementers only. */
     size_t inline_lifecycle_work;
     /* Literal runs grown in place instead of split, and body bytes a
@@ -246,6 +311,12 @@ struct markdown_core_parser {
     int lookahead_entries_used;
     int lookahead_base_line;
     markdown_core_block_peek block_peek;
+    markdown_core_paragraph_line paragraph_line;
+    markdown_core_strbuf paragraph_line_copy;
+    /* The raw source bytes of the line being processed, through its
+     * terminator, or NULL for a line the parser rewrote. */
+    const unsigned char *line_source;
+    bufsize_t line_source_length;
     /* One active table query borrows this reusable line workspace. Per-line
      * geometry is released by the query; the allocation dies with the parser. */
     struct markdown_core_table_source_line *table_lines;
@@ -257,30 +328,17 @@ struct markdown_core_parser {
     struct markdown_core_table_row_geometry *table_row;
     void *table_scratch;
     size_t table_scratch_capacity;
-    /* Borrow the fixed immutable dialect registry. Private setup callers may
-     * extend it before parsing; only that replacement buffer is owned here. */
+    /* The registry this parse dispatches on and its projection: the fixed
+     * immutable dialect's constant, borrowed, until a private setup caller
+     * extends it, from when on it is `owned_registry`. `elements` and
+     * `element_count` mirror the registry's for the phases that walk it.
+     * Every parser reads its own registry, so concurrent parsers with
+     * different element sets never observe each other's projections. */
+    const markdown_core_registry *registry;
+    markdown_core_registry owned_registry;
     const markdown_core_element *const *elements;
-    const markdown_core_element **element_allocation;
     size_t element_count;
-    /* Stable descriptor order projected by byte once before inline parsing.
-     * Each token visits only its possible owners; offsets include an end sentinel. */
-    size_t inline_dispatch_offsets[257];
-    markdown_core_inline_candidate *inline_dispatch;
-    /* Block owners in registry order, projected once per parse from the
-     * attached elements (see markdown_core_block_owner). */
-    markdown_core_block_owner *block_owners;
-    size_t block_owner_count;
-    /* Implementers of the inline root lifecycle hooks, projected whenever the
-     * registry is set or extended, so a root visits implementers only. */
-    markdown_core_inline_hooks inline_hooks;
     markdown_core_ispunct_func backslash_ispunct;
-    /* Inline special-character tables for this parser: the core defaults plus
-     * the special/emphasis-skip characters of the attached inline elements.
-     * Parser-local so concurrent parsers with different element sets never
-     * observe each other's characters. */
-    const markdown_core_element *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
-    int8_t special_chars[256];
-    int8_t skip_chars[256];
     /* The content-to-source map (see markdown_core_line_mark). It is read while the
      * parse is still running -- the block phase reads it as blocks close and
      * the inline phase reads it before the transaction returns -- and it is
@@ -403,6 +461,14 @@ int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markd
 const markdown_core_block_peek *markdown_core_parser_peek_block_line(markdown_core_parser *parser,
                                                                      struct markdown_core_node *parent,
                                                                      markdown_core_node_type child);
+/* Records the line that opened `paragraph` (markdown_core_paragraph_line). */
+void markdown_core_parser_note_paragraph_line(markdown_core_parser *parser, markdown_core_node *paragraph,
+                                              const markdown_core_chunk *input);
+/* The line that opened `paragraph`, while it is the paragraph opened last
+ * and still that one line: open on the line before the current one, or
+ * closed on the line it opened. NULL otherwise. */
+const markdown_core_paragraph_line *markdown_core_parser_paragraph_line(const markdown_core_parser *parser,
+                                                                        const markdown_core_node *paragraph);
 
 bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct markdown_core_node *parent_container,
                                           markdown_core_node_type child, markdown_core_block_lookahead *lookahead);

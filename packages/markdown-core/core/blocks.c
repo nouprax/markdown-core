@@ -88,86 +88,29 @@ static markdown_core_node *make_document(markdown_core_parser *parser) {
     return make_block(parser, MARKDOWN_CORE_NODE_DOCUMENT, 1, 1, NULL);
 }
 
-static void S_register_element(markdown_core_parser *parser, const markdown_core_element *element) {
-    if (element->parse_text) {
-        parser->text_structure = element;
-    }
-    if (element->delimiter_rule != MARKDOWN_CORE_DELIM_RULE_NONE) {
-        parser->delimiter_owners[element->delimiter_rule] = element;
-    }
+/* The registry a parser dispatches on, with the mirrors its phases walk. */
+static void S_install_registry(markdown_core_parser *parser, const markdown_core_registry *registry) {
+    parser->registry = registry;
+    parser->elements = registry->elements;
+    parser->element_count = registry->element_count;
 }
 
-/* Setup extends the same registry read by every phase. The fixed dialect is
- * borrowed; an extension acquires an independent contiguous snapshot before
- * replacing it. The registry and its inline lifecycle projection are built
- * first and published together, so an allocation failure leaves the previous
- * registry, its projections and the dispatch it drives all intact. */
+/* Setup extends the same registry read by every phase. The fixed dialect and
+ * its prepared projection are borrowed; an extension gets its own projection,
+ * built in one allocation and published with the registry it projects, so an
+ * allocation failure leaves the previous registry, its projection and the
+ * dispatch it drives all intact. */
 int markdown_core_parser_attach_element(markdown_core_parser *parser, const markdown_core_element *element) {
-    size_t count = parser->element_count;
-    markdown_core_inline_hooks hooks;
-    const markdown_core_element **entries = parser->mem->calloc(count + 1, sizeof(*entries));
-    if (!entries) {
+    markdown_core_registry extended;
+    if (!markdown_core_registry_prepare(parser->mem, parser->elements, parser->element_count, element, &extended)) {
         return 0;
     }
-    if (count) {
-        memcpy(entries, parser->elements, count * sizeof(*entries));
+    if (parser->registry == &parser->owned_registry) {
+        markdown_core_registry_release(parser->mem, &parser->owned_registry);
     }
-    entries[count] = element;
-    if (!markdown_core_inlines_project_hooks_of(parser->mem, entries, count + 1, &hooks)) {
-        parser->mem->free(entries);
-        return 0;
-    }
-    parser->mem->free(parser->element_allocation);
-    parser->element_allocation = entries;
-    parser->elements = entries;
-    parser->element_count = count + 1;
-    S_register_element(parser, element);
-    /* The block owner projection follows the registry; rebuilt on demand. */
-    parser->mem->free(parser->block_owners);
-    parser->block_owners = NULL;
-    parser->block_owner_count = 0;
-    markdown_core_inlines_release_hooks(parser);
-    parser->inline_hooks = hooks;
+    parser->owned_registry = extended;
+    S_install_registry(parser, &parser->owned_registry);
     return 1;
-}
-
-static bool S_block_owner_accepts(const markdown_core_block_owner *owner, unsigned char c) {
-    return (owner->bytes[c >> 6] >> (c & 63)) & 1;
-}
-
-/* Project the elements with block hooks, each with the first bytes it can
- * accept at, in registry order. One allocation per parse, sized by the
- * registry; nothing about the input's shape enters the projection. */
-static const markdown_core_block_owner *S_block_owners(markdown_core_parser *parser, size_t *count) {
-    if (!parser->block_owners && parser->element_count) {
-        markdown_core_block_owner *owners = parser->mem->calloc(parser->element_count, sizeof(*owners));
-        if (!owners) {
-            parser->oom = true;
-            *count = 0;
-            return NULL;
-        }
-        size_t used = 0;
-        for (size_t i = 0; i < parser->element_count; i++) {
-            const markdown_core_element *element = parser->elements[i];
-            if (!element->scan_block_start && !element->try_interrupting_block && !element->try_opening_block &&
-                !element->try_opening_paragraph) {
-                continue;
-            }
-            markdown_core_block_owner *owner = &owners[used++];
-            owner->element = element;
-            if (!element->block_start_bytes) {
-                memset(owner->bytes, 0xFF, sizeof(owner->bytes));
-            } else {
-                for (const unsigned char *c = (const unsigned char *)element->block_start_bytes; *c; c++) {
-                    owner->bytes[*c >> 6] |= (uint64_t)1 << (*c & 63);
-                }
-            }
-        }
-        parser->block_owners = owners;
-        parser->block_owner_count = used;
-    }
-    *count = parser->block_owner_count;
-    return parser->block_owners;
 }
 
 static unsigned char S_block_start_byte(const markdown_core_chunk *input, int first) {
@@ -186,11 +129,6 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     }
     parser->mem->free(parser->block_inputs);
     parser->mem->free(parser->input_line_offsets);
-    parser->mem->free(parser->inline_dispatch);
-    parser->inline_dispatch = NULL;
-    parser->mem->free(parser->block_owners);
-    parser->block_owners = NULL;
-    markdown_core_inlines_release_hooks(parser);
     if (parser->root) {
         /* The root owns the arena from its creation on. */
         parser->arena = NULL;
@@ -235,6 +173,7 @@ static markdown_core_parser *S_parser_new(markdown_core_mem *mem) {
         return NULL;
     }
     markdown_core_strbuf_init(parser->mem, &parser->curline, 256);
+    markdown_core_strbuf_init(parser->mem, &parser->paragraph_line_copy, 0);
     markdown_core_strbuf_init(parser->mem, &parser->line_scratch, 0);
     markdown_core_strbuf_init(parser->mem, &parser->lookahead_last_line, 0);
 
@@ -252,7 +191,6 @@ static markdown_core_parser *S_parser_new(markdown_core_mem *mem) {
         parser->oom = true;
     }
 
-    markdown_core_inlines_reset_special_chars(parser);
     return parser;
 }
 
@@ -266,8 +204,11 @@ static void S_parser_free(markdown_core_parser *parser) {
     /* Only a parser whose root never existed still holds the arena here. */
     markdown_core_arena_free(parser->arena);
     parser->arena = NULL;
-    parser->mem->free(parser->element_allocation);
+    if (parser->registry == &parser->owned_registry) {
+        markdown_core_registry_release(mem, &parser->owned_registry);
+    }
     markdown_core_strbuf_free(&parser->curline);
+    markdown_core_strbuf_free(&parser->paragraph_line_copy);
     markdown_core_strbuf_free(&parser->line_scratch);
     markdown_core_strbuf_free(&parser->lookahead_last_line);
     mem->free(parser);
@@ -401,10 +342,40 @@ static void S_record_content_mark(markdown_core_parser *parser, markdown_core_no
     markdown_core_parser_append_source_marks(parser, node, parser->line_number, column, length, node->content->size);
 }
 
+/* A block's content lives in the transaction's arena: its first line
+ * reserves the bytes it brings, and each later line extends that reservation
+ * in place, which the arena can do while the block is its latest allocation
+ * -- true between the lines of one block, since nothing else is created
+ * there. Only a reservation the arena cannot extend moves to the allocator,
+ * by the buffer's ordinary growth, and a node outside a transaction keeps an
+ * allocator buffer. A failed reservation costs nothing either: the buffer
+ * grows as it always did. */
+static void S_reserve_content(markdown_core_parser *parser, markdown_core_node *node, bufsize_t add) {
+    markdown_core_strbuf *content = node->content;
+    if (!node->arena_owned || !parser->arena || add <= 0 || content->oom ||
+        add > (bufsize_t)(INT32_MAX / 2) - content->size || content->asize - content->size > add) {
+        return;
+    }
+    size_t needed = (size_t)content->size + (size_t)add + 1;
+    if (content->asize == 0) {
+        unsigned char *storage = markdown_core_arena_alloc(parser->arena, needed);
+        if (storage) {
+            markdown_core_strbuf_borrow(content, storage, (bufsize_t)needed);
+        }
+    } else if (content->borrowed &&
+               markdown_core_arena_extend(parser->arena, content->ptr, (size_t)content->asize, needed)) {
+        content->asize = (bufsize_t)needed;
+    }
+}
+
 void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown_core_parser *parser) {
     int chars_to_tab;
     int i;
     assert(node->flags & MARKDOWN_CORE_NODE__OPEN);
+    if (parser->offset < ch->len) {
+        bufsize_t tab = parser->partially_consumed_tab ? TAB_STOP - (parser->column % TAB_STOP) : 0;
+        S_reserve_content(parser, node, ch->len - parser->offset + tab);
+    }
     /* Indentation stripped ahead of the content belongs to the CONTAINER that
      * stripped it, not to the block being written into -- the same rule the
      * block openers follow, and for the same reason: a block begins at its own
@@ -800,68 +771,164 @@ static size_t inline_candidate_roles(const markdown_core_element *element, unsig
     return count;
 }
 
-void markdown_core_manage_elements_special_characters(markdown_core_parser *parser, int add) {
-    size_t next[256];
+static bool S_owns_block_starts(const markdown_core_element *element) {
+    return element->scan_block_start || element->try_interrupting_block || element->try_opening_block ||
+           element->try_opening_paragraph;
+}
+
+/* A registry's projection is a pure function of its descriptors: the core
+ * registry's is generated once from them (core-registry.inc, which the api
+ * tests hold to this builder), and this builds the projection of a registry
+ * a setup extends. Every table shares one allocation, the pointer-aligned
+ * tables first and the byte sets last. Within a byte, inline candidates keep
+ * registry order among equal precedence; protected tokens precede ordinary
+ * alternatives, which precede literal fallbacks. */
+bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_element *const *elements, size_t count,
+                                    const markdown_core_element *extra, markdown_core_registry *registry) {
     unsigned char roles[256], bytes[256];
-    parser->mem->free(parser->inline_dispatch);
-    parser->inline_dispatch = NULL;
-    memset(parser->inline_dispatch_offsets, 0, sizeof(parser->inline_dispatch_offsets));
-    markdown_core_inlines_reset_special_chars(parser);
-    if (!add || parser->oom) {
-        return;
+    size_t total = count + (extra != NULL);
+    size_t candidates = 0, owners = 0, hooks = 0;
+    for (size_t i = 0; i < total; i++) {
+        const markdown_core_element *element = i < count ? elements[i] : extra;
+        candidates += inline_candidate_roles(element, roles, bytes);
+        owners += S_owns_block_starts(element);
+        hooks += (element->init_inline != NULL) + (element->finish_inline != NULL) + (element->dispose_inline != NULL);
     }
-    for (size_t i = 0; i < parser->element_count; i++) {
-        const markdown_core_element *element = parser->elements[i];
+    size_t elements_size = total * sizeof(*registry->elements);
+    size_t offsets_size = 257 * sizeof(size_t);
+    size_t candidates_size = candidates * sizeof(markdown_core_inline_candidate);
+    size_t owners_size = owners * sizeof(const markdown_core_element *);
+    /* One word per byte holds 64 owners; a registry with more gets more
+     * words per byte, never a limit. */
+    size_t words = owners / 64 + 1;
+    size_t sets_size = 4 * 256 * words * sizeof(uint64_t);
+    size_t hooks_size = hooks * sizeof(const markdown_core_element *);
+    /* The pointer tables before the sets end at a pointer boundary, which an
+     * ABI with 4-byte pointers and 8-byte words (armeabi-v7a) does not accept
+     * for a word: the sets begin at the next multiple of their word size. */
+    size_t sets_align = sizeof(uint64_t);
+    unsigned char *storage = mem->calloc(1, elements_size + offsets_size + candidates_size + owners_size + hooks_size +
+                                                (sets_align - 1) + sets_size + 2 * 256);
+    if (!storage) {
+        return false;
+    }
+    unsigned char *at = storage;
+    const markdown_core_element **list = (const markdown_core_element **)at;
+    size_t *offsets = (size_t *)(at += elements_size);
+    markdown_core_inline_candidate *dispatch = (markdown_core_inline_candidate *)(at += offsets_size);
+    const markdown_core_element **owner_table = (const markdown_core_element **)(at += candidates_size);
+    const markdown_core_element **hook_table = (const markdown_core_element **)(at += owners_size);
+    at += hooks_size;
+    at += (sets_align - (size_t)((uintptr_t)at % sets_align)) % sets_align;
+    uint64_t *sets = (uint64_t *)at;
+    int8_t *special = (int8_t *)(at += sets_size);
+    int8_t *skip = special + 256;
+    markdown_core_registry prepared = {
+        .elements = list,
+        .element_count = total,
+        .inline_dispatch_offsets = offsets,
+        .inline_dispatch = dispatch,
+        .block_owners = owner_table,
+        .block_owner_sets = {sets, sets + 256 * words, sets + 512 * words, sets + 768 * words, words},
+        .inline_hooks = {hook_table, 0, 0, 0},
+        .special_chars = special,
+        .skip_chars = skip,
+        .storage = storage};
+    for (size_t i = 0; i < total; i++) {
+        const markdown_core_element *element = i < count ? elements[i] : extra;
+        list[i] = element;
+        if (element->parse_text) {
+            prepared.text_structure = element;
+        }
+        if (element->delimiter_rule != MARKDOWN_CORE_DELIM_RULE_NONE) {
+            prepared.delimiter_owners[element->delimiter_rule] = element;
+        }
+        prepared.inline_hooks.init_count += element->init_inline != NULL;
+        prepared.inline_hooks.finish_count += element->finish_inline != NULL;
+        prepared.inline_hooks.dispose_count += element->dispose_inline != NULL;
+        if (S_owns_block_starts(element)) {
+            /* The owner's bit joins the set of every byte it accepts, for
+             * each hook it implements. */
+            size_t owner = prepared.block_owner_count++;
+            uint64_t bit = (uint64_t)1 << (owner % 64);
+            size_t word = owner / 64;
+            owner_table[owner] = element;
+            const unsigned char *accepted = (const unsigned char *)element->block_start_bytes;
+            for (size_t c = 0; c < 256; c++) {
+                bool accepts = !accepted;
+                for (const unsigned char *b = accepted; !accepts && b && *b; b++) {
+                    accepts = *b == c;
+                }
+                if (!accepts) {
+                    continue;
+                }
+                uint64_t *slot = sets + c * words + word;
+                slot[0] |= element->scan_block_start ? bit : 0;
+                slot[256 * words] |= element->try_interrupting_block ? bit : 0;
+                slot[512 * words] |= element->try_opening_block ? bit : 0;
+                slot[768 * words] |= element->try_opening_paragraph ? bit : 0;
+            }
+        }
         if (!element->match_inline && !element->insert_inline_from_delim) {
             continue;
         }
         size_t used = inline_candidate_roles(element, roles, bytes);
         for (size_t j = 0; j < used; j++) {
             unsigned char c = bytes[j];
-            parser->inline_dispatch_offsets[c + 1]++;
+            offsets[c + 1]++;
             if (roles[c] & INLINE_TERMINATES) {
-                markdown_core_inlines_add_text_terminator(parser, (unsigned char)c);
+                special[c] = 1;
             }
         }
         for (const unsigned char *c = (const unsigned char *)element->flanking_transparent; c && *c; c++) {
-            markdown_core_inlines_add_flanking_transparent(parser, *c);
+            skip[*c] = 1;
         }
     }
+    size_t next[256];
     for (size_t c = 0; c < 256; c++) {
-        parser->inline_dispatch_offsets[c + 1] += parser->inline_dispatch_offsets[c];
-        next[c] = parser->inline_dispatch_offsets[c];
+        offsets[c + 1] += offsets[c];
+        next[c] = offsets[c];
     }
-    size_t count = parser->inline_dispatch_offsets[256];
-    if (!count) {
-        return;
-    }
-    parser->inline_dispatch = parser->mem->calloc(count, sizeof(*parser->inline_dispatch));
-    if (!parser->inline_dispatch) {
-        parser->oom = true;
-        return;
-    }
-    for (size_t i = 0; i < parser->element_count; i++) {
-        const markdown_core_element *element = parser->elements[i];
+    const markdown_core_element **init = hook_table, **finish = init + prepared.inline_hooks.init_count,
+                                **dispose = finish + prepared.inline_hooks.finish_count;
+    for (size_t i = 0; i < total; i++) {
+        const markdown_core_element *element = list[i];
+        if (element->init_inline) {
+            *init++ = element;
+        }
+        if (element->finish_inline) {
+            *finish++ = element;
+        }
+        if (element->dispose_inline) {
+            *dispose++ = element;
+        }
         size_t used = inline_candidate_roles(element, roles, bytes);
         for (size_t j = 0; j < used; j++) {
             unsigned char c = bytes[j];
-            parser->inline_dispatch[next[c]++] = (markdown_core_inline_candidate){
-                element, (roles[c] & INLINE_DISPATCHES) != 0, (roles[c] & INLINE_TERMINATES) != 0};
+            dispatch[next[c]++] = (markdown_core_inline_candidate){element, (roles[c] & INLINE_DISPATCHES) != 0,
+                                                                   (roles[c] & INLINE_TERMINATES) != 0};
         }
     }
     for (size_t c = 0; c < 256; c++) {
-        size_t first = parser->inline_dispatch_offsets[c], end = parser->inline_dispatch_offsets[c + 1];
+        size_t first = offsets[c], end = offsets[c + 1];
         for (size_t i = first + 1; i < end; i++) {
-            markdown_core_inline_candidate candidate = parser->inline_dispatch[i];
-            size_t at = i;
-            while (at > first &&
-                   parser->inline_dispatch[at - 1].element->inline_precedence > candidate.element->inline_precedence) {
-                parser->inline_dispatch[at] = parser->inline_dispatch[at - 1];
-                at--;
+            markdown_core_inline_candidate candidate = dispatch[i];
+            size_t slot = i;
+            while (slot > first &&
+                   dispatch[slot - 1].element->inline_precedence > candidate.element->inline_precedence) {
+                dispatch[slot] = dispatch[slot - 1];
+                slot--;
             }
-            parser->inline_dispatch[at] = candidate;
+            dispatch[slot] = candidate;
         }
     }
+    *registry = prepared;
+    return true;
+}
+
+void markdown_core_registry_release(markdown_core_mem *mem, markdown_core_registry *registry) {
+    mem->free(registry->storage);
+    *registry = (markdown_core_registry){0};
 }
 
 /* Parse each source buffer once. Inline parsing completes fields at their
@@ -919,23 +986,33 @@ bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_
 
 typedef int (*tree_phase_func)(markdown_core_parser *parser, markdown_core_node **root_slot, void *context);
 typedef void (*tree_node_func)(markdown_core_parser *parser, markdown_core_node *node, int script_depth, void *context);
-/* Runs at a node's EXIT with the frame's iterator, whose lookahead already
- * names a node outside the subtree; returns the node now in the position. */
-typedef markdown_core_node *(*tree_exit_func)(markdown_core_parser *parser, markdown_core_iter *iter,
-                                              markdown_core_node *node, int claim_depth, void *context);
+/* Runs at a node's EXIT and returns the node now in the position, or NULL
+ * once the position is released. `*successor` names the sibling the walk
+ * continues at: the node's next sibling when called, which the hook moves
+ * past any operand it merges into the node before it releases anything. */
+typedef markdown_core_node *(*tree_exit_func)(markdown_core_parser *parser, markdown_core_node *node, int claim_depth,
+                                              void *context, markdown_core_node **successor);
 
+/* One owned tree being walked: its root's slot, and the cursor -- the node
+ * whose ENTER (`entering`) or EXIT comes next. */
 typedef struct {
     markdown_core_node **slot;
-    markdown_core_iter iter;
-    bool started;
+    markdown_core_node *root;
+    markdown_core_node *cursor;
+    bool entering;
     int script_depth, claim_depth;
 } owned_tree_frame;
+
+/* The frames start in the walk's own record, enough for a document whose
+ * fields do not nest, and move to the heap only when they outgrow it. */
+#define OWNED_TREE_FRAMES 8
 
 typedef struct {
     markdown_core_parser *parser;
     owned_tree_frame *frames;
     size_t count, capacity;
     int script_depth;
+    owned_tree_frame first_frames[OWNED_TREE_FRAMES];
 } owned_tree_walk;
 
 static int push_owned_tree(markdown_core_node **slot, void *context) {
@@ -944,87 +1021,125 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
         return !walk->parser->oom;
     }
     if (walk->count == walk->capacity) {
-        size_t capacity = walk->capacity ? 2 * walk->capacity : 8;
+        size_t capacity = 2 * walk->capacity;
         if (capacity > SIZE_MAX / sizeof(*walk->frames)) {
             walk->parser->oom = true;
             return 0;
         }
-        void *frames = walk->parser->mem->realloc(walk->frames, capacity * sizeof(*walk->frames));
+        bool inline_frames = walk->frames == walk->first_frames;
+        void *frames =
+            walk->parser->mem->realloc(inline_frames ? NULL : walk->frames, capacity * sizeof(*walk->frames));
         if (!frames) {
             walk->parser->oom = true;
             return 0;
         }
+        if (inline_frames) {
+            memcpy(frames, walk->first_frames, sizeof(walk->first_frames));
+        }
         walk->frames = frames;
         walk->capacity = capacity;
     }
-    walk->frames[walk->count++] = (owned_tree_frame){.slot = slot, .script_depth = walk->script_depth};
+    walk->frames[walk->count++] = (owned_tree_frame){
+        .slot = slot, .root = *slot, .cursor = *slot, .entering = true, .script_depth = walk->script_depth};
     return 1;
 }
 
 /* Every independent inline tree uses the same explicit continuation stack.
  * Field roots remain owned by their live slots until their children finish;
  * an exit or completion phase may then replace that root. Depth never uses C
- * frames, and a node that cannot own fields costs no visitor call. */
+ * recursion, and the walk steps through the tree's own links: a node is
+ * entered, its children follow, and it is exited once they are. The frame's
+ * position is held in locals while its tree is walked and returns to the
+ * frame only when a field tree is pushed above it, so an event costs no
+ * frame traffic and no iterator record. */
 static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node **slot, tree_node_func enter,
                             tree_exit_func exit, tree_phase_func finish, void *context, int script_depth) {
     owned_tree_walk walk = {.parser = parser, .script_depth = script_depth};
+    walk.frames = walk.first_frames;
+    walk.capacity = OWNED_TREE_FRAMES;
     push_owned_tree(slot, &walk);
     while (walk.count && !parser->oom) {
         owned_tree_frame *frame = &walk.frames[walk.count - 1];
-        if (!frame->started) {
-            markdown_core_iter_init(&frame->iter, *frame->slot);
-            frame->started = true;
-        }
-        markdown_core_event_type event = markdown_core_iter_next(&frame->iter);
-        if (event == MARKDOWN_CORE_EVENT_DONE) {
-            markdown_core_node **completed = frame->slot;
-            walk.count--;
-            if (finish && !finish(parser, completed, context)) {
-                parser->oom = true;
+        markdown_core_node *root = frame->root;
+        markdown_core_node *node = frame->cursor;
+        bool entering = frame->entering;
+        int depth = frame->script_depth, claim = frame->claim_depth;
+        for (;;) {
+            bool word_body = node->element && node->element->delimiter.body == DELIMITER_WORD_BODY;
+            bool claims = markdown_core_node_type_claims_text((markdown_core_node_type)node->kind);
+            if (entering) {
+                depth += word_body;
+                claim += claims;
+                if (enter) {
+                    enter(parser, node, depth, context);
+                    if (parser->oom) {
+                        break;
+                    }
+                }
+                if (markdown_core_node_may_own_inline_subtrees(node)) {
+                    /* The fields finish before the node's children and its
+                     * EXIT: the frame keeps the next event, the field trees
+                     * go above it, and the top frame resumes. Settled before
+                     * pushing, because pushing may move the frames. */
+                    frame->cursor = node->first_child ? node->first_child : node;
+                    frame->entering = node->first_child != NULL;
+                    frame->script_depth = depth;
+                    frame->claim_depth = claim;
+                    walk.script_depth = depth;
+                    size_t first = walk.count;
+                    if (!markdown_core_visit_inline_subtrees(node, push_owned_tree, &walk)) {
+                        parser->oom = true;
+                    }
+                    /* The visitor reports fields in source order; a stack
+                     * consumes their reversed registration order. No field is
+                     * visited or scanned twice. */
+                    for (size_t left = first, right = walk.count; left < right && left < --right; left++) {
+                        owned_tree_frame swap = walk.frames[left];
+                        walk.frames[left] = walk.frames[right];
+                        walk.frames[right] = swap;
+                    }
+                    break;
+                }
+                if (node->first_child) {
+                    node = node->first_child;
+                } else {
+                    entering = false;
+                }
+                continue;
             }
-            continue;
-        }
-        markdown_core_node *node = markdown_core_iter_get_node(&frame->iter);
-        int step = event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
-        if (node->element && node->element->delimiter.body == DELIMITER_WORD_BODY) {
-            frame->script_depth += step;
-        }
-        if (markdown_core_node_type_claims_text((markdown_core_node_type)node->kind)) {
-            frame->claim_depth += step;
-        }
-        if (event != MARKDOWN_CORE_EVENT_ENTER) {
+            depth -= word_body;
+            claim -= claims;
+            markdown_core_node *parent = node->parent;
+            markdown_core_node *successor = node->next;
+            markdown_core_node *now = node;
             if (exit) {
+                now = exit(parser, node, claim, context, &successor);
+                if (parser->oom) {
+                    break;
+                }
+            }
+            if (node == root) {
                 /* The frame root's EXIT is its last event, so the slot may
                  * take a replacement here; a failed walk keeps the tree for
                  * the transaction's cleanup. */
-                bool root = node == frame->iter.root;
-                markdown_core_node *now = exit(parser, &frame->iter, node, frame->claim_depth, context);
-                if (root && !parser->oom) {
-                    *frame->slot = now;
+                *frame->slot = now;
+                walk.count--;
+                if (finish && !finish(parser, frame->slot, context)) {
+                    parser->oom = true;
                 }
+                break;
             }
-            continue;
-        }
-        walk.script_depth = frame->script_depth;
-        if (enter) {
-            enter(parser, node, frame->script_depth, context);
-        }
-        if (!markdown_core_node_may_own_inline_subtrees(node)) {
-            continue;
-        }
-        size_t first = walk.count;
-        if (!markdown_core_visit_inline_subtrees(node, push_owned_tree, &walk)) {
-            parser->oom = true;
-        }
-        /* The visitor reports fields in source order; a stack consumes their
-         * reversed registration order. No field is visited or scanned twice. */
-        for (size_t left = first, right = walk.count; left < right && left < --right; left++) {
-            owned_tree_frame swap = walk.frames[left];
-            walk.frames[left] = walk.frames[right];
-            walk.frames[right] = swap;
+            if (successor) {
+                node = successor;
+                entering = true;
+            } else {
+                node = parent;
+            }
         }
     }
-    parser->mem->free(walk.frames);
+    if (walk.frames != walk.first_frames) {
+        parser->mem->free(walk.frames);
+    }
     return !parser->oom;
 }
 
@@ -1058,8 +1173,6 @@ static void process_inlines(markdown_core_parser *parser, markdown_core_map *ref
     }
 
     markdown_core_visit_block_subtrees(parser->root, complete_independent_inlines, parser);
-
-    markdown_core_manage_elements_special_characters(parser, false);
 }
 
 /* Block syntax and all anchor decisions finish before definitions disappear.
@@ -1171,11 +1284,9 @@ markdown_core_node *markdown_core_parse_document_with_mem(const char *source, si
     if (!parser) {
         return NULL;
     }
-    parser->elements = markdown_core_core_elements(&parser->element_count);
-    for (size_t i = 0; i < parser->element_count; i++) {
-        S_register_element(parser, parser->elements[i]);
-    }
-    if (!markdown_core_inlines_project_hooks(parser) || (setup && !setup(parser, context))) {
+    /* The complete immutable dialect, prepared: nothing is projected here. */
+    S_install_registry(parser, markdown_core_core_registry());
+    if (setup && !setup(parser, context)) {
         S_parser_free(parser);
         return NULL;
     }
@@ -1260,9 +1371,12 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
                     return;
                 }
                 markdown_core_strbuf_put(&parser->line_scratch, cursor, segment_length);
+                parser->line_source = NULL;
                 S_process_line(parser, parser->line_scratch.ptr, parser->line_scratch.size);
                 markdown_core_strbuf_clear(&parser->line_scratch);
             } else {
+                parser->line_source = cursor;
+                parser->line_source_length = (bufsize_t)(next - cursor);
                 S_process_line(parser, cursor, segment_length);
             }
         } else {
@@ -1300,6 +1414,7 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
     if (!parser->oom && parser->line_scratch.size > 0) {
         parser->lookahead_cursor = end;
         parser->lookahead_end = end;
+        parser->line_source = NULL;
         S_process_line(parser, parser->line_scratch.ptr, parser->line_scratch.size);
         markdown_core_strbuf_clear(&parser->line_scratch);
     }
@@ -1906,22 +2021,64 @@ const markdown_core_block_peek *markdown_core_parser_peek_block_line(markdown_co
     return peek;
 }
 
+void markdown_core_parser_note_paragraph_line(markdown_core_parser *parser, markdown_core_node *paragraph,
+                                              const markdown_core_chunk *input) {
+    const unsigned char *data = parser->line_source;
+    bufsize_t length = parser->line_source_length;
+    if (!data) {
+        /* A rewritten line has no source bytes of its own shape: keep the
+         * line the parser built, which is what this line's grammar read. */
+        markdown_core_strbuf_set(&parser->paragraph_line_copy, input->data, input->len);
+        if (parser->paragraph_line_copy.oom) {
+            parser->oom = true;
+            return;
+        }
+        data = parser->paragraph_line_copy.ptr;
+        length = input->len;
+    }
+    parser->paragraph_line = (markdown_core_paragraph_line){.node = paragraph,
+                                                            .data = data,
+                                                            .length = length,
+                                                            .offset = parser->offset,
+                                                            .first = parser->first_nonspace,
+                                                            .first_column = parser->first_nonspace_column,
+                                                            .indent = parser->indent,
+                                                            .line = parser->line_number,
+                                                            .after = parser->lookahead_cursor};
+}
+
+const markdown_core_paragraph_line *markdown_core_parser_paragraph_line(const markdown_core_parser *parser,
+                                                                        const markdown_core_node *paragraph) {
+    const markdown_core_paragraph_line *line = &parser->paragraph_line;
+    if (line->node != paragraph) {
+        return NULL;
+    }
+    bool open = (paragraph->flags & MARKDOWN_CORE_NODE__OPEN) != 0;
+    if (open ? paragraph->start_line != parser->line_number - 1 : paragraph->start_line != paragraph->end_line) {
+        return NULL;
+    }
+    return line;
+}
+
+/* Each arbitration loop visits the owners of the line's first byte that
+ * implement its hook, in registry order, and no other owner. */
 static bool scan_element_start(markdown_core_parser *parser, block_start_context *context, block_start *start) {
-    size_t count;
-    const markdown_core_block_owner *owners = S_block_owners(parser, &count);
+    const markdown_core_registry *registry = parser->registry;
+    const markdown_core_block_owner_sets *sets = &registry->block_owner_sets;
     unsigned char byte = S_block_start_byte(context->input, context->first);
-    for (size_t i = 0; i < count; i++) {
-        const markdown_core_element *element = owners[i].element;
-        if (!element->scan_block_start || context->indent > element->maximum_block_indent ||
-            !S_block_owner_accepts(&owners[i], byte)) {
-            continue;
-        }
-        MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
-        if (element->scan_block_start(parser, context, start)) {
-            return true;
-        }
-        if (parser->oom) {
-            return false;
+    for (size_t word = 0; word < sets->words; word++) {
+        for (uint64_t owners = sets->scan[byte * sets->words + word]; owners; owners &= owners - 1) {
+            const markdown_core_element *element = registry->block_owners[word * 64 + markdown_core_lowest_bit(owners)];
+            MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
+            if (context->indent > element->maximum_block_indent) {
+                continue;
+            }
+            if (element->scan_block_start(parser, context, start)) {
+                return true;
+            }
+            if (parser->oom) {
+                return false;
+            }
         }
     }
     return false;
@@ -1944,6 +2101,7 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
                                    .paragraph = paragraph,
                                    .lazy = paragraph,
                                    .all_matched = true,
+                                   .speculative = true,
                                    .depth = 1};
     block_start start = scan_block_start(parser, &context);
     if (parser->oom) {
@@ -1994,26 +2152,27 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             return;
         }
         parser->thematic_break_kill_pos = context.thematic_kill;
-        size_t owner_count;
-        const markdown_core_block_owner *owners = S_block_owners(parser, &owner_count);
+        const markdown_core_registry *registry = parser->registry;
+        const markdown_core_element *const *owners = registry->block_owners;
+        const markdown_core_block_owner_sets *sets = &registry->block_owner_sets;
+        size_t words = sets->words;
         unsigned char byte = S_block_start_byte(input, parser->first_nonspace);
 
         /* Dash-led tables precede thematic breaks and lists. An opener may
          * close the old path before an allocation fails; OOM is terminal,
          * never a grammar miss that can try another owner on that path. */
-        for (size_t element_index = 0; element_index < owner_count; element_index++) {
-            const markdown_core_element *owner = owners[element_index].element;
-            if (!owner->try_interrupting_block || !S_block_owner_accepts(&owners[element_index], byte)) {
-                continue;
-            }
-            MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
-            markdown_core_node *opened = owner->try_interrupting_block(parser, *container, input, maybe_lazy);
-            if (parser->oom) {
-                return;
-            }
-            if (opened) {
-                *container = opened;
-                return;
+        for (size_t word = 0; word < words; word++) {
+            for (uint64_t set = sets->interrupt[byte * words + word]; set; set &= set - 1) {
+                const markdown_core_element *owner = owners[word * 64 + markdown_core_lowest_bit(set)];
+                MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
+                markdown_core_node *opened = owner->try_interrupting_block(parser, *container, input, maybe_lazy);
+                if (parser->oom) {
+                    return;
+                }
+                if (opened) {
+                    *container = opened;
+                    return;
+                }
             }
         }
 
@@ -2024,17 +2183,15 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
         } else {
             markdown_core_node *new_container = NULL;
 
-            for (size_t element_index = 0; element_index < owner_count; element_index++) {
-                const markdown_core_element *element = owners[element_index].element;
-
-                if (element->try_opening_block && S_block_owner_accepts(&owners[element_index], byte)) {
+            for (size_t word = 0; word < words && !new_container; word++) {
+                for (uint64_t set = sets->open[byte * words + word]; set; set &= set - 1) {
+                    const markdown_core_element *element = owners[word * 64 + markdown_core_lowest_bit(set)];
                     MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
                     new_container = element->try_opening_block(element, parser->indent > element->maximum_block_indent,
                                                                parser, *container, input->data, input->len);
                     if (parser->oom) {
                         return;
                     }
-
                     if (new_container) {
                         *container = new_container;
                         if (parser->claimed_cursor) {
@@ -2047,21 +2204,20 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
 
             if (!new_container) {
                 if (!maybe_lazy && !is_paragraph(*container)) {
-                    for (size_t element_index = 0; element_index < owner_count; element_index++) {
-                        const markdown_core_element *element = owners[element_index].element;
-                        if (!element->try_opening_paragraph || !S_block_owner_accepts(&owners[element_index], byte)) {
-                            continue;
-                        }
-                        MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
-                        new_container =
-                            element->try_opening_paragraph(element, parser->indent > element->maximum_block_indent,
-                                                           parser, *container, input->data, input->len);
-                        if (parser->oom) {
-                            return;
-                        }
-                        if (new_container) {
-                            *container = new_container;
-                            return;
+                    for (size_t word = 0; word < words; word++) {
+                        for (uint64_t set = sets->paragraph[byte * words + word]; set; set &= set - 1) {
+                            const markdown_core_element *element = owners[word * 64 + markdown_core_lowest_bit(set)];
+                            MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
+                            new_container =
+                                element->try_opening_paragraph(element, parser->indent > element->maximum_block_indent,
+                                                               parser, *container, input->data, input->len);
+                            if (parser->oom) {
+                                return;
+                            }
+                            if (new_container) {
+                                *container = new_container;
+                                return;
+                            }
                         }
                     }
                 }
@@ -2380,33 +2536,80 @@ void markdown_core_block_own_definitions(markdown_core_definition_collection *co
  * parsing does not depend on the attached elements. A Text first absorbs the
  * run that follows it and is released when it owns no bytes; the hooks then
  * see the run's survivor, exactly as the former whole-tree passes did. */
+/* An element with a finish hook and the kinds it acts on as a bit per kind
+ * (S_kind_bit); a hook whose kinds do not fit the mask is offered every
+ * node, which is what declaring no kinds means. */
+typedef struct {
+    const markdown_core_element *element;
+    uint64_t kinds;
+} finisher;
+
 typedef struct {
     markdown_core_parser *parser;
-    const markdown_core_element **finishers;
+    finisher *finishers;
     size_t count;
 } finishing_walk;
 
-static markdown_core_node *S_finish_node(markdown_core_parser *parser, markdown_core_iter *iter,
-                                         markdown_core_node *node, int claim_depth, void *context) {
+/* One bit per node kind: the block kinds count from 0 and the inline kinds
+ * from 32, so the dialect's kinds all fit one word. */
+static uint64_t S_kind_bit(markdown_core_node_type kind) {
+    unsigned value = markdown_core_kind_value(kind);
+    unsigned index = value + (MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind) ? 32u : 0u);
+    return value < 32 && index < 64 ? (uint64_t)1 << index : 0;
+}
+
+static uint64_t S_finished_kinds(const markdown_core_node_type *kinds) {
+    uint64_t mask = 0;
+    if (!kinds) {
+        return ~(uint64_t)0;
+    }
+    for (; *kinds != MARKDOWN_CORE_NODE_NONE; kinds++) {
+        uint64_t bit = S_kind_bit(*kinds);
+        if (!bit) {
+            return ~(uint64_t)0;
+        }
+        mask |= bit;
+    }
+    return mask;
+}
+
+static markdown_core_node *S_finish_node(markdown_core_parser *parser, markdown_core_node *node, int claim_depth,
+                                         void *context, markdown_core_node **successor) {
     const finishing_walk *walk = context;
     MARKDOWN_CORE_DIAGNOSTIC(parser->finishing_work++;)
     if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
         if (node->next && node->next->kind == MARKDOWN_CORE_NODE_TEXT &&
-            !markdown_core_consolidate_text_run(parser, iter, node)) {
+            !markdown_core_consolidate_text_run(parser, node)) {
             parser->oom = true;
             return NULL;
         }
+        /* The operands of a merged run are gone; the walk goes on after it. */
+        *successor = node->next;
         if (node->as.literal->len == 0) {
             markdown_core_chunk_free(parser->mem, node->as.literal);
             markdown_core_node_recycle(parser->arena, node);
             return NULL;
         }
     }
-    for (size_t i = 0; i < walk->count && node; i++) {
-        const markdown_core_element *element = walk->finishers[i];
-        node = element->finish_node(element, parser, node, claim_depth);
+    /* A hook answers the node now in the position, which may be of another
+     * kind than the one it was offered; the hooks after it are chosen by
+     * that node's kind, as they would see it. */
+    uint64_t bit = S_kind_bit((markdown_core_node_type)node->kind);
+    for (const finisher *hook = walk->finishers, *end = hook + walk->count; hook != end && node; hook++) {
+        if (!(hook->kinds & bit)) {
+            continue;
+        }
+        const markdown_core_element *element = hook->element;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->finisher_work++;)
+        markdown_core_node *finished = element->finish_node(element, parser, node, claim_depth);
         if (parser->oom) {
             return NULL;
+        }
+        if (finished != node) {
+            node = finished;
+            if (node) {
+                bit = S_kind_bit((markdown_core_node_type)node->kind);
+            }
         }
     }
     return node;
@@ -2422,23 +2625,25 @@ static int S_finish_tree(markdown_core_parser *parser) {
     for (size_t i = 0; i < parser->element_count; i++) {
         walk.count += parser->elements[i]->finish_node != NULL;
     }
+    /* The table lives in the transaction's arena for the walk: no heap
+     * allocation per parse, and its record returns to the arena's pool. */
+    size_t table_size = walk.count * sizeof(*walk.finishers);
     if (walk.count) {
-        walk.finishers = parser->mem->calloc(walk.count, sizeof(*walk.finishers));
+        walk.finishers = markdown_core_arena_take(parser->arena, table_size);
         if (!walk.finishers) {
             parser->oom = true;
             return 0;
         }
         for (size_t i = 0, at = 0; i < parser->element_count; i++) {
-            if (parser->elements[i]->finish_node) {
-                walk.finishers[at++] = parser->elements[i];
+            const markdown_core_element *element = parser->elements[i];
+            if (element->finish_node) {
+                walk.finishers[at++] = (finisher){element, S_finished_kinds(element->finish_node_kinds)};
             }
         }
     }
     int ok = markdown_core_visit_block_subtrees(parser->root, finish_independent_tree, &walk) &&
              walk_owned_trees(parser, &parser->root, NULL, S_finish_node, NULL, &walk, 0);
-    if (walk.finishers) {
-        parser->mem->free(walk.finishers);
-    }
+    markdown_core_arena_recycle(parser->arena, walk.finishers, table_size);
     return ok && !parser->oom;
 }
 
@@ -2480,10 +2685,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     S_parse_block_inputs(parser);
     S_complete_block_tree(parser, parser->root);
     if (!parser->oom) {
-        markdown_core_manage_elements_special_characters(parser, true);
-        if (!parser->oom) {
-            parser->document_structure->prepare_document(parser);
-        }
+        parser->document_structure->prepare_document(parser);
     }
     S_PHASE(parser, prepared);
     if (!parser->oom) {

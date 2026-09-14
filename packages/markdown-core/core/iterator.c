@@ -90,8 +90,7 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
 /* The surviving Text owns the concatenated literal and a concatenation of
  * its operands' source runs. A caller outside a parse has no parser-owned
  * map to retain and uses the public entry point with NULL. */
-int markdown_core_consolidate_text_run(markdown_core_parser *parser, markdown_core_iter *iter,
-                                       markdown_core_node *cur) {
+int markdown_core_consolidate_text_run(markdown_core_parser *parser, markdown_core_node *cur) {
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(cur->mem);
     markdown_core_node combined_map = {0};
     markdown_core_node *tmp, *next;
@@ -137,16 +136,13 @@ int markdown_core_consolidate_text_run(markdown_core_parser *parser, markdown_co
         cur->content_mark_count = combined_map.content_mark_count;
         cur->content_mark_offset = 0;
     }
-    markdown_core_chunk_free(iter->mem, cur->as.literal);
+    markdown_core_chunk_free(cur->mem, cur->as.literal);
     *cur->as.literal = markdown_core_chunk_buf_detach(&buf);
     // A poisoned buffer means this run's bytes are LOST rather than absent.
     // Report it and leave the node where it is: a drop must only ever remove
     // a node that is honestly empty, never one an allocation failure emptied.
     ok = cur->as.literal->data != NULL;
 done:
-    /* Re-establish `cur`'s EXIT whether or not the merge completed: the
-     * cursor must never name an operand this call released. */
-    markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
     markdown_core_strbuf_free(&buf);
     return ok;
 }
@@ -171,9 +167,14 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
         if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->kind != MARKDOWN_CORE_NODE_TEXT) {
             continue;
         }
-        if (cur->next && cur->next->kind == MARKDOWN_CORE_NODE_TEXT &&
-            !markdown_core_consolidate_text_run(parser, iter, cur)) {
-            return 0;
+        if (cur->next && cur->next->kind == MARKDOWN_CORE_NODE_TEXT) {
+            int merged = markdown_core_consolidate_text_run(parser, cur);
+            /* Re-establish `cur`'s EXIT whether or not the merge completed:
+             * the cursor must never name an operand the merge released. */
+            markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
+            if (!merged) {
+                return 0;
+            }
         }
         // A `TEXT` NODE THAT OWNS NO BYTES IS NOT A NODE. It has no literal to
         // render and no source to point at, so the only position it can carry

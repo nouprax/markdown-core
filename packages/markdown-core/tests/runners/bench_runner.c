@@ -11,9 +11,19 @@
  * hosted-runner load and platform variance make wall-clock assertions an
  * unreliable regression oracle. The deterministic lane is work_runner.
  *
- *   bench_runner --list
- *   bench_runner --workload NAME --samples DIR [--repeats N] [--warmup N]
- *                [--json FILE] [--source-sha SHA]
+ * A runner built with MARKDOWN_CORE_BENCH_CMARK links the pinned cmark
+ * oracle and, with --reference cmark, times its parse and free of the same
+ * bytes beside the engine's. --instructions parses and frees each case
+ * exactly once and reports nothing else, so that a run under callgrind
+ * counts the instructions of that one parse; --dry-run builds the input and
+ * parses nothing, the baseline such a count subtracts
+ * (scripts/benchmark-instructions.mjs drives both).
+ *
+ *   bench_runner --list [--workload NAME --samples DIR]
+ *   bench_runner --workload NAME --samples DIR [--case NAME] [--repeats N]
+ *                [--warmup N] [--json FILE] [--source-sha SHA]
+ *                [--reference cmark] [--instructions [--implementation core|cmark]]
+ *                [--dry-run]
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +33,9 @@
 #endif
 
 #include <markdown_core.h>
+#ifdef MARKDOWN_CORE_BENCH_CMARK
+#include <cmark.h>
+#endif
 
 #include "bench_workloads.h"
 #include "test_support.h"
@@ -35,8 +48,16 @@ typedef struct bench_options {
     const char *samples_dir;
     const char *json_path;
     const char *source_sha;
+    /* Only this case of the workload, when set. */
+    const char *case_name;
+    /* The reference implementation timed beside the engine; NULL for none. */
+    const char *reference;
+    /* The one implementation --instructions runs: "core" or "cmark". */
+    const char *implementation;
     int repeats;
     int warmup;
+    int instructions;
+    int dry_run;
 } bench_options;
 
 typedef struct bench_sample {
@@ -48,6 +69,8 @@ typedef struct bench_run {
     const char *workload;
     FILE *json;
     int json_cases;
+    /* Cases the --case filter let through. */
+    int matched;
     /* The previous case of the doubling series being measured. */
     const char *series;
     uint64_t series_previous_ns;
@@ -98,6 +121,39 @@ static int bench_parse_once(const char *input, size_t length, bench_sample *samp
     return 0;
 }
 
+#ifdef MARKDOWN_CORE_BENCH_CMARK
+/* The reference: cmark's parse and free of the same bytes, timed apart the
+ * same way. */
+static int bench_reference_once(const char *input, size_t length, bench_sample *sample) {
+    uint64_t started = ts_monotonic_ns(), parsed, released;
+    cmark_node *document = cmark_parse_document(input, length, CMARK_OPT_DEFAULT);
+    parsed = ts_monotonic_ns();
+    if (!document) {
+        return -1;
+    }
+    released = ts_monotonic_ns();
+    cmark_node_free(document);
+    sample->parse_ns = parsed - started;
+    sample->free_ns = ts_monotonic_ns() - released;
+    return 0;
+}
+#define BENCH_REFERENCE_VERSION CMARK_VERSION_STRING
+#else
+static int bench_reference_once(const char *input, size_t length, bench_sample *sample) {
+    (void)input;
+    (void)length;
+    (void)sample;
+    return -1;
+}
+#define BENCH_REFERENCE_VERSION ""
+#endif
+
+static int bench_once(const bench_options *options, const char *input, size_t length, bench_sample *sample) {
+    return options->implementation && strcmp(options->implementation, "cmark") == 0
+               ? bench_reference_once(input, length, sample)
+               : bench_parse_once(input, length, sample, NULL);
+}
+
 static int compare_u64(const void *left, const void *right) {
     uint64_t a = *(const uint64_t *)left;
     uint64_t b = *(const uint64_t *)right;
@@ -119,14 +175,32 @@ static void order_statistics(const bench_sample *samples, int count, int free_la
 static int measure_case(const bench_case *input, void *context) {
     bench_run *run = (bench_run *)context;
     const bench_options *options = run->options;
-    bench_sample samples[BENCH_MAX_REPEATS];
+    bench_sample samples[BENCH_MAX_REPEATS], reference[BENCH_MAX_REPEATS];
     bench_sample warm;
     size_t nodes = 0;
     uint64_t min_parse, median_parse, min_free, median_free;
+    uint64_t reference_min_parse = 0, reference_median_parse = 0, reference_min_free = 0, reference_median_free = 0;
     long rss_before = peak_rss_kib(), rss_after;
     double mb_per_s, ns_per_node;
     int repeats = options->repeats > BENCH_MAX_REPEATS ? BENCH_MAX_REPEATS : options->repeats;
     int i;
+
+    if (options->case_name && strcmp(input->name, options->case_name) != 0) {
+        return 0;
+    }
+    run->matched++;
+    if (options->dry_run || options->instructions) {
+        /* The instruction lane: the input is built either way; one parse
+         * and free, or none, is the whole difference between the two runs. */
+        if (!options->dry_run && bench_once(options, input->data, input->length, &warm) != 0) {
+            fprintf(stderr, "%s: parse failed\n", input->name);
+            return 1;
+        }
+        printf("instructions case=%s implementation=%s bytes=%zu parses=%d sha256=%s\n", input->name,
+               options->implementation ? options->implementation : "core", input->length, options->dry_run ? 0 : 1,
+               input->sha256);
+        return 0;
+    }
 
     for (i = 0; i < options->warmup; i++) {
         if (bench_parse_once(input->data, input->length, &warm, NULL) != 0) {
@@ -143,6 +217,22 @@ static int measure_case(const bench_case *input, void *context) {
     rss_after = peak_rss_kib();
     order_statistics(samples, repeats, 0, &min_parse, &median_parse);
     order_statistics(samples, repeats, 1, &min_free, &median_free);
+    if (options->reference) {
+        for (i = 0; i < options->warmup; i++) {
+            if (bench_reference_once(input->data, input->length, &warm) != 0) {
+                fprintf(stderr, "%s: %s parse failed\n", input->name, options->reference);
+                return 1;
+            }
+        }
+        for (i = 0; i < repeats; i++) {
+            if (bench_reference_once(input->data, input->length, &reference[i]) != 0) {
+                fprintf(stderr, "%s: %s parse failed\n", input->name, options->reference);
+                return 1;
+            }
+        }
+        order_statistics(reference, repeats, 0, &reference_min_parse, &reference_median_parse);
+        order_statistics(reference, repeats, 1, &reference_min_free, &reference_median_free);
+    }
     mb_per_s = min_parse ? (double)input->length / ((double)min_parse / 1e9) / 1e6 : 0.0;
     ns_per_node = nodes ? (double)min_parse / (double)nodes : 0.0;
 
@@ -160,6 +250,16 @@ static int measure_case(const bench_case *input, void *context) {
         printf("%s%llu", i ? "," : "", (unsigned long long)samples[i].free_ns);
     }
     printf("\n");
+    if (options->reference) {
+        /* The same bytes through the reference, and the engine's minimum
+         * over the reference's: a measurement to read, never a gate. */
+        printf("benchmark reference=%s version=%s case=%s min_parse_ns=%llu median_parse_ns=%llu min_free_ns=%llu"
+               " median_free_ns=%llu parse_ratio=%.3f\n",
+               options->reference, BENCH_REFERENCE_VERSION, input->name, (unsigned long long)reference_min_parse,
+               (unsigned long long)reference_median_parse, (unsigned long long)reference_min_free,
+               (unsigned long long)reference_median_free,
+               reference_min_parse ? (double)min_parse / (double)reference_min_parse : 0.0);
+    }
 
     /* A doubling series reports the ratio of adjacent minimums. A reviewer
      * may use it to design a deterministic invariant or a controlled
@@ -197,7 +297,16 @@ static int measure_case(const bench_case *input, void *context) {
             fprintf(run->json, "%s{\"parseNs\": %llu, \"freeNs\": %llu}", i ? ", " : "",
                     (unsigned long long)samples[i].parse_ns, (unsigned long long)samples[i].free_ns);
         }
-        fprintf(run->json, "]\n    }");
+        fprintf(run->json, "]");
+        if (options->reference) {
+            fprintf(run->json,
+                    ",\n      \"reference\": {\"implementation\": \"%s\", \"version\": \"%s\", \"minParseNs\": %llu,"
+                    " \"medianParseNs\": %llu, \"minFreeNs\": %llu, \"medianFreeNs\": %llu}",
+                    options->reference, BENCH_REFERENCE_VERSION, (unsigned long long)reference_min_parse,
+                    (unsigned long long)reference_median_parse, (unsigned long long)reference_min_free,
+                    (unsigned long long)reference_median_free);
+        }
+        fprintf(run->json, "\n    }");
         run->json_cases++;
     }
     return 0;
@@ -227,6 +336,9 @@ static int run_workload(const char *workload, const bench_options *options) {
         fprintf(stderr, "unknown workload: %s\n", workload);
     } else if (result == -1) {
         fprintf(stderr, "%s: cannot build input\n", workload);
+    } else if (result == 0 && options->case_name && !run.matched) {
+        fprintf(stderr, "unknown case: %s\n", options->case_name);
+        result = -2;
     }
     if (run.json) {
         fprintf(run.json, "\n  ]\n}\n");
@@ -235,9 +347,17 @@ static int run_workload(const char *workload, const bench_options *options) {
     return result == 0 ? 0 : (result == -2 ? 2 : 1);
 }
 
+static int list_case(const bench_case *input, void *context) {
+    (void)context;
+    puts(input->name);
+    return 0;
+}
+
 static int usage(void) {
-    fputs("usage: bench_runner --list | --workload NAME --samples DIR [--repeats N] [--warmup N]"
-          " [--json FILE] [--source-sha SHA]\n",
+    fputs("usage: bench_runner --list [--workload NAME --samples DIR]\n"
+          "       bench_runner --workload NAME --samples DIR [--case NAME] [--repeats N] [--warmup N]\n"
+          "                    [--json FILE] [--source-sha SHA] [--reference cmark]\n"
+          "                    [--instructions [--implementation core|cmark]] [--dry-run]\n",
           stderr);
     return 2;
 }
@@ -267,12 +387,28 @@ int main(int argc, char **argv) {
             options.json_path = argv[++i];
         } else if (strcmp(argv[i], "--source-sha") == 0 && i + 1 < (size_t)argc) {
             options.source_sha = argv[++i];
+        } else if (strcmp(argv[i], "--case") == 0 && i + 1 < (size_t)argc) {
+            options.case_name = argv[++i];
+        } else if (strcmp(argv[i], "--reference") == 0 && i + 1 < (size_t)argc) {
+            options.reference = argv[++i];
+        } else if (strcmp(argv[i], "--implementation") == 0 && i + 1 < (size_t)argc) {
+            options.implementation = argv[++i];
+        } else if (strcmp(argv[i], "--instructions") == 0) {
+            options.instructions = 1;
+        } else if (strcmp(argv[i], "--dry-run") == 0) {
+            options.dry_run = 1;
         } else {
             return usage();
         }
     }
 
     if (list_only) {
+        if (workload_name) {
+            if (!options.samples_dir) {
+                return usage();
+            }
+            return bench_workload_visit(workload_name, options.samples_dir, list_case, NULL) == 0 ? 0 : 1;
+        }
         for (i = 0; i < bench_workload_count(); i++) {
             puts(bench_workload_name(i));
         }
@@ -281,5 +417,20 @@ int main(int argc, char **argv) {
     if (!workload_name || !options.samples_dir || options.repeats < 1 || options.warmup < 0) {
         return usage();
     }
+    if (options.reference && strcmp(options.reference, "cmark") != 0) {
+        fprintf(stderr, "unknown reference: %s (only cmark)\n", options.reference);
+        return 2;
+    }
+    if (options.implementation && strcmp(options.implementation, "core") != 0 &&
+        strcmp(options.implementation, "cmark") != 0) {
+        fprintf(stderr, "unknown implementation: %s (core or cmark)\n", options.implementation);
+        return 2;
+    }
+#ifndef MARKDOWN_CORE_BENCH_CMARK
+    if (options.reference || (options.implementation && strcmp(options.implementation, "cmark") == 0)) {
+        fputs("this bench_runner was built without the cmark reference (MARKDOWN_CORE_BENCH_CMARK=ON)\n", stderr);
+        return 2;
+    }
+#endif
     return run_workload(workload_name, &options);
 }

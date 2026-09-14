@@ -71,7 +71,7 @@ add_library(
     "${MARKDOWN_CORE_ELEMENTS_DIR}/superscript.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/table.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/tasklist.c"
-    "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni_payload.c"
+    "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_payload.c"
     "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni.c")
 
 target_include_directories(

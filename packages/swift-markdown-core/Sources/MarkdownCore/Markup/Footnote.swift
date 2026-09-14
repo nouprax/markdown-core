@@ -20,15 +20,15 @@ public struct Footnote: Markup {
     let fields: Stored<Fields>
 
     /// The source range, from the opening bracket of the definition.
-    public var scope: Scope { fields.scope }
+    public var scope: Scope { fields.read { $0.scope } }
     /// The optional anchor attached to this node.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { fields.read { $0.anchor } }
     /// The ordered attributes attached to this node.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { fields.read { $0.attributes } }
     /// The normalized label without the caret.
-    public var id: String { fields.id }
+    public var id: String { fields.read { $0.id } }
     /// The definition's block content.
-    public var content: MarkupCollection<any Markup> { fields.content }
+    public var content: MarkupCollection<any Markup> { fields.children { $0.content } }
 
     /// Dispatches this node to its typed visitor method.
 }

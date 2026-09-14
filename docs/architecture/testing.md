@@ -68,9 +68,10 @@ independently of correctness. ES has a separate `run-conformance.mjs` entry.
 Conformance checks field shapes, nullability, scopes, binding mappings, and
 reviewed canonical dumps. It is required even when correctness passes.
 
-Each binding tests its public API and native ownership boundary. JVM/Android
-JNI decoder tests stay in the applicable source sets; they do not become
-Kotlin/Native payload tests. ES type and runtime consumers install the actual
+Each binding tests its public API and native ownership boundary. The Kotlin
+payload decoder is one implementation for the JVM, Android, and Kotlin/Native,
+so its wire tests live in one shared test source set and run on every target;
+only the JNI transport tests stay JVM-specific. ES type and runtime consumers install the actual
 `npm pack` tarball and resolve declarations through package exports. Browser
 checks use real headless Chrome/Chromium over HTTP ESM/Wasm loading, rather than
 substituting a Node run. The C++ installed consumer and Swift consumer package
@@ -195,6 +196,35 @@ expectations are regenerated with `work_runner --all --samples DIR --write FILE`
 when the change is intended. The finishing phases of a parse are timed through
 the parser's phase clock, which a setup hook installs, and reported by the work
 lane as information only.
+
+Two more lanes read the same workloads on request. The reference lane is the
+timing lane with `--reference cmark`: a `bench_runner` configured with
+`MARKDOWN_CORE_BENCH_CMARK=ON` links the pinned cmark oracle
+(`scripts/init-environment.sh --install oracle-cmark`) and times its parse and
+free of the same bytes beside the engine's, reporting both and their ratio, so
+a reader can place a measurement against an implementation they know. The
+instruction lane, `scripts/benchmark-instructions.mjs`, runs `bench_runner`
+under callgrind twice per case, once with `--dry-run` (the input is built,
+nothing is parsed) and once with `--instructions` (one parse and one free),
+and reports the difference: the instructions of that parse, exact for one
+build and one input, with the reference counted the same way when asked.
+Neither lane decides anything; a changed count is a line to read in a diff.
+
+Each binding has a timing lane of its own, opt-in and informational like the
+C lanes: `pnpm benchmark:es`, `pnpm benchmark:kotlin` (the `jvmBenchmark`
+Gradle task) and `pnpm benchmark:swift` (the `MarkdownCoreBenchmarks` package
+beside the Swift tests, a release `swift run`; the development manifest does
+not carry it, so no test build stages it) time the public parse -- source
+string in, value tree out -- and a walk of the tree with an empty visitor, on
+the same bytes the C timing lane reads: the `binding_baseline` generator and
+the tracked samples repeated with a blank line between copies, each case named
+with the SHA-256 of its input, so a binding's number stands beside the
+engine's for the same document. They report the minimum and the median of every
+repeat, throughput and time per node, and write the same JSON shape as
+`bench_runner --json` with `--json`. No workflow runs them and no test suite
+reaches them (`scripts/audit-ci-policy.sh`); the Kotlin/Native and Swift test
+binaries are release builds so that a number taken from a test run describes
+the library a consumer links.
 
 The separate PR benchmark measures a versioned parser workload and library
 size against the exact base SHA. The untrusted PR producer builds only the

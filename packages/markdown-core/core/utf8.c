@@ -133,14 +133,33 @@ void markdown_core_utf8proc_case_fold(markdown_core_strbuf *dest, const uint8_t 
     int32_t c;
 
     while (len > 0) {
+        /* An ASCII run folds byte by byte into room reserved once: only a
+         * capital letter changes, and no byte needs decoding to know it is
+         * one. Decoding resumes at the first byte above ASCII. */
+        bufsize_t run = 0;
+        while (run < len && str[run] < 0x80) {
+            run++;
+        }
+        if (run) {
+            markdown_core_strbuf__grow_by(dest, run);
+            if (dest->oom) {
+                return;
+            }
+            unsigned char *out = dest->ptr + dest->size;
+            for (bufsize_t i = 0; i < run; i++) {
+                uint8_t byte = str[i];
+                out[i] = (unsigned char)(byte >= 'A' && byte <= 'Z' ? byte + ('a' - 'A') : byte);
+            }
+            dest->size += run;
+            dest->ptr[dest->size] = '\0';
+            str += run;
+            len -= run;
+            continue;
+        }
+
         bufsize_t char_len = markdown_core_utf8proc_iterate(str, len, &c);
 
-        if (char_len == 1) {
-            if (c >= 'A' && c <= 'Z') {
-                c += 'a' - 'A';
-            }
-            markdown_core_strbuf_putc(dest, c);
-        } else if (c >= CF_MAX) {
+        if (c >= CF_MAX) {
             markdown_core_strbuf_put(dest, str, char_len);
         } else if (char_len >= 0) {
             uint32_t key = (uint32_t)c;
@@ -209,6 +228,30 @@ static int32_t anchor_scalar(int32_t uc) {
  * encoding share one loop and can be inlined within the Unicode module. */
 void markdown_core_utf8proc_anchor(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len) {
     for (bufsize_t at = 0; at < len;) {
+        if (str[at] < 0x80) {
+            /* An ASCII run projects byte by byte through the table the
+             * generator derived from the same ranges, into room reserved
+             * once; a zero removes the byte. */
+            bufsize_t end = at + 1;
+            while (end < len && str[end] < 0x80) {
+                end++;
+            }
+            markdown_core_strbuf__grow_by(dest, end - at);
+            if (dest->oom) {
+                return;
+            }
+            unsigned char *out = dest->ptr + dest->size;
+            bufsize_t written = 0;
+            for (; at < end; at++) {
+                uint8_t byte = anchor_ascii[str[at]];
+                if (byte) {
+                    out[written++] = byte;
+                }
+            }
+            dest->size += written;
+            dest->ptr[dest->size] = '\0';
+            continue;
+        }
         int32_t scalar;
         int width = markdown_core_utf8proc_iterate(str + at, len - at, &scalar);
         assert(width > 0); /* Valid UTF-8 is the parser's input contract. */

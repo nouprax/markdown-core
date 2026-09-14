@@ -302,10 +302,57 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
     return markdown_core_node_new_with_ext(type, NULL);
 }
 
-static void free_node_as(markdown_core_node *node) {
+// Free a markdown_core_node list and any children.
+/* Splices `first`'s sibling chain into the free walk right after `e`, so the
+ * walk frees it as it frees children: without recursion. */
+static void S_splice_after(markdown_core_node *e, markdown_core_node *first) {
+    markdown_core_node *last;
+    if (first == NULL) {
+        return;
+    }
+    last = first;
+    while (last->next != NULL) {
+        last = last->next;
+    }
+    last->next = e->next;
+    e->next = first;
+}
+
+static int S_release_owned_subtree(markdown_core_node **slot, void *context) {
+    S_splice_after(context, *slot);
+    *slot = NULL;
+    return 1;
+}
+
+/* Release what a node's record holds, in one pass over its kind: the
+ * node-valued fields join the iterative free walk right after `after`, as
+ * content does (kind conversion names a separate chain so the node's
+ * siblings remain untouched), and the bytes the record owns go back to the
+ * allocator. A replacement record the node owns separately goes too; the
+ * initial record is part of the node's own allocation. */
+static void S_release_record(markdown_core_node *node, markdown_core_node *after) {
     switch (node->kind) {
+    case MARKDOWN_CORE_NODE_DOCUMENT:
+        S_splice_after(after, node->as.document->metadata);
+        S_splice_after(after, node->as.document->footnotes);
+        S_splice_after(after, node->as.document->specimens);
+        break;
+    case MARKDOWN_CORE_NODE_DEFINITION:
+        S_splice_after(after, node->as.definition->term);
+        break;
     case MARKDOWN_CORE_NODE_CALLOUT:
+        S_splice_after(after, node->as.callout->title);
         markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.callout->variant);
+        break;
+    case MARKDOWN_CORE_NODE_CITE:
+        S_splice_after(after, node->as.cite->citations);
+        break;
+    case MARKDOWN_CORE_NODE_CITATION:
+        /* The affix chains are freed by the walk, spliced in beside the
+         * children; only the referent's bytes are the arm's. */
+        S_splice_after(after, node->as.citation->suffix);
+        S_splice_after(after, node->as.citation->prefix);
+        markdown_core_chunk_free(NODE_MEM(node), &node->as.citation->value);
         break;
     case MARKDOWN_CORE_NODE_METADATA:
         markdown_core_metadata_fields_free(NODE_MEM(node), node->as.metadata);
@@ -335,11 +382,6 @@ static void free_node_as(markdown_core_node *node) {
         markdown_core_optional_chunk_free(NODE_MEM(node), &cross->label);
         break;
     }
-    case MARKDOWN_CORE_NODE_CITATION:
-        /* The affix chains are freed by the walk in `S_free_nodes`, spliced
-         * in beside the children; only the referent's bytes are the arm's. */
-        markdown_core_chunk_free(NODE_MEM(node), &node->as.citation->value);
-        break;
     case MARKDOWN_CORE_NODE_SPECIMEN:
         markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.specimen->id);
         break;
@@ -356,62 +398,11 @@ static void free_node_as(markdown_core_node *node) {
     default:
         break;
     }
-    /* Free only a replacement record the node owns separately; the initial
-     * record is part of the node's own allocation. */
     if (node->owned & MARKDOWN_CORE_NODE_OWNS_PAYLOAD) {
         NODE_MEM(node)->free(node->as.data);
         node->owned &= (uint8_t)~MARKDOWN_CORE_NODE_OWNS_PAYLOAD;
     }
     node->as.data = NULL;
-}
-
-// Free a markdown_core_node list and any children.
-/* Splices `first`'s sibling chain into the free walk right after `e`, so the
- * walk frees it as it frees children: without recursion. */
-static void S_splice_after(markdown_core_node *e, markdown_core_node *first) {
-    markdown_core_node *last;
-    if (first == NULL) {
-        return;
-    }
-    last = first;
-    while (last->next != NULL) {
-        last = last->next;
-    }
-    last->next = e->next;
-    e->next = first;
-}
-
-static int S_release_owned_subtree(markdown_core_node **slot, void *context) {
-    S_splice_after(context, *slot);
-    *slot = NULL;
-    return 1;
-}
-
-/* The node-valued fields join the same iterative free walk as content.
- * Kind conversion uses a separate walk so its siblings remain untouched. */
-static void S_splice_owned_fields(markdown_core_node *owner, markdown_core_node *after) {
-    switch (owner->kind) {
-    case MARKDOWN_CORE_NODE_DEFINITION:
-        S_splice_after(after, owner->as.definition->term);
-        break;
-    case MARKDOWN_CORE_NODE_CALLOUT:
-        S_splice_after(after, owner->as.callout->title);
-        break;
-    case MARKDOWN_CORE_NODE_CITE:
-        S_splice_after(after, owner->as.cite->citations);
-        break;
-    case MARKDOWN_CORE_NODE_CITATION:
-        S_splice_after(after, owner->as.citation->suffix);
-        S_splice_after(after, owner->as.citation->prefix);
-        break;
-    case MARKDOWN_CORE_NODE_DOCUMENT:
-        S_splice_after(after, owner->as.document->metadata);
-        S_splice_after(after, owner->as.document->footnotes);
-        S_splice_after(after, owner->as.document->specimens);
-        break;
-    default:
-        break;
-    }
 }
 
 /* Release everything the nodes own, then their storage: allocator nodes go
@@ -455,8 +446,7 @@ static void S_free_nodes(markdown_core_node *e, markdown_core_arena *pool) {
             }
         }
 
-        S_splice_owned_fields(e, e);
-        free_node_as(e);
+        S_release_record(e, e);
 
         if (e->last_child) {
             // Splice children into list
@@ -526,9 +516,8 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     }
     S_init_node_as(kind, &replacement, NULL);
     markdown_core_node fields = {0};
-    S_splice_owned_fields(node, &fields);
+    S_release_record(node, &fields);
     S_free_nodes(fields.next, NULL);
-    free_node_as(node);
     node->as = replacement;
     if (size) {
         node->owned |= MARKDOWN_CORE_NODE_OWNS_PAYLOAD;

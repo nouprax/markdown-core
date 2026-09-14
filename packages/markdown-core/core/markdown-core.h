@@ -121,7 +121,9 @@ typedef struct markdown_core_element markdown_core_element;
  */
 
 /** Defines the memory allocation functions to be used by Markdown Core
- * when parsing and allocating a document tree
+ * when parsing and allocating a document tree. Each has the contract of its
+ * C namesake: in particular `realloc` is also asked for fresh storage with a
+ * NULL pointer, which it must serve like `malloc`.
  */
 typedef struct markdown_core_mem {
     void *(*calloc)(size_t, size_t);

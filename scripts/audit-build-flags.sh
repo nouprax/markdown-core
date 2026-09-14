@@ -30,6 +30,7 @@ for pair in \
     'packages/markdown-core/elements/CMakeLists.txt:${STATICLIBRARY}' \
     'packages/markdown-core/elements/CMakeLists.txt:${PUBLIC_STATIC_LIBRARY}' \
     'packages/markdown-core/elements/CMakeLists.txt:markdown-core-diagnostics' \
+    'packages/kotlin-markdown-core/src/native/CMakeLists.txt:markdown_core_kotlin_payload' \
     'packages/kotlin-markdown-core/src/native/CMakeLists.txt:markdown_core_kotlin_jni' \
     'packages/kotlin-markdown-core/android-runtime/src/main/cpp/CMakeLists.txt:markdown_core_kotlin'; do
     file=${pair%%:*}

@@ -21,20 +21,20 @@ public struct Embedded: Markup {
     let fields: Stored<Fields>
 
     /// Where it is, `![` through the closing parenthesis. See ``Scope``.
-    public var scope: Scope { fields.scope }
+    public var scope: Scope { fields.read { $0.scope } }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { fields.read { $0.anchor } }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { fields.read { $0.attributes } }
     /// Parsed alt content excluding a valid dimension suffix; empty for a numeric-only label.
     /// A malformed suffix remains part of the alt content.
-    public var content: MarkupCollection<any Markup> { fields.content }
+    public var content: MarkupCollection<any Markup> { fields.children { $0.content } }
     /// Required, for the reason ``Link/dest`` is.
-    public var dest: Destination { fields.dest }
+    public var dest: Destination { fields.read { $0.dest } }
     /// Optional.
-    public var title: String? { fields.title }
+    public var title: String? { fields.read { $0.title } }
     /// Authored size from a complete label suffix, or nil. Independent of attribute records.
-    public var dimensions: Dimensions? { fields.dimensions }
+    public var dimensions: Dimensions? { fields.read { $0.dimensions } }
 }
 
 extension Embedded.Fields {

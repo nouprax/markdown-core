@@ -27,11 +27,16 @@ typedef struct {
     unsigned char *ptr;
     bufsize_t asize, size;
     int oom;
+    /* Storage the buffer does not own (a parse transaction's arena): never
+     * freed or reallocated by the buffer, which copies its bytes out to
+     * storage of its own the first time it has to grow, and copies them out
+     * when detached. */
+    bool borrowed;
 } markdown_core_strbuf;
 
 extern const unsigned char markdown_core_strbuf__initbuf[];
 
-#define MARKDOWN_CORE_BUF_INIT(mem) {mem, (unsigned char *)markdown_core_strbuf__initbuf, 0, 0, 0}
+#define MARKDOWN_CORE_BUF_INIT(mem) {mem, (unsigned char *)markdown_core_strbuf__initbuf, 0, 0, 0, false}
 
 /**
  * Grow the buffer to hold at least `target_size` bytes.
@@ -68,6 +73,7 @@ static MARKDOWN_CORE_INLINE void markdown_core_strbuf_init(markdown_core_mem *me
     buf->asize = 0;
     buf->size = 0;
     buf->oom = 0;
+    buf->borrowed = false;
     /* The cast drops const and nothing writes through it: `asize` is 0 exactly
      * while `ptr` is this sentinel, and every write path either grows first or
      * is guarded by `asize > 0`. */
@@ -84,10 +90,21 @@ static MARKDOWN_CORE_INLINE void markdown_core_strbuf_free(markdown_core_strbuf 
     if (!buf) {
         return;
     }
-    if (buf->ptr != markdown_core_strbuf__initbuf) {
+    if (buf->ptr != markdown_core_strbuf__initbuf && !buf->borrowed) {
         buf->mem->free(buf->ptr);
     }
     markdown_core_strbuf_init(buf->mem, buf, 0);
+}
+
+/* Give an empty buffer `capacity` bytes of storage it does not own (see
+ * `borrowed`), which outlives the buffer: an arena's. */
+static MARKDOWN_CORE_INLINE void markdown_core_strbuf_borrow(markdown_core_strbuf *buf, unsigned char *storage,
+                                                             bufsize_t capacity) {
+    markdown_core_strbuf_free(buf);
+    buf->ptr = storage;
+    buf->asize = capacity;
+    buf->borrowed = true;
+    storage[0] = '\0';
 }
 
 static MARKDOWN_CORE_INLINE void markdown_core_strbuf_clear(markdown_core_strbuf *buf) {
