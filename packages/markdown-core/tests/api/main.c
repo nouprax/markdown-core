@@ -3686,12 +3686,13 @@ static void key_index_failure(test_batch_runner *runner) {
 
 static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind);
 
-/* A line consults only the block owners of its first non-space byte, in
- * registry order: owners that declared no byte set for every line, the rest
- * only where their grammar can begin. The bound is stated per shape and is
- * independent of the number of attached elements that declare a set. A word
- * that begins with a letter is never read past its roman-letter prefix by
- * the list marker scanner. */
+/* A line's block-start arbitration visits only the block owners of its first
+ * non-space byte with the hook, in registry order: owners that declared no
+ * byte set for every line, the rest only where their grammar can begin. The
+ * bound counts owners visited, offered or not, so it is stated per shape and
+ * is independent of the number of attached elements that declare a set. A
+ * word that begins with a letter is never read past its roman-letter prefix
+ * by the list marker scanner. */
 static void block_start_dispatch_work(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
@@ -5069,10 +5070,12 @@ static void core_registry_is_its_own_projection(test_batch_runner *runner) {
                built.inline_dispatch[i].terminates == core->inline_dispatch[i].terminates;
     }
     for (size_t i = 0; same && i < built.block_owner_count; i++) {
-        same =
-            built.block_owners[i].element == core->block_owners[i].element &&
-            memcmp(built.block_owners[i].bytes, core->block_owners[i].bytes, sizeof(built.block_owners[i].bytes)) == 0;
+        same = built.block_owners[i] == core->block_owners[i];
     }
+    same = same && memcmp(built.block_owner_sets.scan, core->block_owner_sets.scan, 256 * sizeof(uint64_t)) == 0 &&
+           memcmp(built.block_owner_sets.interrupt, core->block_owner_sets.interrupt, 256 * sizeof(uint64_t)) == 0 &&
+           memcmp(built.block_owner_sets.open, core->block_owner_sets.open, 256 * sizeof(uint64_t)) == 0 &&
+           memcmp(built.block_owner_sets.paragraph, core->block_owner_sets.paragraph, 256 * sizeof(uint64_t)) == 0;
     size_t hooks = built.inline_hooks.init_count + built.inline_hooks.finish_count + built.inline_hooks.dispose_count;
     for (size_t i = 0; same && i < hooks; i++) {
         same = built.inline_hooks.elements[i] == core->inline_hooks.elements[i];

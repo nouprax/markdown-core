@@ -111,8 +111,11 @@ fallback precedence. One ordered dispatch loop handles all three. Its byte index
 preserves candidate order and set membership without walking unrelated
 descriptors for each token. Block owners are projected the same way: each
 element with block hooks declares `block_start_bytes`, the first non-space
-bytes at which any of its hooks can accept (NULL for every byte), and a line's
-block-start arbitration visits only the owners of its byte, in registry order.
+bytes at which any of its hooks can accept (NULL for every byte), and the
+projection keeps, per first byte and per hook, the set of owners accepting it
+as one bit per owner, so a line's block-start arbitration visits only the
+owners of its byte that implement the hook, in registry order, and examines
+no other.
 Inline state lifecycle and block alternative lists likewise include only
 participating descriptors, in registry order. These projections, with the
 text-terminating and flanking-transparent byte sets and the delimiter owners,

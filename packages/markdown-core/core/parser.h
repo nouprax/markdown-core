@@ -60,13 +60,15 @@ typedef struct {
     bool dispatches, terminates;
 } markdown_core_inline_candidate;
 
-/* An element with block hooks and the first-byte set they can accept at.
- * Every block-start arbitration visits only the owners of the line's byte,
- * in registry order; owners that declared no set are visited for every byte. */
+/* The block owners of one first byte, as a bit per owner in registry order
+ * (`markdown_core_registry.block_owners`): the owners with the hook that
+ * accept lines starting at the byte, so a block-start arbitration visits
+ * those and no other. An owner that declared no byte set is in every byte's
+ * set. A projection holds at most this many block owners. */
+#define MARKDOWN_CORE_BLOCK_OWNER_LIMIT 64
 typedef struct {
-    const markdown_core_element *element;
-    uint64_t bytes[4];
-} markdown_core_block_owner;
+    const uint64_t *scan, *interrupt, *open, *paragraph; /* 256 entries each */
+} markdown_core_block_owner_sets;
 
 /* The elements that implement an inline root's `init_inline`, then
  * `finish_inline`, then `dispose_inline`, each list in registry order and the
@@ -94,9 +96,11 @@ typedef struct markdown_core_registry {
      * only its possible owners. 257 offsets, the last an end sentinel. */
     const size_t *inline_dispatch_offsets;
     const markdown_core_inline_candidate *inline_dispatch;
-    /* Block owners in registry order (see markdown_core_block_owner). */
-    const markdown_core_block_owner *block_owners;
+    /* The elements with block hooks in registry order, and by first byte
+     * the ones each arbitration loop visits (markdown_core_block_owner_sets). */
+    const markdown_core_element *const *block_owners;
     size_t block_owner_count;
+    markdown_core_block_owner_sets block_owner_sets;
     /* Implementers of the inline root lifecycle hooks, so a root visits
      * implementers only. */
     markdown_core_inline_hooks inline_hooks;
@@ -109,8 +113,9 @@ typedef struct markdown_core_registry {
 } markdown_core_registry;
 
 /* Project `elements` (with `extra` appended when not NULL) into one owned
- * allocation. Returns false on allocation failure, leaving `registry` as it
- * was; success replaces every field. */
+ * allocation. Returns false on allocation failure, or for more block owners
+ * than MARKDOWN_CORE_BLOCK_OWNER_LIMIT, leaving `registry` as it was;
+ * success replaces every field. */
 bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_element *const *elements, size_t count,
                                     const markdown_core_element *extra, markdown_core_registry *registry);
 void markdown_core_registry_release(markdown_core_mem *mem, markdown_core_registry *registry);
@@ -238,6 +243,8 @@ struct markdown_core_parser {
     size_t html_scan_work;
     size_t block_lookahead_work;
     /* Block hook invocations: one per owner consulted for a line. */
+    /* Block owners visited by a line's block-start arbitration: the owners
+     * of the line's first byte with the hook, and no other. */
     size_t block_dispatch_work;
     /* Reference definition parses attempted on a block front or a term. */
     size_t reference_probe_work;
