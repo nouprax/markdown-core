@@ -109,6 +109,14 @@ if(MARKDOWN_CORE_STATIC)
         oom_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
                            "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}" "${MARKDOWN_CORE_ELEMENTS_BINARY_DIR}")
     target_link_libraries(oom_runner libmarkdown-core-public-static)
+    # The core registry's projection is generated from the descriptors
+    # (elements/core-registry.inc); registry_runner regenerates it and the
+    # lane checks the committed file is what the descriptors project.
+    add_executable(registry_runner runners/registry_runner.c)
+    target_include_directories(
+        registry_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
+                                "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}" "${MARKDOWN_CORE_ELEMENTS_BINARY_DIR}")
+    target_link_libraries(registry_runner libmarkdown-core-public-static)
 endif()
 markdown_core_add_runner(entity_runner runners/entity_runner.c)
 markdown_core_add_runner(dump_cli_runner runners/dump_cli_runner.c)
@@ -153,6 +161,10 @@ endfunction()
 
 # api: legacy engine API harness (native C/C++).
 markdown_core_add_test(api_engine api 120 api_test)
+if(MARKDOWN_CORE_STATIC)
+    markdown_core_add_test(api_core_registry_projection api 30 registry_runner --check
+                           "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}/core-registry.inc")
+endif()
 foreach(operation reentry wrong-slot null-key double-commit)
     markdown_core_add_test(api_key_index_${operation} api 10 api_test --key-index-misuse ${operation})
 endforeach()
@@ -441,6 +453,7 @@ if(MARKDOWN_CORE_BENCHMARKS)
     markdown_core_add_test(benchmark_corpus_guard benchmark 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
     set(MARKDOWN_CORE_BENCH_WORKLOADS
         binding_baseline
+        empty_document
         representative
         large_document
         deep_nesting

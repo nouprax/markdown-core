@@ -342,6 +342,14 @@ static void generate_deep_wide(text *t, const char *samples_dir, size_t scale) {
     text_puts(t, "\n");
 }
 
+/* No bytes at all: the fixed cost of a parse, which the registry's prepared
+ * projection keeps to the parser, its arena and buffers, and its maps. */
+static void generate_empty_document(text *t, const char *samples_dir, size_t scale) {
+    (void)t;
+    (void)samples_dir;
+    (void)scale;
+}
+
 /* Workloads ------------------------------------------------------------------- */
 
 typedef struct workload_case {
@@ -372,10 +380,14 @@ static void generate_tables(text *t, const char *samples_dir, size_t scale) {
 
 #define DOUBLING(generator_name, fn, a, b, c)                                                                          \
     {generator_name "@" #a, generator_name, fn, NULL, a, 1}, {generator_name "@" #b, generator_name, fn, NULL, b, 2},  \
-        {generator_name "@" #c, generator_name, fn, NULL, c, 3}
+    {                                                                                                                  \
+        generator_name "@" #c, generator_name, fn, NULL, c, 3                                                          \
+    }
 
 static const workload_case BINDING_BASELINE_CASES[] = {
     {"binding_baseline", "binding_baseline", generate_binding_baseline, NULL, 2000, 0}};
+static const workload_case EMPTY_DOCUMENT_CASES[] = {
+    {"empty_document", "empty_document", generate_empty_document, NULL, 0, 0}};
 static const workload_case LARGE_DOCUMENT_CASES[] = {
     DOUBLING("large_document", generate_large_document, 128, 256, 512)};
 static const workload_case DEEP_NESTING_CASES[] = {DOUBLING("deep_nesting", generate_deep_nesting, 8192, 16384, 32768)};
@@ -397,9 +409,11 @@ static const workload_case LEADING_BLANK_LINES_CASES[] = {
     DOUBLING("leading_blank_lines", generate_leading_blank_lines, 2048, 4096, 8192)};
 static const workload_case DEEP_WIDE_CASES[] = {DOUBLING("deep_wide", generate_deep_wide, 64, 128, 256)};
 
-#define WORKLOAD(name, version, cases) {name, version, cases, sizeof(cases) / sizeof(cases[0])}
+#define WORKLOAD(name, version, cases)                                                                                 \
+    { name, version, cases, sizeof(cases) / sizeof(cases[0]) }
 static const workload WORKLOADS[] = {
     WORKLOAD("binding_baseline", 1, BINDING_BASELINE_CASES),
+    WORKLOAD("empty_document", 1, EMPTY_DOCUMENT_CASES),
     /* Version 2: a blank line separates the copies of a sample. */
     {"representative", 2, NULL, SAMPLE_COUNT},
     WORKLOAD("large_document", 1, LARGE_DOCUMENT_CASES),

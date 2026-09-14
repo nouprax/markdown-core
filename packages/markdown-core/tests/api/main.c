@@ -3364,7 +3364,7 @@ static bool measure_inline_work(markdown_core_parser *parser, void *context) {
 static void inline_content_projection(test_batch_runner *runner) {
     enum { LINES = 4096, WIDTH = 8 };
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    markdown_core_parser parser = {.mem = mem};
+    markdown_core_parser parser = {.mem = mem, .registry = markdown_core_core_registry()};
     markdown_core_node owner = {0};
     unsigned char *bytes = malloc(LINES * WIDTH);
     memset(bytes, 'x', LINES * WIDTH);
@@ -3462,7 +3462,7 @@ static bool inspect_delimiter_classes(markdown_core_parser *parser, void *contex
     markdown_core_node *owner = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
     owner->start_line = owner->start_column = 1;
     for (size_t r = 1; r < MARKDOWN_CORE_DELIM_RULE_COUNT; r++) {
-        const markdown_core_element *element = parser->delimiter_owners[r];
+        const markdown_core_element *element = parser->registry->delimiter_owners[r];
         if (!element || !element->delimiter_character || element->delimiter.body == DELIMITER_WORD_BODY) {
             continue;
         }
@@ -3470,8 +3470,8 @@ static bool inspect_delimiter_classes(markdown_core_parser *parser, void *contex
             for (size_t j = 0; j < count; j++) {
                 int32_t before = scalars[i], after = scalars[j];
                 if (before == 0 || after == 0 || before == element->delimiter_character ||
-                    after == element->delimiter_character || (before < 256 && parser->skip_chars[before]) ||
-                    (after < 256 && parser->skip_chars[after])) {
+                    after == element->delimiter_character || (before < 256 && parser->registry->skip_chars[before]) ||
+                    (after < 256 && parser->registry->skip_chars[after])) {
                     continue;
                 }
                 markdown_core_strbuf_clear(owner->content);
@@ -4993,9 +4993,9 @@ static void string_content_on_every_kind(test_batch_runner *runner) {
     markdown_core_node_free(paragraph);
 }
 
-/* Attaching an element publishes the registry and its inline lifecycle
- * projection together: when the projection cannot be allocated, the registry
- * the parser dispatches on is the one it had. */
+/* Attaching an element publishes the registry and its projection together,
+ * in one allocation: when it cannot be allocated, the registry the parser
+ * dispatches on, and every table projected from it, is the one it had. */
 static size_t atomic_attach_allocations_until_failure;
 static void *atomic_attach_calloc(size_t count, size_t size) {
     if (atomic_attach_allocations_until_failure && --atomic_attach_allocations_until_failure == 0) {
@@ -5008,26 +5008,102 @@ static bool atomic_attach_setup(markdown_core_parser *parser, void *context) {
     test_batch_runner *runner = (test_batch_runner *)context;
     size_t count = parser->element_count;
     const void *registry = parser->elements;
-    const void *hooks = parser->inline_hooks.elements;
-    size_t hook_count =
-        parser->inline_hooks.init_count + parser->inline_hooks.finish_count + parser->inline_hooks.dispose_count;
-    /* The registry snapshot is the first allocation; the projection is the second. */
-    atomic_attach_allocations_until_failure = 2;
+    const markdown_core_registry *projection = parser->registry;
+    const void *hooks = parser->registry->inline_hooks.elements;
+    size_t hook_count = parser->registry->inline_hooks.init_count + parser->registry->inline_hooks.finish_count +
+                        parser->registry->inline_hooks.dispose_count;
+    OK(runner, projection == markdown_core_core_registry(), "a parse starts on the prepared core registry");
+    /* The extended registry and its projection are the one allocation. */
+    atomic_attach_allocations_until_failure = 1;
     OK(runner, !markdown_core_parser_attach_element(parser, &ATOMIC_ATTACH_PROBE),
        "an attachment whose projection fails reports failure");
     atomic_attach_allocations_until_failure = 0;
-    OK(runner, parser->element_count == count && (const void *)parser->elements == registry,
+    OK(runner,
+       parser->element_count == count && (const void *)parser->elements == registry && parser->registry == projection,
        "the registry the parser dispatches on is unchanged");
     OK(runner,
-       (const void *)parser->inline_hooks.elements == hooks &&
-           parser->inline_hooks.init_count + parser->inline_hooks.finish_count + parser->inline_hooks.dispose_count ==
+       (const void *)parser->registry->inline_hooks.elements == hooks &&
+           parser->registry->inline_hooks.init_count + parser->registry->inline_hooks.finish_count +
+                   parser->registry->inline_hooks.dispose_count ==
                hook_count,
        "and so is its inline lifecycle projection");
     OK(runner, markdown_core_parser_attach_element(parser, &ATOMIC_ATTACH_PROBE), "the same attachment then succeeds");
     OK(runner, parser->element_count == count + 1 && parser->elements[count] == &ATOMIC_ATTACH_PROBE,
        "and the registry ends with the element");
+    OK(runner,
+       parser->registry == &parser->owned_registry && parser->registry->elements == parser->elements &&
+           parser->registry->element_count == count + 1 &&
+           parser->registry->inline_hooks.init_count + parser->registry->inline_hooks.finish_count +
+                   parser->registry->inline_hooks.dispose_count ==
+               hook_count,
+       "the parser now owns a projection of the extended registry");
     return true;
 }
+/* The committed core-registry.inc is what the runtime builder makes of the
+ * core descriptors: a descriptor change without a regeneration fails here. */
+static void core_registry_is_its_own_projection(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    size_t count;
+    const markdown_core_element *const *elements = markdown_core_core_elements(&count);
+    const markdown_core_registry *core = markdown_core_core_registry();
+    markdown_core_registry built;
+    OK(runner, markdown_core_registry_prepare(mem, elements, count, NULL, &built), "the core registry projects");
+    bool same = built.element_count == count && core->element_count == count && core->elements == elements &&
+                built.text_structure == core->text_structure && built.block_owner_count == core->block_owner_count &&
+                built.inline_hooks.init_count == core->inline_hooks.init_count &&
+                built.inline_hooks.finish_count == core->inline_hooks.finish_count &&
+                built.inline_hooks.dispose_count == core->inline_hooks.dispose_count &&
+                memcmp(built.inline_dispatch_offsets, core->inline_dispatch_offsets,
+                       257 * sizeof(*built.inline_dispatch_offsets)) == 0 &&
+                memcmp(built.special_chars, core->special_chars, 256) == 0 &&
+                memcmp(built.skip_chars, core->skip_chars, 256) == 0;
+    for (size_t i = 0; same && i < count; i++) {
+        same = built.elements[i] == elements[i];
+    }
+    for (size_t rule = 0; same && rule < MARKDOWN_CORE_DELIM_RULE_COUNT; rule++) {
+        same = built.delimiter_owners[rule] == core->delimiter_owners[rule];
+    }
+    for (size_t i = 0; same && i < built.inline_dispatch_offsets[256]; i++) {
+        same = built.inline_dispatch[i].element == core->inline_dispatch[i].element &&
+               built.inline_dispatch[i].dispatches == core->inline_dispatch[i].dispatches &&
+               built.inline_dispatch[i].terminates == core->inline_dispatch[i].terminates;
+    }
+    for (size_t i = 0; same && i < built.block_owner_count; i++) {
+        same =
+            built.block_owners[i].element == core->block_owners[i].element &&
+            memcmp(built.block_owners[i].bytes, core->block_owners[i].bytes, sizeof(built.block_owners[i].bytes)) == 0;
+    }
+    size_t hooks = built.inline_hooks.init_count + built.inline_hooks.finish_count + built.inline_hooks.dispose_count;
+    for (size_t i = 0; same && i < hooks; i++) {
+        same = built.inline_hooks.elements[i] == core->inline_hooks.elements[i];
+    }
+    OK(runner, same,
+       "core-registry.inc is the projection of the core descriptors (regenerate: registry_runner --write)");
+    OK(runner, core->storage == NULL && built.storage != NULL, "the constant owns nothing; a built projection does");
+    markdown_core_registry_release(mem, &built);
+}
+
+/* A parse prepares no registry projection of its own, so an empty document
+ * costs a fixed handful of allocations: the parser, its arena with the first
+ * block inside, the line buffer, and the reference and footnote maps. */
+static size_t fixed_cost_allocations;
+static void *fixed_cost_calloc(size_t count, size_t size) {
+    fixed_cost_allocations++;
+    return calloc(count, size);
+}
+static void *fixed_cost_realloc(void *pointer, size_t size) {
+    fixed_cost_allocations += pointer == NULL;
+    return realloc(pointer, size);
+}
+static void an_empty_parse_allocates_a_fixed_few(test_batch_runner *runner) {
+    markdown_core_mem mem = {fixed_cost_calloc, fixed_cost_realloc, free};
+    fixed_cost_allocations = 0;
+    markdown_core_node *root = markdown_core_parse_document_with_mem("", 0, &mem, NULL, NULL);
+    OK(runner, root != NULL, "an empty document parses");
+    INT_EQ(runner, fixed_cost_allocations, 5, "an empty document costs a fixed handful of allocations");
+    markdown_core_node_free(root);
+}
+
 static void attach_element_is_atomic(test_batch_runner *runner) {
     markdown_core_mem mem = {atomic_attach_calloc, realloc, free};
     const char *source = "a *b* [@k]\n";
@@ -5962,10 +6038,11 @@ static void arena_recycling(test_batch_runner *runner) {
     arena = markdown_core_arena_new(&payload_test_mem);
     OK(runner, arena != NULL, "arena for the failure probe");
     if (arena) {
+        /* The first block came with the arena; a request beyond it grows. */
         payload_fail_at = payload_allocations + 1;
-        OK(runner, markdown_core_arena_take(arena, 48) == NULL, "block growth failure is reported");
+        OK(runner, markdown_core_arena_take(arena, 8192) == NULL, "block growth failure is reported");
         payload_fail_at = 0;
-        OK(runner, markdown_core_arena_take(arena, 48) != NULL, "a later request grows again");
+        OK(runner, markdown_core_arena_take(arena, 8192) != NULL, "a later request grows again");
         markdown_core_arena_free(arena);
     }
     INT_EQ(runner, payload_live, 0, "a failed growth leaves nothing behind");
@@ -7457,6 +7534,8 @@ int main(int argc, char **argv) {
     citation_affix_across_line_ending(runner);
     arena_nodes_stay_in_their_transaction(runner);
     string_content_on_every_kind(runner);
+    core_registry_is_its_own_projection(runner);
+    an_empty_parse_allocates_a_fixed_few(runner);
     attach_element_is_atomic(runner);
     properties_text_memory(runner);
     block_identifier_linear_work(runner);

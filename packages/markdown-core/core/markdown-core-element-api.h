@@ -631,9 +631,6 @@ markdown_core_node *markdown_core_inline_state_make_literal_run(markdown_core_in
 markdown_core_node *markdown_core_inline_state_make_source_text(markdown_core_inline_state *inline_state, int from,
                                                                 int to);
 
-MARKDOWN_CORE_EXPORT
-void markdown_core_manage_elements_special_characters(markdown_core_parser *parser, int add);
-
 #ifdef __cplusplus
 }
 #endif

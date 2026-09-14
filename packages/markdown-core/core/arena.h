@@ -26,7 +26,8 @@ markdown_core_arena *markdown_core_arena_new(markdown_core_mem *mem);
 void markdown_core_arena_free(markdown_core_arena *arena);
 markdown_core_mem *markdown_core_arena_mem(const markdown_core_arena *arena);
 
-/* Zeroed storage that lives as long as the arena. */
+/* Storage that lives as long as the arena, not zeroed: the caller writes
+ * every byte it asked for. */
 void *markdown_core_arena_alloc(markdown_core_arena *arena, size_t size);
 /* Zeroed storage for a record that may be recycled with the same size. */
 void *markdown_core_arena_take(markdown_core_arena *arena, size_t size);

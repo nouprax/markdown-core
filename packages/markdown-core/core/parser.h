@@ -70,11 +70,50 @@ typedef struct {
 
 /* The elements that implement an inline root's `init_inline`, then
  * `finish_inline`, then `dispose_inline`, each list in registry order and the
- * three stored back to back in one allocation. */
+ * three stored back to back. */
 typedef struct {
-    const markdown_core_element **elements;
+    const markdown_core_element *const *elements;
     size_t init_count, finish_count, dispose_count;
 } markdown_core_inline_hooks;
+
+/* The projection of one element registry: everything a parse dispatches on
+ * that the registry alone determines, so nothing of it is rebuilt per parse.
+ * The core registry's projection is a constant prepared with the elements
+ * (see core-registry.inc and registry_runner); a registry a private setup
+ * extends gets its own, built by markdown_core_registry_prepare in one
+ * allocation the parser owns. */
+typedef struct markdown_core_registry {
+    const markdown_core_element *const *elements;
+    size_t element_count;
+    /* The element whose `parse_text` makes plain text, and the owner of each
+     * delimiter rule. */
+    const markdown_core_element *text_structure;
+    const markdown_core_element *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
+    /* Stable descriptor order projected by byte: the candidates of byte `c`
+     * are inline_dispatch[offsets[c] .. offsets[c + 1]), so each token visits
+     * only its possible owners. 257 offsets, the last an end sentinel. */
+    const size_t *inline_dispatch_offsets;
+    const markdown_core_inline_candidate *inline_dispatch;
+    /* Block owners in registry order (see markdown_core_block_owner). */
+    const markdown_core_block_owner *block_owners;
+    size_t block_owner_count;
+    /* Implementers of the inline root lifecycle hooks, so a root visits
+     * implementers only. */
+    markdown_core_inline_hooks inline_hooks;
+    /* 256 entries each: the bytes that end a text run, and the bytes
+     * delimiter flanking looks through. */
+    const int8_t *special_chars;
+    const int8_t *skip_chars;
+    /* The one allocation an owned projection lives in; NULL for a constant. */
+    void *storage;
+} markdown_core_registry;
+
+/* Project `elements` (with `extra` appended when not NULL) into one owned
+ * allocation. Returns false on allocation failure, leaving `registry` as it
+ * was; success replaces every field. */
+bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_element *const *elements, size_t count,
+                                    const markdown_core_element *extra, markdown_core_registry *registry);
+void markdown_core_registry_release(markdown_core_mem *mem, markdown_core_registry *registry);
 
 /* First nonblank line under one prospective block parent. Shared by block
  * owners during a single block-start arbitration; no speculative state or
@@ -118,7 +157,7 @@ struct markdown_core_parser {
     markdown_core_key_index specimen_ids;
     markdown_core_heading_collection headings;
     anchor_registry anchors;
-    const markdown_core_element *document_structure, *text_structure;
+    const markdown_core_element *document_structure;
     /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
     struct markdown_core_node *root;
     /* The active block grammar boundary. The document and mapped cell inputs
@@ -281,30 +320,17 @@ struct markdown_core_parser {
     struct markdown_core_table_row_geometry *table_row;
     void *table_scratch;
     size_t table_scratch_capacity;
-    /* Borrow the fixed immutable dialect registry. Private setup callers may
-     * extend it before parsing; only that replacement buffer is owned here. */
+    /* The registry this parse dispatches on and its projection: the fixed
+     * immutable dialect's constant, borrowed, until a private setup caller
+     * extends it, from when on it is `owned_registry`. `elements` and
+     * `element_count` mirror the registry's for the phases that walk it.
+     * Every parser reads its own registry, so concurrent parsers with
+     * different element sets never observe each other's projections. */
+    const markdown_core_registry *registry;
+    markdown_core_registry owned_registry;
     const markdown_core_element *const *elements;
-    const markdown_core_element **element_allocation;
     size_t element_count;
-    /* Stable descriptor order projected by byte once before inline parsing.
-     * Each token visits only its possible owners; offsets include an end sentinel. */
-    size_t inline_dispatch_offsets[257];
-    markdown_core_inline_candidate *inline_dispatch;
-    /* Block owners in registry order, projected once per parse from the
-     * attached elements (see markdown_core_block_owner). */
-    markdown_core_block_owner *block_owners;
-    size_t block_owner_count;
-    /* Implementers of the inline root lifecycle hooks, projected whenever the
-     * registry is set or extended, so a root visits implementers only. */
-    markdown_core_inline_hooks inline_hooks;
     markdown_core_ispunct_func backslash_ispunct;
-    /* Inline special-character tables for this parser: the core defaults plus
-     * the special/emphasis-skip characters of the attached inline elements.
-     * Parser-local so concurrent parsers with different element sets never
-     * observe each other's characters. */
-    const markdown_core_element *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
-    int8_t special_chars[256];
-    int8_t skip_chars[256];
     /* The content-to-source map (see markdown_core_line_mark). It is read while the
      * parse is still running -- the block phase reads it as blocks close and
      * the inline phase reads it before the transaction returns -- and it is

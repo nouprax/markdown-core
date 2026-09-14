@@ -88,86 +88,33 @@ static markdown_core_node *make_document(markdown_core_parser *parser) {
     return make_block(parser, MARKDOWN_CORE_NODE_DOCUMENT, 1, 1, NULL);
 }
 
-static void S_register_element(markdown_core_parser *parser, const markdown_core_element *element) {
-    if (element->parse_text) {
-        parser->text_structure = element;
-    }
-    if (element->delimiter_rule != MARKDOWN_CORE_DELIM_RULE_NONE) {
-        parser->delimiter_owners[element->delimiter_rule] = element;
-    }
+/* The registry a parser dispatches on, with the mirrors its phases walk. */
+static void S_install_registry(markdown_core_parser *parser, const markdown_core_registry *registry) {
+    parser->registry = registry;
+    parser->elements = registry->elements;
+    parser->element_count = registry->element_count;
 }
 
-/* Setup extends the same registry read by every phase. The fixed dialect is
- * borrowed; an extension acquires an independent contiguous snapshot before
- * replacing it. The registry and its inline lifecycle projection are built
- * first and published together, so an allocation failure leaves the previous
- * registry, its projections and the dispatch it drives all intact. */
+/* Setup extends the same registry read by every phase. The fixed dialect and
+ * its prepared projection are borrowed; an extension gets its own projection,
+ * built in one allocation and published with the registry it projects, so an
+ * allocation failure leaves the previous registry, its projection and the
+ * dispatch it drives all intact. */
 int markdown_core_parser_attach_element(markdown_core_parser *parser, const markdown_core_element *element) {
-    size_t count = parser->element_count;
-    markdown_core_inline_hooks hooks;
-    const markdown_core_element **entries = parser->mem->calloc(count + 1, sizeof(*entries));
-    if (!entries) {
+    markdown_core_registry extended;
+    if (!markdown_core_registry_prepare(parser->mem, parser->elements, parser->element_count, element, &extended)) {
         return 0;
     }
-    if (count) {
-        memcpy(entries, parser->elements, count * sizeof(*entries));
+    if (parser->registry == &parser->owned_registry) {
+        markdown_core_registry_release(parser->mem, &parser->owned_registry);
     }
-    entries[count] = element;
-    if (!markdown_core_inlines_project_hooks_of(parser->mem, entries, count + 1, &hooks)) {
-        parser->mem->free(entries);
-        return 0;
-    }
-    parser->mem->free(parser->element_allocation);
-    parser->element_allocation = entries;
-    parser->elements = entries;
-    parser->element_count = count + 1;
-    S_register_element(parser, element);
-    /* The block owner projection follows the registry; rebuilt on demand. */
-    parser->mem->free(parser->block_owners);
-    parser->block_owners = NULL;
-    parser->block_owner_count = 0;
-    markdown_core_inlines_release_hooks(parser);
-    parser->inline_hooks = hooks;
+    parser->owned_registry = extended;
+    S_install_registry(parser, &parser->owned_registry);
     return 1;
 }
 
 static bool S_block_owner_accepts(const markdown_core_block_owner *owner, unsigned char c) {
     return (owner->bytes[c >> 6] >> (c & 63)) & 1;
-}
-
-/* Project the elements with block hooks, each with the first bytes it can
- * accept at, in registry order. One allocation per parse, sized by the
- * registry; nothing about the input's shape enters the projection. */
-static const markdown_core_block_owner *S_block_owners(markdown_core_parser *parser, size_t *count) {
-    if (!parser->block_owners && parser->element_count) {
-        markdown_core_block_owner *owners = parser->mem->calloc(parser->element_count, sizeof(*owners));
-        if (!owners) {
-            parser->oom = true;
-            *count = 0;
-            return NULL;
-        }
-        size_t used = 0;
-        for (size_t i = 0; i < parser->element_count; i++) {
-            const markdown_core_element *element = parser->elements[i];
-            if (!element->scan_block_start && !element->try_interrupting_block && !element->try_opening_block &&
-                !element->try_opening_paragraph) {
-                continue;
-            }
-            markdown_core_block_owner *owner = &owners[used++];
-            owner->element = element;
-            if (!element->block_start_bytes) {
-                memset(owner->bytes, 0xFF, sizeof(owner->bytes));
-            } else {
-                for (const unsigned char *c = (const unsigned char *)element->block_start_bytes; *c; c++) {
-                    owner->bytes[*c >> 6] |= (uint64_t)1 << (*c & 63);
-                }
-            }
-        }
-        parser->block_owners = owners;
-        parser->block_owner_count = used;
-    }
-    *count = parser->block_owner_count;
-    return parser->block_owners;
 }
 
 static unsigned char S_block_start_byte(const markdown_core_chunk *input, int first) {
@@ -186,11 +133,6 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     }
     parser->mem->free(parser->block_inputs);
     parser->mem->free(parser->input_line_offsets);
-    parser->mem->free(parser->inline_dispatch);
-    parser->inline_dispatch = NULL;
-    parser->mem->free(parser->block_owners);
-    parser->block_owners = NULL;
-    markdown_core_inlines_release_hooks(parser);
     if (parser->root) {
         /* The root owns the arena from its creation on. */
         parser->arena = NULL;
@@ -253,7 +195,6 @@ static markdown_core_parser *S_parser_new(markdown_core_mem *mem) {
         parser->oom = true;
     }
 
-    markdown_core_inlines_reset_special_chars(parser);
     return parser;
 }
 
@@ -267,7 +208,9 @@ static void S_parser_free(markdown_core_parser *parser) {
     /* Only a parser whose root never existed still holds the arena here. */
     markdown_core_arena_free(parser->arena);
     parser->arena = NULL;
-    parser->mem->free(parser->element_allocation);
+    if (parser->registry == &parser->owned_registry) {
+        markdown_core_registry_release(mem, &parser->owned_registry);
+    }
     markdown_core_strbuf_free(&parser->curline);
     markdown_core_strbuf_free(&parser->paragraph_line_copy);
     markdown_core_strbuf_free(&parser->line_scratch);
@@ -802,68 +745,139 @@ static size_t inline_candidate_roles(const markdown_core_element *element, unsig
     return count;
 }
 
-void markdown_core_manage_elements_special_characters(markdown_core_parser *parser, int add) {
-    size_t next[256];
+static bool S_owns_block_starts(const markdown_core_element *element) {
+    return element->scan_block_start || element->try_interrupting_block || element->try_opening_block ||
+           element->try_opening_paragraph;
+}
+
+/* A registry's projection is a pure function of its descriptors: the core
+ * registry's is generated once from them (core-registry.inc, which the api
+ * tests hold to this builder), and this builds the projection of a registry
+ * a setup extends. Every table shares one allocation, the pointer-aligned
+ * tables first and the byte sets last. Within a byte, inline candidates keep
+ * registry order among equal precedence; protected tokens precede ordinary
+ * alternatives, which precede literal fallbacks. */
+bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_element *const *elements, size_t count,
+                                    const markdown_core_element *extra, markdown_core_registry *registry) {
     unsigned char roles[256], bytes[256];
-    parser->mem->free(parser->inline_dispatch);
-    parser->inline_dispatch = NULL;
-    memset(parser->inline_dispatch_offsets, 0, sizeof(parser->inline_dispatch_offsets));
-    markdown_core_inlines_reset_special_chars(parser);
-    if (!add || parser->oom) {
-        return;
+    size_t total = count + (extra != NULL);
+    size_t candidates = 0, owners = 0, hooks = 0;
+    for (size_t i = 0; i < total; i++) {
+        const markdown_core_element *element = i < count ? elements[i] : extra;
+        candidates += inline_candidate_roles(element, roles, bytes);
+        owners += S_owns_block_starts(element);
+        hooks += (element->init_inline != NULL) + (element->finish_inline != NULL) + (element->dispose_inline != NULL);
     }
-    for (size_t i = 0; i < parser->element_count; i++) {
-        const markdown_core_element *element = parser->elements[i];
+    size_t elements_size = total * sizeof(*registry->elements);
+    size_t offsets_size = 257 * sizeof(size_t);
+    size_t candidates_size = candidates * sizeof(markdown_core_inline_candidate);
+    size_t owners_size = owners * sizeof(markdown_core_block_owner);
+    size_t hooks_size = hooks * sizeof(const markdown_core_element *);
+    unsigned char *storage =
+        mem->calloc(1, elements_size + offsets_size + candidates_size + owners_size + hooks_size + 2 * 256);
+    if (!storage) {
+        return false;
+    }
+    unsigned char *at = storage;
+    const markdown_core_element **list = (const markdown_core_element **)at;
+    size_t *offsets = (size_t *)(at += elements_size);
+    markdown_core_inline_candidate *dispatch = (markdown_core_inline_candidate *)(at += offsets_size);
+    markdown_core_block_owner *owner_table = (markdown_core_block_owner *)(at += candidates_size);
+    const markdown_core_element **hook_table = (const markdown_core_element **)(at += owners_size);
+    int8_t *special = (int8_t *)(at += hooks_size);
+    int8_t *skip = special + 256;
+    markdown_core_registry prepared = {.elements = list,
+                                       .element_count = total,
+                                       .inline_dispatch_offsets = offsets,
+                                       .inline_dispatch = dispatch,
+                                       .block_owners = owner_table,
+                                       .inline_hooks = {hook_table, 0, 0, 0},
+                                       .special_chars = special,
+                                       .skip_chars = skip,
+                                       .storage = storage};
+    for (size_t i = 0; i < total; i++) {
+        const markdown_core_element *element = i < count ? elements[i] : extra;
+        list[i] = element;
+        if (element->parse_text) {
+            prepared.text_structure = element;
+        }
+        if (element->delimiter_rule != MARKDOWN_CORE_DELIM_RULE_NONE) {
+            prepared.delimiter_owners[element->delimiter_rule] = element;
+        }
+        prepared.inline_hooks.init_count += element->init_inline != NULL;
+        prepared.inline_hooks.finish_count += element->finish_inline != NULL;
+        prepared.inline_hooks.dispose_count += element->dispose_inline != NULL;
+        if (S_owns_block_starts(element)) {
+            markdown_core_block_owner *owner = &owner_table[prepared.block_owner_count++];
+            owner->element = element;
+            if (!element->block_start_bytes) {
+                memset(owner->bytes, 0xFF, sizeof(owner->bytes));
+            } else {
+                for (const unsigned char *c = (const unsigned char *)element->block_start_bytes; *c; c++) {
+                    owner->bytes[*c >> 6] |= (uint64_t)1 << (*c & 63);
+                }
+            }
+        }
         if (!element->match_inline && !element->insert_inline_from_delim) {
             continue;
         }
         size_t used = inline_candidate_roles(element, roles, bytes);
         for (size_t j = 0; j < used; j++) {
             unsigned char c = bytes[j];
-            parser->inline_dispatch_offsets[c + 1]++;
+            offsets[c + 1]++;
             if (roles[c] & INLINE_TERMINATES) {
-                markdown_core_inlines_add_text_terminator(parser, (unsigned char)c);
+                special[c] = 1;
             }
         }
         for (const unsigned char *c = (const unsigned char *)element->flanking_transparent; c && *c; c++) {
-            markdown_core_inlines_add_flanking_transparent(parser, *c);
+            skip[*c] = 1;
         }
     }
+    size_t next[256];
     for (size_t c = 0; c < 256; c++) {
-        parser->inline_dispatch_offsets[c + 1] += parser->inline_dispatch_offsets[c];
-        next[c] = parser->inline_dispatch_offsets[c];
+        offsets[c + 1] += offsets[c];
+        next[c] = offsets[c];
     }
-    size_t count = parser->inline_dispatch_offsets[256];
-    if (!count) {
-        return;
-    }
-    parser->inline_dispatch = parser->mem->calloc(count, sizeof(*parser->inline_dispatch));
-    if (!parser->inline_dispatch) {
-        parser->oom = true;
-        return;
-    }
-    for (size_t i = 0; i < parser->element_count; i++) {
-        const markdown_core_element *element = parser->elements[i];
+    const markdown_core_element **init = hook_table, **finish = init + prepared.inline_hooks.init_count,
+                                **dispose = finish + prepared.inline_hooks.finish_count;
+    for (size_t i = 0; i < total; i++) {
+        const markdown_core_element *element = list[i];
+        if (element->init_inline) {
+            *init++ = element;
+        }
+        if (element->finish_inline) {
+            *finish++ = element;
+        }
+        if (element->dispose_inline) {
+            *dispose++ = element;
+        }
         size_t used = inline_candidate_roles(element, roles, bytes);
         for (size_t j = 0; j < used; j++) {
             unsigned char c = bytes[j];
-            parser->inline_dispatch[next[c]++] = (markdown_core_inline_candidate){
-                element, (roles[c] & INLINE_DISPATCHES) != 0, (roles[c] & INLINE_TERMINATES) != 0};
+            dispatch[next[c]++] = (markdown_core_inline_candidate){element, (roles[c] & INLINE_DISPATCHES) != 0,
+                                                                   (roles[c] & INLINE_TERMINATES) != 0};
         }
     }
     for (size_t c = 0; c < 256; c++) {
-        size_t first = parser->inline_dispatch_offsets[c], end = parser->inline_dispatch_offsets[c + 1];
+        size_t first = offsets[c], end = offsets[c + 1];
         for (size_t i = first + 1; i < end; i++) {
-            markdown_core_inline_candidate candidate = parser->inline_dispatch[i];
-            size_t at = i;
-            while (at > first &&
-                   parser->inline_dispatch[at - 1].element->inline_precedence > candidate.element->inline_precedence) {
-                parser->inline_dispatch[at] = parser->inline_dispatch[at - 1];
-                at--;
+            markdown_core_inline_candidate candidate = dispatch[i];
+            size_t slot = i;
+            while (slot > first &&
+                   dispatch[slot - 1].element->inline_precedence > candidate.element->inline_precedence) {
+                dispatch[slot] = dispatch[slot - 1];
+                slot--;
             }
-            parser->inline_dispatch[at] = candidate;
+            dispatch[slot] = candidate;
         }
     }
+    *registry = prepared;
+    return true;
+}
+
+void markdown_core_registry_release(markdown_core_mem *mem, markdown_core_registry *registry) {
+    mem->free(registry->storage);
+    *registry = (markdown_core_registry){0};
 }
 
 /* Parse each source buffer once. Inline parsing completes fields at their
@@ -938,11 +952,16 @@ typedef struct {
     int script_depth, claim_depth;
 } owned_tree_frame;
 
+/* The frames start in the walk's own record, enough for a document whose
+ * fields do not nest, and move to the heap only when they outgrow it. */
+#define OWNED_TREE_FRAMES 8
+
 typedef struct {
     markdown_core_parser *parser;
     owned_tree_frame *frames;
     size_t count, capacity;
     int script_depth;
+    owned_tree_frame first_frames[OWNED_TREE_FRAMES];
 } owned_tree_walk;
 
 static int push_owned_tree(markdown_core_node **slot, void *context) {
@@ -951,15 +970,20 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
         return !walk->parser->oom;
     }
     if (walk->count == walk->capacity) {
-        size_t capacity = walk->capacity ? 2 * walk->capacity : 8;
+        size_t capacity = 2 * walk->capacity;
         if (capacity > SIZE_MAX / sizeof(*walk->frames)) {
             walk->parser->oom = true;
             return 0;
         }
-        void *frames = walk->parser->mem->realloc(walk->frames, capacity * sizeof(*walk->frames));
+        bool inline_frames = walk->frames == walk->first_frames;
+        void *frames =
+            walk->parser->mem->realloc(inline_frames ? NULL : walk->frames, capacity * sizeof(*walk->frames));
         if (!frames) {
             walk->parser->oom = true;
             return 0;
+        }
+        if (inline_frames) {
+            memcpy(frames, walk->first_frames, sizeof(walk->first_frames));
         }
         walk->frames = frames;
         walk->capacity = capacity;
@@ -980,6 +1004,8 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
 static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node **slot, tree_node_func enter,
                             tree_exit_func exit, tree_phase_func finish, void *context, int script_depth) {
     owned_tree_walk walk = {.parser = parser, .script_depth = script_depth};
+    walk.frames = walk.first_frames;
+    walk.capacity = OWNED_TREE_FRAMES;
     push_owned_tree(slot, &walk);
     while (walk.count && !parser->oom) {
         owned_tree_frame *frame = &walk.frames[walk.count - 1];
@@ -1060,7 +1086,9 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node **s
             }
         }
     }
-    parser->mem->free(walk.frames);
+    if (walk.frames != walk.first_frames) {
+        parser->mem->free(walk.frames);
+    }
     return !parser->oom;
 }
 
@@ -1094,8 +1122,6 @@ static void process_inlines(markdown_core_parser *parser, markdown_core_map *ref
     }
 
     markdown_core_visit_block_subtrees(parser->root, complete_independent_inlines, parser);
-
-    markdown_core_manage_elements_special_characters(parser, false);
 }
 
 /* Block syntax and all anchor decisions finish before definitions disappear.
@@ -1207,11 +1233,9 @@ markdown_core_node *markdown_core_parse_document_with_mem(const char *source, si
     if (!parser) {
         return NULL;
     }
-    parser->elements = markdown_core_core_elements(&parser->element_count);
-    for (size_t i = 0; i < parser->element_count; i++) {
-        S_register_element(parser, parser->elements[i]);
-    }
-    if (!markdown_core_inlines_project_hooks(parser) || (setup && !setup(parser, context))) {
+    /* The complete immutable dialect, prepared: nothing is projected here. */
+    S_install_registry(parser, markdown_core_core_registry());
+    if (setup && !setup(parser, context)) {
         S_parser_free(parser);
         return NULL;
     }
@@ -1986,8 +2010,8 @@ const markdown_core_paragraph_line *markdown_core_parser_paragraph_line(const ma
 }
 
 static bool scan_element_start(markdown_core_parser *parser, block_start_context *context, block_start *start) {
-    size_t count;
-    const markdown_core_block_owner *owners = S_block_owners(parser, &count);
+    size_t count = parser->registry->block_owner_count;
+    const markdown_core_block_owner *owners = parser->registry->block_owners;
     unsigned char byte = S_block_start_byte(context->input, context->first);
     for (size_t i = 0; i < count; i++) {
         const markdown_core_element *element = owners[i].element;
@@ -2074,8 +2098,8 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             return;
         }
         parser->thematic_break_kill_pos = context.thematic_kill;
-        size_t owner_count;
-        const markdown_core_block_owner *owners = S_block_owners(parser, &owner_count);
+        size_t owner_count = parser->registry->block_owner_count;
+        const markdown_core_block_owner *owners = parser->registry->block_owners;
         unsigned char byte = S_block_start_byte(input, parser->first_nonspace);
 
         /* Dash-led tables precede thematic breaks and lists. An opener may
@@ -2600,10 +2624,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     S_parse_block_inputs(parser);
     S_complete_block_tree(parser, parser->root);
     if (!parser->oom) {
-        markdown_core_manage_elements_special_characters(parser, true);
-        if (!parser->oom) {
-            parser->document_structure->prepare_document(parser);
-        }
+        parser->document_structure->prepare_document(parser);
     }
     S_PHASE(parser, prepared);
     if (!parser->oom) {

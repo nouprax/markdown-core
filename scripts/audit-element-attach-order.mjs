@@ -104,7 +104,9 @@ for (const file of cSources(pkg)) {
         failures.push(`${path.relative(pkg, file)} retains a parse option`);
     }
     if (!file.endsWith(".c")) continue;
-    for (const match of source.matchAll(/\bmarkdown_core_core_elements\s*\(/g)) {
+    /* Tests and runners may read the prepared registry; only the engine selects it. */
+    if (path.relative(pkg, file).startsWith(`tests${path.sep}`)) continue;
+    for (const match of source.matchAll(/\bmarkdown_core_core_registry\s*\(/g)) {
         const end = endOfArguments(source, source.indexOf("(", match.index));
         if (end < 0 || /^\s*\{/.test(source.slice(end))) continue;
         dialectAttachSites.push({ file: path.relative(pkg, file), function: enclosingFunction(source, match.index) });
