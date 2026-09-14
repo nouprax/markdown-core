@@ -171,7 +171,7 @@ if grep -Eq 'benchmark:(es|kotlin|swift)|jvmBenchmark|MarkdownCoreBenchmarks|scr
     echo "a binding timing lane is run by a workflow; the lanes are opt-in" >&2
     exit 1
 fi
-if grep -Eq 'jvmBenchmark' packages/kotlin-markdown-core/build.gradle.kts | grep -q 'dependsOn(.*jvmBenchmark'; then
+if grep -Eq 'dependsOn\(.*"jvmBenchmark"' packages/kotlin-markdown-core/build.gradle.kts; then
     echo "a Kotlin test or check task depends on the benchmark lane" >&2
     exit 1
 fi

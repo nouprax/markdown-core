@@ -48,6 +48,7 @@ import com.nouprax.markdown.core.ThematicBreak
 import com.nouprax.markdown.core.walk
 import java.io.File
 import java.security.MessageDigest
+import java.util.Locale
 
 /*
  * The Kotlin/JVM timing lane: source string to value tree through the
@@ -460,8 +461,8 @@ fun main(arguments: Array<String>) {
         val minWalk = measured.minOf { it.walkNs }
         val medianParse = median(measured.map { it.parseNs })
         val medianWalk = median(measured.map { it.walkNs })
-        val mbPerSecond = if (minParse > 0) "%.3f".format(bytes / 1e6 / (minParse / 1e9)) else "0"
-        val nsPerNode = if (nodes > 0) "%.3f".format(minParse.toDouble() / nodes) else "0"
+        val mbPerSecond = if (minParse > 0) "%.3f".format(Locale.ROOT, bytes / 1e6 / (minParse / 1e9)) else "0"
+        val nsPerNode = if (nodes > 0) "%.3f".format(Locale.ROOT, minParse.toDouble() / nodes) else "0"
         val digest = sha256(case.source)
         println(
             "benchmark case=${case.name} bytes=$bytes nodes=$nodes repeats=$repeats warmup=$warmup " +

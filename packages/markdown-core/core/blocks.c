@@ -803,8 +803,12 @@ bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_
     size_t words = owners / 64 + 1;
     size_t sets_size = 4 * 256 * words * sizeof(uint64_t);
     size_t hooks_size = hooks * sizeof(const markdown_core_element *);
-    unsigned char *storage =
-        mem->calloc(1, elements_size + offsets_size + candidates_size + owners_size + hooks_size + sets_size + 2 * 256);
+    /* The pointer tables before the sets end at a pointer boundary, which an
+     * ABI with 4-byte pointers and 8-byte words (armeabi-v7a) does not accept
+     * for a word: the sets begin at the next multiple of their word size. */
+    size_t sets_align = sizeof(uint64_t);
+    unsigned char *storage = mem->calloc(1, elements_size + offsets_size + candidates_size + owners_size + hooks_size +
+                                                (sets_align - 1) + sets_size + 2 * 256);
     if (!storage) {
         return false;
     }
@@ -814,7 +818,9 @@ bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_
     markdown_core_inline_candidate *dispatch = (markdown_core_inline_candidate *)(at += offsets_size);
     const markdown_core_element **owner_table = (const markdown_core_element **)(at += candidates_size);
     const markdown_core_element **hook_table = (const markdown_core_element **)(at += owners_size);
-    uint64_t *sets = (uint64_t *)(at += hooks_size);
+    at += hooks_size;
+    at += (sets_align - (size_t)((uintptr_t)at % sets_align)) % sets_align;
+    uint64_t *sets = (uint64_t *)at;
     int8_t *special = (int8_t *)(at += sets_size);
     int8_t *skip = special + 256;
     markdown_core_registry prepared = {

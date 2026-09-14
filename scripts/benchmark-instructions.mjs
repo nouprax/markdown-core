@@ -21,6 +21,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** callgrind's total on stderr: `==pid== Collected : N`. */
 export function parseCollected(stderr) {
@@ -140,7 +141,7 @@ function main() {
     }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === new URL(import.meta.url).pathname) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
     try {
         main();
     } catch (error) {

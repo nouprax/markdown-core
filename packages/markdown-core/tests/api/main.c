@@ -3607,7 +3607,7 @@ static void text_whitespace_boundary(test_batch_runner *runner) {
 static void key_index_radix(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     enum { COUNT = 4096, WIDTH = 32 };
-    unsigned char(*keys)[WIDTH] = calloc(COUNT, WIDTH);
+    unsigned char (*keys)[WIDTH] = calloc(COUNT, WIDTH);
     for (size_t order = 0; order < 3; order++) {
         markdown_core_key_index index;
         OK(runner, markdown_core_key_index_init(&index, mem, order ? COUNT : 0), "radix index initializes");
@@ -3664,7 +3664,7 @@ static void key_index_radix(test_batch_runner *runner) {
  * branches; checking the actual tree makes this independent of host timing. */
 static void key_index_adversarial(test_batch_runner *runner) {
     enum { WIDTH = MAX_LINK_LABEL_LENGTH, COUNT = 9 * WIDTH + 1 };
-    unsigned char(*keys)[WIDTH] = calloc(COUNT, WIDTH);
+    unsigned char (*keys)[WIDTH] = calloc(COUNT, WIDTH);
     bufsize_t *lengths = calloc(COUNT, sizeof(*lengths));
     for (int k = 0; k < COUNT; k++) {
         lengths[k] = k < WIDTH ? k : WIDTH;
@@ -6302,7 +6302,7 @@ static markdown_core_node *count_finished_formula_blocks(const markdown_core_ele
     return node;
 }
 static const markdown_core_node_type FORMULA_BLOCK_KINDS[] = {MARKDOWN_CORE_NODE_FORMULA_BLOCK,
-                                                             MARKDOWN_CORE_NODE_NONE};
+                                                              MARKDOWN_CORE_NODE_NONE};
 static const markdown_core_element FORMULA_BLOCK_FINISH_PROBE = {.name = "formula-block-finish-probe",
                                                                  .finish_node = count_finished_formula_blocks,
                                                                  .finish_node_kinds = FORMULA_BLOCK_KINDS};
@@ -6340,6 +6340,7 @@ static markdown_core_element wide_owners[WIDE_OWNER_COUNT];
 static char wide_owner_names[WIDE_OWNER_COUNT][24];
 typedef struct wide_owner_projection {
     size_t words, owners;
+    uintptr_t sets;
 } wide_owner_projection;
 static bool attach_wide_owners(markdown_core_parser *parser, void *context) {
     wide_owner_projection *projection = (wide_owner_projection *)context;
@@ -6350,6 +6351,7 @@ static bool attach_wide_owners(markdown_core_parser *parser, void *context) {
     }
     projection->words = parser->registry->block_owner_sets.words;
     projection->owners = parser->registry->block_owner_count;
+    projection->sets = (uintptr_t)parser->registry->block_owner_sets.scan;
     return true;
 }
 static void block_owner_sets_grow_with_the_registry(test_batch_runner *runner) {
@@ -6366,6 +6368,8 @@ static void block_owner_sets_grow_with_the_registry(test_batch_runner *runner) {
     OK(runner, root != NULL, "a registry with more than sixty-four block owners parses");
     OK(runner, projection.owners > 64 && projection.words == 2, "its owner sets hold two words per byte (%zu owners)",
        projection.owners);
+    OK(runner, projection.sets % sizeof(uint64_t) == 0,
+       "the prepared sets start at a word boundary behind the registry's pointer tables");
     INT_EQ(runner, (int)wide_owner_visits, WIDE_OWNER_COUNT,
            "every owner, on either side of the word boundary, is visited for the line's first byte");
     OK(runner, markdown_core_core_registry()->block_owner_sets.words == 1, "the core registry keeps one word per byte");
