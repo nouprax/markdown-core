@@ -196,6 +196,19 @@ when the change is intended. The finishing phases of a parse are timed through
 the parser's phase clock, which a setup hook installs, and reported by the work
 lane as information only.
 
+Two more lanes read the same workloads on request. The reference lane is the
+timing lane with `--reference cmark`: a `bench_runner` configured with
+`MARKDOWN_CORE_BENCH_CMARK=ON` links the pinned cmark oracle
+(`scripts/init-environment.sh --install oracle-cmark`) and times its parse and
+free of the same bytes beside the engine's, reporting both and their ratio, so
+a reader can place a measurement against an implementation they know. The
+instruction lane, `scripts/benchmark-instructions.mjs`, runs `bench_runner`
+under callgrind twice per case, once with `--dry-run` (the input is built,
+nothing is parsed) and once with `--instructions` (one parse and one free),
+and reports the difference: the instructions of that parse, exact for one
+build and one input, with the reference counted the same way when asked.
+Neither lane decides anything; a changed count is a line to read in a diff.
+
 The separate PR benchmark measures a versioned parser workload and library
 size against the exact base SHA. The untrusted PR producer builds only the
 head and uploads its result. A privileged default-branch workflow uses a

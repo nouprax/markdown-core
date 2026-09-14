@@ -441,6 +441,26 @@ if(MARKDOWN_CORE_BENCHMARKS)
     markdown_core_add_runner(bench_runner runners/bench_runner.c)
     target_include_directories(bench_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
     target_link_libraries(bench_runner markdown-core-bench-workloads)
+    # The reference lane: the pinned cmark oracle, built by
+    # `scripts/init-environment.sh --install oracle-cmark`, linked into
+    # bench_runner so that `--reference cmark` times the same bytes through it.
+    option(MARKDOWN_CORE_BENCH_CMARK "Link the pinned cmark oracle into bench_runner as a reference" OFF)
+    if(MARKDOWN_CORE_BENCH_CMARK)
+        file(STRINGS "${CMAKE_SOURCE_DIR}/scripts/init-environment.sh" cmark_version_line REGEX "^CMARK_VERSION=")
+        string(REGEX REPLACE "^CMARK_VERSION=" "" MARKDOWN_CORE_BENCH_CMARK_VERSION "${cmark_version_line}")
+        set(MARKDOWN_CORE_BENCH_CMARK_ROOT "${CMAKE_SOURCE_DIR}/.tools/cmark/${MARKDOWN_CORE_BENCH_CMARK_VERSION}")
+        if(NOT EXISTS "${MARKDOWN_CORE_BENCH_CMARK_ROOT}/build/src/libcmark.a"
+           OR NOT EXISTS "${MARKDOWN_CORE_BENCH_CMARK_ROOT}/src/cmark.h")
+            message(
+                FATAL_ERROR
+                    "MARKDOWN_CORE_BENCH_CMARK=ON needs the pinned cmark oracle ${MARKDOWN_CORE_BENCH_CMARK_VERSION}: "
+                    "scripts/init-environment.sh --install oracle-cmark")
+        endif()
+        target_compile_definitions(bench_runner PRIVATE MARKDOWN_CORE_BENCH_CMARK=1)
+        target_include_directories(bench_runner PRIVATE "${MARKDOWN_CORE_BENCH_CMARK_ROOT}/src"
+                                                        "${MARKDOWN_CORE_BENCH_CMARK_ROOT}/build/src")
+        target_link_libraries(bench_runner "${MARKDOWN_CORE_BENCH_CMARK_ROOT}/build/src/libcmark.a")
+    endif()
     # The work-invariant lane reads the engine's deterministic work counters
     # through the diagnostics build and an injected allocator, like oom_runner
     # links the engine directly; its counts are an exact contract, never a
@@ -477,6 +497,32 @@ if(MARKDOWN_CORE_BENCHMARKS)
             "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}")
         set_tests_properties(benchmark_${workload} PROPERTIES RUN_SERIAL TRUE)
     endforeach()
+    # The instruction lane's runner contract: one case, one parse, or none.
+    markdown_core_add_test(
+        benchmark_instructions_once
+        benchmark
+        60
+        bench_runner
+        --workload
+        empty_document
+        --case
+        empty_document
+        --samples
+        "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}"
+        --instructions)
+    markdown_core_add_test(
+        benchmark_instructions_dry_run
+        benchmark
+        60
+        bench_runner
+        --workload
+        binding_baseline
+        --case
+        binding_baseline
+        --samples
+        "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}"
+        --instructions
+        --dry-run)
     markdown_core_add_test(
         benchmark_work_invariants
         benchmark
