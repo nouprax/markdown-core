@@ -434,7 +434,11 @@ fun main(arguments: Array<String>) {
     val cases = mutableListOf<Case>()
     cases += Case("binding_baseline", "binding_baseline", "scale=2000", BASELINE_UNIT.repeat(2000))
     cases += Case("empty_document", "empty_document", "", "")
-    for (sample in (samples.listFiles() ?: emptyArray()).filter { it.name.endsWith(".md") }.sortedBy { it.name }) {
+    // A corpus that cannot be listed is an error, not an empty corpus: a report
+    // without the tracked samples would look complete and compare with nothing.
+    val sampleFiles =
+        requireNotNull(samples.listFiles()) { "samples directory ${samples.path} is not a readable directory" }
+    for (sample in sampleFiles.filter { it.name.endsWith(".md") }.sortedBy { it.name }) {
         cases += Case(sample.name, "sample", "copies=$copies", (sample.readText() + "\n\n").repeat(copies))
     }
     for (file in files) cases += Case(file.name, "file", file.path, file.readText())

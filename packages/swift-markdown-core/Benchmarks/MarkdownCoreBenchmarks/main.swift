@@ -220,11 +220,23 @@ var cases: [Case] = [
     ),
     Case(name: "empty_document", generator: "empty_document", parameters: "", source: ""),
 ]
-let sampleNames = ((try? FileManager.default.contentsOfDirectory(atPath: samplesDirectory)) ?? [])
-    .filter { $0.hasSuffix(".md") }.sorted()
+// A corpus that cannot be listed or read is an error, not an empty corpus: a
+// report without the tracked samples would look complete and compare with
+// nothing.
+let sampleNames: [String]
+do {
+    sampleNames = try FileManager.default.contentsOfDirectory(atPath: samplesDirectory).filter { $0.hasSuffix(".md") }
+        .sorted()
+} catch {
+    FileHandle.standardError.write(Data("cannot list samples directory \(samplesDirectory): \(error)\n".utf8))
+    exit(2)
+}
 for name in sampleNames {
     let path = (samplesDirectory as NSString).appendingPathComponent(name)
-    guard let sample = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+    guard let sample = try? String(contentsOfFile: path, encoding: .utf8) else {
+        FileHandle.standardError.write(Data("cannot read \(path)\n".utf8))
+        exit(2)
+    }
     cases.append(
         Case(
             name: name,
