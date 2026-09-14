@@ -1728,7 +1728,8 @@ static void release_frees_only_allocations(test_batch_runner *runner) {
  * many short blocks allocates only the arena's blocks and the fixed few. */
 static void block_content_allocates_nothing_per_block(test_batch_runner *runner) {
     markdown_core_mem mem = {borrow_calloc, borrow_realloc, free};
-    static const char *const units[] = {"- item\n", "# heading\n\n", "one line\n\n", "two\nlines\n\n"};
+    static const char *const units[] = {"- item\n",       "# heading\n\n",           "one line\n\n",
+                                        "two\nlines\n\n", "<div>\nhtml\n</div>\n\n", "```\ncode\n```\n\n"};
     for (size_t shape = 0; shape < sizeof(units) / sizeof(*units); shape++) {
         markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
         for (size_t i = 0; i < 4096; i++) {
@@ -1741,6 +1742,20 @@ static void block_content_allocates_nothing_per_block(test_batch_runner *runner)
         OK(runner, borrow_allocations <= 64,
            "4096 blocks cost the arena's blocks and the fixed few, not one allocation each: shape=%zu allocations=%zu",
            shape, borrow_allocations);
+        /* A literal borrowed from the arena reads as the block's bytes. */
+        if (root && shape >= 4) {
+            static const char *const literals[] = {"<div>\nhtml\n</div>\n", "code\n"};
+            markdown_core_node *block = root->first_child;
+            OK(runner,
+               block && markdown_core_node_get_literal(block) &&
+                   strcmp(markdown_core_node_get_literal(block), literals[shape - 4]) == 0,
+               "the block's literal is its content: shape=%zu literal=%s", shape,
+               block && markdown_core_node_get_literal(block) ? markdown_core_node_get_literal(block) : "(null)");
+            OK(runner,
+               markdown_core_node_set_literal(block, "replaced") &&
+                   strcmp(markdown_core_node_get_literal(block), "replaced") == 0,
+               "a borrowed literal is replaced by an owned one: shape=%zu", shape);
+        }
         markdown_core_node_free(root);
         markdown_core_strbuf_free(&source);
     }
@@ -5288,6 +5303,14 @@ static void core_registry_is_its_own_projection(test_batch_runner *runner) {
     }
     for (size_t i = 0; same && i < built.block_owner_count; i++) {
         same = built.block_owners[i] == core->block_owners[i];
+    }
+    same = same && markdown_core_block_traits_count == markdown_core_block_structure_count &&
+           markdown_core_inline_traits_count == markdown_core_inline_structure_count;
+    for (size_t i = 0; same && i < markdown_core_block_structure_count; i++) {
+        same = markdown_core_block_traits[i] == markdown_core_structure_traits(markdown_core_block_structure[i]);
+    }
+    for (size_t i = 0; same && i < markdown_core_inline_structure_count; i++) {
+        same = markdown_core_inline_traits[i] == markdown_core_structure_traits(markdown_core_inline_structure[i]);
     }
     same = same && memcmp(built.block_owner_sets.scan, core->block_owner_sets.scan, 256 * sizeof(uint64_t)) == 0 &&
            memcmp(built.block_owner_sets.interrupt, core->block_owner_sets.interrupt, 256 * sizeof(uint64_t)) == 0 &&

@@ -89,8 +89,9 @@ kind conversion.
 
 HTML blocks keep their recognition state and eventual literal in distinct
 fields of one data record throughout parsing. Converting a closed HTML comment
-to Comment transfers its owned literal only after the new record can be
-created. Setext headings also use the shared kind conversion operation.
+to Comment transfers its literal, owned or borrowed from the arena content,
+only after the new record can be created. Setext headings also use the shared
+kind conversion operation.
 
 Construction and kind conversion have different ownership constraints: an
 unpublished node and its initial record can share an allocation, while a
@@ -204,7 +205,9 @@ lines of one block; a reservation the arena cannot extend moves to the
 allocator by the buffer's ordinary growth. So a block costs no allocation of
 its own and nothing to release: the literal runs that borrow its bytes, the
 buffer and the node go with the arena. A literal an element takes out of a
-content buffer (a code block's) is copied into storage of its own.
+content buffer -- a code block's, an HTML block's -- borrows the arena bytes
+the same way; only content the arena could not hold is taken over as storage
+of the literal's own, and a literal a caller replaces is owned by the node.
 
 The bracket scanner tracks the most recent non-SP/TAB byte over disjoint
 consumed token ranges, so rejecting empty bodies never rescans nested bodies.

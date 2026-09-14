@@ -40,6 +40,14 @@ static void put_byte_set(FILE *out, const char *name, const int8_t *set) {
     fputs("\n};\n\n", out);
 }
 
+static void put_traits(FILE *out, const char *name, const markdown_core_element *const *structures, size_t count) {
+    fprintf(out, "const uint8_t %s[%zu] = {", name, count);
+    for (size_t i = 0; i < count; i++) {
+        fprintf(out, "%s%u,", i % 16 ? " " : "\n    ", markdown_core_structure_traits(structures[i]));
+    }
+    fprintf(out, "\n};\nconst size_t %s_count = %zu;\n\n", name, count);
+}
+
 static int emit(FILE *out) {
     size_t count;
     const markdown_core_element *const *elements = markdown_core_core_elements(&count);
@@ -124,6 +132,13 @@ static int emit(FILE *out) {
 
     put_byte_set(out, "CORE_SPECIAL_CHARS", registry.special_chars);
     put_byte_set(out, "CORE_SKIP_CHARS", registry.skip_chars);
+
+    fputs("/* By kind value, the per-line traits of the kind's structure\n"
+          " * (markdown_core_node_traits), projected from the structure tables. */\n",
+          out);
+    put_traits(out, "markdown_core_block_traits", markdown_core_block_structure, markdown_core_block_structure_count);
+    put_traits(out, "markdown_core_inline_traits", markdown_core_inline_structure,
+               markdown_core_inline_structure_count);
 
     fputs("static const markdown_core_registry CORE_REGISTRY = {\n"
           "    .elements = CORE_ELEMENTS,\n"

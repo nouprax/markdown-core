@@ -29,6 +29,7 @@ bool markdown_core_block_is_space_or_tab(char c);
 void markdown_core_block_set_end_to_current_line(markdown_core_parser *parser, markdown_core_node *b);
 bool markdown_core_block_is_blank(markdown_core_strbuf *s, bufsize_t offset);
 bool markdown_core_block_accepts_lines(markdown_core_node *node);
+markdown_core_chunk markdown_core_block_take_literal(markdown_core_node *b);
 int markdown_core_block_content_mark_at(markdown_core_parser *parser, const markdown_core_node *node, bufsize_t offset);
 void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, markdown_core_node *node, bufsize_t dropped,
                                               bufsize_t remaining);

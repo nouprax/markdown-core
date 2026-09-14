@@ -256,23 +256,35 @@ bool markdown_core_block_is_blank(markdown_core_strbuf *s, bufsize_t offset) {
     return true;
 }
 
+/* The per-line predicates read the kind's traits (markdown_core_node_traits);
+ * only a kind whose structure decides per node reaches the structure. */
 static bool element_accepts_lines(markdown_core_node *node) {
+    unsigned traits = markdown_core_node_traits(node);
+    if (traits & MARKDOWN_CORE_TRAIT_LITERAL) {
+        return true;
+    }
+    if (!(traits & MARKDOWN_CORE_TRAIT_LINES_FUNC)) {
+        return false;
+    }
     const markdown_core_element *structure = markdown_core_node_structure(node);
-    return structure && (structure->content_mode == MARKDOWN_CORE_CONTENT_LITERAL ||
-                         (structure->accepts_lines_func && structure->accepts_lines_func(structure, node)));
+    return structure->accepts_lines_func(structure, node);
 }
 bool markdown_core_block_accepts_lines(markdown_core_node *node) {
-    const markdown_core_element *structure = markdown_core_node_structure(node);
-    return element_accepts_lines(node) || (structure && structure->content_mode == MARKDOWN_CORE_CONTENT_PROSE);
+    return element_accepts_lines(node) || (markdown_core_node_traits(node) & MARKDOWN_CORE_TRAIT_PROSE);
 }
 static bool contains_inlines(markdown_core_node *node) {
+    unsigned traits = markdown_core_node_traits(node);
+    if (traits & MARKDOWN_CORE_TRAIT_INLINE_CONTENT) {
+        return true;
+    }
+    if (!(traits & MARKDOWN_CORE_TRAIT_INLINES_FUNC)) {
+        return false;
+    }
     const markdown_core_element *structure = markdown_core_node_structure(node);
-    return structure && (structure->inline_content ||
-                         (structure->contains_inlines_func && structure->contains_inlines_func(structure, node)));
+    return structure->contains_inlines_func(structure, node);
 }
 static bool is_paragraph(markdown_core_node *node) {
-    const markdown_core_element *structure = markdown_core_node_structure(node);
-    return structure && structure->paragraph;
+    return (markdown_core_node_traits(node) & MARKDOWN_CORE_TRAIT_PARAGRAPH) != 0;
 }
 
 /* Record where the bytes about to be appended to `node`'s content came from.
@@ -369,6 +381,21 @@ static void S_reserve_content(markdown_core_parser *parser, markdown_core_node *
                markdown_core_arena_extend(parser->arena, content->ptr, (size_t)content->asize, needed)) {
         content->asize = (bufsize_t)needed;
     }
+}
+
+/* The literal a finalized block's content becomes. Content the arena holds
+ * stays there, borrowed: the literal, the buffer and the node go with the
+ * arena together, and the block's bytes are copied nowhere. Content the arena
+ * could not hold, or a node's outside a transaction, is taken over as it is;
+ * a buffer that lost bytes reports the loss as an empty literal with NULL
+ * data, as markdown_core_chunk_buf_detach does. */
+markdown_core_chunk markdown_core_block_take_literal(markdown_core_node *b) {
+    markdown_core_strbuf *content = b->content;
+    if (b->arena_owned && content->borrowed && !content->oom) {
+        markdown_core_chunk literal = {content->ptr, content->size, 0};
+        return literal;
+    }
+    return markdown_core_chunk_buf_detach(content);
 }
 
 void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown_core_parser *parser) {
@@ -1553,6 +1580,23 @@ void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_c
     char c;
     int chars_to_tab;
     int chars_to_advance;
+    /* An ASCII byte other than a tab is one byte, one column and one scalar,
+     * so a run of them advances by its length in either unit -- the whole of
+     * an indent of spaces, in one step. */
+    {
+        bufsize_t at = parser->offset;
+        bufsize_t stop = count < input->len - at ? at + count : input->len;
+        while (at < stop && (unsigned char)(input->data[at] - 1) < 0x7f && input->data[at] != '\t') {
+            at++;
+        }
+        if (at > parser->offset) {
+            bufsize_t advanced = at - parser->offset;
+            parser->partially_consumed_tab = false;
+            parser->offset = at;
+            parser->column += advanced;
+            count -= advanced;
+        }
+    }
     while (count > 0 && parser->offset < input->len && (c = peek_at(input, parser->offset))) {
         if (c == '\t') {
             chars_to_tab = TAB_STOP - (parser->column % TAB_STOP);

@@ -225,9 +225,10 @@ void markdown_core_block_convert_comment_block(markdown_core_parser *parser, mar
 
     body_start = open + 4;
     body_len = close > body_start ? close - body_start : 0;
-    /* Keep ownership of the HTML literal across the kind change. Restore it
-     * on failure; on success the comment record takes it before trimming. */
-    assert(literal->alloc);
+    /* Keep the HTML literal -- owned, or borrowed from the arena content --
+     * across the kind change. Restore it on failure; on success the comment
+     * record takes it before trimming, in place. */
+    assert(literal->data);
     markdown_core_chunk owned_literal = *literal;
     *literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_node_set_kind_result result = markdown_core_node_set_kind(b, MARKDOWN_CORE_NODE_COMMENT_BLOCK);

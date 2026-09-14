@@ -66,6 +66,35 @@ static MARKDOWN_CORE_INLINE const markdown_core_element *markdown_core_node_stru
     return node ? markdown_core_structure_for_kind((markdown_core_node_type)node->kind) : NULL;
 }
 
+/* What a kind's structure answers about every line, as bits by the kind's
+ * value: the block-parsing loops ask a node several times per line whether
+ * it takes lines, and read one byte for it rather than the structure's
+ * fields. The tables are generated with the core registry (registry_runner)
+ * from the structure tables above and held to them by the api tests; a kind
+ * without a structure has no traits. */
+enum {
+    MARKDOWN_CORE_TRAIT_LITERAL = 1 << 0,        /* content_mode LITERAL: takes lines */
+    MARKDOWN_CORE_TRAIT_PROSE = 1 << 1,          /* content_mode PROSE */
+    MARKDOWN_CORE_TRAIT_LINES_FUNC = 1 << 2,     /* accepts_lines_func decides */
+    MARKDOWN_CORE_TRAIT_INLINE_CONTENT = 1 << 3, /* inline_content */
+    MARKDOWN_CORE_TRAIT_INLINES_FUNC = 1 << 4,   /* contains_inlines_func decides */
+    MARKDOWN_CORE_TRAIT_PARAGRAPH = 1 << 5,      /* paragraph */
+};
+extern const uint8_t markdown_core_block_traits[], markdown_core_inline_traits[];
+extern const size_t markdown_core_block_traits_count, markdown_core_inline_traits_count;
+
+static MARKDOWN_CORE_INLINE unsigned markdown_core_node_traits(const markdown_core_node *node) {
+    if (!node) {
+        return 0;
+    }
+    markdown_core_node_type kind = (markdown_core_node_type)node->kind;
+    unsigned index = markdown_core_kind_value(kind);
+    if (MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind)) {
+        return index < markdown_core_inline_traits_count ? markdown_core_inline_traits[index] : 0;
+    }
+    return index < markdown_core_block_traits_count ? markdown_core_block_traits[index] : 0;
+}
+
 struct markdown_core_element {
     /* Negative/zero/positive precedence separates protected tokens, ordinary
      * alternatives, and literal fallbacks without a second dispatch algorithm. */
@@ -182,6 +211,19 @@ struct markdown_core_element {
     markdown_core_opaque_free_func opaque_free_func;
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;
 };
+
+/* The trait bits a block structure projects to (markdown_core_block_traits). */
+static MARKDOWN_CORE_INLINE unsigned markdown_core_structure_traits(const markdown_core_element *structure) {
+    if (!structure) {
+        return 0;
+    }
+    return (structure->content_mode == MARKDOWN_CORE_CONTENT_LITERAL ? MARKDOWN_CORE_TRAIT_LITERAL : 0) |
+           (structure->content_mode == MARKDOWN_CORE_CONTENT_PROSE ? MARKDOWN_CORE_TRAIT_PROSE : 0) |
+           (structure->accepts_lines_func ? MARKDOWN_CORE_TRAIT_LINES_FUNC : 0) |
+           (structure->inline_content ? MARKDOWN_CORE_TRAIT_INLINE_CONTENT : 0) |
+           (structure->contains_inlines_func ? MARKDOWN_CORE_TRAIT_INLINES_FUNC : 0) |
+           (structure->paragraph ? MARKDOWN_CORE_TRAIT_PARAGRAPH : 0);
+}
 
 /* Whether `node` holds node-valued fields at all: a node a core kind attached
  * a field to (MARKDOWN_CORE_NODE__OWNS_FIELDS), or one of an element that
