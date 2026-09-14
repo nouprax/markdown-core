@@ -138,138 +138,99 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (!node) {
         return MARKDOWN_CORE_KIND_NONE;
     }
-    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_LIST) {
+    /* One switch on the kind: a jump table, not a chain of comparisons, for
+     * an accessor every bridge asks of every node. */
+    switch (node->kind) {
+    case MARKDOWN_CORE_NODE_DEFINITION_LIST:
         return MARKDOWN_CORE_KIND_DEFINITION_LIST;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION) {
+    case MARKDOWN_CORE_NODE_DEFINITION:
         return MARKDOWN_CORE_KIND_DEFINITION;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_CITATION) {
+    case MARKDOWN_CORE_NODE_CITATION:
         return MARKDOWN_CORE_KIND_CITATION;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_FOOTNOTE) {
+    case MARKDOWN_CORE_NODE_FOOTNOTE:
         return MARKDOWN_CORE_KIND_FOOTNOTE;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
+    case MARKDOWN_CORE_NODE_SPECIMEN:
         return MARKDOWN_CORE_KIND_SPECIMEN;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_METADATA) {
+    case MARKDOWN_CORE_NODE_METADATA:
         return MARKDOWN_CORE_KIND_METADATA;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_DOCUMENT) {
+    case MARKDOWN_CORE_NODE_DOCUMENT:
         return MARKDOWN_CORE_KIND_DOCUMENT;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_CALLOUT) {
+    case MARKDOWN_CORE_NODE_CALLOUT:
         return MARKDOWN_CORE_KIND_CALLOUT;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
+    case MARKDOWN_CORE_NODE_PARAGRAPH:
         return MARKDOWN_CORE_KIND_PARAGRAPH;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_HEADING) {
+    case MARKDOWN_CORE_NODE_HEADING:
         return MARKDOWN_CORE_KIND_HEADING;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_THEMATIC_BREAK) {
+    case MARKDOWN_CORE_NODE_THEMATIC_BREAK:
         return MARKDOWN_CORE_KIND_THEMATIC_BREAK;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_LIST) {
+    case MARKDOWN_CORE_NODE_LIST:
         return MARKDOWN_CORE_KIND_LIST;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
         return MARKDOWN_CORE_KIND_LIST_ITEM;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
         return MARKDOWN_CORE_KIND_CODE_BLOCK;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_HTML_BLOCK) {
+    case MARKDOWN_CORE_NODE_HTML_BLOCK:
         return MARKDOWN_CORE_KIND_HTML_BLOCK;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
+    case MARKDOWN_CORE_NODE_TEXT:
         return MARKDOWN_CORE_KIND_TEXT;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_SOFT_BREAK) {
+    case MARKDOWN_CORE_NODE_SOFT_BREAK:
         return MARKDOWN_CORE_KIND_SOFT_BREAK;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_LINE_BREAK) {
+    case MARKDOWN_CORE_NODE_LINE_BREAK:
         return MARKDOWN_CORE_KIND_LINE_BREAK;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_CODE) {
+    case MARKDOWN_CORE_NODE_CODE:
         return MARKDOWN_CORE_KIND_CODE;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_HTML) {
+    case MARKDOWN_CORE_NODE_HTML:
         return MARKDOWN_CORE_KIND_HTML;
-    }
-    /* One public kind for both internal types: the parent edge says which
-     * content a comment sits in, and the node stores no placement. */
-    if (node->kind == MARKDOWN_CORE_NODE_COMMENT || node->kind == MARKDOWN_CORE_NODE_COMMENT_BLOCK) {
-        return MARKDOWN_CORE_KIND_COMMENT;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_EMPHASIS) {
+    case MARKDOWN_CORE_NODE_EMPHASIS:
         return MARKDOWN_CORE_KIND_EMPHASIS;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_MARK) {
+    case MARKDOWN_CORE_NODE_MARK:
         return MARKDOWN_CORE_KIND_MARK;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_INSERTION) {
+    case MARKDOWN_CORE_NODE_INSERTION:
         return MARKDOWN_CORE_KIND_INSERTION;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_SPAN) {
+    case MARKDOWN_CORE_NODE_SPAN:
         return MARKDOWN_CORE_KIND_SPAN;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_SUPERSCRIPT) {
+    case MARKDOWN_CORE_NODE_SUPERSCRIPT:
         return MARKDOWN_CORE_KIND_SUPERSCRIPT;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_SUBSCRIPT) {
+    case MARKDOWN_CORE_NODE_SUBSCRIPT:
         return MARKDOWN_CORE_KIND_SUBSCRIPT;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_STRONG) {
+    case MARKDOWN_CORE_NODE_STRONG:
         return MARKDOWN_CORE_KIND_STRONG;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_LINK) {
+    case MARKDOWN_CORE_NODE_LINK:
         return MARKDOWN_CORE_KIND_LINK;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_EMBEDDED) {
+    case MARKDOWN_CORE_NODE_EMBEDDED:
         return MARKDOWN_CORE_KIND_EMBEDDED;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_CROSS_LINK) {
+    case MARKDOWN_CORE_NODE_CROSS_LINK:
         return MARKDOWN_CORE_KIND_CROSS_LINK;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_CROSS_EMBEDDED) {
+    case MARKDOWN_CORE_NODE_CROSS_EMBEDDED:
         return MARKDOWN_CORE_KIND_CROSS_EMBEDDED;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_CITE) {
+    case MARKDOWN_CORE_NODE_CITE:
         return MARKDOWN_CORE_KIND_CITE;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
+    case MARKDOWN_CORE_NODE_TABLE:
         return MARKDOWN_CORE_KIND_TABLE;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_TABLE_ROW) {
+    case MARKDOWN_CORE_NODE_TABLE_ROW:
         return MARKDOWN_CORE_KIND_TABLE_ROW;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
+    case MARKDOWN_CORE_NODE_TABLE_CELL:
         return MARKDOWN_CORE_KIND_TABLE_CELL;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_TABLE_CAPTION) {
+    case MARKDOWN_CORE_NODE_TABLE_CAPTION:
         return MARKDOWN_CORE_KIND_TABLE_CAPTION;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_STRIKETHROUGH) {
+    case MARKDOWN_CORE_NODE_STRIKETHROUGH:
         return MARKDOWN_CORE_KIND_STRIKETHROUGH;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_FORMULA) {
+    case MARKDOWN_CORE_NODE_FORMULA:
         return MARKDOWN_CORE_KIND_FORMULA;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
+    case MARKDOWN_CORE_NODE_FORMULA_BLOCK:
         return MARKDOWN_CORE_KIND_FORMULA_BLOCK;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE) {
+    case MARKDOWN_CORE_NODE_DIRECTIVE:
         return MARKDOWN_CORE_KIND_DIRECTIVE;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
+    case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
         return MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
+    case MARKDOWN_CORE_NODE_DIRECTIVE_LABEL:
         return MARKDOWN_CORE_KIND_DIRECTIVE_LABEL;
+    case MARKDOWN_CORE_NODE_COMMENT:
+    case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
+        return MARKDOWN_CORE_KIND_COMMENT;
+    default:
+        return MARKDOWN_CORE_KIND_NONE;
     }
-    return MARKDOWN_CORE_KIND_NONE;
 }
 
 const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {

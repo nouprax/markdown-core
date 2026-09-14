@@ -1,14 +1,23 @@
 import type { Markup } from "../markup/markup.js";
 import type { MarkupVisitPhase, MarkupVisitor } from "./markup-visitor.js";
 
-type Actions = [node: Markup, phase: MarkupVisitPhase][];
+/* The pending visits as two parallel stacks, a node and its phase at the
+ * same index, so scheduling a visit allocates nothing per node. */
+interface Actions {
+    readonly nodes: Markup[];
+    readonly phases: MarkupVisitPhase[];
+}
 
 /** Walks markup depth first with an explicit stack, reporting both phases to the visitor. */
 export function walk(root: Markup, visitor: MarkupVisitor): void {
-    const actions: Actions = [[root, "enter"]];
-    while (actions.length > 0) {
-        const [node, phase] = actions.pop()!;
-        if (phase === "enter") actions.push([node, "exit"]);
+    const actions: Actions = { nodes: [root], phases: ["enter"] };
+    while (actions.nodes.length > 0) {
+        const node = actions.nodes.pop()!;
+        const phase = actions.phases.pop()!;
+        if (phase === "enter") {
+            actions.nodes.push(node);
+            actions.phases.push("exit");
+        }
         dispatch(node, visitor, phase, actions);
     }
 }
@@ -24,9 +33,14 @@ function dispatch<Kind extends Markup["kind"]>(
     if (phase === "enter") schedule[node.kind](node, actions);
 }
 
+function enter(node: Markup, actions: Actions): void {
+    actions.nodes.push(node);
+    actions.phases.push("enter");
+}
+
 function push(nodes: readonly Markup[], actions: Actions): void {
     for (let index = nodes.length - 1; index >= 0; index -= 1) {
-        actions.push([nodes[index]!, "enter"]);
+        enter(nodes[index]!, actions);
     }
 }
 
@@ -38,7 +52,7 @@ const schedule: {
         push(node.specimens, actions);
         push(node.footnotes, actions);
         push(node.content, actions);
-        if (node.metadata !== null) actions.push([node.metadata, "enter"]);
+        if (node.metadata !== null) enter(node.metadata, actions);
     },
     callout(node, actions) {
         push(node.content, actions);
@@ -60,7 +74,7 @@ const schedule: {
         push(node.foot, actions);
         push(node.content, actions);
         push(node.head, actions);
-        if (node.caption !== null) actions.push([node.caption, "enter"]);
+        if (node.caption !== null) enter(node.caption, actions);
     },
     tableCaption(node, actions) {
         push(node.content, actions);
@@ -73,7 +87,7 @@ const schedule: {
     },
     directiveBlock(node, actions) {
         push(node.content, actions);
-        if (node.label !== null) actions.push([node.label, "enter"]);
+        if (node.label !== null) enter(node.label, actions);
     },
     directiveLabel(node, actions) {
         push(node.content, actions);
@@ -109,7 +123,7 @@ const schedule: {
         push(node.content, actions);
     },
     directive(node, actions) {
-        if (node.label !== null) actions.push([node.label, "enter"]);
+        if (node.label !== null) enter(node.label, actions);
     },
     cite(node, actions) {
         push(node.citations, actions);

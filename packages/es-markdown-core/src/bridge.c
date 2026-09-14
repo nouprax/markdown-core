@@ -385,7 +385,6 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
         markdown_core_node_kind kind;
         const markdown_core_node *child;
         size_t count;
-        size_t index;
 
         if (node == NULL) {
             const markdown_core_definition_body *body = build->nodes[cursor].definition_body;
@@ -399,7 +398,8 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
             }
             continue;
         }
-        kind = markdown_core_node_get_kind(node);
+        /* The kind was read once, when the record was appended. */
+        kind = (markdown_core_node_kind)build->nodes[cursor].wire_kind;
         if (kind == MARKDOWN_CORE_KIND_NONE) {
             build->failure = ES_BUILD_INTERNAL;
             break;
@@ -504,30 +504,20 @@ static void collect_topology(es_build *build, const markdown_core_node *root) {
             }
         }
 
-        count = markdown_core_node_child_count(node);
-        if (count > UINT32_MAX || build->edge_count > UINT32_MAX - count) {
-            build->failure = ES_BUILD_ALLOCATION;
-            break;
-        }
+        /* One walk over the children appends each and counts them; the
+         * record is addressed by index because appending may move it. */
         build->nodes[cursor].child_start = (uint32_t)build->edge_count;
-        build->nodes[cursor].child_count = (uint32_t)count;
-        child = markdown_core_node_get_first_child(node);
-        for (index = 0; index < count; ++index) {
-            uint32_t child_index;
-            if (child == NULL) {
-                build->failure = ES_BUILD_INTERNAL;
-                break;
-            }
-            child_index = append_node(build, child);
+        count = 0;
+        for (child = markdown_core_node_get_first_child(node); child != NULL && build->failure == ES_BUILD_OK;
+             child = markdown_core_node_get_next_sibling(child)) {
+            uint32_t child_index = append_node(build, child);
             if (child_index == ES_NO_INDEX) {
                 break;
             }
             append_edge(build, child_index);
-            child = markdown_core_node_get_next_sibling(child);
+            count++;
         }
-        if (build->failure == ES_BUILD_OK && child != NULL) {
-            build->failure = ES_BUILD_INTERNAL;
-        }
+        build->nodes[cursor].child_count = (uint32_t)count;
 
         if (kind == MARKDOWN_CORE_KIND_DOCUMENT && build->failure == ES_BUILD_OK) {
             /* The document's definitions are its auxiliary range: value
@@ -672,7 +662,7 @@ static void collect_node_fields(es_build *build, size_t node_index) {
         record->dimensions.width = (uint32_t)dimensions->width;
         record->dimensions.height = dimensions->height.has_value ? (uint32_t)dimensions->height.value : 0;
     }
-    kind = markdown_core_node_get_kind(node);
+    kind = (markdown_core_node_kind)record->wire_kind;
     switch (kind) {
     case MARKDOWN_CORE_KIND_METADATA:
         break;

@@ -331,6 +331,15 @@ test("unicode: UTF-8 survives native document release", () => {
     assert.equal(document.content[0].content[0].literal, "héllo 🚀 中文");
 });
 
+test("unicode: the source is encoded into the heap once, non-ASCII and lone surrogates included", () => {
+    const source = `中文 🚀 ${"é".repeat(3000)}\n\n- [x] 🚀 \uD800 tail\n`;
+    const document = Document.parse(source);
+    assert.equal(document.content[0].content[0].literal, `中文 🚀 ${"é".repeat(3000)}`);
+    assert.equal(document.content[1].items[0].marker, "x");
+    assert.equal(document.content[1].items[0].content[0].content[0].literal, "🚀 \uFFFD tail");
+    assert.equal(Document.parse("").content.length, 0);
+});
+
 test("errors: empty input is valid and arguments are checked", () => {
     assert.deepEqual(Document.parse("").content, []);
     assert.deepEqual(Document.parse("").scope, { start: { line: 1, column: 1 }, end: { line: 0, column: 0 } });
