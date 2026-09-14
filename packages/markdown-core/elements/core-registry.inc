@@ -71,8 +71,8 @@ static const markdown_core_element *const CORE_BLOCK_OWNERS[13] = {
     &MARKDOWN_CORE_ELEMENT_TABLE,
 };
 
-/* By first byte, a bit per block owner above: the owners each
- * block-start arbitration loop visits. */
+/* By first byte, a bit per block owner above, 1 word per byte: the
+ * owners each block-start arbitration loop visits. */
 static const uint64_t CORE_BLOCK_SCAN_OWNERS[256] = {
     UINT64_C(0x21), UINT64_C(0x21), UINT64_C(0x21), UINT64_C(0x21),
     UINT64_C(0x21), UINT64_C(0x21), UINT64_C(0x21), UINT64_C(0x21),
@@ -392,7 +392,7 @@ static const markdown_core_registry CORE_REGISTRY = {
     .block_owners = CORE_BLOCK_OWNERS,
     .block_owner_count = 13,
     .block_owner_sets = {CORE_BLOCK_SCAN_OWNERS, CORE_BLOCK_INTERRUPT_OWNERS, CORE_BLOCK_OPEN_OWNERS,
-                         CORE_BLOCK_PARAGRAPH_OWNERS},
+                         CORE_BLOCK_PARAGRAPH_OWNERS, 1},
     .inline_hooks = {CORE_INLINE_HOOKS, 1, 1, 4},
     .special_chars = CORE_SPECIAL_CHARS,
     .skip_chars = CORE_SKIP_CHARS,

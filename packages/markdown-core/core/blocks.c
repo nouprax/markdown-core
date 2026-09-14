@@ -797,11 +797,11 @@ bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_
     size_t elements_size = total * sizeof(*registry->elements);
     size_t offsets_size = 257 * sizeof(size_t);
     size_t candidates_size = candidates * sizeof(markdown_core_inline_candidate);
-    if (owners > MARKDOWN_CORE_BLOCK_OWNER_LIMIT) {
-        return false;
-    }
     size_t owners_size = owners * sizeof(const markdown_core_element *);
-    size_t sets_size = 4 * 256 * sizeof(uint64_t);
+    /* One word per byte holds 64 owners; a registry with more gets more
+     * words per byte, never a limit. */
+    size_t words = owners / 64 + 1;
+    size_t sets_size = 4 * 256 * words * sizeof(uint64_t);
     size_t hooks_size = hooks * sizeof(const markdown_core_element *);
     unsigned char *storage =
         mem->calloc(1, elements_size + offsets_size + candidates_size + owners_size + hooks_size + sets_size + 2 * 256);
@@ -817,16 +817,17 @@ bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_
     uint64_t *sets = (uint64_t *)(at += hooks_size);
     int8_t *special = (int8_t *)(at += sets_size);
     int8_t *skip = special + 256;
-    markdown_core_registry prepared = {.elements = list,
-                                       .element_count = total,
-                                       .inline_dispatch_offsets = offsets,
-                                       .inline_dispatch = dispatch,
-                                       .block_owners = owner_table,
-                                       .block_owner_sets = {sets, sets + 256, sets + 512, sets + 768},
-                                       .inline_hooks = {hook_table, 0, 0, 0},
-                                       .special_chars = special,
-                                       .skip_chars = skip,
-                                       .storage = storage};
+    markdown_core_registry prepared = {
+        .elements = list,
+        .element_count = total,
+        .inline_dispatch_offsets = offsets,
+        .inline_dispatch = dispatch,
+        .block_owners = owner_table,
+        .block_owner_sets = {sets, sets + 256 * words, sets + 512 * words, sets + 768 * words, words},
+        .inline_hooks = {hook_table, 0, 0, 0},
+        .special_chars = special,
+        .skip_chars = skip,
+        .storage = storage};
     for (size_t i = 0; i < total; i++) {
         const markdown_core_element *element = i < count ? elements[i] : extra;
         list[i] = element;
@@ -842,8 +843,10 @@ bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_
         if (S_owns_block_starts(element)) {
             /* The owner's bit joins the set of every byte it accepts, for
              * each hook it implements. */
-            uint64_t bit = (uint64_t)1 << prepared.block_owner_count;
-            owner_table[prepared.block_owner_count++] = element;
+            size_t owner = prepared.block_owner_count++;
+            uint64_t bit = (uint64_t)1 << (owner % 64);
+            size_t word = owner / 64;
+            owner_table[owner] = element;
             const unsigned char *accepted = (const unsigned char *)element->block_start_bytes;
             for (size_t c = 0; c < 256; c++) {
                 bool accepts = !accepted;
@@ -853,10 +856,11 @@ bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_
                 if (!accepts) {
                     continue;
                 }
-                sets[c] |= element->scan_block_start ? bit : 0;
-                sets[256 + c] |= element->try_interrupting_block ? bit : 0;
-                sets[512 + c] |= element->try_opening_block ? bit : 0;
-                sets[768 + c] |= element->try_opening_paragraph ? bit : 0;
+                uint64_t *at = sets + c * words + word;
+                at[0] |= element->scan_block_start ? bit : 0;
+                at[256 * words] |= element->try_interrupting_block ? bit : 0;
+                at[512 * words] |= element->try_opening_block ? bit : 0;
+                at[768 * words] |= element->try_opening_paragraph ? bit : 0;
             }
         }
         if (!element->match_inline && !element->insert_inline_from_delim) {
@@ -2054,18 +2058,21 @@ const markdown_core_paragraph_line *markdown_core_parser_paragraph_line(const ma
  * implement its hook, in registry order, and no other owner. */
 static bool scan_element_start(markdown_core_parser *parser, block_start_context *context, block_start *start) {
     const markdown_core_registry *registry = parser->registry;
+    const markdown_core_block_owner_sets *sets = &registry->block_owner_sets;
     unsigned char byte = S_block_start_byte(context->input, context->first);
-    for (uint64_t owners = registry->block_owner_sets.scan[byte]; owners; owners &= owners - 1) {
-        const markdown_core_element *element = registry->block_owners[markdown_core_lowest_bit(owners)];
-        MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
-        if (context->indent > element->maximum_block_indent) {
-            continue;
-        }
-        if (element->scan_block_start(parser, context, start)) {
-            return true;
-        }
-        if (parser->oom) {
-            return false;
+    for (size_t word = 0; word < sets->words; word++) {
+        for (uint64_t owners = sets->scan[byte * sets->words + word]; owners; owners &= owners - 1) {
+            const markdown_core_element *element = registry->block_owners[word * 64 + markdown_core_lowest_bit(owners)];
+            MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
+            if (context->indent > element->maximum_block_indent) {
+                continue;
+            }
+            if (element->scan_block_start(parser, context, start)) {
+                return true;
+            }
+            if (parser->oom) {
+                return false;
+            }
         }
     }
     return false;
@@ -2141,21 +2148,25 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
         parser->thematic_break_kill_pos = context.thematic_kill;
         const markdown_core_registry *registry = parser->registry;
         const markdown_core_element *const *owners = registry->block_owners;
+        const markdown_core_block_owner_sets *sets = &registry->block_owner_sets;
+        size_t words = sets->words;
         unsigned char byte = S_block_start_byte(input, parser->first_nonspace);
 
         /* Dash-led tables precede thematic breaks and lists. An opener may
          * close the old path before an allocation fails; OOM is terminal,
          * never a grammar miss that can try another owner on that path. */
-        for (uint64_t set = registry->block_owner_sets.interrupt[byte]; set; set &= set - 1) {
-            const markdown_core_element *owner = owners[markdown_core_lowest_bit(set)];
-            MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
-            markdown_core_node *opened = owner->try_interrupting_block(parser, *container, input, maybe_lazy);
-            if (parser->oom) {
-                return;
-            }
-            if (opened) {
-                *container = opened;
-                return;
+        for (size_t word = 0; word < words; word++) {
+            for (uint64_t set = sets->interrupt[byte * words + word]; set; set &= set - 1) {
+                const markdown_core_element *owner = owners[word * 64 + markdown_core_lowest_bit(set)];
+                MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
+                markdown_core_node *opened = owner->try_interrupting_block(parser, *container, input, maybe_lazy);
+                if (parser->oom) {
+                    return;
+                }
+                if (opened) {
+                    *container = opened;
+                    return;
+                }
             }
         }
 
@@ -2166,37 +2177,41 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
         } else {
             markdown_core_node *new_container = NULL;
 
-            for (uint64_t set = registry->block_owner_sets.open[byte]; set; set &= set - 1) {
-                const markdown_core_element *element = owners[markdown_core_lowest_bit(set)];
-                MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
-                new_container = element->try_opening_block(element, parser->indent > element->maximum_block_indent,
-                                                           parser, *container, input->data, input->len);
-                if (parser->oom) {
-                    return;
-                }
-                if (new_container) {
-                    *container = new_container;
-                    if (parser->claimed_cursor) {
+            for (size_t word = 0; word < words && !new_container; word++) {
+                for (uint64_t set = sets->open[byte * words + word]; set; set &= set - 1) {
+                    const markdown_core_element *element = owners[word * 64 + markdown_core_lowest_bit(set)];
+                    MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
+                    new_container = element->try_opening_block(element, parser->indent > element->maximum_block_indent,
+                                                               parser, *container, input->data, input->len);
+                    if (parser->oom) {
                         return;
                     }
-                    break;
+                    if (new_container) {
+                        *container = new_container;
+                        if (parser->claimed_cursor) {
+                            return;
+                        }
+                        break;
+                    }
                 }
             }
 
             if (!new_container) {
                 if (!maybe_lazy && !is_paragraph(*container)) {
-                    for (uint64_t set = registry->block_owner_sets.paragraph[byte]; set; set &= set - 1) {
-                        const markdown_core_element *element = owners[markdown_core_lowest_bit(set)];
-                        MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
-                        new_container =
-                            element->try_opening_paragraph(element, parser->indent > element->maximum_block_indent,
-                                                           parser, *container, input->data, input->len);
-                        if (parser->oom) {
-                            return;
-                        }
-                        if (new_container) {
-                            *container = new_container;
-                            return;
+                    for (size_t word = 0; word < words; word++) {
+                        for (uint64_t set = sets->paragraph[byte * words + word]; set; set &= set - 1) {
+                            const markdown_core_element *element = owners[word * 64 + markdown_core_lowest_bit(set)];
+                            MARKDOWN_CORE_DIAGNOSTIC(parser->block_dispatch_work++;)
+                            new_container =
+                                element->try_opening_paragraph(element, parser->indent > element->maximum_block_indent,
+                                                               parser, *container, input->data, input->len);
+                            if (parser->oom) {
+                                return;
+                            }
+                            if (new_container) {
+                                *container = new_container;
+                                return;
+                            }
                         }
                     }
                 }

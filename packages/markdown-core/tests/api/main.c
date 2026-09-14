@@ -6319,6 +6319,59 @@ static void finishers_see_the_node_a_hook_put_in_place(test_batch_runner *runner
     markdown_core_node_free(root);
 }
 
+/* A registry with more block owners than one word holds gets more words per
+ * byte, and every owner is visited: sixty more owners than the core's
+ * thirteen cross the word boundary. */
+static size_t wide_owner_visits;
+static markdown_core_node *visit_wide_owner(const markdown_core_element *self, int indented,
+                                            markdown_core_parser *parser, markdown_core_node *parent,
+                                            unsigned char *input, int len) {
+    (void)self;
+    (void)indented;
+    (void)parser;
+    (void)parent;
+    (void)input;
+    (void)len;
+    wide_owner_visits++;
+    return NULL;
+}
+#define WIDE_OWNER_COUNT 60
+static markdown_core_element wide_owners[WIDE_OWNER_COUNT];
+static char wide_owner_names[WIDE_OWNER_COUNT][24];
+typedef struct wide_owner_projection {
+    size_t words, owners;
+} wide_owner_projection;
+static bool attach_wide_owners(markdown_core_parser *parser, void *context) {
+    wide_owner_projection *projection = (wide_owner_projection *)context;
+    for (size_t i = 0; i < WIDE_OWNER_COUNT; i++) {
+        if (!markdown_core_parser_attach_element(parser, &wide_owners[i])) {
+            return false;
+        }
+    }
+    projection->words = parser->registry->block_owner_sets.words;
+    projection->owners = parser->registry->block_owner_count;
+    return true;
+}
+static void block_owner_sets_grow_with_the_registry(test_batch_runner *runner) {
+    for (size_t i = 0; i < WIDE_OWNER_COUNT; i++) {
+        snprintf(wide_owner_names[i], sizeof(wide_owner_names[i]), "wide-owner-%zu", i);
+        wide_owners[i] = (markdown_core_element){
+            .name = wide_owner_names[i], .maximum_block_indent = 3, .try_opening_block = visit_wide_owner};
+    }
+    static const char source[] = "text\n";
+    wide_owner_projection projection = {0};
+    wide_owner_visits = 0;
+    markdown_core_node *root = markdown_core_parse_document_with_mem(
+        source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(), attach_wide_owners, &projection);
+    OK(runner, root != NULL, "a registry with more than sixty-four block owners parses");
+    OK(runner, projection.owners > 64 && projection.words == 2, "its owner sets hold two words per byte (%zu owners)",
+       projection.owners);
+    INT_EQ(runner, (int)wide_owner_visits, WIDE_OWNER_COUNT,
+           "every owner, on either side of the word boundary, is visited for the line's first byte");
+    OK(runner, markdown_core_core_registry()->block_owner_sets.words == 1, "the core registry keeps one word per byte");
+    markdown_core_node_free(root);
+}
+
 static void terms_and_headers_from_the_line_below(test_batch_runner *runner) {
     static const struct {
         const char *source, *kind, *expect;
@@ -7776,6 +7829,7 @@ int main(int argc, char **argv) {
     ascii_runs_project_like_scalars(runner);
     terms_and_headers_from_the_line_below(runner);
     finishers_see_the_node_a_hook_put_in_place(runner);
+    block_owner_sets_grow_with_the_registry(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

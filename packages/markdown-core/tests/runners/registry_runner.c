@@ -93,12 +93,14 @@ static int emit(FILE *out) {
     static const char *const SET_NAMES[4] = {"SCAN", "INTERRUPT", "OPEN", "PARAGRAPH"};
     const uint64_t *sets[4] = {registry.block_owner_sets.scan, registry.block_owner_sets.interrupt,
                                registry.block_owner_sets.open, registry.block_owner_sets.paragraph};
-    fputs("/* By first byte, a bit per block owner above: the owners each\n"
-          " * block-start arbitration loop visits. */\n",
-          out);
+    size_t words = registry.block_owner_sets.words;
+    fprintf(out,
+            "/* By first byte, a bit per block owner above, %zu word%s per byte: the\n"
+            " * owners each block-start arbitration loop visits. */\n",
+            words, words == 1 ? "" : "s");
     for (size_t hook = 0; hook < 4; hook++) {
-        fprintf(out, "static const uint64_t CORE_BLOCK_%s_OWNERS[256] = {", SET_NAMES[hook]);
-        for (size_t c = 0; c < 256; c++) {
+        fprintf(out, "static const uint64_t CORE_BLOCK_%s_OWNERS[%zu] = {", SET_NAMES[hook], 256 * words);
+        for (size_t c = 0; c < 256 * words; c++) {
             fprintf(out, "%sUINT64_C(0x%llx),", c % 4 ? " " : "\n    ", (unsigned long long)sets[hook][c]);
         }
         fputs("\n};\n\n", out);
@@ -147,9 +149,10 @@ static int emit(FILE *out) {
           "    .block_owners = CORE_BLOCK_OWNERS,\n",
           out);
     fprintf(out, "    .block_owner_count = %zu,\n", registry.block_owner_count);
-    fputs("    .block_owner_sets = {CORE_BLOCK_SCAN_OWNERS, CORE_BLOCK_INTERRUPT_OWNERS, CORE_BLOCK_OPEN_OWNERS,\n"
-          "                         CORE_BLOCK_PARAGRAPH_OWNERS},\n",
-          out);
+    fprintf(out,
+            "    .block_owner_sets = {CORE_BLOCK_SCAN_OWNERS, CORE_BLOCK_INTERRUPT_OWNERS, CORE_BLOCK_OPEN_OWNERS,\n"
+            "                         CORE_BLOCK_PARAGRAPH_OWNERS, %zu},\n",
+            words);
     fprintf(out, "    .inline_hooks = {CORE_INLINE_HOOKS, %zu, %zu, %zu},\n", hooks->init_count, hooks->finish_count,
             hooks->dispose_count);
     fputs("    .special_chars = CORE_SPECIAL_CHARS,\n"

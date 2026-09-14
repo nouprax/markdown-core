@@ -64,10 +64,12 @@ typedef struct {
  * (`markdown_core_registry.block_owners`): the owners with the hook that
  * accept lines starting at the byte, so a block-start arbitration visits
  * those and no other. An owner that declared no byte set is in every byte's
- * set. A projection holds at most this many block owners. */
-#define MARKDOWN_CORE_BLOCK_OWNER_LIMIT 64
+ * set. Each set is byte-major, `words` 64-bit words per byte -- as many as
+ * the registry's owners need, one for up to 64 of them -- so owner `n` is
+ * bit `n % 64` of word `n / 64` of its byte. */
 typedef struct {
-    const uint64_t *scan, *interrupt, *open, *paragraph; /* 256 entries each */
+    const uint64_t *scan, *interrupt, *open, *paragraph; /* 256 * words entries each */
+    size_t words;
 } markdown_core_block_owner_sets;
 
 /* The elements that implement an inline root's `init_inline`, then
@@ -113,9 +115,8 @@ typedef struct markdown_core_registry {
 } markdown_core_registry;
 
 /* Project `elements` (with `extra` appended when not NULL) into one owned
- * allocation. Returns false on allocation failure, or for more block owners
- * than MARKDOWN_CORE_BLOCK_OWNER_LIMIT, leaving `registry` as it was;
- * success replaces every field. */
+ * allocation. Returns false on allocation failure, leaving `registry` as it
+ * was; success replaces every field. */
 bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_element *const *elements, size_t count,
                                     const markdown_core_element *extra, markdown_core_registry *registry);
 void markdown_core_registry_release(markdown_core_mem *mem, markdown_core_registry *registry);
