@@ -6725,6 +6725,115 @@ static void terms_and_headers_from_the_line_below(test_batch_runner *runner) {
  * collection sorts itself by the keys the entries recorded and the anchors
  * follow the source. Every other document registers its headings in source
  * order and is prepared without a sort. */
+/* The shared source-entry ordering: what it produces must be what eight
+ * stable byte passes produce, and what it costs must follow the keys. The
+ * key function counts its own calls, which is how many passes ran. */
+static size_t order_key_calls;
+static uint64_t counting_order_key(const void *entry) {
+    order_key_calls++;
+    uint64_t value;
+    memcpy(&value, entry, sizeof(value));
+    return value;
+}
+typedef struct {
+    uint64_t key;
+    size_t original;
+} order_entry;
+static uint64_t order_entry_key(const void *entry) {
+    order_key_calls++;
+    return ((const order_entry *)entry)->key;
+}
+/* A stable reference: every pair in the result is ordered by key, and equal
+ * keys keep the order they were given in. */
+static bool order_is_stable_sort(const order_entry *values, size_t count) {
+    for (size_t i = 1; i < count; i++) {
+        if (values[i - 1].key > values[i].key) {
+            return false;
+        }
+        if (values[i - 1].key == values[i].key && values[i - 1].original > values[i].original) {
+            return false;
+        }
+    }
+    return true;
+}
+static void source_entry_ordering(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    /* A deterministic spread, reduced to a few distinct values so equal keys
+     * are common and stability is actually exercised. */
+    enum { LARGE = 4096 };
+    order_entry *values = malloc(LARGE * sizeof(*values));
+    uint64_t state = 0x9e3779b97f4a7c15u;
+    for (size_t shape = 0; shape < 4; shape++) {
+        for (size_t count = 2; count <= LARGE; count *= 4) {
+            for (size_t i = 0; i < count; i++) {
+                state = state * 6364136223846793005u + 1442695040888963407u;
+                uint64_t spread = state >> 33;
+                values[i].key = shape == 0   ? ((uint64_t)(spread % 97) << 32) | (spread % 31)
+                                : shape == 1 ? spread
+                                : shape == 2 ? 0x1234u
+                                             : (uint64_t)(count - i) << 32;
+                values[i].original = i;
+            }
+            order_key_calls = 0;
+            OK(runner, markdown_core_order_source_entries(mem, values, count, sizeof(*values), order_entry_key) == 1,
+               "ordering succeeds: shape=%zu count=%zu", shape, count);
+            OK(runner, order_is_stable_sort(values, count), "ordering is stable and sorted: shape=%zu count=%zu", shape,
+               count);
+            /* Eight passes read every key twice, so 17 reads per entry is
+             * what the fixed schedule cost. Below the small bound the moves
+             * are direct and the reads are the comparisons they need; above
+             * it, one read to plan plus two per byte position that differs. */
+            size_t allowed = count <= 32 ? count * (count + 3) / 2 : 9 * count;
+            OK(runner, order_key_calls <= allowed + 16,
+               "ordering reads keys for the bytes that differ, not all eight: shape=%zu count=%zu reads=%zu", shape,
+               count, order_key_calls);
+            /* Shape 0 is a grid region's key: two coordinates, so only two
+             * byte positions differ and only two passes may run. */
+            if (shape == 0 && count > 32) {
+                OK(runner, order_key_calls <= 5 * count + 16,
+                   "a two-coordinate key takes two passes, not eight: count=%zu reads=%zu", count, order_key_calls);
+            }
+        }
+    }
+    /* Already ordered: nothing is read twice and nothing moves. */
+    for (size_t i = 0; i < LARGE; i++) {
+        values[i].key = (uint64_t)i << 32;
+        values[i].original = i;
+    }
+    order_key_calls = 0;
+    OK(runner, markdown_core_order_source_entries(mem, values, LARGE, sizeof(*values), order_entry_key) == 1,
+       "ordered entries succeed");
+    INT_EQ(runner, order_key_calls, LARGE, "ordered entries are read once and moved not at all");
+    bool intact = true;
+    for (size_t i = 0; i < LARGE; i++) {
+        intact = intact && values[i].original == i;
+    }
+    OK(runner, intact, "ordered entries keep their places");
+    /* Boundaries: nothing to do, and one entry. */
+    order_key_calls = 0;
+    OK(runner,
+       markdown_core_order_source_entries(mem, values, 0, sizeof(*values), order_entry_key) == 1 &&
+           markdown_core_order_source_entries(mem, values, 1, sizeof(*values), order_entry_key) == 1 &&
+           order_key_calls == 0,
+       "an empty or single-entry ordering reads nothing");
+    free(values);
+    /* A bare 64-bit key, the widest spread, through the byte passes. */
+    enum { WIDE = 512 };
+    uint64_t *keys = malloc(WIDE * sizeof(*keys));
+    for (size_t i = 0; i < WIDE; i++) {
+        state = state * 6364136223846793005u + 1442695040888963407u;
+        keys[i] = state;
+    }
+    OK(runner, markdown_core_order_source_entries(mem, keys, WIDE, sizeof(*keys), counting_order_key) == 1,
+       "a full-width key orders");
+    bool ascending = true;
+    for (size_t i = 1; i < WIDE; i++) {
+        ascending = ascending && keys[i - 1] <= keys[i];
+    }
+    OK(runner, ascending, "a full-width key orders ascending");
+    free(keys);
+}
+
 static void heading_registration_order(test_batch_runner *runner) {
     static const struct {
         const char *source;
@@ -8046,6 +8155,7 @@ int main(int argc, char **argv) {
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
     heading_registration_order(runner);
+    source_entry_ordering(runner);
     heading_registry_invariants(runner);
     heading_reference_resource_lifetime(runner);
     heading_label_length_boundary(runner);
