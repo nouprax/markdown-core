@@ -2151,11 +2151,32 @@ markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, m
     /* Grid/dash boundaries and captions identify themselves on this line.
      * A plain textual header is recognized from its separator line instead,
      * once that line arrives below the paragraph the header opened
-     * (try_interrupting_block): nothing looks ahead from a textual line. */
+     * (try_interrupting_block): a textual line that opens a paragraph does
+     * not look ahead. The one textual line that opens no paragraph is a
+     * lazy continuation -- nothing opened on the line, and the open
+     * paragraph of a container it left unmatched would take it -- and its
+     * separator would find that paragraph, not this line, so it alone
+     * still looks ahead for one. */
     unsigned char first = input[parser->first_nonspace];
     if (first != '+' && first != '-' &&
         table_caption_start(input, length, parser->first_nonspace, parser->indent) < 0) {
-        return NULL;
+        if (parent != parser->matched_container || parser->current == parent ||
+            parser->current->kind != MARKDOWN_CORE_NODE_PARAGRAPH) {
+            return NULL;
+        }
+        /* A separator holds a dash; a next line without one, read raw, is
+         * not worth a lookahead, and most lazy lines are followed by none. */
+        const unsigned char *next = parser->lookahead_cursor;
+        size_t rest = (size_t)(parser->lookahead_end - next);
+        const unsigned char *eol = memchr(next, '\n', rest);
+        if (!memchr(next, '-', eol ? (size_t)(eol - next) : rest)) {
+            return NULL;
+        }
+        const markdown_core_block_peek *peek =
+            markdown_core_parser_peek_block_line(parser, parent, MARKDOWN_CORE_NODE_TABLE);
+        if (!peek->available || peek->blanks || peek->indent >= 4 || peek->input.data[peek->first] != '-') {
+            return NULL;
+        }
     }
     table_source source = {.parser = parser, .lines = parser->table_lines};
     table_candidate candidate = {0};
@@ -2234,6 +2255,12 @@ static markdown_core_node *table_try_open_after_header(markdown_core_parser *par
                                                        markdown_core_chunk *input) {
     const markdown_core_paragraph_line *head = markdown_core_parser_paragraph_line(parser, paragraph);
     if (!head) {
+        return NULL;
+    }
+    /* A caption-shaped line -- `: text`, `Table: text` -- leads a table or
+     * is prose; it is never a header, as it never was when a header was
+     * recognized from its own line. */
+    if (table_caption_start(head->data, head->length, head->first, head->indent) >= 0) {
         return NULL;
     }
     markdown_core_node *parent = paragraph->parent;

@@ -6308,6 +6308,25 @@ static void terms_and_headers_from_the_line_below(test_batch_runner *runner) {
         {"> a b\n> --- ---\n> 1 2\n", "Table", "scope=1:3..3:5"},
         {"- a b\n  --- ---\n  1 2\n", "Table", "scope=1:3..3:5"},
         {"a b\n---\n", "Heading", "level=2"},
+        /* The line above a marker or a separator is its term or header only
+         * when a header or term is what it was: a closed reference-only
+         * paragraph has no text left to be a term, a caption-shaped line
+         * leads a table or is prose, and a lazy continuation that a
+         * separator follows is the header of a table at the level the lazy
+         * line came out to, the containers it left closed above it. */
+        {"[x]: /u\n\n: def\n", "DefinitionList", NULL},
+        {"[x]: /u\n\n: def\n", "Paragraph", "scope=3:1..3:5"},
+        {": cap\n--- ---\na b\n", "Table", NULL},
+        {": cap\n--- ---\na b\n", "ThematicBreak", "scope=2:1..2:7"},
+        {"Table: cap\n--- ---\na b\n", "Table", NULL},
+        {"table: cap\n--- ---\na b\n", "ThematicBreak", "scope=2:1..2:7"},
+        {"- item\nheader\n--- ---\nrow\n", "Table", "scope=2:1..4:3"},
+        {"- item\nheader\n--- ---\nrow\n", "List", "scope=1:1..1:6"},
+        {"> quote\nheader\n--- ---\nrow\n", "Table", "scope=2:1..4:3"},
+        {"> quote\nheader\n--- ---\nrow\n", "Callout", "scope=1:1..1:7"},
+        {"- item\n- header\n--- ---\nrow\n", "Table", NULL},
+        {"- item\n  header\n  --- ---\n  row\n", "Table", NULL},
+        {"- item\nheader\n\n--- ---\nrow\n", "Table", NULL},
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
         char *dump = facade_dump_of(cases[i].source);

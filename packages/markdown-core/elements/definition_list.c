@@ -99,8 +99,13 @@ static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, 
 static markdown_core_node *definition_term_candidate(markdown_core_parser *parser, markdown_core_node *container) {
     markdown_core_node *term = container;
     if (term->kind != MARKDOWN_CORE_NODE_PARAGRAPH) {
+        /* A closed paragraph that was only reference definitions has no
+         * text left to be a term: its content went to the reference map
+         * when it closed, and an open one is refused the same way once its
+         * text is read (term_is_reference). */
         term = container->last_child;
-        if (!term || term->kind != MARKDOWN_CORE_NODE_PARAGRAPH || (term->flags & MARKDOWN_CORE_NODE__OPEN) ||
+        if (!term || term->kind != MARKDOWN_CORE_NODE_PARAGRAPH ||
+            (term->flags & (MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY)) ||
             term->end_line != parser->line_number - 2) {
             return NULL;
         }
