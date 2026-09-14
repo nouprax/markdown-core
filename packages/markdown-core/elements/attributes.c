@@ -56,7 +56,17 @@ typedef struct markdown_core_attribute_arena {
  * Only a committed value is carried by the document. */
 #define MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK 4
 
-static size_t fact_block_bytes(size_t capacity) { return sizeof(attribute_arena) + capacity * sizeof(attribute_fact); }
+#define MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK_BYTES                                                                       \
+    (sizeof(attribute_arena) + MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK * sizeof(attribute_fact))
+
+/* Blocks do not grow. A record above the arena's largest recycling class is
+ * dropped rather than pooled, so a growing block would leave exactly the
+ * densest parser's largest blocks in the document -- the lifetime this was
+ * meant to fix. One block size the arena accepts is used instead, and the
+ * chain carries what a dense extent needs. This is what keeps that true if
+ * either size is ever changed. */
+typedef char markdown_core_attribute_fact_block_is_recycled[1 - 2 * !(MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK_BYTES <=
+                                                                      MARKDOWN_CORE_ARENA_RECYCLED_MAX)];
 
 static attribute_fact *fact_at(markdown_core_attribute_parser *p, bufsize_t at) {
     MARKDOWN_CORE_DIAGNOSTIC(p->work++;)
@@ -75,19 +85,14 @@ static attribute_fact *fact_at(markdown_core_attribute_parser *p, bufsize_t at) 
     }
     attribute_arena *arena = p->arena;
     if (!arena || arena->size == arena->capacity) {
-        size_t capacity = arena ? arena->capacity * 2 : MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK;
-        if ((arena && capacity < arena->capacity) || capacity > (SIZE_MAX - sizeof(*arena)) / sizeof(attribute_fact)) {
-            p->oom = 1;
-            return NULL;
-        }
-        arena = p->store ? markdown_core_arena_take(p->store, fact_block_bytes(capacity))
-                         : p->mem->calloc(1, fact_block_bytes(capacity));
+        arena = p->store ? markdown_core_arena_take(p->store, MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK_BYTES)
+                         : p->mem->calloc(1, MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK_BYTES);
         if (!arena) {
             p->oom = 1;
             return NULL;
         }
         arena->next = p->arena;
-        arena->capacity = capacity;
+        arena->capacity = MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK;
         p->arena = arena;
     }
     attribute_fact *fact = &arena->facts[arena->size++];
@@ -300,11 +305,12 @@ void markdown_core_attribute_parser_free(markdown_core_attribute_parser *p) {
         markdown_core_strbuf_free(&p->decoded);
     }
     /* The index borrowed a key out of every fact, and it has just been
-     * released, so the blocks are free to go back. */
+     * released, so the blocks are free to go back. Every one of them is a
+     * size the arena pools, so every one of them is taken. */
     while (p->arena) {
         attribute_arena *next = p->arena->next;
         if (p->store) {
-            markdown_core_arena_recycle(p->store, p->arena, fact_block_bytes(p->arena->capacity));
+            markdown_core_arena_recycle(p->store, p->arena, MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK_BYTES);
         } else {
             p->mem->free(p->arena);
         }

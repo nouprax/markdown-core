@@ -6,8 +6,8 @@
 /* Every record is aligned for any scalar, which is also the size granule of
  * the recycling pools: a record of `size` bytes belongs to class
  * ceil(size / GRANULE) - 1. Larger records are never recycled. */
-#define ARENA_GRANULE 16
-#define ARENA_CLASSES 64
+#define ARENA_GRANULE MARKDOWN_CORE_ARENA_GRANULE
+#define ARENA_CLASSES MARKDOWN_CORE_ARENA_CLASSES
 #define ARENA_FIRST_BLOCK 4096
 #define ARENA_TEXT_SLAB 256
 #define ARENA_LARGEST_BLOCK (256u << 10)
