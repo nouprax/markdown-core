@@ -21,6 +21,7 @@
 #include "node.h"
 #include "buffer.h"
 #include "parser.h"
+#include "block_internal.h"
 #include "element.h"
 #include "inline_internal.h"
 #include "text.h"
@@ -1648,6 +1649,92 @@ static void *growth_realloc(void *pointer, size_t size) {
     strbuf_growths++;
     return realloc(pointer, size);
 }
+/* The four fields a line's leading whitespace produces, against the rule
+ * that produced them one column at a time: a run of spaces advances the byte
+ * cursor and the column together, and a tab lands on the stop above whatever
+ * column the run before it reached. Every prefix shape is checked from every
+ * starting column of a tab stop, since the stop the first tab lands on
+ * depends on where the container prefix left the cursor. */
+static void first_nonspace_crosses_runs_like_columns(test_batch_runner *runner) {
+    static const char *const prefixes[] = {
+        "",
+        " ",
+        "  ",
+        "   ",
+        "    ",
+        "     ",
+        "\t",
+        "\t\t",
+        "\t\t\t",
+        " \t",
+        "\t ",
+        "  \t",
+        "\t  ",
+        " \t ",
+        " \t\t ",
+        "   \t   ",
+        "    \t",
+        "\t    ",
+        "     \t  ",
+        " \t \t \t ",
+        "\t\t    \t",
+        "               ",
+        "\t\t\t\t\t\t\t\t",
+        "                                        ",
+    };
+    static const char *const tails[] = {"x", "", "\n", "\r\n", " x", "\tx", "*", "\xc3\xa9"};
+    bool same = true;
+    for (size_t p = 0; p < sizeof(prefixes) / sizeof(*prefixes); p++) {
+        for (size_t t = 0; t < sizeof(tails) / sizeof(*tails); t++) {
+            char line[80];
+            snprintf(line, sizeof(line), "%s%s", prefixes[p], tails[t]);
+            for (bufsize_t column = 0; column < 8 && same; column++) {
+                markdown_core_chunk input = {(unsigned char *)line, (bufsize_t)strlen(line), 0};
+                markdown_core_parser parser = {0};
+                parser.offset = 0;
+                parser.column = column;
+                parser.first_nonspace = 0;
+                markdown_core_block_find_first_nonspace(&parser, &input);
+                /* The rule this replaced, byte by byte. */
+                bufsize_t at = 0, walked = column;
+                int to_tab = TAB_STOP - (int)(column % TAB_STOP);
+                for (char c = line[at]; c == ' ' || c == '\t'; c = line[at]) {
+                    at++;
+                    if (c == ' ') {
+                        walked += 1;
+                        to_tab = to_tab - 1 == 0 ? TAB_STOP : to_tab - 1;
+                    } else {
+                        walked += (bufsize_t)to_tab;
+                        to_tab = TAB_STOP;
+                    }
+                }
+                same = parser.first_nonspace == at && parser.first_nonspace_column == walked &&
+                       parser.indent == (int)(walked - column) && parser.blank == markdown_core_is_line_end(line[at]);
+                if (!same) {
+                    OK(runner, false, "prefix=%zu tail=%zu column=%d: first=%d column=%d indent=%d blank=%d", p, t,
+                       (int)column, (int)parser.first_nonspace, (int)parser.first_nonspace_column, parser.indent,
+                       (int)parser.blank);
+                }
+            }
+        }
+    }
+    OK(runner, same, "every whitespace prefix crosses to the same cursor, column, indent and blankness");
+    /* A cursor already past the run is left where it is: the scan runs once
+     * per line, not once per container that looks at it. */
+    char held[] = "    text";
+    markdown_core_chunk input = {(unsigned char *)held, 8, 0};
+    markdown_core_parser parser = {0};
+    parser.offset = 0;
+    parser.column = 0;
+    parser.first_nonspace = 0;
+    markdown_core_block_find_first_nonspace(&parser, &input);
+    parser.first_nonspace = 6;
+    parser.first_nonspace_column = 6;
+    markdown_core_block_find_first_nonspace(&parser, &input);
+    OK(runner, parser.first_nonspace == 6 && parser.first_nonspace_column == 6 && parser.indent == 6,
+       "a cursor already past the run is not rescanned");
+}
+
 static void strbuf_short_appends(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     unsigned char pattern[96];
@@ -8396,6 +8483,7 @@ int main(int argc, char **argv) {
     links_allocate_nothing_per_link(runner);
     attributes_allocate_nothing_per_attribute(runner);
     release_frees_only_allocations(runner);
+    first_nonspace_crosses_runs_like_columns(runner);
     strbuf_short_appends(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);

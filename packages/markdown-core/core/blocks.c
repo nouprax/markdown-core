@@ -1537,31 +1537,33 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
 // parser->first_nonspace, parser->first_nonspace_column,
 // parser->indent, and parser->blank. Does not advance parser->offset.
 void markdown_core_block_find_first_nonspace(markdown_core_parser *parser, markdown_core_chunk *input) {
-    char c;
-    int chars_to_tab = TAB_STOP - (parser->column % TAB_STOP);
-
     if (parser->first_nonspace <= parser->offset) {
-        parser->first_nonspace = parser->offset;
-        parser->first_nonspace_column = parser->column;
-        while ((c = peek_at(input, parser->first_nonspace))) {
-            if (c == ' ') {
-                parser->first_nonspace += 1;
-                parser->first_nonspace_column += 1;
-                chars_to_tab = chars_to_tab - 1;
-                if (chars_to_tab == 0) {
-                    chars_to_tab = TAB_STOP;
-                }
-            } else if (c == '\t') {
-                parser->first_nonspace += 1;
-                parser->first_nonspace_column += chars_to_tab;
-                chars_to_tab = TAB_STOP;
-            } else {
+        bufsize_t at = parser->offset;
+        bufsize_t column = parser->column;
+        /* A run of spaces is as long in columns as it is in bytes, so the
+         * whole of an ordinary indent is crossed by finding where it ends --
+         * the line's terminator stops the run like any other byte. Only a tab
+         * needs a column of its own, and that is the tab stop above the column
+         * the run before it reached: the running `chars_to_tab` this loop used
+         * to carry was always `TAB_STOP - column % TAB_STOP`, for spaces (one
+         * column each) as much as for tabs (which land on a stop). */
+        for (;;) {
+            bufsize_t run = at;
+            while (peek_at(input, at) == ' ') {
+                at++;
+            }
+            column += at - run;
+            if (peek_at(input, at) != '\t') {
                 break;
             }
+            at++;
+            column += TAB_STOP - (column % TAB_STOP);
         }
+        parser->first_nonspace = at;
+        parser->first_nonspace_column = column;
     }
 
-    parser->indent = parser->first_nonspace_column - parser->column;
+    parser->indent = (int)(parser->first_nonspace_column - parser->column);
     parser->blank = markdown_core_is_line_end(peek_at(input, parser->first_nonspace));
 }
 
