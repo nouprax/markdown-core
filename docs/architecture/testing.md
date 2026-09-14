@@ -210,6 +210,16 @@ and reports the difference: the instructions of that parse, exact for one
 build and one input, with the reference counted the same way when asked.
 Neither lane decides anything; a changed count is a line to read in a diff.
 
+The timing lane also reports, per case, the minor page faults its measured
+parses took per parse: memory the process allocator handed back to the system
+after a free is faulted in and zeroed by the kernel again on the next parse,
+a cost no instruction count shows. `--allocator retain` asks glibc, through
+`mallopt`, to keep what the parses free (no mapping of its own for a block
+below 32 MB, no trim of the heap top, a 64 MB top pad), so the same
+measurement beside the default shows how much of a workload's time is that
+hand-back; it is a setting of the process's allocator for the measurement,
+never one the library makes, and is refused where there is no `mallopt`.
+
 Each binding has a timing lane of its own, opt-in and informational like the
 C lanes: `pnpm benchmark:es`, `pnpm benchmark:kotlin` (the `jvmBenchmark`
 Gradle task) and `pnpm benchmark:swift` (the `MarkdownCoreBenchmarks` package

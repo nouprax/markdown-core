@@ -19,17 +19,30 @@
  * parses nothing, the baseline such a count subtracts
  * (scripts/benchmark-instructions.mjs drives both).
  *
+ * Every timed case also reports the minor page faults the measured parses
+ * took, per parse: a parse whose arena blocks the allocator gave back to
+ * the system faults every page in again, and the kernel zeroes it, which
+ * no instruction count shows. --allocator retain asks glibc, through
+ * mallopt, to keep freed memory (no mmap for blocks below 32 MB, no trim of
+ * the heap top, a 64 MB top pad) so that the same measurement shows the
+ * parse without those faults: the share of the time that is memory being
+ * handed back and re-faulted, on any workload, beside the default. It is a
+ * measurement of the process's allocator, not a setting the library makes.
+ *
  *   bench_runner --list [--workload NAME --samples DIR]
  *   bench_runner --workload NAME --samples DIR [--case NAME] [--repeats N]
  *                [--warmup N] [--json FILE] [--source-sha SHA]
  *                [--reference cmark] [--instructions [--implementation core|cmark]]
- *                [--dry-run]
+ *                [--dry-run] [--allocator default|retain]
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #ifndef _WIN32
 #include <sys/resource.h>
+#endif
+#if defined(__GLIBC__)
+#include <malloc.h>
 #endif
 
 #include <markdown_core.h>
@@ -54,6 +67,8 @@ typedef struct bench_options {
     const char *reference;
     /* The one implementation --instructions runs: "core" or "cmark". */
     const char *implementation;
+    /* The process allocator's retention: "default" or "retain" (see above). */
+    const char *allocator;
     int repeats;
     int warmup;
     int instructions;
@@ -87,6 +102,19 @@ static long peak_rss_kib(void) {
 #else
     return usage.ru_maxrss;
 #endif
+#else
+    return -1;
+#endif
+}
+
+/* The process's minor page faults so far, or -1 where they cannot be read. */
+static long minor_faults(void) {
+#ifndef _WIN32
+    struct rusage usage;
+    if (getrusage(RUSAGE_SELF, &usage) != 0) {
+        return -1;
+    }
+    return usage.ru_minflt;
 #else
     return -1;
 #endif
@@ -181,7 +209,8 @@ static int measure_case(const bench_case *input, void *context) {
     uint64_t min_parse, median_parse, min_free, median_free;
     uint64_t reference_min_parse = 0, reference_median_parse = 0, reference_min_free = 0, reference_median_free = 0;
     long rss_before = peak_rss_kib(), rss_after;
-    double mb_per_s, ns_per_node;
+    long faults_before, faults_after;
+    double mb_per_s, ns_per_node, faults_per_parse;
     int repeats = options->repeats > BENCH_MAX_REPEATS ? BENCH_MAX_REPEATS : options->repeats;
     int i;
 
@@ -208,12 +237,14 @@ static int measure_case(const bench_case *input, void *context) {
             return 1;
         }
     }
+    faults_before = minor_faults();
     for (i = 0; i < repeats; i++) {
         if (bench_parse_once(input->data, input->length, &samples[i], i == 0 ? &nodes : NULL) != 0) {
             fprintf(stderr, "%s: parse failed\n", input->name);
             return 1;
         }
     }
+    faults_after = minor_faults();
     rss_after = peak_rss_kib();
     order_statistics(samples, repeats, 0, &min_parse, &median_parse);
     order_statistics(samples, repeats, 1, &min_free, &median_free);
@@ -235,12 +266,18 @@ static int measure_case(const bench_case *input, void *context) {
     }
     mb_per_s = min_parse ? (double)input->length / ((double)min_parse / 1e9) / 1e6 : 0.0;
     ns_per_node = nodes ? (double)min_parse / (double)nodes : 0.0;
+    /* The faults of the measured parses and frees together, per parse; the
+     * warmup took the first touch of every page the process keeps. */
+    faults_per_parse =
+        faults_before >= 0 && faults_after >= 0 ? (double)(faults_after - faults_before) / (double)repeats : -1.0;
 
     printf("benchmark case=%s bytes=%zu nodes=%zu repeats=%d warmup=%d min_parse_ns=%llu median_parse_ns=%llu"
-           " min_free_ns=%llu median_free_ns=%llu mb_per_s=%.2f ns_per_node=%.1f rss_delta_kib=%ld sha256=%s\n",
+           " min_free_ns=%llu median_free_ns=%llu mb_per_s=%.2f ns_per_node=%.1f rss_delta_kib=%ld"
+           " minor_faults_per_parse=%.1f allocator=%s sha256=%s\n",
            input->name, input->length, nodes, repeats, options->warmup, (unsigned long long)min_parse,
            (unsigned long long)median_parse, (unsigned long long)min_free, (unsigned long long)median_free, mb_per_s,
-           ns_per_node, rss_before >= 0 && rss_after >= 0 ? rss_after - rss_before : -1L, input->sha256);
+           ns_per_node, rss_before >= 0 && rss_after >= 0 ? rss_after - rss_before : -1L, faults_per_parse,
+           options->allocator ? options->allocator : "default", input->sha256);
     printf("benchmark samples case=%s parse_ns=", input->name);
     for (i = 0; i < repeats; i++) {
         printf("%s%llu", i ? "," : "", (unsigned long long)samples[i].parse_ns);
@@ -357,9 +394,29 @@ static int usage(void) {
     fputs("usage: bench_runner --list [--workload NAME --samples DIR]\n"
           "       bench_runner --workload NAME --samples DIR [--case NAME] [--repeats N] [--warmup N]\n"
           "                    [--json FILE] [--source-sha SHA] [--reference cmark]\n"
-          "                    [--instructions [--implementation core|cmark]] [--dry-run]\n",
+          "                    [--instructions [--implementation core|cmark]] [--dry-run]\n"
+          "                    [--allocator default|retain]\n",
           stderr);
     return 2;
+}
+
+/* --allocator retain: glibc keeps what the parses free. Blocks below 32 MB
+ * (the most mallopt allows) come from the heap rather than their own
+ * mapping, the heap top is never trimmed, and it grows 64 MB at a time, so
+ * a parse after a free runs on pages already in the process. Elsewhere the
+ * lane is refused: the measurement is of glibc's retention. */
+static int retain_allocator(void) {
+#if defined(__GLIBC__)
+    if (!mallopt(M_MMAP_THRESHOLD, 32 << 20) || !mallopt(M_TRIM_THRESHOLD, 512 << 20) ||
+        !mallopt(M_TOP_PAD, 64 << 20)) {
+        fputs("--allocator retain: mallopt refused the retention settings\n", stderr);
+        return 2;
+    }
+    return 0;
+#else
+    fputs("--allocator retain needs glibc's mallopt; this process allocator has no retention setting\n", stderr);
+    return 2;
+#endif
 }
 
 int main(int argc, char **argv) {
@@ -397,6 +454,8 @@ int main(int argc, char **argv) {
             options.instructions = 1;
         } else if (strcmp(argv[i], "--dry-run") == 0) {
             options.dry_run = 1;
+        } else if (strcmp(argv[i], "--allocator") == 0 && i + 1 < (size_t)argc) {
+            options.allocator = argv[++i];
         } else {
             return usage();
         }
@@ -432,5 +491,15 @@ int main(int argc, char **argv) {
         return 2;
     }
 #endif
+    if (options.allocator && strcmp(options.allocator, "default") != 0 && strcmp(options.allocator, "retain") != 0) {
+        fprintf(stderr, "unknown allocator: %s (default or retain)\n", options.allocator);
+        return 2;
+    }
+    if (options.allocator && strcmp(options.allocator, "retain") == 0) {
+        int refused = retain_allocator();
+        if (refused) {
+            return refused;
+        }
+    }
     return run_workload(workload_name, &options);
 }
