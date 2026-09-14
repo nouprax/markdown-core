@@ -3540,7 +3540,7 @@ static void text_whitespace_boundary(test_batch_runner *runner) {
 static void key_index_radix(test_batch_runner *runner) {
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     enum { COUNT = 4096, WIDTH = 32 };
-    unsigned char (*keys)[WIDTH] = calloc(COUNT, WIDTH);
+    unsigned char(*keys)[WIDTH] = calloc(COUNT, WIDTH);
     for (size_t order = 0; order < 3; order++) {
         markdown_core_key_index index;
         OK(runner, markdown_core_key_index_init(&index, mem, order ? COUNT : 0), "radix index initializes");
@@ -3597,7 +3597,7 @@ static void key_index_radix(test_batch_runner *runner) {
  * branches; checking the actual tree makes this independent of host timing. */
 static void key_index_adversarial(test_batch_runner *runner) {
     enum { WIDTH = MAX_LINK_LABEL_LENGTH, COUNT = 9 * WIDTH + 1 };
-    unsigned char (*keys)[WIDTH] = calloc(COUNT, WIDTH);
+    unsigned char(*keys)[WIDTH] = calloc(COUNT, WIDTH);
     bufsize_t *lengths = calloc(COUNT, sizeof(*lengths));
     for (int k = 0; k < COUNT; k++) {
         lengths[k] = k < WIDTH ? k : WIDTH;
@@ -6046,6 +6046,51 @@ static void attribute_attachment_linear_work(test_batch_runner *runner) {
     }
 }
 
+/* An ASCII run projects and folds byte by byte without decoding; the bytes
+ * above ASCII around it still take the scalar path, and a run ending at the
+ * buffer's end or at such a byte joins its neighbours without a seam. */
+static void ascii_runs_project_like_scalars(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    markdown_core_strbuf out = MARKDOWN_CORE_BUF_INIT(mem);
+    bool bytes_ok = true;
+    for (int c = 0; c < 128; c++) {
+        uint8_t byte = (uint8_t)c;
+        const char *expected;
+        char folded[2] = {(char)(c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c), 0};
+        if (c == 9 || c == 10 || c == 11 || c == 12 || c == 13 || c == ' ') {
+            expected = "-";
+        } else if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '-' || c == '_') {
+            expected = folded;
+        } else {
+            expected = "";
+        }
+        markdown_core_strbuf_clear(&out);
+        markdown_core_utf8proc_anchor(&out, &byte, 1);
+        bytes_ok = bytes_ok && strcmp((const char *)out.ptr, expected) == 0;
+    }
+    OK(runner, bytes_ok, "every ASCII byte projects to what the scalar table says");
+    static const struct {
+        const char *input, *anchor, *folded;
+    } cases[] = {
+        {"Héllo Wörld ABC_9-x", "héllo-wörld-abc_9-x", "héllo wörld abc_9-x"},
+        {"abcdÉF", "abcdéf", "abcdéf"},
+        {"É\tA\tb", "é-a-b", "é a b"},
+        {"  Straße  DER  ", "--straße--der--", "strasse der"},
+    };
+    bool cases_ok = true;
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        markdown_core_chunk input = markdown_core_chunk_literal(cases[i].input);
+        markdown_core_strbuf_clear(&out);
+        markdown_core_utf8proc_anchor(&out, input.data, input.len);
+        cases_ok = cases_ok && strcmp((const char *)out.ptr, cases[i].anchor) == 0;
+        markdown_core_strbuf_clear(&out);
+        cases_ok =
+            cases_ok && normalize_map_label_into(&out, &input) && strcmp((const char *)out.ptr, cases[i].folded) == 0;
+    }
+    OK(runner, cases_ok, "ASCII runs and scalars above ASCII project and fold seamlessly");
+    markdown_core_strbuf_free(&out);
+}
+
 static void heading_completion_invariants(test_batch_runner *runner) {
     static const struct {
         const char *source, *anchor;
@@ -6084,8 +6129,11 @@ static void heading_completion_invariants(test_batch_runner *runner) {
                 markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
             OK(runner, root != NULL, "repeated heading declarations parse");
             INT_EQ(runner, work.definitions, count, "each heading creates its own implicit reference definition");
-            INT_EQ(runner, work.definition_resources, count,
-                   "duplicate heading definitions retain their ordinary resources");
+            /* A resource exists only for the declaration references resolved
+             * to: the first of the duplicates when there are references, and
+             * none at all when nothing refers to the headings. */
+            INT_EQ(runner, work.definition_resources, referenced ? 1 : 0,
+                   "only a resolved heading declaration holds a resource");
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
         }
@@ -7422,6 +7470,7 @@ int main(int argc, char **argv) {
     no_node_is_its_own_ancestor(runner);
     iterator_contract_is_total(runner);
     deep_dump_prefixes(runner);
+    ascii_runs_project_like_scalars(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

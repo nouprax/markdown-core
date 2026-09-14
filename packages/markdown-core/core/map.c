@@ -1,4 +1,5 @@
 #include "map.h"
+#include "arena.h"
 #include "utf8.h"
 #include "parser.h"
 
@@ -271,19 +272,26 @@ void markdown_core_map_free(markdown_core_map *map) {
         return;
     }
 
-    record = map->records;
-    while (record) {
-        markdown_core_map_record *next = record->next;
+    for (record = map->records; record; record = record->next) {
         /* The map's holder goes; a resource some node still reads through
          * stays with that node, which is how the tree outlives the parser. */
         markdown_core_resource_release(map->mem, record->resource);
-        map->mem->free(record);
-        record = next;
     }
+    markdown_core_arena_free(map->arena);
 
     markdown_core_key_index_free(&map->index);
     markdown_core_strbuf_free(&map->label_buffer);
     map->mem->free(map);
+}
+
+void *markdown_core_map_allocate(markdown_core_map *map, size_t size) {
+    if (!map->arena) {
+        map->arena = markdown_core_arena_new(map->mem);
+        if (!map->arena) {
+            return NULL;
+        }
+    }
+    return markdown_core_arena_alloc(map->arena, size);
 }
 
 markdown_core_map *markdown_core_map_new(markdown_core_mem *mem) {

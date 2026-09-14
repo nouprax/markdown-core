@@ -20,10 +20,12 @@ reference parsing needs no heading-specific case.
 Each writable heading creates its own implicit reference definition, including
 duplicate labels. Ordinary reference lookup selects the first definition using
 the existing map; heading parsing does not deduplicate declarations or create
-a separate resolution path. Normalization uses map-owned scratch, while every
-declaration owns its label in the same allocation as its record. This changes
-storage only: duplicate records and resources remain distinct, and the map's
-existing first-definition selection runs when references are resolved.
+a separate resolution path. Normalization uses map-owned scratch (folding an
+ASCII run byte by byte, decoding only above ASCII), while every declaration
+owns its label in the same allocation as its record, and the map allocates
+its records from one region that goes with the map. This changes storage
+only: duplicate records remain distinct, and the map's existing
+first-definition selection runs when references are resolved.
 
 A heading label uses authored source, not projected display text. Its endpoint
 depends on whether the normal inline cursor actually claims trailing heading
@@ -68,13 +70,16 @@ not retain a maximum-sized cache for source that never needs one.
 
 ## Final anchors and shared resources
 
-Each writable heading declaration creates an ordinary reference resource with
-an initially empty URL, no title, and empty attributes. Occurrences retain that
-resource through the existing reference algorithm. No occurrence copies or
-interprets its provisional URL during parsing. Finalization writes `#anchor`
-to the resource once; bindings encode and decode that resource once, just as
-they do for an explicit reference definition. The heading's attributes do not
-become inherited reference attributes.
+A writable heading declaration gets an ordinary reference resource -- an
+initially empty URL, no title, and empty attributes -- when the first
+reference resolves to it; a heading nothing resolves to never allocates one.
+Occurrences retain that resource through the existing reference algorithm. No
+occurrence copies or interprets its provisional URL during parsing.
+Finalization writes `#anchor` to the resource once; bindings encode and decode
+that resource once, just as they do for an explicit reference definition. The
+heading's attributes do not become inherited reference attributes, and the
+anchor itself is a terminated copy in the parse arena that the node's
+attributes borrow, so no heading owns a heap string for it.
 
 The existing inline-completion walk reserves effective explicit anchors while
 it discovers owned label/title fields. It visits only completed child trees,
@@ -137,7 +142,7 @@ before the finishing walk can replace nodes.
 
 Expected work is proportional to parsed input, visited nodes, and produced
 anchor/target bytes, using the shared hash index's normal bounds. Memory is
-proportional to headings, unique reserved anchors and inherited resources, plus
+proportional to headings, unique reserved anchors and resolved resources, plus
 live inline state. Tests measure node/string/candidate work, rather than using
 timing to assert linearity. They include dense suffix reservations, nested live
 delimiters at suspension, long shared anchors with thousands of references,

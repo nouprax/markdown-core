@@ -508,9 +508,14 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
          * resolves depend on how many resolved before it (D9). The occurrence
          * keeps its own scope, below: the definition's range is never copied,
          * unioned or substituted into it. */
-        assert(record->resource != NULL);
-        markdown_core_resource_retain(record->resource);
-        inl->as.link->resource = record->resource;
+        markdown_core_resource *resource = markdown_core_reference_resource(inline_state->refmap, record);
+        if (!resource) {
+            markdown_core_node_recycle(inline_state->arena, inl);
+            inl = NULL;
+        } else {
+            markdown_core_resource_retain(resource);
+            inl->as.link->resource = resource;
+        }
     } else if (inl) {
         inl->as.link->resource = markdown_core_resource_new(inline_state->mem, url, title);
         if (!inl->as.link->resource) {
