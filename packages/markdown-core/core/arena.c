@@ -175,17 +175,27 @@ bool markdown_core_arena_extend(markdown_core_arena *arena, const void *storage,
  * whatever its size, so a caller that means to replace its storage never has
  * to know which sizes the pools happen to accept -- and a size that drifts
  * past the ceiling cannot silently stop being recycled. Only a record above
- * the ceiling pays the round-up, and only to the next power of two. */
+ * the ceiling pays the round-up, and only to the next power of two.
+ *
+ * Zero means no pool can serve the size: one that would carry the granule
+ * round-up past the end of a size_t, or one above the largest representable
+ * power of two. Neither can name storage that exists, so a take reports the
+ * allocation failure markdown_core_arena_alloc reports for the same size,
+ * and a recycle -- which could only have been handed such a size by a record
+ * that was never served -- does nothing. */
 static size_t pool_size(size_t size) {
+    if (size > SIZE_MAX - ARENA_GRANULE) {
+        return 0;
+    }
     size_t want = round_up(size ? size : 1);
     size_t power = (size_t)MARKDOWN_CORE_ARENA_RECYCLED_MAX;
-    if (want <= power) {
-        return want;
-    }
     while (power < want) {
+        if (power > SIZE_MAX / 2) {
+            return 0;
+        }
         power <<= 1;
     }
-    return power;
+    return want <= (size_t)MARKDOWN_CORE_ARENA_RECYCLED_MAX ? want : power;
 }
 
 /* A class holds records of exactly one size, so a take can only ever receive
@@ -206,6 +216,9 @@ static size_t pool_class(size_t size) {
 
 void *markdown_core_arena_take(markdown_core_arena *arena, size_t size) {
     size_t served = pool_size(size);
+    if (!served) {
+        return NULL;
+    }
     size_t class = pool_class(served);
     if (arena->pools[class]) {
         free_record *record = arena->pools[class];
@@ -221,10 +234,11 @@ void *markdown_core_arena_take(markdown_core_arena *arena, size_t size) {
 }
 
 void markdown_core_arena_recycle(markdown_core_arena *arena, void *record, size_t size) {
-    if (!record) {
+    size_t served = pool_size(size);
+    if (!record || !served) {
         return;
     }
-    size_t class = pool_class(pool_size(size));
+    size_t class = pool_class(served);
     free_record *entry = record;
     entry->next = arena->pools[class];
     arena->pools[class] = entry;

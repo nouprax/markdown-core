@@ -6665,6 +6665,24 @@ static void arena_recycling(test_batch_runner *runner) {
     OK(runner, wide != NULL && markdown_core_arena_take(arena, 4096) != wide,
        "a power-of-two class never receives another power's records");
     OK(runner, markdown_core_arena_take(arena, (1u << 20) + 1) != NULL, "a request beyond a block gets its own");
+    /* A size no storage could have is refused rather than rounded: carrying
+     * the granule round-up past the end of a size_t would wrap to zero and
+     * index the pools below their first class, and doubling past the largest
+     * representable power of two would never reach the size. Both report the
+     * allocation failure markdown_core_arena_alloc reports for the same size,
+     * and recycling such a size touches nothing -- no record was ever served
+     * at it. */
+    OK(runner,
+       markdown_core_arena_take(arena, SIZE_MAX) == NULL && markdown_core_arena_take(arena, SIZE_MAX - 1) == NULL &&
+           markdown_core_arena_alloc(arena, SIZE_MAX) == NULL,
+       "a size that would wrap the granule round-up is refused");
+    OK(runner, markdown_core_arena_take(arena, (SIZE_MAX >> 1) + 2) == NULL,
+       "a size above the largest representable power of two is refused");
+    void *live = markdown_core_arena_take(arena, 32);
+    markdown_core_arena_recycle(arena, live, SIZE_MAX);
+    markdown_core_arena_recycle(arena, live, (SIZE_MAX >> 1) + 2);
+    OK(runner, live != NULL && markdown_core_arena_take(arena, 32) != live,
+       "recycling a size no record was served at pools nothing");
     /* Text packs byte by byte where a record would take a whole granule, and
      * a record taken afterwards is still aligned and its own storage. */
     unsigned char *first = markdown_core_arena_text(arena, 3);
