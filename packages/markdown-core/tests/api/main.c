@@ -6509,6 +6509,51 @@ static void terms_and_headers_from_the_line_below(test_batch_runner *runner) {
     }
 }
 
+/* A heading a mapped input holds -- a grid table's cell -- is finalized
+ * after the blocks below its owner, so it registers behind them; the
+ * collection sorts itself by the keys the entries recorded and the anchors
+ * follow the source. Every other document registers its headings in source
+ * order and is prepared without a sort. */
+static void heading_registration_order(test_batch_runner *runner) {
+    static const struct {
+        const char *source;
+        const char *anchors[4];
+    } cases[] = {
+        {"+-----+\n| # h |\n+-----+\n\n# h\n\n# h\n", {"h", "h-1", "h-2", NULL}},
+        {"# h\n\n+-----+\n| # h |\n+-----+\n\n# h\n", {"h", "h-1", "h-2", NULL}},
+        {"# h\n\n# h {#h-1}\n\n# h\n", {"h", "h-1", "h-2", NULL}},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        markdown_core_node *root = parse(cases[i].source);
+        OK(runner, root != NULL, "the heading order case parses: case=%zu", i);
+        if (!root) {
+            continue;
+        }
+        markdown_core_iter *iter = markdown_core_iter_new(root);
+        size_t seen = 0;
+        markdown_core_event_type event;
+        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            markdown_core_node *node = markdown_core_iter_get_node(iter);
+            if (event != MARKDOWN_CORE_EVENT_ENTER || node->kind != MARKDOWN_CORE_NODE_HEADING) {
+                continue;
+            }
+            const char *expected = seen < 3 ? cases[i].anchors[seen] : NULL;
+            OK(runner,
+               expected && node->attributes && node->attributes->anchor.data &&
+                   strcmp((const char *)node->attributes->anchor.data, expected) == 0,
+               "headings take their anchors in source order whatever order they registered in: case=%zu heading=%zu "
+               "anchor=%s",
+               i, seen,
+               node->attributes && node->attributes->anchor.data ? (const char *)node->attributes->anchor.data
+                                                                 : "(none)");
+            seen++;
+        }
+        markdown_core_iter_free(iter);
+        INT_EQ(runner, seen, 3, "every heading of the case was visited: case=%zu", i);
+        markdown_core_node_free(root);
+    }
+}
+
 static void heading_completion_invariants(test_batch_runner *runner) {
     static const struct {
         const char *source, *anchor;
@@ -7789,6 +7834,7 @@ int main(int argc, char **argv) {
     attribute_linear_work(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
+    heading_registration_order(runner);
     heading_registry_invariants(runner);
     heading_reference_resource_lifetime(runner);
     heading_label_length_boundary(runner);

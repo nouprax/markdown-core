@@ -31,8 +31,16 @@ void markdown_core_block_register_heading(markdown_core_parser *parser, markdown
         headings->values = values;
         headings->capacity = capacity;
     }
-    headings->values[headings->count++] = (markdown_core_heading_parse){.node = node};
+    uint64_t key = ((uint64_t)(uint32_t)node->start_line << 32) | (uint32_t)node->start_column;
+    if (headings->count && headings->values[headings->count - 1].key > key) {
+        headings->unordered = true;
+    }
+    headings->values[headings->count++] = (markdown_core_heading_parse){.node = node, .key = key};
 }
+
+/* The key an entry recorded at registration: the sort reads the entries it
+ * moves, never the nodes they name. */
+static uint64_t heading_entry_key(const void *entry) { return ((const markdown_core_heading_parse *)entry)->key; }
 
 static markdown_core_key_index_slot *anchor_slot(markdown_core_parser *parser, anchor_registry *registry,
                                                  markdown_core_chunk key) {
@@ -73,11 +81,15 @@ void markdown_core_block_reserve_node_anchor(markdown_core_parser *parser, ancho
 }
 
 void markdown_core_block_prepare_headings(markdown_core_parser *parser, markdown_core_heading_collection *headings) {
-    if (!markdown_core_order_source_entries(parser->mem, headings->values, headings->count, sizeof(*headings->values),
-                                            markdown_core_source_key)) {
+    /* Headings are finalized in source order; only a mapped input's heading
+     * arrives behind the blocks below its owner, and only then is the
+     * collection sorted -- by the keys the entries carry. */
+    if (headings->unordered && !markdown_core_order_source_entries(parser->mem, headings->values, headings->count,
+                                                                   sizeof(*headings->values), heading_entry_key)) {
         parser->oom = true;
         return;
     }
+    headings->unordered = false;
     /* The reference map compares explicitness and original source positions,
      * independently of mapped-input scheduling and declaration closure order. */
     for (size_t i = 0; i < headings->count && !parser->oom; i++) {
