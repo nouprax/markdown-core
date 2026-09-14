@@ -6582,10 +6582,21 @@ static void arena_recycling(test_batch_runner *runner) {
         distinct &= other != records[j];
     }
     OK(runner, distinct, "a different size class never receives another class's records");
-    void *large = markdown_core_arena_take(arena, 4096);
-    markdown_core_arena_recycle(arena, large, 4096);
-    OK(runner, large != NULL && markdown_core_arena_take(arena, 4096) != large,
-       "records above the pooled sizes are arena storage and are not handed out twice");
+    /* Above the exact classes a record is pooled when its size is a power of
+     * two -- what a doubling vector asks for, so the storage each growth
+     * supersedes comes back -- and is not when it is any other size. */
+    void *doubled = markdown_core_arena_take(arena, 4096);
+    markdown_core_arena_recycle(arena, doubled, 4096);
+    OK(runner, doubled != NULL && markdown_core_arena_take(arena, 4096) == doubled,
+       "an oversized record whose size is a power of two is handed out again");
+    void *odd = markdown_core_arena_take(arena, 4096 + 16);
+    markdown_core_arena_recycle(arena, odd, 4096 + 16);
+    OK(runner, odd != NULL && markdown_core_arena_take(arena, 4096 + 16) != odd,
+       "an oversized record of any other size has no class and stays arena storage");
+    void *wide = markdown_core_arena_take(arena, 8192);
+    markdown_core_arena_recycle(arena, wide, 8192);
+    OK(runner, wide != NULL && markdown_core_arena_take(arena, 4096) != wide,
+       "a power-of-two class never receives another power's records");
     OK(runner, markdown_core_arena_take(arena, (1u << 20) + 1) != NULL, "a request beyond a block gets its own");
     /* Text packs byte by byte where a record would take a whole granule, and
      * a record taken afterwards is still aligned and its own storage. */

@@ -4,10 +4,14 @@
 #include "arena.h"
 
 /* Every record is aligned for any scalar, which is also the size granule of
- * the recycling pools: a record of `size` bytes belongs to class
- * ceil(size / GRANULE) - 1. Larger records are never recycled. */
+ * the recycling pools; `pool_class` below assigns a record of `size` bytes to
+ * its class. */
 #define ARENA_GRANULE MARKDOWN_CORE_ARENA_GRANULE
-#define ARENA_CLASSES MARKDOWN_CORE_ARENA_CLASSES
+#define ARENA_EXACT_CLASSES MARKDOWN_CORE_ARENA_CLASSES
+/* One class per power of two above the exact ones; a size_t has no more. */
+#define ARENA_WIDE_CLASSES (sizeof(size_t) * 8)
+#define ARENA_CLASSES (ARENA_EXACT_CLASSES + ARENA_WIDE_CLASSES)
+#define ARENA_UNPOOLED ((size_t)-1)
 #define ARENA_FIRST_BLOCK 4096
 #define ARENA_TEXT_SLAB 256
 #define ARENA_LARGEST_BLOCK (256u << 10)
@@ -162,14 +166,34 @@ bool markdown_core_arena_extend(markdown_core_arena *arena, const void *storage,
     return true;
 }
 
-static size_t pool_class(size_t size) { return (round_up(size ? size : 1) / ARENA_GRANULE) - 1; }
+/* A class holds records of exactly one size, so a take can only ever receive
+ * a record as large as it asked for. Every size up to the granule ceiling has
+ * a class of its own; above it, the powers of two do, which is the shape a
+ * doubling vector grows through -- the storage each growth supersedes goes
+ * back to the pool instead of lying dead in the arena for the document's
+ * life. An oversized record of any other size has no class and is released
+ * with the arena, as every oversized record used to be. */
+static size_t pool_class(size_t size) {
+    size_t units = round_up(size ? size : 1) / ARENA_GRANULE;
+    if (units <= ARENA_EXACT_CLASSES) {
+        return units - 1;
+    }
+    if (units & (units - 1)) {
+        return ARENA_UNPOOLED;
+    }
+    size_t wide = 0;
+    while (((size_t)1 << wide) != units) {
+        wide++;
+    }
+    return ARENA_EXACT_CLASSES + wide;
+}
 
 void *markdown_core_arena_take(markdown_core_arena *arena, size_t size) {
     size_t class = pool_class(size);
-    if (class < ARENA_CLASSES && arena->pools[class]) {
+    if (class != ARENA_UNPOOLED && arena->pools[class]) {
         free_record *record = arena->pools[class];
         arena->pools[class] = record->next;
-        memset(record, 0, (class + 1) * ARENA_GRANULE);
+        memset(record, 0, round_up(size ? size : 1));
         return record;
     }
     void *record = markdown_core_arena_alloc(arena, size);
@@ -181,7 +205,7 @@ void *markdown_core_arena_take(markdown_core_arena *arena, size_t size) {
 
 void markdown_core_arena_recycle(markdown_core_arena *arena, void *record, size_t size) {
     size_t class = pool_class(size);
-    if (!record || class >= ARENA_CLASSES) {
+    if (!record || class == ARENA_UNPOOLED) {
         return;
     }
     free_record *entry = record;
