@@ -415,12 +415,23 @@ fun main(arguments: Array<String>) {
         require(index < arguments.size) { "${arguments[index - 1]} needs a value" }
         return arguments[index]
     }
+
+    // A count that is not an integer of at least `minimum` is an error, not a
+    // loop that runs zero times and a report of nothing.
+    fun count(minimum: Int): Int {
+        val text = value()
+        val parsed = text.toIntOrNull()
+        require(parsed != null && parsed >= minimum) {
+            "${arguments[index - 1]} needs an integer >= $minimum, not $text"
+        }
+        return parsed
+    }
     while (index < arguments.size) {
         when (val argument = arguments[index]) {
             "--samples" -> samples = File(value())
-            "--copies" -> copies = value().toInt()
-            "--repeats" -> repeats = value().toInt()
-            "--warmup" -> warmup = value().toInt()
+            "--copies" -> copies = count(1)
+            "--repeats" -> repeats = count(1)
+            "--warmup" -> warmup = count(0)
             "--case" -> only = value()
             "--json" -> json = File(value())
             else -> files += File(argument)
@@ -490,6 +501,9 @@ fun main(arguments: Array<String>) {
       "samples": [${measured.joinToString(", ") { "{\"parseNs\": ${it.parseNs}, \"walkNs\": ${it.walkNs}}" }}]
     }"""
     }
+    // A filter that names no case is an error, as in bench_runner: a run that
+    // measured nothing must not leave a report behind.
+    require(only == null || results.isNotEmpty()) { "unknown case: $only" }
     json?.writeText(
         """{
   "schema": 2,

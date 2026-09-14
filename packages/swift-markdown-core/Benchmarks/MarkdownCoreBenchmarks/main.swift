@@ -183,13 +183,23 @@ func parseOptions(_ arguments: [String]) -> Options {
         precondition(index < arguments.count, "\(arguments[index - 1]) needs a value")
         return arguments[index]
     }
+    // A count that is not an integer of at least `minimum` is an error, not a
+    // loop that runs zero times and a report of nothing.
+    func count(_ flag: String, atLeast minimum: Int) -> Int {
+        let text = value()
+        guard let parsed = Int(text), parsed >= minimum else {
+            FileHandle.standardError.write(Data("\(flag) needs an integer of at least \(minimum), not \(text)\n".utf8))
+            exit(2)
+        }
+        return parsed
+    }
     while index < arguments.count {
         let argument = arguments[index]
         switch argument {
         case "--samples": options.samples = value()
-        case "--copies": options.copies = Int(value()) ?? options.copies
-        case "--repeats": options.repeats = Int(value()) ?? options.repeats
-        case "--warmup": options.warmup = Int(value()) ?? options.warmup
+        case "--copies": options.copies = count(argument, atLeast: 1)
+        case "--repeats": options.repeats = count(argument, atLeast: 1)
+        case "--warmup": options.warmup = count(argument, atLeast: 0)
         case "--case": options.only = value()
         case "--json": options.json = value()
         default: options.files.append(argument)
@@ -309,6 +319,12 @@ for item in cases {
             }
         """
     )
+}
+// A filter that names no case is an error, as in bench_runner: a run that
+// measured nothing must not leave a report behind.
+if let only, results.isEmpty {
+    FileHandle.standardError.write(Data("unknown case: \(only)\n".utf8))
+    exit(2)
 }
 if let jsonPath {
     let document = """

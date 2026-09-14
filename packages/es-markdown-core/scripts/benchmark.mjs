@@ -41,10 +41,20 @@ for (let index = 2; index < process.argv.length; index++) {
         if (next === undefined) throw new Error(`${argument} needs a value`);
         return next;
     };
+    // A count that is not an integer of at least `minimum` is an error, not a
+    // loop that runs zero times and a report of nothing.
+    const count = (minimum) => {
+        const text = value();
+        const parsed = Number(text);
+        if (!Number.isInteger(parsed) || parsed < minimum) {
+            throw new Error(`${argument} needs an integer of at least ${minimum}, not ${text}`);
+        }
+        return parsed;
+    };
     if (argument === "--samples") options.samples = value();
-    else if (argument === "--copies") options.copies = Number(value());
-    else if (argument === "--repeats") options.repeats = Number(value());
-    else if (argument === "--warmup") options.warmup = Number(value());
+    else if (argument === "--copies") options.copies = count(1);
+    else if (argument === "--repeats") options.repeats = count(1);
+    else if (argument === "--warmup") options.warmup = count(0);
     else if (argument === "--case") options.case = value();
     else if (argument === "--json") options.json = value();
     else options.files.push(argument);
@@ -179,6 +189,12 @@ for (const item of cases) {
             `median_walk_ns=${result.medianWalkNs} mb_per_s=${result.mbPerSecond} ns_per_node=${result.nsPerNode} ` +
             `sha256=${result.inputSha256}`
     );
+}
+// A filter that names no case is an error, as in bench_runner: a run that
+// measured nothing must not leave a report behind.
+if (options.case && results.length === 0) {
+    console.error(`unknown case: ${options.case}`);
+    process.exit(2);
 }
 if (options.json) {
     writeFileSync(
