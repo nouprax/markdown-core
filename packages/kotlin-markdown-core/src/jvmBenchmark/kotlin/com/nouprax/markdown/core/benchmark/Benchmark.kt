@@ -388,13 +388,18 @@ private fun sha256(text: String): String =
 
 private fun median(values: kotlin.collections.List<Long>): Long = values.sorted()[values.size / 2]
 
+// A JSON string body: the two characters JSON escapes and every control
+// character, which JSON forbids unescaped.
 private fun escape(value: String): String =
     buildString {
         for (character in value) {
-            when (character) {
-                '"' -> append("\\\"")
-                '\\' -> append("\\\\")
-                '\n' -> append("\\n")
+            when {
+                character == '"' -> append("\\\"")
+                character == '\\' -> append("\\\\")
+                character == '\n' -> append("\\n")
+                character == '\r' -> append("\\r")
+                character == '\t' -> append("\\t")
+                character < ' ' -> append("\\u%04x".format(Locale.ROOT, character.code))
                 else -> append(character)
             }
         }

@@ -152,14 +152,23 @@ enum SHA256 {
     }
 }
 
+// A JSON string body: the two characters JSON escapes and every control
+// character, which JSON forbids unescaped.
 func escape(_ value: String) -> String {
     var escaped = ""
-    for character in value {
-        switch character {
+    for scalar in value.unicodeScalars {
+        switch scalar {
         case "\"": escaped += "\\\""
         case "\\": escaped += "\\\\"
         case "\n": escaped += "\\n"
-        default: escaped.append(character)
+        case "\r": escaped += "\\r"
+        case "\t": escaped += "\\t"
+        default:
+            if scalar.value < 0x20 {
+                escaped += String(format: "\\u%04x", scalar.value)
+            } else {
+                escaped.unicodeScalars.append(scalar)
+            }
         }
     }
     return escaped
