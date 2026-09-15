@@ -231,7 +231,19 @@ function buildCmark(profile, cmark, out, versions) {
 const STAMP = "markdown-core-profile-stamp.txt";
 
 function stampOf(profile, versions) {
-    return [profile.compiler, profile.flags, versions.compiler, versions.libc].join("\n");
+    /* CFLAGS is in here because CMake folds it into CMAKE_C_FLAGS, which is
+     * prepended to CMAKE_C_FLAGS_RELEASE on every compile line: an exported
+     * `-march=native` changes the instruction stream without touching the
+     * preset. process.arch is in here because the same compiler string builds
+     * for more than one target. */
+    return [
+        profile.compiler,
+        profile.flags,
+        process.env.CFLAGS ?? "",
+        process.arch,
+        versions.compiler,
+        versions.libc
+    ].join("\n");
 }
 
 function discardForeignTree(buildDir, profile, versions) {
@@ -240,6 +252,20 @@ function discardForeignTree(buildDir, profile, versions) {
     const current = fs.existsSync(stamp) ? fs.readFileSync(stamp, "utf8") : "";
     if (current === stampOf(profile, versions)) return;
     fs.rmSync(buildDir, { recursive: true, force: true });
+}
+
+/**
+ * The flags a tree's compile lines actually carry.
+ *
+ * `CMAKE_C_FLAGS_RELEASE` is only half of it: CMake initializes
+ * `CMAKE_C_FLAGS` from the CFLAGS environment variable and puts it FIRST on
+ * every compile line, so a preset's flags and the effective flags are not the
+ * same string and only the effective one describes the binary.
+ */
+function effectiveFlags(buildDir) {
+    const cache = fs.readFileSync(path.join(buildDir, "CMakeCache.txt"), "utf8");
+    const entry = (name) => new RegExp(`^${name}:[A-Z]+=(.*)$`, "mu").exec(cache)?.[1] ?? "";
+    return `${entry("CMAKE_C_FLAGS")} ${entry("CMAKE_C_FLAGS_RELEASE")}`.replace(/\s+/gu, " ").trim();
 }
 
 function stampTree(buildDir, profile, versions) {
@@ -568,15 +594,18 @@ function markdownReport(report) {
     lines.push("## Parse stage comparison", "");
     lines.push(
         `Markdown Core against cmark \`${report.cmark.version}\` (\`${report.cmark.commit.slice(0, 12)}\`)` +
-            " on the same corpus. Both engines are compiled by the same toolchain with" +
-            ` \`${report.profile.flags}\`, so within this report the ratio between them is a` +
-            " fact about the two parsers rather than about the build.",
+            " on the same corpus. Both engines were compiled by the same toolchain with the" +
+            " same flags -- verified against what each build recorded, not assumed -- so" +
+            " within this report the ratio between them is a fact about the two parsers" +
+            " rather than about the build.",
         "",
         "| | |",
         "| --- | --- |",
         `| Compiler | \`${report.toolchain.compiler}\` |`,
         `| C library | \`${report.toolchain.libc}\` |`,
         `| Profiler | \`${report.toolchain.valgrind}\` |`,
+        `| Architecture | \`${report.toolchain.architecture}\` |`,
+        `| Effective C flags | \`${report.toolchain.flags}\` |`,
         "",
         "Counts do not depend on the machine's speed, its load, or what else was" +
             " running: re-running this commit on this toolchain reproduces every number" +
@@ -587,7 +616,11 @@ function markdownReport(report) {
         "",
         "**Compare this report only against one whose table above is identical.**" +
             " Across differing toolchains nothing here is comparable, ratios included," +
-            " and a difference cannot be read as a code change.",
+            " and a difference cannot be read as a code change. The table carries the" +
+            " EFFECTIVE compile flags rather than the preset's, because CMake folds the" +
+            " CFLAGS environment variable into every compile line ahead of them, and it" +
+            " carries the target architecture, because one compiler string builds for" +
+            " more than one target.",
         ""
     );
 
@@ -713,6 +746,17 @@ function main() {
     buildRunners(profile, cmark, cmarkBuildDir, versions);
     verifyStageSymbols(profile);
     verifyBuildProvenance(profile, versions);
+    /* The report's central claim is that both engines met the same compiler
+     * with the same flags. The two trees are configured separately, so that is
+     * checked against what they each recorded rather than assumed from having
+     * passed the same string to both. */
+    const coreFlags = effectiveFlags(profile.binaryDir);
+    const cmarkFlags = effectiveFlags(path.join(options.out, "cmark"));
+    if (coreFlags !== cmarkFlags) {
+        fail(`the engines were compiled with different flags:\n  markdown-core: ${coreFlags}\n  cmark: ${cmarkFlags}`);
+    }
+    versions.flags = coreFlags;
+    versions.architecture = process.arch;
     const binaries = runnerIdentity(profile);
 
     const corpus = buildCorpus(options);
