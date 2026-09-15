@@ -194,8 +194,9 @@ function pinnedCmark() {
     return { version, commit, checkout };
 }
 
-function buildCmark(profile, cmark, out) {
+function buildCmark(profile, cmark, out, versions) {
     const buildDir = path.join(out, "cmark");
+    discardForeignTree(buildDir, profile, versions);
     run("cmake", [
         "-S",
         cmark.checkout,
@@ -208,29 +209,45 @@ function buildCmark(profile, cmark, out) {
         `-DCMAKE_C_FLAGS_RELEASE=${profile.flags}`
     ]);
     run("cmake", ["--build", buildDir, "--parallel"]);
+    stampTree(buildDir, profile, versions);
     return path.join(buildDir, "src");
 }
 
 /**
- * CMake keeps the compiler and the release flags in its cache, and a cache
- * written by an earlier preset wins over the preset that is being asked for
- * now. That is how a profile build silently comes out compiled by whatever
- * built the tree last, with the stage boundaries inlined away -- so the cache
- * is checked against the preset and discarded rather than reused.
+ * A build tree is reused only when it was produced by this exact toolchain.
+ *
+ * CMake's cache records the compiler NAME ("gcc") and the flags, not the
+ * compiler's version, and an incremental build invalidates objects on source
+ * timestamps alone. So upgrading gcc in place leaves every existing object
+ * file untouched and the cache looking correct, while the report goes on to
+ * state the newly resolved compiler for binaries that predate it -- and one
+ * engine's tree can be rebuilt while the other's is not, which is a
+ * comparison between two compilers reported as one.
+ *
+ * Neither the cache nor CMake can answer that, so the tree carries a stamp of
+ * the toolchain and flags that produced it, and a tree stamped differently is
+ * discarded rather than built on top of.
  */
-function discardMismatchedCache(profile) {
-    const cache = path.join(profile.binaryDir, "CMakeCache.txt");
-    if (!fs.existsSync(cache)) return;
-    const text = fs.readFileSync(cache, "utf8");
-    const entry = (name) => new RegExp(`^${name}:[A-Z]+=(.*)$`, "mu").exec(text)?.[1] ?? "";
-    if (entry("CMAKE_C_FLAGS_RELEASE") === profile.flags && entry("CMAKE_C_COMPILER").endsWith(profile.compiler)) {
-        return;
-    }
-    fs.rmSync(profile.binaryDir, { recursive: true, force: true });
+const STAMP = "markdown-core-profile-stamp.txt";
+
+function stampOf(profile, versions) {
+    return [profile.compiler, profile.flags, versions.compiler, versions.libc].join("\n");
 }
 
-function buildRunners(profile, cmark, cmarkBuildDir) {
-    discardMismatchedCache(profile);
+function discardForeignTree(buildDir, profile, versions) {
+    if (!fs.existsSync(buildDir)) return;
+    const stamp = path.join(buildDir, STAMP);
+    const current = fs.existsSync(stamp) ? fs.readFileSync(stamp, "utf8") : "";
+    if (current === stampOf(profile, versions)) return;
+    fs.rmSync(buildDir, { recursive: true, force: true });
+}
+
+function stampTree(buildDir, profile, versions) {
+    fs.writeFileSync(path.join(buildDir, STAMP), stampOf(profile, versions));
+}
+
+function buildRunners(profile, cmark, cmarkBuildDir, versions) {
+    discardForeignTree(profile.binaryDir, profile, versions);
     run("cmake", [
         "--preset",
         "benchmark",
@@ -238,6 +255,53 @@ function buildRunners(profile, cmark, cmarkBuildDir) {
         `-DMARKDOWN_CORE_CMARK_BUILD_DIR=${cmarkBuildDir}`
     ]);
     run("cmake", ["--build", "--preset", "benchmark", "--parallel"]);
+    stampTree(profile.binaryDir, profile, versions);
+}
+
+/**
+ * Both binaries were produced by the toolchain the report names -- checked,
+ * not assumed.
+ *
+ * Stamping a tree prevents the common way that goes wrong; this catches every
+ * other way, because it asks the binaries instead of the build system. Each
+ * compiler writes its identity into a `.comment` entry per translation unit
+ * and the linker concatenates them, so a binary holding objects from two
+ * compilers carries both strings.
+ *
+ * EVERY entry is compared, not just the ones that look like GCC's. A gcc
+ * object linked with a clang object yields one "GCC: (...)" line and one
+ * "Ubuntu clang version ..." line, so a check that only counted GCC spellings
+ * would see a single producer and wave through a binary built by two
+ * compilers -- which is exactly the mixed tree this exists to catch.
+ */
+function verifyBuildProvenance(profile, versions) {
+    /* `gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0` -> the part .comment also
+     * carries, so the two spellings are compared on what they share. */
+    const identity = versions.compiler.replace(/^\S+\s+/u, "").trim();
+    for (const [engine, definition] of Object.entries(ENGINES)) {
+        const binary = path.join(profile.binaryDir, definition.runner);
+        const readelf = spawnSync("readelf", ["-p", ".comment", binary], { encoding: "utf8" });
+        if (readelf.status !== 0) {
+            fail(`${engine}: cannot read the build provenance of ${definition.runner}; readelf is required`);
+        }
+        /* `  [     0]  GCC: (Ubuntu 13.3.0-...) 13.3.0` -> the string itself. */
+        const producers = [
+            ...new Set([...(readelf.stdout ?? "").matchAll(/^\s*\[\s*[0-9a-f]+\]\s{2}(.+?)\s*$/gmu)].map((m) => m[1]))
+        ];
+        if (producers.length !== 1) {
+            fail(
+                `${engine}: ${definition.runner} records ${producers.length} compiler identities ` +
+                    `(${producers.join(" | ") || "none"}), so the report cannot name one; ` +
+                    `delete ${path.relative(root, profile.binaryDir)} and re-run`
+            );
+        }
+        if (!producers[0].includes(identity)) {
+            fail(
+                `${engine}: ${definition.runner} was built by "${producers[0]}" but the report would name ` +
+                    `"${identity}"; delete ${path.relative(root, profile.binaryDir)} and re-run`
+            );
+        }
+    }
 }
 
 /**
@@ -645,9 +709,10 @@ function main() {
      * this commit's pins over another revision's instruction counts -- and an
      * up-to-date rebuild of both engines costs about two seconds against a
      * measurement that takes minutes. There is no flag to get it wrong with. */
-    const cmarkBuildDir = buildCmark(profile, cmark, options.out);
-    buildRunners(profile, cmark, cmarkBuildDir);
+    const cmarkBuildDir = buildCmark(profile, cmark, options.out, versions);
+    buildRunners(profile, cmark, cmarkBuildDir, versions);
     verifyStageSymbols(profile);
+    verifyBuildProvenance(profile, versions);
     const binaries = runnerIdentity(profile);
 
     const corpus = buildCorpus(options);
