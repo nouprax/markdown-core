@@ -61,8 +61,11 @@ test("--scale refuses zero", () => {
 test("--scale takes digits naming a number held exactly, leading zeros and all", () => {
     for (const value of ["1", "2", "007", "64"]) {
         const { message } = refuse(["--scale", value, "--case", "no-such-case-exists"]);
-        /* It got past the scale check: the refusal names the case instead. */
-        assert.match(message, /no corpus case is named no-such-case-exists/u, `--scale ${value} was refused`);
+        /* The run still refuses -- there is no such case, and on a machine
+         * without the pinned oracle it does not get that far. Which refusal it
+         * is depends on the machine, so the assertion is the one thing that
+         * does not: the scale was not what was rejected. */
+        assert.doesNotMatch(message, /--scale must be a positive integer/u, `--scale ${value} was refused`);
     }
 });
 
