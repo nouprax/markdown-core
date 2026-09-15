@@ -321,9 +321,14 @@ const COMPILER_PROGRAMS = ["cc1", "collect2", "as", "ld"];
  *
  * The driver and the programs it reports for the stages below it are digested
  * by content, keyed by the name asked for so that the same toolchain installed
- * at two prefixes compares equal. A program the driver names but that is not a
- * file on disk is recorded as the answer it gave, which is itself a fact about
- * this compiler.
+ * at two prefixes compares equal.
+ *
+ * A bare name means the driver will search PATH, so PATH is asked. A relative
+ * path -- what `-B./tools` produces -- is refused instead: it resolves against
+ * whatever directory the compiler runs in, and the two engines are configured
+ * in different build trees, so there is no single program for the identity to
+ * name. Recording the string would be recording a constant that two different
+ * assemblers both satisfy.
  */
 function compilerBinaries(compiler, flags) {
     const ask = (command) => {
@@ -335,14 +340,23 @@ function compilerBinaries(compiler, flags) {
     const named = [["", driver]];
     for (const program of COMPILER_PROGRAMS) {
         const reported = ask(`${compiler} ${flags} -print-prog-name=${program}`);
-        named.push([program, reported === program ? ask(`command -v ${program}`) || reported : reported]);
+        /* A bare name is a PATH lookup the driver has deferred; anything with a
+         * separator is a path it has already decided on. */
+        named.push([program, reported.includes(path.sep) ? reported : ask(`command -v ${reported}`) || reported]);
     }
     const digest = crypto.createHash("sha256");
     for (const [program, file] of named) {
-        const bytes = file && path.isAbsolute(file) && fs.existsSync(file) ? fs.readFileSync(file) : null;
-        digest.update(
-            `${program}\u0000${bytes ? crypto.createHash("sha256").update(bytes).digest("hex") : `unresolved:${file}`}\n`
-        );
+        if (!file || !path.isAbsolute(file)) {
+            fail(
+                `${compiler} would use ${file || "nothing"} for ${program || "itself"}, which is not one program ` +
+                    "this report can identify: a relative path resolves against the directory the compiler runs " +
+                    "in, and the two engines are configured in different build trees"
+            );
+        }
+        if (!fs.existsSync(file)) {
+            fail(`${compiler} would use ${file} for ${program || "itself"}, and there is no such file`);
+        }
+        digest.update(`${program}\u0000${crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex")}\n`);
     }
     return digest.digest("hex");
 }
