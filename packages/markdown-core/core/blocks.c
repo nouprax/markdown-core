@@ -2273,13 +2273,24 @@ const markdown_core_paragraph_line *markdown_core_parser_paragraph_line(const ma
  * one row names every owner whose indent it reached and no owner that asked
  * for more -- and the line's own byte row when it reaches none, where oring
  * it in changes nothing. */
-static size_t S_block_owner_row(const markdown_core_block_owner_sets *sets, unsigned char byte, int indent) {
-    size_t row = byte;
-    for (size_t g = MARKDOWN_CORE_BLOCK_OWNER_BYTES; g < sets->rows; g++) {
-        if (sets->indent_thresholds[g - MARKDOWN_CORE_BLOCK_OWNER_BYTES] > indent) {
-            break;
+static size_t S_block_owner_row(markdown_core_parser *parser, const markdown_core_block_owner_sets *sets,
+                                unsigned char byte, int indent) {
+    /* The last row whose threshold the line reached. The thresholds are
+     * ascending and distinct, so the row is found by halving them rather
+     * than by walking to it: a registry that declares many indents costs a
+     * comparison per doubling on a line, not one per threshold it reached,
+     * and this runs on every line of every container. */
+    (void)parser; /* the probe count is a diagnostics build's only use of it */
+    size_t row = byte, low = 0, high = sets->rows - MARKDOWN_CORE_BLOCK_OWNER_BYTES;
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+        MARKDOWN_CORE_DIAGNOSTIC(parser->block_indent_probe_work++;)
+        if (sets->indent_thresholds[mid] > indent) {
+            high = mid;
+        } else {
+            row = MARKDOWN_CORE_BLOCK_OWNER_BYTES + mid;
+            low = mid + 1;
         }
-        row = g;
     }
     return row;
 }
@@ -2290,7 +2301,7 @@ static bool scan_element_start(markdown_core_parser *parser, block_start_context
     const markdown_core_registry *registry = parser->registry;
     const markdown_core_block_owner_sets *sets = &registry->block_owner_sets;
     unsigned char byte = S_block_start_byte(context->input, context->first);
-    size_t row = S_block_owner_row(sets, byte, context->indent);
+    size_t row = S_block_owner_row(parser, sets, byte, context->indent);
     for (size_t word = 0; word < sets->words; word++) {
         for (uint64_t owners = sets->scan[byte * sets->words + word] | sets->scan[row * sets->words + word]; owners;
              owners &= owners - 1) {
@@ -2383,7 +2394,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
         const markdown_core_block_owner_sets *sets = &registry->block_owner_sets;
         size_t words = sets->words;
         unsigned char byte = S_block_start_byte(input, parser->first_nonspace);
-        size_t row = S_block_owner_row(sets, byte, parser->indent);
+        size_t row = S_block_owner_row(parser, sets, byte, parser->indent);
 
         /* Dash-led tables precede thematic breaks and lists. An opener may
          * close the old path before an allocation fails; OOM is terminal,
