@@ -1390,8 +1390,36 @@ function measure(profile, engine, document, out) {
         parsePathIr,
         outsideStagesIr: STAGES.reduce((total, stage) => total - stages[stage].cost.Ir, parsePathIr),
         stages,
+        hotPaths: hotPaths(profileByName),
         dump
     };
+}
+
+/* The functions this document spent the most instructions IN, as opposed to
+ * through.
+ *
+ * The per-stage breakdown beside this one is the stage entry's immediate
+ * callees, which is one level deep: on a grid table it reads `S_process_line
+ * 99.7%` and names no grammar at all. A ratio can say a case is expensive; only
+ * this can say what is expensive about it, which is the step between noticing a
+ * number and knowing what to change.
+ *
+ * Self cost, not inclusive: an inclusive ranking puts the drivers on top --
+ * every line goes through `S_process_line` -- and buries the work. */
+function hotPaths(profile) {
+    const totals = new Map();
+    let whole = 0;
+    for (const [name, cost] of profile.self) {
+        const ir = costRecord(profile, cost).Ir ?? 0;
+        if (!ir) continue;
+        const fn = baseName(name);
+        totals.set(fn, (totals.get(fn) ?? 0) + ir);
+        whole += ir;
+    }
+    return [...totals.entries()]
+        .sort((left, right) => right[1] - left[1])
+        .slice(0, 8)
+        .map(([name, ir]) => ({ name, ir, share: whole ? ir / whole : 0 }));
 }
 
 function derive(document, stage) {
@@ -1525,6 +1553,74 @@ function markdownReport(report) {
             " moved.",
         ""
     );
+
+    /* A ratio is only a comparison where both engines did the same job. */
+    const ranked = report.cases
+        .filter((item) => item.scale === 1 && item.engines["markdown-core"] && item.engines.cmark)
+        .map((item) => {
+            const core = STAGES.reduce((sum, stage) => sum + item.engines["markdown-core"].stages[stage].ir, 0);
+            const reference = STAGES.reduce((sum, stage) => sum + item.engines.cmark.stages[stage].ir, 0);
+            return { ...item, coreIr: core, referenceIr: reference, ratio: reference ? core / reference : 0 };
+        })
+        .sort((left, right) => right.ratio - left.ratio);
+
+    if (ranked.length) {
+        const median = (values) => {
+            const sorted = values.slice().sort((left, right) => left - right);
+            return sorted[Math.floor(sorted.length / 2)] ?? 0;
+        };
+        lines.push("### Ratio against the reference", "");
+        lines.push(
+            "cmark implements the CommonMark cases. It does NOT implement the extended" +
+                " ones, so those two groups are reported apart and never averaged together.",
+            "",
+            "An extended case's ratio is not this parser being slower at the same job. cmark" +
+                " reads `| a | b |` as a paragraph and builds no table, reads `> [!NOTE]` as a" +
+                " plain block quote, and reads `$$x$$` as text. Its number there is the cost of" +
+                " NOT implementing the construct, so the ratio measures work this parser does" +
+                " and the reference does not. It bounds what the construct costs; it does not" +
+                " say the construct is slow.",
+            ""
+        );
+        lines.push("| Group | Cases | Median ratio | Worst |", "| --- | ---: | ---: | --- |");
+        for (const [group, label] of [
+            ["commonmark", "CommonMark (same job)"],
+            ["extended", "Extended (work cmark does not do)"]
+        ]) {
+            const group_ = ranked.filter((item) => item.dialect === group);
+            if (!group_.length) continue;
+            const worst = group_[0];
+            lines.push(
+                `| ${label} | ${group_.length} | ${median(group_.map((item) => item.ratio)).toFixed(2)}x |` +
+                    ` ${worst.ratio.toFixed(2)}x \`${worst.case}\` |`
+            );
+        }
+        lines.push("");
+
+        lines.push("### Where the cost is", "");
+        lines.push(
+            "The ratio says which case to look at. This says what to look at inside it:" +
+                " the functions the parse spent the most instructions IN, not through." +
+                " The per-stage breakdown below is one level deep and names the drivers" +
+                " -- on a grid table it reads `S_process_line`, which every line goes" +
+                " through -- so it cannot answer that question.",
+            "",
+            "Ranked by ratio, so the most suspicious case is first.",
+            ""
+        );
+        lines.push("| Case | Dialect | Ratio | Core Ir/B | Dominant self cost |", "| --- | --- | ---: | ---: | --- |");
+        for (const item of ranked.slice(0, 16)) {
+            const hot = (item.engines["markdown-core"].hotPaths ?? [])
+                .slice(0, 3)
+                .map((entry) => `\`${entry.name}\` ${(entry.share * 100).toFixed(1)}%`)
+                .join(", ");
+            lines.push(
+                `| ${item.case} | ${item.dialect} | ${item.ratio.toFixed(2)}x |` +
+                    ` ${(item.coreIr / item.bytes).toFixed(1)} | ${hot || "(not recorded)"} |`
+            );
+        }
+        lines.push("");
+    }
 
     lines.push("### Cost per input byte", "");
     lines.push(
@@ -1752,6 +1848,7 @@ function main() {
                 parsePathIr: measured.parsePathIr,
                 outsideStagesIr: measured.outsideStagesIr,
                 rootChildren: measured.rootChildren,
+                hotPaths: measured.hotPaths,
                 stages: Object.fromEntries(
                     STAGES.map((stage) => [
                         stage,
