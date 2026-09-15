@@ -305,6 +305,48 @@ function resolveTarget(compiler, flags) {
  * two hosts that could not answer would record the same nothing and compare as
  * equal.
  */
+/* The programs the driver says it will exec. A wrapper one layer down sits
+ * here rather than at the name PATH resolved. */
+const COMPILER_PROGRAMS = ["cc1", "collect2", "as", "ld"];
+
+/**
+ * The compiler that ran, by its bytes.
+ *
+ * `gcc` is a name, and what PATH resolves it to can be a wrapper that answers
+ * every probe here exactly as the real driver would and adds an option only
+ * when asked to compile. The banner, the resolved target, the recorded compile
+ * lines and the objects' own provenance would all agree while the objects
+ * differed -- and `compiledFlags` drops the compiler token itself, so the
+ * wrapper appears nowhere in the table at all.
+ *
+ * The driver and the programs it reports for the stages below it are digested
+ * by content, keyed by the name asked for so that the same toolchain installed
+ * at two prefixes compares equal. A program the driver names but that is not a
+ * file on disk is recorded as the answer it gave, which is itself a fact about
+ * this compiler.
+ */
+function compilerBinaries(compiler, flags) {
+    const ask = (command) => {
+        const probe = spawnSync("/bin/sh", ["-c", command], { encoding: "utf8", env: buildEnvironment() });
+        return probe.status === 0 ? (probe.stdout ?? "").trim() : "";
+    };
+    const driver = ask(`command -v ${compiler}`);
+    if (!driver) fail(`${compiler} could not be resolved to a program, so this report cannot say what compiled it`);
+    const named = [["", driver]];
+    for (const program of COMPILER_PROGRAMS) {
+        const reported = ask(`${compiler} ${flags} -print-prog-name=${program}`);
+        named.push([program, reported === program ? ask(`command -v ${program}`) || reported : reported]);
+    }
+    const digest = crypto.createHash("sha256");
+    for (const [program, file] of named) {
+        const bytes = file && path.isAbsolute(file) && fs.existsSync(file) ? fs.readFileSync(file) : null;
+        digest.update(
+            `${program}\u0000${bytes ? crypto.createHash("sha256").update(bytes).digest("hex") : `unresolved:${file}`}\n`
+        );
+    }
+    return digest.digest("hex");
+}
+
 function compilerConfiguration(compiler, flags) {
     const banner = agreed(`the compiler's configuration (${compiler})`, () => compilerBanner(compiler, flags));
     return crypto.createHash("sha256").update(banner).digest("hex");
@@ -346,6 +388,9 @@ function toolchain(profile) {
     return {
         compiler: first(run(profile.compiler, ["--version"])),
         compilerDigest: compilerConfiguration(profile.compiler, flags),
+        compilerBinaries: agreed(`the compiler's programs (${profile.compiler})`, () =>
+            compilerBinaries(profile.compiler, flags)
+        ),
         libc: required("C library", [
             ["ldd", ["--version"]],
             ["getconf", ["GNU_LIBC_VERSION"]]
@@ -552,6 +597,7 @@ function stampOf(profile, versions) {
         process.arch,
         versions.compiler,
         versions.compilerDigest,
+        versions.compilerBinaries,
         versions.libc,
         versions.target,
         versions.targetDigest
@@ -1103,9 +1149,16 @@ function measurementEnvironment(root) {
  * So the objects are digested by content, keyed by soname rather than by path
  * so that the same library installed in two places compares equal. The vdso is
  * skipped: the kernel provides it and there is no file to read.
+ *
+ * Asked in the measurement's own environment, because `ldd` resolves what the
+ * caller's LD_PRELOAD and LD_LIBRARY_PATH say rather than what the measured
+ * child will load -- and the measured child is given neither. Inheriting them
+ * would fingerprint libraries that never ran, and would do it differently on
+ * two hosts whose measurements were identical.
  */
-function loadedLibraries(runner) {
-    const resolved = [...run("ldd", [runner]).matchAll(/=>\s*(\/\S+)|^\s*(\/\S+)/gmu)]
+function loadedLibraries(runner, isolated) {
+    const listing = run("ldd", [runner], { env: measurementEnvironment(isolated), cwd: isolated });
+    const resolved = [...listing.matchAll(/=>\s*(\/\S+)|^\s*(\/\S+)/gmu)]
         .map((match) => match[1] ?? match[2])
         .filter((file) => fs.existsSync(file));
     if (!resolved.length) {
@@ -1317,6 +1370,7 @@ function markdownReport(report) {
         "| | |",
         "| --- | --- |",
         `| Compiler | \`${report.toolchain.compiler}\` (\`${report.toolchain.compilerDigest.slice(0, 16)}\`) |`,
+        `| Compiler programs | \`${report.toolchain.compilerBinaries.slice(0, 16)}\` |`,
         `| C library | \`${report.toolchain.libc}\` |`,
         `| C library objects | \`${report.toolchain.libraries.summary}\` (\`${report.toolchain.libraries.digest.slice(0, 16)}\`) |`,
         `| Profiler | \`${report.toolchain.valgrind}\` |`,
@@ -1562,7 +1616,10 @@ function main() {
     versions.flags = coreFlags.compile;
     versions.linkFlags = coreFlags.link;
     versions.dispatch = dispatchIdentity(profile, root);
-    versions.libraries = loadedLibraries(path.join(profile.binaryDir, ENGINES["markdown-core"].runner));
+    versions.libraries = loadedLibraries(
+        path.join(profile.binaryDir, ENGINES["markdown-core"].runner),
+        measurementRoot(path.dirname(profile.binaryDir))
+    );
     /* Split rather than left as two long lines for a reader to diff by eye: what
      * both engines got, and what only one of them did. Order is not meaning
      * here, so this compares as sets. */

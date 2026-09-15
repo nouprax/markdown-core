@@ -273,11 +273,26 @@ grep -Fq 'dispatchIdentity' scripts/benchmark-stages.mjs || {
     echo "the stage benchmark does not record what the C library dispatched on" >&2
     exit 1
 }
+# `gcc` is a name PATH resolves, and what it resolves to can be a wrapper that
+# answers every probe as the real driver would and injects an option only when
+# it compiles. compiledFlags drops the compiler token, so nothing else sees it.
+grep -Fq 'compilerBinaries' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark does not identify the compiler program that ran" >&2
+    exit 1
+}
 # `ldd --version` names a release, not the build of it that ran: a distribution
 # patch or a local rebuild keeps that line and changes the instructions inside
 # memcpy and strlen, which are inside the stage costs.
 grep -Fq 'loadedLibraries' scripts/benchmark-stages.mjs || {
     echo "the stage benchmark identifies the C library by its version line alone" >&2
+    exit 1
+}
+# And asked in the measurement's environment: ldd resolves what the caller's
+# LD_PRELOAD says rather than what the measured child loads, and the child is
+# given neither.
+grep -Fq 'run("ldd", [runner], { env: measurementEnvironment(isolated), cwd: isolated })' \
+    scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark asks ldd in the caller's environment, not the measurement's" >&2
     exit 1
 }
 # The toolchain is half the identity: the same binaries over different documents
