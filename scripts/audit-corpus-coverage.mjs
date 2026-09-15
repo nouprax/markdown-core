@@ -61,12 +61,11 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const KIND_TABLE = path.join(root, "packages/markdown-core/elements/ast.c");
-const CLI = path.join(root, "build/cmake/packages/markdown-core/core/markdown-core");
 
 /* Set just under the measured value so ordinary drift does not fail the build,
  * while a corpus that stops reaching the parser does. Raise it when the corpus
  * genuinely improves; never lower it to make a red build green. */
-const DEFAULT_FLOOR = 73.0;
+const DEFAULT_FLOOR = 71.0;
 
 function fail(message) {
     process.stderr.write(`corpus coverage audit FAILED\n  ${message}\n`);
@@ -74,9 +73,17 @@ function fail(message) {
 }
 
 const isGenerated = (file) => file.endsWith("_scanners.c") || file.endsWith(".inc");
-/* `main.c` is the dump CLI that drives the corpus, not parser code, and
- * counting the harness as parse phase would flatter the number. */
-const isParsePhase = (file) => file !== "core/main.c";
+/* The parse phase is source to tree, and these two are neither.
+ *
+ * `core/main.c` is the CLI that drives a document through it. `elements/ast.c`
+ * is the canonical-AST projection and serializer -- the thing that WRITES a
+ * tree, 1,174 lines of it, which nothing in `blocks.c` or `inlines.c` calls.
+ * Counting either flattered the number this audit exists to report: while the
+ * census dumped every document, `ast.c` read 84.7% covered and lifted the whole
+ * figure from 66.2% to 75.2%, describing the writer as though it were the
+ * parser. The benchmark does not measure serialization, so this must not
+ * either. */
+const isParsePhase = (file) => file !== "core/main.c" && file !== "elements/ast.c";
 
 function parseArguments(argv) {
     const options = { floor: DEFAULT_FLOOR, json: null };
@@ -140,13 +147,24 @@ function corpusDocuments(directory) {
 async function kindsProduced(cli, documents) {
     const seen = new Set();
     for (const document of documents) {
+        /* The complexity shapes are excluded, and only here. `chain-list-depth`
+         * is 32,765 levels deep, and `markdown_core_document_dump` materialises
+         * the whole canonical dump in one buffer before a byte is written, so
+         * asking these for a tree costs gigabytes of RSS in the child whatever
+         * this end does with the stream -- enough to lose a hosted runner. They
+         * are shapes for depth, not for constructs, and contribute no kind that
+         * the other cases do not build; the coverage passes below still run
+         * them, through a binary that never dumps. */
+        if (path.basename(document).startsWith("chain-")) continue;
         const child = spawn(cli, [document], { stdio: ["ignore", "pipe", "ignore"], timeout: 600_000 });
         const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
         for await (const line of lines) {
             const match = /([A-Za-z]+) scope=/.exec(line);
             if (match) seen.add(match[1]);
         }
-        await new Promise((resolve) => child.on("close", resolve));
+        const [code, signal] = await new Promise((resolve) => child.on("close", (c, s) => resolve([c, s])));
+        if (signal) fail(`the dump CLI was killed by ${signal} on ${path.basename(document)}`);
+        if (code !== 0) fail(`the dump CLI exited ${code} on ${path.basename(document)}`);
     }
     return seen;
 }
@@ -173,18 +191,23 @@ function requiredGrammars() {
     return required;
 }
 
+function resetCounters(buildDir) {
+    for (const dir of gcdaDirectories(buildDir)) {
+        for (const name of fs.readdirSync(dir).filter((entry) => entry.endsWith(".gcda"))) {
+            fs.rmSync(path.join(dir, name), { force: true });
+        }
+    }
+}
+
 /* Per-function coverage for one document, read with the counters reset so the
  * result is that document's alone rather than the corpus's. */
 function functionsFor(cli, buildDir, document) {
-    for (const file of gcdaDirectories(buildDir).flatMap((dir) =>
-        fs
-            .readdirSync(dir)
-            .filter((n) => n.endsWith(".gcda"))
-            .map((n) => path.join(dir, n))
-    )) {
-        fs.rmSync(file, { force: true });
-    }
-    spawnSync(cli, [document], { stdio: "ignore", timeout: 600_000 });
+    resetCounters(buildDir);
+    requireClean(
+        spawnSync(cli, ["--document", document], { stdio: "ignore", timeout: 600_000 }),
+        "the parse runner",
+        document
+    );
     const percent = new Map();
     for (const dir of gcdaDirectories(buildDir)) {
         const gcda = fs
@@ -199,6 +222,13 @@ function functionsFor(cli, buildDir, document) {
     return percent;
 }
 
+/* Both binaries, instrumented, built from the working tree every run.
+ *
+ * `markdown-core` is the dump CLI: the kind census needs a tree it can read.
+ * `markdown_core_stage_runner` parses and frees without dumping, and that is
+ * what the coverage passes use -- `elements/ast.c` is the SERIALIZER, 1,174
+ * lines of it, and running the dumper counted the writer as parse phase and
+ * flattered the number this audit exists to report. */
 function coverageBuild(buildDir) {
     const run = (command, args) =>
         execFileSync(command, args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -209,12 +239,37 @@ function coverageBuild(buildDir) {
         buildDir,
         "-DCMAKE_BUILD_TYPE=Debug",
         "-DCMAKE_C_FLAGS=-O0 --coverage",
-        "-DCMAKE_EXE_LINKER_FLAGS=--coverage"
+        "-DCMAKE_EXE_LINKER_FLAGS=--coverage",
+        "-DMARKDOWN_CORE_STATIC=ON",
+        "-DMARKDOWN_CORE_BENCHMARKS=ON"
     ]);
-    run("cmake", ["--build", buildDir, "--target", "markdown-core", "--parallel", String(os.cpus().length)]);
-    const cli = path.join(buildDir, "packages/markdown-core/core/markdown-core");
-    if (!fs.existsSync(cli)) fail(`the coverage build produced no dump CLI at ${cli}`);
-    return cli;
+    run("cmake", [
+        "--build",
+        buildDir,
+        "--target",
+        "markdown-core",
+        "--target",
+        "markdown_core_stage_runner",
+        "--parallel",
+        String(os.cpus().length)
+    ]);
+    const binaries = {
+        dump: path.join(buildDir, "packages/markdown-core/core/markdown-core"),
+        parse: path.join(buildDir, "packages/markdown-core/benchmarks/markdown_core_stage_runner")
+    };
+    for (const [role, file] of Object.entries(binaries)) {
+        if (!fs.existsSync(file)) fail(`the coverage build produced no ${role} binary at ${file}`);
+    }
+    return binaries;
+}
+
+/* A document the parser cannot finish is not a weaker measurement, it is a
+ * broken one: the audit would go on to read counters from a process that died
+ * partway and report whatever the surviving documents happened to cover. */
+function requireClean(result, what, document) {
+    if (result.error) fail(`${what} could not run on ${path.basename(document)}: ${result.error.message}`);
+    if (result.signal) fail(`${what} was killed by ${result.signal} on ${path.basename(document)}`);
+    if (result.status !== 0) fail(`${what} exited ${result.status} on ${path.basename(document)}`);
 }
 
 function gcdaDirectories(buildDir) {
@@ -270,35 +325,32 @@ const corpusDir = fs.mkdtempSync(path.join(os.tmpdir(), "corpus-reach-"));
 process.on("exit", () => fs.rmSync(corpusDir, { recursive: true, force: true }));
 const documents = corpusDocuments(corpusDir);
 
-if (!fs.existsSync(CLI)) {
-    /* Built here rather than demanded of the caller, so the audit states one
-     * precondition -- a checkout -- and holds wherever it is run. */
-    execFileSync("cmake", ["--preset", "default"], { cwd: root, stdio: ["ignore", "ignore", "pipe"] });
-    execFileSync("cmake", ["--build", "--preset", "default", "--target", "markdown-core", "--parallel"], {
-        cwd: root,
-        stdio: ["ignore", "ignore", "pipe"]
-    });
-    if (!fs.existsSync(CLI)) fail(`no dump CLI at ${path.relative(root, CLI)} after building it`);
-}
-const produced = await kindsProduced(CLI, documents);
-const unbuilt = kinds.filter((kind) => !produced.has(kind));
-
 process.stdout.write(`Corpus reach over ${documents.length} documents\n\n`);
 
 const required = requiredGrammars();
 const driven = new Set();
 const undriven = [];
+let unbuilt;
 let coverage;
 {
     const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), "corpus-coverage-"));
     try {
-        const instrumented = coverageBuild(buildDir);
+        /* Everything reads binaries built here, from the working tree. Reusing
+         * whatever `build/` happened to hold would let a source change that
+         * stops building a kind still report every kind built, which is the
+         * same staleness the corpus itself was fixed for. */
+        const binaries = coverageBuild(buildDir);
+        const produced = await kindsProduced(binaries.dump, documents);
+        unbuilt = kinds.filter((kind) => !produced.has(kind));
+        /* The census ran the dumper, whose lines are not the parse phase, so
+         * its counters are discarded before anything is measured. */
+        resetCounters(buildDir);
         /* Every case alone, with the counters reset, so what each document
          * drives is separated from what the corpus drives together. A grammar
          * is driven when some ONE case reaches it; spreading a function's lines
          * across several cases that each brush it is not the same thing. */
         for (const document of documents) {
-            for (const [name, percent] of functionsFor(instrumented, buildDir, document)) {
+            for (const [name, percent] of functionsFor(binaries.parse, buildDir, document)) {
                 if (percent >= EXERCISED_FLOOR) driven.add(name);
             }
         }
@@ -308,16 +360,13 @@ let coverage;
             }
         }
         /* Then the whole corpus, for the aggregate. */
-        for (const file of gcdaDirectories(buildDir).flatMap((dir) =>
-            fs
-                .readdirSync(dir)
-                .filter((n) => n.endsWith(".gcda"))
-                .map((n) => path.join(dir, n))
-        )) {
-            fs.rmSync(file, { force: true });
-        }
+        resetCounters(buildDir);
         for (const document of documents) {
-            spawnSync(instrumented, [document], { stdio: "ignore", timeout: 600_000 });
+            requireClean(
+                spawnSync(binaries.parse, ["--document", document], { stdio: "ignore", timeout: 600_000 }),
+                "the parse runner",
+                document
+            );
         }
         coverage = summarise(readCoverage(buildDir));
         process.stdout.write(
