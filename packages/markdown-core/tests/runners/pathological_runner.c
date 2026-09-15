@@ -433,6 +433,67 @@ static int case_dump_deep_nesting(pc_context *context) {
     return 0;
 }
 
+/* The canonical dump of a very wide document.
+ *
+ * Depth is what the dump's walk must not pay a C frame for; breadth is what it
+ * must not accumulate. A node's nested lines are drawn from a cursor over its
+ * children rather than from a list of them, and the connector each line gets
+ * comes from a running count of what is still owed at that level. This checks
+ * that accounting over a chain far longer than any fixture's: every top-level
+ * line a branch, the last a corner, and exactly one line per sibling.
+ *
+ * It does not measure what the dump allocates. The dump takes no allocator, so
+ * there is nothing to count against; what the design is worth on breadth is a
+ * measurement rather than an assertion. */
+#define PC_DUMP_WIDTH 20000u
+
+static int case_dump_wide_siblings(pc_context *context) {
+    size_t width;
+    char *cursor;
+    uint8_t *output = NULL;
+    size_t length = 0;
+    size_t branches = 0, corners = 0, index;
+    int result = 0;
+    context->input_length = (size_t)PC_DUMP_WIDTH * 3u;
+    context->input = (char *)malloc(context->input_length + 1u);
+    if (!context->input) {
+        return -1;
+    }
+    cursor = context->input;
+    for (width = 0; width < PC_DUMP_WIDTH; width++) {
+        *cursor++ = 'a';
+        *cursor++ = '\n';
+        *cursor++ = '\n';
+    }
+    *cursor = 0;
+    if (pc_parse(context) != 0) {
+        return -1;
+    }
+    if (!markdown_core_document_dump(context->document, &output, &length, NULL)) {
+        fprintf(stderr, "dumping a %u-wide document did not return a dump\n", (unsigned)PC_DUMP_WIDTH);
+        return -1;
+    }
+    /* The paragraphs sit directly under the document, so their connectors are
+     * the only ones at the outermost level: 3 bytes each, at the line start. */
+    for (index = 0; index + 3u <= length; index++) {
+        if (index && output[index - 1u] != (uint8_t)'\n') {
+            continue;
+        }
+        if (memcmp(output + index, "\xe2\x94\x9c", 3) == 0) {
+            branches++;
+        } else if (memcmp(output + index, "\xe2\x94\x94", 3) == 0) {
+            corners++;
+        }
+    }
+    if (branches != PC_DUMP_WIDTH - 1u || corners != 1u) {
+        fprintf(stderr, "a %u-wide document drew %zu branches and %zu corners, wanted %u and 1\n",
+                (unsigned)PC_DUMP_WIDTH, branches, corners, (unsigned)(PC_DUMP_WIDTH - 1u));
+        result = -1;
+    }
+    markdown_core_dump_free(output);
+    return result;
+}
+
 static int case_deeply_nested_lists(pc_context *context) {
     char *expected;
     size_t expected_length = 0;
@@ -1327,6 +1388,7 @@ static const pc_case_entry PC_CASES[] = {
     {"reference_collisions", case_reference_collisions},
     {"reference_expansion_bound", case_reference_expansion_bound},
     {"dump_deep_nesting", case_dump_deep_nesting},
+    {"dump_wide_siblings", case_dump_wide_siblings},
     {"directive_unclosed_labels", case_directive_unclosed_labels},
     {"directive_unclosed_attributes", case_directive_unclosed_attributes},
     {"directive_colon_pairs", case_directive_colon_pairs},

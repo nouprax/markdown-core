@@ -301,6 +301,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     nested_block_quotes
     deeply_nested_lists
     dump_deep_nesting
+    dump_wide_siblings
     empty_lines_in_deeply_nested_lists
     empty_lines_in_deep_list_blockquote
     emphasis_in_deep_blockquote
