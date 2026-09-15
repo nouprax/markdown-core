@@ -13,6 +13,22 @@ extern "C" {
 
 #define MAX_LINK_LABEL_LENGTH 1000
 
+/* The block-start hook families, in the order a line consults them.
+ *
+ * They are separate families rather than one list because the ORDER BETWEEN
+ * them is grammar: every `scan` owner wins over every `open` owner on the same
+ * line, and `interrupt` runs between the two so a dash-led table can take a
+ * line a thematic break or list already matched. Merging them would change
+ * which element claims an ambiguous line. */
+typedef enum {
+    MARKDOWN_CORE_BLOCK_HOOK_SCAN,
+    MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT,
+    MARKDOWN_CORE_BLOCK_HOOK_OPEN,
+    MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH,
+    MARKDOWN_CORE_BLOCK_HOOK_PROBE,
+    MARKDOWN_CORE_BLOCK_HOOK_COUNT
+} markdown_core_block_hook;
+
 /* Immutable runs map logical content bytes to authored byte intervals.
  * Blocks append runs as lines arrive; transformed cells and decoded inline
  * tokens append runs when assembled. Nodes retain index slices with an origin,
@@ -188,6 +204,20 @@ struct markdown_core_parser {
      * Each token visits only its possible owners; offsets include an end sentinel. */
     size_t inline_dispatch_offsets[257];
     const markdown_core_element **inline_dispatch;
+    /* The same idea one phase earlier: each block-start hook family projected
+     * to the elements that implement it, in descriptor order, once per parse.
+     * A line asks four of these families in turn, so without the projection a
+     * line pays the whole registry four times to reach the one to four owners
+     * that can answer -- `try_interrupting_block` has a single implementer and
+     * was reached by walking every element attached to the parser.
+     *
+     * Order inside a family IS the grammar: the first owner that claims a line
+     * wins it, which is why heading precedes thematic break (setext `---`) and
+     * thematic break precedes list (`***`). The projection therefore preserves
+     * descriptor order rather than grouping by anything else. */
+    const markdown_core_element **block_hooks[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
+    size_t block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
+    const markdown_core_element **block_hook_allocation;
     markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
      * the special/emphasis-skip characters of the attached inline elements.
