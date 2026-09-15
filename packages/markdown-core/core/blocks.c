@@ -839,16 +839,38 @@ static bool S_owns_block_starts(const markdown_core_element *element) {
            element->try_opening_paragraph;
 }
 
-/* Copy one row of every hook's owner set over another, or clear the target
- * when `from` names no indent row: the indent rows accumulate, so one that
- * arrives between two others starts from the one below it, and the lowest
- * starts from nothing. */
-static void S_copy_owner_row(uint64_t *sets, size_t stride, size_t words, size_t to, size_t from) {
-    for (size_t hook = 0; hook < 4; hook++) {
-        for (size_t w = 0; w < words; w++) {
-            sets[hook * stride + to * words + w] = from ? sets[hook * stride + from * words + w] : 0;
+/* Whether a hook accepts at a byte: a declared set names its bytes, and no
+ * set at all means every byte, a line end included. */
+static bool S_accepts_block_start_byte(const unsigned char *accepted, size_t byte) {
+    if (!accepted) {
+        return true;
+    }
+    for (const unsigned char *b = accepted; *b; b++) {
+        if (*b == byte) {
+            return true;
         }
     }
+    return false;
+}
+
+static bool S_implements_block_hook(const markdown_core_element *element, size_t hook) {
+    switch (hook) {
+    case MARKDOWN_CORE_BLOCK_HOOK_SCAN:
+        return element->scan_block_start != NULL;
+    case MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT:
+        return element->try_interrupting_block != NULL;
+    case MARKDOWN_CORE_BLOCK_HOOK_OPEN:
+        return element->try_opening_block != NULL;
+    default:
+        return element->try_opening_paragraph != NULL;
+    }
+}
+
+/* The bytes one hook accepts at: its own where it narrowed the element's,
+ * the element's otherwise. */
+static const unsigned char *S_block_hook_bytes(const markdown_core_element *element, size_t hook) {
+    const char *narrowed = element->block_start_hook_bytes[hook];
+    return (const unsigned char *)(narrowed ? narrowed : element->block_start_bytes);
 }
 
 /* A registry's projection is a pure function of its descriptors: the core
@@ -868,18 +890,14 @@ bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_
         candidates += inline_candidate_roles(element, roles, bytes);
         owners += S_owns_block_starts(element);
         hooks += (element->init_inline != NULL) + (element->finish_inline != NULL) + (element->dispose_inline != NULL);
-        /* One indent row per distinct declared indent, so no owner is ever
-         * visited below its own. Quadratic in the elements that declare one,
-         * which a registry does once. */
-        if (!S_owns_block_starts(element) || element->block_start_indent <= 0) {
-            continue;
-        }
-        bool seen = false;
-        for (size_t j = 0; !seen && j < i; j++) {
-            const markdown_core_element *earlier = j < count ? elements[j] : extra;
-            seen = S_owns_block_starts(earlier) && earlier->block_start_indent == element->block_start_indent;
-        }
-        indent_rows += !seen;
+        /* An upper bound on the indent rows: one per owner that declares an
+         * indent, before the duplicates among them are known. Counting the
+         * distinct ones here would mean reading every earlier descriptor
+         * again for each of these, and a setup attaches its owners one at a
+         * time, each attachment preparing the whole registry again. The rows
+         * the duplicates would have taken are left unbuilt below, and
+         * `block_owner_sets.rows` names the ones that exist. */
+        indent_rows += S_owns_block_starts(element) && element->block_start_indent > 0;
     }
     size_t elements_size = total * sizeof(*registry->elements);
     size_t offsets_size = 257 * sizeof(size_t);
@@ -913,19 +931,41 @@ bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_
     uint64_t *sets = (uint64_t *)at;
     int8_t *special = (int8_t *)(at += sets_size);
     int8_t *skip = special + 256;
+    /* The declared indents, ascending and distinct, settled before a single
+     * row is built: an owner then joins its own row and every row above it,
+     * so the rows accumulate without any of them being copied or moved. Each
+     * insertion walks only the indents already kept, never the descriptors. */
     size_t indent_used = 0;
-    markdown_core_registry prepared = {.elements = list,
-                                       .element_count = total,
-                                       .inline_dispatch_offsets = offsets,
-                                       .inline_dispatch = dispatch,
-                                       .block_owners = owner_table,
-                                       .block_owner_sets = {sets, sets + rows * words, sets + 2 * rows * words,
-                                                            sets + 3 * rows * words, words, rows,
-                                                            indent_rows ? thresholds : NULL},
-                                       .inline_hooks = {hook_table, 0, 0, 0},
-                                       .special_chars = special,
-                                       .skip_chars = skip,
-                                       .storage = storage};
+    for (size_t i = 0; i < total; i++) {
+        const markdown_core_element *element = i < count ? elements[i] : extra;
+        if (!S_owns_block_starts(element) || element->block_start_indent <= 0) {
+            continue;
+        }
+        size_t place = 0;
+        while (place < indent_used && thresholds[place] < element->block_start_indent) {
+            place++;
+        }
+        if (place < indent_used && thresholds[place] == element->block_start_indent) {
+            continue;
+        }
+        for (size_t move = indent_used; move > place; move--) {
+            thresholds[move] = thresholds[move - 1];
+        }
+        thresholds[place] = element->block_start_indent;
+        indent_used++;
+    }
+    markdown_core_registry prepared = {
+        .elements = list,
+        .element_count = total,
+        .inline_dispatch_offsets = offsets,
+        .inline_dispatch = dispatch,
+        .block_owners = owner_table,
+        .block_owner_sets = {sets, sets + rows * words, sets + 2 * rows * words, sets + 3 * rows * words, words,
+                             MARKDOWN_CORE_BLOCK_OWNER_BYTES + indent_used, indent_used ? thresholds : NULL},
+        .inline_hooks = {hook_table, 0, 0, 0},
+        .special_chars = special,
+        .skip_chars = skip,
+        .storage = storage};
     for (size_t i = 0; i < total; i++) {
         const markdown_core_element *element = i < count ? elements[i] : extra;
         list[i] = element;
@@ -940,57 +980,38 @@ bool markdown_core_registry_prepare(markdown_core_mem *mem, const markdown_core_
         prepared.inline_hooks.dispose_count += element->dispose_inline != NULL;
         prepared.inline_completion_walk |= element->complete_inline && !element->complete_inline_on_request;
         if (S_owns_block_starts(element)) {
-            /* The owner's bit joins the set of every byte it accepts, for
-             * each hook it implements. */
             size_t owner = prepared.block_owner_count++;
             uint64_t bit = (uint64_t)1 << (owner % 64);
             size_t word = owner / 64;
             owner_table[owner] = element;
-            const unsigned char *accepted = (const unsigned char *)element->block_start_bytes;
             size_t stride = rows * words;
-            for (size_t c = 0; c < MARKDOWN_CORE_BLOCK_OWNER_BYTES; c++) {
-                bool accepts = !accepted;
-                for (const unsigned char *b = accepted; !accepts && b && *b; b++) {
-                    accepts = *b == c;
+            /* The row this owner's declared indent took above, and so the
+             * first row of the ones it joins: a line that reaches a higher
+             * indent has reached this one, so the rows accumulate upward. */
+            size_t indent_row = indent_used;
+            if (element->block_start_indent > 0) {
+                indent_row = 0;
+                while (thresholds[indent_row] != element->block_start_indent) {
+                    indent_row++;
                 }
-                if (!accepts) {
+            }
+            /* Each hook the element implements joins the rows of the bytes
+             * that hook accepts at -- its own set where it declared one, the
+             * element's otherwise -- in that hook's bank, and the indent rows
+             * the element reaches. */
+            for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
+                if (!S_implements_block_hook(element, hook)) {
                     continue;
                 }
-                uint64_t *slot = sets + c * words + word;
-                slot[0] |= element->scan_block_start ? bit : 0;
-                slot[stride] |= element->try_interrupting_block ? bit : 0;
-                slot[2 * stride] |= element->try_opening_block ? bit : 0;
-                slot[3 * stride] |= element->try_opening_paragraph ? bit : 0;
-            }
-            /* A block that begins at an indent joins its own indent's row and
-             * every row above it, so a line reads one row for the indent it
-             * reached and reaches no owner that asked for more. The row's
-             * threshold takes its place in ascending order as it arrives. */
-            if (element->block_start_indent > 0) {
-                size_t at_row = 0;
-                while (at_row < indent_used && thresholds[at_row] < element->block_start_indent) {
-                    at_row++;
-                }
-                if (at_row == indent_used || thresholds[at_row] != element->block_start_indent) {
-                    /* A new threshold takes its place in ascending order, and
-                     * starts from what the threshold below it already admits:
-                     * a line that reaches this indent has reached that one. */
-                    for (size_t move = indent_used; move > at_row; move--) {
-                        thresholds[move] = thresholds[move - 1];
-                        S_copy_owner_row(sets, stride, words, MARKDOWN_CORE_BLOCK_OWNER_BYTES + move,
-                                         MARKDOWN_CORE_BLOCK_OWNER_BYTES + move - 1);
+                const unsigned char *accepted = S_block_hook_bytes(element, hook);
+                uint64_t *bank = sets + hook * stride;
+                for (size_t c = 0; c < MARKDOWN_CORE_BLOCK_OWNER_BYTES; c++) {
+                    if (S_accepts_block_start_byte(accepted, c)) {
+                        bank[c * words + word] |= bit;
                     }
-                    thresholds[at_row] = element->block_start_indent;
-                    S_copy_owner_row(sets, stride, words, MARKDOWN_CORE_BLOCK_OWNER_BYTES + at_row,
-                                     at_row ? MARKDOWN_CORE_BLOCK_OWNER_BYTES + at_row - 1 : 0);
-                    indent_used++;
                 }
-                for (size_t g = at_row; g < indent_used; g++) {
-                    uint64_t *slot = sets + (MARKDOWN_CORE_BLOCK_OWNER_BYTES + g) * words + word;
-                    slot[0] |= element->scan_block_start ? bit : 0;
-                    slot[stride] |= element->try_interrupting_block ? bit : 0;
-                    slot[2 * stride] |= element->try_opening_block ? bit : 0;
-                    slot[3 * stride] |= element->try_opening_paragraph ? bit : 0;
+                for (size_t g = indent_row; element->block_start_indent > 0 && g < indent_used; g++) {
+                    bank[(MARKDOWN_CORE_BLOCK_OWNER_BYTES + g) * words + word] |= bit;
                 }
             }
         }

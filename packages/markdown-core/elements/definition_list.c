@@ -322,6 +322,12 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .continue_container = continue_container,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_definition_list_scan,
+    /* The two hooks are two grammars. A marker line names its own byte --
+     * markdown_core_block_definition_marker refuses every other before the
+     * scan can accept -- while a term is whatever line a marker line follows,
+     * so the paragraph fallback is reached on any byte. Declaring the union
+     * would put the scan in all 256. */
+    .block_start_hook_bytes = {[MARKDOWN_CORE_BLOCK_HOOK_SCAN] = ":~"},
     .try_opening_paragraph = try_paragraph,
 };
 

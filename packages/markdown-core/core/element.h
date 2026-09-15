@@ -19,6 +19,18 @@ typedef struct markdown_core_block_reader {
 typedef int (*markdown_core_probe_block_func)(markdown_core_parser *parser, markdown_core_chunk *input, int first,
                                               int indent, markdown_core_block_reader *reader);
 
+/* The block hooks an element may implement, in the order the block-start
+ * arbitrations run them, which is also the order the projection banks their
+ * owner sets (markdown_core_block_owner_sets). An element declares the bytes
+ * each of them accepts at; see block_start_bytes. */
+typedef enum {
+    MARKDOWN_CORE_BLOCK_HOOK_SCAN,
+    MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT,
+    MARKDOWN_CORE_BLOCK_HOOK_OPEN,
+    MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH,
+    MARKDOWN_CORE_BLOCK_HOOK_COUNT
+} markdown_core_block_hook;
+
 /* Node-valued fields are independent child-tree roots. This internal hook
  * exposes their owning slots only to parser phases; it does not change the
  * public child iterator or make a field a parent/child edge. Destruction
@@ -139,12 +151,20 @@ struct markdown_core_element {
     void (*finalize_block)(markdown_core_parser *, markdown_core_node *);
     void (*complete_block)(markdown_core_parser *, markdown_core_node *);
 
-    /* The bytes at a line's first non-space position at which any of this
-     * element's block hooks (scan_block_start, try_interrupting_block,
-     * try_opening_block, try_opening_paragraph) can accept. NULL means every
-     * byte, including a line end; an element whose grammar begins with a
-     * known byte is not consulted for lines that begin otherwise. */
+    /* The bytes at a line's first non-space position at which this element's
+     * block hooks can accept. NULL means every byte, including a line end; an
+     * element whose grammar begins with a known byte is not consulted for
+     * lines that begin otherwise.
+     *
+     * `block_start_bytes` is what every hook accepts at. A hook that accepts
+     * at fewer bytes than that names its own set in `block_start_hook_bytes`,
+     * indexed by markdown_core_block_hook; a NULL entry leaves that hook at
+     * the element's. An element with one grammar declares only the first. One
+     * whose hooks are different grammars -- a marker that must be its own
+     * byte, and a term the line below decides -- declares the narrow ones
+     * here, so the widest hook no longer drags the rest into every byte. */
     const char *block_start_bytes;
+    const char *block_start_hook_bytes[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     /* The indent from which those hooks accept a line of any first byte, for
      * an element one of whose blocks begins at an indent rather than at a
      * byte -- an indented code block is the whole of that grammar, and the

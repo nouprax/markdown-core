@@ -2461,6 +2461,12 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .opaque_size = sizeof(markdown_core_table),
 
     .try_interrupting_block = try_interrupting_block,
+    /* The two hooks are two grammars. Only a dash line interrupts, and the
+     * interrupt refuses every other byte before it does anything else; the
+     * opener is reached on any byte, because a lazy continuation line of any
+     * content can be the header the separator below it names. Declaring the
+     * union would put the interrupt in all 256. */
+    .block_start_hook_bytes = {[MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT] = "-"},
 
     .name = "table",
     .last_block_matches = matches,

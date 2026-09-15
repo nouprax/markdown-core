@@ -7071,6 +7071,142 @@ static void owners_are_reached_by_their_bytes_or_their_indent(test_batch_runner 
     }
 }
 
+/* A hook is reached at its own bytes, not at its element's. An element whose
+ * hooks are different grammars declares the narrow one; the wide one no
+ * longer drags it into every byte. */
+static size_t hook_byte_visits[2];
+static markdown_core_node *visit_narrow_hook(markdown_core_parser *parser, markdown_core_node *node,
+                                             markdown_core_chunk *input, bool lazy) {
+    (void)parser;
+    (void)node;
+    (void)input;
+    (void)lazy;
+    hook_byte_visits[0]++;
+    return NULL;
+}
+static markdown_core_node *visit_wide_hook(const markdown_core_element *self, int indented,
+                                           markdown_core_parser *parser, markdown_core_node *parent,
+                                           unsigned char *input, int len) {
+    (void)self;
+    (void)indented;
+    (void)parser;
+    (void)parent;
+    (void)input;
+    (void)len;
+    hook_byte_visits[1]++;
+    return NULL;
+}
+static markdown_core_element hook_byte_owner;
+static bool attach_hook_byte_owner(markdown_core_parser *parser, void *context) {
+    (void)context;
+    return markdown_core_parser_attach_element(parser, &hook_byte_owner);
+}
+static void a_hook_is_reached_at_its_own_bytes(test_batch_runner *runner) {
+    static const struct {
+        const char *source, *what;
+        bool narrow_reached;
+    } cases[] = {
+        /* The narrow hook declared "@"; the wide one declared nothing, so it
+           is reached on both lines and the narrow one only on its own byte. */
+        {"alpha\n", "a line of another byte", false},
+        {"@alpha\n", "a line of the narrow hook's byte", true},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        memset(&hook_byte_owner, 0, sizeof(hook_byte_owner));
+        hook_byte_owner.name = "hook-bytes";
+        hook_byte_owner.maximum_block_indent = 3;
+        hook_byte_owner.try_interrupting_block = visit_narrow_hook;
+        hook_byte_owner.try_opening_block = visit_wide_hook;
+        hook_byte_owner.block_start_hook_bytes[MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT] = "@";
+        hook_byte_visits[0] = hook_byte_visits[1] = 0;
+        markdown_core_node *root = markdown_core_parse_document_with_mem(cases[i].source, strlen(cases[i].source),
+                                                                         markdown_core_get_default_mem_allocator(),
+                                                                         attach_hook_byte_owner, NULL);
+        OK(runner, root != NULL, "%s parses", cases[i].what);
+        OK(runner, (hook_byte_visits[0] > 0) == cases[i].narrow_reached, "%s reaches the narrow hook %s(%zu visits)",
+           cases[i].what, cases[i].narrow_reached ? "" : "not ", hook_byte_visits[0]);
+        OK(runner, hook_byte_visits[1] > 0, "%s reaches the hook that declared no bytes of its own", cases[i].what);
+        markdown_core_node_free(root);
+    }
+}
+
+/* Preparing a registry stays linear in the descriptors even when many of them
+ * declare an indent: the distinct indents are settled by walking the indents
+ * already kept, never by re-reading earlier descriptors, and a setup attaches
+ * its owners one at a time with the whole registry prepared again each time.
+ * Each owner must still be reached at its own indent and no lower. */
+#define INDENT_OWNER_COUNT 48
+static markdown_core_element indent_owners[INDENT_OWNER_COUNT];
+static char indent_owner_names[INDENT_OWNER_COUNT][24];
+static size_t indent_owner_visits[INDENT_OWNER_COUNT];
+static size_t indent_owner_of(const markdown_core_element *self) { return (size_t)(self - indent_owners); }
+static markdown_core_node *visit_indent_owner(const markdown_core_element *self, int indented,
+                                              markdown_core_parser *parser, markdown_core_node *parent,
+                                              unsigned char *input, int len) {
+    (void)indented;
+    (void)parser;
+    (void)parent;
+    (void)input;
+    (void)len;
+    indent_owner_visits[indent_owner_of(self)]++;
+    return NULL;
+}
+typedef struct indent_owner_projection {
+    size_t rows;
+    int first_threshold, last_threshold;
+} indent_owner_projection;
+static bool attach_indent_owners(markdown_core_parser *parser, void *context) {
+    indent_owner_projection *seen = (indent_owner_projection *)context;
+    for (size_t i = 0; i < INDENT_OWNER_COUNT; i++) {
+        if (!markdown_core_parser_attach_element(parser, &indent_owners[i])) {
+            return false;
+        }
+    }
+    const markdown_core_block_owner_sets *sets = &parser->registry->block_owner_sets;
+    seen->rows = sets->rows;
+    seen->first_threshold = sets->indent_thresholds ? sets->indent_thresholds[0] : -1;
+    seen->last_threshold =
+        sets->indent_thresholds ? sets->indent_thresholds[sets->rows - MARKDOWN_CORE_BLOCK_OWNER_BYTES - 1] : -1;
+    return true;
+}
+static void many_indent_owners_prepare_and_dispatch(test_batch_runner *runner) {
+    memset(indent_owners, 0, sizeof(indent_owners));
+    memset(indent_owner_visits, 0, sizeof(indent_owner_visits));
+    /* Half declare a distinct indent, half repeat one already declared, so
+     * the distinct count is checked as well as the ordering. */
+    for (size_t i = 0; i < INDENT_OWNER_COUNT; i++) {
+        snprintf(indent_owner_names[i], sizeof(indent_owner_names[i]), "indent-owner-%zu", i);
+        indent_owners[i].name = indent_owner_names[i];
+        indent_owners[i].maximum_block_indent = INT_MAX;
+        indent_owners[i].block_start_bytes = "@";
+        indent_owners[i].block_start_indent = (int)(i % (INDENT_OWNER_COUNT / 2)) + 1;
+        indent_owners[i].try_opening_block = visit_indent_owner;
+    }
+    /* Three spaces reach the indents 1 to 3 and no deeper one. Four would
+     * open an indented code block, whose scan settles the line before the
+     * opening loop these probes sit in ever runs. */
+    static const char source[] = "   alpha\n";
+    indent_owner_projection seen = {0};
+    markdown_core_node *root = markdown_core_parse_document_with_mem(
+        source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(), attach_indent_owners, &seen);
+    OK(runner, root != NULL, "a registry with many indent-declaring owners parses");
+    INT_EQ(runner, (int)(seen.rows - MARKDOWN_CORE_BLOCK_OWNER_BYTES), INDENT_OWNER_COUNT / 2,
+           "the distinct declared indents each take one row");
+    INT_EQ(runner, seen.first_threshold, 1, "the rows are ordered by indent, shallowest first");
+    INT_EQ(runner, seen.last_threshold, INDENT_OWNER_COUNT / 2, "and deepest last");
+    bool reached = true, spared = true;
+    for (size_t i = 0; i < INDENT_OWNER_COUNT; i++) {
+        if (indent_owners[i].block_start_indent <= 3) {
+            reached &= indent_owner_visits[i] > 0;
+        } else {
+            spared &= indent_owner_visits[i] == 0;
+        }
+    }
+    OK(runner, reached, "every owner whose indent the line reached is visited");
+    OK(runner, spared, "and no owner that asked for a deeper indent is");
+    markdown_core_node_free(root);
+}
+
 static void terms_and_headers_from_the_line_below(test_batch_runner *runner) {
     static const struct {
         const char *source, *kind, *expect;
@@ -8735,6 +8871,8 @@ int main(int argc, char **argv) {
     finishers_see_the_node_a_hook_put_in_place(runner);
     block_owner_sets_grow_with_the_registry(runner);
     owners_are_reached_by_their_bytes_or_their_indent(runner);
+    a_hook_is_reached_at_its_own_bytes(runner);
+    many_indent_owners_prepare_and_dispatch(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;
