@@ -273,6 +273,13 @@ grep -Fq 'dispatchIdentity' scripts/benchmark-stages.mjs || {
     echo "the stage benchmark does not record what the C library dispatched on" >&2
     exit 1
 }
+# `valgrind` is a name PATH resolves too, and the measurement keeps that PATH.
+# A wrapper there can pass --version through and add an option only for
+# --tool=callgrind; --collect-atstart=no alone takes the summary to zero.
+grep -Fq 'profilerBinaries' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark does not identify the profiler program that ran" >&2
+    exit 1
+}
 # `gcc` is a name PATH resolves, and what it resolves to can be a wrapper that
 # answers every probe as the real driver would and injects an option only when
 # it compiles. compiledFlags drops the compiler token, so nothing else sees it.

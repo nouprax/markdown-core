@@ -321,7 +321,11 @@ const COMPILER_PROGRAMS = ["cc1", "collect2", "as", "ld"];
  *
  * The driver and the programs it reports for the stages below it are digested
  * by content, keyed by the name asked for so that the same toolchain installed
- * at two prefixes compares equal.
+ * at two prefixes compares equal. These are the programs a non-LTO compile and
+ * link use; LTO brings its own (lto1, lto-wrapper, the plugin) and is not
+ * digested because it cannot reach a report -- it inlines the stage boundaries
+ * and verifyStageSymbols refuses the run. That coupling is worth knowing if
+ * that check is ever loosened.
  *
  * A bare name means the driver will search PATH, so PATH is asked. A relative
  * path -- what `-B./tools` produces -- is refused instead: it resolves against
@@ -357,6 +361,53 @@ function compilerBinaries(compiler, flags) {
             fail(`${compiler} would use ${file} for ${program || "itself"}, and there is no such file`);
         }
         digest.update(`${program}\u0000${crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex")}\n`);
+    }
+    return digest.digest("hex");
+}
+
+/**
+ * The profiler that will run, by its bytes.
+ *
+ * `valgrind` is a name PATH resolves, and the measurement environment keeps
+ * that PATH deliberately. A wrapper there can pass `--version` through
+ * unchanged and add an option only for `--tool=callgrind` -- and the options
+ * that decide what gets counted are precisely the ones this driver never
+ * passes, so they conflict with nothing and simply win. `--collect-atstart=no`
+ * alone takes the summary to zero.
+ *
+ * The launcher is digested, and so is the tool binary it says it will launch
+ * for each tool this driver uses: `-d` reports the choice, which is the same
+ * question `-print-prog-name` asks the compiler. Asked in the measurement's own
+ * environment and directory, because that is where the answer has to hold.
+ */
+function profilerBinaries(isolated) {
+    const environment = measurementEnvironment(isolated);
+    const resolved = spawnSync("/bin/sh", ["-c", "command -v valgrind"], {
+        encoding: "utf8",
+        env: environment,
+        cwd: isolated
+    });
+    const launcher = resolved.status === 0 ? (resolved.stdout ?? "").trim() : "";
+    if (!launcher) fail("valgrind could not be resolved to a program, so this report cannot say what measured it");
+    const files = [launcher];
+    for (const tool of ["callgrind", "none"]) {
+        const probe = spawnSync("valgrind", ["-d", `--tool=${tool}`, "/bin/true"], {
+            encoding: "utf8",
+            env: environment,
+            cwd: isolated
+        });
+        const launched = /launcher launching (\S+)/u.exec(probe.stderr ?? "")?.[1];
+        if (!launched) fail(`valgrind would not say which ${tool} tool it launches, so this report cannot identify it`);
+        files.push(launched);
+    }
+    const digest = crypto.createHash("sha256");
+    for (const file of files) {
+        if (!path.isAbsolute(file) || !fs.existsSync(file)) {
+            fail(`valgrind would use ${file}, which is not one program this report can identify`);
+        }
+        digest.update(
+            `${path.basename(file)}\u0000${crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex")}\n`
+        );
     }
     return digest.digest("hex");
 }
@@ -410,6 +461,9 @@ function toolchain(profile) {
             ["getconf", ["GNU_LIBC_VERSION"]]
         ]),
         valgrind: required("valgrind", [["valgrind", ["--version"]]]),
+        valgrindDigest: agreed("the profiler's programs", () =>
+            profilerBinaries(measurementRoot(path.dirname(profile.binaryDir)))
+        ),
         target: resolved.summary,
         targetDigest: resolved.digest
     };
@@ -1387,7 +1441,7 @@ function markdownReport(report) {
         `| Compiler programs | \`${report.toolchain.compilerBinaries.slice(0, 16)}\` |`,
         `| C library | \`${report.toolchain.libc}\` |`,
         `| C library objects | \`${report.toolchain.libraries.summary}\` (\`${report.toolchain.libraries.digest.slice(0, 16)}\`) |`,
-        `| Profiler | \`${report.toolchain.valgrind}\` |`,
+        `| Profiler | \`${report.toolchain.valgrind}\` (\`${report.toolchain.valgrindDigest.slice(0, 16)}\`) |`,
         `| Architecture | \`${report.toolchain.architecture}\` |`,
         `| Code generation target | \`${report.toolchain.target}\` (\`${report.toolchain.targetDigest.slice(0, 16)}\`) |`,
         `| Shared cache C flags | \`${report.toolchain.flags}\` |`,
