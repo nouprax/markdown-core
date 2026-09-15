@@ -186,9 +186,51 @@ export function foldNames(profile, rename) {
     return { ...profile, self, edges };
 }
 
+/**
+ * A function name without its calling context.
+ *
+ * Under `--separate-callers=N` callgrind names a node `callee'caller`, so the
+ * same function appears once per context it is entered from. That is the whole
+ * point -- it is what lets a caller's outgoing edges be read without merging
+ * the contexts -- but every lookup by plain name has to strip it first.
+ */
+export function baseName(name) {
+    const context = name.indexOf("'");
+    return context < 0 ? name : name.slice(0, context);
+}
+
+/** The context a node was entered from, or null when it carries none. */
+export function callerContext(name) {
+    const context = name.indexOf("'");
+    return context < 0 ? null : name.slice(context + 1);
+}
+
 /** The inclusive cost of the calls from `caller` to `callee`, or null. */
 export function callEdge(profile, caller, callee) {
     return profile.edges.get(`${caller}${EDGE_SEPARATOR}${callee}`) ?? null;
+}
+
+/**
+ * Every edge whose endpoints carry these names, whatever their contexts.
+ *
+ * Reading a stage total this way is deliberate: "what the parse transaction
+ * spent calling `S_parse_source`" is the sum over however many contexts the
+ * transaction itself was entered from, and it stays separate from the nested
+ * call under `S_finish_parse`, whose caller is a different function.
+ */
+export function edgesBetween(profile, caller, callee) {
+    return [...profile.edges.values()].filter(
+        (edge) => baseName(edge.caller) === caller && baseName(edge.callee) === callee
+    );
+}
+
+/** The nodes named `callee` that were entered from `caller`. */
+export function nodesEnteredFrom(profile, callee, caller) {
+    const names = new Set();
+    for (const edge of profile.edges.values()) {
+        if (baseName(edge.callee) === callee && baseName(edge.caller) === caller) names.add(edge.callee);
+    }
+    return [...names];
 }
 
 /** Every recorded call into `callee`, whatever the caller. */

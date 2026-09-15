@@ -53,7 +53,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { callEdge, calleesOf, costRecord, foldNames, parseCallgrind } from "./lib/callgrind.mjs";
+import { baseName, costRecord, edgesBetween, foldNames, nodesEnteredFrom, parseCallgrind } from "./lib/callgrind.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const BENCHMARKS = path.join(root, "packages/markdown-core/benchmarks");
@@ -374,6 +374,13 @@ function measure(profile, engine, document, out) {
         "--tool=callgrind",
         "--cache-sim=yes",
         "--dump-instr=no",
+        /* One level of calling context. `S_parse_source` is entered twice --
+         * as the document's source read, and again nested under
+         * `S_finish_parse` for mapped block content -- and without this the
+         * two share one node, so the source stage's callee breakdown silently
+         * includes the AST stage's nested work. The totals were always read
+         * from the edge and so were right; the breakdown was not. */
+        "--separate-callers=1",
         ...CACHE,
         `--callgrind-out-file=${dump}`,
         "--quiet",
@@ -386,31 +393,66 @@ function measure(profile, engine, document, out) {
     if (!receipt) fail(`${engine}: ${document.case} produced no receipt`);
 
     const parsed = parseCallgrind(fs.readFileSync(dump, "utf8"));
-    const profileByName = foldNames(parsed, (name) => name.replace(CLONE_SUFFIX, ""));
+    const profileByName = foldNames(parsed, (name) => {
+        const context = name.indexOf("'");
+        if (context < 0) return name.replace(CLONE_SUFFIX, "");
+        return name.slice(0, context).replace(CLONE_SUFFIX, "") + name.slice(context);
+    });
     const stages = {};
     for (const stage of STAGES) {
         const boundary = definition.stages[stage];
-        const edge = callEdge(profileByName, boundary.caller, boundary.callee);
-        if (!edge) {
+        const edges = edgesBetween(profileByName, boundary.caller, boundary.callee);
+        if (!edges.length) {
             fail(`${engine}: no call edge ${boundary.caller} -> ${boundary.callee} in ${path.basename(dump)}`);
+        }
+        const cost = [];
+        let calls = 0;
+        for (const edge of edges) {
+            calls += edge.calls;
+            edge.cost.forEach((value, index) => (cost[index] = (cost[index] ?? 0) + value));
+        }
+        /* Only the callee nodes this stage entered, never the same function as
+         * the other stage reached it. */
+        const scoped = new Set(nodesEnteredFrom(profileByName, boundary.callee, boundary.caller));
+        const breakdown = new Map();
+        for (const edge of profileByName.edges.values()) {
+            if (!scoped.has(edge.caller)) continue;
+            const name = baseName(edge.callee);
+            const total = breakdown.get(name) ?? [];
+            edge.cost.forEach((value, index) => (total[index] = (total[index] ?? 0) + value));
+            breakdown.set(name, total);
+        }
+        const stageCost = costRecord(profileByName, cost);
+        const callees = [...breakdown]
+            .map(([callee, total]) => ({ callee, cost: costRecord(profileByName, total) }))
+            .sort((left, right) => right.cost.Ir - left.cost.Ir);
+        /* A part cannot exceed its whole. This held false for a release: the
+         * breakdown summed a callee across both contexts it was reached from,
+         * so the source stage reported a callee costing more than the stage
+         * itself. The contradiction was sitting in the JSON the whole time --
+         * it is checked now rather than left for a reader to notice. */
+        for (const callee of callees) {
+            if (callee.cost.Ir > stageCost.Ir) {
+                fail(
+                    `${engine}: ${stage} reports ${callee.callee} at ${callee.cost.Ir} Ir inside a stage of ` +
+                        `${stageCost.Ir} Ir, so the breakdown is counting another stage's work`
+                );
+            }
         }
         stages[stage] = {
             entry: `${boundary.caller} -> ${boundary.callee}`,
-            calls: edge.calls,
-            cost: costRecord(profileByName, edge.cost),
-            breakdown: calleesOf(profileByName, boundary.callee)
-                .map((callee) => ({ callee: callee.callee, cost: costRecord(profileByName, callee.cost) }))
-                .sort((left, right) => right.cost.Ir - left.cost.Ir)
-                .slice(0, 8)
+            calls,
+            cost: stageCost,
+            breakdown: callees.slice(0, 8)
         };
     }
     /* What excluding setup, discovery and release actually excluded. Reading
      * it keeps the exclusion auditable: a claim that fixed cost is small is a
      * measurement, and a stage split that has quietly stopped covering the
      * parse shows up here as a growing remainder rather than not at all. */
-    const whole = callEdge(profileByName, "main", ENGINE_ENTRY);
-    if (!whole) fail(`${engine}: no call edge main -> ${ENGINE_ENTRY} in ${path.basename(dump)}`);
-    const parsePathIr = costRecord(profileByName, whole.cost).Ir ?? 0;
+    const whole = edgesBetween(profileByName, "main", ENGINE_ENTRY);
+    if (!whole.length) fail(`${engine}: no call edge main -> ${ENGINE_ENTRY} in ${path.basename(dump)}`);
+    const parsePathIr = whole.reduce((total, edge) => total + (costRecord(profileByName, edge.cost).Ir ?? 0), 0);
 
     return {
         rootChildren: Number(receipt[2]),

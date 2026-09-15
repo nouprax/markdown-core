@@ -44,8 +44,18 @@ instead of not showing up at all.
 `S_parse_source` also runs nested inside `buffer_to_ast`, where mapped cell
 inputs are read back through the ordinary block parser. That work belongs to
 the AST stage and is counted there, because that is where the transaction
-spends it. It is why the driver reads call *edges* rather than per-function
-inclusive totals, which would count it under both stages at once.
+spends it.
+
+That one function being entered from two stages is why the measurement is
+shaped the way it is. Stage totals come from call *edges*, not per-function
+inclusive totals, which would count the nested run under both stages at once.
+The per-stage callee breakdowns need more than that: callgrind keys a profile
+by function, so both entries share one node and one set of outgoing edges. The
+driver runs with `--separate-callers=1`, which gives each context its own node,
+and reads the breakdown from the node this stage actually entered. The driver
+also refuses any breakdown entry that costs more than the stage containing it —
+a part cannot exceed its whole, and that is precisely what a context-merged
+breakdown reports.
 
 ## Why callgrind and not a clock
 
