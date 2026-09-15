@@ -11,8 +11,12 @@ const driver = path.join(root, "scripts/benchmark-stages.mjs");
  * The argument checks refuse before anything is built, so these run in
  * milliseconds and never touch a compiler.
  */
-function refuse(args) {
-    const result = spawnSync(process.execPath, [driver, ...args], { encoding: "utf8", cwd: root });
+function refuse(args, environment = {}) {
+    const result = spawnSync(process.execPath, [driver, ...args], {
+        encoding: "utf8",
+        cwd: root,
+        env: { ...process.env, ...environment }
+    });
     return { status: result.status, message: `${result.stderr ?? ""}`.split("\n")[0] };
 }
 
@@ -82,6 +86,25 @@ test("an unknown case is refused before anything is installed or built", () => {
     assert.match(message, /no corpus case is named no-such-case-exists/u);
     assert.match(message, /the manifest has /u);
 });
+
+/**
+ * A response file keeps its flags in a file the report never reads, so two
+ * runs whose identity tables match can have compiled different objects. The
+ * contents are what matters and the path is all that is recorded, so the
+ * arrangement is refused rather than recorded as if it said something.
+ */
+for (const name of ["CFLAGS", "LDFLAGS"]) {
+    test(`a response file in ${name} is refused`, () => {
+        const { status, message } = refuse(["--case", "block-heading"], { [name]: "@/tmp/profile.rsp" });
+        assert.notEqual(status, 0);
+        assert.match(message, new RegExp(`${name} names the response file @/tmp/profile.rsp`, "u"));
+    });
+
+    test(`ordinary flags in ${name} are not mistaken for one`, () => {
+        const { message } = refuse(["--case", "no-such-case-exists"], { [name]: "-DNDEBUG -O2" });
+        assert.match(message, /no corpus case is named no-such-case-exists/u);
+    });
+}
 
 test("an unknown flag is refused rather than ignored", () => {
     const { status, message } = refuse(["--jobs", "4"]);

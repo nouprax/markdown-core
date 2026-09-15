@@ -202,7 +202,10 @@ function parseArguments(argv) {
  * construction, which is the half of this that was missing: the measurement got
  * an allowlist earlier and the build that produced it did not.
  */
-const BUILD_VARIABLES = ["PATH", "HOME", "TMPDIR", "CFLAGS", "LDFLAGS"];
+/* The two the identity deliberately honours and records, so the two whose
+ * contents have to be visible in it. */
+const BUILD_FLAG_VARIABLES = ["CFLAGS", "LDFLAGS"];
+const BUILD_VARIABLES = ["PATH", "HOME", "TMPDIR", ...BUILD_FLAG_VARIABLES];
 
 function buildEnvironment() {
     const environment = { LC_ALL: "C", LANG: "C" };
@@ -803,6 +806,35 @@ function chainText(chain, target) {
     return { text: chain.unit.repeat(length) + tail, length };
 }
 
+/**
+ * A response file is a flag whose content is kept somewhere else.
+ *
+ * `gcc @flags.rsp` compiles with whatever that file says, and every place this
+ * report looks sees the path instead of the contents: the recorded compile
+ * lines carry `@flags.rsp`, the resolved target never shows a define at all,
+ * and the compiler's banner does not echo its own arguments. Editing the file
+ * between two runs changes the objects while every digest here stays
+ * identical -- two reports declared comparable that measured different
+ * binaries, which is the one thing the identity exists to prevent.
+ *
+ * Refused rather than expanded. Expansion is not one line: response files
+ * nest, carry their own quoting rules, and resolve their paths against the
+ * directory the compiler ran in, so an expander that is subtly wrong rebuilds
+ * this same hole behind a digest that now looks thorough. Inlining the flags
+ * is the caller's one-line fix, and the preset's own flags are pinned.
+ */
+function refuseResponseFiles() {
+    for (const name of BUILD_FLAG_VARIABLES) {
+        const file = (process.env[name] ?? "").split(/\s+/u).find((token) => token.startsWith("@"));
+        if (file) {
+            fail(
+                `${name} names the response file ${file}, whose contents reach the build but no line of the ` +
+                    `report -- editing it would change the measurement and nothing would say so; inline its flags`
+            );
+        }
+    }
+}
+
 function corpusManifest() {
     const manifest = JSON.parse(fs.readFileSync(path.join(BENCHMARKS, "corpus.json"), "utf8"));
     if (manifest.schemaVersion !== 2) fail(`unsupported corpus schema: ${manifest.schemaVersion}`);
@@ -1367,6 +1399,7 @@ function main() {
      * way, and it costs them nothing to hear it now. */
     const manifest = corpusManifest();
     refuseUnknownCases(options, manifest);
+    refuseResponseFiles();
     const profile = profileBuild();
     refuseOverlappingTrees(options, profile);
     const cmark = pinnedCmark();

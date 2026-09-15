@@ -195,6 +195,14 @@ for probe in '--help=target' '--help=params' '--help=common'; do
         exit 1
     }
 done
+# A response file is a flag whose contents live elsewhere: `gcc @flags.rsp`
+# compiles with what that file says while the compile line, the resolved target
+# and the compiler's banner all see only the path. Editing it between two runs
+# changes the objects and moves no digest here.
+grep -Fq 'refuseResponseFiles' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark records a response file's path as though it were its contents" >&2
+    exit 1
+}
 # The version line names a release, not a build of it: two compilers that print
 # the same line can carry different configure-time defaults and built-in specs,
 # and those reach the object file without reaching any compile line.
