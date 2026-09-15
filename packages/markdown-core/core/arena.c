@@ -111,21 +111,35 @@ static arena_block *arena_grow(markdown_core_arena *arena, size_t needed) {
     return block;
 }
 
-void *markdown_core_arena_alloc(markdown_core_arena *arena, size_t size) {
-    if (size > SIZE_MAX - ARENA_GRANULE) {
-        return NULL;
-    }
-    size = round_up(size ? size : 1);
+/* Carve `rounded` bytes off the current block, growing the arena when it does
+ * not hold them. `rounded` is a granule multiple and non-zero: each caller
+ * below has established that, and this is the whole of what the two of them
+ * share.
+ *
+ * A take carves through here rather than through the exported entry point
+ * because that one is emitted out of line whatever the compiler decides about
+ * folding it into a caller, and what it decides moves with the rest of the
+ * file: it stopped folding it into `markdown_core_arena_take` when this file
+ * gained a second caller of it in `markdown_core_arena_text`. Carving through
+ * a static function makes that decision stop reaching the take path. */
+static void *arena_carve(markdown_core_arena *arena, size_t rounded) {
     arena_block *block = arena->current;
-    if (!block || block->capacity - block->used < size) {
-        block = arena_grow(arena, size);
+    if (!block || block->capacity - block->used < rounded) {
+        block = arena_grow(arena, rounded);
         if (!block) {
             return NULL;
         }
     }
     void *record = block_data(block) + block->used;
-    block->used += size;
+    block->used += rounded;
     return record;
+}
+
+void *markdown_core_arena_alloc(markdown_core_arena *arena, size_t size) {
+    if (size > SIZE_MAX - ARENA_GRANULE) {
+        return NULL;
+    }
+    return arena_carve(arena, round_up(size ? size : 1));
 }
 
 /* Storage for bytes, which need no alignment: the copied text of a value, a
@@ -165,10 +179,15 @@ bool markdown_core_arena_extend(markdown_core_arena *arena, const void *storage,
     return true;
 }
 
-/* The size a record is served at: the smallest size the pools have a class
- * for. Every size up to the granule ceiling has a class of its own; above it
- * the powers of two do, which is the shape a record that grows by doubling
- * asks for, and a larger ask of any other size is served by the next power.
+/* The pool slot a record of `size` belongs to: the size it is served at, and
+ * the class that holds records of that size. They are one derivation -- a
+ * class is a served size named by its position -- so they are read together
+ * rather than each from the other.
+ *
+ * Every size up to the granule ceiling is served as it stands and has a class
+ * of its own; above the ceiling the powers of two do, which is the shape a
+ * record that grows by doubling asks for, and a larger ask of any other size
+ * is served by the next power.
  *
  * Rounding here rather than leaving such a size unpooled is what makes the
  * contract total: every record this arena hands out can be handed back,
@@ -177,71 +196,96 @@ bool markdown_core_arena_extend(markdown_core_arena *arena, const void *storage,
  * past the ceiling cannot silently stop being recycled. Only a record above
  * the ceiling pays the round-up, and only to the next power of two.
  *
- * Zero means no pool can serve the size: one that would carry the granule
- * round-up past the end of a size_t, or one above the largest representable
- * power of two. Neither can name storage that exists, so a take reports the
- * allocation failure markdown_core_arena_alloc reports for the same size,
- * and a recycle -- which could only have been handed such a size by a record
- * that was never served -- does nothing. */
-static size_t pool_size(size_t size) {
-    if (size > SIZE_MAX - ARENA_GRANULE) {
-        return 0;
+ * A served size of zero means no pool can serve the ask, and there is no
+ * class: a size within a granule of the end of a size_t carries the round-up
+ * past the end and wraps, and one above the largest representable power of
+ * two is never reached by doubling. Neither names storage that exists, so a
+ * take reports the allocation failure markdown_core_arena_alloc reports for
+ * the same size, and a recycle -- which could only have been handed such a
+ * size by a record that was never served -- does nothing. */
+typedef struct {
+    size_t served, class;
+} pool_slot;
+
+/* The powers of two above the ceiling, kept out of line: a record of a fixed
+ * size never reaches them, and a loop in the middle of the slot lookup would
+ * sit on the path of every take that does not. */
+static pool_slot pool_slot_above_ceiling(size_t want) {
+    if (!want) {
+        return (pool_slot){0, 0};
     }
-    size_t want = round_up(size ? size : 1);
-    size_t power = (size_t)MARKDOWN_CORE_ARENA_RECYCLED_MAX;
+    size_t power = (size_t)MARKDOWN_CORE_ARENA_RECYCLED_MAX, wide = 0;
     while (power < want) {
         if (power > SIZE_MAX / 2) {
-            return 0;
+            return (pool_slot){0, 0};
         }
         power <<= 1;
-    }
-    return want <= (size_t)MARKDOWN_CORE_ARENA_RECYCLED_MAX ? want : power;
-}
-
-/* A class holds records of exactly one size, so a take can only ever receive
- * a record as large as it asked for. `size` is a pool size: every caller
- * passes it through pool_size first, so every size reaching here has a class.
- */
-static size_t pool_class(size_t size) {
-    size_t units = size / ARENA_GRANULE;
-    if (units <= ARENA_EXACT_CLASSES) {
-        return units - 1;
-    }
-    size_t wide = 0;
-    while (((size_t)1 << wide) != units) {
         wide++;
     }
-    return ARENA_EXACT_CLASSES + wide;
+    return (pool_slot){power, ARENA_EXACT_CLASSES + wide};
+}
+
+static pool_slot pool_slot_for(size_t size) {
+    size_t want = round_up(size ? size : 1);
+    /* One comparison admits the exact classes and rejects a wrapped round-up
+     * with them: zero minus one is the largest size_t, so it lands where the
+     * sizes above the ceiling are, and that is where it is refused. */
+    if (want - 1 < (size_t)MARKDOWN_CORE_ARENA_RECYCLED_MAX) {
+        return (pool_slot){want, want / ARENA_GRANULE - 1};
+    }
+    return pool_slot_above_ceiling(want);
+}
+
+/* Clear a record of `class`, which is the whole of it: a class holds one
+ * size, and the slot above read backwards gives it -- an exact class as many
+ * granules as its position, a wide one the ceiling doubled as many times as
+ * its position is above the exact classes.
+ *
+ * The two spellings are the two kinds of class, not two paths through one.
+ * Writing them apart is also what keeps an exact class's size bounded by the
+ * pools' ceiling where the clear happens, so the compiler clears it in place;
+ * a wide class names any power of two and calls. Deriving one size from the
+ * class and clearing once reads better and makes every take call, including
+ * the takes whose size the compiler could otherwise see. */
+static void clear_record(void *record, size_t class) {
+    if (class < ARENA_EXACT_CLASSES) {
+        memset(record, 0, (class + 1) * (size_t)ARENA_GRANULE);
+    } else {
+        memset(record, 0, (size_t)MARKDOWN_CORE_ARENA_RECYCLED_MAX << (class - ARENA_EXACT_CLASSES));
+    }
 }
 
 void *markdown_core_arena_take(markdown_core_arena *arena, size_t size) {
-    size_t served = pool_size(size);
-    if (!served) {
+    pool_slot slot = pool_slot_for(size);
+    if (!slot.served) {
         return NULL;
     }
-    size_t class = pool_class(served);
-    if (arena->pools[class]) {
-        free_record *record = arena->pools[class];
-        arena->pools[class] = record->next;
-        memset(record, 0, served);
-        return record;
-    }
-    void *record = markdown_core_arena_alloc(arena, served);
+    size_t class = slot.class;
+    /* A class's records and a freshly carved one are the same storage at the
+     * same size; only where they come from differs, so one clear serves both.
+     * The served size is already a granule multiple, so the carve rounds
+     * nothing. */
+    free_record *record = arena->pools[class];
     if (record) {
-        memset(record, 0, served);
+        arena->pools[class] = record->next;
+    } else {
+        record = arena_carve(arena, slot.served);
+        if (!record) {
+            return NULL;
+        }
     }
+    clear_record(record, class);
     return record;
 }
 
 void markdown_core_arena_recycle(markdown_core_arena *arena, void *record, size_t size) {
-    size_t served = pool_size(size);
-    if (!record || !served) {
+    pool_slot slot = pool_slot_for(size);
+    if (!record || !slot.served) {
         return;
     }
-    size_t class = pool_class(served);
     free_record *entry = record;
-    entry->next = arena->pools[class];
-    arena->pools[class] = entry;
+    entry->next = arena->pools[slot.class];
+    arena->pools[slot.class] = entry;
 }
 
 bool markdown_core_arena_owns(const markdown_core_arena *arena, const void *record) {

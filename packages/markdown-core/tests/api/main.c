@@ -6649,6 +6649,21 @@ static void arena_recycling(test_batch_runner *runner) {
     markdown_core_arena_recycle(arena, doubled, 4096);
     OK(runner, doubled != NULL && markdown_core_arena_take(arena, 4096) == doubled,
        "an oversized record whose size is a power of two is handed out again");
+    /* A record is cleared across the whole size its class holds, not across
+     * the size the take asked for: a class above the granule ceiling serves
+     * every size up to its power of two, so a take that asks for half of one
+     * still reads all of it. */
+    unsigned char *dirty = markdown_core_arena_take(arena, 4096);
+    if (dirty) {
+        memset(dirty, 0xCD, 4096);
+        markdown_core_arena_recycle(arena, dirty, 4096);
+    }
+    unsigned char *cleared = markdown_core_arena_take(arena, 2049);
+    bool wide_zeroed = cleared != NULL && cleared == dirty;
+    for (size_t b = 0; cleared && b < 4096; b++) {
+        wide_zeroed &= cleared[b] == 0;
+    }
+    OK(runner, wide_zeroed, "a record of an oversized class is cleared across the whole class");
     void *odd = markdown_core_arena_take(arena, 4096 + 16);
     markdown_core_arena_recycle(arena, odd, 4096 + 16);
     OK(runner, odd != NULL && markdown_core_arena_take(arena, 4096 + 16) == odd,
