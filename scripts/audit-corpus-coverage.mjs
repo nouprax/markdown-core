@@ -40,7 +40,8 @@
  *   node scripts/audit-corpus-coverage.mjs [--coverage] [--floor N] [--json FILE]
  */
 
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import readline from "node:readline";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -113,20 +114,24 @@ function corpusDocuments() {
     return documents;
 }
 
-/* The deep-nesting cases dump gigabytes, so the kinds are extracted from a
- * stream rather than from a buffered result. */
-function kindsProduced(cli, documents) {
+/* The deep-nesting cases dump gigabytes, so the kinds are read off a stream a
+ * line at a time rather than from a buffered result.
+ *
+ * The reading is done here rather than by piping the dump through `grep`,
+ * because a pipeline means a shell, and a shell means the corpus path and the
+ * checkout path -- neither of which this script chooses -- are parsed as
+ * command text. There is nothing a shell was providing that a line reader does
+ * not, so the child is executed directly with its arguments as arguments. */
+async function kindsProduced(cli, documents) {
     const seen = new Set();
     for (const document of documents) {
-        const result = spawnSync(
-            "/bin/sh",
-            ["-c", `"$0" "$1" 2>/dev/null | grep -oE '[A-Za-z]+ scope=' | sed 's/ scope=//' | sort -u`, cli, document],
-            { encoding: "utf8", timeout: 600_000, maxBuffer: 1 << 20 }
-        );
-        for (const line of (result.stdout ?? "").split("\n")) {
-            const name = line.trim();
-            if (name) seen.add(name);
+        const child = spawn(cli, [document], { stdio: ["ignore", "pipe", "ignore"], timeout: 600_000 });
+        const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
+        for await (const line of lines) {
+            const match = /([A-Za-z]+) scope=/.exec(line);
+            if (match) seen.add(match[1]);
         }
+        await new Promise((resolve) => child.on("close", resolve));
     }
     return seen;
 }
@@ -206,7 +211,7 @@ if (!fs.existsSync(CLI)) {
     });
     if (!fs.existsSync(CLI)) fail(`no dump CLI at ${path.relative(root, CLI)} after building it`);
 }
-const produced = kindsProduced(CLI, documents);
+const produced = await kindsProduced(CLI, documents);
 const unbuilt = kinds.filter((kind) => !produced.has(kind));
 
 process.stdout.write(
