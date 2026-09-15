@@ -166,16 +166,31 @@ function parseArguments(argv) {
  * comparable is the failure, and a spurious rebuild is not.
  */
 function resolveTarget(compiler, flags) {
-    const argv = flags.split(/\s+/u).filter(Boolean);
+    /* Through a shell, because a shell is what splits these flags when the
+     * build runs them: CMake stores the string verbatim and the generated
+     * compile line is interpreted, so `-isystem "/opt/a b/include"` is one
+     * argument there. Splitting on whitespace here instead made the probe see
+     * `"/opt/a` and `b/include"`, and gcc reject them, for a flag set that
+     * compiles perfectly. The string reaches a shell either way, so asking
+     * this question adds no exposure the build does not already have. */
     const ask = (option) => {
-        const probe = spawnSync(compiler, [...argv, "-Q", option], { encoding: "utf8" });
+        const probe = spawnSync("/bin/sh", ["-c", `${compiler} ${flags} -Q ${option}`], { encoding: "utf8" });
         return probe.status === 0 ? (probe.stdout ?? "") : null;
     };
     const target = ask("--help=target");
-    if (target === null) return { summary: "unknown", digest: "unknown" };
+    const params = ask("--help=params");
+    /* Refused rather than recorded as unknown. Two hosts that both failed to
+     * answer would record the same "unknown" and compare as equal, which is
+     * the one outcome the identity exists to prevent -- and it would be
+     * reached silently, by any probe failure at all rather than just this
+     * one. An unanswerable target is a broken measurement, not a vague one. */
+    if (target === null || params === null) {
+        fail(`the compiler would not report its resolved target: ${compiler} ${flags}`);
+    }
     const value = (name) => new RegExp(`^\\s+-m${name}=\\s+(\\S+)`, "mu").exec(target)?.[1];
     const march = value("arch");
     const mtune = value("tune");
+    if (!march && !mtune) fail(`the compiler reported no -march or -mtune: ${compiler} ${flags}`);
     /* Whitespace in this output is tabs and padding for the terminal, not
      * content: normalizing it keeps the digest a fact about the compiler's
      * configuration rather than about its column alignment. */
@@ -185,23 +200,36 @@ function resolveTarget(compiler, flags) {
             .map((line) => line.trim().replace(/\s+/gu, " "))
             .filter(Boolean)
             .join("\n");
-    const answer = `${normalize(target)}\n${normalize(ask("--help=params") ?? "")}`;
     return {
-        summary: march || mtune ? `march=${march ?? "?"} mtune=${mtune ?? "?"}` : "unknown",
-        digest: crypto.createHash("sha256").update(answer).digest("hex")
+        summary: `march=${march ?? "?"} mtune=${mtune ?? "?"}`,
+        digest: crypto
+            .createHash("sha256")
+            .update(`${normalize(target)}\n${normalize(params)}`)
+            .digest("hex")
     };
 }
 
 function toolchain(profile) {
     const first = (text) => text.split("\n")[0].trim();
-    const optional = (command, args) => {
-        const result = spawnSync(command, args, { encoding: "utf8" });
-        return result.status === 0 ? first(result.stdout ?? "") : "unknown";
+    /* Every row here is refused rather than recorded as unknown, for the same
+     * reason the resolved target is: two hosts that could not answer would
+     * record the same "unknown" and compare as equal. The libc is asked for
+     * two ways because the first is not present everywhere, and the second
+     * answers wherever the first is missing on a glibc host. */
+    const required = (what, attempts) => {
+        for (const [command, args] of attempts) {
+            const result = spawnSync(command, args, { encoding: "utf8" });
+            if (result.status === 0) return first(result.stdout ?? "");
+        }
+        fail(`the ${what} version could not be determined, so this report could not say what it measured`);
     };
     return {
         compiler: first(run(profile.compiler, ["--version"])),
-        libc: optional("ldd", ["--version"]),
-        valgrind: optional("valgrind", ["--version"]),
+        libc: required("C library", [
+            ["ldd", ["--version"]],
+            ["getconf", ["GNU_LIBC_VERSION"]]
+        ]),
+        valgrind: required("valgrind", [["valgrind", ["--version"]]]),
         ...(() => {
             const resolved = resolveTarget(profile.compiler, `${process.env.CFLAGS ?? ""} ${profile.flags}`);
             return { target: resolved.summary, targetDigest: resolved.digest };

@@ -186,6 +186,13 @@ for probe in '--help=target' '--help=params'; do
         exit 1
     }
 done
+# An identity row that cannot be determined fails the run. Recording "unknown"
+# instead would make two hosts that could not answer compare as equal, which is
+# the one thing the identity exists to prevent.
+if grep -Eq '\breturn "unknown"|summary: "unknown"' scripts/benchmark-stages.mjs; then
+    echo "the stage benchmark records an undetermined identity row as unknown" >&2
+    exit 1
+fi
 # The loader's inputs are not part of the identity because they are not allowed
 # into the measurement: an exported LD_PRELOAD or GLIBC_TUNABLES changes what
 # the parse stages execute while every row of the report stays as it was.
