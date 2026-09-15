@@ -88,6 +88,25 @@ only keeps the boundaries that already exist from being optimized out of the
 symbol table. The driver checks for them after the build and fails loudly
 rather than reporting a missing stage as a cheap one.
 
+## What the measurement is insulated from
+
+The measured process runs with the dynamic loader's inputs cleared —
+`LD_PRELOAD`, `LD_LIBRARY_PATH`, `GLIBC_TUNABLES` and friends. These are read at
+exec time, so an exported custom allocator would run inside the measurement
+while every row of the identity table stayed as it was; the stages call malloc
+and libc constantly, and on one host `GLIBC_TUNABLES=glibc.malloc.tcache_count=0`
+alone moves a case by ~34,500 Ir. They are cleared rather than recorded, because
+what the counts should describe is the pinned build parsing the corpus and not
+what the surrounding shell arranged to load into it.
+
+The cmark side is linked from the static archive the driver just built,
+with the library lookup constrained to static suffixes: CMake searches `.so`
+ahead of `.a`, and configuring with `BUILD_SHARED_LIBS=OFF` does not remove what
+an earlier shared build left in the tree. The oracle checkout is also required
+to be free of untracked files, not merely of modified tracked ones — a stray
+`src/config.h` is neither tracked nor ignored, and the source directory precedes
+the build directory on the include path.
+
 ## The corpus
 
 `corpus.json` names the documents. All but one sample come from cmark's own

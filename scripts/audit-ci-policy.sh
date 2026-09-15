@@ -186,6 +186,26 @@ for probe in '--help=target' '--help=params'; do
         exit 1
     }
 done
+# The loader's inputs are not part of the identity because they are not allowed
+# into the measurement: an exported LD_PRELOAD or GLIBC_TUNABLES changes what
+# the parse stages execute while every row of the report stays as it was.
+grep -Fq 'measurementEnvironment' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark measures under the caller's loader environment" >&2
+    exit 1
+}
+# The oracle is the pinned commit only if nothing untracked is shadowing it: a
+# stray src/config.h is neither tracked nor ignored, and the source directory
+# precedes the build directory on the include path.
+grep -Fq -- '--untracked-files=all' scripts/benchmark-stages.mjs || {
+    echo "the cmark oracle check ignores untracked files" >&2
+    exit 1
+}
+# The comparison links the archive the driver just built, never a DSO an
+# earlier shared build left in the same tree ahead of it in suffix order.
+grep -Fq 'CMAKE_FIND_LIBRARY_SUFFIXES' packages/markdown-core/benchmarks/CMakeLists.txt || {
+    echo "the cmark oracle is linked by an unconstrained library lookup" >&2
+    exit 1
+}
 # The toolchain is half the identity: the same binaries over different documents
 # also move every count. The report names the workload it measured by digest,
 # so an edited manifest or sample cannot be read as a parser change.

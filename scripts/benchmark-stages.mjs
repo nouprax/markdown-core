@@ -265,7 +265,12 @@ function pinnedCmark() {
     if (head !== commit) {
         fail(`the cmark oracle checkout is at ${head}, but cmark ${version} is pinned to ${commit}; run: ${install}`);
     }
-    const dirty = run("git", ["-C", checkout, "status", "--porcelain", "--untracked-files=no"]).trim();
+    /* Untracked files count. A stray `src/config.h` is not tracked and is not
+     * ignored by cmark's .gitignore, and the source directory is on the
+     * include path ahead of the build directory -- so it shadows the generated
+     * header and the build is no longer the pinned commit, while a check that
+     * asked only about tracked files reports it as one. */
+    const dirty = run("git", ["-C", checkout, "status", "--porcelain", "--untracked-files=all"]).trim();
     if (dirty) {
         fail(`the cmark oracle checkout has local modifications, so it is not cmark ${version}:\n${dirty}`);
     }
@@ -576,28 +581,57 @@ function runnerIdentity(profile) {
     return identity;
 }
 
+/**
+ * Loader inputs are cleared for the measured child.
+ *
+ * `LD_PRELOAD` and friends are read by the dynamic loader at exec time, so an
+ * exported custom allocator runs inside the measurement while every row of the
+ * report's identity table stays as it was. The parse stages call malloc and
+ * libc constantly, so this is not a rounding difference: on this host
+ * `GLIBC_TUNABLES=glibc.malloc.tcache_count=0` alone moves one case's total
+ * from 35,066,966 to 35,101,488 Ir.
+ *
+ * Cleared rather than recorded. What the counts should describe is the pinned
+ * build parsing the corpus, not whatever the surrounding shell arranged to
+ * load into it; putting the ambient environment in the identity would make
+ * those runs comparable-with-a-caveat instead of simply not happening.
+ * Valgrind sets its own loader variables for the client, so removing the
+ * inherited ones does not disturb it.
+ */
+const LOADER_VARIABLES = ["LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "LD_PROFILE", "LD_DEBUG", "GLIBC_TUNABLES"];
+
+function measurementEnvironment() {
+    const environment = { ...process.env };
+    for (const name of LOADER_VARIABLES) delete environment[name];
+    return environment;
+}
+
 function measure(profile, engine, document, out) {
     const definition = ENGINES[engine];
     const dump = path.join(out, "callgrind", `${engine}.${document.case}.x${document.scale}.out`);
     fs.mkdirSync(path.dirname(dump), { recursive: true });
-    const stdout = run("valgrind", [
-        "--tool=callgrind",
-        "--cache-sim=yes",
-        "--dump-instr=no",
-        /* One level of calling context. `S_parse_source` is entered twice --
-         * as the document's source read, and again nested under
-         * `S_finish_parse` for mapped block content -- and without this the
-         * two share one node, so the source stage's callee breakdown silently
-         * includes the AST stage's nested work. The totals were always read
-         * from the edge and so were right; the breakdown was not. */
-        "--separate-callers=1",
-        ...CACHE,
-        `--callgrind-out-file=${dump}`,
-        "--quiet",
-        path.join(profile.binaryDir, definition.runner),
-        "--document",
-        document.file
-    ]);
+    const stdout = run(
+        "valgrind",
+        [
+            "--tool=callgrind",
+            "--cache-sim=yes",
+            "--dump-instr=no",
+            /* One level of calling context. `S_parse_source` is entered twice --
+             * as the document's source read, and again nested under
+             * `S_finish_parse` for mapped block content -- and without this the
+             * two share one node, so the source stage's callee breakdown silently
+             * includes the AST stage's nested work. The totals were always read
+             * from the edge and so were right; the breakdown was not. */
+            "--separate-callers=1",
+            ...CACHE,
+            `--callgrind-out-file=${dump}`,
+            "--quiet",
+            path.join(profile.binaryDir, definition.runner),
+            "--document",
+            document.file
+        ],
+        { env: measurementEnvironment() }
+    );
 
     const receipt = /bytes=(\d+) root_children=(\d+)/u.exec(stdout);
     if (!receipt) fail(`${engine}: ${document.case} produced no receipt`);
@@ -729,6 +763,11 @@ function markdownReport(report) {
         `| Effective C flags | \`${report.toolchain.flags}\` |`,
         `| Effective link flags | \`${report.toolchain.linkFlags || "(none)"}\` |`,
         `| Corpus | \`${report.corpus.digest.slice(0, 16)}\` (${report.corpus.cases} documents) |`,
+        "",
+        "The measurement runs with the dynamic loader's inputs cleared -- LD_PRELOAD," +
+            " LD_LIBRARY_PATH and GLIBC_TUNABLES among them -- so an allocator or libc" +
+            " arranged by the surrounding shell cannot enter the counts while this table" +
+            " stays unchanged.",
         "",
         "Counts do not depend on the machine's speed, its load, or what else was" +
             " running: re-running this commit on this toolchain reproduces every number" +

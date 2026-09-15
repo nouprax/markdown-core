@@ -26,11 +26,19 @@ if(MARKDOWN_CORE_CMARK_SOURCE_DIR AND MARKDOWN_CORE_CMARK_BUILD_DIR)
     # cached path from an earlier output directory would link the comparison
     # against an archive built with flags nobody asked for.
     unset(MARKDOWN_CORE_CMARK_LIBRARY CACHE)
+    # Static suffixes only. CMake searches ".so" before ".a" on Unix, and
+    # configuring with BUILD_SHARED_LIBS=OFF does not delete what an earlier
+    # shared build left behind -- so an unconstrained lookup in a reused tree
+    # links a stale DSO whose bytes no provenance check here covers, because
+    # both the .comment check and the binary digest read the executable.
+    set(_markdown_core_find_suffixes "${CMAKE_FIND_LIBRARY_SUFFIXES}")
+    set(CMAKE_FIND_LIBRARY_SUFFIXES "${CMAKE_STATIC_LIBRARY_SUFFIX}")
     find_library(
         MARKDOWN_CORE_CMARK_LIBRARY
         NAMES cmark
         PATHS "${MARKDOWN_CORE_CMARK_BUILD_DIR}"
         NO_DEFAULT_PATH REQUIRED)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES "${_markdown_core_find_suffixes}")
     add_executable(cmark_stage_runner stage_runner.c cmark_stages.c)
     target_include_directories(
         cmark_stage_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${MARKDOWN_CORE_CMARK_SOURCE_DIR}"
