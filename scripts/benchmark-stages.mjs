@@ -121,6 +121,8 @@ function parseArguments(argv) {
         const value = argv[index + 1];
         if (flag === "--quiet") {
             options.quiet = true;
+        } else if (flag === "--corpus-only") {
+            options.corpusOnly = true;
         } else if (!value) {
             fail(`${flag} needs a value`);
         } else if (flag === "--out") {
@@ -129,8 +131,6 @@ function parseArguments(argv) {
         } else if (flag === "--case") {
             options.cases.push(value);
             index++;
-        } else if (flag === "--corpus-only") {
-            options.corpusOnly = true;
         } else if (flag === "--scale") {
             /* Digits and nothing else, naming a number JavaScript can hold
              * exactly.

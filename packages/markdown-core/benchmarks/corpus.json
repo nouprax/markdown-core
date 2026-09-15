@@ -1,6 +1,14 @@
 {
     "schemaVersion": 2,
     "targetBytes": 65536,
+    "requiredGrammars": [
+        "table_parse_grid",
+        "table_parse_pipe_header",
+        "table_parse_simple",
+        "table_parse_multiline",
+        "markdown_core_parse_task_prefix",
+        "autolink_delim"
+    ],
     "cases": [
         {
             "name": "block-bq-flat",

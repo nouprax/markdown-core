@@ -27,7 +27,19 @@
  * Citation, Footnote, Specimen, Metadata and the rest -- which is exactly the
  * set the profile was blind to.
  *
- * `--coverage` adds the line measurement behind it, with two denominators,
+ * ONE KIND IS NOT ONE GRAMMAR. Several grammars can build the same kind, so the
+ * census above cannot tell them apart: the grid, pipe, simple and multiline
+ * table parsers all produce `Table`, `TableRow` and `TableCell`, and deleting
+ * the grid case still leaves every kind built by the other three. Task markers
+ * and bare autolinks have no kind of their own at all.
+ *
+ * So a case may also declare, in the manifest, the grammar ENTRY it exists to
+ * drive, and that function is required to have run. Measured, the discrimination
+ * is not marginal: the grid case drives `table_parse_grid` to 79.1% while the
+ * other three only brush its guard clause at 6.1%, which is why the bar is a
+ * majority of the function rather than merely reaching it.
+ *
+ * The line measurement carries two denominators,
  * because they mean different things. Hand-written code is the parser: a line
  * the corpus never runs is a line the profile cannot see, and that is what the
  * floor is set on. Generated code is not: `*_scanners.c` are re2c DFAs and
@@ -37,7 +49,7 @@
  * with inputs chosen to walk a state machine rather than inputs that look like
  * documents. They are reported and deliberately not gated.
  *
- *   node scripts/audit-corpus-coverage.mjs [--coverage] [--floor N] [--json FILE]
+ *   node scripts/audit-corpus-coverage.mjs [--floor N] [--json FILE]
  */
 
 import { execFileSync, spawn, spawnSync } from "node:child_process";
@@ -48,7 +60,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const CORPUS = path.join(root, "build/benchmark-stages/corpus");
 const KIND_TABLE = path.join(root, "packages/markdown-core/elements/ast.c");
 const CLI = path.join(root, "build/cmake/packages/markdown-core/core/markdown-core");
 
@@ -68,11 +79,10 @@ const isGenerated = (file) => file.endsWith("_scanners.c") || file.endsWith(".in
 const isParsePhase = (file) => file !== "core/main.c";
 
 function parseArguments(argv) {
-    const options = { coverage: false, floor: DEFAULT_FLOOR, json: null };
+    const options = { floor: DEFAULT_FLOOR, json: null };
     for (let i = 0; i < argv.length; i++) {
         const flag = argv[i];
-        if (flag === "--coverage") options.coverage = true;
-        else if (flag === "--floor") {
+        if (flag === "--floor") {
             const value = Number(argv[++i]);
             if (!Number.isFinite(value) || value < 0 || value > 100) fail("--floor takes a percentage");
             options.floor = value;
@@ -93,24 +103,29 @@ function dialectKinds() {
     return kinds;
 }
 
-function corpusDocuments() {
-    if (!fs.existsSync(CORPUS)) {
-        /* The corpus is a function of the manifest and the tracked samples, and
-         * writing it costs a fraction of a second, so the audit produces what it
-         * reads rather than depending on a measurement job having run first. */
-        execFileSync("node", [path.join(root, "scripts/benchmark-stages.mjs"), "--corpus-only", "--quiet"], {
-            cwd: root,
-            stdio: ["ignore", "ignore", "pipe"]
-        });
-    }
+/* Generated fresh every run, into a directory this audit owns.
+ *
+ * Reusing `build/benchmark-stages/corpus` would audit whatever a previous run
+ * left there: an edited manifest or sample would be ignored while the directory
+ * existed, and documents for cases that no longer exist would still be
+ * enumerated. The audit would then pass on the previous revision's corpus,
+ * which is the one failure a coverage gate must not have. Writing it costs a
+ * fraction of a second, so there is nothing to reuse it for. */
+function corpusDocuments(directory) {
+    execFileSync(
+        "node",
+        [path.join(root, "scripts/benchmark-stages.mjs"), "--corpus-only", "--quiet", "--out", directory],
+        { cwd: root, stdio: ["ignore", "ignore", "pipe"] }
+    );
+    const corpus = path.join(directory, "corpus");
     /* One scale is enough: the second repeats the same shapes at a larger size,
      * so it moves instruction counts, not which constructs appear. */
     const documents = fs
-        .readdirSync(CORPUS)
+        .readdirSync(corpus)
         .filter((name) => name.endsWith(".x1.md"))
         .sort()
-        .map((name) => path.join(CORPUS, name));
-    if (!documents.length) fail("the corpus directory holds no .x1.md documents");
+        .map((name) => path.join(corpus, name));
+    if (!documents.length) fail("the generated corpus holds no .x1.md documents");
     return documents;
 }
 
@@ -136,6 +151,54 @@ async function kindsProduced(cli, documents) {
     return seen;
 }
 
+/* A function only brushed by a guard clause is not a grammar the corpus drives,
+ * so a declared entry has to be mostly executed. Measured on the four table
+ * grammars: the case that owns one reaches 64-79% of it, while the cases that
+ * do not reach 6.1%. */
+const EXERCISED_FLOOR = 50.0;
+
+/* The grammar entries the corpus must drive, declared BESIDE the cases rather
+ * than inside them. A case that named its own obligation could retire it by
+ * being deleted -- the corpus would stop measuring that grammar and the audit
+ * would still pass, because the requirement left with the case. Kept here, a
+ * deleted case leaves its grammar required and undriven, and the audit says so.
+ * Retiring one is then an edit to this list: a visible, reviewable act, the way
+ * removing a kind from the table in `ast.c` would be. */
+function requiredGrammars() {
+    const manifest = JSON.parse(
+        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
+    );
+    const required = manifest.requiredGrammars ?? [];
+    if (!Array.isArray(required)) fail("corpus.json: requiredGrammars must be a list of function names");
+    return required;
+}
+
+/* Per-function coverage for one document, read with the counters reset so the
+ * result is that document's alone rather than the corpus's. */
+function functionsFor(cli, buildDir, document) {
+    for (const file of gcdaDirectories(buildDir).flatMap((dir) =>
+        fs
+            .readdirSync(dir)
+            .filter((n) => n.endsWith(".gcda"))
+            .map((n) => path.join(dir, n))
+    )) {
+        fs.rmSync(file, { force: true });
+    }
+    spawnSync(cli, [document], { stdio: "ignore", timeout: 600_000 });
+    const percent = new Map();
+    for (const dir of gcdaDirectories(buildDir)) {
+        const gcda = fs
+            .readdirSync(dir)
+            .filter((n) => n.endsWith(".gcda"))
+            .map((n) => path.join(dir, n));
+        const out = spawnSync("gcov", ["-f", "-n", "-o", dir, ...gcda], { cwd: dir, encoding: "utf8" }).stdout ?? "";
+        for (const match of out.matchAll(/Function '([^']+)'\nLines executed:([\d.]+)%/g)) {
+            percent.set(match[1], Math.max(percent.get(match[1]) ?? 0, Number(match[2])));
+        }
+    }
+    return percent;
+}
+
 function coverageBuild(buildDir) {
     const run = (command, args) =>
         execFileSync(command, args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -154,7 +217,7 @@ function coverageBuild(buildDir) {
     return cli;
 }
 
-function readCoverage(buildDir) {
+function gcdaDirectories(buildDir) {
     const directories = new Set();
     const walk = (dir) => {
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -164,8 +227,12 @@ function readCoverage(buildDir) {
         }
     };
     walk(buildDir);
+    return [...directories].sort();
+}
+
+function readCoverage(buildDir) {
     let output = "";
-    for (const dir of [...directories].sort()) {
+    for (const dir of gcdaDirectories(buildDir)) {
         const gcda = fs
             .readdirSync(dir)
             .filter((n) => n.endsWith(".gcda"))
@@ -199,7 +266,9 @@ function summarise(files) {
 
 const options = parseArguments(process.argv.slice(2));
 const kinds = dialectKinds();
-const documents = corpusDocuments();
+const corpusDir = fs.mkdtempSync(path.join(os.tmpdir(), "corpus-reach-"));
+process.on("exit", () => fs.rmSync(corpusDir, { recursive: true, force: true }));
+const documents = corpusDocuments(corpusDir);
 
 if (!fs.existsSync(CLI)) {
     /* Built here rather than demanded of the caller, so the audit states one
@@ -214,16 +283,39 @@ if (!fs.existsSync(CLI)) {
 const produced = await kindsProduced(CLI, documents);
 const unbuilt = kinds.filter((kind) => !produced.has(kind));
 
-process.stdout.write(
-    `Corpus reach over ${documents.length} documents\n\n` +
-        `  node kinds built  ${kinds.length - unbuilt.length}/${kinds.length}\n`
-);
+process.stdout.write(`Corpus reach over ${documents.length} documents\n\n`);
 
-let coverage = null;
-if (options.coverage) {
+const required = requiredGrammars();
+const driven = new Set();
+const undriven = [];
+let coverage;
+{
     const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), "corpus-coverage-"));
     try {
         const instrumented = coverageBuild(buildDir);
+        /* Every case alone, with the counters reset, so what each document
+         * drives is separated from what the corpus drives together. A grammar
+         * is driven when some ONE case reaches it; spreading a function's lines
+         * across several cases that each brush it is not the same thing. */
+        for (const document of documents) {
+            for (const [name, percent] of functionsFor(instrumented, buildDir, document)) {
+                if (percent >= EXERCISED_FLOOR) driven.add(name);
+            }
+        }
+        for (const name of required) {
+            if (!driven.has(name)) {
+                undriven.push(`${name} is driven by no case, so the benchmark no longer measures that grammar`);
+            }
+        }
+        /* Then the whole corpus, for the aggregate. */
+        for (const file of gcdaDirectories(buildDir).flatMap((dir) =>
+            fs
+                .readdirSync(dir)
+                .filter((n) => n.endsWith(".gcda"))
+                .map((n) => path.join(dir, n))
+        )) {
+            fs.rmSync(file, { force: true });
+        }
         for (const document of documents) {
             spawnSync(instrumented, [document], { stdio: "ignore", timeout: 600_000 });
         }
@@ -252,6 +344,11 @@ if (options.coverage) {
 }
 process.stdout.write("\n");
 
+process.stdout.write(
+    `  node kinds built     ${kinds.length - unbuilt.length}/${kinds.length}\n` +
+        `  grammars driven      ${required.length - undriven.length}/${required.length}\n`
+);
+
 if (options.json) {
     fs.writeFileSync(
         options.json,
@@ -277,6 +374,9 @@ if (unbuilt.length) {
         `the corpus never builds these node kinds, so the staged profile says nothing about the grammars ` +
             `that produce them: ${unbuilt.join(", ")}`
     );
+}
+if (undriven.length) {
+    failures.push(`grammars the corpus must measure and no longer does:\n    ${undriven.join("\n    ")}`);
 }
 if (coverage && coverage.handWritten.percent < options.floor) {
     failures.push(
