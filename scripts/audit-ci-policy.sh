@@ -185,12 +185,29 @@ done
 # it: one -march/-mtune pair covers host CPUs that differ in which features they
 # expose, and the cache sizes that steer unrolling are in the params rather than
 # in --help=target.
-for probe in '--help=target' '--help=params'; do
+# --help=common belongs to that answer too: a configure-time default such as
+# --enable-default-pie shows up there as `-fPIE [enabled]` and nowhere else the
+# report reads -- not in a version string, not on a recorded compile line.
+for probe in '--help=target' '--help=params' '--help=common'; do
     grep -Fq -- "$probe" scripts/benchmark-stages.mjs || {
         echo "the stage benchmark does not ask the compiler for $probe" >&2
         exit 1
     }
 done
+# The version line names a release, not a build of it: two compilers that print
+# the same line can carry different configure-time defaults and built-in specs,
+# and those reach the object file without reaching any compile line.
+grep -Fq 'compilerConfiguration' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark identifies the compiler by its version line alone" >&2
+    exit 1
+}
+# Every probe that feeds a digest is asked twice and must agree. A digest that
+# moves between two identical probes makes every report incomparable and every
+# build tree foreign, and does it silently -- the counts stay plausible.
+grep -Fq 'function agreed(' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark does not check that its identity probes reproduce" >&2
+    exit 1
+}
 # An identity row that cannot be determined fails the run. Recording "unknown"
 # instead would make two hosts that could not answer compare as equal, which is
 # the one thing the identity exists to prevent.

@@ -124,13 +124,18 @@ function parseArguments(argv) {
             options.cases.push(value);
             index++;
         } else if (flag === "--scale") {
+            /* Digits and nothing else. Number.parseInt reads the leading digits
+             * of "2x", "1.5" and "1e3" and discards the rest, so a mistyped
+             * scale would quietly measure a different experiment than the one
+             * asked for and the report would not say so. */
+            if (!/^\d+$/u.test(value)) fail(`--scale must be a positive integer, not ${value}`);
             options.scale = Number.parseInt(value, 10);
             index++;
         } else {
             fail(`unknown argument: ${flag}`);
         }
     }
-    if (!Number.isInteger(options.scale) || options.scale < 1) fail("--scale must be a positive integer");
+    if (options.scale < 1) fail("--scale must be a positive integer");
     return options;
 }
 
@@ -196,6 +201,23 @@ function buildEnvironment() {
     return environment;
 }
 
+/**
+ * Asked twice and required to agree.
+ *
+ * A digest that moves between two identical probes makes every report
+ * incomparable with every other and every build tree foreign to the next run
+ * -- and does both silently, because the counts stay perfectly plausible. One
+ * varying line is enough to do it, so the property is checked rather than
+ * assumed.
+ */
+function agreed(what, produce) {
+    const first = produce();
+    if (first !== produce()) {
+        fail(`${what} answered differently to two identical probes, so no report could be compared to another`);
+    }
+    return first;
+}
+
 function resolveTarget(compiler, flags) {
     /* Through a shell, because a shell is what splits these flags when the
      * build runs them: CMake stores the string verbatim and the generated
@@ -211,36 +233,84 @@ function resolveTarget(compiler, flags) {
         });
         return probe.status === 0 ? (probe.stdout ?? "") : null;
     };
-    const target = ask("--help=target");
-    const params = ask("--help=params");
-    /* Refused rather than recorded as unknown. Two hosts that both failed to
-     * answer would record the same "unknown" and compare as equal, which is
-     * the one outcome the identity exists to prevent -- and it would be
-     * reached silently, by any probe failure at all rather than just this
-     * one. An unanswerable target is a broken measurement, not a vague one. */
-    if (target === null || params === null) {
-        fail(`the compiler would not report its resolved target: ${compiler} ${flags}`);
-    }
-    const value = (name) => new RegExp(`^\\s+-m${name}=\\s+(\\S+)`, "mu").exec(target)?.[1];
-    const march = value("arch");
-    const mtune = value("tune");
-    if (!march && !mtune) fail(`the compiler reported no -march or -mtune: ${compiler} ${flags}`);
     /* Whitespace in this output is tabs and padding for the terminal, not
      * content: normalizing it keeps the digest a fact about the compiler's
-     * configuration rather than about its column alignment. */
-    const normalize = (text) =>
+     * configuration rather than about its column alignment.
+     *
+     * `-o <file>` is dropped with it. Under --help=common the compiler reports
+     * the temporary assembler file of THIS invocation there, a fresh name
+     * every time -- what it was handed, not how it is configured. */
+    const settings = (text) =>
         text
             .split("\n")
             .map((line) => line.trim().replace(/\s+/gu, " "))
-            .filter(Boolean)
+            .filter((line) => line && !line.startsWith("-o <file>"))
             .join("\n");
+    const answer = () => {
+        const target = ask("--help=target");
+        const params = ask("--help=params");
+        /* The common options too, because that is where a configure-time
+         * default shows its effect: a GCC built --enable-default-pie reports
+         * `-fPIE [enabled]` here and names it under --help=target only as a
+         * side effect on an unrelated row. */
+        const common = ask("--help=common");
+        /* Refused rather than recorded as unknown. Two hosts that both failed
+         * to answer would record the same "unknown" and compare as equal,
+         * which is the one outcome the identity exists to prevent -- and it
+         * would be reached silently, by any probe failure at all rather than
+         * just this one. An unanswerable target is a broken measurement, not a
+         * vague one. */
+        if (target === null || params === null || common === null) {
+            fail(`the compiler would not report its resolved target: ${compiler} ${flags}`);
+        }
+        return `${settings(target)}\n${settings(params)}\n${settings(common)}`;
+    };
+    const text = agreed(`the compiler's resolved target (${compiler})`, answer);
+    const target = ask("--help=target");
+    const value = (name) => new RegExp(`^\\s+-m${name}=\\s+(\\S+)`, "mu").exec(target ?? "")?.[1];
+    const march = value("arch");
+    const mtune = value("tune");
+    if (!march && !mtune) fail(`the compiler reported no -march or -mtune: ${compiler} ${flags}`);
     return {
         summary: `march=${march ?? "?"} mtune=${mtune ?? "?"}`,
-        digest: crypto
-            .createHash("sha256")
-            .update(`${normalize(target)}\n${normalize(params)}`)
-            .digest("hex")
+        digest: crypto.createHash("sha256").update(text).digest("hex")
     };
+}
+
+/**
+ * What the compiler was built to be, beside what it was asked to do.
+ *
+ * The version line names a release, not a build of it. Two GCCs that print the
+ * same line can carry different configure-time defaults and different built-in
+ * specs, and those reach the object file without appearing on any compile line
+ * this report records. The banner carries the `Configured with:` line, the
+ * specs in use and the thread model, so the digest covers the compiler rather
+ * than its release number.
+ *
+ * Refused rather than recorded as unknown, for the reason every other row is:
+ * two hosts that could not answer would record the same nothing and compare as
+ * equal.
+ */
+function compilerConfiguration(compiler, flags) {
+    const banner = agreed(`the compiler's configuration (${compiler})`, () => compilerBanner(compiler, flags));
+    return crypto.createHash("sha256").update(banner).digest("hex");
+}
+
+function compilerBanner(compiler, flags) {
+    const probe = spawnSync("/bin/sh", ["-c", `${compiler} ${flags} -v`], {
+        encoding: "utf8",
+        env: buildEnvironment()
+    });
+    /* gcc and clang both write the banner to stderr and exit 0. */
+    const banner = probe.status === 0 ? `${probe.stderr ?? ""}${probe.stdout ?? ""}` : "";
+    if (!banner.trim()) {
+        fail(`the compiler would not report how it was configured: ${compiler} ${flags}`);
+    }
+    return banner
+        .split("\n")
+        .map((line) => line.trim().replace(/\s+/gu, " "))
+        .filter(Boolean)
+        .join("\n");
 }
 
 function toolchain(profile) {
@@ -257,17 +327,18 @@ function toolchain(profile) {
         }
         fail(`the ${what} version could not be determined, so this report could not say what it measured`);
     };
+    const flags = `${process.env.CFLAGS ?? ""} ${profile.flags}`;
+    const resolved = resolveTarget(profile.compiler, flags);
     return {
         compiler: first(run(profile.compiler, ["--version"])),
+        compilerDigest: compilerConfiguration(profile.compiler, flags),
         libc: required("C library", [
             ["ldd", ["--version"]],
             ["getconf", ["GNU_LIBC_VERSION"]]
         ]),
         valgrind: required("valgrind", [["valgrind", ["--version"]]]),
-        ...(() => {
-            const resolved = resolveTarget(profile.compiler, `${process.env.CFLAGS ?? ""} ${profile.flags}`);
-            return { target: resolved.summary, targetDigest: resolved.digest };
-        })()
+        target: resolved.summary,
+        targetDigest: resolved.digest
     };
 }
 
@@ -466,6 +537,7 @@ function stampOf(profile, versions) {
         process.env.LDFLAGS ?? "",
         process.arch,
         versions.compiler,
+        versions.compilerDigest,
         versions.libc,
         versions.target,
         versions.targetDigest
@@ -1083,7 +1155,7 @@ function markdownReport(report) {
         "",
         "| | |",
         "| --- | --- |",
-        `| Compiler | \`${report.toolchain.compiler}\` |`,
+        `| Compiler | \`${report.toolchain.compiler}\` (\`${report.toolchain.compilerDigest.slice(0, 16)}\`) |`,
         `| C library | \`${report.toolchain.libc}\` |`,
         `| Profiler | \`${report.toolchain.valgrind}\` |`,
         `| Architecture | \`${report.toolchain.architecture}\` |`,
@@ -1131,10 +1203,21 @@ function markdownReport(report) {
             " RESOLVED code generation target, because `-march=native` and a" +
             " distribution's default -march both name themselves identically on" +
             " machines that generate different code. The target row's digest covers" +
-            " the compiler's complete answer -- every feature switch and tuning param," +
-            " cache sizes included -- because the march and mtune names are its label" +
-            " and not its content: one pair of names covers host CPUs that differ in" +
-            " which features they expose.",
+            " the compiler's complete answer -- every feature switch, tuning param and" +
+            " common code generation option, cache sizes included -- because the march" +
+            " and mtune names are its label and not its content: one pair of names" +
+            " covers host CPUs that differ in which features they expose.",
+        "",
+        "The compiler row carries a digest of its own, over how the compiler was" +
+            " built rather than what it was asked to do. A version line names a" +
+            " release, not a build of it: two compilers printing the same line can" +
+            " carry different configure-time defaults and different built-in specs," +
+            " and those reach the object file without appearing on any compile line" +
+            " recorded here. A GCC built --enable-default-pie is the plain case -- it" +
+            " compiles position-independent by default and says so nowhere else. Every" +
+            " probe behind these two digests is asked twice and must agree, because a" +
+            " digest that moved between two runs would make every report incomparable" +
+            " while its counts stayed perfectly plausible.",
         "",
         "The last row is the workload rather than the build: one digest over every" +
             " document measured, content and all. An edited corpus manifest, an edited" +
