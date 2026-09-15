@@ -69,6 +69,20 @@ test("--scale takes digits naming a number held exactly, leading zeros and all",
     }
 });
 
+/**
+ * A mistyped case name is answerable from the manifest alone, so it is
+ * answered before the oracle, the toolchain or either build is looked at. A
+ * checkout without the pinned cmark installed otherwise reports that instead,
+ * which is a true statement about the machine and not the answer to what the
+ * caller got wrong.
+ */
+test("an unknown case is refused before anything is installed or built", () => {
+    const { status, message } = refuse(["--case", "no-such-case-exists"]);
+    assert.notEqual(status, 0);
+    assert.match(message, /no corpus case is named no-such-case-exists/u);
+    assert.match(message, /the manifest has /u);
+});
+
 test("an unknown flag is refused rather than ignored", () => {
     const { status, message } = refuse(["--jobs", "4"]);
     assert.notEqual(status, 0);

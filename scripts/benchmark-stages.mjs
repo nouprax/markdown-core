@@ -803,21 +803,36 @@ function chainText(chain, target) {
     return { text: chain.unit.repeat(length) + tail, length };
 }
 
-function buildCorpus(options) {
+function corpusManifest() {
     const manifest = JSON.parse(fs.readFileSync(path.join(BENCHMARKS, "corpus.json"), "utf8"));
     if (manifest.schemaVersion !== 2) fail(`unsupported corpus schema: ${manifest.schemaVersion}`);
-    const directory = path.join(options.out, "corpus");
-    fs.mkdirSync(directory, { recursive: true });
+    return manifest;
+}
 
-    /* Every requested name has to exist, not just one of them. A run filtered
-     * to `--case mixed-commonmark --case chain-braket-open` would otherwise
-     * measure the first, drop the typo silently, and report an experiment the
-     * caller did not ask for -- with the adversarial case they wanted absent. */
+/**
+ * Every requested name has to exist, not just one of them.
+ *
+ * A run filtered to `--case mixed-commonmark --case chain-braket-open` would
+ * otherwise measure the first, drop the typo silently, and report an
+ * experiment the caller did not ask for -- with the adversarial case they
+ * wanted absent.
+ *
+ * Asked of the manifest before anything is installed or built, because that is
+ * all it takes to answer. A typo told to go install an oracle, or told nothing
+ * until two builds have run, is a correction the caller has to wait for and
+ * then read past the wrong error to find.
+ */
+function refuseUnknownCases(options, manifest) {
     const named = new Set(manifest.cases.map((entry) => entry.name));
     const unknown = options.cases.filter((name) => !named.has(name));
     if (unknown.length) {
         fail(`no corpus case is named ${unknown.join(", ")}; the manifest has ${[...named].sort().join(", ")}`);
     }
+}
+
+function buildCorpus(options, manifest) {
+    const directory = path.join(options.out, "corpus");
+    fs.mkdirSync(directory, { recursive: true });
     const selected = options.cases.length
         ? manifest.cases.filter((entry) => options.cases.includes(entry.name))
         : manifest.cases;
@@ -1347,6 +1362,11 @@ function markdownReport(report) {
 
 function main() {
     const options = parseArguments(process.argv.slice(2));
+    /* What the arguments alone decide is settled before anything is installed,
+     * configured or built: a mistyped case name is the caller's to fix either
+     * way, and it costs them nothing to hear it now. */
+    const manifest = corpusManifest();
+    refuseUnknownCases(options, manifest);
     const profile = profileBuild();
     refuseOverlappingTrees(options, profile);
     const cmark = pinnedCmark();
@@ -1428,7 +1448,7 @@ function main() {
     versions.architecture = process.arch;
     const binaries = runnerIdentity(profile);
 
-    const corpus = buildCorpus(options);
+    const corpus = buildCorpus(options, manifest);
     const cases = [];
     for (const document of corpus.documents) {
         const engines = {};
