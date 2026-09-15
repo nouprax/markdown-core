@@ -163,6 +163,17 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     if(CMAKE_C_COMPILER_ID MATCHES "Clang")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wanon-enum-enum-conversion")
     endif()
+    # The same story for "declaration hides previous local declaration": MSVC
+    # raises it at /W4 and /WX turns it into an error, while GCC and Clang leave
+    # it out of both -Wall and -Wextra. A shadowed local therefore builds clean
+    # on every host we develop on and fails only on Windows. Ask for it by name,
+    # scoped to locals under GCC so it stays off the globals and typedefs MSVC
+    # says nothing about; Clang spells the same scope plain -Wshadow.
+    if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wshadow")
+    else()
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wshadow=local")
+    endif()
 endif()
 
 # Compile as C++ under MSVC older than 12.0

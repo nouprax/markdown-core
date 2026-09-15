@@ -1692,7 +1692,6 @@ static void dump_definition_nodes(dump_buffer *buffer, const markdown_core_node 
 }
 
 static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
-    size_t i;
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_scope scope = markdown_core_node_scope(node);
     /* `children` counts structural children: a cite's are its items. */
@@ -1822,8 +1821,8 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     }
     /* Reversed onto the stack, the items pop in drawing order, each with
      * everything nested under it before the item behind it. */
-    for (i = buffer->item_count; i-- > 0;) {
-        push_item(buffer, buffer->items[i]);
+    for (size_t pending = buffer->item_count; pending-- > 0;) {
+        push_item(buffer, buffer->items[pending]);
     }
     buffer->item_count = 0;
 }
