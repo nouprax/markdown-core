@@ -21,12 +21,19 @@
  * that is the same boundary, not an approximation of one. Both engines get
  * byte-identical documents built from the same tracked corpus.
  *
- * WHY CALLGRIND. Instruction and data-reference counts are a property of the
- * program, not of the machine it ran on, so a hosted runner reports the same
- * numbers a laptop does and a 2% change is a real 2%. Wall clock cannot make
- * that claim, which is why the pipeline this replaced could only ever be
- * informational. Nothing here is a merge gate: it is the measurement an
- * optimization is argued from.
+ * WHY CALLGRIND. Instruction and data-reference counts do not depend on how
+ * fast the machine was or what else was running on it, so a hosted runner is
+ * as good a place to measure as a quiet laptop and a 2% change is a real 2%.
+ * Wall clock cannot make that claim, which is why the pipeline this replaced
+ * could only ever be informational. Nothing here is a merge gate: it is the
+ * measurement an optimization is argued from.
+ *
+ * They are not independent of the TOOLCHAIN: another compiler or C library
+ * emits a different instruction stream for the same source. The report records
+ * the resolved compiler, libc and valgrind versions so absolute counts are only
+ * ever compared against a matching environment; the engine-to-cmark ratio is
+ * the quantity that survives an image roll, because both sides were built by
+ * whichever toolchain produced that report.
  *
  * WHAT THE NUMBERS ARE NOT. Ir is work, not time: it does not price a cache
  * miss, a branch miss, or a dependency stall. A change that trades three
@@ -121,7 +128,31 @@ function parseArguments(argv) {
     return options;
 }
 
-/** The one place the profile's compiler and flags are written down. */
+/**
+ * The one place the profile's compiler and flags are written down -- and what
+ * that name resolved to on this machine.
+ *
+ * The preset pins a compiler NAME and a flag string, which is what makes both
+ * engines comparable to each other. It does not pin a toolchain: a different
+ * gcc or libc emits a different instruction stream for the same source, so
+ * absolute counts are a property of (commit, toolchain), not of the commit.
+ * Recording the resolved versions is what lets a reader tell a code change
+ * from an image roll instead of subtracting two numbers that were never
+ * comparable.
+ */
+function toolchain(profile) {
+    const first = (text) => text.split("\n")[0].trim();
+    const optional = (command, args) => {
+        const result = spawnSync(command, args, { encoding: "utf8" });
+        return result.status === 0 ? first(result.stdout ?? "") : "unknown";
+    };
+    return {
+        compiler: first(run(profile.compiler, ["--version"])),
+        libc: optional("ldd", ["--version"]),
+        valgrind: optional("valgrind", ["--version"])
+    };
+}
+
 function profileBuild() {
     const presets = JSON.parse(fs.readFileSync(path.join(root, "CMakePresets.json"), "utf8"));
     const preset = presets.configurePresets.find((entry) => entry.name === "benchmark");
@@ -132,15 +163,32 @@ function profileBuild() {
     return { compiler, flags, binaryDir: path.join(root, "build/benchmark") };
 }
 
-/** The pinned cmark the parity oracles already use; no second version exists. */
+/**
+ * The pinned cmark the parity oracles already use; no second version exists.
+ *
+ * The checkout is verified, not assumed. `.tools/` is a local working
+ * directory: a checkout can be left on another revision or edited in place,
+ * and building whatever bytes are there while the report states the pinned
+ * commit would mislabel the comparison as against upstream cmark. The build
+ * is refused instead, the way `init-environment.sh --check` refuses it.
+ */
 function pinnedCmark() {
     const script = fs.readFileSync(path.join(root, "scripts/init-environment.sh"), "utf8");
     const version = /^CMARK_VERSION=(.+)$/mu.exec(script)?.[1];
     const commit = /^CMARK_COMMIT=([0-9a-f]{40})$/mu.exec(script)?.[1];
     if (!version || !commit) fail("scripts/init-environment.sh does not pin cmark");
     const checkout = path.join(root, ".tools/cmark", version);
+    const install = "scripts/init-environment.sh --install oracle-cmark";
     if (!fs.existsSync(path.join(checkout, "src/cmark.h"))) {
-        fail(`the pinned cmark oracle is not installed; run: scripts/init-environment.sh --install oracle-cmark`);
+        fail(`the pinned cmark oracle is not installed; run: ${install}`);
+    }
+    const head = run("git", ["-C", checkout, "rev-parse", "HEAD"]).trim();
+    if (head !== commit) {
+        fail(`the cmark oracle checkout is at ${head}, but cmark ${version} is pinned to ${commit}; run: ${install}`);
+    }
+    const dirty = run("git", ["-C", checkout, "status", "--porcelain", "--untracked-files=no"]).trim();
+    if (dirty) {
+        fail(`the cmark oracle checkout has local modifications, so it is not cmark ${version}:\n${dirty}`);
     }
     return { version, commit, checkout };
 }
@@ -220,7 +268,7 @@ function verifyStageSymbols(profile) {
 }
 
 /**
- * One document per case, built from the tracked samples.
+ * A case built by repeating whole documents.
  *
  * Each sample is normalized to end in exactly one newline and the whole unit
  * gets a blank line after it, so that repeating a unit cannot merge the last
@@ -228,9 +276,42 @@ function verifyStageSymbols(profile) {
  * document's structure, and so its cost, a non-linear function of the repeat
  * count and quietly ruin the scaling comparison.
  */
+function documentsUnit(entry) {
+    return (
+        entry.samples
+            .map((sample) => {
+                const file = path.join(BENCHMARKS, "samples", sample);
+                if (!fs.existsSync(file)) fail(`corpus.json names a missing sample: ${sample}`);
+                return `${fs.readFileSync(file, "utf8").replace(/\n*$/u, "")}\n`;
+            })
+            .join("") + "\n"
+    );
+}
+
+/**
+ * A case built as ONE structure whose depth or run length is the scale.
+ *
+ * Repeating whole documents grows the number of independent blocks and nothing
+ * else -- the blank line between copies is there precisely to keep them from
+ * interacting. That makes the growth table blind in the dimension adversarial
+ * inputs actually attack: a container nested D deep or a delimiter run of D
+ * openers stays at its original D no matter how many copies are concatenated,
+ * so work quadratic in D still reports linear growth in bytes.
+ *
+ * A chain case has no copies. Its single structure is `unit` repeated until the
+ * document reaches its size, so D doubles when the document doubles and cost
+ * quadratic in D shows up as a 4x growth ratio.
+ */
+function chainText(chain, target) {
+    const tail = chain.tail ?? "";
+    const unit = Buffer.byteLength(chain.unit);
+    const length = Math.max(1, Math.floor((target - Buffer.byteLength(tail)) / unit));
+    return { text: chain.unit.repeat(length) + tail, length };
+}
+
 function buildCorpus(options) {
     const manifest = JSON.parse(fs.readFileSync(path.join(BENCHMARKS, "corpus.json"), "utf8"));
-    if (manifest.schemaVersion !== 1) fail(`unsupported corpus schema: ${manifest.schemaVersion}`);
+    if (manifest.schemaVersion !== 2) fail(`unsupported corpus schema: ${manifest.schemaVersion}`);
     const directory = path.join(options.out, "corpus");
     fs.mkdirSync(directory, { recursive: true });
 
@@ -241,26 +322,29 @@ function buildCorpus(options) {
 
     const documents = [];
     for (const entry of selected) {
-        const unit =
-            entry.samples
-                .map((sample) => {
-                    const file = path.join(BENCHMARKS, "samples", sample);
-                    if (!fs.existsSync(file)) fail(`corpus.json names a missing sample: ${sample}`);
-                    return `${fs.readFileSync(file, "utf8").replace(/\n*$/u, "")}\n`;
-                })
-                .join("") + "\n";
+        if (Boolean(entry.samples) === Boolean(entry.chain)) {
+            fail(`corpus case ${entry.name} must name exactly one of "samples" or "chain"`);
+        }
+        const unit = entry.chain ? null : documentsUnit(entry);
         for (let scale = 1; scale <= options.scale; scale++) {
-            const target = manifest.targetBytes * scale;
-            const repeats = Math.max(1, Math.ceil(target / Buffer.byteLength(unit)));
-            const text = unit.repeat(repeats);
+            const target = (entry.targetBytes ?? manifest.targetBytes) * scale;
+            const built = entry.chain
+                ? chainText(entry.chain, target)
+                : (() => {
+                      const repeats = Math.max(1, Math.ceil(target / Buffer.byteLength(unit)));
+                      return { text: unit.repeat(repeats), length: repeats };
+                  })();
             const file = path.join(directory, `${entry.name}.x${scale}.md`);
-            fs.writeFileSync(file, text);
+            fs.writeFileSync(file, built.text);
             documents.push({
                 case: entry.name,
                 dialect: entry.dialect,
+                /* What the growth table is varying: whole documents, or the
+                 * depth/run length of one structure. */
+                growth: entry.chain ? "structure" : "documents",
                 scale,
-                repeats,
-                bytes: Buffer.byteLength(text),
+                units: built.length,
+                bytes: Buffer.byteLength(built.text),
                 file
             });
         }
@@ -347,9 +431,10 @@ function coverage(report) {
         }
     }
     if (!shares.length) return "an unknown share of";
-    /* Two decimals: a stage split covering 99.98% of the path must not be
-     * reported as covering all of it. */
-    const percent = (value) => `${(value * 100).toFixed(2)}%`;
+    /* Truncated, not rounded, at both ends: a split covering 99.998% of the
+     * path must not be reported as covering all of it, and a "covers at least"
+     * claim should err low. */
+    const percent = (value) => `${(Math.floor(value * 10000) / 100).toFixed(2)}%`;
     return `${percent(Math.min(...shares))} to ${percent(Math.max(...shares))}`;
 }
 
@@ -362,12 +447,24 @@ function markdownReport(report) {
     const lines = [];
     lines.push("## Parse stage comparison", "");
     lines.push(
-        `Markdown Core against cmark \`${report.cmark.version}\` on the same corpus, ` +
-            `measured with \`${report.valgrind}\`.`,
+        `Markdown Core against cmark \`${report.cmark.version}\` (\`${report.cmark.commit.slice(0, 12)}\`)` +
+            " on the same corpus. Both engines are compiled by the same toolchain with" +
+            ` \`${report.profile.flags}\`, so the ratio between them is a property of the` +
+            " two parsers.",
         "",
-        `Both engines are compiled by \`${report.profile.compiler}\` with ` +
-            `\`${report.profile.flags}\`. Counts are deterministic: the same commit ` +
-            "reports the same numbers on any machine.",
+        "| | |",
+        "| --- | --- |",
+        `| Compiler | \`${report.toolchain.compiler}\` |`,
+        `| C library | \`${report.toolchain.libc}\` |`,
+        `| Profiler | \`${report.toolchain.valgrind}\` |`,
+        "",
+        "Counts do not depend on the machine's speed, its load, or what else was" +
+            " running: re-running this commit on this toolchain reproduces every number" +
+            " exactly. They DO depend on the toolchain -- another compiler or C library" +
+            " emits a different instruction stream for the same source -- so absolute" +
+            " counts are comparable only against a report whose table above matches." +
+            " The ratio columns survive a toolchain change, because both engines were" +
+            " built by whichever toolchain produced the report.",
         ""
     );
 
@@ -426,10 +523,17 @@ function markdownReport(report) {
             "### Growth against input size",
             "",
             "Each case is measured again at a larger size. A stage whose cost is linear in" +
-                " the input reports a growth ratio equal to the byte ratio.",
+                " what was scaled reports a growth ratio equal to the byte ratio; a stage" +
+                " quadratic in it reports the square.",
             "",
-            "| Case | Byte ratio | Stage | Core growth | cmark growth |",
-            "| --- | ---: | --- | ---: | ---: |"
+            "The `scaled` column says which dimension grew. `documents` cases add" +
+                " independent copies, so they scale breadth and hold depth fixed." +
+                " `structure` cases are a single nested container or delimiter run whose" +
+                " depth is the size, which is the dimension a copied document cannot" +
+                " reach.",
+            "",
+            "| Case | Scaled | Byte ratio | Stage | Core growth | cmark growth |",
+            "| --- | --- | ---: | --- | ---: | ---: |"
         );
         for (const entry of scaled) {
             const base = report.cases.find((item) => item.case === entry.case && item.scale === 1);
@@ -441,8 +545,8 @@ function markdownReport(report) {
                 const cmarkBase = base.engines.cmark?.stages[stage];
                 if (!core || !coreBase || !cmark || !cmarkBase) continue;
                 lines.push(
-                    `| ${entry.case} | ${(entry.bytes / base.bytes).toFixed(2)}x | ${stage} |` +
-                        ` ${ratio(core.ir, coreBase.ir)} | ${ratio(cmark.ir, cmarkBase.ir)} |`
+                    `| ${entry.case} | ${entry.growth} | ${(entry.bytes / base.bytes).toFixed(2)}x |` +
+                        ` ${stage} | ${ratio(core.ir, coreBase.ir)} | ${ratio(cmark.ir, cmarkBase.ir)} |`
                 );
             }
         }
@@ -471,8 +575,10 @@ function main() {
     const profile = profileBuild();
     const cmark = pinnedCmark();
 
-    const valgrind = /valgrind-[0-9.]+/u.exec(run("valgrind", ["--version"]))?.[0];
-    if (!valgrind) fail("valgrind is required; install it and re-run");
+    if (spawnSync("valgrind", ["--version"], { encoding: "utf8" }).status !== 0) {
+        fail("valgrind is required; install it and re-run");
+    }
+    const versions = toolchain(profile);
 
     fs.mkdirSync(options.out, { recursive: true });
     if (options.build) {
@@ -507,8 +613,8 @@ function main() {
     }
 
     const report = {
-        schemaVersion: 1,
-        valgrind,
+        schemaVersion: 2,
+        toolchain: versions,
         profile: { compiler: profile.compiler, flags: profile.flags },
         cmark: { version: cmark.version, commit: cmark.commit },
         corpus: { targetBytes: corpus.targetBytes, cases: corpus.documents.length },

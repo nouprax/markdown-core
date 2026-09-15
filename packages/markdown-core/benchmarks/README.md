@@ -49,11 +49,12 @@ inclusive totals, which would count it under both stages at once.
 
 ## Why callgrind and not a clock
 
-Instruction and data-reference counts are a property of the program, not of the
-machine that ran it. A hosted runner reports the same numbers a laptop does, so
-a 2% difference is a real 2% rather than a neighbour's build. The wall-clock
-pipeline this replaced could never make that claim, which is why it could only
-ever be informational.
+Instruction and data-reference counts do not depend on how fast the machine was
+or what else was running on it, so a hosted runner is as good a place to
+measure as a quiet laptop and a 2% difference is a real 2% rather than a
+neighbour's build. The wall-clock pipeline this replaced could never make that
+claim, which is why it could only ever be informational. What the counts *are*
+a property of is set out below.
 
 The counts are not time. Ir does not price a cache miss, a branch miss, or a
 dependency stall, so a change that trades three instructions for one random
@@ -85,11 +86,38 @@ against. `directive.md` is repository syntax that cmark does not recognize, and
 its case is marked `extended`: Markdown Core is doing strictly more recognition
 work there, and the ratio is not an apples-to-apples one.
 
-Each case is built by repeating its samples to at least `targetBytes`, with a
-blank line between repeats so that repeating cannot merge the last block of one
-copy into the first block of the next. Both engines get byte-identical files,
-and the driver checks each engine's receipt against the file it was given.
+A `samples` case is built by repeating its samples to at least `targetBytes`,
+with a blank line between repeats so that repeating cannot merge the last block
+of one copy into the first block of the next. Both engines get byte-identical
+files, and the driver checks each engine's receipt against the file it was
+given.
 
-Every case is also measured at twice the size. A stage whose cost is linear in
-the input reports a growth ratio equal to the byte ratio; anything else is a
-complexity finding, which is a correctness question rather than a tuning one.
+A `chain` case is one structure instead of many copies: `unit` repeated until
+the document reaches its size, then `tail`. That distinction is what the
+scaling comparison rests on. Repeating a document grows the number of
+independent blocks and nothing else — the blank line between copies exists
+precisely to stop them interacting — so a container nested D deep stays at its
+original D however many copies are concatenated, and work quadratic in D would
+still report linear growth in bytes. A chain case makes D the size, so D
+doubles when the document doubles and a cost quadratic in D shows up as a 4x
+growth ratio. The four chain cases scale block-container nesting, list nesting,
+the delimiter stack, and an unclosed bracket chain.
+
+Every case is also measured at twice the size, and the growth table names which
+dimension grew. A stage whose cost is linear in what was scaled reports a
+growth ratio equal to the byte ratio; anything else is a complexity finding,
+which is a correctness question rather than a tuning one.
+
+## What the counts are a property of
+
+Instruction and data-reference counts do not depend on how fast the machine was
+or what else was running on it: re-running one commit on one toolchain
+reproduces every number exactly. They are not independent of the toolchain — a
+different compiler or C library emits a different instruction stream for the
+same source — so the report records the resolved compiler, libc and valgrind
+versions, and absolute counts are comparable only against a report whose
+toolchain table matches.
+
+The engine-to-cmark ratio is the quantity that survives that: both engines are
+built by the same toolchain within one run, so the ratio measures the two
+parsers rather than the image they were built on.

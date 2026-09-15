@@ -1,5 +1,5 @@
 {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "targetBytes": 65536,
     "cases": [
         {
@@ -194,6 +194,38 @@
                 "lorem1.md",
                 "rawtabs.md"
             ]
+        },
+        {
+            "name": "chain-quote-depth",
+            "dialect": "commonmark",
+            "chain": {
+                "unit": "> ",
+                "tail": "deep\n"
+            }
+        },
+        {
+            "name": "chain-list-depth",
+            "dialect": "commonmark",
+            "chain": {
+                "unit": "- ",
+                "tail": "leaf\n"
+            }
+        },
+        {
+            "name": "chain-emphasis-run",
+            "dialect": "commonmark",
+            "chain": {
+                "unit": "*a_ ",
+                "tail": "\n"
+            }
+        },
+        {
+            "name": "chain-bracket-run",
+            "dialect": "commonmark",
+            "chain": {
+                "unit": "[a](b",
+                "tail": "\n"
+            }
         }
     ]
 }
