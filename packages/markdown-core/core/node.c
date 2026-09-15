@@ -1148,3 +1148,22 @@ int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_o
     }
     return 1;
 }
+
+uint32_t markdown_core_node_block_kind_bit(markdown_core_node_type kind) {
+    unsigned value;
+
+    if ((kind & MARKDOWN_CORE_NODE_TYPE_MASK) != MARKDOWN_CORE_NODE_TYPE_BLOCK) {
+        return 0;
+    }
+    value = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+    /* Every block kind too large for a bit of its own shares the last one.
+     * Sharing can only make two different kinds look alike, never make one
+     * disappear, so a set built this way OVER-approximates: the cost of an
+     * extension kind beyond the word is a hook entered once too often, not a
+     * construct silently never recognised. A private bit per kind would be the
+     * other way round, and that is the direction that loses documents. */
+    if (value >= 31) {
+        return 1u << 31;
+    }
+    return 1u << value;
+}

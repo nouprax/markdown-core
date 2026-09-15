@@ -46,6 +46,29 @@ typedef enum {
 const markdown_core_element *markdown_core_structure_for_kind(markdown_core_node_type kind);
 const markdown_core_element *markdown_core_node_structure(const markdown_core_node *node);
 
+/* What the block dispatcher may know about a hook's grammar without entering
+ * it.
+ *
+ * `bytes` is the COMPLETE set of first non-space bytes that can lead the hook
+ * to claim a line. NULL means ungated: the hook is asked about every line,
+ * which is what every hook did before gates existed, so an element that
+ * declares nothing keeps exactly its old behaviour. A byte wrongly left out of
+ * a declared set does not make the parser slower, it makes it WRONG -- the
+ * construct is silently never recognised -- which is why the set belongs to
+ * the element that owns the grammar and why an audit checks it.
+ *
+ * `relaxed_containers` names the block kinds whose presence suspends the byte
+ * test. Some grammars accept any first byte, but only while a particular block
+ * is open: a table header splits an open paragraph, a table row continues an
+ * open table. Such an element declares its narrow bytes plus those kinds,
+ * rather than declaring all 256 bytes and charging every line of prose for a
+ * table that cannot start there. Bit N is the block kind whose value masks to
+ * N; zero means the byte test always applies. */
+typedef struct markdown_core_block_gate {
+    const char *bytes;
+    uint32_t relaxed_containers;
+} markdown_core_block_gate;
+
 struct markdown_core_element {
     /* Negative/zero/positive precedence separates protected tokens, ordinary
      * alternatives, and literal fallbacks without a second dispatch algorithm. */
@@ -92,6 +115,8 @@ struct markdown_core_element {
      * (see the typedef); required of an element whose blocks contain blocks. */
     markdown_core_continues_block_func continues_block;
     markdown_core_open_block_func try_opening_block;
+    /* What `try_opening_block` needs on the line before it is worth entering. */
+    markdown_core_block_gate open_block_gate;
     /* Non-consuming recognition before this element's block-opening slot.
      * Shares the producer's grammar; may report allocation failure, but never
      * opens a node or claims source. */

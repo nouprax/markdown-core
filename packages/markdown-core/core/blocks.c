@@ -137,6 +137,8 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     parser->inline_dispatch = NULL;
     parser->mem->free(parser->block_hook_allocation);
     parser->block_hook_allocation = NULL;
+    parser->mem->free(parser->block_gate_allocation);
+    parser->block_gate_allocation = NULL;
     if (parser->root) {
         markdown_core_node_free(parser->root);
     }
@@ -1768,6 +1770,62 @@ static bool S_element_implements(const markdown_core_element *element, markdown_
     return false;
 }
 
+/* The gate `element` declares for `hook`, or an ungated one. A family gains a
+ * gate by adding a descriptor field and a case here; the dispatcher below does
+ * not change and never learns an element's name. */
+static markdown_core_block_gate S_element_gate(const markdown_core_element *element, markdown_core_block_hook hook) {
+    markdown_core_block_gate ungated = {NULL, 0};
+
+    switch (hook) {
+    case MARKDOWN_CORE_BLOCK_HOOK_OPEN:
+        return element->open_block_gate;
+    case MARKDOWN_CORE_BLOCK_HOOK_SCAN:
+    case MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT:
+    case MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH:
+    case MARKDOWN_CORE_BLOCK_HOOK_PROBE:
+    case MARKDOWN_CORE_BLOCK_HOOK_COUNT:
+        break;
+    }
+    return ungated;
+}
+
+#define BLOCK_GATE_MAP_BYTES 32
+
+/* The block kinds live where the line is being offered: the container it would
+ * open inside, and the block it would continue lazily. A gate that suspends
+ * its byte test for either is asked about every byte. */
+static uint32_t S_live_container_kinds(const markdown_core_parser *parser, const markdown_core_node *container) {
+    uint32_t live = 0;
+
+    if (container) {
+        live |= markdown_core_node_block_kind_bit(container->kind);
+    }
+    if (parser->current) {
+        live |= markdown_core_node_block_kind_bit(parser->current->kind);
+    }
+    return live;
+}
+
+/* Whether the owner at `index` in `hook`'s family can claim a line whose first
+ * non-space byte is `byte`. `byte` is negative for a line with no non-space
+ * byte at all, which no declared set can name, so only a relaxed gate admits
+ * it -- a blank line still has to reach an element that continues a table. */
+static bool S_gate_admits(const markdown_core_parser *parser, markdown_core_block_hook hook, size_t index, int byte,
+                          uint32_t live) {
+    const uint8_t *map = parser->block_gate_bytes[hook];
+
+    if (!map) {
+        return true;
+    }
+    if (parser->block_gate_relaxed[hook][index] & live) {
+        return true;
+    }
+    if (byte < 0) {
+        return false;
+    }
+    return (map[index * BLOCK_GATE_MAP_BYTES + ((unsigned)byte >> 3)] & (1u << ((unsigned)byte & 7))) != 0;
+}
+
 /* Project the registry into one list per block-start hook family, in
  * descriptor order, once per parse. Built after setup has attached everything,
  * because an extension element must appear in the same families as a core one.
@@ -1782,8 +1840,12 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
 
     parser->mem->free(parser->block_hook_allocation);
     parser->block_hook_allocation = NULL;
+    parser->mem->free(parser->block_gate_allocation);
+    parser->block_gate_allocation = NULL;
     memset(parser->block_hooks, 0, sizeof(parser->block_hooks));
     memset(parser->block_hook_counts, 0, sizeof(parser->block_hook_counts));
+    memset(parser->block_gate_bytes, 0, sizeof(parser->block_gate_bytes));
+    memset(parser->block_gate_relaxed, 0, sizeof(parser->block_gate_relaxed));
 
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
         for (size_t i = 0; i < parser->element_count; i++) {
@@ -1813,6 +1875,64 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
                 entries[at++] = parser->elements[i];
             }
         }
+    }
+
+    /* A family with no declared gate keeps a NULL map and every owner is asked,
+     * so adding the first declaration to a family is what turns gating on for
+     * it -- an element that declares nothing is never skipped. */
+    size_t gate_bytes = 0, gate_relaxed = 0;
+    for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
+        bool declared = false;
+        for (size_t i = 0; i < totals[hook]; i++) {
+            if (S_element_gate(parser->block_hooks[hook][i], (markdown_core_block_hook)hook).bytes) {
+                declared = true;
+            }
+        }
+        if (declared) {
+            gate_bytes += totals[hook] * BLOCK_GATE_MAP_BYTES;
+            gate_relaxed += totals[hook];
+        }
+    }
+    if (!gate_bytes) {
+        return;
+    }
+
+    uint8_t *maps = parser->mem->calloc(gate_bytes + gate_relaxed * sizeof(uint32_t), 1);
+    if (!maps) {
+        parser->oom = true;
+        return;
+    }
+    parser->block_gate_allocation = maps;
+
+    uint32_t *relaxed = (uint32_t *)(void *)(maps + gate_bytes);
+    size_t map_at = 0, relaxed_at = 0;
+    for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
+        bool declared = false;
+        for (size_t i = 0; i < totals[hook]; i++) {
+            if (S_element_gate(parser->block_hooks[hook][i], (markdown_core_block_hook)hook).bytes) {
+                declared = true;
+            }
+        }
+        if (!declared) {
+            continue;
+        }
+        parser->block_gate_bytes[hook] = maps + map_at;
+        parser->block_gate_relaxed[hook] = relaxed + relaxed_at;
+        for (size_t i = 0; i < totals[hook]; i++) {
+            markdown_core_block_gate gate =
+                S_element_gate(parser->block_hooks[hook][i], (markdown_core_block_hook)hook);
+            uint8_t *map = maps + map_at + i * BLOCK_GATE_MAP_BYTES;
+            relaxed[relaxed_at + i] = gate.relaxed_containers;
+            if (!gate.bytes) {
+                memset(map, 0xff, BLOCK_GATE_MAP_BYTES);
+                continue;
+            }
+            for (const unsigned char *c = (const unsigned char *)gate.bytes; *c; c++) {
+                map[*c >> 3] |= (uint8_t)(1u << (*c & 7));
+            }
+        }
+        map_at += totals[hook] * BLOCK_GATE_MAP_BYTES;
+        relaxed_at += totals[hook];
     }
 }
 
@@ -1928,9 +2048,17 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             markdown_core_node *new_container = NULL;
             const markdown_core_element *const *openers = parser->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_OPEN];
             size_t opener_count = parser->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_OPEN];
+            int opener_byte =
+                parser->first_nonspace < input->len ? (int)(unsigned char)input->data[parser->first_nonspace] : -1;
+            uint32_t live_containers = S_live_container_kinds(parser, *container);
 
             for (size_t element_index = 0; element_index < opener_count; element_index++) {
                 const markdown_core_element *element = openers[element_index];
+
+                if (!S_gate_admits(parser, MARKDOWN_CORE_BLOCK_HOOK_OPEN, element_index, opener_byte,
+                                   live_containers)) {
+                    continue;
+                }
 
                 new_container = element->try_opening_block(element, parser->indent > element->maximum_block_indent,
                                                            parser, *container, input->data, input->len);

@@ -369,6 +369,15 @@ int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_o
  * the checked mutation API. */
 int markdown_core_node_attach_owned(markdown_core_node *parent, markdown_core_node *child, markdown_core_node *before);
 
+/* The bit a BLOCK kind occupies in a container-kind set, or zero for an inline
+ * kind or none at all. Block kind values are small and dense, so a set of the
+ * kinds open at a point in the parse fits one word and is tested with an AND.
+ *
+ * It lives with the node type rather than with the code that builds such a set
+ * so that the block driver can intersect two sets without naming a kind or
+ * knowing how a kind is encoded. */
+uint32_t markdown_core_node_block_kind_bit(markdown_core_node_type kind);
+
 #ifdef __cplusplus
 }
 #endif

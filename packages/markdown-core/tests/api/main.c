@@ -1468,6 +1468,89 @@ static bool attach_dispatch_observers(markdown_core_parser *parser, void *contex
            markdown_core_parser_attach_element(parser, &disjoint);
 }
 
+/* A declared block-start gate is a PROMISE ABOUT A NEGATIVE: the dispatcher
+ * skips the hook for every byte the gate leaves out, so a byte wrongly left out
+ * is not a slow parse, it is a construct that silently stops existing. Nothing
+ * in the output can show it -- the element simply never runs.
+ *
+ * So the law is checked against the implementation rather than against a
+ * fixture: for every byte the gate excludes, the hook itself must agree by
+ * returning NULL. The gate may be wider than the grammar, which only costs a
+ * call; it may never be narrower.
+ *
+ * The parent here is a DOCUMENT, so no `relaxed_containers` bit is live and
+ * the byte set alone decides -- a gate that leans on a container kind is
+ * checked for the case where that container is absent, which is the case that
+ * loses documents. */
+static void block_gate_admits_every_opener(test_batch_runner *runner) {
+    size_t element_count = 0;
+    const markdown_core_element *const *elements = markdown_core_core_elements(&element_count);
+    size_t gated = 0, violations = 0;
+    int first_bad_byte = -1;
+    const char *first_bad_element = NULL;
+
+    for (size_t i = 0; i < element_count; i++) {
+        const markdown_core_element *element = elements[i];
+        if (!element->try_opening_block || !element->open_block_gate.bytes) {
+            continue;
+        }
+        gated++;
+        for (int byte = 1; byte < 256; byte++) {
+            unsigned char line[8];
+            markdown_core_parser parser = {0};
+            markdown_core_node *parent;
+            markdown_core_node *opened;
+
+            if (byte == '\n' || byte == '\r' || strchr(element->open_block_gate.bytes, byte)) {
+                continue;
+            }
+            parser.mem = markdown_core_get_default_mem_allocator();
+            parent = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
+            if (!parent) {
+                continue;
+            }
+            line[0] = (unsigned char)byte;
+            line[1] = (unsigned char)byte;
+            line[2] = (unsigned char)byte;
+            line[3] = '\n';
+            opened = element->try_opening_block(element, 0, &parser, parent, line, 4);
+            if (opened) {
+                violations++;
+                if (first_bad_byte < 0) {
+                    first_bad_byte = byte;
+                    first_bad_element = element->name;
+                }
+            }
+            markdown_core_node_free(parent);
+        }
+    }
+
+    OK(runner, gated > 0, "at least one element declares a block-start gate for this law to bind");
+    OK(runner, violations == 0, "no gated opener claims a line its gate excludes");
+    if (violations) {
+        fprintf(stderr, "element %s opened a block on byte 0x%02x, which its gate excludes\n",
+                first_bad_element ? first_bad_element : "?", (unsigned)first_bad_byte);
+    }
+
+    /* The sweep above offers ONE line, so it can only bind a grammar that one
+     * line decides. A block whose opener needs a LATER line is invisible to
+     * it -- and that is not hypothetical: a Pandoc simple table is introduced
+     * by its header row, whose bytes are arbitrary prose, and the dashes that
+     * make it a table are on the next line. Gating such an opener on the
+     * bytes of its first line deletes the construct while every single-line
+     * probe still passes. Pin the shape here so the sweep is never mistaken
+     * for the whole law. */
+    static const char *const simple_table = "  Right     Left\n------- --------\n     12     12\n";
+    markdown_core_node *doc = parse(simple_table);
+    OK(runner, doc != NULL, "a simple table with a prose header parses");
+    if (doc) {
+        markdown_core_node *first = markdown_core_node_first_child(doc);
+        STR_EQ(runner, first ? markdown_core_node_get_type_string(first) : "", "table",
+               "a block opened by a later line survives first-line gating");
+        markdown_core_node_free(doc);
+    }
+}
+
 static void inline_dispatch_ownership(test_batch_runner *runner) {
     const char source[] = "`!` ! tail";
     dispatch_observation observation = {0};
@@ -5588,6 +5671,7 @@ int main(void) {
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
+    block_gate_admits_every_opener(runner);
     inline_dispatch_ownership(runner);
     no_node_is_its_own_ancestor(runner);
     iterator_contract_is_total(runner);

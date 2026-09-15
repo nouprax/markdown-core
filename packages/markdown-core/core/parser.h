@@ -218,6 +218,13 @@ struct markdown_core_parser {
     const markdown_core_element **block_hooks[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     size_t block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     const markdown_core_element **block_hook_allocation;
+    /* Each family's declared gates flattened to one 256-bit admitted-byte map
+     * per owner, in the family's own order, so a line tests a bit rather than
+     * walking a declared set. A NULL map means the family declared nothing and
+     * every owner is asked, which is the behaviour a gate replaces. */
+    uint8_t *block_gate_bytes[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
+    uint32_t *block_gate_relaxed[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
+    uint8_t *block_gate_allocation;
     markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
      * the special/emphasis-skip characters of the attached inline elements.
