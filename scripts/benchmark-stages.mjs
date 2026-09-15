@@ -276,15 +276,20 @@ function buildCmark(profile, cmark, out, versions) {
 const STAMP = "markdown-core-profile-stamp.txt";
 
 function stampOf(profile, versions) {
-    /* CFLAGS is in here because CMake folds it into CMAKE_C_FLAGS, which is
-     * prepended to CMAKE_C_FLAGS_RELEASE on every compile line: an exported
-     * `-march=native` changes the instruction stream without touching the
-     * preset. process.arch is in here because the same compiler string builds
-     * for more than one target. */
+    /* CFLAGS and LDFLAGS are in here because CMake initializes cache variables
+     * from both -- CMAKE_C_FLAGS ahead of CMAKE_C_FLAGS_RELEASE on every
+     * compile line, CMAKE_EXE_LINKER_FLAGS on every link line -- and CMake
+     * initializes them ONCE, at first configure. So a tree first configured
+     * under an exported `-march=native` or `-static` keeps those flags in its
+     * cache for every later build, and a run without the variable set would
+     * otherwise match the stamp and reuse binaries the preset never described.
+     * process.arch is in here because the same compiler string builds for more
+     * than one target. */
     return [
         profile.compiler,
         profile.flags,
         process.env.CFLAGS ?? "",
+        process.env.LDFLAGS ?? "",
         process.arch,
         versions.compiler,
         versions.libc,
@@ -301,17 +306,29 @@ function discardForeignTree(buildDir, profile, versions) {
 }
 
 /**
- * The flags a tree's compile lines actually carry.
+ * The flags a tree's compile and link lines actually carry.
  *
- * `CMAKE_C_FLAGS_RELEASE` is only half of it: CMake initializes
- * `CMAKE_C_FLAGS` from the CFLAGS environment variable and puts it FIRST on
- * every compile line, so a preset's flags and the effective flags are not the
- * same string and only the effective one describes the binary.
+ * The preset's `CMAKE_C_FLAGS_RELEASE` is one of four cache variables that
+ * reach a command line, and the other three come from the environment: CMake
+ * initializes `CMAKE_C_FLAGS` from CFLAGS and puts it FIRST on every compile
+ * line, and `CMAKE_EXE_LINKER_FLAGS` from LDFLAGS on every link line. The
+ * link line is not a detail the instruction counts are indifferent to -- an
+ * inherited `-static` moves the C library's code into the measured binary and
+ * changes the stream every stage is counted from.
+ *
+ * So the description of a build is read out of its own cache rather than
+ * taken from what the driver passed, and the whole set is read: a comparison
+ * whose two trees agree on the compile flags and disagree on the link flags is
+ * still a comparison between two binaries built differently.
  */
 function effectiveFlags(buildDir) {
     const cache = fs.readFileSync(path.join(buildDir, "CMakeCache.txt"), "utf8");
     const entry = (name) => new RegExp(`^${name}:[A-Z]+=(.*)$`, "mu").exec(cache)?.[1] ?? "";
-    return `${entry("CMAKE_C_FLAGS")} ${entry("CMAKE_C_FLAGS_RELEASE")}`.replace(/\s+/gu, " ").trim();
+    const join = (...names) => names.map(entry).join(" ").replace(/\s+/gu, " ").trim();
+    return {
+        compile: join("CMAKE_C_FLAGS", "CMAKE_C_FLAGS_RELEASE"),
+        link: join("CMAKE_EXE_LINKER_FLAGS", "CMAKE_EXE_LINKER_FLAGS_RELEASE")
+    };
 }
 
 function stampTree(buildDir, profile, versions) {
@@ -653,6 +670,7 @@ function markdownReport(report) {
         `| Architecture | \`${report.toolchain.architecture}\` |`,
         `| Code generation target | \`${report.toolchain.target}\` |`,
         `| Effective C flags | \`${report.toolchain.flags}\` |`,
+        `| Effective link flags | \`${report.toolchain.linkFlags || "(none)"}\` |`,
         "",
         "Counts do not depend on the machine's speed, its load, or what else was" +
             " running: re-running this commit on this toolchain reproduces every number" +
@@ -664,11 +682,12 @@ function markdownReport(report) {
         "**Compare this report only against one whose table above is identical.**" +
             " Across differing toolchains nothing here is comparable, ratios included," +
             " and a difference cannot be read as a code change. The table carries the" +
-            " EFFECTIVE compile flags rather than the preset's, because CMake folds the" +
-            " CFLAGS environment variable into every compile line ahead of them, and it" +
-            " carries the architecture and the compiler's RESOLVED code generation" +
-            " target, because `-march=native` and a distribution's default -march both" +
-            " name themselves identically on machines that generate different code.",
+            " EFFECTIVE compile and link flags rather than the preset's, because CMake" +
+            " folds the CFLAGS and LDFLAGS environment variables into those lines" +
+            " alongside them, and it carries the architecture and the compiler's" +
+            " RESOLVED code generation target, because `-march=native` and a" +
+            " distribution's default -march both name themselves identically on" +
+            " machines that generate different code.",
         ""
     );
 
@@ -801,10 +820,15 @@ function main() {
      * passed the same string to both. */
     const coreFlags = effectiveFlags(profile.binaryDir);
     const cmarkFlags = effectiveFlags(path.join(options.out, "cmark"));
-    if (coreFlags !== cmarkFlags) {
-        fail(`the engines were compiled with different flags:\n  markdown-core: ${coreFlags}\n  cmark: ${cmarkFlags}`);
+    for (const kind of ["compile", "link"]) {
+        if (coreFlags[kind] === cmarkFlags[kind]) continue;
+        fail(
+            `the engines were built with different ${kind} flags:\n` +
+                `  markdown-core: ${coreFlags[kind]}\n  cmark: ${cmarkFlags[kind]}`
+        );
     }
-    versions.flags = coreFlags;
+    versions.flags = coreFlags.compile;
+    versions.linkFlags = coreFlags.link;
     versions.architecture = process.arch;
     const binaries = runnerIdentity(profile);
 

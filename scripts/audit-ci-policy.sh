@@ -154,6 +154,28 @@ done
 grep -Fq '"CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG -g -fno-inline-functions-called-once"' CMakePresets.json
 grep -Fq 'CMAKE_C_FLAGS_RELEASE' scripts/benchmark-stages.mjs
 grep -Fq 'verifyStageSymbols' scripts/benchmark-stages.mjs
+# The preset is not the whole description of a build. CMake initializes
+# CMAKE_C_FLAGS from CFLAGS and CMAKE_EXE_LINKER_FLAGS from LDFLAGS, once, at
+# first configure -- so a tree keeps an inherited -march=native or -static for
+# every later build. All four reach a command line, so all four are what a tree
+# is identified and compared by; recording a subset makes two differently built
+# comparisons look like one report.
+for cached in \
+    'CMAKE_C_FLAGS' \
+    'CMAKE_C_FLAGS_RELEASE' \
+    'CMAKE_EXE_LINKER_FLAGS' \
+    'CMAKE_EXE_LINKER_FLAGS_RELEASE'; do
+    grep -Fq "\"$cached\"" scripts/benchmark-stages.mjs || {
+        echo "the stage benchmark does not read $cached, so it cannot describe the build it measured" >&2
+        exit 1
+    }
+done
+for inherited in CFLAGS LDFLAGS; do
+    grep -Fq "process.env.$inherited" scripts/benchmark-stages.mjs || {
+        echo "the stage benchmark does not account for an inherited $inherited" >&2
+        exit 1
+    }
+done
 # Both engines are rebuilt on every run. Nothing in a compiled binary says which
 # source produced it, so an option to reuse one is an option for the report to
 # state this commit's pins over another revision's instruction counts.

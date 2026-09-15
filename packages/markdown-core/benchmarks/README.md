@@ -147,6 +147,15 @@ same source — so the report records the resolved compiler, libc and valgrind
 versions, and absolute counts are comparable only against a report whose
 toolchain table matches.
 
+The build flags are part of that table, and they are read back out of each
+tree's CMake cache rather than taken from the preset. CMake initializes
+`CMAKE_C_FLAGS` from `CFLAGS` and `CMAKE_EXE_LINKER_FLAGS` from `LDFLAGS`, once,
+at first configure — so an exported `-march=native` or `-static` outlives the
+shell it was set in, and both the compile and the link line describe a binary
+the preset alone does not. Both are recorded, both are compared between the two
+engine trees, and a tree stamped with different ones is rebuilt rather than
+reused.
+
 The ratio is not exempt. A compiler upgrade need not change both engines by the
 same proportion, so a toolchain roll moves the ratio too. **Two reports whose
 toolchain tables differ are not comparable at all** — not their counts, not
