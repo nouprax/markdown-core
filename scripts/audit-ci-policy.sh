@@ -197,9 +197,16 @@ fi
 # into the measurement: an exported LD_PRELOAD or GLIBC_TUNABLES changes what
 # the parse stages execute while every row of the report stays as it was.
 grep -Fq 'measurementEnvironment' scripts/benchmark-stages.mjs || {
-    echo "the stage benchmark measures under the caller's loader environment" >&2
+    echo "the stage benchmark measures under the caller's environment" >&2
     exit 1
 }
+# Built, not filtered. A denylist has to name every variable that can reach into
+# a measurement -- the loader's, glibc's allocator controls, the locale -- and
+# the one nobody named is admitted silently.
+if grep -Fq '...process.env' scripts/benchmark-stages.mjs; then
+    echo "the stage benchmark hands the caller's whole environment to the measurement" >&2
+    exit 1
+fi
 # The oracle is the pinned commit only if nothing untracked is shadowing it: a
 # stray src/config.h is neither tracked nor ignored, and the source directory
 # precedes the build directory on the include path.

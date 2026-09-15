@@ -610,27 +610,40 @@ function runnerIdentity(profile) {
 }
 
 /**
- * Loader inputs are cleared for the measured child.
+ * The measured child's environment is built, not inherited.
  *
- * `LD_PRELOAD` and friends are read by the dynamic loader at exec time, so an
- * exported custom allocator runs inside the measurement while every row of the
- * report's identity table stays as it was. The parse stages call malloc and
- * libc constantly, so this is not a rounding difference: on this host
- * `GLIBC_TUNABLES=glibc.malloc.tcache_count=0` alone moves one case's total
- * from 35,066,966 to 35,101,488 Ir.
+ * The environment reaches inside the measurement. The loader reads `LD_PRELOAD`
+ * at exec time, glibc reads `GLIBC_TUNABLES` and `MALLOC_PERTURB_` when it
+ * allocates, and libc reads the locale when it classifies a byte -- and the
+ * parse stages allocate and call libc constantly, so none of this is a rounding
+ * difference. On this host, against one case's 35,066,966 Ir baseline:
  *
- * Cleared rather than recorded. What the counts should describe is the pinned
- * build parsing the corpus, not whatever the surrounding shell arranged to
- * load into it; putting the ambient environment in the identity would make
- * those runs comparable-with-a-caveat instead of simply not happening.
- * Valgrind sets its own loader variables for the client, so removing the
- * inherited ones does not disturb it.
+ *   MALLOC_PERTURB_=42                        51,807,936   (+47.7%)
+ *   GLIBC_TUNABLES=glibc.malloc.tcache_count=0 35,101,488
+ *   LC_ALL=en_US.UTF-8                        35,067,533
+ *
+ * An allowlist rather than a list of variables to remove. A denylist has to
+ * name every mechanism that can reach into a measurement, and the list above
+ * is three separate ones in three different layers -- the next is a variable
+ * nobody here has thought of, and it would be silently admitted. This way an
+ * unnamed variable is absent by construction, which is the direction that has
+ * to be safe.
+ *
+ * What is kept is what the child needs to run and nothing that steers how it
+ * runs: a path to find the binary, a home and a temporary directory for the
+ * profiler's own files. The locale is not inherited but SET, because there is
+ * no "no locale" -- libc falls back to C, so naming it makes the measurement
+ * state its locale rather than depend on the caller not having one.
+ *
+ * Valgrind sets its own loader variables for the client, so it is undisturbed.
  */
-const LOADER_VARIABLES = ["LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "LD_PROFILE", "LD_DEBUG", "GLIBC_TUNABLES"];
+const MEASUREMENT_PATH_VARIABLES = ["PATH", "HOME", "TMPDIR"];
 
 function measurementEnvironment() {
-    const environment = { ...process.env };
-    for (const name of LOADER_VARIABLES) delete environment[name];
+    const environment = { LC_ALL: "C", LANG: "C" };
+    for (const name of MEASUREMENT_PATH_VARIABLES) {
+        if (process.env[name] !== undefined) environment[name] = process.env[name];
+    }
     return environment;
 }
 
@@ -792,10 +805,12 @@ function markdownReport(report) {
         `| Effective link flags | \`${report.toolchain.linkFlags || "(none)"}\` |`,
         `| Corpus | \`${report.corpus.digest.slice(0, 16)}\` (${report.corpus.cases} documents) |`,
         "",
-        "The measurement runs with the dynamic loader's inputs cleared -- LD_PRELOAD," +
-            " LD_LIBRARY_PATH and GLIBC_TUNABLES among them -- so an allocator or libc" +
-            " arranged by the surrounding shell cannot enter the counts while this table" +
-            " stays unchanged.",
+        "The measurement runs in an environment built rather than inherited: a path," +
+            " a home, a temporary directory and the C locale, and nothing else. An" +
+            " exported LD_PRELOAD, GLIBC_TUNABLES or MALLOC_PERTURB_ would otherwise" +
+            " change what the stages execute while this table stayed identical, and the" +
+            " last of those is worth nearly 48% on one case. Naming variables to remove" +
+            " would leave the next one admitted; an unnamed variable is absent here.",
         "",
         "Counts do not depend on the machine's speed, its load, or what else was" +
             " running: re-running this commit on this toolchain reproduces every number" +

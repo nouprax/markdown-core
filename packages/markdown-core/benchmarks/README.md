@@ -90,14 +90,31 @@ rather than reporting a missing stage as a cheap one.
 
 ## What the measurement is insulated from
 
-The measured process runs with the dynamic loader's inputs cleared —
-`LD_PRELOAD`, `LD_LIBRARY_PATH`, `GLIBC_TUNABLES` and friends. These are read at
-exec time, so an exported custom allocator would run inside the measurement
-while every row of the identity table stayed as it was; the stages call malloc
-and libc constantly, and on one host `GLIBC_TUNABLES=glibc.malloc.tcache_count=0`
-alone moves a case by ~34,500 Ir. They are cleared rather than recorded, because
-what the counts should describe is the pinned build parsing the corpus and not
-what the surrounding shell arranged to load into it.
+The measured process gets an environment that is built rather than inherited: a
+path, a home, a temporary directory, and the C locale. Nothing else is passed.
+
+The environment reaches inside a measurement through several layers at once —
+the loader reads `LD_PRELOAD` at exec time, glibc reads `GLIBC_TUNABLES` and
+`MALLOC_PERTURB_` when it allocates, libc reads the locale when it classifies a
+byte — and the stages allocate and call libc constantly, so none of it is a
+rounding difference. Against one case's 35,066,966 Ir:
+
+| exported | summary Ir |
+| --- | ---: |
+| `MALLOC_PERTURB_=42` | 51,807,936 |
+| `GLIBC_TUNABLES=glibc.malloc.tcache_count=0` | 35,101,488 |
+| `LC_ALL=en_US.UTF-8` | 35,067,533 |
+
+Hence an allowlist and not a list of variables to remove: a denylist has to name
+every mechanism that can reach in, those are three of them in three different
+layers, and the next one would be admitted silently. The locale is *set* rather
+than dropped, because there is no "no locale" — libc falls back to C either way,
+so naming it makes the measurement state its locale instead of depending on the
+caller not having one.
+
+They are excluded rather than recorded because what the counts should describe
+is the pinned build parsing the corpus and not what the surrounding shell
+arranged around it.
 
 The cmark side is linked from the static archive the driver just built,
 with the library lookup constrained to static suffixes: CMake searches `.so`
