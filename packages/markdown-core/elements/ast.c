@@ -41,8 +41,16 @@ typedef struct dump_buffer {
     size_t size;
     size_t capacity;
     bool failed;
+    /* The file-tree connectors of every open nesting level. `more[depth]` says
+     * whether the node drawn at `depth` has a following sibling: it decides
+     * that node's own connector and the segment every line below it carries
+     * for that level. `prefix` holds those segments as bytes and
+     * `prefix_end[depth]` is where the segments above `depth` end, so a line
+     * copies its lead-in once instead of rebuilding it a level at a time. */
     bool *more;
-    size_t more_capacity;
+    uint8_t *prefix;
+    size_t *prefix_end;
+    size_t level_capacity;
     /* The items still to draw, the next on top. A node's line collects what it
      * nests in drawing order (`items`) and pushes that in reverse, so the walk
      * is the pre-order a recursion would produce with no C frame per nesting
@@ -991,24 +999,60 @@ static void buffer_optional_string(dump_buffer *buffer, markdown_core_optional_s
     }
 }
 
-static bool ensure_more(dump_buffer *buffer, size_t depth) {
+#define DUMP_SEGMENT_MAX 6 /* the bytes of "│   " */
+
+static bool ensure_level(dump_buffer *buffer, size_t depth) {
     bool *more;
+    uint8_t *prefix;
+    size_t *prefix_end;
     size_t capacity;
-    if (depth < buffer->more_capacity) {
+    if (depth < buffer->level_capacity) {
         return true;
     }
-    capacity = buffer->more_capacity ? buffer->more_capacity : 16;
+    capacity = buffer->level_capacity ? buffer->level_capacity : 16;
     while (capacity <= depth) {
         capacity *= 2;
     }
     more = (bool *)realloc(buffer->more, capacity * sizeof(*more));
-    if (!more) {
+    if (more) {
+        buffer->more = more;
+    }
+    prefix = (uint8_t *)realloc(buffer->prefix, capacity * DUMP_SEGMENT_MAX);
+    if (prefix) {
+        buffer->prefix = prefix;
+    }
+    prefix_end = (size_t *)realloc(buffer->prefix_end, capacity * sizeof(*prefix_end));
+    if (prefix_end) {
+        buffer->prefix_end = prefix_end;
+    }
+    if (!more || !prefix || !prefix_end) {
         buffer->failed = true;
         return false;
     }
-    buffer->more = more;
-    buffer->more_capacity = capacity;
+    if (!buffer->level_capacity) {
+        buffer->prefix_end[0] = 0;
+    }
+    buffer->level_capacity = capacity;
     return true;
+}
+
+/* Extends the segments to cover `depth`: the lines nested below the node at
+ * `depth` lead with the segments above it plus the one its own connector
+ * decides. Called once that node's `more` flag is set and before anything is
+ * drawn below it. */
+static void extend_prefix(dump_buffer *buffer, size_t depth) {
+    size_t base;
+    if (!depth) {
+        return;
+    }
+    base = buffer->prefix_end[depth - 1];
+    if (buffer->more[depth - 1]) {
+        memcpy(buffer->prefix + base, "│   ", 6);
+        buffer->prefix_end[depth] = base + 6;
+    } else {
+        memcpy(buffer->prefix + base, "    ", 4);
+        buffer->prefix_end[depth] = base + 4;
+    }
 }
 
 static const char *flow_name(markdown_core_flow flow) {
@@ -1370,13 +1414,10 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
 
 /* The file-tree connectors that lead a line at `depth`. */
 static void dump_prefix(dump_buffer *buffer, size_t depth) {
-    size_t i;
     if (!depth) {
         return;
     }
-    for (i = 0; i + 1 < depth; i++) {
-        buffer_cstr(buffer, buffer->more[i] ? "│   " : "    ");
-    }
+    buffer_bytes(buffer, buffer->prefix, buffer->prefix_end[depth - 1]);
     buffer_cstr(buffer, buffer->more[depth - 1] ? "├── " : "└── ");
 }
 
@@ -1416,7 +1457,7 @@ static void push_item(dump_buffer *buffer, dump_item item) {
  * draws them is a loop over an explicit stack, so nesting depth costs heap and
  * not C stack. The connector state of a level is written when the item at that
  * level is drawn, which is where the recursion this replaces wrote it. */
-static void dump_nested_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth, bool has_next) {
+static void add_nested(dump_buffer *buffer, const markdown_core_node *node, size_t depth, bool has_next) {
     dump_item item = {node, NULL, 0, depth, has_next};
     add_item(buffer, item);
 }
@@ -1426,7 +1467,7 @@ static void dump_children(dump_buffer *buffer, const markdown_core_node *node, s
     while (child) {
         const markdown_core_node *next = markdown_core_node_get_next_sibling(child);
         remaining_nested--;
-        dump_nested_node(buffer, child, depth, remaining_nested != 0);
+        add_nested(buffer, child, depth, remaining_nested != 0);
         child = next;
     }
 }
@@ -1437,7 +1478,7 @@ static void dump_directive_nodes(dump_buffer *buffer, const markdown_core_node *
     size_t remaining = child_count + (label ? 1u : 0u);
     if (label) {
         remaining--;
-        dump_nested_node(buffer, label, depth, remaining != 0);
+        add_nested(buffer, label, depth, remaining != 0);
     }
     dump_children(buffer, node, depth, remaining);
 }
@@ -1445,16 +1486,17 @@ static void dump_directive_nodes(dump_buffer *buffer, const markdown_core_node *
 /* A group line nests a node-valued list under its owner: `Kind children=N`
  * with no scope and no fields, at the owner's nesting depth, and the list's
  * nodes one level below it. */
-static void dump_group_line(dump_buffer *buffer, const char *name, size_t count, size_t depth, bool has_next) {
+static void add_group(dump_buffer *buffer, const char *name, size_t count, size_t depth, bool has_next) {
     dump_item item = {NULL, name, count, depth, has_next};
     add_item(buffer, item);
 }
 
-static void draw_group_line(dump_buffer *buffer, const char *name, size_t count, size_t depth, bool has_next) {
-    if (!ensure_more(buffer, depth)) {
+static void dump_group_line(dump_buffer *buffer, const char *name, size_t count, size_t depth, bool has_next) {
+    if (!ensure_level(buffer, depth)) {
         return;
     }
     buffer->more[depth] = has_next;
+    extend_prefix(buffer, depth);
     dump_prefix(buffer, depth + 1);
     buffer_cstr(buffer, name);
     buffer_cstr(buffer, " children=");
@@ -1475,10 +1517,10 @@ static void dump_callout_nodes(dump_buffer *buffer, const markdown_core_node *no
             count++;
         }
         remaining--;
-        dump_group_line(buffer, "Title", count, depth, remaining != 0);
+        add_group(buffer, "Title", count, depth, remaining != 0);
         for (cursor = title; cursor; cursor = markdown_core_node_get_next_sibling(cursor)) {
             count--;
-            dump_nested_node(buffer, cursor, depth + 1, count != 0);
+            add_nested(buffer, cursor, depth + 1, count != 0);
         }
     }
     dump_children(buffer, node, depth, remaining);
@@ -1492,13 +1534,13 @@ static void dump_table_nodes(dump_buffer *buffer, const markdown_core_node *node
     markdown_core_node_table_properties(node, &columns, &counts[0], &counts[1], &counts[2]);
     const markdown_core_node *caption = markdown_core_node_table_caption(node);
     if (caption) {
-        dump_nested_node(buffer, caption, depth, true);
+        add_nested(buffer, caption, depth, true);
     }
     const markdown_core_node *row = markdown_core_node_get_first_child(node);
     for (size_t group = 0; group < 3; group++) {
-        dump_group_line(buffer, names[group], counts[group], depth, group < 2);
+        add_group(buffer, names[group], counts[group], depth, group < 2);
         for (size_t i = 0; i < counts[group]; i++) {
-            dump_nested_node(buffer, row, depth + 1, i + 1 < counts[group]);
+            add_nested(buffer, row, depth + 1, i + 1 < counts[group]);
             row = markdown_core_node_get_next_sibling(row);
         }
     }
@@ -1554,10 +1596,10 @@ static void buffer_referent(dump_buffer *buffer, markdown_core_referent referent
 static void dump_affix_group(dump_buffer *buffer, const char *name, const markdown_core_node *first, size_t depth,
                              bool has_next) {
     size_t count = chain_length(first);
-    dump_group_line(buffer, name, count, depth, has_next);
+    add_group(buffer, name, count, depth, has_next);
     for (; first; first = first->next) {
         count--;
-        dump_nested_node(buffer, first, depth + 1, count != 0);
+        add_nested(buffer, first, depth + 1, count != 0);
     }
 }
 
@@ -1625,26 +1667,26 @@ static void dump_document_nodes(dump_buffer *buffer, const markdown_core_node *n
     size_t remaining = child_count + chain_length(definitions[0]) + chain_length(definitions[1]);
     const markdown_core_node *metadata = markdown_core_node_document_metadata(node);
     if (metadata) {
-        dump_nested_node(buffer, metadata, depth, remaining != 0);
+        add_nested(buffer, metadata, depth, remaining != 0);
     }
     dump_children(buffer, node, depth, remaining);
     remaining -= child_count;
     for (size_t family = 0; family < 2; family++) {
         for (const markdown_core_node *definition = definitions[family]; definition; definition = definition->next) {
-            dump_nested_node(buffer, definition, depth, --remaining != 0);
+            add_nested(buffer, definition, depth, --remaining != 0);
         }
     }
 }
 
 static void dump_definition_nodes(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
     const markdown_core_node *term = markdown_core_node_definition_term(node);
-    dump_group_line(buffer, "DefinitionTerm", chain_length(term), depth, true);
+    add_group(buffer, "DefinitionTerm", chain_length(term), depth, true);
     for (const markdown_core_node *child = term; child; child = child->next) {
-        dump_nested_node(buffer, child, depth + 1, child->next != NULL);
+        add_nested(buffer, child, depth + 1, child->next != NULL);
     }
     for (const markdown_core_node *body = node->first_child; body; body = body->next) {
         size_t count = markdown_core_node_child_count(body);
-        dump_group_line(buffer, "DefinitionBody", count, depth, body->next != NULL);
+        add_group(buffer, "DefinitionBody", count, depth, body->next != NULL);
         dump_children(buffer, body, depth + 1, count);
     }
 }
@@ -1730,7 +1772,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
         break;
     case MARKDOWN_CORE_KIND_CITE:
         for (const markdown_core_node *item = markdown_core_node_cite_citations(node); item; item = item->next) {
-            dump_nested_node(buffer, item, depth, item->next != NULL);
+            add_nested(buffer, item, depth, item->next != NULL);
         }
         break;
     case MARKDOWN_CORE_KIND_CITATION:
@@ -1793,13 +1835,14 @@ static void dump_tree(dump_buffer *buffer, const markdown_core_node *root) {
     while (!buffer->failed && buffer->stack_count) {
         dump_item item = buffer->stack[--buffer->stack_count];
         if (!item.node) {
-            draw_group_line(buffer, item.name, item.count, item.depth, item.has_next);
+            dump_group_line(buffer, item.name, item.count, item.depth, item.has_next);
             continue;
         }
-        if (!ensure_more(buffer, item.depth)) {
+        if (!ensure_level(buffer, item.depth)) {
             return;
         }
         buffer->more[item.depth] = item.has_next;
+        extend_prefix(buffer, item.depth);
         dump_node(buffer, item.node, item.depth + 1);
     }
 }
@@ -1816,6 +1859,8 @@ bool markdown_core_document_dump(const markdown_core_document *document, uint8_t
     *length = 0;
     dump_tree(&buffer, document->root);
     free(buffer.more);
+    free(buffer.prefix);
+    free(buffer.prefix_end);
     free(buffer.stack);
     free(buffer.items);
     if (buffer.failed) {
