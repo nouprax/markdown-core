@@ -67,10 +67,9 @@ typedef struct {
     bool dispatches, terminates;
 } markdown_core_inline_candidate;
 
-/* The row of the block owner sets that holds the owners of an indented line
- * rather than of a first byte, one past the 256 bytes. */
-#define MARKDOWN_CORE_BLOCK_OWNER_INDENT_ROW 256
-#define MARKDOWN_CORE_BLOCK_OWNER_ROWS (MARKDOWN_CORE_BLOCK_OWNER_INDENT_ROW + 1)
+/* The rows of the block owner sets that are indexed by a line's first byte.
+ * The rows after them are indexed by its indent; see below. */
+#define MARKDOWN_CORE_BLOCK_OWNER_BYTES 256
 
 /* The block owners of one first byte, as a bit per owner in registry order
  * (`markdown_core_registry.block_owners`): the owners with the hook that
@@ -80,18 +79,21 @@ typedef struct {
  * the registry's owners need, one for up to 64 of them -- so owner `n` is
  * bit `n % 64` of word `n / 64` of its row.
  *
- * The row after the bytes holds the owners that accept a line of any first
- * byte once its indent reaches `indent_floor` (`block_start_indent`), which
- * is how a block that begins at an indent rather than at a byte declares
- * itself. An arbitration reads it as a second row and ors the two, and below
- * the floor it reads the byte's row twice, so the shape does not change with
- * the line. `indent_floor` is the lowest indent any owner declared, or
- * INT_MAX when none did; an owner that declared a higher one is visited from
- * the floor up and refuses there as it would have anyway. */
+ * After the 256 byte rows come the indent rows, one per distinct indent any
+ * owner declared (`block_start_indent`), which is how a block that begins at
+ * an indent rather than at a byte declares itself. `indent_thresholds` holds
+ * those indents in ascending order, `rows - MARKDOWN_CORE_BLOCK_OWNER_BYTES`
+ * of them, and row `MARKDOWN_CORE_BLOCK_OWNER_BYTES + g` holds every owner
+ * whose declared indent the line has reached by `indent_thresholds[g]` -- so
+ * the rows accumulate, and a line reads exactly one of them: the last whose
+ * threshold it reaches. An arbitration ors that row with the byte's, and a
+ * line that reaches none reads the byte's row twice, so the shape does not
+ * change with the line and no owner is visited below the indent it
+ * declared. */
 typedef struct {
-    const uint64_t *scan, *interrupt, *open, *paragraph; /* ROWS * words entries each */
-    size_t words;
-    int indent_floor;
+    const uint64_t *scan, *interrupt, *open, *paragraph; /* `rows` * `words` entries each */
+    size_t words, rows;
+    const int *indent_thresholds;
 } markdown_core_block_owner_sets;
 
 /* The elements that implement an inline root's `init_inline`, then

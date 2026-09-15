@@ -72,8 +72,9 @@ static const markdown_core_element *const CORE_BLOCK_OWNERS[13] = {
 };
 
 /* By first byte, a bit per block owner above, 1 word per row: the
- * owners each block-start arbitration loop visits. The row after the
- * 256 bytes holds the owners of a line indented to the floor below. */
+ * owners each block-start arbitration loop visits. The 1 row after
+ * the 256 bytes hold the owners of a line that reached each declared
+ * indent below, and accumulate. */
 static const uint64_t CORE_BLOCK_SCAN_OWNERS[257] = {
     UINT64_C(0x20), UINT64_C(0x20), UINT64_C(0x20), UINT64_C(0x20),
     UINT64_C(0x20), UINT64_C(0x20), UINT64_C(0x20), UINT64_C(0x20),
@@ -346,6 +347,12 @@ static const uint64_t CORE_BLOCK_PARAGRAPH_OWNERS[257] = {
     UINT64_C(0x0),
 };
 
+/* The declared indents, ascending: a line reads the last row whose
+ * indent it reaches. */
+static const int CORE_BLOCK_INDENT_THRESHOLDS[1] = {
+    4,
+};
+
 /* init_inline x1, then finish_inline x1, then dispose_inline x4. */
 static const markdown_core_element *const CORE_INLINE_HOOKS[6] = {
     &MARKDOWN_CORE_ELEMENT_LINK,
@@ -411,7 +418,7 @@ static const markdown_core_registry CORE_REGISTRY = {
     .block_owners = CORE_BLOCK_OWNERS,
     .block_owner_count = 13,
     .block_owner_sets = {CORE_BLOCK_SCAN_OWNERS, CORE_BLOCK_INTERRUPT_OWNERS, CORE_BLOCK_OPEN_OWNERS,
-                         CORE_BLOCK_PARAGRAPH_OWNERS, 1, 4},
+                         CORE_BLOCK_PARAGRAPH_OWNERS, 1, 257, CORE_BLOCK_INDENT_THRESHOLDS},
     .inline_hooks = {CORE_INLINE_HOOKS, 1, 1, 4},
     .inline_completion_walk = false,
     .special_chars = CORE_SPECIAL_CHARS,

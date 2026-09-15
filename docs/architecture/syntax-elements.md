@@ -115,9 +115,12 @@ bytes at which any of its hooks can accept (NULL for every byte), and
 `block_start_indent`, the indent from which they accept a line of any first
 byte (zero for none), and the projection keeps, per first byte and per hook,
 the set of owners accepting it as one bit per owner, plus one further row per
-hook for the owners an indent admits, so a line's block-start arbitration
-visits only the owners of its byte and of its indent that implement the hook,
-in registry order, and examines no other. The indent is how a block that
+hook per distinct declared indent, each holding the owners whose indent a line
+has reached by that one, so a line's block-start arbitration reads its byte's
+row and the row of the deepest indent it reached, and visits only the owners
+of those that implement the hook, in registry order, and examines no other.
+Owners that declare different indents are kept apart: reaching one owner's
+indent does not reach another's. The indent is how a block that
 begins at an indent rather than at a byte declares itself: an indented code
 block claims no byte, while the fences of the same element claim theirs, so a
 line of prose is no longer dispatched to the code block that cannot open on

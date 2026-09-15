@@ -103,16 +103,28 @@ static int emit(FILE *out) {
     const uint64_t *sets[4] = {registry.block_owner_sets.scan, registry.block_owner_sets.interrupt,
                                registry.block_owner_sets.open, registry.block_owner_sets.paragraph};
     size_t words = registry.block_owner_sets.words;
-    size_t rows = MARKDOWN_CORE_BLOCK_OWNER_ROWS;
+    size_t rows = registry.block_owner_sets.rows;
+    size_t indent_rows = rows - MARKDOWN_CORE_BLOCK_OWNER_BYTES;
     fprintf(out,
             "/* By first byte, a bit per block owner above, %zu word%s per row: the\n"
-            " * owners each block-start arbitration loop visits. The row after the\n"
-            " * 256 bytes holds the owners of a line indented to the floor below. */\n",
-            words, words == 1 ? "" : "s");
+            " * owners each block-start arbitration loop visits. The %zu row%s after\n"
+            " * the 256 bytes hold the owners of a line that reached each declared\n"
+            " * indent below, and accumulate. */\n",
+            words, words == 1 ? "" : "s", indent_rows, indent_rows == 1 ? "" : "s");
     for (size_t hook = 0; hook < 4; hook++) {
         fprintf(out, "static const uint64_t CORE_BLOCK_%s_OWNERS[%zu] = {", SET_NAMES[hook], rows * words);
         for (size_t c = 0; c < rows * words; c++) {
             fprintf(out, "%sUINT64_C(0x%llx),", c % 4 ? " " : "\n    ", (unsigned long long)sets[hook][c]);
+        }
+        fputs("\n};\n\n", out);
+    }
+    if (indent_rows) {
+        fputs("/* The declared indents, ascending: a line reads the last row whose\n"
+              " * indent it reaches. */\n",
+              out);
+        fprintf(out, "static const int CORE_BLOCK_INDENT_THRESHOLDS[%zu] = {", indent_rows);
+        for (size_t g = 0; g < indent_rows; g++) {
+            fprintf(out, "%s%d,", g % 8 ? " " : "\n    ", registry.block_owner_sets.indent_thresholds[g]);
         }
         fputs("\n};\n\n", out);
     }
@@ -167,16 +179,10 @@ static int emit(FILE *out) {
           "    .block_owners = CORE_BLOCK_OWNERS,\n",
           out);
     fprintf(out, "    .block_owner_count = %zu,\n", registry.block_owner_count);
-    char floor[32];
-    if (registry.block_owner_sets.indent_floor == INT_MAX) {
-        snprintf(floor, sizeof(floor), "INT_MAX");
-    } else {
-        snprintf(floor, sizeof(floor), "%d", registry.block_owner_sets.indent_floor);
-    }
     fprintf(out,
             "    .block_owner_sets = {CORE_BLOCK_SCAN_OWNERS, CORE_BLOCK_INTERRUPT_OWNERS, CORE_BLOCK_OPEN_OWNERS,\n"
-            "                         CORE_BLOCK_PARAGRAPH_OWNERS, %zu, %s},\n",
-            words, floor);
+            "                         CORE_BLOCK_PARAGRAPH_OWNERS, %zu, %zu, %s},\n",
+            words, rows, indent_rows ? "CORE_BLOCK_INDENT_THRESHOLDS" : "NULL");
     fprintf(out, "    .inline_hooks = {CORE_INLINE_HOOKS, %zu, %zu, %zu},\n", hooks->init_count, hooks->finish_count,
             hooks->dispose_count);
     fprintf(out, "    .inline_completion_walk = %s,\n", registry.inline_completion_walk ? "true" : "false");

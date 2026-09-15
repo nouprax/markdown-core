@@ -5624,9 +5624,11 @@ static void core_registry_is_its_own_projection(test_batch_runner *runner) {
     for (size_t i = 0; same && i < markdown_core_inline_structure_count; i++) {
         same = markdown_core_inline_traits[i] == markdown_core_structure_traits(markdown_core_inline_structure[i]);
     }
-    size_t rows_size = MARKDOWN_CORE_BLOCK_OWNER_ROWS * built.block_owner_sets.words * sizeof(uint64_t);
+    size_t rows_size = built.block_owner_sets.rows * built.block_owner_sets.words * sizeof(uint64_t);
     same = same && built.block_owner_sets.words == core->block_owner_sets.words &&
-           built.block_owner_sets.indent_floor == core->block_owner_sets.indent_floor &&
+           built.block_owner_sets.rows == core->block_owner_sets.rows &&
+           memcmp(built.block_owner_sets.indent_thresholds, core->block_owner_sets.indent_thresholds,
+                  (built.block_owner_sets.rows - MARKDOWN_CORE_BLOCK_OWNER_BYTES) * sizeof(int)) == 0 &&
            memcmp(built.block_owner_sets.scan, core->block_owner_sets.scan, rows_size) == 0 &&
            memcmp(built.block_owner_sets.interrupt, core->block_owner_sets.interrupt, rows_size) == 0 &&
            memcmp(built.block_owner_sets.open, core->block_owner_sets.open, rows_size) == 0 &&
@@ -6993,56 +6995,78 @@ static void block_owner_sets_grow_with_the_registry(test_batch_runner *runner) {
 /* An owner is reached by its bytes or by its indent. One that declares both
  * is visited for a line that matches either and for no other line, so a
  * grammar whose block begins at an indent (an indented code block) declares
- * that instead of claiming every byte. */
-static size_t indent_gate_visits;
-static markdown_core_node *visit_indent_gate(markdown_core_parser *parser, markdown_core_node *node,
-                                             markdown_core_chunk *input, bool lazy) {
+ * that instead of claiming every byte. Owners that declare different indents
+ * keep them: reaching one owner's indent does not reach another's. */
+static size_t indent_gate_visits[2];
+static markdown_core_node *visit_shallow_gate(markdown_core_parser *parser, markdown_core_node *node,
+                                              markdown_core_chunk *input, bool lazy) {
     (void)parser;
     (void)node;
     (void)input;
     (void)lazy;
-    indent_gate_visits++;
+    indent_gate_visits[0]++;
     return NULL;
 }
-static markdown_core_element indent_gate_owner;
-static bool attach_indent_gate(markdown_core_parser *parser, void *context) {
+static markdown_core_node *visit_deep_gate(markdown_core_parser *parser, markdown_core_node *node,
+                                           markdown_core_chunk *input, bool lazy) {
+    (void)parser;
+    (void)node;
+    (void)input;
+    (void)lazy;
+    indent_gate_visits[1]++;
+    return NULL;
+}
+static markdown_core_element indent_gate_owners[2];
+static bool attach_indent_gates(markdown_core_parser *parser, void *context) {
     (void)context;
-    return markdown_core_parser_attach_element(parser, &indent_gate_owner);
+    return markdown_core_parser_attach_element(parser, &indent_gate_owners[0]) &&
+           markdown_core_parser_attach_element(parser, &indent_gate_owners[1]);
 }
 static void owners_are_reached_by_their_bytes_or_their_indent(test_batch_runner *runner) {
+    /* Two owners declaring different indents, so a registry with more than
+     * one keeps them apart: reaching the lower must not dispatch the higher.
+     * `@` belongs to the shallow owner and `$` to the deep one. */
     static const struct {
         const char *source, *what;
-        size_t visits;
+        size_t shallow, deep;
     } cases[] = {
-        /* Neither: a paragraph line of a byte the owner did not declare. */
-        {"alpha\n", "a line of another byte", 0},
-        /* Its byte, below the indent. */
-        {"@alpha\n", "a line of its byte", 1},
-        /* Its indent, of a byte it did not declare. */
-        {"    alpha\n", "an indented line of another byte", 1},
-        /* Three spaces are not the indent, and the byte is not its byte. */
-        {"   alpha\n", "a line indented below the floor", 0},
-        /* Both at once is still one visit: the two rows are ored, not read
-           in turn. */
-        {"    @alpha\n", "an indented line of its byte", 1},
+        {"alpha\n", "a line of neither byte, unindented", 0, 0},
+        {"@alpha\n", "a line of the shallow owner's byte", 1, 0},
+        {"$alpha\n", "a line of the deep owner's byte", 0, 1},
+        {" alpha\n", "a line indented below both", 0, 0},
+        /* Two columns reach the shallow owner's indent and not the deep
+           owner's, which is the case a single shared floor would get wrong. */
+        {"  alpha\n", "a line at the shallow indent", 1, 0},
+        {"   alpha\n", "a line between the two indents", 1, 0},
+        {"    alpha\n", "a line at the deep indent", 1, 1},
+        /* Byte and indent at once is still one visit: the rows are ored, not
+           read in turn. */
+        {"    @alpha\n", "a line at the deep indent of the shallow byte", 1, 1},
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-        memset(&indent_gate_owner, 0, sizeof(indent_gate_owner));
-        indent_gate_owner.name = "indent-gate";
-        indent_gate_owner.maximum_block_indent = INT_MAX;
-        indent_gate_owner.block_start_bytes = "@";
-        indent_gate_owner.block_start_indent = 4;
+        memset(indent_gate_owners, 0, sizeof(indent_gate_owners));
+        indent_gate_owners[0].name = "shallow-gate";
+        indent_gate_owners[0].maximum_block_indent = INT_MAX;
+        indent_gate_owners[0].block_start_bytes = "@";
+        indent_gate_owners[0].block_start_indent = 2;
+        indent_gate_owners[1].name = "deep-gate";
+        indent_gate_owners[1].maximum_block_indent = INT_MAX;
+        indent_gate_owners[1].block_start_bytes = "$";
+        indent_gate_owners[1].block_start_indent = 4;
         /* The interruption loop, which every line reaches whatever another
          * owner's scan already matched, so the count is of the dispatch and
          * not of what won the line. */
-        indent_gate_owner.try_interrupting_block = visit_indent_gate;
-        indent_gate_visits = 0;
+        indent_gate_owners[0].try_interrupting_block = visit_shallow_gate;
+        indent_gate_owners[1].try_interrupting_block = visit_deep_gate;
+        indent_gate_visits[0] = indent_gate_visits[1] = 0;
         markdown_core_node *root =
             markdown_core_parse_document_with_mem(cases[i].source, strlen(cases[i].source),
-                                                  markdown_core_get_default_mem_allocator(), attach_indent_gate, NULL);
+                                                  markdown_core_get_default_mem_allocator(), attach_indent_gates, NULL);
         OK(runner, root != NULL, "%s parses", cases[i].what);
-        INT_EQ(runner, (int)indent_gate_visits, (int)cases[i].visits, "%s visits the owner %zu time(s)", cases[i].what,
-               cases[i].visits);
+        INT_EQ(runner, (int)indent_gate_visits[0], (int)cases[i].shallow, "%s visits the shallow owner %zu time(s)",
+               cases[i].what, cases[i].shallow);
+        INT_EQ(runner, (int)indent_gate_visits[1], (int)cases[i].deep, "%s visits the deep owner %zu time(s)",
+               cases[i].what, cases[i].deep);
         markdown_core_node_free(root);
     }
 }
