@@ -109,7 +109,7 @@ function run(command, args, options = {}) {
 }
 
 function parseArguments(argv) {
-    const options = { out: path.join(root, "build/benchmark-stages"), cases: [], scale: 2, quiet: false };
+    const options = { out: path.join(root, "build/benchmark-stages"), cases: [], scale: 2, quiet: false, corpusOnly: false };
     for (let index = 0; index < argv.length; index++) {
         const flag = argv[index];
         const value = argv[index + 1];
@@ -123,6 +123,8 @@ function parseArguments(argv) {
         } else if (flag === "--case") {
             options.cases.push(value);
             index++;
+        } else if (flag === "--corpus-only") {
+            options.corpusOnly = true;
         } else if (flag === "--scale") {
             /* Digits and nothing else, naming a number JavaScript can hold
              * exactly.
@@ -1630,6 +1632,21 @@ function main() {
      * way, and it costs them nothing to hear it now. */
     const manifest = corpusManifest();
     refuseUnknownCases(options, manifest);
+    /* The corpus is a function of the manifest and the tracked samples alone.
+     * Writing it needs no compiler, no valgrind and no reference engine, so
+     * whoever only wants the documents -- the corpus-reach audit does -- can
+     * have them without paying for a measurement they will not read. */
+    if (options.corpusOnly) {
+        fs.mkdirSync(options.out, { recursive: true });
+        const only = buildCorpus(options, manifest);
+        if (!options.quiet) {
+            process.stdout.write(
+                `wrote ${only.documents.length} documents to ${path.relative(root, path.join(options.out, "corpus"))} ` +
+                    `(digest ${only.digest.slice(0, 16)})\n`
+            );
+        }
+        return;
+    }
     refuseResponseFiles();
     const profile = profileBuild();
     refuseOverlappingTrees(options, profile);

@@ -5,132 +5,369 @@
         {
             "name": "block-bq-flat",
             "dialect": "commonmark",
-            "samples": ["block-bq-flat.md"]
+            "samples": [
+                "block-bq-flat.md"
+            ]
         },
         {
             "name": "block-bq-nested",
             "dialect": "commonmark",
-            "samples": ["block-bq-nested.md"]
+            "samples": [
+                "block-bq-nested.md"
+            ]
+        },
+        {
+            "name": "block-callout",
+            "dialect": "extended",
+            "samples": [
+                "block-callout.md"
+            ]
         },
         {
             "name": "block-code",
             "dialect": "commonmark",
-            "samples": ["block-code.md"]
+            "samples": [
+                "block-code.md"
+            ]
+        },
+        {
+            "name": "block-definition-list",
+            "dialect": "extended",
+            "samples": [
+                "block-definition-list.md"
+            ]
         },
         {
             "name": "block-fences",
             "dialect": "commonmark",
-            "samples": ["block-fences.md"]
+            "samples": [
+                "block-fences.md"
+            ]
         },
         {
             "name": "block-heading",
             "dialect": "commonmark",
-            "samples": ["block-heading.md"]
+            "samples": [
+                "block-heading.md"
+            ]
         },
         {
             "name": "block-hr",
             "dialect": "commonmark",
-            "samples": ["block-hr.md"]
+            "samples": [
+                "block-hr.md"
+            ]
         },
         {
             "name": "block-html",
             "dialect": "commonmark",
-            "samples": ["block-html.md"]
+            "samples": [
+                "block-html.md"
+            ]
+        },
+        {
+            "name": "block-html-rich",
+            "dialect": "commonmark",
+            "samples": [
+                "block-html-rich.md"
+            ]
+        },
+        {
+            "name": "block-identifier",
+            "dialect": "extended",
+            "samples": [
+                "block-identifier.md"
+            ]
         },
         {
             "name": "block-lheading",
             "dialect": "commonmark",
-            "samples": ["block-lheading.md"]
+            "samples": [
+                "block-lheading.md"
+            ]
         },
         {
             "name": "block-list-flat",
             "dialect": "commonmark",
-            "samples": ["block-list-flat.md"]
+            "samples": [
+                "block-list-flat.md"
+            ]
         },
         {
             "name": "block-list-nested",
             "dialect": "commonmark",
-            "samples": ["block-list-nested.md"]
+            "samples": [
+                "block-list-nested.md"
+            ]
+        },
+        {
+            "name": "block-metadata",
+            "dialect": "extended",
+            "samples": [
+                "block-metadata.md"
+            ]
         },
         {
             "name": "block-ref-flat",
             "dialect": "commonmark",
-            "samples": ["block-ref-flat.md"]
+            "samples": [
+                "block-ref-flat.md"
+            ]
         },
         {
             "name": "block-ref-nested",
             "dialect": "commonmark",
-            "samples": ["block-ref-nested.md"]
+            "samples": [
+                "block-ref-nested.md"
+            ]
         },
         {
-            "name": "inline-autolink",
-            "dialect": "commonmark",
-            "samples": ["inline-autolink.md"]
+            "name": "block-specimen",
+            "dialect": "extended",
+            "samples": [
+                "block-specimen.md"
+            ]
         },
         {
-            "name": "inline-backticks",
-            "dialect": "commonmark",
-            "samples": ["inline-backticks.md"]
+            "name": "block-table-grid",
+            "dialect": "extended",
+            "samples": [
+                "block-table-grid.md"
+            ]
         },
         {
-            "name": "inline-em-flat",
-            "dialect": "commonmark",
-            "samples": ["inline-em-flat.md"]
+            "name": "block-table-multiline",
+            "dialect": "extended",
+            "samples": [
+                "block-table-multiline.md"
+            ]
         },
         {
-            "name": "inline-em-nested",
-            "dialect": "commonmark",
-            "samples": ["inline-em-nested.md"]
+            "name": "block-table-pipe",
+            "dialect": "extended",
+            "samples": [
+                "block-table-pipe.md"
+            ]
         },
         {
-            "name": "inline-em-worst",
-            "dialect": "commonmark",
-            "samples": ["inline-em-worst.md"]
+            "name": "block-table-simple",
+            "dialect": "extended",
+            "samples": [
+                "block-table-simple.md"
+            ]
         },
         {
-            "name": "inline-entity",
-            "dialect": "commonmark",
-            "samples": ["inline-entity.md"]
+            "name": "block-tasklist",
+            "dialect": "extended",
+            "samples": [
+                "block-tasklist.md"
+            ]
         },
         {
-            "name": "inline-escape",
+            "name": "chain-bracket-open",
             "dialect": "commonmark",
-            "samples": ["inline-escape.md"]
+            "scales": "live bracket-stack depth",
+            "chain": {
+                "unit": "[a ",
+                "tail": "\n"
+            }
         },
         {
-            "name": "inline-html",
+            "name": "chain-emphasis-run",
             "dialect": "commonmark",
-            "samples": ["inline-html.md"]
+            "chain": {
+                "unit": "*a_ ",
+                "tail": "\n"
+            },
+            "scales": "live delimiter-stack depth"
         },
         {
-            "name": "inline-links-flat",
+            "name": "chain-link-candidates",
             "dialect": "commonmark",
-            "samples": ["inline-links-flat.md"]
+            "chain": {
+                "unit": "[a](b",
+                "tail": "\n"
+            },
+            "scales": "count of bounded failed link candidates"
         },
         {
-            "name": "inline-links-nested",
+            "name": "chain-list-depth",
             "dialect": "commonmark",
-            "samples": ["inline-links-nested.md"]
+            "chain": {
+                "unit": "- ",
+                "tail": "leaf\n"
+            },
+            "scales": "list nesting depth"
         },
         {
-            "name": "inline-newlines",
+            "name": "chain-quote-depth",
             "dialect": "commonmark",
-            "samples": ["inline-newlines.md"]
-        },
-        {
-            "name": "lorem1",
-            "dialect": "commonmark",
-            "samples": ["lorem1.md"]
-        },
-        {
-            "name": "rawtabs",
-            "dialect": "commonmark",
-            "samples": ["rawtabs.md"]
+            "chain": {
+                "unit": "> ",
+                "tail": "deep\n"
+            },
+            "scales": "block-container nesting depth"
         },
         {
             "name": "directive",
             "dialect": "extended",
-            "samples": ["directive.md"]
+            "samples": [
+                "directive.md"
+            ]
+        },
+        {
+            "name": "inline-autolink",
+            "dialect": "commonmark",
+            "samples": [
+                "inline-autolink.md"
+            ]
+        },
+        {
+            "name": "inline-autolink-rich",
+            "dialect": "commonmark",
+            "samples": [
+                "inline-autolink-rich.md"
+            ]
+        },
+        {
+            "name": "inline-backticks",
+            "dialect": "commonmark",
+            "samples": [
+                "inline-backticks.md"
+            ]
+        },
+        {
+            "name": "inline-citation",
+            "dialect": "extended",
+            "samples": [
+                "inline-citation.md"
+            ]
+        },
+        {
+            "name": "inline-comment",
+            "dialect": "extended",
+            "samples": [
+                "inline-comment.md"
+            ]
+        },
+        {
+            "name": "inline-cross-link",
+            "dialect": "extended",
+            "samples": [
+                "inline-cross-link.md"
+            ]
+        },
+        {
+            "name": "inline-delimiter-runs",
+            "dialect": "extended",
+            "samples": [
+                "inline-delimiter-runs.md"
+            ]
+        },
+        {
+            "name": "inline-em-flat",
+            "dialect": "commonmark",
+            "samples": [
+                "inline-em-flat.md"
+            ]
+        },
+        {
+            "name": "inline-em-nested",
+            "dialect": "commonmark",
+            "samples": [
+                "inline-em-nested.md"
+            ]
+        },
+        {
+            "name": "inline-em-worst",
+            "dialect": "commonmark",
+            "samples": [
+                "inline-em-worst.md"
+            ]
+        },
+        {
+            "name": "inline-embedded",
+            "dialect": "commonmark",
+            "samples": [
+                "inline-embedded.md"
+            ]
+        },
+        {
+            "name": "inline-entity",
+            "dialect": "commonmark",
+            "samples": [
+                "inline-entity.md"
+            ]
+        },
+        {
+            "name": "inline-escape",
+            "dialect": "commonmark",
+            "samples": [
+                "inline-escape.md"
+            ]
+        },
+        {
+            "name": "inline-footnote",
+            "dialect": "extended",
+            "samples": [
+                "inline-footnote.md"
+            ]
+        },
+        {
+            "name": "inline-formula",
+            "dialect": "extended",
+            "samples": [
+                "inline-formula.md"
+            ]
+        },
+        {
+            "name": "inline-html",
+            "dialect": "commonmark",
+            "samples": [
+                "inline-html.md"
+            ]
+        },
+        {
+            "name": "inline-links-flat",
+            "dialect": "commonmark",
+            "samples": [
+                "inline-links-flat.md"
+            ]
+        },
+        {
+            "name": "inline-links-nested",
+            "dialect": "commonmark",
+            "samples": [
+                "inline-links-nested.md"
+            ]
+        },
+        {
+            "name": "inline-newlines",
+            "dialect": "commonmark",
+            "samples": [
+                "inline-newlines.md"
+            ]
+        },
+        {
+            "name": "inline-span",
+            "dialect": "extended",
+            "samples": [
+                "inline-span.md"
+            ]
+        },
+        {
+            "name": "lorem1",
+            "dialect": "commonmark",
+            "samples": [
+                "lorem1.md"
+            ]
+        },
+        {
+            "name": "rawtabs",
+            "dialect": "commonmark",
+            "samples": [
+                "rawtabs.md"
+            ]
         },
         {
             "name": "mixed-commonmark",
@@ -169,76 +406,51 @@
             "samples": [
                 "block-bq-flat.md",
                 "block-bq-nested.md",
+                "block-callout.md",
                 "block-code.md",
+                "block-definition-list.md",
                 "block-fences.md",
                 "block-heading.md",
                 "block-hr.md",
+                "block-html-rich.md",
                 "block-html.md",
+                "block-identifier.md",
                 "block-lheading.md",
                 "block-list-flat.md",
                 "block-list-nested.md",
+                "block-metadata.md",
                 "block-ref-flat.md",
                 "block-ref-nested.md",
+                "block-specimen.md",
+                "block-table-grid.md",
+                "block-table-multiline.md",
+                "block-table-pipe.md",
+                "block-table-simple.md",
+                "block-tasklist.md",
                 "directive.md",
+                "inline-autolink-rich.md",
                 "inline-autolink.md",
                 "inline-backticks.md",
+                "inline-citation.md",
+                "inline-comment.md",
+                "inline-cross-link.md",
+                "inline-delimiter-runs.md",
                 "inline-em-flat.md",
                 "inline-em-nested.md",
                 "inline-em-worst.md",
+                "inline-embedded.md",
                 "inline-entity.md",
                 "inline-escape.md",
+                "inline-footnote.md",
+                "inline-formula.md",
                 "inline-html.md",
                 "inline-links-flat.md",
                 "inline-links-nested.md",
                 "inline-newlines.md",
+                "inline-span.md",
                 "lorem1.md",
                 "rawtabs.md"
             ]
-        },
-        {
-            "name": "chain-quote-depth",
-            "dialect": "commonmark",
-            "chain": {
-                "unit": "> ",
-                "tail": "deep\n"
-            },
-            "scales": "block-container nesting depth"
-        },
-        {
-            "name": "chain-list-depth",
-            "dialect": "commonmark",
-            "chain": {
-                "unit": "- ",
-                "tail": "leaf\n"
-            },
-            "scales": "list nesting depth"
-        },
-        {
-            "name": "chain-emphasis-run",
-            "dialect": "commonmark",
-            "chain": {
-                "unit": "*a_ ",
-                "tail": "\n"
-            },
-            "scales": "live delimiter-stack depth"
-        },
-        {
-            "name": "chain-link-candidates",
-            "dialect": "commonmark",
-            "chain": {
-                "unit": "[a](b",
-                "tail": "\n"
-            },
-            "scales": "count of bounded failed link candidates"
-        },
-        {
-            "name": "chain-bracket-open",
-            "dialect": "commonmark",
-            "scales": "live bracket-stack depth",
-            "chain": {
-                "unit": "[a ",
-                "tail": "\n"
-            }
         }
     ]
 }
