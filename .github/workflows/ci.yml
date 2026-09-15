@@ -157,7 +157,17 @@ jobs:
                   cache: gradle
                   distribution: temurin
                   java-version: 26
+            # `packages` defaults to "tools platform-tools" and the action runs one
+            # `sdkmanager <pkg>` per token, `tools` first. Google retired the obsolete
+            # `tools` package, so that first call exits 1 with "Failed to find package
+            # 'tools'" and the action dies before exporting ANDROID_HOME -- which is why
+            # the explicit sdkmanager steps below never ran either. platform-tools is
+            # what these jobs need (adb), so it is named rather than inherited; the
+            # empty string would drop it too. Remove this once upstream ships a fix:
+            # https://github.com/android-actions/setup-android/issues/537
             - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+              with:
+                  packages: platform-tools
             - uses: emscripten-core/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984 # v16
               with:
                   version: 6.0.9
@@ -327,6 +337,8 @@ jobs:
                   java-version: 26
             - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
               if: matrix.mode == 'linux-release'
+              with:
+                  packages: platform-tools
             - name: Install Android build dependencies
               if: matrix.mode == 'linux-release'
               run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
@@ -466,6 +478,8 @@ jobs:
                   distribution: temurin
                   java-version: 26
             - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+              with:
+                  packages: platform-tools
             - name: Install Android build dependencies
               if: matrix.os == 'ubuntu-latest'
               run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
@@ -577,6 +591,8 @@ jobs:
                   run_install: false
                   version: 11.25.0
             - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+              with:
+                  packages: platform-tools
             - name: Install Android build dependencies
               run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
             - name: Verify Kotlin publication consumers
@@ -597,6 +613,8 @@ jobs:
                   distribution: temurin
                   java-version: 26
             - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+              with:
+                  packages: platform-tools
             - name: Install Android build dependencies
               run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
             - name: Build immutable Android instrumentation artifact
@@ -653,6 +671,8 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+              with:
+                  packages: platform-tools
             - name: Restore the pinned emulator and system image
               id: emulator-cache
               uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0

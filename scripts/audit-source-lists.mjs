@@ -133,14 +133,14 @@ const report = (message) => {
 
 // Agreeing on the parser sources is not enough: an accidental CLI, test, fuzz,
 // fixture, or benchmark source would also become part of the Android runtime.
-// The only Android-specific additions are the Kotlin payload encoder and the
-// JNI entry point owned by the Kotlin package. IDE sync deliberately does not import this
+// The only Android-specific additions are the JNI payload codec and JNI entry
+// point owned by the Kotlin package. IDE sync deliberately does not import this
 // cross-package target through Android Studio's lossy `cpp` projection.
 const androidSources = names(ANDROID_CMAKE, "complete Android target", /"(?<file>[^"\n]+\.c)"/g);
 const expectedAndroidSources = [
     ...authority.core.map((file) => `\${MARKDOWN_CORE_CORE_DIR}/${file}`),
     ...authority.elements.map((file) => `\${MARKDOWN_CORE_ELEMENTS_DIR}/${file}`),
-    "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_payload.c",
+    "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni_payload.c",
     "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni.c"
 ];
 const expectedAndroidSet = new Set(expectedAndroidSources);

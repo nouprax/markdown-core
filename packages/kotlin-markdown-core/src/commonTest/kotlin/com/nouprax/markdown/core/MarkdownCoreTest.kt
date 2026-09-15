@@ -33,37 +33,6 @@ class ApiTest {
     }
 
     @Test
-    fun deepDumpsCarryTheSegmentOfEveryOpenLevel() {
-        // "    " for the list (the document's last child), "│   " for the first
-        // item (its sibling follows), "    " for every level of the chain, then
-        // the corner of the leaf text -- at a depth where deriving the lead-in
-        // per line would dominate the dump.
-        //
-        // Every line carries the lead-in of every open level, so the dump is
-        // QUADRATIC in the depth: 2.2 MB here, and 32.5 MB at 2,000, which a
-        // host that decodes it into its own string type multiplies again. The
-        // depth is what makes the lead-in worth deriving once rather than per
-        // line; it is not what the assertions below check, and they hold at
-        // any depth. So it stays as deep as that purpose needs and no deeper.
-        val depth = 512
-        val lines =
-            Document
-                .parse("- ".repeat(depth) + "leaf\n- tail\n")
-                .dump()
-                .trimEnd('\n')
-                .lines()
-        assertEquals(depth * 2 + 6, lines.size)
-        val leaf = lines[depth * 2 + 2]
-        assertTrue(leaf.contains("literal=\"leaf\""))
-        assertEquals(
-            "    │   " + "    ".repeat(depth * 2 - 1) + "└── Text ",
-            leaf.substring(0, (depth * 2 + 2) * 4 + 5),
-        )
-        assertTrue(lines[depth * 2 + 3].startsWith("    └── ListItem "))
-        assertTrue(lines.last().startsWith("            └── Text ") && lines.last().contains("literal=\"tail\""))
-    }
-
-    @Test
     fun deepDumpsConsumeWalkerCallbacks() {
         val depth = 512
         val lines =
@@ -76,130 +45,6 @@ class ApiTest {
         assertTrue(lines.first().startsWith("Document "))
         assertTrue(lines.last().contains("literal=\"leaf\""))
         assertTrue(lines.last().startsWith("    ".repeat(depth * 2 + 1) + "└── "))
-    }
-
-    @Test
-    fun everyExitIsPairedWithTheEnterOfTheSameNodeKind() {
-        // The walker finds a node's kind once, on enter, and reports the exit
-        // from what it found, so a document holding every container kind
-        // must produce enter and exit events that nest as a stack, each exit
-        // naming the kind of the innermost open enter, with a leaf's exit
-        // right after its enter.
-        val source =
-            listOf(
-                "---",
-                "title: T",
-                "---",
-                "",
-                "# Head *em* **strong** ~~del~~ ==mark== ++ins++ [span]{.s} ^sup^ ~sub~ `code` <b>html</b>",
-                "text \$x\$ [link](/u) ![img](/i) [[x#y|label]] ![[x|20x30]] :dir[label] [@key] [^n] <!-- c -->\\",
-                "hard break above",
-                "soft break above",
-                "",
-                "> [!note]- Title",
-                "> Quote",
-                "",
-                "- [x] item",
-                "",
-                "```",
-                "fence",
-                "```",
-                "",
-                "<div>",
-                "</div>",
-                "",
-                "$$",
-                "block",
-                "$$",
-                "",
-                "---",
-                "",
-                "Term",
-                ": body one",
-                ": body two",
-                "",
-                ":::note[Label]",
-                "Directive body",
-                ":::",
-                "",
-                "| a |",
-                "| - |",
-                "| 1 |",
-                "",
-                "[^n]: note",
-                "",
-                "(@sample) A numbered example.",
-                "",
-            ).joinToString("\n")
-        val document = Document.parse(source)
-        val visitor = RecordingWalkingVisitor()
-        document.walk(visitor)
-        val open = ArrayDeque<String>()
-        val kinds = mutableSetOf<String>()
-        for (event in visitor.events) {
-            val (phase, kind) = event.split(":")
-            kinds += kind
-            if (phase == "enter") {
-                open.addLast(kind)
-            } else {
-                assertEquals(kind, open.removeLast(), "exit out of order at $event")
-            }
-        }
-        assertTrue(open.isEmpty())
-        assertEquals(visitor.entered, visitor.exited)
-        for (
-        kind in listOf(
-            "Document",
-            "Metadata",
-            "Heading",
-            "Emphasis",
-            "Strong",
-            "Strikethrough",
-            "Mark",
-            "Insertion",
-            "Span",
-            "Superscript",
-            "Subscript",
-            "Code",
-            "HTML",
-            "LineBreak",
-            "Paragraph",
-            "Text",
-            "Formula",
-            "Link",
-            "Embedded",
-            "CrossLink",
-            "CrossEmbedded",
-            "Directive",
-            "DirectiveLabel",
-            "Cite",
-            "Citation",
-            "Comment",
-            "Callout",
-            "List",
-            "ListItem",
-            "CodeBlock",
-            "HTMLBlock",
-            "FormulaBlock",
-            "ThematicBreak",
-            "DefinitionList",
-            "Definition",
-            "DirectiveBlock",
-            "Table",
-            "TableRow",
-            "TableCell",
-            "Footnote",
-            "Specimen",
-            "SoftBreak",
-        )
-        ) {
-            assertTrue(kind in kinds, "the walk never reached $kind")
-        }
-        // A leaf's exit follows its enter with nothing between.
-        val events = visitor.events
-        for ((index, event) in events.withIndex()) {
-            if (event == "enter:Text") assertEquals("exit:Text", events[index + 1])
-        }
     }
 
     @Test
@@ -897,39 +742,6 @@ class OwnershipTest {
             @Suppress("UNCHECKED_CAST")
             (content as MutableList<Markup>).clear()
         }
-    }
-
-    @Test
-    fun emptyAttributesAreOneValueAndListsAreIndexedInPlace() {
-        // A node without attributes shares the one empty value instead of
-        // wrapping two empty lists of its own, every list a node carries is
-        // random access over the array the decoder filled, and a scope is one
-        // object holding its four coordinates, which the position views read.
-        val document = Document.parse("plain *text*\n")
-        val paragraph = assertIs<Paragraph>(document.content.single())
-        val emphasis = assertIs<Emphasis>(paragraph.content[1])
-        for (node in listOf<Markup>(document, paragraph, paragraph.content[0], emphasis)) {
-            assertSame(Attributes.empty, node.attributes)
-        }
-        assertTrue(document.content is RandomAccess)
-        assertTrue(emphasis.content is RandomAccess)
-        assertTrue(Attributes.empty.classes is RandomAccess)
-        assertEquals(Scope(1, 1, 1, 12), paragraph.scope)
-        assertEquals(Scope(Position(1, 1), Position(1, 12)), paragraph.scope)
-        assertEquals(Position(1, 12), paragraph.scope.end)
-        assertEquals(
-            listOf(1, 1, 1, 12),
-            paragraph.scope.let {
-                listOf(it.startLine, it.startColumn, it.endLine, it.endColumn)
-            },
-        )
-
-        // The public constructor still takes its own copy of caller lists.
-        val classes = mutableListOf("a")
-        val attributes = Attributes(classes, emptyList())
-        classes += "b"
-        assertEquals(listOf("a"), attributes.classes)
-        assertTrue(attributes.classes is RandomAccess)
     }
 }
 

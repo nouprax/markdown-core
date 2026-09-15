@@ -8,10 +8,6 @@ public struct MarkupCollection<Element: Sendable>: RandomAccessCollection, Senda
     public typealias Index = Int
     let store: MarkupStore
     let recordIndices: [Int]
-    // How an index becomes an element, decided once where the relation's
-    // static type is known: the one kind a typed relation holds, or any kind
-    // for `any Markup`. No element is cast at runtime.
-    let resolve: @Sendable (MarkupStore, Int) -> Element
 
     /// The first valid position, or `endIndex` for an empty relation.
     public var startIndex: Int { recordIndices.startIndex }
@@ -19,7 +15,7 @@ public struct MarkupCollection<Element: Sendable>: RandomAccessCollection, Senda
     public var endIndex: Int { recordIndices.endIndex }
     /// The value at a valid position, without copying its descendants.
     public subscript(position: Int) -> Element {
-        resolve(store, recordIndices[position])
+        store.value(at: recordIndices[position], as: Element.self)
     }
 }
 
@@ -33,7 +29,6 @@ public struct MarkupGroups<Value: Sendable>: RandomAccessCollection, Sendable {
     public typealias Index = Int
     let store: MarkupStore
     let recordIndices: [[Int]]
-    let resolve: @Sendable (MarkupStore, Int) -> Value
 
     /// The first valid position, or `endIndex` for no groups.
     public var startIndex: Int { recordIndices.startIndex }
@@ -41,140 +36,84 @@ public struct MarkupGroups<Value: Sendable>: RandomAccessCollection, Sendable {
     public var endIndex: Int { recordIndices.endIndex }
     /// The group at a valid position, without copying its elements.
     public subscript(position: Int) -> MarkupCollection<Value> {
-        MarkupCollection(store: store, recordIndices: recordIndices[position], resolve: resolve)
+        MarkupCollection(store: store, recordIndices: recordIndices[position])
     }
 }
 
-/// A typed index into the store containing its owner. A relation's stored
-/// representation never retains the store it is resolved against.
-struct MarkupReference<Value: Sendable>: Sendable {
+/// A relation's stored representation never retains the store it is resolved against.
+protocol StoredRelation: Sendable {
+    associatedtype Value: Sendable
+    func read(from store: MarkupStore) -> Value
+}
+
+/// A typed index into the store containing its owner.
+struct MarkupReference<Value: Sendable>: StoredRelation {
     let index: Int
+
+    func read(from store: MarkupStore) -> Value { store.value(at: index, as: Value.self) }
 }
 
 /// Ordered node indices; creating the collection view does not copy their storage.
-struct MarkupReferences<Element: Sendable>: Sendable {
+struct MarkupReferences<Element: Sendable>: StoredRelation {
     let indices: [Int]
+
+    func read(from store: MarkupStore) -> MarkupCollection<Element> {
+        MarkupCollection(store: store, recordIndices: indices)
+    }
 }
 
 /// Grouped node indices, including empty groups.
-struct MarkupGroupReferences<Element: Sendable>: Sendable {
+struct MarkupGroupReferences<Element: Sendable>: StoredRelation {
     let indices: [[Int]]
+
+    func read(from store: MarkupStore) -> MarkupGroups<Element> {
+        MarkupGroups(store: store, recordIndices: indices)
+    }
 }
 
-/// The fields of one stored kind: each knows the one record case that holds
-/// it, so a field is read by a tag check, not by a runtime cast.
-protocol StoredFields: Sendable {
-    static func project(_ record: StoredMarkup) -> Self
-}
-
-/// A kind that is read out of the store by index: the one construction a typed
-/// relation resolves its elements through, so no element is cast at runtime.
-protocol MarkupElement: Markup {
-    static func stored(at index: Int, in store: MarkupStore) -> Self
-}
-
-/// Where a stored view lives: the store and the record it reads.
-struct StoredLocation {
-    let store: MarkupStore
-    let index: Int
-}
-
-/// A view over one stored record. A walk starts from it and continues over the
-/// store's records, never over values.
-protocol StoredMarkupView {
-    var storedLocation: StoredLocation { get }
+extension Optional: StoredRelation where Wrapped: StoredRelation {
+    func read(from store: MarkupStore) -> Wrapped.Value? { map { $0.read(from: store) } }
 }
 
 /// A typed field view. Values pass through; relations resolve against the same store.
 /// Only this view retains the store, keeping stored records free of ownership cycles.
 @dynamicMemberLookup
-struct Stored<Fields: StoredFields>: Sendable {
+struct Stored<Fields: Sendable>: Sendable {
     let store: MarkupStore
-    let index: Int
+    private let index: Int
 
-    init(store: MarkupStore, index: Int) {
+    fileprivate init(store: MarkupStore, index: Int) {
         self.store = store
         self.index = index
     }
 
-    var location: StoredLocation { StoredLocation(store: store, index: index) }
-
-    /// One field, projected in place from the record: the record is read
-    /// where it lies and only the field the caller asked for leaves it.
+    // Inline the field access so constant key paths resolve at the call site.
     @inline(__always)
-    func read<Value>(_ body: (Fields) -> Value) -> Value {
-        store.records.withUnsafeBufferPointer { records in body(Fields.project(records[index])) }
-    }
-
-    // Relations resolve to views over the same store. The element resolution
-    // is chosen here, by the relation's static type, once per collection.
-    @inline(__always)
-    func children(_ body: (Fields) -> MarkupReferences<any Markup>) -> MarkupCollection<any Markup> {
-        MarkupCollection(store: store, recordIndices: read(body).indices, resolve: MarkupStore.anyMarkup)
-    }
-
-    @inline(__always)
-    func optionalChildren(_ body: (Fields) -> MarkupReferences<any Markup>?) -> MarkupCollection<any Markup>? {
-        read(body).map { MarkupCollection(store: store, recordIndices: $0.indices, resolve: MarkupStore.anyMarkup) }
-    }
-
-    @inline(__always)
-    func elements<Element: MarkupElement>(_ body: (Fields) -> MarkupReferences<Element>) -> MarkupCollection<Element> {
-        MarkupCollection(store: store, recordIndices: read(body).indices, resolve: { Element.stored(at: $1, in: $0) })
-    }
-
-    @inline(__always)
-    func optionalElement<Element: MarkupElement>(_ body: (Fields) -> MarkupReference<Element>?) -> Element? {
-        read(body).map { Element.stored(at: $0.index, in: store) }
-    }
-
-    @inline(__always)
-    func groups(_ body: (Fields) -> MarkupGroupReferences<any Markup>) -> MarkupGroups<any Markup> {
-        MarkupGroups(store: store, recordIndices: read(body).indices, resolve: MarkupStore.anyMarkup)
-    }
-
-    // Key-path access for tests and tools; the node types read through the
-    // closures above so the field is a direct load.
     subscript<Value>(dynamicMember keyPath: KeyPath<Fields, Value>) -> Value {
-        read { $0[keyPath: keyPath] }
+        storedValue(for: keyPath)
     }
 
-    subscript(dynamicMember keyPath: KeyPath<Fields, MarkupReferences<any Markup>>) -> MarkupCollection<any Markup> {
-        children { $0[keyPath: keyPath] }
+    @inline(__always)
+    subscript<Relation: StoredRelation>(dynamicMember keyPath: KeyPath<Fields, Relation>) -> Relation.Value {
+        storedValue(for: keyPath).read(from: store)
     }
 
-    subscript(dynamicMember keyPath: KeyPath<Fields, MarkupReferences<any Markup>?>) -> MarkupCollection<any Markup>? {
-        optionalChildren { $0[keyPath: keyPath] }
-    }
-
-    subscript<Element: MarkupElement>(
-        dynamicMember keyPath: KeyPath<Fields, MarkupReferences<Element>>
-    ) -> MarkupCollection<Element> {
-        elements { $0[keyPath: keyPath] }
-    }
-
-    subscript<Element: MarkupElement>(dynamicMember keyPath: KeyPath<Fields, MarkupReference<Element>?>) -> Element? {
-        optionalElement { $0[keyPath: keyPath] }
-    }
-
-    subscript(dynamicMember keyPath: KeyPath<Fields, MarkupGroupReferences<any Markup>>) -> MarkupGroups<any Markup> {
-        groups { $0[keyPath: keyPath] }
+    // Return the selected field before resolving it, so the owner's other fields
+    // do not stay borrowed across a second store lookup.
+    @inline(__always)
+    private func storedValue<Value>(for keyPath: KeyPath<Fields, Value>) -> Value {
+        let fields: Fields = store.fields(at: index)
+        return fields[keyPath: keyPath]
     }
 }
 
 /// Records contain scalar values and integer edges only. Consequently ARC
 /// destruction has bounded stack depth, including after extracting a subtree.
-/// Every kind but metadata is its fields; a view over the record is 16 bytes
-/// and fits the existential inline buffer, so no `any Markup` is boxed.
 enum StoredMarkup: Sendable {
+    // Nodes with owned Markup relations.
     case callout(Callout.Fields)
     case citation(Citation.Fields)
     case cite(Cite.Fields)
-    case code(Code.Fields)
-    case codeBlock(CodeBlock.Fields)
-    case comment(Comment.Fields)
-    case crossEmbedded(CrossEmbedded.Fields)
-    case crossLink(CrossLink.Fields)
     case definition(Definition.Fields)
     case definitionList(DefinitionList.Fields)
     case directive(Directive.Fields)
@@ -184,19 +123,13 @@ enum StoredMarkup: Sendable {
     case embedded(Embedded.Fields)
     case emphasis(Emphasis.Fields)
     case footnote(Footnote.Fields)
-    case formula(Formula.Fields)
-    case formulaBlock(FormulaBlock.Fields)
     case heading(Heading.Fields)
-    case html(HTML.Fields)
-    case htmlBlock(HTMLBlock.Fields)
     case insertion(Insertion.Fields)
-    case lineBreak(LineBreak.Fields)
     case link(Link.Fields)
     case list(List.Fields)
     case listItem(ListItem.Fields)
     case mark(Mark.Fields)
     case paragraph(Paragraph.Fields)
-    case softBreak(SoftBreak.Fields)
     case span(Span.Fields)
     case specimen(Specimen.Fields)
     case strikethrough(Strikethrough.Fields)
@@ -207,10 +140,23 @@ enum StoredMarkup: Sendable {
     case tableCaption(TableCaption.Fields)
     case tableCell(TableCell.Fields)
     case tableRow(TableRow.Fields)
-    case text(Text.Fields)
-    case thematicBreak(ThematicBreak.Fields)
 
-    // Boxed leaf node.
+    // Inline leaf nodes without Markup relations.
+    case code(Code)
+    case codeBlock(CodeBlock)
+    case comment(Comment)
+    case crossEmbedded(CrossEmbedded)
+    case crossLink(CrossLink)
+    case formula(Formula)
+    case formulaBlock(FormulaBlock)
+    case html(HTML)
+    case htmlBlock(HTMLBlock)
+    case lineBreak(LineBreak)
+    case softBreak(SoftBreak)
+    case text(Text)
+    case thematicBreak(ThematicBreak)
+
+    // Boxed leaf nodes.
     // Keep the large metadata payload out of every other record.
     indirect case metadata(Metadata)
 }
@@ -222,59 +168,107 @@ final class MarkupStore: Sendable {
         self.records = records
     }
 
-    /// The resolution of an `any Markup` relation: the record's kind chooses the
-    /// view, upcast where it is made, with no cast at any read.
-    static func anyMarkup(_ store: MarkupStore, _ index: Int) -> any Markup {
-        store.markup(at: index)
+    // swiftlint:disable:next cyclomatic_complexity
+    func fields<Fields: Sendable>(at index: Int) -> Fields {
+        let fields: Fields?
+        switch records[index] {
+        case let .callout(value): fields = value as? Fields
+        case let .citation(value): fields = value as? Fields
+        case let .cite(value): fields = value as? Fields
+        case let .definition(value): fields = value as? Fields
+        case let .definitionList(value): fields = value as? Fields
+        case let .directive(value): fields = value as? Fields
+        case let .directiveBlock(value): fields = value as? Fields
+        case let .directiveLabel(value): fields = value as? Fields
+        case let .document(value): fields = value as? Fields
+        case let .embedded(value): fields = value as? Fields
+        case let .emphasis(value): fields = value as? Fields
+        case let .footnote(value): fields = value as? Fields
+        case let .heading(value): fields = value as? Fields
+        case let .insertion(value): fields = value as? Fields
+        case let .link(value): fields = value as? Fields
+        case let .list(value): fields = value as? Fields
+        case let .listItem(value): fields = value as? Fields
+        case let .mark(value): fields = value as? Fields
+        case let .paragraph(value): fields = value as? Fields
+        case let .span(value): fields = value as? Fields
+        case let .specimen(value): fields = value as? Fields
+        case let .strikethrough(value): fields = value as? Fields
+        case let .strong(value): fields = value as? Fields
+        case let .subscript(value): fields = value as? Fields
+        case let .superscript(value): fields = value as? Fields
+        case let .table(value): fields = value as? Fields
+        case let .tableCaption(value): fields = value as? Fields
+        case let .tableCell(value): fields = value as? Fields
+        case let .tableRow(value): fields = value as? Fields
+
+        case .code, .codeBlock, .comment, .crossEmbedded, .crossLink, .formula, .formulaBlock, .html, .htmlBlock,
+            .lineBreak, .softBreak, .text, .thematicBreak:
+            fields = nil
+
+        case .metadata:
+            fields = nil
+        }
+        guard let fields else {
+            preconditionFailure("Invalid stored fields for \(Fields.self)")
+        }
+        return fields
     }
 
     // Exhaustive dispatch preserves the one-to-one stored-kind projection.
     // swiftlint:disable:next cyclomatic_complexity
-    func markup(at index: Int) -> any Markup {
+    func value<Value: Sendable>(at index: Int, as type: Value.Type) -> Value {
+        let value: any Sendable
         switch records[index] {
-        case .callout: return Callout(fields: Stored(store: self, index: index))
-        case .citation: return Citation(fields: Stored(store: self, index: index))
-        case .cite: return Cite(fields: Stored(store: self, index: index))
-        case .code: return Code(fields: Stored(store: self, index: index))
-        case .codeBlock: return CodeBlock(fields: Stored(store: self, index: index))
-        case .comment: return Comment(fields: Stored(store: self, index: index))
-        case .crossEmbedded: return CrossEmbedded(fields: Stored(store: self, index: index))
-        case .crossLink: return CrossLink(fields: Stored(store: self, index: index))
-        case .definition: return Definition(fields: Stored(store: self, index: index))
-        case .definitionList: return DefinitionList(fields: Stored(store: self, index: index))
-        case .directive: return Directive(fields: Stored(store: self, index: index))
-        case .directiveBlock: return DirectiveBlock(fields: Stored(store: self, index: index))
-        case .directiveLabel: return DirectiveLabel(fields: Stored(store: self, index: index))
-        case .document: return Document(fields: Stored(store: self, index: index))
-        case .embedded: return Embedded(fields: Stored(store: self, index: index))
-        case .emphasis: return Emphasis(fields: Stored(store: self, index: index))
-        case .footnote: return Footnote(fields: Stored(store: self, index: index))
-        case .formula: return Formula(fields: Stored(store: self, index: index))
-        case .formulaBlock: return FormulaBlock(fields: Stored(store: self, index: index))
-        case .heading: return Heading(fields: Stored(store: self, index: index))
-        case .html: return HTML(fields: Stored(store: self, index: index))
-        case .htmlBlock: return HTMLBlock(fields: Stored(store: self, index: index))
-        case .insertion: return Insertion(fields: Stored(store: self, index: index))
-        case .lineBreak: return LineBreak(fields: Stored(store: self, index: index))
-        case .link: return Link(fields: Stored(store: self, index: index))
-        case .list: return List(fields: Stored(store: self, index: index))
-        case .listItem: return ListItem(fields: Stored(store: self, index: index))
-        case .mark: return Mark(fields: Stored(store: self, index: index))
-        case .paragraph: return Paragraph(fields: Stored(store: self, index: index))
-        case .softBreak: return SoftBreak(fields: Stored(store: self, index: index))
-        case .span: return Span(fields: Stored(store: self, index: index))
-        case .specimen: return Specimen(fields: Stored(store: self, index: index))
-        case .strikethrough: return Strikethrough(fields: Stored(store: self, index: index))
-        case .strong: return Strong(fields: Stored(store: self, index: index))
-        case .`subscript`: return Subscript(fields: Stored(store: self, index: index))
-        case .superscript: return Superscript(fields: Stored(store: self, index: index))
-        case .table: return Table(fields: Stored(store: self, index: index))
-        case .tableCaption: return TableCaption(fields: Stored(store: self, index: index))
-        case .tableCell: return TableCell(fields: Stored(store: self, index: index))
-        case .tableRow: return TableRow(fields: Stored(store: self, index: index))
-        case .text: return Text(fields: Stored(store: self, index: index))
-        case .thematicBreak: return ThematicBreak(fields: Stored(store: self, index: index))
-        case let .metadata(node): return node
+        case .callout: value = Callout(fields: Stored(store: self, index: index))
+        case .citation: value = Citation(fields: Stored(store: self, index: index))
+        case .cite: value = Cite(fields: Stored(store: self, index: index))
+        case .definition: value = Definition(fields: Stored(store: self, index: index))
+        case .definitionList: value = DefinitionList(fields: Stored(store: self, index: index))
+        case .directive: value = Directive(fields: Stored(store: self, index: index))
+        case .directiveBlock: value = DirectiveBlock(fields: Stored(store: self, index: index))
+        case .directiveLabel: value = DirectiveLabel(fields: Stored(store: self, index: index))
+        case .document: value = Document(fields: Stored(store: self, index: index))
+        case .embedded: value = Embedded(fields: Stored(store: self, index: index))
+        case .emphasis: value = Emphasis(fields: Stored(store: self, index: index))
+        case .footnote: value = Footnote(fields: Stored(store: self, index: index))
+        case .heading: value = Heading(fields: Stored(store: self, index: index))
+        case .insertion: value = Insertion(fields: Stored(store: self, index: index))
+        case .link: value = Link(fields: Stored(store: self, index: index))
+        case .list: value = List(fields: Stored(store: self, index: index))
+        case .listItem: value = ListItem(fields: Stored(store: self, index: index))
+        case .mark: value = Mark(fields: Stored(store: self, index: index))
+        case .paragraph: value = Paragraph(fields: Stored(store: self, index: index))
+        case .span: value = Span(fields: Stored(store: self, index: index))
+        case .specimen: value = Specimen(fields: Stored(store: self, index: index))
+        case .strikethrough: value = Strikethrough(fields: Stored(store: self, index: index))
+        case .strong: value = Strong(fields: Stored(store: self, index: index))
+        case .subscript: value = Subscript(fields: Stored(store: self, index: index))
+        case .superscript: value = Superscript(fields: Stored(store: self, index: index))
+        case .table: value = Table(fields: Stored(store: self, index: index))
+        case .tableCaption: value = TableCaption(fields: Stored(store: self, index: index))
+        case .tableCell: value = TableCell(fields: Stored(store: self, index: index))
+        case .tableRow: value = TableRow(fields: Stored(store: self, index: index))
+
+        case let .code(node): value = node
+        case let .codeBlock(node): value = node
+        case let .comment(node): value = node
+        case let .crossEmbedded(node): value = node
+        case let .crossLink(node): value = node
+        case let .formula(node): value = node
+        case let .formulaBlock(node): value = node
+        case let .html(node): value = node
+        case let .htmlBlock(node): value = node
+        case let .lineBreak(node): value = node
+        case let .softBreak(node): value = node
+        case let .text(node): value = node
+        case let .thematicBreak(node): value = node
+
+        case let .metadata(node): value = node
         }
+        guard let result = value as? Value else {
+            preconditionFailure("Invalid value kind in a typed relation")
+        }
+        return result
     }
 }

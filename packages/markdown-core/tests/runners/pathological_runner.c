@@ -19,6 +19,52 @@
 
 #include "test_support.h"
 
+/* A thread with a chosen stack size, so a traversal that recurses per nesting
+ * level fails here rather than only on someone's small-stack thread in
+ * production. Raw native threads for the reason concurrency_runner gives: the
+ * facade contract has to hold without harness serialization. */
+#if defined(_WIN32)
+#include <process.h>
+#include <windows.h>
+typedef HANDLE pc_thread;
+typedef unsigned(__stdcall *pc_thread_entry)(void *);
+static int pc_thread_spawn(pc_thread *handle, pc_thread_entry entry, void *argument, size_t stack_bytes) {
+    uintptr_t raw = _beginthreadex(NULL, (unsigned)stack_bytes, entry, argument, 0, NULL);
+    if (!raw) {
+        return -1;
+    }
+    *handle = (HANDLE)raw;
+    return 0;
+}
+static void pc_thread_join(pc_thread handle) {
+    WaitForSingleObject(handle, INFINITE);
+    CloseHandle(handle);
+}
+#define PC_THREAD_RESULT unsigned __stdcall
+#define PC_THREAD_RETURN return 0
+#else
+#include <pthread.h>
+typedef pthread_t pc_thread;
+typedef void *(*pc_thread_entry)(void *);
+static int pc_thread_spawn(pc_thread *handle, pc_thread_entry entry, void *argument, size_t stack_bytes) {
+    pthread_attr_t attributes;
+    int spawned;
+    if (pthread_attr_init(&attributes) != 0) {
+        return -1;
+    }
+    if (pthread_attr_setstacksize(&attributes, stack_bytes) != 0) {
+        pthread_attr_destroy(&attributes);
+        return -1;
+    }
+    spawned = pthread_create(handle, &attributes, entry, argument);
+    pthread_attr_destroy(&attributes);
+    return spawned == 0 ? 0 : -1;
+}
+static void pc_thread_join(pc_thread handle) { pthread_join(handle, NULL); }
+#define PC_THREAD_RESULT void *
+#define PC_THREAD_RETURN return NULL
+#endif
+
 typedef struct pc_context {
     char *input;
     size_t input_length;
@@ -314,6 +360,138 @@ static int case_nested_block_quotes(pc_context *context) {
         return -1;
     }
     return pc_expect_text(context, "a", 1);
+}
+
+/* The canonical dump of a deep document, drawn on a deliberately small stack.
+ *
+ * The dump walks the tree the parser produced, and a walk that recurses per
+ * nesting level costs a C frame per level: a document the parser accepts can
+ * then terminate the process inside the dump instead of returning one. 256 KiB
+ * is a stack an embedder can plausibly give a worker thread.
+ *
+ * The shape and the depth are both chosen from measurement rather than taste.
+ * List markers nest several tree levels each, so `- ` repeated is markedly
+ * harsher than `> ` repeated: at 3000 markers a recursive walk returns a dump
+ * for the quotes and dies on the lists. On this stack it survives 1000 list
+ * markers and dies at 2000, so 3000 leaves margin for a platform whose frames
+ * are smaller, while the dump itself stays around 73 MB -- it grows with the
+ * square of the depth, because every line carries the connectors of all the
+ * levels above it. An iterative walk does not notice any of this. */
+#define PC_DUMP_STACK_BYTES (256u * 1024u)
+#define PC_DUMP_DEPTH 3000u
+
+typedef struct pc_dump_job {
+    const markdown_core_document *document;
+    uint8_t *output;
+    size_t length;
+    bool dumped;
+} pc_dump_job;
+
+static PC_THREAD_RESULT pc_dump_entry(void *argument) {
+    pc_dump_job *job = (pc_dump_job *)argument;
+    job->dumped = markdown_core_document_dump(job->document, &job->output, &job->length, NULL);
+    PC_THREAD_RETURN;
+}
+
+static int case_dump_deep_nesting(pc_context *context) {
+    pc_dump_job job;
+    pc_thread thread;
+    size_t depth;
+    char *cursor;
+    context->input_length = (size_t)PC_DUMP_DEPTH * 2u + 2u;
+    context->input = (char *)malloc(context->input_length + 1u);
+    if (!context->input) {
+        return -1;
+    }
+    cursor = context->input;
+    for (depth = 0; depth < PC_DUMP_DEPTH; depth++) {
+        *cursor++ = '-';
+        *cursor++ = ' ';
+    }
+    *cursor++ = 'a';
+    *cursor++ = '\n';
+    *cursor = 0;
+    if (pc_parse(context) != 0) {
+        return -1;
+    }
+    job.document = context->document;
+    job.output = NULL;
+    job.length = 0;
+    job.dumped = false;
+    if (pc_thread_spawn(&thread, pc_dump_entry, &job, PC_DUMP_STACK_BYTES) != 0) {
+        fprintf(stderr, "could not start a %u-byte-stack thread for the dump\n", (unsigned)PC_DUMP_STACK_BYTES);
+        return -1;
+    }
+    pc_thread_join(thread);
+    if (!job.dumped || !job.output || job.length == 0) {
+        fprintf(stderr, "dumping a %u-deep document on a %u-byte stack did not return a dump\n",
+                (unsigned)PC_DUMP_DEPTH, (unsigned)PC_DUMP_STACK_BYTES);
+        markdown_core_dump_free(job.output);
+        return -1;
+    }
+    markdown_core_dump_free(job.output);
+    return 0;
+}
+
+/* The canonical dump of a very wide document.
+ *
+ * Depth is what the dump's walk must not pay a C frame for; breadth is what it
+ * must not accumulate. A node's nested lines are drawn from a cursor over its
+ * children rather than from a list of them, and the connector each line gets
+ * comes from a running count of what is still owed at that level. This checks
+ * that accounting over a chain far longer than any fixture's: every top-level
+ * line a branch, the last a corner, and exactly one line per sibling.
+ *
+ * It does not measure what the dump allocates. The dump takes no allocator, so
+ * there is nothing to count against; what the design is worth on breadth is a
+ * measurement rather than an assertion. */
+#define PC_DUMP_WIDTH 20000u
+
+static int case_dump_wide_siblings(pc_context *context) {
+    size_t width;
+    char *cursor;
+    uint8_t *output = NULL;
+    size_t length = 0;
+    size_t branches = 0, corners = 0, index;
+    int result = 0;
+    context->input_length = (size_t)PC_DUMP_WIDTH * 3u;
+    context->input = (char *)malloc(context->input_length + 1u);
+    if (!context->input) {
+        return -1;
+    }
+    cursor = context->input;
+    for (width = 0; width < PC_DUMP_WIDTH; width++) {
+        *cursor++ = 'a';
+        *cursor++ = '\n';
+        *cursor++ = '\n';
+    }
+    *cursor = 0;
+    if (pc_parse(context) != 0) {
+        return -1;
+    }
+    if (!markdown_core_document_dump(context->document, &output, &length, NULL)) {
+        fprintf(stderr, "dumping a %u-wide document did not return a dump\n", (unsigned)PC_DUMP_WIDTH);
+        return -1;
+    }
+    /* The paragraphs sit directly under the document, so their connectors are
+     * the only ones at the outermost level: 3 bytes each, at the line start. */
+    for (index = 0; index + 3u <= length; index++) {
+        if (index && output[index - 1u] != (uint8_t)'\n') {
+            continue;
+        }
+        if (memcmp(output + index, "\xe2\x94\x9c", 3) == 0) {
+            branches++;
+        } else if (memcmp(output + index, "\xe2\x94\x94", 3) == 0) {
+            corners++;
+        }
+    }
+    if (branches != PC_DUMP_WIDTH - 1u || corners != 1u) {
+        fprintf(stderr, "a %u-wide document drew %zu branches and %zu corners, wanted %u and 1\n",
+                (unsigned)PC_DUMP_WIDTH, branches, corners, (unsigned)(PC_DUMP_WIDTH - 1u));
+        result = -1;
+    }
+    markdown_core_dump_free(output);
+    return result;
 }
 
 static int case_deeply_nested_lists(pc_context *context) {
@@ -629,26 +807,16 @@ static int case_tables(pc_context *context) {
     return 0;
 }
 
-/* Replay a real 5eca3bc1 bucket flood, not cmark's unrelated sdbm hash.
- * These 2048 keys collided at each baseline capacity through 4096. They have
- * no special meaning to radix: this case replays former semantic failures,
- * not a timing complexity gate. api_test checks the new tree at its full
- * key-length bound, including prefix chains and allocation failure. */
-static int pc_baseline_bucket_zero(const char *key) {
-    uint64_t hash = UINT64_C(1469598103934665603);
-    for (const unsigned char *p = (const unsigned char *)key; *p; p++) {
-        hash ^= *p;
-        hash *= UINT64_C(1099511628211);
+/* Port of the reference-map hash collision generator. */
+static int pc_badhash(const char *key) {
+    uint32_t h = 0;
+    const char *cursor;
+    for (cursor = key; *cursor; cursor++) {
+        uint32_t a = h << 6;
+        uint32_t b = h << 16;
+        h = (uint32_t)*cursor + a + b - h;
     }
-    hash ^= hash >> 33;
-    hash *= UINT64_C(0xff51afd7ed558ccd);
-    hash ^= hash >> 33;
-    hash *= UINT64_C(0xc4ceb9fe1a85ec53);
-    hash ^= hash >> 33;
-    if (!hash) {
-        hash = 1;
-    }
-    return (hash & 4095) == 0;
+    return (h % 16) == 0;
 }
 
 typedef struct pc_uniform_text {
@@ -672,7 +840,8 @@ static int pc_uniform_text_visit(const markdown_core_node *node, void *context) 
     return 0;
 }
 
-static int reference_misses(pc_context *context, size_t count, int (*accept_key)(const char *)) {
+static int case_reference_collisions(pc_context *context) {
+    enum { COLLISIONS = 50000 };
     char bad_key[32] = "";
     char key[32];
     size_t found = 0;
@@ -687,9 +856,9 @@ static int reference_misses(pc_context *context, size_t count, int (*accept_key)
         if (!buffer) {
             return -1;
         }
-        while (found < count) {
+        while (found < COLLISIONS) {
             snprintf(key, sizeof(key), "x%lu", candidate++);
-            if (!accept_key(key)) {
+            if (!pc_badhash(key)) {
                 continue;
             }
             found++;
@@ -721,7 +890,7 @@ static int reference_misses(pc_context *context, size_t count, int (*accept_key)
     if (pc_parse(context) != 0) {
         return -1;
     }
-    if (pc_expect_count(context, MARKDOWN_CORE_KIND_PARAGRAPH, count - 1, "Paragraph") != 0 ||
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_PARAGRAPH, COLLISIONS - 1, "Paragraph") != 0 ||
         pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, 0, "Link") != 0) {
         return -1;
     }
@@ -731,26 +900,11 @@ static int reference_misses(pc_context *context, size_t count, int (*accept_key)
     check.seen = 0;
     check.mismatch = 0;
     if (ts_ast_walk(markdown_core_document_root(context->document), pc_uniform_text_visit, &check) < 0 ||
-        check.mismatch || check.seen != count - 1) {
+        check.mismatch || check.seen != COLLISIONS - 1) {
         fprintf(stderr, "unresolved references are not uniform literal text\n");
         return -1;
     }
     return 0;
-}
-
-static int case_reference_collisions(pc_context *context) {
-    return reference_misses(context, 2048, pc_baseline_bucket_zero);
-}
-
-static int pc_every_reference_key(const char *key) {
-    (void)key;
-    return 1;
-}
-
-/* Keep the former 49,999-definition/missing-reference document size covered
- * independently of the historical hash generator's sampling cost. */
-static int case_reference_unresolved_scale(pc_context *context) {
-    return reference_misses(context, 50000, pc_every_reference_key);
 }
 
 /* A resolved reference SHARES its definition's resource instead of copying the
@@ -1232,8 +1386,9 @@ static const pc_case_entry PC_CASES[] = {
     {"comment_nested_item_blank_runs", case_comment_nested_item_blank_runs},
     {"tables", case_tables},
     {"reference_collisions", case_reference_collisions},
-    {"reference_unresolved_scale", case_reference_unresolved_scale},
     {"reference_expansion_bound", case_reference_expansion_bound},
+    {"dump_deep_nesting", case_dump_deep_nesting},
+    {"dump_wide_siblings", case_dump_wide_siblings},
     {"directive_unclosed_labels", case_directive_unclosed_labels},
     {"directive_unclosed_attributes", case_directive_unclosed_attributes},
     {"directive_colon_pairs", case_directive_colon_pairs},

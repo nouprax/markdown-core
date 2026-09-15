@@ -1,5 +1,4 @@
 #include "link_scanners.h"
-#include <string.h>
 #include "text_scanners.h"
 #include "citation.h"
 #include "footnote.h"
@@ -14,45 +13,16 @@
 
 static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *input, bufsize_t offset,
                                                            markdown_core_chunk *output);
-/* A definition's label closes with `]:` inside the label window that
- * follows its `[`. A front without that pair cannot be a definition, so no
- * inline state is built for it. The test is a necessary condition only; the
- * reference parser still decides. */
-bool markdown_core_reference_definition_possible(const unsigned char *data, bufsize_t length) {
-    bufsize_t window = length < MAX_LINK_LABEL_LENGTH + 2 ? length : MAX_LINK_LABEL_LENGTH + 2;
-    const unsigned char *at = data + 1, *end = data + window;
-    while (at < end) {
-        const unsigned char *close = memchr(at, ']', (size_t)(end - at));
-        if (!close) {
-            return false;
-        }
-        if (close + 1 < data + length && close[1] == ':') {
-            return true;
-        }
-        at = close + 1;
-    }
-    return false;
-}
-
 bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
-    markdown_core_strbuf *node_content = b->content;
+    markdown_core_strbuf *node_content = &b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
-    /* A definition's attributes are the map's, not the document's. An
-     * occurrence retains the resource rather than copying it, so a resolved
-     * definition's values do reach the document -- but a definition nothing
-     * resolves to, and one that loses to a duplicate, is released with the
-     * map at dispose_document. Arena storage cannot be released before the
-     * document is, so these come from the allocator, which the resource's
-     * own release reclaims. */
     markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = chunk.data, .length = chunk.len};
-    while (chunk.len && chunk.data[0] == '[' && markdown_core_reference_definition_possible(chunk.data, chunk.len)) {
+    while (chunk.len && chunk.data[0] == '[') {
         int line = b->start_line, column = b->start_column;
         markdown_core_parser_content_place(parser, b, (bufsize_t)(chunk.data - node_content->ptr), &line, &column);
         uint64_t source_key = ((uint64_t)(uint32_t)line << 32) | (uint32_t)column;
-        MARKDOWN_CORE_DIAGNOSTIC(parser->reference_probe_work++;)
-        pos = markdown_core_parse_reference_inline(parser->mem, parser->arena, &parser->url_scratch, &chunk,
-                                                   parser->refmap, &attributes, source_key);
+        pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap, &attributes, source_key);
         if (!pos) {
             break;
         }
@@ -62,7 +32,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     if (attributes.oom) {
         parser->oom = true;
     }
-    MARKDOWN_CORE_DIAGNOSTIC(parser->attribute_work += attributes.work;)
+    parser->attribute_work += attributes.work;
     markdown_core_attribute_parser_free(&attributes);
     // The definitions are dropped off the FRONT of the block's content, so what
     // is left starts further down the source than the block was told it did.
@@ -94,44 +64,11 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
         b->start_line = line;
         b->start_column = column;
     }
-    return !markdown_core_block_is_blank(b->content, 0);
+    return !markdown_core_block_is_blank(&b->content, 0);
 }
 
-markdown_core_chunk markdown_core_arena_copy_chunk(markdown_core_arena *arena, const markdown_core_strbuf *buf) {
-    markdown_core_chunk copy = {NULL, 0, 0};
-    unsigned char *bytes = markdown_core_arena_alloc(arena, (size_t)buf->size + 1);
-    if (bytes) {
-        memcpy(bytes, buf->ptr, (size_t)buf->size);
-        bytes[buf->size] = '\0';
-        copy.data = bytes;
-        copy.len = buf->size;
-    }
-    return copy;
-}
-
-/* The cleaned bytes handed out: a copy in the arena when there is one to
- * copy into, else the buffer's own storage detached. */
-static markdown_core_chunk S_cleaned_chunk(markdown_core_arena *arena, markdown_core_strbuf *buf, int *lost) {
-    if (buf->oom) {
-        if (lost) {
-            *lost = 1;
-        }
-        return markdown_core_chunk_buf_detach(buf);
-    }
-    if (arena) {
-        markdown_core_chunk copy = markdown_core_arena_copy_chunk(arena, buf);
-        if (!copy.data && lost) {
-            *lost = 1;
-        }
-        return copy;
-    }
-    return markdown_core_chunk_buf_detach(buf);
-}
-
-markdown_core_chunk markdown_core_clean_url_in(markdown_core_arena *arena, markdown_core_strbuf *scratch,
-                                               markdown_core_mem *mem, markdown_core_chunk *url, int *lost) {
-    markdown_core_strbuf own = MARKDOWN_CORE_BUF_INIT(mem);
-    markdown_core_strbuf *buf = arena && scratch ? scratch : &own;
+markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_core_chunk *url, int *lost) {
+    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(mem);
 
     markdown_core_chunk_trim(url);
 
@@ -139,22 +76,17 @@ markdown_core_chunk markdown_core_clean_url_in(markdown_core_arena *arena, markd
         return markdown_core_chunk_literal("");
     }
 
-    markdown_core_strbuf_clear(buf);
-    houdini_unescape_html_f(buf, url->data, url->len);
+    houdini_unescape_html_f(&buf, url->data, url->len);
 
-    markdown_core_strbuf_unescape(buf);
-    return S_cleaned_chunk(buf == scratch ? arena : NULL, buf, lost);
+    markdown_core_strbuf_unescape(&buf);
+    if (buf.oom && lost) {
+        *lost = 1;
+    }
+    return markdown_core_chunk_buf_detach(&buf);
 }
 
-markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_core_chunk *url, int *lost) {
-    return markdown_core_clean_url_in(NULL, NULL, mem, url, lost);
-}
-
-markdown_core_optional_chunk markdown_core_clean_title_in(markdown_core_arena *arena, markdown_core_strbuf *scratch,
-                                                          markdown_core_mem *mem, markdown_core_chunk *title,
-                                                          int *lost) {
-    markdown_core_strbuf own = MARKDOWN_CORE_BUF_INIT(mem);
-    markdown_core_strbuf *buf = arena && scratch ? scratch : &own;
+markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost) {
+    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(mem);
     unsigned char first, last;
 
     if (title->len == 0) {
@@ -164,20 +96,18 @@ markdown_core_optional_chunk markdown_core_clean_title_in(markdown_core_arena *a
     first = title->data[0];
     last = title->data[title->len - 1];
 
-    markdown_core_strbuf_clear(buf);
     // remove surrounding quotes if any:
     if ((first == '\'' && last == '\'') || (first == '(' && last == ')') || (first == '"' && last == '"')) {
-        houdini_unescape_html_f(buf, title->data + 1, title->len - 2);
+        houdini_unescape_html_f(&buf, title->data + 1, title->len - 2);
     } else {
-        houdini_unescape_html_f(buf, title->data, title->len);
+        houdini_unescape_html_f(&buf, title->data, title->len);
     }
 
-    markdown_core_strbuf_unescape(buf);
-    return markdown_core_optional_chunk_present(S_cleaned_chunk(buf == scratch ? arena : NULL, buf, lost));
-}
-
-markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost) {
-    return markdown_core_clean_title_in(NULL, NULL, mem, title, lost);
+    markdown_core_strbuf_unescape(&buf);
+    if (buf.oom && lost) {
+        *lost = 1;
+    }
+    return markdown_core_optional_chunk_present(markdown_core_chunk_buf_detach(&buf));
 }
 
 bufsize_t markdown_core_inline_reference_label_length(const unsigned char *data, bufsize_t length) {
@@ -314,7 +244,7 @@ static bool reference_tail(markdown_core_inline_state *inline_state, markdown_co
         inline_state->pos = end - base;
         markdown_core_inline_skip_spaces(inline_state);
         if (markdown_core_inline_skip_line_end(inline_state)) {
-            return !value || markdown_core_attributes_parse(attributes, start, value, &end) != 0;
+            return markdown_core_attributes_parse(attributes, start, value, &end) != 0;
         }
     }
     inline_state->pos = before;
@@ -322,8 +252,7 @@ static bool reference_tail(markdown_core_inline_state *inline_state, markdown_co
     return markdown_core_inline_skip_line_end(inline_state);
 }
 
-bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_arena *arena,
-                                               markdown_core_strbuf *scratch, markdown_core_chunk *input,
+bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
                                                markdown_core_map *refmap, markdown_core_attribute_parser *attributes,
                                                uint64_t source_key) {
     markdown_core_inline_state inline_state;
@@ -376,10 +305,10 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
     }
 
     // parse final spaces and newline:
-    if (!reference_tail(&inline_state, attributes, refmap ? &value : NULL)) {
+    if (!reference_tail(&inline_state, attributes, &value)) {
         if (matchlen) { // try rewinding before title
             inline_state.pos = beforetitle;
-            if (!reference_tail(&inline_state, attributes, refmap ? &value : NULL)) {
+            if (!reference_tail(&inline_state, attributes, &value)) {
                 return 0;
             }
             // The title candidate is un-read here: its bytes stay paragraph
@@ -402,9 +331,9 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
     // destination and title are cleaned here, the way a direct link's are, so
     // a resolved occurrence and a direct one state the same values.
     {
-        markdown_core_chunk clean_url = markdown_core_clean_url_in(arena, scratch, mem, &url, &lost);
-        markdown_core_optional_chunk clean_title = markdown_core_clean_title_in(arena, scratch, mem, &title, &lost);
-        resource = lost ? NULL : markdown_core_resource_create(arena, mem, clean_url, clean_title);
+        markdown_core_chunk clean_url = markdown_core_clean_url(mem, &url, &lost);
+        markdown_core_optional_chunk clean_title = markdown_core_clean_title(mem, &title, &lost);
+        resource = lost ? NULL : markdown_core_resource_new(mem, clean_url, clean_title);
         if (!resource) {
             markdown_core_chunk_free(mem, &clean_url);
             markdown_core_optional_chunk_free(mem, &clean_title);
@@ -467,11 +396,8 @@ markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_state
             title_chunk = markdown_core_chunk_dup(&inline_state->input, starttitle, endtitle - starttitle);
             {
                 int lost = 0;
-                markdown_core_strbuf *scratch =
-                    inline_state->owner_parser ? &inline_state->owner_parser->url_scratch : NULL;
-                url = markdown_core_clean_url_in(inline_state->arena, scratch, inline_state->mem, &url_chunk, &lost);
-                title =
-                    markdown_core_clean_title_in(inline_state->arena, scratch, inline_state->mem, &title_chunk, &lost);
+                url = markdown_core_clean_url(inline_state->mem, &url_chunk, &lost);
+                title = markdown_core_clean_title(inline_state->mem, &title_chunk, &lost);
                 if (lost) {
                     inline_state->oom = 1;
                 }
@@ -498,41 +424,25 @@ markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_state
         // If we have a shortcut reference link, back up
         // to before the spacse we skipped.
         inline_state->pos = initial_pos;
-        markdown_core_chunk_free(inline_state->mem, &raw_label);
-        candidate->record = NULL;
-        candidate->explicit_tail = false;
-        /* The label would be the bracket's own content, and folding it costs
-         * as much as the bracket is long: a span, a citation group or a
-         * bibliography claims most such brackets by their shape alone, so
-         * the map is asked only once none of them has. */
-        return link_allowed && !opener->bracket_after ? LINK_SHORTCUT : LINK_UNMATCHED;
     }
 
-    if (raw_label.len == 0 && !opener->bracket_after) {
+    if ((!found_label || raw_label.len == 0) && !opener->bracket_after) {
         markdown_core_chunk_free(inline_state->mem, &raw_label);
         raw_label = markdown_core_chunk_dup(&inline_state->input, opener->position, initial_pos - opener->position - 1);
+        found_label = true;
     }
 
     /* `[t][l]`, `[l][]` and `[l]` resolve identically and to the same node: the
      * `Link` or `Embedded` the definition names (M2). Nothing records which of the
      * three spellings the author wrote, and nothing downstream can recover it
      * -- the module states one node for every successful form. */
-    if (link_allowed) {
+    if (link_allowed && found_label) {
         record = markdown_core_map_lookup(inline_state->refmap, &raw_label);
     }
     markdown_core_chunk_free(inline_state->mem, &raw_label);
     candidate->record = record;
     candidate->explicit_tail = explicit_tail;
-    return record ? LINK_EXPLICIT : LINK_UNMATCHED;
-}
-
-bool markdown_core_link_resolve_shortcut(markdown_core_inline_state *inline_state, bracket *opener,
-                                         bufsize_t initial_pos, markdown_core_link_candidate *candidate) {
-    markdown_core_chunk label =
-        markdown_core_chunk_dup(&inline_state->input, opener->position, initial_pos - opener->position - 1);
-    candidate->record = markdown_core_map_lookup(inline_state->refmap, &label);
-    candidate->explicit_tail = false;
-    return candidate->record != NULL;
+    return record ? (explicit_tail ? LINK_EXPLICIT : LINK_SHORTCUT) : LINK_UNMATCHED;
 }
 
 bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inline_state *inline_state, bracket *opener,
@@ -550,7 +460,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
         markdown_core_optional_chunk_free(inline_state->mem, &title);
         return false;
     }
-    inl = markdown_core_inline_make_simple(inline_state,
+    inl = markdown_core_inline_make_simple(inline_state->mem,
                                            is_image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK);
     if (inl && record) {
         /* A RESOLVED REFERENCE IS THE LINK OR EMBEDDED IT NAMES (M2), and it reads
@@ -560,23 +470,13 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
          * resolves depend on how many resolved before it (D9). The occurrence
          * keeps its own scope, below: the definition's range is never copied,
          * unioned or substituted into it. */
-        markdown_core_resource *resource = markdown_core_reference_resource(inline_state->refmap, record);
-        if (!resource) {
-            markdown_core_node_recycle(inline_state->arena, inl);
-            inl = NULL;
-        } else {
-            markdown_core_resource_retain(resource);
-            inl->as.link->resource = resource;
-            /* The occurrence reads the definition's anchor: the document
-             * reserves it once, from the completion walk this asks for. */
-            if (resource->attributes.anchor.len) {
-                markdown_core_inline_request_completion(inline_state);
-            }
-        }
+        assert(record->resource != NULL);
+        markdown_core_resource_retain(record->resource);
+        inl->as.link->resource = record->resource;
     } else if (inl) {
-        inl->as.link->resource = markdown_core_resource_create(inline_state->arena, inline_state->mem, url, title);
+        inl->as.link->resource = markdown_core_resource_new(inline_state->mem, url, title);
         if (!inl->as.link->resource) {
-            markdown_core_node_recycle(inline_state->arena, inl);
+            markdown_core_node_free(inl);
             inl = NULL;
         }
     }
@@ -624,7 +524,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
     }
 
     // Free the bracket [:
-    markdown_core_node_recycle(inline_state->arena, opener->inl_text);
+    markdown_core_node_free(opener->inl_text);
 
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
     markdown_core_inline_pop_bracket(inline_state);
@@ -649,19 +549,8 @@ void markdown_core_inline_take_bracket_content(markdown_core_parser *parser, bra
         markdown_core_node *next = child->next;
         markdown_core_node_unlink(child);
         markdown_core_node_attach_owned(owner, child, NULL);
-        MARKDOWN_CORE_DIAGNOSTIC(parser->bracket_work++;)
+        parser->bracket_work++;
         child = next;
-    }
-}
-
-/* A bracket record and its tokens go back to where they came from: the
- * parse arena's pool, or the allocator for a state built without one. */
-static void release_bracket(markdown_core_inline_state *inline_state, bracket *b) {
-    markdown_core_inline_free_citation_tokens(inline_state, &b->citations);
-    if (inline_state->arena) {
-        markdown_core_arena_recycle(inline_state->arena, b, sizeof(*b));
-    } else {
-        inline_state->mem->free(b);
     }
 }
 
@@ -683,13 +572,13 @@ void markdown_core_inline_pop_bracket(markdown_core_inline_state *inline_state) 
         }
         markdown_core_inline_remove_delimiter(inline_state, b->delim_end);
     }
-    release_bracket(inline_state, b);
+    markdown_core_inline_free_citation_tokens(inline_state, &b->citations);
+    inline_state->mem->free(b);
 }
 
 void markdown_core_inline_push_bracket(markdown_core_inline_state *inline_state, bracket_kind kind,
                                        markdown_core_node *inl_text) {
-    bracket *b = inline_state->arena ? (bracket *)markdown_core_arena_take(inline_state->arena, sizeof(bracket))
-                                     : (bracket *)inline_state->mem->calloc(1, sizeof(bracket));
+    bracket *b = (bracket *)inline_state->mem->calloc(1, sizeof(bracket));
     if (!b) {
         inline_state->oom = 1;
         return;
@@ -729,18 +618,18 @@ void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inl
         markdown_core_node_attach_owned(opener->inl_text->parent, replacement, opener->inl_text->next);
     } else {
         markdown_core_node_attach_owned(opener->inl_text->parent, replacement, opener->inl_text);
-        markdown_core_node_recycle(inline_state->arena, opener->inl_text);
+        markdown_core_node_free(opener->inl_text);
     }
 }
 
 markdown_core_node *markdown_core_inline_handle_close_bracket(markdown_core_parser *parser,
                                                               markdown_core_inline_state *inline_state) {
-    MARKDOWN_CORE_DIAGNOSTIC(parser->bracket_work++;)
+    parser->bracket_work++;
     advance(inline_state);
     bufsize_t initial_pos = inline_state->pos;
     bracket *opener = inline_state->last_bracket;
     if (!opener) {
-        return markdown_core_inline_state_make_literal_run(inline_state, initial_pos - 1, initial_pos - 1);
+        return make_str(inline_state, initial_pos - 1, initial_pos - 1, markdown_core_chunk_literal("]"));
     }
     if (opener->kind == BRACKET_FOOTNOTE) {
         return markdown_core_inline_close_inline_footnote(parser, inline_state, opener);
@@ -771,7 +660,7 @@ markdown_core_node *markdown_core_inline_handle_close_bracket(markdown_core_pars
     if (markdown_core_inline_close_bibliography(parser, inline_state, opener)) {
         return NULL;
     }
-    if (match == LINK_SHORTCUT && markdown_core_link_resolve_shortcut(inline_state, opener, initial_pos, &link)) {
+    if (match == LINK_SHORTCUT) {
         if (markdown_core_link_commit(parser, inline_state, opener, &link, initial_pos)) {
             return NULL;
         }
@@ -785,7 +674,7 @@ no_match:
     markdown_core_inline_finish_citation_tokens(inline_state, &opener->citations);
     markdown_core_inline_pop_bracket(inline_state);
     inline_state->pos = initial_pos;
-    return markdown_core_inline_state_make_literal_run(inline_state, initial_pos - 1, initial_pos - 1);
+    return make_str(inline_state, initial_pos - 1, initial_pos - 1, markdown_core_chunk_literal("]"));
 }
 
 static markdown_core_node *match_bracket(const markdown_core_element *self, markdown_core_parser *parser,
@@ -797,7 +686,7 @@ static markdown_core_node *match_bracket(const markdown_core_element *self, mark
     if (character == '[') {
         advance(inline_state);
         markdown_core_node *text =
-            markdown_core_inline_state_make_source_text(inline_state, inline_state->pos - 1, inline_state->pos - 1);
+            make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("["));
         if (text) {
             markdown_core_inline_push_bracket(inline_state, BRACKET_LINK, text);
         }
@@ -811,19 +700,15 @@ static void dispose_inline(markdown_core_inline_state *inline_state) {
     }
     while (inline_state->pending_brackets) {
         bracket *next = inline_state->pending_brackets->pending_next;
-        release_bracket(inline_state, inline_state->pending_brackets);
+        markdown_core_inline_free_citation_tokens(inline_state, &inline_state->pending_brackets->citations);
+        inline_state->mem->free(inline_state->pending_brackets);
         inline_state->pending_brackets = next;
     }
 }
 
 static void init_inline(markdown_core_inline_state *inline_state) { inline_state->no_link_openers = true; }
 
-static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
-    return state->input.data[at] != ']' || state->last_bracket != NULL;
-}
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
-    .can_start = can_start,
     .init_inline = init_inline,
 
     .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,

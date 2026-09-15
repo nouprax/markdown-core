@@ -328,23 +328,6 @@ fi
 # data that contains relocations (function-pointer tables, string-pointer
 # arrays) is emitted into .data.rel.ro, which the loader write-protects
 # right after relocation — immutable by contract and therefore allowed.
-#
-# The archives carry the compiler's intermediate code next to the native code
-# (MarkdownCoreBuildFlags.cmake), and GNU nm answers for such an object
-# through the linker's LTO plugin, whose symbol table names no section: every
-# constant would read as writable data. GNU objdump reads the object's own
-# symbol table, so where GNU nm is the only nm it classifies the archives;
-# llvm-nm reads the object itself and needs no substitute.
-objdump_tool=""
-case "$nm_tool" in
-    *llvm-nm*) ;;
-    *)
-        if command -v objdump >/dev/null 2>&1 \
-            && objdump --version 2>/dev/null | head -n 1 | grep -q '^GNU objdump'; then
-            objdump_tool=$(command -v objdump)
-        fi
-        ;;
-esac
 # Mach-O nm leaves the SysV section column empty, but its class letters
 # already separate const data ('s'/'S') from writable data, so the letters
 # decide there; the plain-format letter scan remains as the fallback for nm
@@ -355,26 +338,7 @@ if ! [ -s "$temp_dir/c-static-archives.txt" ]; then
     exit 1
 fi
 while IFS= read -r archive; do
-    if [ -n "$objdump_tool" ]; then
-        sysv_output=""
-        # `address flags section<TAB>size [.hidden] name`; a section's own
-        # symbol (`l d .bss`) is named like its section and is not data.
-        writable_symbols=$("$objdump_tool" -t "$archive" 2>/dev/null | awk -F'\t' '
-            NF >= 2 && $1 ~ /^[0-9a-f]+ / {
-                n = split($1, head, " ")
-                section = head[n]
-                m = split($2, tail, " ")
-                name = tail[m]
-                if (name == "" || name ~ /^\./)
-                    next
-                if (section ~ /^\.data\.rel\.ro/)
-                    next
-                if (section ~ /^(\.data|\.bss|\.tdata|\.tbss)/ || section ~ /COM/)
-                    print name " [" section "]"
-            }' | sort -u)
-    else
-        sysv_output=$("$nm_tool" --format=sysv "$archive" 2>/dev/null || true)
-    fi
+    sysv_output=$("$nm_tool" --format=sysv "$archive" 2>/dev/null || true)
     case "$sysv_output" in
     *'|'*)
         writable_symbols=$(printf '%s\n' "$sysv_output" | awk -F'|' '
@@ -398,9 +362,7 @@ while IFS= read -r archive; do
             }' | sort -u)
         ;;
     *)
-        if [ -z "$objdump_tool" ]; then
-            writable_symbols=$("$nm_tool" "$archive" 2>/dev/null | awk '$2 ~ /^[dDbBC]$/ { print $NF }' | sort -u)
-        fi
+        writable_symbols=$("$nm_tool" "$archive" 2>/dev/null | awk '$2 ~ /^[dDbBC]$/ { print $NF }' | sort -u)
         ;;
     esac
     if [ -n "$writable_symbols" ]; then
@@ -467,9 +429,9 @@ for required_source in \
     commonMain/com/nouprax/markdown/core/visitor/MarkupVisitor.kt \
     commonMain/com/nouprax/markdown/core/visitor/MarkupWalker.kt \
     jvmMain/com/nouprax/markdown/core/PlatformParser.jvm.kt \
-    jvmMain/com/nouprax/markdown/core/wire/PayloadDecoder.kt \
-    jvmMain/com/nouprax/markdown/core/wire/PayloadNodeKind.kt \
-    jvmMain/com/nouprax/markdown/core/wire/PayloadMarkupDecoder.kt; do
+    jvmMain/com/nouprax/markdown/core/wire/JniPayloadDecoder.kt \
+    jvmMain/com/nouprax/markdown/core/wire/JniNodeKind.kt \
+    jvmMain/com/nouprax/markdown/core/wire/JniMarkupDecoder.kt; do
     if ! unzip -Z1 "$kotlin_jvm_sources" | grep -qx "$required_source"; then
         echo "Kotlin JVM source publication is missing $required_source" >&2
         exit 1

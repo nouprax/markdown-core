@@ -40,7 +40,8 @@ Usage: scripts/init-environment.sh --check [component ...]
        scripts/init-environment.sh --install [component ...]
 
 Components: core node java wrappers android android-emulator swift emscripten
-            oracle-cmark oracle-cmark-gfm oracle-pandoc dependencies tools
+            oracle-cmark oracle-cmark-gfm oracle-pandoc callgrind dependencies
+            tools
 
 With no components, the command checks or installs the complete environment
 supported by the current host. --check never installs or downloads anything.
@@ -72,7 +73,7 @@ fi
 
 for component do
     case "$component" in
-        core | node | java | wrappers | android | android-emulator | swift | emscripten | oracle-cmark | oracle-cmark-gfm | oracle-pandoc | dependencies | tools) ;;
+        core | node | java | wrappers | android | android-emulator | swift | emscripten | oracle-cmark | oracle-cmark-gfm | oracle-pandoc | callgrind | dependencies | tools) ;;
         *)
             echo "Unknown environment component: $component" >&2
             usage >&2
@@ -369,6 +370,24 @@ check_oracle_cmark_gfm() {
     return 0
 }
 
+# The stage benchmark's measurement tool. There is no installer: valgrind comes
+# from the host package manager, and this script does not choose one on a
+# machine's behalf. It is not part of the default component set because nothing
+# except that benchmark needs it.
+check_callgrind() {
+    if ! command -v valgrind >/dev/null 2>&1; then
+        fail "valgrind is not installed; the stage benchmark needs it (apt: valgrind, brew: valgrind)"
+        return 0
+    fi
+    actual=$(valgrind --version 2>/dev/null)
+    if ! command -v callgrind_annotate >/dev/null 2>&1; then
+        fail "callgrind is not installed alongside ${actual:-valgrind}"
+        return 0
+    fi
+    ok "${actual:-valgrind} with callgrind"
+    return 0
+}
+
 check_dependencies() {
     if [ -f node_modules/.modules.yaml ]; then
         ok "frozen JavaScript dependency install"
@@ -606,6 +625,7 @@ has_component emscripten "$@" && check_emscripten
 has_component oracle-pandoc "$@" && { node scripts/install-pandoc-oracle.mjs --check || fail "Pandoc oracle check failed"; }
 has_component oracle-cmark "$@" && check_oracle_cmark
 has_component oracle-cmark-gfm "$@" && check_oracle_cmark_gfm
+has_component callgrind "$@" && check_callgrind
 has_component dependencies "$@" && check_dependencies
 has_component tools "$@" && check_tools
 

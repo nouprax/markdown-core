@@ -26,9 +26,6 @@ typedef struct {
 
 struct markdown_core_inline_state {
     markdown_core_mem *mem;
-    /* The owning parse's arena, or NULL for a state built straight out of a
-     * chunk, whose few records then come from `mem`. */
-    markdown_core_arena *arena;
     markdown_core_chunk input;
     markdown_core_attribute_parser attributes;
     bufsize_t heading_attributes_start, text_end, heading_label_end;
@@ -46,7 +43,6 @@ struct markdown_core_inline_state {
      * parser -- and the map is then simply not consulted. */
     markdown_core_parser *owner_parser;
     markdown_core_node *owner;
-    int content_mark_cursor;
     markdown_core_map *refmap;
     delimiter *last_delim;
     delimiter_run cached_run;
@@ -72,9 +68,6 @@ struct markdown_core_inline_state {
     const int8_t *skip_chars;
     /* Sticky allocation-failure flag, copied to the parser after the inline
      * pass so a lossy parse is reported instead of silently truncated. */
-    /* markdown_core_inline_request_completion calls made while this root was
-     * parsed; the root is walked for completion only when there were any. */
-    unsigned completion_requests;
     int oom;
 };
 
@@ -84,8 +77,7 @@ struct markdown_core_inline_state {
 markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state *inline_state,
                                                       markdown_core_node_type t, int start_column, int end_column,
                                                       markdown_core_chunk s);
-markdown_core_node *markdown_core_inline_make_simple(markdown_core_inline_state *inline_state,
-                                                     markdown_core_node_type t);
+markdown_core_node *markdown_core_inline_make_simple(markdown_core_mem *mem, markdown_core_node_type t);
 markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_inline_state *inline_state,
                                                                 markdown_core_node_type t);
 void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number,

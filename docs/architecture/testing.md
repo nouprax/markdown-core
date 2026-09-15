@@ -46,7 +46,7 @@ family router. Diagnostic sharding uses the native filters.
 C data-driven runners also offer `spec_runner --list/--example/--section`,
 `pathological_runner --list/--case`, and `concurrency_runner --case`.
 `scripts/audit-test-topology.sh` compares discovery with CTest registration.
-The optional benchmark runner's workload list is separate from test discovery.
+The stage benchmark's runners are not in the test graph at all.
 
 ## Correctness and conformance
 
@@ -68,10 +68,9 @@ independently of correctness. ES has a separate `run-conformance.mjs` entry.
 Conformance checks field shapes, nullability, scopes, binding mappings, and
 reviewed canonical dumps. It is required even when correctness passes.
 
-Each binding tests its public API and native ownership boundary. The Kotlin
-payload decoder is one implementation for the JVM, Android, and Kotlin/Native,
-so its wire tests live in one shared test source set and run on every target;
-only the JNI transport tests stay JVM-specific. ES type and runtime consumers install the actual
+Each binding tests its public API and native ownership boundary. JVM/Android
+JNI decoder tests stay in the applicable source sets; they do not become
+Kotlin/Native payload tests. ES type and runtime consumers install the actual
 `npm pack` tarball and resolve declarations through package exports. Browser
 checks use real headless Chrome/Chromium over HTTP ESM/Wasm loading, rather than
 substituting a Node run. The C++ installed consumer and Swift consumer package
@@ -161,96 +160,49 @@ its artifact-specific CTest tree.
 
 ## Benchmarks and external corpora
 
-`pnpm benchmark:c-host` explicitly configures an isolated C measurement build.
-The `benchmark` label/runner exists only with `MARKDOWN_CORE_BENCHMARKS=ON` and
-is absent from default, sanitizer, required-CI, and release test artifacts.
-Measurements cover representative documents and adversarial shapes, using
-tracked samples or deterministic generation without runtime downloads.
+Performance measurement is a comparison against another parser, not against a
+previous run of this one. `pnpm benchmark:stages` runs Markdown Core and the
+pinned cmark over byte-identical documents under callgrind and reports what
+each engine spends on the two parse paths: source bytes into block buffers,
+and those buffers into an AST. cmark splits exactly those two paths across
+`cmark_parser_feed` and `cmark_parser_finish`, so the boundary is a real one on
+both sides. Parser allocation, dialect attachment, element discovery, and tree
+release are outside both stages: they are fixed cost that no document-size
+argument applies to. The contract is in the
+[benchmark README](../../packages/markdown-core/benchmarks/README.md).
 
-The workloads are one shared module (`tests/support/bench_workloads.c`): each
-case is a tracked sample or an in-process generator with its parameters, is
-versioned with its workload, and is identified by the SHA-256 of the bytes it
-produced, so two measurements can prove they read the same input. A sample
-repeated for the representative workload is separated from its next copy by a
-blank line, so the repeated shape is the sample's shape. Doubling series cover
-the sample block, quote nesting, directives, unclosed links and emphasis, one
-long fenced block, one long paragraph, references with their definitions at the
-end, leading blank lines, and nested spans over independent autolinks.
+Instruction and data-reference counts do not depend on how fast the machine was
+or what else was running on it, so a hosted runner is as good a place to measure
+as a quiet laptop. That is why no wall-clock pipeline remains: every one this
+repository has had measured a shared runner as much as the parser.
 
-Two lanes read the workloads. The timing lane, `bench_runner`, parses through
-the public facade and times the parse and the free of each document apart,
-reports every sample with the minimum and the median, throughput from the bytes
-and time per node from the tree, and writes the whole measurement as JSON with
-`--json` (the `metric` line of `binding_baseline` keeps the PR benchmark's
-contract and adds the same measurement's detail, which the collector writes
-to a sidecar next to the contract artifact, so a comparison workflow from
-before the detail still validates the contract). The work-invariant lane,
-`work_runner`, links the diagnostics build with an injected allocator and
-reports counts instead of time: the parser's deterministic work counters, the
-nodes built, the allocations and the bytes they asked for, the peak of live
-bytes and the bytes a document retains. Those counts are an exact contract per
-case in `benchmarks/work-invariants.txt`: `benchmark_work_invariants` fails on
-any difference, and on a doubling series whose work grows by more than 2.25x
-across a doubling, so a change of work is a reviewed line in a diff; the
-expectations are regenerated with `work_runner --all --samples DIR --write FILE`
-when the change is intended. The finishing phases of a parse are timed through
-the parser's phase clock, which a setup hook installs, and reported by the work
-lane as information only.
+They are not independent of the machine, though, and the report says so rather
+than implying otherwise. Every report heads with an identity table — resolved
+compiler, C library and valgrind versions, the compiler's full code generation
+target, both engines' real compile options, what the C library dispatched on,
+and a digest of the corpus — and **two reports whose tables differ are not
+comparable at all**, counts or ratios. A hosted runner and a developer's machine
+reproduce each other only as far as that table matches.
 
-Two more lanes read the same workloads on request. The reference lane is the
-timing lane with `--reference cmark`: a `bench_runner` configured with
-`MARKDOWN_CORE_BENCH_CMARK=ON` links the pinned cmark oracle
-(`scripts/init-environment.sh --install oracle-cmark`) and times its parse and
-free of the same bytes beside the engine's, reporting both and their ratio, so
-a reader can place a measurement against an implementation they know. The
-instruction lane, `scripts/benchmark-instructions.mjs`, runs `bench_runner`
-under callgrind twice per case, once with `--dry-run` (the input is built,
-nothing is parsed) and once with `--instructions` (one parse and one free),
-and reports the difference: the instructions of that parse, exact for one
-build and one input, with the reference counted the same way when asked.
-Neither lane decides anything; a changed count is a line to read in a diff.
+The counts are still not time — they do not price a cache miss, a branch miss,
+or a stall — so they are evidence for an optimization, never a threshold.
 
-The timing lane also reports, per case, the minor page faults its measured
-parses took per parse: memory the process allocator handed back to the system
-after a free is faulted in and zeroed by the kernel again on the next parse,
-a cost no instruction count shows. `--allocator retain` asks glibc, through
-`mallopt`, to keep what the parses free (no mapping of its own for a block
-below 32 MB, no trim of the heap top, a 64 MB top pad), so the same
-measurement beside the default shows how much of a workload's time is that
-hand-back; it is a setting of the process's allocator for the measurement,
-never one the library makes, and is refused where there is no `mallopt`.
+The runners exist only with `MARKDOWN_CORE_BENCHMARKS=ON` and are registered
+with neither CTest nor any required gate, so no preset change can turn a
+measurement into a merge gate. The engine has no measurement mode: it keeps one
+parse entry with no feed/finish lifecycle, and the stage split is read out of
+the recorded call graph afterwards. The profiling flavour differs from Release by
+debug information, by keeping the single-call-site stage boundary out of line,
+and by `-fvisibility=hidden` — which cmark sets for its own build and Markdown
+Core's static objects did not, worth 2.1% of the source stage and 5.9% of the AST
+stage until both engines got it. The driver verifies both boundaries survived the
+build rather than reporting a folded-away stage as a cheap one.
 
-Each binding has a timing lane of its own, opt-in and informational like the
-C lanes: `pnpm benchmark:es`, `pnpm benchmark:kotlin` (the `jvmBenchmark`
-Gradle task) and `pnpm benchmark:swift` (the `MarkdownCoreBenchmarks` package
-beside the Swift tests, a release `swift run`; the development manifest does
-not carry it, so no test build stages it) time the public parse -- source
-string in, value tree out -- and a walk of the tree with an empty visitor, on
-the same bytes the C timing lane reads: the `binding_baseline` generator and
-the tracked samples repeated with a blank line between copies, each case named
-with the SHA-256 of its input, so a binding's number stands beside the
-engine's for the same document. They report the minimum and the median of every
-repeat, throughput and time per node, and write the same JSON shape as
-`bench_runner --json` with `--json`. No workflow runs them and no test suite
-reaches them (`scripts/audit-ci-policy.sh`); the Kotlin/Native and Swift test
-binaries are release builds so that a number taken from a test run describes
-the library a consumer links.
-
-The separate PR benchmark measures a versioned parser workload and library
-size against the exact base SHA. The untrusted PR producer builds only the
-head and uploads its result. A privileged default-branch workflow uses a
-trusted exact-SHA baseline or builds that base itself with persisted credentials
-disabled. It never checks out or executes PR-head code. Both JSON inputs are
-validated for origin, SHA, schema, workload, and numeric bounds before a
-comparison comment is written.
-
-Timing and RSS on hosted runners are informational and do not set pass/fail
-thresholds. Binary-size comparisons require matching toolchain inputs. A future
-performance gate requires a controlled environment, statistical design,
-versioned workloads, and an explicit false-positive budget. A timing concern
-becomes a correctness gate only when expressed as a reproducible semantic,
-operation-count, or resource invariant. Bindings do not maintain additional
-short wall-clock/RSS benchmark loops.
+Each case is also measured at twice the size, because a stage whose cost stops
+being linear in the input is a complexity finding rather than a tuning one. A
+timing concern becomes a correctness gate only when expressed as a reproducible
+semantic, operation-count, or resource invariant. Bindings do not maintain
+wall-clock or RSS benchmark loops.
 
 External test corpora follow the owning package's
 [manifest, license, and hash policy](../../packages/markdown-core/tests/corpora/README.md).
@@ -266,8 +218,8 @@ cross-host Maven artifact producers. When full validation is required, a
 failed, cancelled, skipped, or missing producer blocks readiness; a manual
 dry run has a different context.
 
-Every CI, CodeQL, release dry-run, and PR benchmark run first uses the shared
-`changes.yml` preflight. Repository integrity, documentation contracts, test
+Every CI, CodeQL, release dry-run, and stage benchmark run first uses the
+shared `changes.yml` preflight. Repository integrity, documentation contracts, test
 topology, and documented release coordinates are checked even for
 documentation-only changes. Required workflows always start; their gates may
 skip only after a successful preflight explicitly permits it. A failed preflight
@@ -297,7 +249,7 @@ from a successful run for the same repository, event, ref, and PR. Re-running a
 workflow replaces its record; failed-job retries can retain the original record
 for that fixed snapshot. Missing, expired, incomplete, or unreadable evidence
 falls back to full validation. Manual, scheduled, and formal release runs always
-execute fully. A skipped PR benchmark produces no comparison comment.
+execute fully. A skipped stage benchmark produces no report.
 
 `pnpm audit:tests` checks contracts without compiling. After an existing C build,
 `scripts/audit-test-topology.sh build/cmake` additionally checks dynamic discovery,
@@ -305,7 +257,10 @@ nonempty labels, and disjoint correctness/conformance selection. Audits must not
 rebuild C or Swift just to inspect their topology.
 
 CI policy audits enforce required execution, release/test artifact boundaries,
-and benchmark trust boundaries. Source layout, router implementation text,
+and the stage benchmark's measurement contract: its stage boundaries, its
+pinned profile flags, the absence of profiler instrumentation or a benchmark
+parse lifecycle in the product sources, and the absence of any retired
+wall-clock pipeline. Source layout, router implementation text,
 managed-device orchestration details, and Action major versions are not CI
 contracts to enforce through static string matching. Element inventories compare
 actual descriptor identities and attachment tables, detecting missing, duplicate,

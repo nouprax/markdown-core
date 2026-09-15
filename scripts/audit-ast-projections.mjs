@@ -274,21 +274,27 @@ const kindSurfaces = [
         )
     },
     {
-        label: "Kotlin payload node kinds",
+        label: "Kotlin JNI node kinds",
         expect: [...kinds.keys()].map(snake),
         actual: namedKinds(
-            "packages/kotlin-markdown-core/src/payloadMain/kotlin/com/nouprax/markdown/core/wire/PayloadNodeKind.kt",
+            "packages/kotlin-markdown-core/src/jniMain/kotlin/com/nouprax/markdown/core/wire/JniNodeKind.kt",
             /^\s{4}([A-Z][A-Z_]*)\(\d+\),$/gm
         )
     },
     {
-        // One decoder serves the JVM, Android, and Kotlin/Native: the
-        // payload is the only projection a Kotlin target reads.
-        label: "Kotlin payload decoder",
+        label: "Kotlin decoder",
         expect: [...kinds.keys()].map(snake),
         actual: namedKinds(
-            "packages/kotlin-markdown-core/src/payloadMain/kotlin/com/nouprax/markdown/core/wire/PayloadMarkupDecoder.kt",
-            /PayloadNodeKind\.([A-Z_]+)(?=\s*(?:,|->))/g
+            "packages/kotlin-markdown-core/src/jniMain/kotlin/com/nouprax/markdown/core/wire/JniMarkupDecoder.kt",
+            /JniNodeKind\.([A-Z_]+)(?=\s*(?:,|->))/g
+        )
+    },
+    {
+        label: "Kotlin/Native C facade adapter",
+        expect: [...kinds.keys()].map(snake),
+        actual: namedKinds(
+            "packages/kotlin-markdown-core/src/nativePlatformMain/kotlin/com/nouprax/markdown/core/PlatformParser.native.kt",
+            /^\s+MARKDOWN_CORE_KIND_([A-Z_]+)\s*->/gm
         )
     },
     {
@@ -343,12 +349,11 @@ const kindSurfaces = [
         )
     },
     {
-        // The walker switches on the stored record's tag, one arm per kind.
         label: "Swift markup walker",
-        expect: [...kinds.keys()].map(camel),
+        expect: [...kinds.keys()],
         actual: namedKinds(
             "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalker.swift",
-            /^\s+case (?:let )?\.`?([a-z][A-Za-z]*)`?(?:\(\w+\))?:/gm
+            /case let node as ([A-Za-z]+):/g
         )
     },
     {

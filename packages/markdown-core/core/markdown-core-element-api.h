@@ -195,22 +195,6 @@ typedef int (*markdown_core_accepts_lines_func)(const markdown_core_element *ele
 typedef markdown_core_node *(*markdown_core_postprocess_func)(const markdown_core_element *element,
                                                               markdown_core_parser *parser, markdown_core_node *root);
 
-/* One call at the EXIT of every node of every owned tree, in the parser's
- * single finishing walk: after inline completion, document finalization and
- * the consolidation of the node's own Text run. `claim_depth` counts the
- * ancestors within the same tree that claim the text they enclose as their
- * own (markdown_core_node_type_claims_text: a link's text is the link's), so
- * a hook that recognizes plain text leaves theirs be. Returns the node now occupying the
- * position: `node` itself, a replacement already spliced in, or NULL once the
- * position is released; a failure sets `parser->oom`. Nodes inserted before
- * `node` are never revisited, nor are nodes inserted after it: the walk
- * continues at the sibling `node` had when the hook was called. An element
- * names the kinds its hook acts on in `finish_node_kinds` and is offered
- * only those. */
-typedef markdown_core_node *(*markdown_core_finish_node_func)(const markdown_core_element *element,
-                                                              markdown_core_parser *parser, markdown_core_node *node,
-                                                              int claim_depth);
-
 typedef int (*markdown_core_ispunct_func)(char c);
 
 typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_element *element, markdown_core_mem *mem,
@@ -360,10 +344,6 @@ int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markd
 int markdown_core_parser_append_content_marks(markdown_core_parser *parser, markdown_core_node *owner,
                                               markdown_core_node *node, bufsize_t from, bufsize_t length,
                                               bufsize_t offset);
-/** Ask for the completion walk over the root being parsed: complete_inline
- * and observe_inline delivered to every node of the root once its delimiters
- * and brackets are resolved. A root nobody asked for is not walked. */
-void markdown_core_inline_request_completion(markdown_core_inline_state *inline_state);
 /** Project a logical inline range, including its Text literal mapping. */
 void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
                                       int to);
@@ -447,14 +427,6 @@ int markdown_core_parser_get_last_line_length(markdown_core_parser *parser);
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_node *parent,
                                                    markdown_core_node_type block_type, int start_column);
-/* The same, for a block the element itself builds: the node is created with
- * `element` set, so a payload the element declares through `opaque_size` is
- * reserved inside the node's record and claimed by its opaque_alloc_func. */
-MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_parser_add_element_child(markdown_core_parser *parser,
-                                                                                markdown_core_node *parent,
-                                                                                markdown_core_node_type block_type,
-                                                                                int start_column,
-                                                                                const markdown_core_element *element);
 
 /** Advance the 'offset' of the parser in the current line.
  *
@@ -619,21 +591,41 @@ int markdown_core_inline_state_get_line(markdown_core_inline_state *inline_state
 MARKDOWN_CORE_EXPORT
 int markdown_core_inline_state_get_column(markdown_core_inline_state *inline_state);
 
-/** Borrow the unchanged source bytes [from, to] as a Text node and project
- * their source extent. Returns NULL for an invalid range or allocation failure.
- * Does not move the inline cursor. Decoded text uses an owned literal instead.
+/** Make the Text node a delimiter run stands as: its literal is the bytes
+ * [from, to] of the block's content and its position is a projection of that
+ * range. Returns NULL for a range outside the content.
+ *
+ * ONE constructor, because there were two hand-written copies of it -- one in
+ * `formula`, one in `strikethrough` -- and they disagreed about where the
+ * cursor was when they ran, so each computed the run's columns from a different
+ * end. Passing the range says it once. The cursor is NOT moved: a caller that
+ * has not consumed the run yet still has to.
  */
 MARKDOWN_CORE_EXPORT
-/* `[from, to]` are bytes of the literal text around them: a candidate that
- * produced no token, or a fallback an element hands back as plain text. When
- * the owner's last child is the literal run ending at `from`, the bytes join
- * that run and it is returned, already attached; otherwise a new run is made.
- * Only for text nothing else will refer to -- never a delimiter, bracket or
- * token text, and never one the caller marks afterwards. */
-markdown_core_node *markdown_core_inline_state_make_literal_run(markdown_core_inline_state *inline_state, int from,
-                                                                int to);
-markdown_core_node *markdown_core_inline_state_make_source_text(markdown_core_inline_state *inline_state, int from,
-                                                                int to);
+markdown_core_node *markdown_core_inline_state_make_delimiter_text(markdown_core_inline_state *inline_state, int from,
+                                                                   int to);
+
+/** Convenience function to scan a given delimiter.
+ *
+ * 'left_flanking' and 'right_flanking' will be set to true if they
+ * respectively precede and follow a non-space, non-punctuation
+ * character.
+ *
+ * Additionally, 'punct_before' and 'punct_after' will respectively be set
+ * if the preceding or following character is a punctuation character.
+ *
+ * Note that 'left_flanking' and 'right_flanking' can both be 'true'.
+ *
+ * Returns the number of delimiters encountered, in the limit
+ * of 'max_delims', and advances the inline parsing offset.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_inline_state_scan_delimiters(markdown_core_inline_state *inline_state, int max_delims,
+                                               unsigned char c, int *left_flanking, int *right_flanking,
+                                               int *punct_before, int *punct_after);
+
+MARKDOWN_CORE_EXPORT
+void markdown_core_manage_elements_special_characters(markdown_core_parser *parser, int add);
 
 #ifdef __cplusplus
 }

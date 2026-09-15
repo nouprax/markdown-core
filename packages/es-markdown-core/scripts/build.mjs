@@ -16,7 +16,6 @@ const core = [
     "buffer.c",
     "references.c",
     "map.c",
-    "arena.c",
     "houdini_html_u.c",
     "markdown_core_ctype.c",
     "linked_list.c"
@@ -82,14 +81,6 @@ const result = spawnSync(
         ...elements,
         path.join(packageDirectory, "src/bridge.c"),
         "-O3",
-        "-DNDEBUG",
-        // Every translation unit takes part in one link-time optimization,
-        // so the facade accessors inline into the bridge instead of staying
-        // calls across the 44 objects; the two target features are what
-        // current engines execute natively and what bulk copies compile to.
-        "-flto",
-        "-mbulk-memory",
-        "-mnontrapping-fptoint",
         "-std=c99",
         "-sSTANDALONE_WASM=1",
         // A FIXED HEAP ONLY MOVES THE CLIFF. Without this the heap is

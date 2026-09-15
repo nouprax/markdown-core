@@ -41,20 +41,20 @@ public struct Document: Markup {
     let fields: Stored<Fields>
 
     /// The whole document's boundaries. See ``Scope``.
-    public var scope: Scope { fields.read { $0.scope } }
+    public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.read { $0.anchor } }
+    public var anchor: String? { fields.anchor }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.read { $0.attributes } }
+    public var attributes: Attributes { fields.attributes }
     /// The document's blocks. Block content, not inline.
-    public var content: MarkupCollection<any Markup> { fields.children { $0.content } }
+    public var content: MarkupCollection<any Markup> { fields.content }
     /// The parsed Properties node, absent when no Properties block was authored.
-    public var metadata: Metadata? { fields.optionalElement { $0.metadata } }
+    public var metadata: Metadata? { fields.metadata }
     /// The footnotes the document owns, ordered by scope start; never part of
     /// `content`.
-    public var footnotes: MarkupCollection<Footnote> { fields.elements { $0.footnotes } }
+    public var footnotes: MarkupCollection<Footnote> { fields.footnotes }
     /// The specimen definitions, ordered by scope start and visited after footnotes.
-    public var specimens: MarkupCollection<Specimen> { fields.elements { $0.specimens } }
+    public var specimens: MarkupCollection<Specimen> { fields.specimens }
 
     /// Parses `source` and returns the whole tree as values.
     ///
@@ -68,11 +68,8 @@ public struct Document: Markup {
     /// - Throws: ``ParseError`` when there is no document to return at all.
     public static func parse(_ source: String) throws -> Document {
         var error: OpaquePointer?
-        // A native String already holds contiguous UTF-8: the parser reads it
-        // in place, so the source crosses the boundary without a copy of its
-        // own. A bridged or non-contiguous string is made contiguous once.
-        var bytes = source
-        let document = bytes.withUTF8 { buffer in
+        let bytes = Array(source.utf8)
+        let document = bytes.withUnsafeBufferPointer { buffer in
             markdown_core_document_parse(buffer.baseAddress, buffer.count, &error)
         }
         guard let document else {
@@ -124,20 +121,17 @@ private struct DocumentBuilder {
     }
 
     private mutating func copy(_ node: OpaquePointer) -> StoredMarkup {
-        // The kind is read once per node and handed on: the relations it has
-        // and the value it becomes are both decided by it.
-        let kind = markdown_core_node_get_kind(node)
-        let relations = record(relations: node, kind: kind)
-        return Self.stored(from: node, kind: kind, relations: relations, resources: &resources)
+        let relations = record(relations: node)
+        return Self.stored(from: node, relations: relations, resources: &resources)
     }
 
-    // Enumerate each facade-owned relation alongside its native kind. The
-    // child chain is walked once, here; nothing counts it again.
+    // Enumerate each facade-owned relation alongside its native kind.
     // swiftlint:disable:next cyclomatic_complexity
-    private mutating func record(relations node: OpaquePointer, kind: markdown_core_node_kind) -> Relations {
+    private mutating func record(relations node: OpaquePointer) -> Relations {
         var relations = Relations()
         relations.children = record(chain: markdown_core_node_get_first_child(node))
-        switch kind {
+        precondition(relations.children.count == markdown_core_node_child_count(node))
+        switch markdown_core_node_get_kind(node) {
         case MARKDOWN_CORE_KIND_TABLE:
             relations.caption = record(field: markdown_core_node_table_caption(node))
         case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_DIRECTIVE:
@@ -202,7 +196,7 @@ private struct DocumentBuilder {
     }
 
     func document() -> Document {
-        Document.stored(at: 0, in: MarkupStore(records: stored))
+        MarkupStore(records: stored).value(at: 0, as: Document.self)
     }
 }
 
@@ -212,11 +206,10 @@ extension DocumentBuilder {
     // swiftlint:disable:next cyclomatic_complexity function_body_length
     private static func stored(
         from node: OpaquePointer,
-        kind: markdown_core_node_kind,
         relations: Relations,
         resources: inout [UnsafeRawPointer: SharedResource]
     ) -> StoredMarkup {
-        switch kind {
+        switch markdown_core_node_get_kind(node) {
         case MARKDOWN_CORE_KIND_DOCUMENT:
             .document(
                 Document.Fields(
@@ -243,25 +236,25 @@ extension DocumentBuilder {
             .definition(Definition.Fields(from: node, term: relations.term, content: relations.bodies))
         case MARKDOWN_CORE_KIND_PARAGRAPH: .paragraph(Paragraph.Fields(from: node, content: relations.children))
         case MARKDOWN_CORE_KIND_HEADING: .heading(Heading.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_THEMATIC_BREAK: .thematicBreak(ThematicBreak.Fields(from: node))
+        case MARKDOWN_CORE_KIND_THEMATIC_BREAK: .thematicBreak(ThematicBreak(from: node))
         case MARKDOWN_CORE_KIND_LIST: .list(List.Fields(from: node, children: relations.children))
         case MARKDOWN_CORE_KIND_LIST_ITEM: .listItem(ListItem.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_CODE_BLOCK: .codeBlock(CodeBlock.Fields(from: node))
-        case MARKDOWN_CORE_KIND_HTML_BLOCK: .htmlBlock(HTMLBlock.Fields(from: node))
-        case MARKDOWN_CORE_KIND_FORMULA_BLOCK: .formulaBlock(FormulaBlock.Fields(from: node))
+        case MARKDOWN_CORE_KIND_CODE_BLOCK: .codeBlock(CodeBlock(from: node))
+        case MARKDOWN_CORE_KIND_HTML_BLOCK: .htmlBlock(HTMLBlock(from: node))
+        case MARKDOWN_CORE_KIND_FORMULA_BLOCK: .formulaBlock(FormulaBlock(from: node))
         case MARKDOWN_CORE_KIND_TABLE:
             .table(Table.Fields(from: node, caption: relations.caption, children: relations.children))
         case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
             .directiveBlock(DirectiveBlock.Fields(from: node, label: relations.label, content: relations.children))
-        case MARKDOWN_CORE_KIND_TEXT: .text(Text.Fields(from: node))
-        case MARKDOWN_CORE_KIND_SOFT_BREAK: .softBreak(SoftBreak.Fields(from: node))
-        case MARKDOWN_CORE_KIND_LINE_BREAK: .lineBreak(LineBreak.Fields(from: node))
-        case MARKDOWN_CORE_KIND_CODE: .code(Code.Fields(from: node))
-        case MARKDOWN_CORE_KIND_HTML: .html(HTML.Fields(from: node))
-        case MARKDOWN_CORE_KIND_COMMENT: .comment(Comment.Fields(from: node))
-        case MARKDOWN_CORE_KIND_CROSS_LINK: .crossLink(CrossLink.Fields(from: node))
-        case MARKDOWN_CORE_KIND_CROSS_EMBEDDED: .crossEmbedded(CrossEmbedded.Fields(from: node))
-        case MARKDOWN_CORE_KIND_FORMULA: .formula(Formula.Fields(from: node))
+        case MARKDOWN_CORE_KIND_TEXT: .text(Text(from: node))
+        case MARKDOWN_CORE_KIND_SOFT_BREAK: .softBreak(SoftBreak(from: node))
+        case MARKDOWN_CORE_KIND_LINE_BREAK: .lineBreak(LineBreak(from: node))
+        case MARKDOWN_CORE_KIND_CODE: .code(Code(from: node))
+        case MARKDOWN_CORE_KIND_HTML: .html(HTML(from: node))
+        case MARKDOWN_CORE_KIND_COMMENT: .comment(Comment(from: node))
+        case MARKDOWN_CORE_KIND_CROSS_LINK: .crossLink(CrossLink(from: node))
+        case MARKDOWN_CORE_KIND_CROSS_EMBEDDED: .crossEmbedded(CrossEmbedded(from: node))
+        case MARKDOWN_CORE_KIND_FORMULA: .formula(Formula(from: node))
         case MARKDOWN_CORE_KIND_EMPHASIS: .emphasis(Emphasis.Fields(from: node, content: relations.children))
         case MARKDOWN_CORE_KIND_STRONG: .strong(Strong.Fields(from: node, content: relations.children))
         case MARKDOWN_CORE_KIND_STRIKETHROUGH:

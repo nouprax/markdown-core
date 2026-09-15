@@ -1,8 +1,9 @@
 # Convenience wrapper around the single CMake/CTest graph.  This Makefile
 # never implements a second test or benchmark runner: `make test` runs the
-# CTest `correctness` preset, `make bench` explicitly creates the isolated
-# local benchmark graph, and sanitizer targets reuse the test graph through
-# their presets.
+# CTest `correctness` preset, `make bench` delegates to the stage benchmark's
+# own driver, and sanitizer targets reuse the test graph through their presets.
+# Measurement deliberately has no CTest preset to delegate to: a runner in the
+# test graph is a runner one preset change away from gating a merge.
 
 SRCDIR=packages/markdown-core/core
 ELEMENTSDIR=packages/markdown-core/elements
@@ -28,9 +29,7 @@ test: build
 	ctest --preset correctness
 
 bench:
-	cmake --preset benchmark
-	cmake --build --preset benchmark --parallel
-	ctest --preset benchmark
+	node scripts/benchmark-stages.mjs
 
 asan-test:
 	cmake --preset asan

@@ -6,7 +6,6 @@ extern "C" {
 #endif
 
 #include "markdown-core-element-api.h"
-#include "chunk.h"
 #include "markdown-core-export.h"
 #include <stddef.h>
 #include <stdbool.h>
@@ -71,20 +70,10 @@ typedef enum {
  */
 const markdown_core_element *const *markdown_core_core_elements(size_t *count);
 
-/** The prepared projection of that registry (see markdown_core_registry):
- * a constant generated from the descriptors, which every parse borrows. */
-struct markdown_core_registry;
-const struct markdown_core_registry *markdown_core_core_registry(void);
-
 /** Returns the literal formula payload for formula element nodes, or NULL on error.
  */
 MARKDOWN_CORE_EXPORT
 const char *markdown_core_elements_get_formula_literal(markdown_core_node *node);
-
-/** The literal as bytes, borrowed from the node: never copies and never
- * fails, unlike the terminated form above. NULL for a node without one. */
-MARKDOWN_CORE_EXPORT
-const markdown_core_chunk *markdown_core_elements_formula_literal(markdown_core_node *node);
 
 /** Sets the literal formula payload for formula element nodes, returning 1 on success and 0 on
  * error.
@@ -107,10 +96,6 @@ int markdown_core_elements_set_formula_mode(markdown_core_node *node, markdown_c
  */
 MARKDOWN_CORE_EXPORT
 const char *markdown_core_elements_get_directive_name(markdown_core_node *node);
-
-/** The name as bytes, borrowed from the node; empty when none was written. */
-MARKDOWN_CORE_EXPORT
-const markdown_core_chunk *markdown_core_elements_directive_name(markdown_core_node *node);
 
 /** Sets the directive name for directive element nodes, returning 1
  * on success and 0 on error. NULL selects a nameless DirectiveBlock; an inline

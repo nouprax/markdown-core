@@ -331,15 +331,6 @@ test("unicode: UTF-8 survives native document release", () => {
     assert.equal(document.content[0].content[0].literal, "héllo 🚀 中文");
 });
 
-test("unicode: the source is encoded into the heap once, non-ASCII and lone surrogates included", () => {
-    const source = `中文 🚀 ${"é".repeat(3000)}\n\n- [x] 🚀 \uD800 tail\n`;
-    const document = Document.parse(source);
-    assert.equal(document.content[0].content[0].literal, `中文 🚀 ${"é".repeat(3000)}`);
-    assert.equal(document.content[1].items[0].marker, "x");
-    assert.equal(document.content[1].items[0].content[0].content[0].literal, "🚀 \uFFFD tail");
-    assert.equal(Document.parse("").content.length, 0);
-});
-
 test("errors: empty input is valid and arguments are checked", () => {
     assert.deepEqual(Document.parse("").content, []);
     assert.deepEqual(Document.parse("").scope, { start: { line: 1, column: 1 }, end: { line: 0, column: 0 } });
@@ -521,7 +512,7 @@ test("ast: a title is decoded from the auxiliary range before the content and du
     // title is the text `T` and whose content is empty.
     const nodeSize = 160;
     const strings = Uint8Array.from("noteT", (character) => character.charCodeAt(0));
-    const nodesOffset = 80;
+    const nodesOffset = 64;
     const edgesOffset = nodesOffset + 3 * nodeSize;
     const stringsOffset = edgesOffset + 2 * 4;
     const total = stringsOffset + strings.length;
@@ -537,8 +528,7 @@ test("ast: a title is decoded from the auxiliary range before the content and du
         [48, stringsOffset],
         [52, stringsOffset],
         [56, stringsOffset],
-        [60, strings.length],
-        [64, strings.length]
+        [60, strings.length]
     ]) {
         view.setUint32(offset, value, true);
     }
@@ -554,9 +544,8 @@ test("ast: a title is decoded from the auxiliary range before the content and du
         for (const [offset, value] of Object.entries(fields)) view.setUint32(at + Number(offset), value, true);
     };
     node(0, 1, [1, 1, 1, 8], { 24: 0, 28: 1 });
-    // A string reference is a start and a length in UTF-16 units of the blob.
-    node(1, 2, [1, 1, 1, 8], { 24: 1, 28: 0, 36: 1, 40: 1, 44: 1, 64: 0, 68: 4 });
-    node(2, 13, [1, 10, 1, 10], { 64: 4, 68: 1 });
+    node(1, 2, [1, 1, 1, 8], { 24: 1, 28: 0, 36: 1, 40: 1, 44: 1, 64: stringsOffset, 68: 4 });
+    node(2, 13, [1, 10, 1, 10], { 64: stringsOffset + 4, 68: 1 });
     view.setUint32(edgesOffset, 1, true);
     view.setUint32(edgesOffset + 4, 2, true);
     bytes.set(strings, stringsOffset);
@@ -883,29 +872,19 @@ test("errors: malformed native values are rejected before they enter the AST", (
     const badMagic = nativeResult("text\n");
     badMagic[0] = 0;
     assert.throws(() => new Decoder(badMagic).decode(), /invalid native result/u);
-
-    // Every string reference is measured in UTF-16 units of the one decoded
-    // blob, whose total the header states; a blob that decodes to any other
-    // length would slice every string wrong, so it is refused as a whole.
-    const badUnits = nativeResult("中文 🚀\n");
-    new DataView(badUnits.buffer).setUint32(64, new DataView(badUnits.buffer).getUint32(64, true) + 1, true);
-    assert.throws(() => new Decoder(badUnits).decode(), /does not decode to the units/u);
-    const units = nativeResult("中文 🚀\n");
-    assert.equal(new DataView(units.buffer).getUint32(64, true), "中文 🚀".length);
-    assert.equal(new Decoder(units).decode().content[0].content[0].literal, "中文 🚀");
 });
 
 function errorResult(code, message) {
     const encoded = new globalThis.TextEncoder().encode(message);
-    const result = new Uint8Array(80 + encoded.length);
+    const result = new Uint8Array(64 + encoded.length);
     const view = new DataView(result.buffer);
     result.set([0x4d, 0x43, 0x42, 0x31]);
     view.setUint32(4, result.length, true);
     view.setUint32(8, 1, true);
     view.setInt32(12, code, true);
-    view.setUint32(16, 80, true);
+    view.setUint32(16, 64, true);
     view.setUint32(20, encoded.length, true);
-    result.set(encoded, 80);
+    result.set(encoded, 64);
     return result;
 }
 
@@ -1107,7 +1086,7 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
         ""
     ];
     const encoded = strings.map((value) => new globalThis.TextEncoder().encode(value));
-    const nodes = 80,
+    const nodes = 64,
         edges = nodes + 8 * 160,
         attributes = edges + 6 * 4,
         blob = attributes + 2 * 16;
@@ -1125,19 +1104,14 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
         [48, attributes],
         [52, blob],
         [56, blob],
-        [60, bytes.length - blob],
-        [64, strings.reduce((n, value) => n + value.length, 0)]
+        [60, bytes.length - blob]
     ])
         put(offset, value);
-    // A reference is a start and a length in UTF-16 units of the decoded
-    // blob; the bytes land at their byte cursor.
     let cursor = blob;
-    let units = 0;
-    const refs = encoded.map((value, index) => {
-        const ref = [units, strings[index].length];
+    const refs = encoded.map((value) => {
+        const ref = [cursor, value.length];
         bytes.set(value, cursor);
         cursor += value.length;
-        units += strings[index].length;
         return ref;
     });
     const string = (offset, index) => {
@@ -1419,10 +1393,7 @@ test("errors: definition body values cannot leak into markup or accept markup in
         assert.throws(() => new Decoder(bytes).decode(), pattern);
     };
     malformed((v) => v.setUint32(body, kinds.indexOf("paragraph"), true), /invalid definition body/);
-    malformed((v) => {
-        v.setUint32(definition, kinds.indexOf("paragraph"), true);
-        v.setUint32(definition + 4, 0, true);
-    }, /not uniquely owned|not ordinary content/);
+    malformed((v) => v.setUint32(definition, kinds.indexOf("paragraph"), true), /not uniquely owned|non-markup/);
     malformed((v) => v.setUint32(definition + 4, 2, true), /flags/);
     malformed(
         (v) => v.setUint32(findNode(original, kinds.indexOf("definitionList")), 0x101, true),
@@ -1477,31 +1448,6 @@ test("api: owned scoped elements are Markup with finite walks and preserved iden
         if (node.kind === "citation") view.setInt32(leaf + 44, 2, true);
         assert.throws(() => new Decoder(bytes).decode(), /child is not ordinary content/);
     }
-});
-
-test("robustness: deep dumps carry the segment of every open level", () => {
-    // "    " for the list (the document's last child), "│   " for the first
-    // item (its sibling follows), "    " for every level of the chain, then
-    // the corner of the leaf text -- at a depth where deriving the lead-in
-    // per line would dominate the dump.
-    //
-    // Every line carries the lead-in of every open level, so the dump is
-    // QUADRATIC in the depth: 2.2 MB here, and 32.5 MB at 2,000, which a host
-    // that decodes it into its own string type multiplies again. The depth is
-    // what makes the lead-in worth deriving once rather than per line; it is
-    // not what the assertions below check, and they hold at any depth. So it
-    // stays as deep as that purpose needs and no deeper.
-    const depth = 512;
-    const lines = Document.parse(`${"- ".repeat(depth)}leaf\n- tail\n`)
-        .dump()
-        .trimEnd()
-        .split("\n");
-    assert.equal(lines.length, depth * 2 + 6);
-    const leaf = lines[depth * 2 + 2];
-    assert.ok(leaf.includes('literal="leaf"'));
-    assert.equal(leaf.slice(0, (depth * 2 + 2) * 4 + 5), `    │   ${"    ".repeat(depth * 2 - 1)}└── Text `);
-    assert.ok(lines[depth * 2 + 3].startsWith("    └── ListItem "));
-    assert.ok(lines.at(-1).startsWith("            └── Text ") && lines.at(-1).includes('literal="tail"'));
 });
 
 test("robustness: deep dumps run with a bounded JavaScript call stack", () => {

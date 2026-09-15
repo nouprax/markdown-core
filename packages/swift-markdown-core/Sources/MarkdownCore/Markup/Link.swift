@@ -18,19 +18,19 @@ public struct Link: Markup {
     let fields: Stored<Fields>
 
     /// Where it is, brackets and parentheses included. See ``Scope``.
-    public var scope: Scope { fields.read { $0.scope } }
+    public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.read { $0.anchor } }
+    public var anchor: String? { fields.anchor }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.read { $0.attributes } }
+    public var attributes: Attributes { fields.attributes }
     /// The link text, as inline content.
-    public var content: MarkupCollection<any Markup> { fields.children { $0.content } }
+    public var content: MarkupCollection<any Markup> { fields.content }
     /// Required: `[a]()` and `[a](<>)` wrote a destination and wrote nothing
     /// in it, so they answer `.url("")`; a reference occurrence answers the
     /// destination its definition stated.
-    public var dest: Destination { fields.read { $0.dest } }
+    public var dest: Destination { fields.dest }
     /// Optional: `[a](/u)` wrote no title and `[a](/u "")` wrote an empty one.
-    public var title: String? { fields.read { $0.title } }
+    public var title: String? { fields.title }
 }
 
 extension Link.Fields {

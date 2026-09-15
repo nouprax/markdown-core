@@ -26,12 +26,15 @@ ENV DEBIAN_FRONTEND=noninteractive
 # resolves its C++ runtime against the newest installed GCC toolchain, so
 # libstdc++-14-dev must be present for CMake's compiler probe to link.
 # python3-venv/pip back the repo-managed clang-format and cmake-format venvs.
+# valgrind carries callgrind, which is the stage benchmark's measurement tool;
+# the profile build it measures is compiled by gcc from build-essential.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
         clang \
         libstdc++-14-dev \
         cmake \
+        valgrind \
         pkg-config \
         git \
         curl \

@@ -4,7 +4,7 @@ include_directories(
     ${MARKDOWN_CORE_ELEMENTS_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../../include")
 # This suite validates parser internals retained for implementation coverage;
 # it is deliberately not a consumer of the public shared-library ABI.
-target_link_libraries(api_test markdown-core-diagnostics)
+target_link_libraries(api_test libmarkdown-core-public-static)
 
 # Compiler flags
 if(MSVC)

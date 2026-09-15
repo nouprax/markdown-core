@@ -2,8 +2,8 @@
 #include "inline_internal.h"
 #include "attributes.h"
 #include "autolink.h"
-#include "link.h"
 #include "element.h"
+#include <iterator.h>
 #include <parser.h>
 #include <string.h>
 #include <utf8.h>
@@ -29,14 +29,9 @@ static markdown_core_node *make_str_with_entities(markdown_core_inline_state *in
     }
 }
 
-/* The destination cleaned into the parser's scratch and copied into the
- * arena, when the state has both; a chunk-built state hands out the
- * allocator's bytes. */
 static markdown_core_chunk markdown_core_clean_autolink(markdown_core_inline_state *inline_state,
                                                         markdown_core_chunk *url, int is_email) {
-    markdown_core_strbuf own = MARKDOWN_CORE_BUF_INIT(inline_state->mem);
-    markdown_core_strbuf *buf =
-        inline_state->arena && inline_state->owner_parser ? &inline_state->owner_parser->url_scratch : &own;
+    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(inline_state->mem);
 
     markdown_core_chunk_trim(url);
 
@@ -45,30 +40,21 @@ static markdown_core_chunk markdown_core_clean_autolink(markdown_core_inline_sta
         return result;
     }
 
-    markdown_core_strbuf_clear(buf);
     if (is_email) {
-        markdown_core_strbuf_puts(buf, "mailto:");
+        markdown_core_strbuf_puts(&buf, "mailto:");
     }
 
-    houdini_unescape_html_f(buf, url->data, url->len);
-    if (buf->oom) {
-        inline_state->oom = 1;
-        return markdown_core_chunk_buf_detach(buf);
-    }
-    if (buf == &own) {
-        return markdown_core_chunk_buf_detach(buf);
-    }
-    markdown_core_chunk copy = markdown_core_arena_copy_chunk(inline_state->arena, buf);
-    if (!copy.data) {
+    houdini_unescape_html_f(&buf, url->data, url->len);
+    if (buf.oom) {
         inline_state->oom = 1;
     }
-    return copy;
+    return markdown_core_chunk_buf_detach(&buf);
 }
 
 static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inline_state *inline_state,
                                                               int start_column, int end_column, markdown_core_chunk url,
                                                               int is_email) {
-    markdown_core_node *link = markdown_core_inline_make_simple(inline_state, MARKDOWN_CORE_NODE_LINK);
+    markdown_core_node *link = markdown_core_inline_make_simple(inline_state->mem, MARKDOWN_CORE_NODE_LINK);
     markdown_core_node *text;
     if (!link) {
         inline_state->oom = 1;
@@ -80,12 +66,12 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
         // `elements.txt` records both spellings of one construct on one line
         // disagreeing about it three columns apart.
         markdown_core_chunk destination = markdown_core_clean_autolink(inline_state, &url, is_email);
-        link->as.link->resource = markdown_core_resource_create(inline_state->arena, inline_state->mem, destination,
-                                                                markdown_core_optional_chunk_absent());
+        link->as.link->resource =
+            markdown_core_resource_new(inline_state->mem, destination, markdown_core_optional_chunk_absent());
         if (!link->as.link->resource) {
             inline_state->oom = 1;
             markdown_core_chunk_free(inline_state->mem, &destination);
-            markdown_core_node_recycle(inline_state->arena, link);
+            markdown_core_node_free(link);
             return NULL;
         }
     }
@@ -231,7 +217,7 @@ static size_t check_domain(markdown_core_parser *parser, markdown_core_inline_st
                            size_t size, int allow_short) {
     size_t i, np = 0, uscore1 = 0, uscore2 = 0, last_underscore = 0;
     bufsize_t start = (bufsize_t)(data - inline_state->input.data);
-    MARKDOWN_CORE_DIAGNOSTIC(parser->autolink_domain_work++;)
+    parser->autolink_domain_work++;
     if (start < inline_state->autolink_rejected_until) {
         return 0;
     }
@@ -248,7 +234,7 @@ static size_t check_domain(markdown_core_parser *parser, markdown_core_inline_st
      * but host names are not. See: https://stackoverflow.com/a/2183140
      */
     for (i = 1; i < size - 1; i++) {
-        MARKDOWN_CORE_DIAGNOSTIC(parser->autolink_domain_work++;)
+        parser->autolink_domain_work++;
         if (data[i] == '\\' && i < size - 2) {
             i++;
         }
@@ -359,32 +345,30 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
 
     markdown_core_inline_state_set_offset(inline_state, (int)(max_rewind + link_end));
 
-    markdown_core_node *node = markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_LINK, NULL);
+    markdown_core_node *node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LINK, parser->mem);
     if (!node) {
         parser->oom = true;
         return NULL;
     }
 
-    markdown_core_strbuf *buf = &parser->url_scratch;
-    markdown_core_strbuf_clear(buf);
-    markdown_core_strbuf_puts(buf, "http://");
-    markdown_core_strbuf_put(buf, data, (bufsize_t)link_end);
+    markdown_core_strbuf buf;
+    markdown_core_strbuf_init(parser->mem, &buf, 10);
+    markdown_core_strbuf_puts(&buf, "http://");
+    markdown_core_strbuf_put(&buf, data, (bufsize_t)link_end);
     {
-        markdown_core_chunk url =
-            buf->oom ? markdown_core_chunk_buf_detach(buf) : markdown_core_arena_copy_chunk(parser->arena, buf);
-        node->as.link->resource = url.data ? markdown_core_resource_create(parser->arena, parser->mem, url,
-                                                                           markdown_core_optional_chunk_absent())
-                                           : NULL;
+        markdown_core_chunk url = markdown_core_chunk_buf_detach(&buf);
+        node->as.link->resource =
+            url.data ? markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent()) : NULL;
         if (!node->as.link->resource) {
             markdown_core_chunk_free(parser->mem, &url);
             parser->oom = true;
         }
     }
 
-    markdown_core_node *text = markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_TEXT, NULL);
+    markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
     if (!text) {
         parser->oom = true;
-        markdown_core_node_recycle(inline_state->arena, node);
+        markdown_core_node_free(node);
         return NULL;
     }
     *text->as.literal = markdown_core_chunk_dup(chunk, (bufsize_t)max_rewind, (bufsize_t)link_end);
@@ -438,23 +422,22 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     markdown_core_inline_state_set_offset(inline_state, (int)(max_rewind + link_end));
     markdown_core_node_unput(parser, parent, rewind);
 
-    markdown_core_node *node = markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_LINK, NULL);
+    markdown_core_node *node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LINK, parser->mem);
     if (!node) {
         parser->oom = true;
         return NULL;
     }
 
     markdown_core_chunk url = markdown_core_chunk_dup(chunk, max_rewind - rewind, (bufsize_t)(link_end + rewind));
-    node->as.link->resource =
-        markdown_core_resource_create(parser->arena, parser->mem, url, markdown_core_optional_chunk_absent());
+    node->as.link->resource = markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent());
     if (!node->as.link->resource) {
         parser->oom = true;
     }
 
-    markdown_core_node *text = markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_TEXT, NULL);
+    markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
     if (!text) {
         parser->oom = true;
-        markdown_core_node_recycle(inline_state->arena, node);
+        markdown_core_node_free(node);
         return NULL;
     }
     *text->as.literal = url;
@@ -513,7 +496,7 @@ static markdown_core_node *address_match(markdown_core_parser *parser, markdown_
         return NULL;
     }
 
-    node = markdown_core_inline_state_make_literal_run(inline_state, (int)offset, (int)offset);
+    node = markdown_core_inline_state_make_delimiter_text(inline_state, (int)offset, (int)offset);
     if (!node) {
         return NULL;
     }
@@ -579,7 +562,7 @@ static bool validate_protocol(const char protocol[], uint8_t *data, size_t rewin
 static markdown_core_node *email_text_fragment(markdown_core_parser *parser, markdown_core_node *source_map,
                                                const markdown_core_chunk *source, size_t start, size_t length) {
     assert(length);
-    markdown_core_node *text = markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_TEXT, NULL);
+    markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
     if (!text) {
         parser->oom = true;
         return NULL;
@@ -587,7 +570,7 @@ static markdown_core_node *email_text_fragment(markdown_core_parser *parser, mar
     markdown_core_chunk literal = markdown_core_chunk_dup(source, (bufsize_t)start, (bufsize_t)length);
     if (!markdown_core_chunk_to_cstr(parser->mem, &literal)) {
         parser->oom = true;
-        markdown_core_node_recycle(parser->arena, text);
+        markdown_core_node_free(text);
         return NULL;
     }
     *text->as.literal = literal;
@@ -595,23 +578,18 @@ static markdown_core_node *email_text_fragment(markdown_core_parser *parser, mar
     return text;
 }
 
-static markdown_core_node *postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
-    /* The original Text owns the immutable source until every split is
-     * committed. A failed search neither detaches nor copies its buffer. */
-    markdown_core_chunk source = *text->as.literal;
-    uint8_t *data = source.data;
-    size_t remaining = source.len;
-    /* Most Texts hold no address at all: one scan settles them before any
-     * split state is set up. */
-    if (!remaining || !memchr(data, '@', remaining)) {
-        return text;
-    }
+static void postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
     size_t start = 0;
     size_t offset = 0;
     markdown_core_node source_map = {0};
     source_map.content_mark = text->content_mark;
     source_map.content_mark_count = text->content_mark_count;
     source_map.content_mark_offset = text->content_mark_offset;
+    /* The original Text owns the immutable source until every split is
+     * committed. A failed search neither detaches nor copies its buffer. */
+    markdown_core_chunk source = *text->as.literal;
+    uint8_t *data = source.data;
+    size_t remaining = source.len;
 
     while (true) {
         size_t link_end;
@@ -704,8 +682,7 @@ static markdown_core_node *postprocess_text(markdown_core_parser *parser, markdo
             continue;
         }
 
-        markdown_core_node *link_node =
-            markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_LINK, NULL);
+        markdown_core_node *link_node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LINK, parser->mem);
         if (!link_node) {
             parser->oom = true;
             break;
@@ -715,23 +692,20 @@ static markdown_core_node *postprocess_text(markdown_core_parser *parser, markdo
         size_t link_start = start + offset + max_rewind - rewind;
         size_t link_len = link_end + rewind;
         size_t post_start = start + offset + max_rewind + link_end;
-        markdown_core_strbuf *buf = &parser->url_scratch;
-        markdown_core_strbuf_clear(buf);
+        markdown_core_strbuf buf;
+        markdown_core_strbuf_init(parser->mem, &buf, 10);
         if (auto_mailto) {
-            markdown_core_strbuf_puts(buf, "mailto:");
+            markdown_core_strbuf_puts(&buf, "mailto:");
         }
-        markdown_core_strbuf_put(buf, data + start + offset + max_rewind - rewind, (bufsize_t)(link_end + rewind));
+        markdown_core_strbuf_put(&buf, data + start + offset + max_rewind - rewind, (bufsize_t)(link_end + rewind));
         {
-            markdown_core_chunk url =
-                buf->oom ? markdown_core_chunk_buf_detach(buf) : markdown_core_arena_copy_chunk(parser->arena, buf);
-            link_node->as.link->resource = url.data
-                                               ? markdown_core_resource_create(parser->arena, parser->mem, url,
-                                                                               markdown_core_optional_chunk_absent())
-                                               : NULL;
+            markdown_core_chunk url = markdown_core_chunk_buf_detach(&buf);
+            link_node->as.link->resource =
+                url.data ? markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent()) : NULL;
             if (!link_node->as.link->resource) {
                 markdown_core_chunk_free(parser->mem, &url);
                 parser->oom = true;
-                markdown_core_node_recycle(parser->arena, link_node);
+                markdown_core_node_free(link_node);
                 break;
             }
         }
@@ -739,14 +713,14 @@ static markdown_core_node *postprocess_text(markdown_core_parser *parser, markdo
 
         markdown_core_node *link_text = email_text_fragment(parser, &source_map, &source, link_start, link_len);
         if (!link_text) {
-            markdown_core_node_recycle(parser->arena, link_node);
+            markdown_core_node_free(link_node);
             break;
         }
         markdown_core_node_attach_owned(link_node, link_text, NULL);
         if (prefix_len) {
             markdown_core_node *prefix = email_text_fragment(parser, &source_map, &source, prefix_start, prefix_len);
             if (!prefix) {
-                markdown_core_node_recycle(parser->arena, link_node);
+                markdown_core_node_free(link_node);
                 break;
             }
             markdown_core_node_attach_owned(text->parent, prefix, text);
@@ -758,62 +732,66 @@ static markdown_core_node *postprocess_text(markdown_core_parser *parser, markdo
     }
 
     if (!start || parser->oom) {
-        return text;
+        return;
     }
     if (!remaining) {
-        markdown_core_node_recycle(parser->arena, text);
-        return NULL;
+        markdown_core_node_free(text);
+        return;
     }
     markdown_core_chunk tail = markdown_core_chunk_dup(&source, (bufsize_t)start, (bufsize_t)remaining);
     if (!markdown_core_chunk_to_cstr(parser->mem, &tail)) {
         parser->oom = true;
-        return text;
+        return;
     }
     set_sourcepos_from_range(parser, text, &source_map, start, remaining);
     *text->as.literal = tail;
     markdown_core_chunk_free(parser->mem, &source);
-    return text;
 }
 
-/* One Text at its EXIT of the parser's finishing walk. Link content is never
- * linked again, and a run without `@` is left untouched without allocating;
- * splits land before the Text, which the walk never revisits. */
-static markdown_core_node *finish_node(const markdown_core_element *element, markdown_core_parser *parser,
-                                       markdown_core_node *node, int claim_depth) {
-    (void)element;
-    /* Text a link already claims is the link's own: never an address. */
-    if (node->kind != MARKDOWN_CORE_NODE_TEXT || claim_depth > 0) {
-        return node;
-    }
-    return postprocess_text(parser, node);
-}
+static markdown_core_node *postprocess(const markdown_core_element *element, markdown_core_parser *parser,
+                                       markdown_core_node *root) {
+    markdown_core_iter *iter;
+    markdown_core_event_type ev;
+    markdown_core_node *node;
+    bool in_link = false;
 
-static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
-    const unsigned char *s = state->input.data;
-    bufsize_t left = state->input.len - at;
-    if (s[at] == 'w') {
-        return left >= 4 && memcmp(s + at, "www.", 4) == 0;
+    /* The parser consolidates main and owned inline roots before postprocessing. */
+    iter = markdown_core_iter_new(root);
+    if (!iter) {
+        parser->oom = true;
+        return NULL;
     }
-    if (left < 2) {
-        return false;
-    }
-    unsigned char next = s[at + 1];
-    if (s[at] == ':') {
-        /* address_match also fences off mailto/local-part text in labels. */
-        return (left >= 3 && next == '/' && s[at + 2] == '/') || markdown_core_isalnum(next) ||
-               strchr(".+-_", next) != NULL;
-    }
-    return markdown_core_isalnum(next) || strchr(".!#$%&'*+/=?^_`{|}~-", next) != NULL;
-}
 
-static const markdown_core_node_type FINISHED_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
+    while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        node = markdown_core_iter_get_node(iter);
+        if (in_link) {
+            if (ev == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_LINK) {
+                in_link = false;
+            }
+            continue;
+        }
+
+        if (ev == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_LINK) {
+            in_link = true;
+            continue;
+        }
+
+        /* EXIT lookahead already holds the original following sibling.
+         * Splits are inserted before Text, which may itself be freed. */
+        if (ev == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_TEXT) {
+            postprocess_text(parser, node);
+        }
+    }
+
+    markdown_core_iter_free(iter);
+
+    return root;
+}
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
-    .can_start = can_start,
     .name = "autolink",
     .match_inline = match,
-    .finish_node = finish_node,
-    .finish_node_kinds = FINISHED_KINDS,
+    .postprocess_func = postprocess,
     .terminates_text = "<:w",
     .dispatch = "<:w",
 };

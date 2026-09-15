@@ -25,7 +25,6 @@
 #include "subscript.h"
 #include <stddef.h>
 #include "element.h"
-#include "parser.h"
 
 #include "markdown-core-elements.h"
 #include "autolink.h"
@@ -80,14 +79,7 @@ const markdown_core_element *const *markdown_core_core_elements(size_t *count) {
     return CORE_ELEMENTS;
 }
 
-/* The projection of CORE_ELEMENTS, generated from the descriptors by
- * registry_runner and checked against the runtime builder by the api tests:
- * a parse borrows it and prepares nothing of its own. */
-#include "core-registry.inc"
-
-const markdown_core_registry *markdown_core_core_registry(void) { return &CORE_REGISTRY; }
-
-const markdown_core_element *const markdown_core_block_structure[] = {
+static const markdown_core_element *const BLOCK_STRUCTURE[] = {
     [MARKDOWN_CORE_NODE_TABLE & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_TABLE,
     [MARKDOWN_CORE_NODE_TABLE_ROW & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_TABLE,
     [MARKDOWN_CORE_NODE_TABLE_CELL & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_TABLE,
@@ -112,7 +104,7 @@ const markdown_core_element *const markdown_core_block_structure[] = {
     [MARKDOWN_CORE_NODE_TABLE_CAPTION & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_TABLE,
 };
 
-const markdown_core_element *const markdown_core_inline_structure[] = {
+static const markdown_core_element *const INLINE_STRUCTURE[] = {
     [MARKDOWN_CORE_NODE_CITE & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_CITATION,
     [MARKDOWN_CORE_NODE_CITATION & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_CITATION,
     [MARKDOWN_CORE_NODE_COMMENT & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_COMMENT,
@@ -138,7 +130,13 @@ const markdown_core_element *const markdown_core_inline_structure[] = {
     [MARKDOWN_CORE_NODE_EMBEDDED & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_EMBEDDED,
 };
 
-const size_t markdown_core_block_structure_count =
-    sizeof(markdown_core_block_structure) / sizeof(*markdown_core_block_structure);
-const size_t markdown_core_inline_structure_count =
-    sizeof(markdown_core_inline_structure) / sizeof(*markdown_core_inline_structure);
+const markdown_core_element *markdown_core_structure_for_kind(markdown_core_node_type kind) {
+    unsigned index = kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+    if (MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind)) {
+        return index < sizeof(INLINE_STRUCTURE) / sizeof(*INLINE_STRUCTURE) ? INLINE_STRUCTURE[index] : NULL;
+    }
+    return index < sizeof(BLOCK_STRUCTURE) / sizeof(*BLOCK_STRUCTURE) ? BLOCK_STRUCTURE[index] : NULL;
+}
+const markdown_core_element *markdown_core_node_structure(const markdown_core_node *node) {
+    return node ? markdown_core_structure_for_kind(node->kind) : NULL;
+}

@@ -377,7 +377,7 @@ test("full-validation gates reject every failed, missing, or unexpectedly skippe
 });
 
 test("documentation decisions cover the complete job graph including benchmarks", () => {
-    for (const file of ["ci", "codeql", "release-dry-run", "pr-benchmark"]) {
+    for (const file of ["ci", "codeql", "release-dry-run", "stage-benchmark"]) {
         const { jobs } = workflow(file);
         const skipped = new Set();
         const visit = (id, ancestors = new Set()) => {

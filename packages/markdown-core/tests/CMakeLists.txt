@@ -4,9 +4,10 @@
 #   api facade consumer spec elements regression pathological fuzz packaging
 #
 # The default correctness preset excludes conformance. Performance measurement
-# is not part of the test graph unless MARKDOWN_CORE_BENCHMARKS is explicitly
-# enabled for a local benchmark build. Every suite is native (C/C++); the test
-# tree has no scripting-language dependency and never touches the network.
+# is not in this graph at all: the stage benchmark lives in ../benchmarks and
+# runs under callgrind from its own driver, so no timing can ever reach CTest.
+# Every suite is native (C/C++); the test tree has no scripting-language
+# dependency and never touches the network.
 
 set(MARKDOWN_CORE_TEST_FIXTURES_DIR "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures")
 set(MARKDOWN_CORE_CANONICAL_AST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../specs/canonical-ast")
@@ -109,14 +110,6 @@ if(MARKDOWN_CORE_STATIC)
         oom_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
                            "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}" "${MARKDOWN_CORE_ELEMENTS_BINARY_DIR}")
     target_link_libraries(oom_runner libmarkdown-core-public-static)
-    # The core registry's projection is generated from the descriptors
-    # (elements/core-registry.inc); registry_runner regenerates it and the
-    # lane checks the committed file is what the descriptors project.
-    add_executable(registry_runner runners/registry_runner.c)
-    target_include_directories(
-        registry_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
-                                "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}" "${MARKDOWN_CORE_ELEMENTS_BINARY_DIR}")
-    target_link_libraries(registry_runner libmarkdown-core-public-static)
 endif()
 markdown_core_add_runner(entity_runner runners/entity_runner.c)
 markdown_core_add_runner(dump_cli_runner runners/dump_cli_runner.c)
@@ -139,11 +132,6 @@ add_executable(facade_test facade.c)
 target_include_directories(facade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(facade_test ${MARKDOWN_CORE_TEST_LIBRARIES})
 
-# Compile-time accounting must not change the facade's canonical semantics.
-add_executable(facade_diagnostics_test facade.c)
-target_include_directories(facade_diagnostics_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
-target_link_libraries(facade_diagnostics_test markdown-core-diagnostics)
-
 add_executable(facade_cplusplus_test facade_cplusplus.cpp)
 target_include_directories(facade_cplusplus_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(facade_cplusplus_test ${MARKDOWN_CORE_TEST_LIBRARIES})
@@ -161,13 +149,6 @@ endfunction()
 
 # api: legacy engine API harness (native C/C++).
 markdown_core_add_test(api_engine api 120 api_test)
-if(MARKDOWN_CORE_STATIC)
-    markdown_core_add_test(api_core_registry_projection api 30 registry_runner --check
-                           "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}/core-registry.inc")
-endif()
-foreach(operation reentry wrong-slot null-key double-commit)
-    markdown_core_add_test(api_key_index_${operation} api 10 api_test --key-index-misuse ${operation})
-endforeach()
 
 # conformance: public facade/schema shape and every manifest-owned canonical dump.
 markdown_core_add_test(
@@ -175,14 +156,6 @@ markdown_core_add_test(
     conformance
     120
     facade_test
-    --fixtures
-    "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
-    ${MARKDOWN_CORE_CANONICAL_NAMES})
-markdown_core_add_test(
-    facade_diagnostics
-    regression
-    120
-    facade_diagnostics_test
     --fixtures
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
     ${MARKDOWN_CORE_CANONICAL_NAMES})
@@ -327,6 +300,8 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     cross_reference_kinds
     nested_block_quotes
     deeply_nested_lists
+    dump_deep_nesting
+    dump_wide_siblings
     empty_lines_in_deeply_nested_lists
     empty_lines_in_deep_list_blockquote
     emphasis_in_deep_blockquote
@@ -342,7 +317,6 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     comment_nested_item_blank_runs
     tables
     reference_collisions
-    reference_unresolved_scale
     reference_expansion_bound
     directive_unclosed_labels
     directive_unclosed_attributes
@@ -425,117 +399,6 @@ markdown_core_add_test(
 
 # packaging: corpus/workspace policy guard.
 markdown_core_add_test(packaging_corpus_guard packaging 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
-
-# Performance measurement is a developer tool, not a correctness oracle. It is
-# absent from normal and sanitizer builds so CI artifacts cannot accidentally
-# promote hosted-runner timing into a merge gate. The explicit benchmark preset
-# enables this block and reports measurements without wall-clock assertions.
-if(MARKDOWN_CORE_BENCHMARKS)
-    set(MARKDOWN_CORE_BENCH_SAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks/samples")
-    # The deterministic workload inputs both lanes measure: tracked samples
-    # and in-process generators, each input identified by its SHA-256.
-    add_library(markdown-core-bench-workloads STATIC support/bench_workloads.c support/bench_workloads.h)
-    target_include_directories(markdown-core-bench-workloads PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/support")
-    # The public flavour on purpose: the PR benchmark times the product library
-    # and reports the size of the shared library this target therefore builds.
-    markdown_core_add_runner(bench_runner runners/bench_runner.c)
-    target_include_directories(bench_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
-    target_link_libraries(bench_runner markdown-core-bench-workloads)
-    # The reference lane: the pinned cmark oracle, built by
-    # `scripts/init-environment.sh --install oracle-cmark`, linked into
-    # bench_runner so that `--reference cmark` times the same bytes through it.
-    option(MARKDOWN_CORE_BENCH_CMARK "Link the pinned cmark oracle into bench_runner as a reference" OFF)
-    if(MARKDOWN_CORE_BENCH_CMARK)
-        file(STRINGS "${CMAKE_SOURCE_DIR}/scripts/init-environment.sh" cmark_version_line REGEX "^CMARK_VERSION=")
-        string(REGEX REPLACE "^CMARK_VERSION=" "" MARKDOWN_CORE_BENCH_CMARK_VERSION "${cmark_version_line}")
-        set(MARKDOWN_CORE_BENCH_CMARK_ROOT "${CMAKE_SOURCE_DIR}/.tools/cmark/${MARKDOWN_CORE_BENCH_CMARK_VERSION}")
-        if(NOT EXISTS "${MARKDOWN_CORE_BENCH_CMARK_ROOT}/build/src/libcmark.a"
-           OR NOT EXISTS "${MARKDOWN_CORE_BENCH_CMARK_ROOT}/src/cmark.h")
-            message(
-                FATAL_ERROR
-                    "MARKDOWN_CORE_BENCH_CMARK=ON needs the pinned cmark oracle ${MARKDOWN_CORE_BENCH_CMARK_VERSION}: "
-                    "scripts/init-environment.sh --install oracle-cmark")
-        endif()
-        target_compile_definitions(bench_runner PRIVATE MARKDOWN_CORE_BENCH_CMARK=1)
-        target_include_directories(bench_runner PRIVATE "${MARKDOWN_CORE_BENCH_CMARK_ROOT}/src"
-                                                        "${MARKDOWN_CORE_BENCH_CMARK_ROOT}/build/src")
-        target_link_libraries(bench_runner "${MARKDOWN_CORE_BENCH_CMARK_ROOT}/build/src/libcmark.a")
-    endif()
-    # The work-invariant lane reads the engine's deterministic work counters
-    # through the diagnostics build and an injected allocator, like oom_runner
-    # links the engine directly; its counts are an exact contract, never a
-    # timing.
-    add_executable(work_runner runners/work_runner.c)
-    target_include_directories(
-        work_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
-                            "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}" "${MARKDOWN_CORE_ELEMENTS_BINARY_DIR}")
-    target_link_libraries(work_runner markdown-core-diagnostics markdown-core-bench-workloads)
-    markdown_core_add_test(benchmark_corpus_guard benchmark 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
-    set(MARKDOWN_CORE_BENCH_WORKLOADS
-        binding_baseline
-        empty_document
-        representative
-        large_document
-        deep_nesting
-        elements
-        tables
-        adversarial
-        long_fence
-        long_paragraph
-        trailing_definitions
-        leading_blank_lines
-        deep_wide)
-    foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
-        markdown_core_add_test(
-            benchmark_${workload}
-            benchmark
-            600
-            bench_runner
-            --workload
-            ${workload}
-            --samples
-            "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}")
-        set_tests_properties(benchmark_${workload} PROPERTIES RUN_SERIAL TRUE)
-    endforeach()
-    # The instruction lane's runner contract: one case, one parse, or none.
-    markdown_core_add_test(
-        benchmark_instructions_once
-        benchmark
-        60
-        bench_runner
-        --workload
-        empty_document
-        --case
-        empty_document
-        --samples
-        "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}"
-        --instructions)
-    markdown_core_add_test(
-        benchmark_instructions_dry_run
-        benchmark
-        60
-        bench_runner
-        --workload
-        binding_baseline
-        --case
-        binding_baseline
-        --samples
-        "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}"
-        --instructions
-        --dry-run)
-    markdown_core_add_test(
-        benchmark_work_invariants
-        benchmark
-        600
-        work_runner
-        --all
-        --samples
-        "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}"
-        --expect
-        "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks/work-invariants.txt"
-        --max-ratio
-        2.25)
-endif()
 
 if(WIN32 AND MARKDOWN_CORE_SHARED)
     file(TO_NATIVE_PATH ${MARKDOWN_CORE_CORE_BINARY_DIR} WIN_SRC_DLL_DIR)

@@ -1,0 +1,91 @@
+name: Stage Benchmark
+
+# What a parse costs Markdown Core, stage by stage, next to what the same bytes
+# cost cmark. Callgrind counts instructions and data references rather than
+# time, so a shared runner's load and speed cannot reach the result and this one
+# is worth reading; the pipeline this replaced measured wall clock on that same
+# runner and could only ever be informational.
+#
+# Not the same as machine-independent. The counts depend on the compiler, the C
+# library, what the C library dispatched on, and the corpus, all of which the
+# report records in an identity table -- and two reports whose tables differ are
+# not comparable at all, counts or ratios. What this job produces is comparable
+# to another run of this job, not to whatever a contributor ran locally.
+#
+# The report goes to the run's job summary and an artifact. It is deliberately
+# NOT a pull-request comment: a comment needs `pull-requests: write`, and a
+# workflow that both executes pull-request code and holds a write token is the
+# shape the previous pipeline needed two workflows and an artifact-validation
+# protocol to make safe. There is nothing to compare against a trusted baseline
+# here — the comparison is against a pinned cmark — so the whole trust split is
+# unnecessary rather than merely satisfied.
+#
+# Nothing here gates a merge. Instruction counts do not price cache misses,
+# branch misses, or stalls; they are the evidence an optimization is argued
+# from, not a threshold.
+
+on:
+    pull_request:
+        types: [opened, reopened, synchronize]
+    push:
+        branches:
+            - main
+    workflow_dispatch:
+
+permissions:
+    actions: read
+    contents: read
+
+concurrency:
+    group: stage-benchmark-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    changes:
+        uses: ./.github/workflows/changes.yml
+        permissions:
+            actions: read
+            contents: read
+
+    stages:
+        needs: changes
+        name: Measure - parse stages against cmark
+        if: ${{ needs.changes.outputs.required == 'true' }}
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version: 26.8.1
+            - name: Install callgrind
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install --no-install-recommends --yes valgrind
+            - name: Build the pinned cmark oracle checkout
+              run: scripts/init-environment.sh --install oracle-cmark
+            - name: Measure both engines on the same corpus
+              run: node scripts/benchmark-stages.mjs --scale 2
+            - name: Publish the report to the run summary
+              if: ${{ always() }}
+              run: |
+                  test -f build/benchmark-stages/stages.md \
+                      && cat build/benchmark-stages/stages.md >>"$GITHUB_STEP_SUMMARY"
+            - name: Upload the report and the raw dumps
+              if: ${{ always() }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: stage-benchmark-${{ github.sha }}
+                  # The dumps are what a reviewer opens in kcachegrind when a
+                  # stage total moves and the table does not say why, and the
+                  # corpus is what they diff when the report's corpus digest
+                  # moves instead -- the digest says two reports measured
+                  # different documents, these say which ones.
+                  path: |
+                      build/benchmark-stages/stages.md
+                      build/benchmark-stages/stages.json
+                      build/benchmark-stages/callgrind
+                      build/benchmark-stages/corpus
+                  if-no-files-found: error
+                  retention-days: 30

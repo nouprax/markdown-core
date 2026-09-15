@@ -4,26 +4,18 @@ import MarkdownCoreC
 ///
 /// A leaf: it has no content, and its scope is all there is to read.
 public struct LineBreak: Markup {
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-    }
-
-    let fields: Stored<Fields>
-
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public var scope: Scope { fields.read { $0.scope } }
+    public let scope: Scope
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.read { $0.anchor } }
+    public let anchor: String?
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.read { $0.attributes } }
+    public let attributes: Attributes
 }
 
-extension LineBreak.Fields {
+extension LineBreak {
     init(from node: OpaquePointer) {
         self.init(
-            scope: Scope(from: markdown_core_node_scope(node)),
+            scope: Self.scope(from: node),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node)
         )

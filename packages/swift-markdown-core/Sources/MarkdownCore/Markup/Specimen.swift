@@ -16,17 +16,17 @@ public struct Specimen: Markup {
     let fields: Stored<Fields>
 
     /// The source range of the definition.
-    public var scope: Scope { fields.read { $0.scope } }
+    public var scope: Scope { fields.scope }
     /// The optional anchor attached to this node.
-    public var anchor: String? { fields.read { $0.anchor } }
+    public var anchor: String? { fields.anchor }
     /// The ordered attributes attached to this node.
-    public var attributes: Attributes { fields.read { $0.attributes } }
+    public var attributes: Attributes { fields.attributes }
     /// The authored label, or `nil` for an anonymous definition.
-    public var id: String? { fields.read { $0.id } }
+    public var id: String? { fields.id }
     /// An explicit counter reset, or `nil` when numbering continues.
-    public var start: Int64? { fields.read { $0.start } }
+    public var start: Int64? { fields.start }
     /// The parsed content of the definition.
-    public var content: MarkupCollection<any Markup> { fields.children { $0.content } }
+    public var content: MarkupCollection<any Markup> { fields.content }
 
     /// Dispatches this node to its typed visitor method.
 }

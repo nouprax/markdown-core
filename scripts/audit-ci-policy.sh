@@ -9,8 +9,7 @@ changes=.github/workflows/changes.yml
 codeql=.github/workflows/codeql.yml
 release=.github/workflows/release.yml
 release_dry_run=.github/workflows/release-dry-run.yml
-pr_benchmark=.github/workflows/pr-benchmark.yml
-pr_benchmark_comment=.github/workflows/pr-benchmark-comment.yml
+stage_benchmark=.github/workflows/stage-benchmark.yml
 ruleset=.github/rulesets/main.json
 owner_review_ruleset=.github/rulesets/owner-review.json
 release_ruleset=.github/rulesets/release-tags.json
@@ -65,8 +64,7 @@ for required in \
     "$codeql" \
     "$release" \
     "$release_dry_run" \
-    "$pr_benchmark" \
-    "$pr_benchmark_comment" \
+    "$stage_benchmark" \
     "$ruleset" \
     "$owner_review_ruleset" \
     "$release_ruleset" \
@@ -78,115 +76,290 @@ for required in \
     fi
 done
 
-node --test scripts/tests/ci-changes.test.mjs
+node --test scripts/tests/ci-changes.test.mjs scripts/tests/callgrind.test.mjs \
+    scripts/tests/benchmark-stages-cli.test.mjs
 
-# Retire the old cross-runtime metrics pipeline. The replacement is a single C
-# parser workload in an independent workflow; it is informational, exact-base
-# keyed, and never part of required CI.
+# THE PERFORMANCE PIPELINE MEASURES WORK, NOT TIME. Every hosted-runner
+# wall-clock pipeline this repository has had was retired for the same reason:
+# a number a neighbouring build can move is not evidence, and a comparison
+# against a moving baseline needs a trust protocol to be safe at all. The
+# replacement counts instructions and data references under callgrind and
+# compares against a pinned cmark, so neither the runner nor a base build is
+# part of the result.
 for retired in \
     .github/workflows/benchmark.yml \
+    .github/workflows/pr-benchmark.yml \
+    .github/workflows/pr-benchmark-comment.yml \
     .github/workflows/pr-metrics.yml \
     .github/workflows/pr-metrics-comment.yml \
-    scripts/collect-pr-metrics.mjs; do
-    if [ -e "$retired" ]; then
-        echo "retired hosted-runner performance pipeline still exists: $retired" >&2
-        exit 1
-    fi
-done
-test -x scripts/pr-benchmark-result.mjs
-grep -Fq 'name: PR Benchmark' "$pr_benchmark"
-grep -Fq 'workflows: [PR Benchmark]' "$pr_benchmark_comment"
-grep -Fq 'pr-benchmark-baseline-${{ github.sha }}' "$pr_benchmark"
-grep -Fq 'name: pr-benchmark-head' "$pr_benchmark"
-# The head measurement is the contract and, next to it, the same measurement's
-# detail sidecar, both from the head job's own result directory.
-grep -Fq 'build/pr-benchmark/head.json' "$pr_benchmark"
-grep -Fq 'build/pr-benchmark/head.detail.json' "$pr_benchmark"
-if [ "$(grep -Fc 'mkdir -p build/pr-benchmark' "$pr_benchmark")" -ne 2 ]; then
-    echo "main and PR-head benchmark producers must create their result directory" >&2
-    exit 1
-fi
-head_benchmark_job=$(job_body measure-head "$pr_benchmark")
-if grep -Eq 'base\.json|baseline-source|pull_request\.base|pr-benchmark-baseline' <<<"$head_benchmark_job"; then
-    echo "PR-controlled benchmark job can access or publish trusted baseline data" >&2
-    exit 1
-fi
-grep -Fq 'pr-benchmark-baseline-${{ steps.comparison.outputs.base_sha }}' "$pr_benchmark_comment"
-grep -Fq 'github.rest.actions.listArtifactsForRepo' "$pr_benchmark_comment"
-grep -Fq 'const artifactName = `pr-benchmark-baseline-${process.env.BASE_SHA}`' "$pr_benchmark_comment"
-grep -Fq 'const trustedMain =' "$pr_benchmark_comment"
-grep -Fq 'const trustedFallback =' "$pr_benchmark_comment"
-grep -Fq 'run.path === ".github/workflows/pr-benchmark-comment.yml"' "$pr_benchmark_comment"
-grep -Fq 'steps.baseline.outputs.usable != '"'"'true'"'"'' "$pr_benchmark_comment"
-grep -Fq 'ref: ${{ steps.comparison.outputs.base_sha }}' "$pr_benchmark_comment"
-grep -Fq 'persist-credentials: false' "$pr_benchmark_comment"
-grep -Fq 'the privileged workflow will build and publish it' "$pr_benchmark_comment"
-if [ "$(grep -c 'uses: actions/checkout@' "$pr_benchmark_comment")" -ne 1 ]; then
-    echo "privileged benchmark workflow must checkout exactly one tree: the exact PR base" >&2
-    exit 1
-fi
-if grep -Eq '^[[:space:]]+issues: write$' "$pr_benchmark_comment"; then
-    echo "privileged benchmark workflow has unnecessary issue-wide write permission" >&2
-    exit 1
-fi
-grep -Fq '"boundary" in metric' "$pr_benchmark_comment"
-if grep -Eq '\|[^\n]*Boundary[^\n]*\|' "$pr_benchmark_comment"; then
-    echo "PR benchmark comment still renders a boundary column" >&2
-    exit 1
-fi
-if grep -Eq 'workflows: \[CI\]|run\.name === "CI"|successful main CI' \
-    "$pr_benchmark" "$pr_benchmark_comment"; then
-    echo "PR benchmark still depends on the normal main CI pipeline" >&2
-    exit 1
-fi
-# THE BINDING TIMING LANES ARE OPT-IN AND INFORMATIONAL. Each binding times
-# its public parse on the C lane's workloads from one entry a person runs on
-# purpose (`pnpm benchmark:es|kotlin|swift`); no CI workflow runs one, no
-# test suite contains one, and the Swift release manifest never ships one.
-for lane in \
+    scripts/collect-pr-metrics.mjs \
+    scripts/pr-benchmark-result.mjs \
+    packages/markdown-core/tests/runners/bench_runner.c \
     packages/es-markdown-core/scripts/benchmark.mjs \
     packages/kotlin-markdown-core/src/jvmBenchmark/kotlin/com/nouprax/markdown/core/benchmark/Benchmark.kt \
     packages/swift-markdown-core/Benchmarks/MarkdownCoreBenchmarks/main.swift; do
-    if [ ! -e "$lane" ]; then
-        echo "binding timing lane is missing: $lane" >&2
+    if [ -e "$retired" ]; then
+        echo "retired hosted-runner wall-clock pipeline still exists: $retired" >&2
         exit 1
     fi
 done
-for entry in 'benchmark:es' 'benchmark:kotlin' 'benchmark:swift'; do
-    grep -Fq "\"$entry\"" package.json || {
-        echo "package.json does not route the $entry lane" >&2
+if grep -Eq 'MarkdownCoreBenchmarks|kotlinBenchmark|jvmBenchmark|scripts/benchmark\.mjs|benchmark:(swift|kotlin|es|c-host)' \
+    Package.swift \
+    package.json \
+    packages/kotlin-markdown-core/build.gradle.kts \
+    packages/es-markdown-core/package.json; then
+    echo "a retired wall-clock diagnostic is still routed by a package graph" >&2
+    exit 1
+fi
+
+# The measurement's own contract. Each of these is a way the comparison stops
+# being one without failing: a stage that stops being read from the call graph,
+# an engine built with flags the other was not, a corpus only one side sees, or
+# a report that reaches a privileged context as text.
+test -x scripts/benchmark-stages.mjs
+grep -Fq 'name: Stage Benchmark' "$stage_benchmark"
+grep -Fq 'node scripts/benchmark-stages.mjs' "$stage_benchmark"
+grep -Fq 'install --no-install-recommends --yes valgrind' "$stage_benchmark"
+grep -Fq 'scripts/init-environment.sh --install oracle-cmark' "$stage_benchmark"
+grep -Fq 'GITHUB_STEP_SUMMARY' "$stage_benchmark"
+# The report is a job summary and an artifact, never a comment: a workflow that
+# both runs pull-request code and holds a write token is the shape that made the
+# previous pipeline need two workflows and an artifact-validation protocol.
+if grep -Eq '^[[:space:]]+(pull-requests|issues|contents):[[:space:]]+write$' "$stage_benchmark"; then
+    echo "the stage benchmark holds a write token while executing pull-request code" >&2
+    exit 1
+fi
+if grep -Eq 'createComment|updateComment|issues\.create' "$stage_benchmark"; then
+    echo "the stage benchmark writes untrusted measurement text back to a pull request" >&2
+    exit 1
+fi
+# One harness, one corpus: both runners are the same driver source over the same
+# generated document, and the driver checks each engine's receipt against it.
+grep -Fq 'stage_runner.c markdown_core_stages.c' packages/markdown-core/benchmarks/CMakeLists.txt
+grep -Fq 'stage_runner.c cmark_stages.c' packages/markdown-core/benchmarks/CMakeLists.txt
+grep -Fq 'receiptBytes !== document.bytes' scripts/benchmark-stages.mjs
+for boundary in \
+    'markdown_core_parse_document_with_mem' \
+    'S_parse_source' \
+    'S_finish_parse' \
+    'cmark_parser_feed' \
+    'cmark_parser_finish'; do
+    grep -Fq "$boundary" scripts/benchmark-stages.mjs || {
+        echo "the stage benchmark no longer names the $boundary boundary" >&2
         exit 1
     }
 done
-grep -Fq 'register<JavaExec>("jvmBenchmark")' packages/kotlin-markdown-core/build.gradle.kts || {
-    echo "the Kotlin benchmark lane is not an opt-in task" >&2
+# Both engines must be compiled from one pinned description, and the flags must
+# keep the boundaries out of line: -O3 alone folds S_finish_parse into its
+# caller, which reports the AST stage as absent rather than as cheap.
+# -fvisibility=hidden is pinned for the same reason the rest of this line is:
+# cmark sets it for its own build and Markdown Core's static objects do not, and
+# an engine compiled without it pays for indirection the other side avoids --
+# measured at 2.1% of the source stage and 5.9% of the AST stage, which is a
+# build difference sitting inside a number meant to be about parsers.
+grep -Fq '"CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG -g -fno-inline-functions-called-once -fvisibility=hidden"' CMakePresets.json
+grep -Fq 'CMAKE_C_FLAGS_RELEASE' scripts/benchmark-stages.mjs
+grep -Fq 'verifyStageSymbols' scripts/benchmark-stages.mjs
+# The preset is not the whole description of a build. CMake initializes
+# CMAKE_C_FLAGS from CFLAGS and CMAKE_EXE_LINKER_FLAGS from LDFLAGS, once, at
+# first configure -- so a tree keeps an inherited -march=native or -static for
+# every later build. All four reach a command line, so all four are what a tree
+# is identified and compared by; recording a subset makes two differently built
+# comparisons look like one report.
+for cached in \
+    'CMAKE_C_FLAGS' \
+    'CMAKE_C_FLAGS_RELEASE' \
+    'CMAKE_EXE_LINKER_FLAGS' \
+    'CMAKE_EXE_LINKER_FLAGS_RELEASE'; do
+    grep -Fq "\"$cached\"" scripts/benchmark-stages.mjs || {
+        echo "the stage benchmark does not read $cached, so it cannot describe the build it measured" >&2
+        exit 1
+    }
+done
+for inherited in CFLAGS LDFLAGS; do
+    grep -Fq "process.env.$inherited" scripts/benchmark-stages.mjs || {
+        echo "the stage benchmark does not account for an inherited $inherited" >&2
+        exit 1
+    }
+done
+# The resolved target is the compiler's whole answer, not the two model names in
+# it: one -march/-mtune pair covers host CPUs that differ in which features they
+# expose, and the cache sizes that steer unrolling are in the params rather than
+# in --help=target.
+# --help=common belongs to that answer too: a configure-time default such as
+# --enable-default-pie shows up there as `-fPIE [enabled]` and nowhere else the
+# report reads -- not in a version string, not on a recorded compile line.
+for probe in '--help=target' '--help=params' '--help=common'; do
+    grep -Fq -- "$probe" scripts/benchmark-stages.mjs || {
+        echo "the stage benchmark does not ask the compiler for $probe" >&2
+        exit 1
+    }
+done
+# A response file is a flag whose contents live elsewhere: `gcc @flags.rsp`
+# compiles with what that file says while the compile line, the resolved target
+# and the compiler's banner all see only the path. Editing it between two runs
+# changes the objects and moves no digest here.
+grep -Fq 'refuseResponseFiles' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark records a response file's path as though it were its contents" >&2
     exit 1
 }
-grep -Fq 'name: "MarkdownCoreBenchmarks"' packages/swift-markdown-core/Benchmarks/Package.swift || {
-    echo "the Swift benchmark lane is not a package of its own" >&2
+# The version line names a release, not a build of it: two compilers that print
+# the same line can carry different configure-time defaults and built-in specs,
+# and those reach the object file without reaching any compile line.
+grep -Fq 'compilerConfiguration' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark identifies the compiler by its version line alone" >&2
     exit 1
 }
-if grep -Fq 'MarkdownCoreBenchmarks' Package.swift; then
-    echo "the Swift development manifest carries the benchmark lane, so the test build would stage it" >&2
+# Every probe that feeds a digest is asked twice and must agree. A digest that
+# moves between two identical probes makes every report incomparable and every
+# build tree foreign, and does it silently -- the counts stay plausible.
+grep -Fq 'function agreed(' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark does not check that its identity probes reproduce" >&2
+    exit 1
+}
+# An identity row that cannot be determined fails the run. Recording "unknown"
+# instead would make two hosts that could not answer compare as equal, which is
+# the one thing the identity exists to prevent.
+if grep -Eq '\breturn "unknown"|summary: "unknown"' scripts/benchmark-stages.mjs; then
+    echo "the stage benchmark records an undetermined identity row as unknown" >&2
     exit 1
 fi
-if grep -Eq 'benchmark:(es|kotlin|swift)|jvmBenchmark|MarkdownCoreBenchmarks|scripts/benchmark\.mjs' \
-    "$ci" "$pr_benchmark" "$pr_benchmark_comment" .github/workflows/release.yml .github/workflows/release-dry-run.yml; then
-    echo "a binding timing lane is run by a workflow; the lanes are opt-in" >&2
+# The loader's inputs are not part of the identity because they are not allowed
+# into the measurement: an exported LD_PRELOAD or GLIBC_TUNABLES changes what
+# the parse stages execute while every row of the report stays as it was.
+grep -Fq 'measurementEnvironment' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark measures under the caller's environment" >&2
+    exit 1
+}
+# Built, not filtered. A denylist has to name every variable that can reach into
+# a measurement -- the loader's, glibc's allocator controls, the locale -- and
+# the one nobody named is admitted silently.
+if grep -Fq '...process.env' scripts/benchmark-stages.mjs; then
+    echo "the stage benchmark hands the caller's whole environment to the measurement" >&2
     exit 1
 fi
-if grep -Eq 'dependsOn\(.*"jvmBenchmark"' packages/kotlin-markdown-core/build.gradle.kts; then
-    echo "a Kotlin test or check task depends on the benchmark lane" >&2
+# The build's environment is built too. A compiler reads more than its command
+# line: CPATH and C_INCLUDE_PATH add include directories that appear on no
+# compile line, so a header can be swapped under a build while the recorded
+# compile commands are character-for-character identical.
+grep -Fq 'buildEnvironment' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark builds under the caller's environment" >&2
+    exit 1
+}
+# The profiler reads rc files before its command line, so the options the driver
+# does not pass are the caller's unless HOME and the working directory are the
+# driver's own.
+grep -Fq 'measurementRoot' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark lets the caller's valgrindrc configure the measurement" >&2
+    exit 1
+}
+# The oracle is the pinned commit only if nothing untracked is shadowing it: a
+# stray src/config.h is neither tracked nor ignored, and the source directory
+# precedes the build directory on the include path.
+grep -Fq -- '--untracked-files=all' scripts/benchmark-stages.mjs || {
+    echo "the cmark oracle check ignores untracked files" >&2
+    exit 1
+}
+# The comparison links the archive the driver just built, never a DSO an
+# earlier shared build left in the same tree ahead of it in suffix order.
+grep -Fq 'CMAKE_FIND_LIBRARY_SUFFIXES' packages/markdown-core/benchmarks/CMakeLists.txt || {
+    echo "the cmark oracle is linked by an unconstrained library lookup" >&2
+    exit 1
+}
+# The C library dispatches per routine on the CPU it detects, and those
+# instructions are inside the stage costs -- so the host's capabilities are part
+# of the identity, asked through valgrind because valgrind masks CPUID.
+grep -Fq 'dispatchIdentity' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark does not record what the C library dispatched on" >&2
+    exit 1
+}
+# `valgrind` is a name PATH resolves too, and the measurement keeps that PATH.
+# A wrapper there can pass --version through and add an option only for
+# --tool=callgrind; --collect-atstart=no alone takes the summary to zero.
+grep -Fq 'profilerBinaries' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark does not identify the profiler program that ran" >&2
+    exit 1
+}
+# `gcc` is a name PATH resolves, and what it resolves to can be a wrapper that
+# answers every probe as the real driver would and injects an option only when
+# it compiles. compiledFlags drops the compiler token, so nothing else sees it.
+grep -Fq 'compilerBinaries' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark does not identify the compiler program that ran" >&2
+    exit 1
+}
+# `ldd --version` names a release, not the build of it that ran: a distribution
+# patch or a local rebuild keeps that line and changes the instructions inside
+# memcpy and strlen, which are inside the stage costs.
+grep -Fq 'loadedLibraries' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark identifies the C library by its version line alone" >&2
+    exit 1
+}
+# And asked in the measurement's environment: ldd resolves what the caller's
+# LD_PRELOAD says rather than what the measured child loads, and the child is
+# given neither.
+grep -Fq 'run("ldd", [runner], { env: measurementEnvironment(isolated), cwd: isolated })' \
+    scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark asks ldd in the caller's environment, not the measurement's" >&2
+    exit 1
+}
+# The toolchain is half the identity: the same binaries over different documents
+# also move every count. The report names the workload it measured by digest,
+# so an edited manifest or sample cannot be read as a parser change.
+grep -Fq 'corpusDigest' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark does not identify the corpus it measured" >&2
+    exit 1
+}
+grep -Fq 'build/benchmark-stages/corpus' "$stage_benchmark" || {
+    echo "the stage benchmark does not publish the corpus its digest names" >&2
+    exit 1
+}
+# The output directory and the profile tree must not contain one another, and
+# containment is a question about where a path lands rather than how it is
+# spelled: a symlink into the profile tree reads as outside it, and the run
+# that follows deletes its own freshly built cmark archive.
+grep -Fq 'realPath' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark compares build trees by spelling, not by where they land" >&2
+    exit 1
+}
+# The preset places the profile build tree and the driver addresses it from a
+# dozen call sites. A second copy of that path in the driver would let the two
+# drift: `cmake --preset` would build one tree while the cleanup, the symbol
+# checks and the runner paths read another, stale one.
+grep -Fq 'presetBinaryDir' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark does not take the profile build tree from the preset" >&2
+    exit 1
+}
+if grep -Eq '"build/benchmark"|build/benchmark[^-]' scripts/benchmark-stages.mjs; then
+    echo "the stage benchmark hard-codes the profile build tree the preset places" >&2
     exit 1
 fi
-if grep -RqE 'benchmark\.mjs|Benchmark\.kt|MarkdownCoreBenchmarks' \
-    packages/es-markdown-core/scripts/run-tests.mjs packages/es-markdown-core/scripts/run-conformance.mjs \
-    packages/swift-markdown-core/Tests; then
-    echo "a binding test suite reaches into a timing lane" >&2
+# Both engines are rebuilt on every run. Nothing in a compiled binary says which
+# source produced it, so an option to reuse one is an option for the report to
+# state this commit's pins over another revision's instruction counts.
+if grep -Eq 'skip-build|options\.build' scripts/benchmark-stages.mjs; then
+    echo "the stage benchmark can reuse binaries it did not build" >&2
+    exit 1
+fi
+# The engine keeps ONE parse entry and no measurement mode: the split is read
+# out of the call graph afterwards, never built into the product.
+if grep -R -nE 'markdown_core_parser_(begin|feed|read|finish)\b|MARKDOWN_CORE_(PARSE_)?PHASE' \
+    packages/markdown-core/core packages/markdown-core/elements packages/markdown-core/include; then
+    echo "a benchmark-only parse lifecycle leaked into the engine" >&2
+    exit 1
+fi
+if grep -R -nE 'valgrind/callgrind\.h|CALLGRIND_' \
+    packages/markdown-core/core packages/markdown-core/elements packages/markdown-core/include; then
+    echo "profiler instrumentation leaked into the product sources" >&2
+    exit 1
+fi
+# A measurement runner registered with CTest is a measurement one preset change
+# away from being a merge gate.
+if grep -Eq '(add_test|markdown_core_add_test)' packages/markdown-core/benchmarks/CMakeLists.txt; then
+    echo "the stage runners are registered as tests" >&2
     exit 1
 fi
 if grep -R -nE 'START_TIMING|END_TIMING|TIMING[[:space:]]*[<>]=?|takes less than [0-9]+ms' \
-    packages/markdown-core/tests --exclude=bench_runner.c; then
+    packages/markdown-core/tests; then
     echo "a wall-clock assertion leaked into the C correctness graph" >&2
     exit 1
 fi
