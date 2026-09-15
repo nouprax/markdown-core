@@ -807,6 +807,35 @@ function chainText(chain, target) {
 }
 
 /**
+ * A flag string split the way the build will split it.
+ *
+ * CMake stores these verbatim and the compile line it generates is
+ * interpreted, so a shell decides where one flag ends -- not whitespace.
+ * `\'@/tmp/flags with space.rsp\'` is three whitespace-separated words and one
+ * shell argument, and it is the argument the compiler reads. Splitting it here
+ * any other way asks a different question than the build answers, which is the
+ * same lesson the resolved-target probe records one screen up.
+ *
+ * The string reaches a shell either way, so asking adds no exposure the build
+ * does not already have. A string the shell cannot split is refused: the build
+ * would not be able to run it either.
+ */
+function flagArguments(name) {
+    const value = process.env[name] ?? "";
+    if (!value.trim()) {
+        return [];
+    }
+    const probe = spawnSync("/bin/sh", ["-c", `printf '%s\\0' ${value}`], {
+        encoding: "utf8",
+        env: buildEnvironment()
+    });
+    if (probe.status !== 0) {
+        fail(`${name} cannot be split into arguments by the shell that will run them: ${value}`);
+    }
+    return (probe.stdout ?? "").split("\0").filter(Boolean);
+}
+
+/**
  * A response file is a flag whose content is kept somewhere else.
  *
  * `gcc @flags.rsp` compiles with whatever that file says, and every place this
@@ -825,7 +854,7 @@ function chainText(chain, target) {
  */
 function refuseResponseFiles() {
     for (const name of BUILD_FLAG_VARIABLES) {
-        const file = (process.env[name] ?? "").split(/\s+/u).find((token) => token.startsWith("@"));
+        const file = flagArguments(name).find((argument) => argument.startsWith("@"));
         if (file) {
             fail(
                 `${name} names the response file ${file}, whose contents reach the build but no line of the ` +

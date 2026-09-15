@@ -100,9 +100,42 @@ for (const name of ["CFLAGS", "LDFLAGS"]) {
         assert.match(message, new RegExp(`${name} names the response file @/tmp/profile.rsp`, "u"));
     });
 
+    /* The shell decides where a flag ends, not whitespace: quoted and escaped
+     * spellings are one argument to the compiler and several words to a naive
+     * split, and the compiler reads the argument. */
+    for (const [shape, value] of [
+        ["single-quoted, with spaces", "'@/tmp/flags with space.rsp'"],
+        ["double-quoted", '"@/tmp/profile.rsp"'],
+        ["escaped spaces", "@/tmp/flags\\ with\\ space.rsp"]
+    ]) {
+        test(`a response file in ${name} is refused when ${shape}`, () => {
+            const { status, message } = refuse(["--case", "block-heading"], { [name]: value });
+            assert.notEqual(status, 0);
+            assert.match(message, new RegExp(`${name} names the response file @/tmp/`, "u"));
+        });
+    }
+
+    test(`${name} that the shell cannot split is refused`, () => {
+        const { status, message } = refuse(["--case", "block-heading"], { [name]: "'@/tmp/unbalanced" });
+        assert.notEqual(status, 0);
+        assert.match(message, new RegExp(`${name} cannot be split into arguments`, "u"));
+    });
+
+    /* An @ inside a path is not a response file -- `llvm@17` is an ordinary
+     * Homebrew include directory, and only a leading @ names a file. The
+     * overlap refusal that follows shows the flags got past this check. */
+    test(`an @ inside a path in ${name} is not mistaken for one`, () => {
+        const { message } = refuse(["--case", "block-heading", "--out", "build/benchmark/nested"], {
+            [name]: "-I/opt/homebrew/opt/llvm@17/include"
+        });
+        assert.match(message, /overlaps the profile build tree/u);
+    });
+
     test(`ordinary flags in ${name} are not mistaken for one`, () => {
-        const { message } = refuse(["--case", "no-such-case-exists"], { [name]: "-DNDEBUG -O2" });
-        assert.match(message, /no corpus case is named no-such-case-exists/u);
+        const { message } = refuse(["--case", "block-heading", "--out", "build/benchmark/nested"], {
+            [name]: "-DNDEBUG -O2"
+        });
+        assert.match(message, /overlaps the profile build tree/u);
     });
 }
 
