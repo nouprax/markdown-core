@@ -80,7 +80,22 @@ by the driver. The flags are Release plus two additions:
 - `-g`, so callgrind can name what it measured;
 - `-fno-inline-functions-called-once`, because `S_finish_parse` is called from
   exactly one place and is otherwise folded into its caller, which does not
-  make the AST stage cheaper — it makes it unmeasurable.
+  make the AST stage cheaper — it makes it unmeasurable;
+- `-fvisibility=hidden`, because cmark sets it for its own build and Markdown
+  Core's static objects do not. An engine compiled without it pays for
+  indirection the other avoids: adding it moved Markdown Core's source stage by
+  2.1% and its AST stage by 5.9% on `mixed-commonmark`, with cmark unchanged.
+  That is a build difference sitting inside a number meant to be about parsers,
+  and it is larger than most changes anyone would bring this benchmark to judge.
+
+The report does not stop there and claim the two compile lines match, because
+they do not. It prints both, read out of each tree's `compile_commands.json` for
+the object that is actually linked — Markdown Core compiles its `blocks.c` twice,
+once into the shared library and once into the static one the runner links, and
+only the second is the measured code. What remains different between the engines
+is language level, defines and warning flags, none of which reach code
+generation; what must be identical is the pinned set above, and the driver fails
+if either engine's real compile line is missing any of it.
 
 Nothing in the product is arranged for this. The engine has no measurement
 mode, no phase hooks, and no benchmark-only code path; the profiling flavour

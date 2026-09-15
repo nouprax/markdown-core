@@ -151,7 +151,12 @@ done
 # Both engines must be compiled from one pinned description, and the flags must
 # keep the boundaries out of line: -O3 alone folds S_finish_parse into its
 # caller, which reports the AST stage as absent rather than as cheap.
-grep -Fq '"CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG -g -fno-inline-functions-called-once"' CMakePresets.json
+# -fvisibility=hidden is pinned for the same reason the rest of this line is:
+# cmark sets it for its own build and Markdown Core's static objects do not, and
+# an engine compiled without it pays for indirection the other side avoids --
+# measured at 2.1% of the source stage and 5.9% of the AST stage, which is a
+# build difference sitting inside a number meant to be about parsers.
+grep -Fq '"CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG -g -fno-inline-functions-called-once -fvisibility=hidden"' CMakePresets.json
 grep -Fq 'CMAKE_C_FLAGS_RELEASE' scripts/benchmark-stages.mjs
 grep -Fq 'verifyStageSymbols' scripts/benchmark-stages.mjs
 # The preset is not the whole description of a build. CMake initializes

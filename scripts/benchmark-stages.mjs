@@ -316,6 +316,7 @@ function buildCmark(profile, cmark, out, versions) {
         "-DCMAKE_BUILD_TYPE=Release",
         "-DBUILD_TESTING=OFF",
         "-DBUILD_SHARED_LIBS=OFF",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
         `-DCMAKE_C_COMPILER=${profile.compiler}`,
         `-DCMAKE_C_FLAGS_RELEASE=${profile.flags}`
     ]);
@@ -398,6 +399,73 @@ function effectiveFlags(buildDir) {
     };
 }
 
+/**
+ * What a translation unit was ACTUALLY compiled with.
+ *
+ * The cache variables above are global, and a compile line is not built from
+ * them alone: CMake adds directory-, target- and property-derived options that
+ * live nowhere in the cache. `POSITION_INDEPENDENT_CODE` contributes `-fPIC`,
+ * a target's own `target_compile_options` contribute whatever it asked for, and
+ * each project sets its own language level and warning set. So two trees can
+ * agree on every cache variable while their compile lines differ -- including
+ * in options that change code generation.
+ *
+ * The unit read here is the one that holds the stage boundaries, which is the
+ * code the report's numbers are about. Both engines keep those in a file named
+ * `blocks.c`, which is a coincidence of naming and not relied on: each engine
+ * names its own path.
+ *
+ * The TARGET has to be named too, because one source can be compiled several
+ * ways in one tree. Markdown Core compiles `core/blocks.c` twice -- once into
+ * the shared library with `-fvisibility=hidden` and once into the static
+ * library without it -- and only the static one is linked into the runner, so
+ * reading "the flags for blocks.c" without saying which object would be a coin
+ * flip between two different compile lines.
+ */
+function compiledFlags(buildDir, source, target) {
+    const database = path.join(buildDir, "compile_commands.json");
+    if (!fs.existsSync(database)) {
+        fail(`${path.relative(root, database)} was not generated, so the real compile line cannot be read`);
+    }
+    const resolved = path.resolve(source);
+    const object = `CMakeFiles/${target}.dir/`;
+    const entries = JSON.parse(fs.readFileSync(database, "utf8")).filter(
+        (entry) => path.resolve(entry.directory, entry.file) === resolved && (entry.output ?? "").includes(object)
+    );
+    if (!entries.length) {
+        fail(`${path.relative(root, database)} has no ${target} entry for ${path.relative(root, resolved)}`);
+    }
+
+    /* Include directories and the output and input paths are per-project by
+     * construction and say nothing about code generation; everything else the
+     * compiler was handed is kept, warnings included, because this is a record
+     * of the build rather than a filter of it. */
+    const normalize = (command) => {
+        const tokens = command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/gu) ?? [];
+        const kept = [];
+        for (let index = 1; index < tokens.length; index++) {
+            const token = tokens[index];
+            if (token === "-c" || token === "-o" || token === "-I" || token === "-isystem") {
+                index++;
+                continue;
+            }
+            if (token.startsWith("-I") || token.startsWith("-isystem")) continue;
+            if (path.resolve(entries[0].directory, token.replace(/^["']|["']$/gu, "")) === resolved) continue;
+            kept.push(token);
+        }
+        return kept.join(" ");
+    };
+
+    const distinct = new Set(entries.map((entry) => normalize(entry.command ?? (entry.arguments ?? []).join(" "))));
+    if (distinct.size !== 1) {
+        fail(
+            `${path.relative(root, resolved)} is compiled more than one way into ${target}, so the report ` +
+                `cannot name one:\n  ${[...distinct].join("\n  ")}`
+        );
+    }
+    return [...distinct][0];
+}
+
 function stampTree(buildDir, profile, versions) {
     fs.writeFileSync(path.join(buildDir, STAMP), stampOf(profile, versions));
 }
@@ -407,6 +475,7 @@ function buildRunners(profile, cmark, cmarkBuildDir, versions) {
     run("cmake", [
         "--preset",
         "benchmark",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
         `-DMARKDOWN_CORE_CMARK_SOURCE_DIR=${path.join(cmark.checkout, "src")}`,
         `-DMARKDOWN_CORE_CMARK_BUILD_DIR=${cmarkBuildDir}`
     ]);
@@ -811,10 +880,16 @@ function markdownReport(report) {
     lines.push("## Parse stage comparison", "");
     lines.push(
         `Markdown Core against cmark \`${report.cmark.version}\` (\`${report.cmark.commit.slice(0, 12)}\`)` +
-            " on the same corpus. Both engines were compiled by the same toolchain with the" +
-            " same flags -- verified against what each build recorded, not assumed -- so" +
-            " within this report the ratio between them is a fact about the two parsers" +
-            " rather than about the build.",
+            " on the same corpus, by the same compiler, in one run, with the profile flags" +
+            " this driver pins present on both -- checked against each engine's real compile" +
+            " line rather than assumed from what was passed to CMake.",
+        "",
+        "Their compile lines are NOT identical, and the table below gives both rather than" +
+            " claiming otherwise. Each project sets its own language level, warning set and" +
+            " target properties, and CMake derives options from those that appear in no" +
+            " cache variable. Most of what differs cannot reach code generation -- warning" +
+            " flags do not -- but not all of it: read the two lines before reading a ratio" +
+            " as a fact about the parsers alone.",
         "",
         "| | |",
         "| --- | --- |",
@@ -823,8 +898,10 @@ function markdownReport(report) {
         `| Profiler | \`${report.toolchain.valgrind}\` |`,
         `| Architecture | \`${report.toolchain.architecture}\` |`,
         `| Code generation target | \`${report.toolchain.target}\` (\`${report.toolchain.targetDigest.slice(0, 16)}\`) |`,
-        `| Effective C flags | \`${report.toolchain.flags}\` |`,
-        `| Effective link flags | \`${report.toolchain.linkFlags || "(none)"}\` |`,
+        `| Shared cache C flags | \`${report.toolchain.flags}\` |`,
+        `| Shared link flags | \`${report.toolchain.linkFlags || "(none)"}\` |`,
+        `| Markdown Core compile line | \`${report.toolchain.compiled["markdown-core"]}\` |`,
+        `| cmark compile line | \`${report.toolchain.compiled.cmark}\` |`,
         `| Corpus | \`${report.corpus.digest.slice(0, 16)}\` (${report.corpus.cases} documents) |`,
         "",
         "The measurement runs in an environment built rather than inherited: a path," +
@@ -998,15 +1075,39 @@ function main() {
      * passed the same string to both. */
     const coreFlags = effectiveFlags(profile.binaryDir);
     const cmarkFlags = effectiveFlags(path.join(options.out, "cmark"));
-    for (const kind of ["compile", "link"]) {
-        if (coreFlags[kind] === cmarkFlags[kind]) continue;
+    if (coreFlags.link !== cmarkFlags.link) {
         fail(
-            `the engines were built with different ${kind} flags:\n` +
-                `  markdown-core: ${coreFlags[kind]}\n  cmark: ${cmarkFlags[kind]}`
+            `the engines were linked with different flags:\n` +
+                `  markdown-core: ${coreFlags.link}\n  cmark: ${cmarkFlags.link}`
         );
+    }
+    /* The real compile lines, not the cache variables both trees share. Each
+     * project adds its own language level, warning set and target properties,
+     * so these are NOT identical and the report says what each one is rather
+     * than claiming they match. What must match is the profile: the flags this
+     * driver pins are the reason the two engines are comparable at all, and a
+     * build that dropped one of them is measuring something else. */
+    const compiled = {
+        "markdown-core": compiledFlags(
+            profile.binaryDir,
+            path.join(root, "packages/markdown-core/core/blocks.c"),
+            /* The archive the runner links, per benchmarks/CMakeLists.txt. */
+            "libmarkdown-core-public-static"
+        ),
+        cmark: compiledFlags(path.join(options.out, "cmark"), path.join(cmark.checkout, "src/blocks.c"), "cmark")
+    };
+    for (const [engine, flags] of Object.entries(compiled)) {
+        const missing = profile.flags
+            .split(/\s+/u)
+            .filter(Boolean)
+            .filter((flag) => !flags.split(" ").includes(flag));
+        if (missing.length) {
+            fail(`${engine} was compiled without the pinned profile flags ${missing.join(" ")}:\n  ${flags}`);
+        }
     }
     versions.flags = coreFlags.compile;
     versions.linkFlags = coreFlags.link;
+    versions.compiled = compiled;
     versions.architecture = process.arch;
     const binaries = runnerIdentity(profile);
 

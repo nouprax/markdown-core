@@ -18,7 +18,7 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_C_COMPILER": "gcc",
-                "CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG -g -fno-inline-functions-called-once",
+                "CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG -g -fno-inline-functions-called-once -fvisibility=hidden",
                 "MARKDOWN_CORE_BENCHMARKS": "ON",
                 "MARKDOWN_CORE_TESTS": "OFF"
             }
