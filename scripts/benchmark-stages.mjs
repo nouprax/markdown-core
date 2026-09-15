@@ -150,16 +150,46 @@ function parseArguments(argv) {
  * comparable. Asking the compiler closes that, and closes the same gap for
  * flags nobody passed: distribution builds differ in their default -march,
  * so the resolved target belongs in the identity however it was arrived at.
+ *
+ * The model names are not the resolved target, only its label. `native` on
+ * this host resolves to `sapphirerapids` with 81 feature switches enabled,
+ * and `-march=native -mno-avx512f` resolves to the SAME march and mtune with
+ * 68 -- so a VM that masks a feature, or a host whose cache sizes differ,
+ * produces a different instruction stream under an identical pair. The cache
+ * sizes are not in `--help=target` at all; `native` writes them into the
+ * tuning params, where they steer unrolling and prefetching.
+ *
+ * So the identity carries a digest of the compiler's COMPLETE answer -- every
+ * target switch and every param -- and the model names serve as the label a
+ * reader can actually read. The digest moves whenever code generation could,
+ * which is the direction that has to be safe: calling two differing streams
+ * comparable is the failure, and a spurious rebuild is not.
  */
 function resolveTarget(compiler, flags) {
-    const probe = spawnSync(compiler, [...flags.split(/\s+/u).filter(Boolean), "-Q", "--help=target"], {
-        encoding: "utf8"
-    });
-    if (probe.status !== 0) return "unknown";
-    const value = (name) => new RegExp(`^\\s+-m${name}=\\s+(\\S+)`, "mu").exec(probe.stdout ?? "")?.[1];
+    const argv = flags.split(/\s+/u).filter(Boolean);
+    const ask = (option) => {
+        const probe = spawnSync(compiler, [...argv, "-Q", option], { encoding: "utf8" });
+        return probe.status === 0 ? (probe.stdout ?? "") : null;
+    };
+    const target = ask("--help=target");
+    if (target === null) return { summary: "unknown", digest: "unknown" };
+    const value = (name) => new RegExp(`^\\s+-m${name}=\\s+(\\S+)`, "mu").exec(target)?.[1];
     const march = value("arch");
     const mtune = value("tune");
-    return march || mtune ? `march=${march ?? "?"} mtune=${mtune ?? "?"}` : "unknown";
+    /* Whitespace in this output is tabs and padding for the terminal, not
+     * content: normalizing it keeps the digest a fact about the compiler's
+     * configuration rather than about its column alignment. */
+    const normalize = (text) =>
+        text
+            .split("\n")
+            .map((line) => line.trim().replace(/\s+/gu, " "))
+            .filter(Boolean)
+            .join("\n");
+    const answer = `${normalize(target)}\n${normalize(ask("--help=params") ?? "")}`;
+    return {
+        summary: march || mtune ? `march=${march ?? "?"} mtune=${mtune ?? "?"}` : "unknown",
+        digest: crypto.createHash("sha256").update(answer).digest("hex")
+    };
 }
 
 function toolchain(profile) {
@@ -172,7 +202,10 @@ function toolchain(profile) {
         compiler: first(run(profile.compiler, ["--version"])),
         libc: optional("ldd", ["--version"]),
         valgrind: optional("valgrind", ["--version"]),
-        target: resolveTarget(profile.compiler, `${process.env.CFLAGS ?? ""} ${profile.flags}`)
+        ...(() => {
+            const resolved = resolveTarget(profile.compiler, `${process.env.CFLAGS ?? ""} ${profile.flags}`);
+            return { target: resolved.summary, targetDigest: resolved.digest };
+        })()
     };
 }
 
@@ -293,7 +326,8 @@ function stampOf(profile, versions) {
         process.arch,
         versions.compiler,
         versions.libc,
-        versions.target
+        versions.target,
+        versions.targetDigest
     ].join("\n");
 }
 
@@ -691,7 +725,7 @@ function markdownReport(report) {
         `| C library | \`${report.toolchain.libc}\` |`,
         `| Profiler | \`${report.toolchain.valgrind}\` |`,
         `| Architecture | \`${report.toolchain.architecture}\` |`,
-        `| Code generation target | \`${report.toolchain.target}\` |`,
+        `| Code generation target | \`${report.toolchain.target}\` (\`${report.toolchain.targetDigest.slice(0, 16)}\`) |`,
         `| Effective C flags | \`${report.toolchain.flags}\` |`,
         `| Effective link flags | \`${report.toolchain.linkFlags || "(none)"}\` |`,
         `| Corpus | \`${report.corpus.digest.slice(0, 16)}\` (${report.corpus.cases} documents) |`,
@@ -711,7 +745,11 @@ function markdownReport(report) {
             " alongside them, and it carries the architecture and the compiler's" +
             " RESOLVED code generation target, because `-march=native` and a" +
             " distribution's default -march both name themselves identically on" +
-            " machines that generate different code.",
+            " machines that generate different code. The target row's digest covers" +
+            " the compiler's complete answer -- every feature switch and tuning param," +
+            " cache sizes included -- because the march and mtune names are its label" +
+            " and not its content: one pair of names covers host CPUs that differ in" +
+            " which features they expose.",
         "",
         "The last row is the workload rather than the build: one digest over every" +
             " document measured, content and all. An edited corpus manifest, an edited" +

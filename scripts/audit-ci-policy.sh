@@ -176,6 +176,16 @@ for inherited in CFLAGS LDFLAGS; do
         exit 1
     }
 done
+# The resolved target is the compiler's whole answer, not the two model names in
+# it: one -march/-mtune pair covers host CPUs that differ in which features they
+# expose, and the cache sizes that steer unrolling are in the params rather than
+# in --help=target.
+for probe in '--help=target' '--help=params'; do
+    grep -Fq -- "$probe" scripts/benchmark-stages.mjs || {
+        echo "the stage benchmark does not ask the compiler for $probe" >&2
+        exit 1
+    }
+done
 # The toolchain is half the identity: the same binaries over different documents
 # also move every count. The report names the workload it measured by digest,
 # so an edited manifest or sample cannot be read as a parser change.

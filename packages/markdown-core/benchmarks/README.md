@@ -147,6 +147,15 @@ same source — so the report records the resolved compiler, libc and valgrind
 versions, and absolute counts are comparable only against a report whose
 toolchain table matches.
 
+The code generation target is recorded as the compiler's complete answer, not
+as the `-march`/`-mtune` names. Those names are a label: on one host `native`
+resolves to `sapphirerapids` with 81 feature switches enabled, and
+`-march=native -mno-avx512f` resolves to the same two names with 68. Cache sizes
+are not in `--help=target` at all — `native` writes them into the tuning params,
+where they steer unrolling and prefetching. So the table shows the names for a
+reader and a digest of every switch and param beside them, and the digest is
+what the comparison rule runs on.
+
 The corpus is part of that table too. The report carries one digest over every
 document measured, content and all, because an edited `corpus.json`, an edited
 sample, or a change to how documents are generated moves every count while the
