@@ -89,11 +89,20 @@ by the driver. The flags are Release plus two additions:
   and it is larger than most changes anyone would bring this benchmark to judge.
 
 The report does not stop there and claim the two compile lines match, because
-they do not. It reads both out of each tree's `compile_commands.json` — for the
-object that is actually linked, since Markdown Core compiles its `blocks.c`
-twice, once into the shared library and once into the static one the runner
-links, and only the second is the measured code — and then splits them into what
-both engines got and what only one of them did.
+they do not. It reads every object of each linked engine out of that tree's
+`compile_commands.json` — 59 for Markdown Core and 19 for cmark — and splits the
+options into what both engines got and what only one of them did.
+
+Every object, not the one holding the stage boundaries: a stage's cost is
+inclusive, so it contains whatever the scanners and inline code did, and CMake
+lets a single source carry its own options. `elements/CMakeLists.txt` gives ten
+scanner sources `-Wno-unused-variable` through `set_source_files_properties`,
+which is why Markdown Core's 59 objects have two distinct compile lines and not
+one. The report names the object count and the number of distinct lines, and
+digests the whole per-file set, so a per-source option anywhere in an engine
+moves the identity. Naming the target matters too, since Markdown Core compiles
+`blocks.c` twice — into the shared library and into the static one the runner
+links — and only the second is measured.
 
 That split is what to read, and the report does not tell you it is harmless.
 Warning flags cannot reach code generation. A define can: a `*_STATIC_DEFINE` is

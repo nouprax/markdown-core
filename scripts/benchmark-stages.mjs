@@ -410,31 +410,28 @@ function effectiveFlags(buildDir) {
  * agree on every cache variable while their compile lines differ -- including
  * in options that change code generation.
  *
- * The unit read here is the one that holds the stage boundaries, which is the
- * code the report's numbers are about. Both engines keep those in a file named
- * `blocks.c`, which is a coincidence of naming and not relied on: each engine
- * names its own path.
+ * EVERY unit of the linked target, not the one holding the stage boundaries. A
+ * stage's cost is inclusive, so it contains whatever the scanners and the
+ * inline code did too, and CMake lets a single source carry its own options:
+ * `elements/CMakeLists.txt` gives ten scanner sources `-Wno-unused-variable`
+ * through `set_source_files_properties`, which is how 59 objects here come to
+ * have two distinct compile lines. Reading one file would see one of them.
  *
- * The TARGET has to be named too, because one source can be compiled several
- * ways in one tree. Markdown Core compiles `core/blocks.c` twice -- once into
- * the shared library with `-fvisibility=hidden` and once into the static
- * library without it -- and only the static one is linked into the runner, so
- * reading "the flags for blocks.c" without saying which object would be a coin
- * flip between two different compile lines.
+ * The target has to be named because one source can be compiled several ways in
+ * one tree. Markdown Core compiles `core/blocks.c` twice -- into the shared
+ * library and into the static library the runner links -- so a lookup by file
+ * alone would be a coin flip between two different compile lines.
  */
-function compiledFlags(buildDir, source, target) {
+function compiledFlags(buildDir, target) {
     const database = path.join(buildDir, "compile_commands.json");
     if (!fs.existsSync(database)) {
         fail(`${path.relative(root, database)} was not generated, so the real compile line cannot be read`);
     }
-    const resolved = path.resolve(source);
     const object = `CMakeFiles/${target}.dir/`;
-    const entries = JSON.parse(fs.readFileSync(database, "utf8")).filter(
-        (entry) => path.resolve(entry.directory, entry.file) === resolved && (entry.output ?? "").includes(object)
+    const entries = JSON.parse(fs.readFileSync(database, "utf8")).filter((entry) =>
+        (entry.output ?? "").includes(object)
     );
-    if (!entries.length) {
-        fail(`${path.relative(root, database)} has no ${target} entry for ${path.relative(root, resolved)}`);
-    }
+    if (!entries.length) fail(`${path.relative(root, database)} has no entries for target ${target}`);
 
     /* Include directories and the output and input paths are per-project by
      * construction and say nothing about code generation; everything else the
@@ -450,20 +447,33 @@ function compiledFlags(buildDir, source, target) {
                 continue;
             }
             if (token.startsWith("-I") || token.startsWith("-isystem")) continue;
-            if (path.resolve(entries[0].directory, token.replace(/^["']|["']$/gu, "")) === resolved) continue;
+            if (/\.(?:c|o|obj)$/u.test(token.replace(/^["']|["']$/gu, ""))) continue;
             kept.push(token);
         }
         return kept.join(" ");
     };
 
-    const distinct = new Set(entries.map((entry) => normalize(entry.command ?? (entry.arguments ?? []).join(" "))));
-    if (distinct.size !== 1) {
-        fail(
-            `${path.relative(root, resolved)} is compiled more than one way into ${target}, so the report ` +
-                `cannot name one:\n  ${[...distinct].join("\n  ")}`
-        );
-    }
-    return [...distinct][0];
+    /* Kept per unit and digested, so a per-source option anywhere in the engine
+     * moves the identity. The distinct lines are what a reader is shown: one is
+     * the ordinary case, and more than one says the engine is not compiled
+     * uniformly, which is a fact about the measurement rather than an error. */
+    const units = entries
+        .map((entry) => ({
+            file: path.relative(root, path.resolve(entry.directory, entry.file)),
+            flags: normalize(entry.command ?? (entry.arguments ?? []).join(" "))
+        }))
+        .sort((left, right) => left.file.localeCompare(right.file));
+    const distinct = [...new Set(units.map((unit) => unit.flags))].sort();
+    return {
+        units: units.length,
+        distinct,
+        /* Union across the units: every option any measured object received. */
+        flags: [...new Set(distinct.flatMap((line) => line.split(" ")))].join(" "),
+        digest: crypto
+            .createHash("sha256")
+            .update(units.map((unit) => `${unit.file}\u0000${unit.flags}`).join("\n"))
+            .digest("hex")
+    };
 }
 
 function stampTree(buildDir, profile, versions) {
@@ -629,9 +639,14 @@ function buildCorpus(options) {
             documents.push({
                 case: entry.name,
                 dialect: entry.dialect,
-                /* What the growth table is varying: whole documents, or the
-                 * depth/run length of one structure. */
-                growth: entry.chain ? "structure" : "documents",
+                /* What the growth table is varying. `documents` cases add
+                 * independent copies; a chain case grows one structure, and
+                 * WHICH dimension is not the same question as the shape --
+                 * chain-link-candidates grows a count of separately bounded
+                 * failures, not a depth, so a table that called it "structure"
+                 * alongside the nesting cases would invite exactly the reading
+                 * the case was renamed to prevent. */
+                growth: entry.chain ? (entry.scales ?? "structure") : "documents",
                 scale,
                 units: built.length,
                 bytes: Buffer.byteLength(built.text),
@@ -949,6 +964,14 @@ function markdownReport(report) {
         `| Code generation target | \`${report.toolchain.target}\` (\`${report.toolchain.targetDigest.slice(0, 16)}\`) |`,
         `| Shared cache C flags | \`${report.toolchain.flags}\` |`,
         `| Shared link flags | \`${report.toolchain.linkFlags || "(none)"}\` |`,
+        `| Measured objects | ${Object.entries(report.toolchain.compiled.objects)
+            .map(
+                ([engine, record]) =>
+                    `${engine} ${record.units} (${record.distinct.length} compile ${
+                        record.distinct.length === 1 ? "line" : "lines"
+                    }, \`${record.digest.slice(0, 12)}\`)`
+            )
+            .join(", ")} |`,
         `| Compile options both engines got | \`${report.toolchain.compiled.shared}\` |`,
         `| Markdown Core only | \`${report.toolchain.compiled["markdown-core only"] || "(nothing)"}\` |`,
         `| cmark only | \`${report.toolchain.compiled["cmark only"] || "(nothing)"}\` |`,
@@ -1055,7 +1078,10 @@ function markdownReport(report) {
                 " what was scaled reports a growth ratio equal to the byte ratio; a stage" +
                 " quadratic in it reports the square.",
             "",
-            "The `scaled` column says which dimension grew. `documents` cases add" +
+            "The `scaled` column names the dimension that grew, taken from the corpus" +
+                " rather than from the case's shape: a chain case can grow a nesting depth," +
+                " a live stack depth, or a count of separately bounded failures, and those" +
+                " are not interchangeable readings of a linear result. `documents` cases add" +
                 " independent copies, so they scale breadth and hold depth fixed." +
                 " `structure` cases are a single nested container or delimiter run whose" +
                 " depth is the size, which is the dimension a copied document cannot" +
@@ -1139,21 +1165,21 @@ function main() {
      * driver pins are the reason the two engines are comparable at all, and a
      * build that dropped one of them is measuring something else. */
     const compiled = {
-        "markdown-core": compiledFlags(
-            profile.binaryDir,
-            path.join(root, "packages/markdown-core/core/blocks.c"),
-            /* The archive the runner links, per benchmarks/CMakeLists.txt. */
-            "libmarkdown-core-public-static"
-        ),
-        cmark: compiledFlags(path.join(options.out, "cmark"), path.join(cmark.checkout, "src/blocks.c"), "cmark")
+        /* The archive the runner links, per benchmarks/CMakeLists.txt. */
+        "markdown-core": compiledFlags(profile.binaryDir, "libmarkdown-core-public-static"),
+        cmark: compiledFlags(path.join(options.out, "cmark"), "cmark")
     };
-    for (const [engine, flags] of Object.entries(compiled)) {
-        const missing = profile.flags
-            .split(/\s+/u)
-            .filter(Boolean)
-            .filter((flag) => !flags.split(" ").includes(flag));
-        if (missing.length) {
-            fail(`${engine} was compiled without the pinned profile flags ${missing.join(" ")}:\n  ${flags}`);
+    /* Checked against EVERY measured object rather than their union: a pinned
+     * flag missing from one translation unit is a hole a union would paper. */
+    for (const [engine, record] of Object.entries(compiled)) {
+        for (const line of record.distinct) {
+            const missing = profile.flags
+                .split(/\s+/u)
+                .filter(Boolean)
+                .filter((flag) => !line.split(" ").includes(flag));
+            if (missing.length) {
+                fail(`${engine} has an object compiled without the pinned flags ${missing.join(" ")}:\n  ${line}`);
+            }
         }
     }
     versions.flags = coreFlags.compile;
@@ -1162,10 +1188,17 @@ function main() {
     /* Split rather than left as two long lines for a reader to diff by eye: what
      * both engines got, and what only one of them did. Order is not meaning
      * here, so this compares as sets. */
-    const tokens = (engine) => compiled[engine].split(" ").filter(Boolean);
+    const tokens = (engine) => compiled[engine].flags.split(" ").filter(Boolean);
     const only = (engine, other) => tokens(engine).filter((flag) => !tokens(other).includes(flag));
     versions.compiled = {
-        ...compiled,
+        "markdown-core": compiled["markdown-core"].flags,
+        cmark: compiled.cmark.flags,
+        objects: Object.fromEntries(
+            Object.entries(compiled).map(([engine, record]) => [
+                engine,
+                { units: record.units, distinct: record.distinct, digest: record.digest }
+            ])
+        ),
         shared: tokens("markdown-core")
             .filter((flag) => tokens("cmark").includes(flag))
             .join(" "),
