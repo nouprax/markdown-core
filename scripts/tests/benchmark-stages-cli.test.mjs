@@ -115,6 +115,33 @@ for (const name of ["CFLAGS", "LDFLAGS"]) {
         });
     }
 
+    /* The linker and the assembler read @FILE too, and their spelling puts it
+     * after a comma rather than at the start of the argument. */
+    for (const [shape, value] of [
+        ["-Wl,", "-Wl,@/tmp/link.rsp"],
+        ["-Wa,", "-Wa,@/tmp/as.rsp"],
+        ["a later comma piece", "-Wl,-x,@/tmp/link.rsp"],
+        ["-Xlinker", "-Xlinker @/tmp/link.rsp"]
+    ]) {
+        test(`a response file reached through ${shape} in ${name} is refused`, () => {
+            const { status, message } = refuse(["--case", "block-heading"], { [name]: value });
+            assert.notEqual(status, 0);
+            assert.match(message, new RegExp(`${name} names the response file @/tmp/`, "u"));
+        });
+    }
+
+    /* dyld's placeholders are the one @ in linker arguments that names no
+     * file: `-Wl,-rpath,@loader_path/../lib` is an ordinary macOS link flag,
+     * and a check that refused it would be wrong rather than strict. */
+    for (const placeholder of ["@loader_path", "@executable_path", "@rpath"]) {
+        test(`${placeholder} in ${name} is not mistaken for a response file`, () => {
+            const { message } = refuse(["--case", "block-heading", "--out", "build/benchmark/nested"], {
+                [name]: `-Wl,-rpath,${placeholder}/../lib`
+            });
+            assert.match(message, /overlaps the profile build tree/u);
+        });
+    }
+
     test(`${name} that the shell cannot split is refused`, () => {
         const { status, message } = refuse(["--case", "block-heading"], { [name]: "'@/tmp/unbalanced" });
         assert.notEqual(status, 0);

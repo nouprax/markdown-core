@@ -835,6 +835,25 @@ function flagArguments(name) {
     return (probe.stdout ?? "").split("\0").filter(Boolean);
 }
 
+/* dyld's placeholders, which are not files to read but positions to resolve
+ * against at load time: `-Wl,-rpath,@loader_path/../lib` is an ordinary macOS
+ * link flag and the only @ in linker arguments that does not name a file. */
+const LOAD_PATH_PLACEHOLDERS = ["@executable_path", "@loader_path", "@rpath"];
+
+/**
+ * The response files one shell argument names.
+ *
+ * The compiler's own spelling is a leading @. The linker's and the assembler's
+ * arrive through `-Wl,` and `-Wa,`, where the argument is a comma-separated
+ * list and the @ begins a piece of it rather than the whole -- and `ld` and
+ * `as` read those files exactly as the driver reads its own.
+ */
+function responseFiles(argument) {
+    return argument
+        .split(",")
+        .filter((piece) => piece.startsWith("@") && !LOAD_PATH_PLACEHOLDERS.some((at) => piece.startsWith(at)));
+}
+
 /**
  * A response file is a flag whose content is kept somewhere else.
  *
@@ -851,10 +870,16 @@ function flagArguments(name) {
  * directory the compiler ran in, so an expander that is subtly wrong rebuilds
  * this same hole behind a digest that now looks thorough. Inlining the flags
  * is the caller's one-line fix, and the preset's own flags are pinned.
+ *
+ * This is about options, not about every file an option can reach. `-I` and
+ * `-include` name files the report does not digest either, but they say so on
+ * the compile line and the identity has never claimed to cover the sources a
+ * build reads. A response file is the case where the recorded flags themselves
+ * are not the flags used, and that is what makes it a lie rather than a limit.
  */
 function refuseResponseFiles() {
     for (const name of BUILD_FLAG_VARIABLES) {
-        const file = flagArguments(name).find((argument) => argument.startsWith("@"));
+        const file = flagArguments(name).flatMap(responseFiles).at(0);
         if (file) {
             fail(
                 `${name} names the response file ${file}, whose contents reach the build but no line of the ` +
