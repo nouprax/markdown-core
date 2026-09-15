@@ -19,6 +19,52 @@
 
 #include "test_support.h"
 
+/* A thread with a chosen stack size, so a traversal that recurses per nesting
+ * level fails here rather than only on someone's small-stack thread in
+ * production. Raw native threads for the reason concurrency_runner gives: the
+ * facade contract has to hold without harness serialization. */
+#if defined(_WIN32)
+#include <process.h>
+#include <windows.h>
+typedef HANDLE pc_thread;
+typedef unsigned(__stdcall *pc_thread_entry)(void *);
+static int pc_thread_spawn(pc_thread *handle, pc_thread_entry entry, void *argument, size_t stack_bytes) {
+    uintptr_t raw = _beginthreadex(NULL, (unsigned)stack_bytes, entry, argument, 0, NULL);
+    if (!raw) {
+        return -1;
+    }
+    *handle = (HANDLE)raw;
+    return 0;
+}
+static void pc_thread_join(pc_thread handle) {
+    WaitForSingleObject(handle, INFINITE);
+    CloseHandle(handle);
+}
+#define PC_THREAD_RESULT unsigned __stdcall
+#define PC_THREAD_RETURN return 0
+#else
+#include <pthread.h>
+typedef pthread_t pc_thread;
+typedef void *(*pc_thread_entry)(void *);
+static int pc_thread_spawn(pc_thread *handle, pc_thread_entry entry, void *argument, size_t stack_bytes) {
+    pthread_attr_t attributes;
+    int spawned;
+    if (pthread_attr_init(&attributes) != 0) {
+        return -1;
+    }
+    if (pthread_attr_setstacksize(&attributes, stack_bytes) != 0) {
+        pthread_attr_destroy(&attributes);
+        return -1;
+    }
+    spawned = pthread_create(handle, &attributes, entry, argument);
+    pthread_attr_destroy(&attributes);
+    return spawned == 0 ? 0 : -1;
+}
+static void pc_thread_join(pc_thread handle) { pthread_join(handle, NULL); }
+#define PC_THREAD_RESULT void *
+#define PC_THREAD_RETURN return NULL
+#endif
+
 typedef struct pc_context {
     char *input;
     size_t input_length;
@@ -314,6 +360,77 @@ static int case_nested_block_quotes(pc_context *context) {
         return -1;
     }
     return pc_expect_text(context, "a", 1);
+}
+
+/* The canonical dump of a deep document, drawn on a deliberately small stack.
+ *
+ * The dump walks the tree the parser produced, and a walk that recurses per
+ * nesting level costs a C frame per level: a document the parser accepts can
+ * then terminate the process inside the dump instead of returning one. 256 KiB
+ * is a stack an embedder can plausibly give a worker thread.
+ *
+ * The shape and the depth are both chosen from measurement rather than taste.
+ * List markers nest several tree levels each, so `- ` repeated is markedly
+ * harsher than `> ` repeated: at 3000 markers a recursive walk returns a dump
+ * for the quotes and dies on the lists. On this stack it survives 1000 list
+ * markers and dies at 2000, so 3000 leaves margin for a platform whose frames
+ * are smaller, while the dump itself stays around 73 MB -- it grows with the
+ * square of the depth, because every line carries the connectors of all the
+ * levels above it. An iterative walk does not notice any of this. */
+#define PC_DUMP_STACK_BYTES (256u * 1024u)
+#define PC_DUMP_DEPTH 3000u
+
+typedef struct pc_dump_job {
+    const markdown_core_document *document;
+    uint8_t *output;
+    size_t length;
+    bool dumped;
+} pc_dump_job;
+
+static PC_THREAD_RESULT pc_dump_entry(void *argument) {
+    pc_dump_job *job = (pc_dump_job *)argument;
+    job->dumped = markdown_core_document_dump(job->document, &job->output, &job->length, NULL);
+    PC_THREAD_RETURN;
+}
+
+static int case_dump_deep_nesting(pc_context *context) {
+    pc_dump_job job;
+    pc_thread thread;
+    size_t depth;
+    char *cursor;
+    context->input_length = (size_t)PC_DUMP_DEPTH * 2u + 2u;
+    context->input = (char *)malloc(context->input_length + 1u);
+    if (!context->input) {
+        return -1;
+    }
+    cursor = context->input;
+    for (depth = 0; depth < PC_DUMP_DEPTH; depth++) {
+        *cursor++ = '-';
+        *cursor++ = ' ';
+    }
+    *cursor++ = 'a';
+    *cursor++ = '\n';
+    *cursor = 0;
+    if (pc_parse(context) != 0) {
+        return -1;
+    }
+    job.document = context->document;
+    job.output = NULL;
+    job.length = 0;
+    job.dumped = false;
+    if (pc_thread_spawn(&thread, pc_dump_entry, &job, PC_DUMP_STACK_BYTES) != 0) {
+        fprintf(stderr, "could not start a %u-byte-stack thread for the dump\n", (unsigned)PC_DUMP_STACK_BYTES);
+        return -1;
+    }
+    pc_thread_join(thread);
+    if (!job.dumped || !job.output || job.length == 0) {
+        fprintf(stderr, "dumping a %u-deep document on a %u-byte stack did not return a dump\n",
+                (unsigned)PC_DUMP_DEPTH, (unsigned)PC_DUMP_STACK_BYTES);
+        markdown_core_dump_free(job.output);
+        return -1;
+    }
+    markdown_core_dump_free(job.output);
+    return 0;
 }
 
 static int case_deeply_nested_lists(pc_context *context) {
@@ -1209,6 +1326,7 @@ static const pc_case_entry PC_CASES[] = {
     {"tables", case_tables},
     {"reference_collisions", case_reference_collisions},
     {"reference_expansion_bound", case_reference_expansion_bound},
+    {"dump_deep_nesting", case_dump_deep_nesting},
     {"directive_unclosed_labels", case_directive_unclosed_labels},
     {"directive_unclosed_attributes", case_directive_unclosed_attributes},
     {"directive_colon_pairs", case_directive_colon_pairs},

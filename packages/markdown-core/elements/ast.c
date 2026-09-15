@@ -25,6 +25,17 @@ struct markdown_core_error {
     const char *message;
 };
 
+/* One thing still to draw: a nested node, or a group line (`node` NULL) naming
+ * a node-valued list. `depth` is the level whose connector the item decides and
+ * `has_next` whether another item follows it at that level. */
+typedef struct dump_item {
+    const markdown_core_node *node;
+    const char *name;
+    size_t count;
+    size_t depth;
+    bool has_next;
+} dump_item;
+
 typedef struct dump_buffer {
     uint8_t *data;
     size_t size;
@@ -32,6 +43,17 @@ typedef struct dump_buffer {
     bool failed;
     bool *more;
     size_t more_capacity;
+    /* The items still to draw, the next on top. A node's line collects what it
+     * nests in drawing order (`items`) and pushes that in reverse, so the walk
+     * is the pre-order a recursion would produce with no C frame per nesting
+     * level: a document is as deep as its author made it, and the dump never
+     * meets the stack. */
+    dump_item *stack;
+    size_t stack_count;
+    size_t stack_capacity;
+    dump_item *items;
+    size_t item_count;
+    size_t item_capacity;
 } dump_buffer;
 
 static void clear_error(markdown_core_error **error) {
@@ -1358,15 +1380,45 @@ static void dump_prefix(dump_buffer *buffer, size_t depth) {
     buffer_cstr(buffer, buffer->more[depth - 1] ? "├── " : "└── ");
 }
 
+static void add_item(dump_buffer *buffer, dump_item item) {
+    if (buffer->item_count == buffer->item_capacity) {
+        size_t capacity = buffer->item_capacity ? buffer->item_capacity * 2 : 16;
+        dump_item *items = (dump_item *)realloc(buffer->items, capacity * sizeof(*items));
+        if (!items) {
+            buffer->failed = true;
+            return;
+        }
+        buffer->items = items;
+        buffer->item_capacity = capacity;
+    }
+    buffer->items[buffer->item_count++] = item;
+}
+
+static void push_item(dump_buffer *buffer, dump_item item) {
+    if (buffer->stack_count == buffer->stack_capacity) {
+        size_t capacity = buffer->stack_capacity ? buffer->stack_capacity * 2 : 64;
+        dump_item *stack = (dump_item *)realloc(buffer->stack, capacity * sizeof(*stack));
+        if (!stack) {
+            buffer->failed = true;
+            return;
+        }
+        buffer->stack = stack;
+        buffer->stack_capacity = capacity;
+    }
+    buffer->stack[buffer->stack_count++] = item;
+}
+
 /* The file-tree drawing can nest both child nodes and node-valued fields.  The
  * caller states their total so connectors remain a formatting concern rather
- * than redefining either relation as the other. */
+ * than redefining either relation as the other.
+ *
+ * These record what a node nests rather than descending into it: the walk that
+ * draws them is a loop over an explicit stack, so nesting depth costs heap and
+ * not C stack. The connector state of a level is written when the item at that
+ * level is drawn, which is where the recursion this replaces wrote it. */
 static void dump_nested_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth, bool has_next) {
-    if (!ensure_more(buffer, depth)) {
-        return;
-    }
-    buffer->more[depth] = has_next;
-    dump_node(buffer, node, depth + 1);
+    dump_item item = {node, NULL, 0, depth, has_next};
+    add_item(buffer, item);
 }
 
 static void dump_children(dump_buffer *buffer, const markdown_core_node *node, size_t depth, size_t remaining_nested) {
@@ -1394,6 +1446,11 @@ static void dump_directive_nodes(dump_buffer *buffer, const markdown_core_node *
  * with no scope and no fields, at the owner's nesting depth, and the list's
  * nodes one level below it. */
 static void dump_group_line(dump_buffer *buffer, const char *name, size_t count, size_t depth, bool has_next) {
+    dump_item item = {NULL, name, count, depth, has_next};
+    add_item(buffer, item);
+}
+
+static void draw_group_line(dump_buffer *buffer, const char *name, size_t count, size_t depth, bool has_next) {
     if (!ensure_more(buffer, depth)) {
         return;
     }
@@ -1593,6 +1650,7 @@ static void dump_definition_nodes(dump_buffer *buffer, const markdown_core_node 
 }
 
 static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
+    size_t i;
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_scope scope = markdown_core_node_scope(node);
     /* `children` counts structural children: a cite's are its items. */
@@ -1720,6 +1778,30 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     case MARKDOWN_CORE_KIND_NONE:
         break;
     }
+    /* Reversed onto the stack, the items pop in drawing order, each with
+     * everything nested under it before the item behind it. */
+    for (i = buffer->item_count; i-- > 0;) {
+        push_item(buffer, buffer->items[i]);
+    }
+    buffer->item_count = 0;
+}
+
+/* Draws the tree under `root`: the root's line, then the items it nests, each
+ * item drawing its node's line and pushing that node's own items. */
+static void dump_tree(dump_buffer *buffer, const markdown_core_node *root) {
+    dump_node(buffer, root, 0);
+    while (!buffer->failed && buffer->stack_count) {
+        dump_item item = buffer->stack[--buffer->stack_count];
+        if (!item.node) {
+            draw_group_line(buffer, item.name, item.count, item.depth, item.has_next);
+            continue;
+        }
+        if (!ensure_more(buffer, item.depth)) {
+            return;
+        }
+        buffer->more[item.depth] = item.has_next;
+        dump_node(buffer, item.node, item.depth + 1);
+    }
 }
 
 bool markdown_core_document_dump(const markdown_core_document *document, uint8_t **output, size_t *length,
@@ -1732,8 +1814,10 @@ bool markdown_core_document_dump(const markdown_core_document *document, uint8_t
     }
     *output = NULL;
     *length = 0;
-    dump_node(&buffer, document->root, 0);
+    dump_tree(&buffer, document->root);
     free(buffer.more);
+    free(buffer.stack);
+    free(buffer.items);
     if (buffer.failed) {
         free(buffer.data);
         set_error(error, &ERROR_DUMP_ALLOCATION);
