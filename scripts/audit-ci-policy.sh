@@ -176,6 +176,17 @@ for inherited in CFLAGS LDFLAGS; do
         exit 1
     }
 done
+# The toolchain is half the identity: the same binaries over different documents
+# also move every count. The report names the workload it measured by digest,
+# so an edited manifest or sample cannot be read as a parser change.
+grep -Fq 'corpusDigest' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark does not identify the corpus it measured" >&2
+    exit 1
+}
+grep -Fq 'build/benchmark-stages/corpus' "$stage_benchmark" || {
+    echo "the stage benchmark does not publish the corpus its digest names" >&2
+    exit 1
+}
 # Both engines are rebuilt on every run. Nothing in a compiled binary says which
 # source produced it, so an option to reuse one is an option for the report to
 # state this commit's pins over another revision's instruction counts.

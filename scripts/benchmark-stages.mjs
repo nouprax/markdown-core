@@ -499,11 +499,34 @@ function buildCorpus(options) {
                 scale,
                 units: built.length,
                 bytes: Buffer.byteLength(built.text),
+                /* The bytes actually parsed, not just how many there were. A
+                 * byte count does not distinguish two documents of one size. */
+                sha256: crypto.createHash("sha256").update(built.text).digest("hex"),
                 file
             });
         }
     }
-    return { targetBytes: manifest.targetBytes, documents };
+    return { targetBytes: manifest.targetBytes, digest: corpusDigest(documents), documents };
+}
+
+/**
+ * One digest naming the whole workload a report measured.
+ *
+ * The toolchain table says what built the binaries; this says what they were
+ * given. Both have to match before two reports can be compared, because an
+ * edited `corpus.json`, an edited sample, or a change to how documents are
+ * generated moves every count without touching either parser -- and a report
+ * that recorded only byte counts cannot tell that apart from an optimization.
+ *
+ * Case name and scale are folded in beside the content, so a `--case`-filtered
+ * run does not present itself as comparable to a full one.
+ */
+function corpusDigest(documents) {
+    const digest = crypto.createHash("sha256");
+    for (const document of documents) {
+        digest.update(`${document.case}\u0000${document.scale}\u0000${document.bytes}\u0000${document.sha256}\n`);
+    }
+    return digest.digest("hex");
 }
 
 /** The exact bytes measured, so a report's numbers can be traced to a binary. */
@@ -671,6 +694,7 @@ function markdownReport(report) {
         `| Code generation target | \`${report.toolchain.target}\` |`,
         `| Effective C flags | \`${report.toolchain.flags}\` |`,
         `| Effective link flags | \`${report.toolchain.linkFlags || "(none)"}\` |`,
+        `| Corpus | \`${report.corpus.digest.slice(0, 16)}\` (${report.corpus.cases} documents) |`,
         "",
         "Counts do not depend on the machine's speed, its load, or what else was" +
             " running: re-running this commit on this toolchain reproduces every number" +
@@ -688,6 +712,14 @@ function markdownReport(report) {
             " RESOLVED code generation target, because `-march=native` and a" +
             " distribution's default -march both name themselves identically on" +
             " machines that generate different code.",
+        "",
+        "The last row is the workload rather than the build: one digest over every" +
+            " document measured, content and all. An edited corpus manifest, an edited" +
+            " sample, or a change to how documents are generated moves every count" +
+            " while the parsers stand still, and a byte count cannot tell two different" +
+            " documents of one size apart. Each case carries its own document digest in" +
+            " `stages.json`, so a corpus that moved can be narrowed to which cases" +
+            " moved.",
         ""
     );
 
@@ -864,7 +896,7 @@ function main() {
         binaries,
         profile: { compiler: profile.compiler, flags: profile.flags },
         cmark: { version: cmark.version, commit: cmark.commit },
-        corpus: { targetBytes: corpus.targetBytes, cases: corpus.documents.length },
+        corpus: { targetBytes: corpus.targetBytes, cases: corpus.documents.length, digest: corpus.digest },
         artifacts: path.relative(root, options.out),
         cases
     };

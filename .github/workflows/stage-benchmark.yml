@@ -72,10 +72,14 @@ jobs:
               with:
                   name: stage-benchmark-${{ github.sha }}
                   # The dumps are what a reviewer opens in kcachegrind when a
-                  # stage total moves and the table does not say why.
+                  # stage total moves and the table does not say why, and the
+                  # corpus is what they diff when the report's corpus digest
+                  # moves instead -- the digest says two reports measured
+                  # different documents, these say which ones.
                   path: |
                       build/benchmark-stages/stages.md
                       build/benchmark-stages/stages.json
                       build/benchmark-stages/callgrind
+                      build/benchmark-stages/corpus
                   if-no-files-found: error
                   retention-days: 30

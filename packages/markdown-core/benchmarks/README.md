@@ -147,6 +147,15 @@ same source — so the report records the resolved compiler, libc and valgrind
 versions, and absolute counts are comparable only against a report whose
 toolchain table matches.
 
+The corpus is part of that table too. The report carries one digest over every
+document measured, content and all, because an edited `corpus.json`, an edited
+sample, or a change to how documents are generated moves every count while the
+parsers stand still — and a byte count cannot tell two different documents of
+one size apart. Each case also carries its own document digest in `stages.json`,
+so a corpus that moved can be narrowed to the cases that moved. Filtering with
+`--case` changes the digest, which is the intended reading: a partial run did
+not measure the same workload as a full one.
+
 The build flags are part of that table, and they are read back out of each
 tree's CMake cache rather than taken from the preset. CMake initializes
 `CMAKE_C_FLAGS` from `CFLAGS` and `CMAKE_EXE_LINKER_FLAGS` from `LDFLAGS`, once,
