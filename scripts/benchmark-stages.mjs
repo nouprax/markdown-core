@@ -58,6 +58,11 @@ import { baseName, costRecord, edgesBetween, foldNames, nodesEnteredFrom, parseC
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const BENCHMARKS = path.join(root, "packages/markdown-core/benchmarks");
 
+/* The one configure preset this script builds through. Its compiler, its
+ * flags and its build tree are all read back from CMakePresets.json under this
+ * name, so the preset stays the single place any of them is written down. */
+const PROFILE_PRESET = "benchmark";
+
 /* A cache geometry pinned in the report rather than taken from the host, so
  * that two machines produce the same file and a diff means a code change. */
 const CACHE = ["--I1=32768,8,64", "--D1=32768,8,64", "--LL=8388608,16,64"];
@@ -289,14 +294,47 @@ function refuseOverlappingTrees(options, profile) {
     }
 }
 
+/**
+ * The build tree the preset names, with CMake's macros expanded.
+ *
+ * `cmake --preset` puts the tree wherever `binaryDir` says, while the cleanup,
+ * the overlap check, the stamp, the symbol and provenance checks and every
+ * runner path here address it directly. A second copy of the path would let
+ * the preset move the tree out from under all of them at once and leave this
+ * script reading a stale one, so the preset is the only place it is written.
+ *
+ * Only the macros whose value is knowable from here are expanded. A path is
+ * used by eleven call sites, so one that is silently wrong is worse than none:
+ * anything left unexpanded -- `$env{}`, a macro CMake adds later -- is refused
+ * rather than passed through.
+ */
+function presetBinaryDir(preset) {
+    if (!preset.binaryDir) fail(`the ${preset.name} preset must set binaryDir`);
+    const macros = {
+        sourceDir: root,
+        sourceParentDir: path.dirname(root),
+        sourceDirName: path.basename(root),
+        presetName: preset.name
+    };
+    const expanded = preset.binaryDir.replace(/\$\{(\w+)\}/gu, (macro, name) =>
+        Object.hasOwn(macros, name) ? macros[name] : macro
+    );
+    if (expanded.includes("${") || expanded.includes("$env{") || expanded.includes("$penv{")) {
+        fail(`the ${preset.name} preset's binaryDir uses a macro this script cannot expand: ${preset.binaryDir}`);
+    }
+    return path.resolve(root, expanded);
+}
+
 function profileBuild() {
     const presets = JSON.parse(fs.readFileSync(path.join(root, "CMakePresets.json"), "utf8"));
-    const preset = presets.configurePresets.find((entry) => entry.name === "benchmark");
-    if (!preset) fail("CMakePresets.json has no benchmark configure preset");
+    const preset = presets.configurePresets.find((entry) => entry.name === PROFILE_PRESET);
+    if (!preset) fail(`CMakePresets.json has no ${PROFILE_PRESET} configure preset`);
     const compiler = preset.cacheVariables.CMAKE_C_COMPILER;
     const flags = preset.cacheVariables.CMAKE_C_FLAGS_RELEASE;
-    if (!compiler || !flags) fail("the benchmark preset must pin CMAKE_C_COMPILER and CMAKE_C_FLAGS_RELEASE");
-    return { compiler, flags, binaryDir: path.join(root, "build/benchmark") };
+    if (!compiler || !flags) {
+        fail(`the ${PROFILE_PRESET} preset must pin CMAKE_C_COMPILER and CMAKE_C_FLAGS_RELEASE`);
+    }
+    return { compiler, flags, binaryDir: presetBinaryDir(preset) };
 }
 
 /**
@@ -519,14 +557,14 @@ function buildRunners(profile, cmark, cmarkBuildDir, versions) {
         "cmake",
         [
             "--preset",
-            "benchmark",
+            PROFILE_PRESET,
             "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
             `-DMARKDOWN_CORE_CMARK_SOURCE_DIR=${path.join(cmark.checkout, "src")}`,
             `-DMARKDOWN_CORE_CMARK_BUILD_DIR=${cmarkBuildDir}`
         ],
         { env: buildEnvironment() }
     );
-    run("cmake", ["--build", "--preset", "benchmark", "--parallel"], { env: buildEnvironment() });
+    run("cmake", ["--build", "--preset", PROFILE_PRESET, "--parallel"], { env: buildEnvironment() });
     stampTree(profile.binaryDir, profile, versions);
 }
 

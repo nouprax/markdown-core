@@ -258,6 +258,18 @@ grep -Fq 'build/benchmark-stages/corpus' "$stage_benchmark" || {
     echo "the stage benchmark does not publish the corpus its digest names" >&2
     exit 1
 }
+# The preset places the profile build tree and the driver addresses it from a
+# dozen call sites. A second copy of that path in the driver would let the two
+# drift: `cmake --preset` would build one tree while the cleanup, the symbol
+# checks and the runner paths read another, stale one.
+grep -Fq 'presetBinaryDir' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark does not take the profile build tree from the preset" >&2
+    exit 1
+}
+if grep -Eq '"build/benchmark"|build/benchmark[^-]' scripts/benchmark-stages.mjs; then
+    echo "the stage benchmark hard-codes the profile build tree the preset places" >&2
+    exit 1
+fi
 # Both engines are rebuilt on every run. Nothing in a compiled binary says which
 # source produced it, so an option to reuse one is an option for the report to
 # state this commit's pins over another revision's instruction counts.
