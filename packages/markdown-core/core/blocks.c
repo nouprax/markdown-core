@@ -60,6 +60,7 @@ static void S_set_last_line_checked(markdown_core_node *node) { node->flags |= M
 bool markdown_core_block_is_space_or_tab(char c) { return (c == ' ' || c == '\t'); }
 
 static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length);
+static void S_project_block_hooks(markdown_core_parser *parser);
 static markdown_core_node *S_finish_parse(markdown_core_parser *parser);
 
 static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, bufsize_t bytes);
@@ -134,6 +135,10 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     parser->mem->free(parser->input_line_offsets);
     parser->mem->free(parser->inline_dispatch);
     parser->inline_dispatch = NULL;
+    parser->mem->free(parser->block_hook_allocation);
+    parser->block_hook_allocation = NULL;
+    parser->mem->free(parser->block_gate_allocation);
+    parser->block_gate_allocation = NULL;
     if (parser->root) {
         markdown_core_node_free(parser->root);
     }
@@ -1055,6 +1060,9 @@ markdown_core_node *markdown_core_parse_document_with_mem(const char *source, si
         S_parser_free(parser);
         return NULL;
     }
+    /* After setup, because setup is the only thing that may still add an
+     * element, and before the source stage, because that is the first reader. */
+    S_project_block_hooks(parser);
 
     S_parse_source(parser, source ? (const unsigned char *)source : empty, length);
     document = S_finish_parse(parser);
@@ -1740,11 +1748,179 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
     lookahead->parser = NULL;
 }
 
+/* Whether `element` implements `hook`. The PROBE family carries a second
+ * static condition: `markdown_core_parser_has_block_start` only ever asked a
+ * probe that also interrupts a paragraph, and that is a descriptor property,
+ * so it belongs in the projection rather than in the loop. */
+static bool S_element_implements(const markdown_core_element *element, markdown_core_block_hook hook) {
+    switch (hook) {
+    case MARKDOWN_CORE_BLOCK_HOOK_SCAN:
+        return element->scan_block_start != NULL;
+    case MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT:
+        return element->try_interrupting_block != NULL;
+    case MARKDOWN_CORE_BLOCK_HOOK_OPEN:
+        return element->try_opening_block != NULL;
+    case MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH:
+        return element->try_opening_paragraph != NULL;
+    case MARKDOWN_CORE_BLOCK_HOOK_PROBE:
+        return element->probe_block != NULL && element->interrupts_paragraph;
+    case MARKDOWN_CORE_BLOCK_HOOK_COUNT:
+        break;
+    }
+    return false;
+}
+
+/* The gate `element` declares for `hook`, or an ungated one. A family gains a
+ * gate by adding a descriptor field and a case here; the dispatcher below does
+ * not change and never learns an element's name. */
+static markdown_core_block_gate S_element_gate(const markdown_core_element *element, markdown_core_block_hook hook) {
+    markdown_core_block_gate ungated = {NULL};
+
+    switch (hook) {
+    case MARKDOWN_CORE_BLOCK_HOOK_OPEN:
+        return element->open_block_gate;
+    case MARKDOWN_CORE_BLOCK_HOOK_SCAN:
+    case MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT:
+    case MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH:
+    case MARKDOWN_CORE_BLOCK_HOOK_PROBE:
+    case MARKDOWN_CORE_BLOCK_HOOK_COUNT:
+        break;
+    }
+    return ungated;
+}
+
+#define BLOCK_GATE_MAP_BYTES 32
+
+/* Whether the owner at `index` in `hook`'s family can claim a line whose first
+ * non-space byte is `byte`. `byte` is negative for a line with no non-space
+ * byte at all, which no declared set can name, so a gated owner is not asked
+ * about it. */
+static bool S_gate_admits(const markdown_core_parser *parser, markdown_core_block_hook hook, size_t index, int byte) {
+    const uint8_t *map = parser->block_gate_bytes[hook];
+
+    if (!map) {
+        return true;
+    }
+    if (byte < 0) {
+        return false;
+    }
+    return (map[index * BLOCK_GATE_MAP_BYTES + ((unsigned)byte >> 3)] & (1u << ((unsigned)byte & 7))) != 0;
+}
+
+/* Project the registry into one list per block-start hook family, in
+ * descriptor order, once per parse. Built after setup has attached everything,
+ * because an extension element must appear in the same families as a core one.
+ *
+ * One allocation holds all five lists back to back: the families are read
+ * together, once per line, and separate blocks would scatter them. Failure
+ * leaves every list empty, which parses as "no element opens a block" rather
+ * than as a wrong grammar, and is reported through parser->oom. */
+static void S_project_block_hooks(markdown_core_parser *parser) {
+    size_t totals[MARKDOWN_CORE_BLOCK_HOOK_COUNT] = {0};
+    size_t total = 0;
+
+    parser->mem->free(parser->block_hook_allocation);
+    parser->block_hook_allocation = NULL;
+    parser->mem->free(parser->block_gate_allocation);
+    parser->block_gate_allocation = NULL;
+    memset(parser->block_hooks, 0, sizeof(parser->block_hooks));
+    memset(parser->block_hook_counts, 0, sizeof(parser->block_hook_counts));
+    memset(parser->block_gate_bytes, 0, sizeof(parser->block_gate_bytes));
+
+    for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
+        for (size_t i = 0; i < parser->element_count; i++) {
+            if (S_element_implements(parser->elements[i], (markdown_core_block_hook)hook)) {
+                totals[hook]++;
+            }
+        }
+        total += totals[hook];
+    }
+    if (!total) {
+        return;
+    }
+
+    const markdown_core_element **entries = parser->mem->calloc(total, sizeof(*entries));
+    if (!entries) {
+        parser->oom = true;
+        return;
+    }
+    parser->block_hook_allocation = entries;
+
+    size_t at = 0;
+    for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
+        parser->block_hooks[hook] = entries + at;
+        parser->block_hook_counts[hook] = totals[hook];
+        for (size_t i = 0; i < parser->element_count; i++) {
+            if (S_element_implements(parser->elements[i], (markdown_core_block_hook)hook)) {
+                entries[at++] = parser->elements[i];
+            }
+        }
+    }
+
+    /* A family with no declared gate keeps a NULL map and every owner is asked,
+     * so adding the first declaration to a family is what turns gating on for
+     * it -- an element that declares nothing is never skipped. */
+    size_t gate_bytes = 0;
+    for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
+        bool declared = false;
+        for (size_t i = 0; i < totals[hook]; i++) {
+            if (S_element_gate(parser->block_hooks[hook][i], (markdown_core_block_hook)hook).bytes) {
+                declared = true;
+            }
+        }
+        if (declared) {
+            gate_bytes += totals[hook] * BLOCK_GATE_MAP_BYTES;
+        }
+    }
+    if (!gate_bytes) {
+        return;
+    }
+
+    uint8_t *maps = parser->mem->calloc(gate_bytes, 1);
+    if (!maps) {
+        parser->oom = true;
+        return;
+    }
+    parser->block_gate_allocation = maps;
+
+    size_t map_at = 0;
+    for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
+        bool declared = false;
+        for (size_t i = 0; i < totals[hook]; i++) {
+            if (S_element_gate(parser->block_hooks[hook][i], (markdown_core_block_hook)hook).bytes) {
+                declared = true;
+            }
+        }
+        if (!declared) {
+            continue;
+        }
+        parser->block_gate_bytes[hook] = maps + map_at;
+        for (size_t i = 0; i < totals[hook]; i++) {
+            markdown_core_block_gate gate =
+                S_element_gate(parser->block_hooks[hook][i], (markdown_core_block_hook)hook);
+            uint8_t *map = maps + map_at + i * BLOCK_GATE_MAP_BYTES;
+            if (!gate.bytes) {
+                memset(map, 0xff, BLOCK_GATE_MAP_BYTES);
+                continue;
+            }
+            for (const unsigned char *c = (const unsigned char *)gate.bytes; *c; c++) {
+                map[*c >> 3] |= (uint8_t)(1u << (*c & 7));
+            }
+        }
+        map_at += totals[hook] * BLOCK_GATE_MAP_BYTES;
+    }
+}
+
 static bool scan_element_start(markdown_core_parser *parser, block_start_context *context, block_start *start) {
-    for (size_t i = 0; i < parser->element_count; i++) {
-        const markdown_core_element *element = parser->elements[i];
-        if (element->scan_block_start && context->indent <= element->maximum_block_indent &&
-            element->scan_block_start(parser, context, start)) {
+    const markdown_core_element *const *owners = parser->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_SCAN];
+    size_t count = parser->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_SCAN];
+
+    for (size_t i = 0; i < count; i++) {
+        const markdown_core_element *element = owners[i];
+        /* The indent bound stays a runtime test rather than part of the
+         * projection: `context->indent` is a property of the line, not of the
+         * element set, so it cannot be folded into a table built once. */
+        if (context->indent <= element->maximum_block_indent && element->scan_block_start(parser, context, start)) {
             return true;
         }
         if (parser->oom) {
@@ -1779,10 +1955,11 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
     if (start.kind != MARKDOWN_CORE_NODE_NONE) {
         return true;
     }
-    for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
-        const markdown_core_element *element = parser->elements[element_index];
-        if (element->interrupts_paragraph && element->probe_block &&
-            element->probe_block(parser, input, first, indent, reader)) {
+    const markdown_core_element *const *probes = parser->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_PROBE];
+    size_t probe_count = parser->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_PROBE];
+    for (size_t element_index = 0; element_index < probe_count; element_index++) {
+        const markdown_core_element *element = probes[element_index];
+        if (element->probe_block(parser, input, first, indent, reader)) {
             return true;
         }
         if (parser->oom) {
@@ -1824,11 +2001,10 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
         /* Dash-led tables precede thematic breaks and lists. An opener may
          * close the old path before an allocation fails; OOM is terminal,
          * never a grammar miss that can try another owner on that path. */
-        for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
-            const markdown_core_element *owner = parser->elements[element_index];
-            if (!owner->try_interrupting_block) {
-                continue;
-            }
+        const markdown_core_element *const *interrupters = parser->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT];
+        size_t interrupter_count = parser->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT];
+        for (size_t element_index = 0; element_index < interrupter_count; element_index++) {
+            const markdown_core_element *owner = interrupters[element_index];
             markdown_core_node *opened = owner->try_interrupting_block(parser, *container, input, maybe_lazy);
             if (parser->oom) {
                 return;
@@ -1845,34 +2021,40 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             }
         } else {
             markdown_core_node *new_container = NULL;
+            const markdown_core_element *const *openers = parser->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_OPEN];
+            size_t opener_count = parser->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_OPEN];
+            int opener_byte =
+                parser->first_nonspace < input->len ? (int)(unsigned char)input->data[parser->first_nonspace] : -1;
 
-            for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
-                const markdown_core_element *element = parser->elements[element_index];
+            for (size_t element_index = 0; element_index < opener_count; element_index++) {
+                const markdown_core_element *element = openers[element_index];
 
-                if (element->try_opening_block) {
-                    new_container = element->try_opening_block(element, parser->indent > element->maximum_block_indent,
-                                                               parser, *container, input->data, input->len);
-                    if (parser->oom) {
+                if (!S_gate_admits(parser, MARKDOWN_CORE_BLOCK_HOOK_OPEN, element_index, opener_byte)) {
+                    continue;
+                }
+
+                new_container = element->try_opening_block(element, parser->indent > element->maximum_block_indent,
+                                                           parser, *container, input->data, input->len);
+                if (parser->oom) {
+                    return;
+                }
+
+                if (new_container) {
+                    *container = new_container;
+                    if (parser->claimed_cursor) {
                         return;
                     }
-
-                    if (new_container) {
-                        *container = new_container;
-                        if (parser->claimed_cursor) {
-                            return;
-                        }
-                        break;
-                    }
+                    break;
                 }
             }
 
             if (!new_container) {
                 if (!maybe_lazy && !is_paragraph(*container)) {
-                    for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
-                        const markdown_core_element *element = parser->elements[element_index];
-                        if (!element->try_opening_paragraph) {
-                            continue;
-                        }
+                    const markdown_core_element *const *last_chance =
+                        parser->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH];
+                    size_t last_chance_count = parser->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH];
+                    for (size_t element_index = 0; element_index < last_chance_count; element_index++) {
+                        const markdown_core_element *element = last_chance[element_index];
                         new_container =
                             element->try_opening_paragraph(element, parser->indent > element->maximum_block_indent,
                                                            parser, *container, input->data, input->len);
@@ -2255,10 +2437,29 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
 
     for (size_t i = 0; i < parser->element_count && !parser->oom; i++) {
         const markdown_core_element *element = parser->elements[i];
-        if (element->postprocess_func) {
-            if (!S_apply_tree_phase(parser, &parser->root, S_postprocess_tree, (void *)element)) {
-                parser->oom = true;
+        if (!element->postprocess_func) {
+            continue;
+        }
+        /* An empty declaration means the pass always runs, so an element that
+         * says nothing keeps the behaviour it had. One that declares its kinds
+         * is skipped for a document that produced none of them, and skipping
+         * costs the whole pass: the root enumeration AND the walk inside it.
+         *
+         * The declared kinds are projected here rather than stored as a bit set
+         * on the descriptor, so each kind keeps the namespace that tells a
+         * block from an inline; the list is a handful of entries per element,
+         * read once per parse. */
+        if (element->postprocess_kinds) {
+            markdown_core_node_kind_set declared = {0, 0};
+            for (const markdown_core_node_type *kind = element->postprocess_kinds; *kind; kind++) {
+                markdown_core_node_kind_set_add(&declared, *kind);
             }
+            if (!markdown_core_node_kind_set_intersects(&declared, &parser->kinds_seen)) {
+                continue;
+            }
+        }
+        if (!S_apply_tree_phase(parser, &parser->root, S_postprocess_tree, (void *)element)) {
+            parser->oom = true;
         }
     }
     if (parser->oom) {

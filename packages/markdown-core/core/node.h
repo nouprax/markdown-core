@@ -369,6 +369,33 @@ int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_o
  * the checked mutation API. */
 int markdown_core_node_attach_owned(markdown_core_node *parent, markdown_core_node *child, markdown_core_node *before);
 
+/* The bit a BLOCK kind occupies in a container-kind set, or zero for an inline
+ * kind or none at all. Block kind values are small and dense, so a set of the
+ * kinds open at a point in the parse fits one word and is tested with an AND.
+ *
+ * It lives with the node type rather than with the code that builds such a set
+ * so that the block driver can intersect two sets without naming a kind or
+ * knowing how a kind is encoded. */
+uint32_t markdown_core_node_block_kind_bit(markdown_core_node_type kind);
+
+/* The same for an INLINE kind. Block and inline values overlap once masked, so
+ * a set that must tell a List from a LineBreak keeps the two apart. */
+uint32_t markdown_core_node_inline_kind_bit(markdown_core_node_type kind);
+
+/* A set of node kinds, used both for what an element's phase acts on and for
+ * what a parse actually produced. Intersecting the two is how a phase that
+ * cannot possibly do anything is skipped instead of walking the tree. */
+typedef struct markdown_core_node_kind_set {
+    uint32_t blocks;
+    uint32_t inlines;
+} markdown_core_node_kind_set;
+
+/* Add `kind` to `set`. */
+void markdown_core_node_kind_set_add(markdown_core_node_kind_set *set, markdown_core_node_type kind);
+
+/* Whether the two sets name any kind in common. */
+bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a, const markdown_core_node_kind_set *b);
+
 #ifdef __cplusplus
 }
 #endif

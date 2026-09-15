@@ -760,6 +760,9 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .continues_block = directive_block_continues,
     .maximum_block_indent = 3,
     .try_opening_block = open_directive_block,
+    /* `scan_directive_block` needs at least two leading colons, so a line that
+     * does not start with one cannot open a directive. */
+    .open_block_gate = {.bytes = ":"},
     .probe_block = probe_directive_block,
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,
