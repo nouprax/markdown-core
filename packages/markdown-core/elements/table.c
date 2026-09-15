@@ -29,8 +29,6 @@ typedef struct {
     int start_offset, end_offset, internal_offset;
 } node_cell;
 
-static bool table_reserve(markdown_core_parser *parser, void **values, size_t *capacity, size_t count, size_t size);
-
 /* A recognized final row borrows its source; no cell array is retained. */
 typedef struct {
     unsigned char *source;
@@ -38,14 +36,12 @@ typedef struct {
     uint16_t n_columns;
 } pipe_row;
 
-/* The payload storage is the node's (markdown_core_node_opaque_take); only
- * what it owns is released here. */
 static void free_node_table(markdown_core_mem *mem, markdown_core_table *table) {
     if (!table) {
         return;
     }
     mem->free(table->columns);
-    table->columns = NULL;
+    mem->free(table);
 }
 
 static void init_cell(markdown_core_node *node) {
@@ -80,9 +76,9 @@ static void set_cell_content(markdown_core_parser *parser, markdown_core_node *n
                 first = markdown_core_parser_source_column(parser, line, offset + from + 1);
                 last = markdown_core_parser_source_column(parser, line, offset + from + 2);
             }
-            markdown_core_parser_append_content_mark(parser, node, node->content->size, line, first, last - first + 1,
+            markdown_core_parser_append_content_mark(parser, node, node->content.size, line, first, last - first + 1,
                                                      last - first + 1);
-            markdown_core_strbuf_putc(node->content, '|');
+            markdown_core_strbuf_putc(&node->content, '|');
             to = from + 2;
         } else {
             do {
@@ -91,14 +87,14 @@ static void set_cell_content(markdown_core_parser *parser, markdown_core_node *n
                                                  cell->content.data[to + 1] == '|'));
             if (source) {
                 markdown_core_parser_append_content_marks(parser, source, node, offset + from, to - from,
-                                                          node->content->size);
+                                                          node->content.size);
             } else {
                 markdown_core_parser_append_source_marks(parser, node, parser->line_number, offset + from + 1,
-                                                         to - from, node->content->size);
+                                                         to - from, node->content.size);
             }
-            markdown_core_strbuf_put(node->content, cell->content.data + from, to - from);
+            markdown_core_strbuf_put(&node->content, cell->content.data + from, to - from);
         }
-        if (node->content->oom) {
+        if (node->content.oom) {
             parser->oom = true;
         }
         from = to;
@@ -184,97 +180,6 @@ static pipe_row_cursor pipe_row_cells(const pipe_row *row) {
     return pipe_row_begin(row->source, row->length, row->paragraph_offset);
 }
 
-/* THE ROW IS READ ONCE. An open table's matcher recognizes the line, the
- * block-start pass then offers the same line to every opener, and the row
- * opener used to recognize it again and walk its cells a third time. The
- * geometry the matcher read is kept on the parser, keyed by the line it was
- * read from, with the cells it passed; the opener reuses it. */
-typedef struct markdown_core_table_row_geometry {
-    const unsigned char *source;
-    int length, line;
-    bool valid;
-    pipe_row row;
-    node_cell *cells;
-    size_t count, capacity;
-} table_row_geometry;
-
-static const table_row_geometry *table_row_capture(markdown_core_parser *parser, unsigned char *source, int length) {
-    table_row_geometry *geometry = parser->table_row;
-    if (!geometry) {
-        geometry = parser->mem->calloc(1, sizeof(*geometry));
-        if (!geometry) {
-            parser->oom = true;
-            return NULL;
-        }
-        geometry->line = -1;
-        parser->table_row = geometry;
-    }
-    if (geometry->source == source && geometry->length == length && geometry->line == parser->line_number) {
-        return geometry;
-    }
-    geometry->source = source;
-    geometry->length = length;
-    geometry->line = parser->line_number;
-    geometry->count = 0;
-    geometry->valid = false;
-    MARKDOWN_CORE_DIAGNOSTIC(parser->table_row_scans++; parser->table_row_work += (size_t)length;)
-    pipe_row_cursor cursor = pipe_row_begin(source, length, 0);
-    node_cell cell;
-    while (pipe_row_next(&cursor, &cell)) {
-        if (!table_reserve(parser, (void **)&geometry->cells, &geometry->capacity, geometry->count + 1,
-                           sizeof(*geometry->cells))) {
-            return NULL;
-        }
-        geometry->cells[geometry->count++] = cell;
-    }
-    geometry->valid = cursor.valid;
-    if (!geometry->valid) {
-        return geometry;
-    }
-    geometry->row = (pipe_row){.source = source,
-                               .length = length,
-                               .paragraph_offset = cursor.row_start,
-                               .n_columns = (uint16_t)cursor.columns};
-    /* Only the final row's cells are its geometry. */
-    size_t first = 0;
-    while (first < geometry->count && geometry->cells[first].start_offset < cursor.row_start) {
-        first++;
-    }
-    if (first) {
-        memmove(geometry->cells, geometry->cells + first, (geometry->count - first) * sizeof(*geometry->cells));
-        geometry->count -= first;
-    }
-    return geometry;
-}
-
-/* One scratch region for every table search. A search reserves everything it
- * will carve before it carves, so growth never moves a slice in use; the
- * region is zeroed for the request, as the arrays it replaces were. */
-static size_t table_scratch_span(size_t bytes) { return (bytes + 15) & ~(size_t)15; }
-
-static unsigned char *table_scratch(markdown_core_parser *parser, size_t bytes) {
-    if (bytes > parser->table_scratch_capacity) {
-        size_t capacity = parser->table_scratch_capacity ? parser->table_scratch_capacity : 256;
-        while (capacity < bytes) {
-            if (capacity > SIZE_MAX / 2) {
-                parser->oom = true;
-                return NULL;
-            }
-            capacity *= 2;
-        }
-        void *grown = parser->mem->realloc(parser->table_scratch, capacity);
-        if (!grown) {
-            parser->oom = true;
-            return NULL;
-        }
-        parser->table_scratch = grown;
-        parser->table_scratch_capacity = capacity;
-        MARKDOWN_CORE_DIAGNOSTIC(parser->table_scratch_growth++;)
-    }
-    memset(parser->table_scratch, 0, bytes);
-    return parser->table_scratch;
-}
-
 /* Give `node` the source span of [start_offset, end_offset] in `owner`'s
  * content buffer. Every table position recovered from that buffer goes through
  * here, so there is one place that knows a content offset is not a column. */
@@ -306,7 +211,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     // with the allocation refused. The other three lose the lead paragraph
     // WITHOUT setting parser->oom, so the document comes back short and the
     // failure bit says everything was fine.
-    paragraph = markdown_core_node_create(parser->arena, parser->mem, MARKDOWN_CORE_NODE_PARAGRAPH, NULL);
+    paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
     if (!paragraph) {
         parser->oom = true;
         return;
@@ -328,10 +233,10 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     while (scope_end > first && (parent_string[scope_end - 1] == '\n' || parent_string[scope_end - 1] == '\r')) {
         scope_end--;
     }
-    markdown_core_strbuf_put(paragraph->content, parent_string + first, content_end - first);
-    if (paragraph->content->oom) {
+    markdown_core_strbuf_put(&paragraph->content, parent_string + first, content_end - first);
+    if (paragraph->content.oom) {
         parser->oom = true;
-        markdown_core_node_recycle(parser->arena, paragraph);
+        markdown_core_node_free(paragraph);
         return;
     }
 
@@ -356,7 +261,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
         // markdown_core_node_free, not mem->free: the node owns a content
         // buffer by now, and freeing the struct alone leaks it.
         parser->oom = true;
-        markdown_core_node_recycle(parser->arena, paragraph);
+        markdown_core_node_free(paragraph);
         return;
     }
     /* A table split completes this paragraph just as a later block start
@@ -372,9 +277,9 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
                                                     markdown_core_node *parent_container, unsigned char *input,
                                                     int len) {
     markdown_core_node *table_header;
-    pipe_row header_row;
+    pipe_row header_row, delimiter_row;
     const char *parent_string;
-    size_t i;
+    uint16_t i;
     int header_line, header_column;
 
     if (parent_container->flags & MARKDOWN_CORE_NODE__TABLE_VISITED) {
@@ -385,35 +290,18 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
         return NULL;
     }
 
-    const table_row_geometry *delimiter =
-        table_row_capture(parser, input + markdown_core_parser_get_first_nonspace(parser),
-                          len - markdown_core_parser_get_first_nonspace(parser));
-    if (!delimiter || !delimiter->valid) {
+    if (!recognize_pipe_row(input + markdown_core_parser_get_first_nonspace(parser),
+                            len - markdown_core_parser_get_first_nonspace(parser), &delimiter_row)) {
         return NULL;
     }
 
-    /* The header is the paragraph's LAST line. Its start is found from the
-     * end of the buffer, so a long paragraph is not walked to reach it. */
+    // Select the final header row and verify width before committing a table.
     parent_string = markdown_core_node_get_string_content(parent_container);
-    bufsize_t content_size = parent_container->content->size;
-    bufsize_t last_end = content_size, last_start;
-    while (last_end > 0 && markdown_core_is_line_end((unsigned char)parent_string[last_end - 1])) {
-        last_end--;
-    }
-    last_start = last_end;
-    while (last_start > 0 && !markdown_core_is_line_end((unsigned char)parent_string[last_start - 1])) {
-        last_start--;
-    }
-    MARKDOWN_CORE_DIAGNOSTIC(parser->table_row_scans++; parser->table_row_work += (size_t)(content_size - last_start);)
-    if (!recognize_pipe_row((unsigned char *)parent_string + last_start, (int)(content_size - last_start),
-                            &header_row) ||
-        header_row.n_columns != delimiter->row.n_columns) {
+    if (!recognize_pipe_row((unsigned char *)parent_string, (int)strlen(parent_string), &header_row) ||
+        header_row.n_columns != delimiter_row.n_columns) {
         parent_container->flags |= MARKDOWN_CORE_NODE__TABLE_VISITED;
         return NULL;
     }
-    header_row.source = (unsigned char *)parent_string;
-    header_row.length = (int)content_size;
-    header_row.paragraph_offset += (int)last_start;
 
     markdown_core_node_set_kind_result result = markdown_core_node_set_kind(parent_container, MARKDOWN_CORE_NODE_TABLE);
     if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
@@ -440,7 +328,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
     /* Table data belongs to the element. Its cleanup accepts partial
      * initialization when an allocation fails after the kind change. */
     markdown_core_node_set_element(parent_container, self);
-    if (!markdown_core_node_opaque_take(parent_container, sizeof(markdown_core_table))) {
+    parent_container->opaque = parser->mem->calloc(1, sizeof(markdown_core_table));
+    if (!parent_container->opaque) {
         parser->oom = true;
 
         return parent_container;
@@ -453,9 +342,10 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
 
         return parent_container;
     }
+    pipe_row_cursor markers = pipe_row_cells(&delimiter_row);
     node_cell geometry;
-    for (i = 0; i < delimiter->count && i < table->column_count; ++i) {
-        const markdown_core_chunk *cell = &delimiter->cells[i].content;
+    for (i = 0; pipe_row_next(&markers, &geometry); ++i) {
+        const markdown_core_chunk *cell = &geometry.content;
         bool left = cell->data[0] == ':', right = cell->data[cell->len - 1] == ':';
         table->columns[i].flow = left ? (right ? MARKDOWN_CORE_FLOW_CENTER : MARKDOWN_CORE_FLOW_LEFT)
                                       : (right ? MARKDOWN_CORE_FLOW_RIGHT : MARKDOWN_CORE_FLOW_NONE);
@@ -473,7 +363,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
      * where the block does; with a lead split off, `| a | b |` on line three
      * was reported at 1:10, a column that is not on line one. The map turns
      * each offset back into the place it was written. */
-    S_place_content_span(parser, parent_container, table_header, header_row.paragraph_offset, content_size - 2);
+    S_place_content_span(parser, parent_container, table_header, header_row.paragraph_offset,
+                         (bufsize_t)strlen(parent_string) - 2);
 
     table->head_count = 1;
 
@@ -490,8 +381,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
                          (bufsize_t)(cell->content.data - (unsigned char *)parent_string));
     }
 
-    markdown_core_parser_advance_offset(parser, (char *)input, len - 1 - markdown_core_parser_get_offset(parser),
-                                        false);
+    markdown_core_parser_advance_offset(
+        parser, (char *)input, (int)strlen((char *)input) - 1 - markdown_core_parser_get_offset(parser), false);
 
     return parent_container;
 }
@@ -499,6 +390,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
 static markdown_core_node *try_opening_table_row(const markdown_core_element *self, markdown_core_parser *parser,
                                                  markdown_core_node *parent_container, unsigned char *input, int len) {
     markdown_core_node *table_row_block;
+    pipe_row row;
 
     if (markdown_core_parser_is_blank(parser)) {
         return NULL;
@@ -509,11 +401,8 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
         return NULL;
     }
 
-    /* The matcher read this line's geometry already; it is reused here. */
-    const table_row_geometry *geometry =
-        table_row_capture(parser, input + markdown_core_parser_get_first_nonspace(parser),
-                          len - markdown_core_parser_get_first_nonspace(parser));
-    if (!geometry || !geometry->valid) {
+    if (!recognize_pipe_row(input + markdown_core_parser_get_first_nonspace(parser),
+                            len - markdown_core_parser_get_first_nonspace(parser), &row)) {
         return NULL;
     }
     table_row_block =
@@ -528,8 +417,10 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
     {
         int i, table_columns = (int)table->column_count;
 
-        for (i = 0; i < table_columns && (size_t)i < geometry->count; ++i) {
-            const node_cell *cell = &geometry->cells[i];
+        pipe_row_cursor cells = pipe_row_cells(&row);
+        node_cell geometry;
+        for (i = 0; i < table_columns && pipe_row_next(&cells, &geometry); ++i) {
+            const node_cell *cell = &geometry;
             markdown_core_node *node =
                 new_cell(parser, table_row_block, parser->first_nonspace + 1 + cell->start_offset);
             if (!node) {
@@ -627,10 +518,9 @@ static int matches(const markdown_core_element *self, markdown_core_parser *pars
         if (table_caption_start(input, len, parser->first_nonspace, parser->indent) >= 0) {
             return 0;
         }
-        const table_row_geometry *geometry =
-            table_row_capture(parser, input + markdown_core_parser_get_first_nonspace(parser),
-                              len - markdown_core_parser_get_first_nonspace(parser));
-        res = geometry && geometry->valid;
+        pipe_row row;
+        res = recognize_pipe_row(input + markdown_core_parser_get_first_nonspace(parser),
+                                 len - markdown_core_parser_get_first_nonspace(parser), &row);
     }
 
     return res;
@@ -667,14 +557,14 @@ static int contains_inlines(const markdown_core_element *element, markdown_core_
         return true;
     }
     return node->kind == MARKDOWN_CORE_NODE_TABLE_CAPTION ||
-           (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL && node->content->size > 0);
+           (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL && node->content.size > 0);
 }
 
 static void opaque_alloc(const markdown_core_element *self, markdown_core_mem *mem, markdown_core_node *node) {
     /* A NULL payload makes the table facade accessors fail; no incomplete
      * table is returned by a successful parse. */
     if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
-        markdown_core_node_opaque_take(node, sizeof(markdown_core_table));
+        node->opaque = mem->calloc(1, sizeof(markdown_core_table));
     } else if (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
         init_cell(node);
     }
@@ -692,7 +582,7 @@ static int visit_owned_subtrees(const markdown_core_element *self, markdown_core
 
 /* Source candidates own geometry only. Public nodes are allocated after a
  * complete candidate has passed validation; failed candidates consume nothing. */
-typedef struct markdown_core_table_interval {
+typedef struct {
     int start, end;
 } table_interval;
 
@@ -700,11 +590,10 @@ typedef struct markdown_core_table_source_line {
     const unsigned char *data, *after;
     markdown_core_parser *parser;
     int length, input_length, offset, first, first_column, indent, line, blanks;
-    bool dashes_scanned, full_boundary, dashes_placed, columns_mapped;
+    bool dashes_scanned, full_boundary;
     size_t dash_count;
-    /* Where the line's dash intervals and column map begin in the parser's
-     * regions, once placed (table_dashes, table_line_bytes). */
-    size_t dashes_at, bytes_at;
+    table_interval *dashes;
+    int *bytes;
     int columns;
 } table_source_line;
 
@@ -766,13 +655,13 @@ static bool table_reserve(markdown_core_parser *parser, void **values, size_t *c
 
 static bool table_source_push(table_source *source, table_source_line line) {
     markdown_core_parser *parser = source->parser;
-    MARKDOWN_CORE_DIAGNOSTIC(size_t capacity = parser->table_lines_capacity;)
+    size_t capacity = parser->table_lines_capacity;
     if (!table_reserve(parser, (void **)&parser->table_lines, &parser->table_lines_capacity, source->count + 1,
                        sizeof(*source->lines))) {
         return false;
     }
     source->lines = parser->table_lines;
-    MARKDOWN_CORE_DIAGNOSTIC(parser->table_workspace_growth += parser->table_lines_capacity != capacity;)
+    parser->table_workspace_growth += parser->table_lines_capacity != capacity;
     line.input_length = line.length;
     while (line.length && (line.data[line.length - 1] == '\n' || line.data[line.length - 1] == '\r')) {
         line.length--;
@@ -809,119 +698,75 @@ static bool table_source_get(table_source *source, size_t index) {
 
 static void table_source_free(table_source *source) {
     markdown_core_parser_lookahead_end(&source->lookahead);
-    /* The query's column maps and intervals are gone; the regions stay. */
-    source->parser->table_columns_used = 0;
-    source->parser->table_dashes_used = 0;
+    for (size_t i = 0; i < source->count; i++) {
+        source->parser->mem->free(source->lines[i].bytes);
+        source->parser->mem->free(source->lines[i].dashes);
+    }
 }
 
 static void table_candidate_free(markdown_core_parser *parser, table_candidate *candidate) {
-    markdown_core_mem_release(parser->mem, candidate->columns);
-    markdown_core_mem_release(parser->mem, candidate->rows);
-    markdown_core_mem_release(parser->mem, candidate->cells);
+    parser->mem->free(candidate->columns);
+    parser->mem->free(candidate->rows);
+    parser->mem->free(candidate->cells);
     *candidate = (table_candidate){0};
-}
-
-/* The two regions a query's geometry is carved from grow in place for the
- * geometry being placed -- it is the region's last -- and may move what was
- * placed before: a pointer into a region is taken after the last placement
- * that can precede its use (table_dashes says how). */
-static bool table_region_reserve(markdown_core_parser *parser, void **values, size_t *capacity, size_t count,
-                                 size_t size) {
-    MARKDOWN_CORE_DIAGNOSTIC(size_t before = *capacity;)
-    if (!table_reserve(parser, values, capacity, count, size)) {
-        return false;
-    }
-    MARKDOWN_CORE_DIAGNOSTIC(parser->table_geometry_allocations += *capacity != before;)
-    return true;
-}
-
-static bool table_columns_reserve(markdown_core_parser *parser, size_t count) {
-    return table_region_reserve(parser, (void **)&parser->table_columns, &parser->table_columns_capacity, count,
-                                sizeof(*parser->table_columns));
-}
-
-/* A mapped line's column map: column -> the byte that authored it. */
-static const int *table_line_bytes(const table_source_line *line) {
-    return line->parser->table_columns + line->bytes_at;
 }
 
 /* Grid columns count scalars, with tabs expanded at four-column stops. Each
  * position retains the input byte that authored it; slicing never loses tabs
- * or UTF-8 provenance and never consults terminal display width. A line has
- * at most one column per byte plus tab expansion, so its map is reserved at
- * the end of the column region once, and only a tab asks for more; a byte
- * below 0x80 is its own scalar and is not decoded. */
+ * or UTF-8 provenance and never consults terminal display width. */
 static bool table_source_columns(table_source *source, size_t index) {
     if (!table_source_get(source, index)) {
         return false;
     }
     table_source_line *line = &source->lines[index];
-    if (line->columns_mapped) {
+    if (line->bytes) {
         return true;
     }
-    markdown_core_parser *parser = source->parser;
-    MARKDOWN_CORE_DIAGNOSTIC(parser->table_geometry_lines++;)
-    size_t at = parser->table_columns_used;
-    if (!table_columns_reserve(parser, at + (size_t)(line->length - line->offset) + 5)) {
-        return false;
-    }
-    size_t room = parser->table_columns_capacity - at;
-    int *bytes = parser->table_columns + at;
-    int byte = line->offset, column = 0;
-    while (byte < line->length) {
-        unsigned char c = line->data[byte];
-        if (c < 0x80 && c != '\t') {
-            bytes[column++] = byte++;
-        } else if (c == '\t') {
-            /* Up to four columns for this byte, at most one for each byte
-             * after it, and one for the terminator. */
-            size_t need = (size_t)column + 4 + (size_t)(line->length - byte);
-            if (need > room) {
-                if (!table_columns_reserve(parser, at + need)) {
-                    return false;
-                }
-                room = parser->table_columns_capacity - at;
-                bytes = parser->table_columns + at;
-            }
+    source->parser->table_geometry_lines++;
+    size_t capacity = 0;
+    for (int byte = line->offset, column = 0;;) {
+        if (!table_reserve(source->parser, (void **)&line->bytes, &capacity, (size_t)column + 5,
+                           sizeof(*line->bytes))) {
+            return false;
+        }
+        if (byte == line->length) {
+            line->bytes[column] = byte;
+            line->columns = column;
+            return true;
+        }
+        if (line->data[byte] == '\t') {
             int spaces = 4 - column % 4;
             while (spaces--) {
-                bytes[column++] = byte;
+                line->bytes[column++] = byte;
             }
             byte++;
         } else {
             int32_t scalar;
             int width = markdown_core_utf8proc_iterate(line->data + byte, line->length - byte, &scalar);
-            bytes[column++] = byte;
+            line->bytes[column++] = byte;
             byte += width > 0 ? width : 1;
         }
     }
-    bytes[column] = byte;
-    line->columns = column;
-    line->bytes_at = at;
-    line->columns_mapped = true;
-    parser->table_columns_used = at + (size_t)column + 1;
-    return true;
 }
 
 static int table_character(const table_source_line *line, int column) {
-    MARKDOWN_CORE_DIAGNOSTIC(line->parser->table_scan_work++;)
+    line->parser->table_scan_work++;
     if (column < 0 || column >= line->columns) {
         return 0;
     }
-    int c = line->data[table_line_bytes(line)[column]];
+    int c = line->data[line->bytes[column]];
     return c == '\t' ? ' ' : c;
 }
 
 static int table_byte(const table_source_line *line, int column) {
-    return column >= line->columns ? line->length : table_line_bytes(line)[column < 0 ? 0 : column];
+    return column >= line->columns ? line->length : line->bytes[column < 0 ? 0 : column];
 }
 
 static int table_column(const table_source_line *line, int byte) {
-    const int *bytes = table_line_bytes(line);
     int low = 0, high = line->columns;
     while (low < high) {
         int middle = low + (high - low) / 2;
-        if (bytes[middle] < byte) {
+        if (line->bytes[middle] < byte) {
             low = middle + 1;
         } else {
             high = middle;
@@ -939,21 +784,21 @@ static size_t table_dash_count(table_source *source, size_t index) {
     table_source_line *line = &source->lines[index];
     if (!line->dashes_scanned) {
         line->dashes_scanned = true;
-        MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_separator_scans++;)
+        source->parser->table_separator_scans++;
         if (line->indent > 3) {
             return 0;
         }
-        const unsigned char *p = line->data + line->offset, *from;
-        MARKDOWN_CORE_DIAGNOSTIC(const unsigned char *start = p;)
+        const unsigned char *p = line->data + line->offset, *from, *before;
         int result;
         do {
+            before = p;
             result = scan_table_dash(&p, line->data + line->length, &from);
+            source->parser->table_scan_work += (size_t)(p - before) + 1;
             if (result > 0) {
                 line->dash_count++;
                 line->full_boundary = line->dash_count == 1 && p - from >= 3;
             }
         } while (result > 0);
-        MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work += (size_t)(p - start) + line->dash_count + 1;)
         if (result < 0) {
             line->dash_count = 0;
             line->full_boundary = false;
@@ -962,42 +807,33 @@ static size_t table_dash_count(table_source *source, size_t index) {
     return line->dash_count;
 }
 
-/* A line's authored dash intervals, placed once at the end of the parser's
- * interval region. Placing them may move intervals placed earlier: a caller
- * that holds intervals across another line's placement takes them again
- * afterwards, which places nothing and cannot move anything. */
 static const table_interval *table_dashes(table_source *source, size_t index) {
     size_t count = table_dash_count(source, index);
     if (!count) {
         return NULL;
     }
     table_source_line *line = &source->lines[index];
-    markdown_core_parser *parser = source->parser;
-    if (!line->dashes_placed) {
-        size_t at = parser->table_dashes_used;
-        if (!table_region_reserve(parser, (void **)&parser->table_dashes, &parser->table_dashes_capacity, at + count,
-                                  sizeof(*parser->table_dashes))) {
+    if (!line->dashes) {
+        line->dashes = source->parser->mem->calloc(count, sizeof(*line->dashes));
+        if (!line->dashes) {
+            source->parser->oom = true;
             return NULL;
         }
-        table_interval *dashes = parser->table_dashes + at;
-        const unsigned char *p = line->data + line->offset, *from = p, *before = p;
+        const unsigned char *p = line->data + line->offset, *from, *before = p;
         int column = 0;
         for (size_t i = 0; i < count; i++) {
             scan_table_dash(&p, line->data + line->length, &from);
+            source->parser->table_scan_work += (size_t)(p - before);
             while (before < from) {
                 column += *before++ == '\t' ? 4 - column % 4 : 1;
             }
             int start = column;
             column += (int)(p - from);
-            dashes[i] = (table_interval){start, column};
+            line->dashes[i] = (table_interval){start, column};
             before = p;
         }
-        MARKDOWN_CORE_DIAGNOSTIC(parser->table_scan_work += (size_t)(p - line->data - line->offset);)
-        line->dashes_at = at;
-        line->dashes_placed = true;
-        parser->table_dashes_used = at + count;
     }
-    return parser->table_dashes + line->dashes_at;
+    return line->dashes;
 }
 
 static bool table_full_boundary(table_source *source, size_t index) {
@@ -1185,13 +1021,12 @@ static bool table_same_dashes(table_source *source, size_t left, size_t right) {
     if (count < 2 || table_dash_count(source, right) != count) {
         return false;
     }
-    if (!table_dashes(source, left) || !table_dashes(source, right)) {
+    const table_interval *a = table_dashes(source, left), *b = table_dashes(source, right);
+    if (!a || !b) {
         return false;
     }
-    /* Both placed: taking them again moves neither. */
-    const table_interval *a = table_dashes(source, left), *b = table_dashes(source, right);
     for (size_t i = 0; i < count; i++) {
-        MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work++;)
+        source->parser->table_scan_work++;
         if (a[i].start != b[i].start || a[i].end != b[i].end) {
             return false;
         }
@@ -1200,7 +1035,7 @@ static bool table_same_dashes(table_source *source, size_t left, size_t right) {
 }
 
 typedef struct {
-    size_t at; /* The line's intervals, by their place in the interval region. */
+    const table_interval *runs;
     size_t count, line;
 } table_separator_key;
 
@@ -1213,11 +1048,11 @@ typedef struct {
  * digits, so distinct widths, offsets and column counts cost source-linear
  * work without hashing or repeatedly comparing long shared prefixes. */
 static unsigned table_separator_digit(table_source *source, table_separator_key key, size_t digit) {
-    MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work++;)
+    source->parser->table_scan_work++;
     if (digit / 16 >= key.count) {
         return 0;
     }
-    table_interval run = source->parser->table_dashes[key.at + digit / 16];
+    table_interval run = key.runs[digit / 16];
     uint32_t position = (uint32_t)(digit % 16 < 8 ? run.start : run.end);
     return 1 + ((position >> (28 - 4 * (digit % 8))) & 15);
 }
@@ -1228,22 +1063,21 @@ static unsigned table_separator_digit(table_source *source, table_separator_key 
  * tables. Facts retain the shared container/offset ownership. */
 static void table_simple_search_finish(table_source *source, size_t first, size_t last) {
     size_t capacity = last - first + 1, count = 0;
-    size_t keys_bytes = table_scratch_span(capacity * sizeof(table_separator_key));
-    size_t groups_bytes = table_scratch_span(capacity * sizeof(table_separator_group));
-    unsigned char *base = table_scratch(source->parser, 2 * keys_bytes + groups_bytes);
-    if (!base) {
-        return;
+    table_separator_key *keys = source->parser->mem->calloc(capacity, sizeof(*keys));
+    table_separator_key *scratch = source->parser->mem->calloc(capacity, sizeof(*scratch));
+    table_separator_group *groups = source->parser->mem->calloc(capacity, sizeof(*groups));
+    if (!keys || !scratch || !groups) {
+        source->parser->oom = true;
+        goto done;
     }
-    table_separator_key *keys = (table_separator_key *)base;
-    table_separator_key *scratch = (table_separator_key *)(base + keys_bytes);
-    table_separator_group *groups = (table_separator_group *)(base + 2 * keys_bytes);
     for (size_t i = first; i <= last; i++) {
         size_t columns = table_dash_count(source, i);
         if (columns > 1) {
-            if (!table_dashes(source, i)) {
-                return;
+            const table_interval *runs = table_dashes(source, i);
+            if (!runs) {
+                goto done;
             }
-            keys[count++] = (table_separator_key){source->lines[i].dashes_at, columns, i};
+            keys[count++] = (table_separator_key){runs, columns, i};
         }
     }
     size_t pending = 1;
@@ -1289,6 +1123,10 @@ static void table_simple_search_finish(table_source *source, size_t first, size_
             }
         }
     }
+done:
+    source->parser->mem->free(keys);
+    source->parser->mem->free(scratch);
+    source->parser->mem->free(groups);
 }
 
 static bool table_parse_simple(table_source *source, size_t start, table_candidate *candidate) {
@@ -1332,9 +1170,6 @@ static bool table_parse_simple(table_source *source, size_t start, table_candida
     if (!table_source_columns(source, start) || !table_source_columns(source, body)) {
         goto failed;
     }
-    /* The footer comparison and the failed search placed other lines'
-     * intervals: the delimiter's are taken again. */
-    runs = table_dashes(source, delimiter);
     if (!table_set_columns(source, candidate, runs, count, headerless ? body : start, false)) {
         goto failed;
     }
@@ -1436,13 +1271,13 @@ failed:
 
 static int table_grid_root(table_source *source, int *parents, int column) {
     int root = column;
-    MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work++;)
+    source->parser->table_scan_work++;
     while (parents[root] != root) {
-        MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work++;)
+        source->parser->table_scan_work++;
         root = parents[root];
     }
     while (parents[column] != column) {
-        MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work++;)
+        source->parser->table_scan_work++;
         int next = parents[column];
         parents[column] = root;
         column = next;
@@ -1451,7 +1286,7 @@ static int table_grid_root(table_source *source, int *parents, int column) {
 }
 
 static int table_horizontal_bytes(const table_source_line *line, int first, int last) {
-    MARKDOWN_CORE_DIAGNOSTIC(line->parser->table_scan_work += (size_t)(last - first);)
+    line->parser->table_scan_work += (size_t)(last - first);
     return scan_table_horizontal(line->data, last, first);
 }
 
@@ -1531,7 +1366,12 @@ static uint64_t table_region_source_key(const void *entry) {
  * intermediate '+' markers on vertical edges even when no cell starts there.
  * Disjoint regions bound the total perimeter work by the source grid area. */
 static bool table_grid_rows(table_source *source, table_candidate *candidate, const int *columns, size_t *boundaries,
-                            size_t row_count, table_grid_region *regions, size_t count, size_t *indices) {
+                            size_t row_count, table_grid_region *regions, size_t count) {
+    size_t *indices = source->parser->mem->calloc(row_count + 1, sizeof(*indices));
+    if (!indices) {
+        source->parser->oom = true;
+        return false;
+    }
     for (size_t i = 0; i < count; i++) {
         table_grid_region *region = &regions[i];
         indices[region->top] = 1;
@@ -1558,6 +1398,7 @@ static bool table_grid_rows(table_source *source, table_candidate *candidate, co
         regions[i].top = indices[regions[i].top];
         regions[i].bottom = indices[regions[i].bottom + 1] - 1;
     }
+    source->parser->mem->free(indices);
     size_t cell_index = 0, width = candidate->column_count;
     for (size_t r = 0; r + 1 < boundary_count; r++) {
         size_t first = boundaries[r] + 1, next_line = boundaries[r + 1];
@@ -1596,24 +1437,20 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         return false;
     }
     size_t capacity = 2 * width, active_count = 0, closed_count = 0, closed_capacity = 0;
-    size_t ints = table_scratch_span(capacity * sizeof(int)), widths = table_scratch_span(width * sizeof(int));
-    size_t regions_bytes = table_scratch_span(capacity * sizeof(table_grid_region));
-    size_t scratch_bytes = table_scratch_span(width * sizeof(table_grid_region));
-    size_t indices_bytes = table_scratch_span((row_count + 1) * sizeof(size_t));
-    unsigned char *base =
-        table_scratch(source->parser, 3 * ints + widths + regions_bytes + scratch_bytes + indices_bytes);
-    table_grid_region *closed = NULL;
+    int *parents = source->parser->mem->calloc(capacity, sizeof(*parents));
+    int *sizes = source->parser->mem->calloc(capacity, sizeof(*sizes));
+    int *next = source->parser->mem->calloc(capacity, sizeof(*next));
+    int *previous = source->parser->mem->calloc(width, sizeof(*previous));
+    table_grid_region *regions = source->parser->mem->calloc(capacity, sizeof(*regions));
+    table_grid_region *scratch = source->parser->mem->calloc(width, sizeof(*scratch)), *closed = NULL;
     bool valid = false;
-    if (!base) {
-        return false;
+    if (!parents || !sizes || !next || !previous || !regions || !scratch) {
+        source->parser->oom = true;
+        goto done;
     }
-    int *parents = (int *)base, *sizes = (int *)(base + ints), *next = (int *)(base + 2 * ints);
-    int *previous = (int *)(base + 3 * ints);
-    table_grid_region *regions = (table_grid_region *)(base + 3 * ints + widths);
-    table_grid_region *scratch = (table_grid_region *)(base + 3 * ints + widths + regions_bytes);
-    size_t *indices = (size_t *)(base + 3 * ints + widths + regions_bytes + scratch_bytes);
-    MARKDOWN_CORE_DIAGNOSTIC(
-        if (capacity > source->parser->table_frontier_peak) { source->parser->table_frontier_peak = capacity; })
+    if (capacity > source->parser->table_frontier_peak) {
+        source->parser->table_frontier_peak = capacity;
+    }
     for (size_t r = 0; r < row_count; r++) {
         size_t used = active_count + width;
         for (size_t i = 0; i < used; i++) {
@@ -1680,9 +1517,15 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         source->parser->oom = true;
         goto done;
     }
-    MARKDOWN_CORE_DIAGNOSTIC(source->parser->table_scan_work += 16 * closed_count;)
-    valid = table_grid_rows(source, candidate, columns, boundaries, row_count, closed, closed_count, indices);
+    source->parser->table_scan_work += 16 * closed_count;
+    valid = table_grid_rows(source, candidate, columns, boundaries, row_count, closed, closed_count);
 done:
+    source->parser->mem->free(parents);
+    source->parser->mem->free(sizes);
+    source->parser->mem->free(next);
+    source->parser->mem->free(previous);
+    source->parser->mem->free(regions);
+    source->parser->mem->free(scratch);
     source->parser->mem->free(closed);
     return valid;
 }
@@ -1699,7 +1542,7 @@ static bool table_grid_opening(table_source *source, size_t index, int *left, in
     table_source_line *line = &source->lines[index];
     int last = line->length;
     while (last > line->first && (line->data[last - 1] == ' ' || line->data[last - 1] == '\t')) {
-        MARKDOWN_CORE_DIAGNOSTIC(line->parser->table_scan_work++;)
+        line->parser->table_scan_work++;
         last--;
     }
     if (!table_horizontal_bytes(line, line->first, last) || !table_source_columns(source, index)) {
@@ -1974,16 +1817,16 @@ static void table_append_range(table_source *source, markdown_core_node *node, s
         int byte = table_byte(line, column);
         if (line->data[byte] == '\t') {
             int original = markdown_core_parser_source_column(parser, line->line, byte + 1);
-            markdown_core_parser_append_content_mark(parser, node, node->content->size, line->line, original, 1, 0);
-            markdown_core_strbuf_putc(node->content, ' ');
+            markdown_core_parser_append_content_mark(parser, node, node->content.size, line->line, original, 1, 0);
+            markdown_core_strbuf_putc(&node->content, ' ');
             column++;
         } else if (escapes && column + 1 < right && table_character(line, column) == '\\' &&
                    table_character(line, column + 1) == '|') {
             int first = markdown_core_parser_source_column(parser, line->line, byte + 1);
             int end = markdown_core_parser_source_column(parser, line->line, byte + 2);
-            markdown_core_parser_append_content_mark(parser, node, node->content->size, line->line, first,
+            markdown_core_parser_append_content_mark(parser, node, node->content.size, line->line, first,
                                                      end - first + 1, end - first + 1);
-            markdown_core_strbuf_putc(node->content, '|');
+            markdown_core_strbuf_putc(&node->content, '|');
             column += 2;
         } else {
             int end = column + 1;
@@ -1992,22 +1835,21 @@ static void table_append_range(table_source *source, markdown_core_node *node, s
                 end++;
             }
             int length = table_byte(line, end) - byte;
-            markdown_core_parser_append_source_marks(parser, node, line->line, byte + 1, length, node->content->size);
-            markdown_core_strbuf_put(node->content, line->data + byte, length);
+            markdown_core_parser_append_source_marks(parser, node, line->line, byte + 1, length, node->content.size);
+            markdown_core_strbuf_put(&node->content, line->data + byte, length);
             column = end;
         }
     }
-    if (node->content->oom) {
+    if (node->content.oom) {
         parser->oom = true;
     }
 }
 
 static void table_append_newline(table_source *source, markdown_core_node *node, size_t index) {
     table_source_line *line = &source->lines[index];
-    markdown_core_parser_append_source_marks(source->parser, node, line->line, line->length + 1, 1,
-                                             node->content->size);
-    markdown_core_strbuf_putc(node->content, '\n');
-    if (node->content->oom) {
+    markdown_core_parser_append_source_marks(source->parser, node, line->line, line->length + 1, 1, node->content.size);
+    markdown_core_strbuf_putc(&node->content, '\n');
+    if (node->content.oom) {
         source->parser->oom = true;
     }
 }
@@ -2050,7 +1892,7 @@ static void table_fill_cell(table_source *source, markdown_core_node *node, cons
 static markdown_core_node *table_child(markdown_core_parser *parser, markdown_core_node *parent,
                                        markdown_core_node_type kind, int first_line, int first_column, int last_line,
                                        int last_column) {
-    markdown_core_node *node = markdown_core_node_create(parser->arena, parser->mem, kind, NULL);
+    markdown_core_node *node = markdown_core_node_new_with_mem(kind, parser->mem);
     if (!node) {
         parser->oom = true;
         return NULL;
@@ -2063,7 +1905,7 @@ static markdown_core_node *table_child(markdown_core_parser *parser, markdown_co
     node->start_column = markdown_core_parser_source_column(parser, first_line, first_column);
     node->end_column = markdown_core_parser_source_column(parser, last_line, last_column);
     if (parent && !markdown_core_node_attach_owned(parent, node, NULL)) {
-        markdown_core_node_recycle(parser->arena, node);
+        markdown_core_node_free(node);
         parser->oom = true;
         return NULL;
     }
@@ -2073,12 +1915,13 @@ static markdown_core_node *table_child(markdown_core_parser *parser, markdown_co
 static markdown_core_node *table_build(table_source *source, markdown_core_node *parent, table_candidate *candidate) {
     markdown_core_parser *parser = source->parser;
     table_source_line *first = &source->lines[candidate->first], *last = &source->lines[candidate->last];
-    /* Built with the element, so the payload is inside the node's record. */
-    markdown_core_node *node = markdown_core_parser_add_element_child(
-        parser, parent, MARKDOWN_CORE_NODE_TABLE, source->lines[0].first + 1, &MARKDOWN_CORE_ELEMENT_TABLE);
+    markdown_core_node *node =
+        markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_TABLE, source->lines[0].first + 1);
     if (!node) {
         return NULL;
     }
+    markdown_core_node_set_element(node, &MARKDOWN_CORE_ELEMENT_TABLE);
+    node->opaque = parser->mem->calloc(1, sizeof(markdown_core_table));
     if (!node->opaque) {
         parser->oom = true;
         return node;
@@ -2160,19 +2003,6 @@ static bool table_after_caption(table_source *source, size_t *caption_last, tabl
            table_parse_candidate(source, next, candidate, true);
 }
 
-/* Whether the raw line below the parser's current one is blank, or there is
- * none. Every grammar a dash or grid line can begin reads on past that line,
- * so such a line opens nothing when this holds, and the answer costs no
- * lookahead: a container prefix keeps a line from reading blank here, and
- * the lookahead then reads the line properly. */
-static bool table_next_line_blank(const markdown_core_parser *parser) {
-    const unsigned char *next = parser->lookahead_cursor, *end = parser->lookahead_end;
-    while (next < end && (*next == ' ' || *next == '\t' || *next == '\r')) {
-        next++;
-    }
-    return next == end || *next == '\n';
-}
-
 bool markdown_core_table_caption_probe(markdown_core_block_lookahead *lookahead, markdown_core_chunk *input, int first,
                                        int indent) {
     markdown_core_parser *parser = lookahead->parser;
@@ -2208,40 +2038,6 @@ markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, m
     if (parser->lookahead_cursor == parser->lookahead_end &&
         (!parent->last_child || parent->last_child->kind != MARKDOWN_CORE_NODE_TABLE)) {
         return NULL;
-    }
-    /* Grid/dash boundaries and captions identify themselves on this line.
-     * A plain textual header is recognized from its separator line instead,
-     * once that line arrives below the paragraph the header opened
-     * (try_interrupting_block): a textual line that opens a paragraph does
-     * not look ahead. The one textual line that opens no paragraph is a
-     * lazy continuation -- nothing opened on the line, and the open
-     * paragraph of a container it left unmatched would take it -- and its
-     * separator would find that paragraph, not this line, so it alone
-     * still looks ahead for one. A grid or dash line needs a line below
-     * it that is not blank, read raw before any lookahead. */
-    unsigned char first = input[parser->first_nonspace];
-    if (first == '+' || first == '-') {
-        if (table_next_line_blank(parser)) {
-            return NULL;
-        }
-    } else if (table_caption_start(input, length, parser->first_nonspace, parser->indent) < 0) {
-        if (parent != parser->matched_container || parser->current == parent ||
-            parser->current->kind != MARKDOWN_CORE_NODE_PARAGRAPH) {
-            return NULL;
-        }
-        /* A separator holds a dash; a next line without one, read raw, is
-         * not worth a lookahead, and most lazy lines are followed by none. */
-        const unsigned char *next = parser->lookahead_cursor;
-        size_t rest = (size_t)(parser->lookahead_end - next);
-        const unsigned char *eol = memchr(next, '\n', rest);
-        if (!memchr(next, '-', eol ? (size_t)(eol - next) : rest)) {
-            return NULL;
-        }
-        const markdown_core_block_peek *peek =
-            markdown_core_parser_peek_block_line(parser, parent, MARKDOWN_CORE_NODE_TABLE);
-        if (!peek->available || peek->blanks || peek->indent >= 4 || peek->input.data[peek->first] != '-') {
-            return NULL;
-        }
     }
     table_source source = {.parser = parser, .lines = parser->table_lines};
     table_candidate candidate = {0};
@@ -2310,155 +2106,24 @@ done:
     return result;
 }
 
-/* A textual header line opened a paragraph; the separator line below it is
- * where the table it began is recognized. The header line is read back from
- * the parser's record of that paragraph's opening line, the separator is
- * this line, and the rows beyond come through the lookahead as for any
- * other candidate. When the candidate holds, the paragraph gives way to
- * the table, which starts where the paragraph did. */
-static markdown_core_node *table_try_open_after_header(markdown_core_parser *parser, markdown_core_node *paragraph,
-                                                       markdown_core_chunk *input) {
-    const markdown_core_paragraph_line *head = markdown_core_parser_paragraph_line(parser, paragraph);
-    if (!head) {
-        return NULL;
-    }
-    /* A caption-shaped line -- `: text`, `Table: text` -- leads a table or
-     * is prose; it is never a header, as it never was when a header was
-     * recognized from its own line. */
-    if (table_caption_start(head->data, head->length, head->first, head->indent) >= 0) {
-        return NULL;
-    }
-    markdown_core_node *parent = paragraph->parent;
-    table_source source = {.parser = parser, .lines = parser->table_lines};
-    table_candidate candidate = {0};
-    markdown_core_node *result = NULL;
-    if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_TABLE, &source.lookahead)) {
-        return NULL;
-    }
-    if (!table_source_push(&source, (table_source_line){.data = (unsigned char *)head->data,
-                                                        .length = head->length,
-                                                        .offset = head->offset,
-                                                        .first = head->first,
-                                                        .first_column = head->first_column,
-                                                        .indent = head->indent,
-                                                        .line = head->line,
-                                                        .after = head->after}) ||
-        !table_source_push(&source, (table_source_line){.data = input->data,
-                                                        .length = input->len,
-                                                        .offset = parser->offset,
-                                                        .first = parser->first_nonspace,
-                                                        .first_column = parser->first_nonspace_column,
-                                                        .indent = parser->indent,
-                                                        .line = parser->line_number,
-                                                        .after = parser->lookahead_cursor})) {
-        goto done;
-    }
-    bool matched = table_parse_candidate(&source, 0, &candidate, false);
-    markdown_core_parser_lookahead_end(&source.lookahead);
-    if (parser->oom || !matched) {
-        goto done;
-    }
-    /* The header line stops being a paragraph: the table begins where it
-     * began, in the container that held it. */
-    if (parser->current == paragraph) {
-        parser->current = parent;
-    }
-    if (parser->matched_container == paragraph) {
-        parser->matched_container = parent;
-    }
-    parser->paragraph_line.node = NULL;
-    markdown_core_node_recycle(parser->arena, paragraph);
-    result = table_build(&source, parent, &candidate);
-    if (result) {
-        parser->claimed_cursor = source.lines[candidate.last].after;
-        parser->claimed_line = source.lines[candidate.last].line;
-        parser->claimed_last_column =
-            markdown_core_parser_source_column(parser, parser->claimed_line, source.lines[candidate.last].length);
-    }
-done:
-    table_candidate_free(parser, &candidate);
-    table_source_free(&source);
-    return result;
-}
-
 /* A block-only element: no byte ends a text run for it, no byte is offered to an
  * inline hook it does not have, and no byte is transparent to flanking. */
 static markdown_core_node *try_interrupting_block(markdown_core_parser *parser, markdown_core_node *node,
                                                   markdown_core_chunk *input, bool lazy) {
-    if (parser->indent >= 4 || input->data[parser->first_nonspace] != '-') {
+    if (parser->indent >= 4 || lazy || node->kind == MARKDOWN_CORE_NODE_PARAGRAPH ||
+        input->data[parser->first_nonspace] != '-') {
         return NULL;
-    }
-    /* A dash line under a one-line paragraph may be the separator of the
-     * simple table that paragraph's line is the header of; under a longer
-     * paragraph, or lazily, a dash line interrupts nothing here. */
-    markdown_core_node *header = NULL;
-    if (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
-        if (!markdown_core_parser_paragraph_line(parser, node)) {
-            return NULL;
-        }
-        header = node;
-    } else if (lazy) {
-        return NULL;
-    }
-    /* Only a dash separator can supersede a recognized list/thematic start.
-     * Reuse the scanner's rejection across nested containers: each suffix
-     * before that byte fails the same grammar. This avoids both repeated
-     * suffix scans and speculative ancestor walks. */
-    if (parser->first_nonspace < parser->table_separator_kill_pos) {
-        return NULL;
-    }
-    /* A separator has rows below it, and a boundary a table: the raw line
-     * below settles that before the dash scan. */
-    if (table_next_line_blank(parser)) {
-        return NULL;
-    }
-    const unsigned char *cursor = input->data + parser->first_nonspace, *from;
-    const unsigned char *end = input->data + input->len;
-    while (end > cursor && (end[-1] == '\n' || end[-1] == '\r')) {
-        end--;
-    }
-    int result;
-    MARKDOWN_CORE_DIAGNOSTIC(size_t scans = 0;)
-    do {
-        result = scan_table_dash(&cursor, end, &from);
-        MARKDOWN_CORE_DIAGNOSTIC(scans++;)
-    } while (result > 0);
-    MARKDOWN_CORE_DIAGNOSTIC(parser->table_scan_work +=
-                             (size_t)(cursor - input->data - parser->first_nonspace) + scans;)
-    if (result < 0) {
-        parser->table_separator_kill_pos = (bufsize_t)(cursor - input->data);
-        return NULL;
-    }
-    if (header) {
-        return table_try_open_after_header(parser, header, input);
     }
     return markdown_core_table_try_open(parser, node, input->data, input->len);
 }
 
 static void dispose_parser(markdown_core_parser *parser) {
-    markdown_core_mem_release(parser->mem, parser->table_lines);
+    parser->mem->free(parser->table_lines);
     parser->table_lines = NULL;
-    if (parser->table_row) {
-        markdown_core_mem_release(parser->mem, parser->table_row->cells);
-        parser->mem->free(parser->table_row);
-        parser->table_row = NULL;
-    }
-    markdown_core_mem_release(parser->mem, parser->table_scratch);
-    parser->table_scratch = NULL;
-    parser->table_scratch_capacity = 0;
-    markdown_core_mem_release(parser->mem, parser->table_columns);
-    parser->table_columns = NULL;
-    parser->table_columns_capacity = parser->table_columns_used = 0;
-    markdown_core_mem_release(parser->mem, parser->table_dashes);
-    parser->table_dashes = NULL;
-    parser->table_dashes_capacity = parser->table_dashes_used = 0;
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .dispose_parser = dispose_parser,
-    /* A Table built by the element carries its payload in its record; a
-     * paragraph converted into one takes the payload at the conversion. */
-    .opaque_size = sizeof(markdown_core_table),
 
     .try_interrupting_block = try_interrupting_block,
 

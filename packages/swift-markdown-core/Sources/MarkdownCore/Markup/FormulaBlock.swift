@@ -2,26 +2,17 @@ import MarkdownCoreC
 
 /// A standalone formula. Requires the `formula` extension.
 public struct FormulaBlock: Markup {
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let literal: String
-    }
-
-    let fields: Stored<Fields>
-
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public var scope: Scope { fields.read { $0.scope } }
+    public let scope: Scope
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.read { $0.anchor } }
+    public let anchor: String?
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.read { $0.attributes } }
+    public let attributes: Attributes
     /// The formula's body. Its delimiters or fence are in no literal.
-    public var literal: String { fields.read { $0.literal } }
+    public let literal: String
 }
 
-extension FormulaBlock.Fields {
+extension FormulaBlock {
     init(from node: OpaquePointer) {
         // A formula BLOCK is always standalone -- the engine's own
         // `markdown_core_elements_set_formula_mode` refuses any other value
@@ -31,7 +22,7 @@ extension FormulaBlock.Fields {
         var literal = markdown_core_string()
         markdown_core_node_formula_properties(node, &mode, &literal)
         self.init(
-            scope: Scope(from: markdown_core_node_scope(node)),
+            scope: Self.scope(from: node),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
             literal: literal.required

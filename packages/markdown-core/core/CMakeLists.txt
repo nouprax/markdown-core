@@ -10,8 +10,6 @@ set(HEADERS
     markdown-core.h
     markdown-core-element-api.h
     parser.h
-    diagnostics.h
-    arena.h
     buffer.h
     node.h
     iterator.h
@@ -38,7 +36,6 @@ set(LIBRARY_SOURCES
     buffer.c
     references.c
     map.c
-    arena.c
     houdini_html_u.c
     markdown_core_ctype.c
     linked_list.c
@@ -86,13 +83,14 @@ set(CMAKE_LINKER_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG}")
 set(CMAKE_C_FLAGS_PROFILE "${CMAKE_C_FLAGS_RELEASE} -pg")
 set(CMAKE_LINKER_PROFILE "${CMAKE_LINKER_FLAGS_RELEASE} -pg")
 
-markdown_core_apply_build_flags(${PROGRAM})
+# -fvisibility=hidden
+set(CMAKE_C_VISIBILITY_PRESET hidden)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)
 
 if(MARKDOWN_CORE_STATIC OR MARKDOWN_CORE_SHARED)
     add_library(${STATICLIBRARY} STATIC ${LIBRARY_SOURCES})
     target_compile_definitions(${STATICLIBRARY} PUBLIC MARKDOWN_CORE_STATIC_DEFINE)
     set_target_properties(${STATICLIBRARY} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-    markdown_core_apply_build_flags(${STATICLIBRARY})
 
     if(MSVC)
         set_target_properties(${STATICLIBRARY} PROPERTIES OUTPUT_NAME "markdown-core_static" VERSION ${PROJECT_VERSION})

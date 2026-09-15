@@ -629,26 +629,16 @@ static int case_tables(pc_context *context) {
     return 0;
 }
 
-/* Replay a real 5eca3bc1 bucket flood, not cmark's unrelated sdbm hash.
- * These 2048 keys collided at each baseline capacity through 4096. They have
- * no special meaning to radix: this case replays former semantic failures,
- * not a timing complexity gate. api_test checks the new tree at its full
- * key-length bound, including prefix chains and allocation failure. */
-static int pc_baseline_bucket_zero(const char *key) {
-    uint64_t hash = UINT64_C(1469598103934665603);
-    for (const unsigned char *p = (const unsigned char *)key; *p; p++) {
-        hash ^= *p;
-        hash *= UINT64_C(1099511628211);
+/* Port of the reference-map hash collision generator. */
+static int pc_badhash(const char *key) {
+    uint32_t h = 0;
+    const char *cursor;
+    for (cursor = key; *cursor; cursor++) {
+        uint32_t a = h << 6;
+        uint32_t b = h << 16;
+        h = (uint32_t)*cursor + a + b - h;
     }
-    hash ^= hash >> 33;
-    hash *= UINT64_C(0xff51afd7ed558ccd);
-    hash ^= hash >> 33;
-    hash *= UINT64_C(0xc4ceb9fe1a85ec53);
-    hash ^= hash >> 33;
-    if (!hash) {
-        hash = 1;
-    }
-    return (hash & 4095) == 0;
+    return (h % 16) == 0;
 }
 
 typedef struct pc_uniform_text {
@@ -672,7 +662,8 @@ static int pc_uniform_text_visit(const markdown_core_node *node, void *context) 
     return 0;
 }
 
-static int reference_misses(pc_context *context, size_t count, int (*accept_key)(const char *)) {
+static int case_reference_collisions(pc_context *context) {
+    enum { COLLISIONS = 50000 };
     char bad_key[32] = "";
     char key[32];
     size_t found = 0;
@@ -687,9 +678,9 @@ static int reference_misses(pc_context *context, size_t count, int (*accept_key)
         if (!buffer) {
             return -1;
         }
-        while (found < count) {
+        while (found < COLLISIONS) {
             snprintf(key, sizeof(key), "x%lu", candidate++);
-            if (!accept_key(key)) {
+            if (!pc_badhash(key)) {
                 continue;
             }
             found++;
@@ -721,7 +712,7 @@ static int reference_misses(pc_context *context, size_t count, int (*accept_key)
     if (pc_parse(context) != 0) {
         return -1;
     }
-    if (pc_expect_count(context, MARKDOWN_CORE_KIND_PARAGRAPH, count - 1, "Paragraph") != 0 ||
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_PARAGRAPH, COLLISIONS - 1, "Paragraph") != 0 ||
         pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, 0, "Link") != 0) {
         return -1;
     }
@@ -731,26 +722,11 @@ static int reference_misses(pc_context *context, size_t count, int (*accept_key)
     check.seen = 0;
     check.mismatch = 0;
     if (ts_ast_walk(markdown_core_document_root(context->document), pc_uniform_text_visit, &check) < 0 ||
-        check.mismatch || check.seen != count - 1) {
+        check.mismatch || check.seen != COLLISIONS - 1) {
         fprintf(stderr, "unresolved references are not uniform literal text\n");
         return -1;
     }
     return 0;
-}
-
-static int case_reference_collisions(pc_context *context) {
-    return reference_misses(context, 2048, pc_baseline_bucket_zero);
-}
-
-static int pc_every_reference_key(const char *key) {
-    (void)key;
-    return 1;
-}
-
-/* Keep the former 49,999-definition/missing-reference document size covered
- * independently of the historical hash generator's sampling cost. */
-static int case_reference_unresolved_scale(pc_context *context) {
-    return reference_misses(context, 50000, pc_every_reference_key);
 }
 
 /* A resolved reference SHARES its definition's resource instead of copying the
@@ -1232,7 +1208,6 @@ static const pc_case_entry PC_CASES[] = {
     {"comment_nested_item_blank_runs", case_comment_nested_item_blank_runs},
     {"tables", case_tables},
     {"reference_collisions", case_reference_collisions},
-    {"reference_unresolved_scale", case_reference_unresolved_scale},
     {"reference_expansion_bound", case_reference_expansion_bound},
     {"directive_unclosed_labels", case_directive_unclosed_labels},
     {"directive_unclosed_attributes", case_directive_unclosed_attributes},

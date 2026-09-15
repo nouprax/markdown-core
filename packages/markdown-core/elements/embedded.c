@@ -3,13 +3,12 @@
 #include "inline_internal.h"
 #include "block_internal.h"
 static bool dimension_component(const unsigned char *s, bufsize_t *pos, bufsize_t end, int32_t *value, size_t *work) {
-    (void)work;
     if (*pos == end || s[*pos] < '1' || s[*pos] > '9') {
         return false;
     }
     int32_t number = 0;
     while (*pos < end && s[*pos] >= '0' && s[*pos] <= '9') {
-        MARKDOWN_CORE_DIAGNOSTIC((*work)++;)
+        (*work)++;
         int digit = s[(*pos)++] - '0';
         if (number > (INT32_MAX - digit) / 10) {
             return false;
@@ -22,10 +21,9 @@ static bool dimension_component(const unsigned char *s, bufsize_t *pos, bufsize_
 
 bool markdown_core_parse_dimensions(markdown_core_chunk label, bufsize_t suffix, bufsize_t separator_length,
                                     markdown_core_dimensions *value, size_t *work) {
-    (void)work;
     bufsize_t pos = suffix + separator_length;
     markdown_core_dimensions parsed = {0};
-    MARKDOWN_CORE_DIAGNOSTIC((*work)++;)
+    (*work)++;
     if ((suffix > 0 && markdown_core_isspace(label.data[suffix - 1])) ||
         !dimension_component(label.data, &pos, label.len, &parsed.width, work)) {
         return false;
@@ -56,7 +54,7 @@ void markdown_core_inline_apply_image_dimensions(markdown_core_inline_state *inl
     markdown_core_dimensions dimensions;
     markdown_core_chunk label = markdown_core_chunk_dup(&inline_state->input, opener->position, end - opener->position);
     if (!markdown_core_parse_dimensions(label, suffix - opener->position, opener->image_pipe >= 0 ? 1 : 0, &dimensions,
-                                        MARKDOWN_CORE_DIAGNOSTIC_ADDRESS(inline_state->owner_parser->dimension_work))) {
+                                        &inline_state->owner_parser->dimension_work)) {
         return;
     }
 
@@ -68,7 +66,7 @@ void markdown_core_inline_apply_image_dimensions(markdown_core_inline_state *inl
     bufsize_t start = end - tail->as.literal->len;
     tail->as.literal->len -= end - suffix;
     if (tail->as.literal->len == 0) {
-        markdown_core_node_recycle(inline_state->arena, tail);
+        markdown_core_node_free(tail);
     } else {
         markdown_core_inline_state_place(inline_state, tail, start, suffix - 1);
     }
@@ -80,7 +78,7 @@ void markdown_core_embedded_record_text(markdown_core_parser *parser, markdown_c
                                         bufsize_t endpos) {
     if (inline_state->last_bracket && inline_state->last_bracket->kind == BRACKET_IMAGE) {
         for (bufsize_t i = inline_state->pos; i < endpos; i++) {
-            MARKDOWN_CORE_DIAGNOSTIC(parser->dimension_work++;)
+            parser->dimension_work++;
             if (inline_state->input.data[i] == '|') {
                 inline_state->last_bracket->image_pipe = i;
             }
@@ -99,21 +97,16 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
         markdown_core_inline_peek_char_n(inline_state, 1) != '^') {
         inline_state->pos++;
         markdown_core_node *text =
-            markdown_core_inline_state_make_source_text(inline_state, inline_state->pos - 2, inline_state->pos - 1);
+            make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1, markdown_core_chunk_literal("!["));
         if (text) {
             markdown_core_inline_push_bracket(inline_state, BRACKET_IMAGE, text);
         }
         return text;
     }
-    return markdown_core_inline_state_make_literal_run(inline_state, inline_state->pos - 1, inline_state->pos - 1);
-}
-
-static bool can_start(markdown_core_inline_state *state, bufsize_t at) {
-    return at + 1 < state->input.len && state->input.data[at + 1] == '[';
+    return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("!"));
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_EMBEDDED = {
-    .can_start = can_start,
     .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
 
     .name = "embedded",

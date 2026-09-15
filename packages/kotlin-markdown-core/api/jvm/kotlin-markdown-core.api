@@ -644,21 +644,14 @@ public final class com/nouprax/markdown/core/Record {
 }
 
 public final class com/nouprax/markdown/core/Scope {
-	public fun <init> (IIII)V
 	public fun <init> (Lcom/nouprax/markdown/core/Position;Lcom/nouprax/markdown/core/Position;)V
-	public final fun component1 ()I
-	public final fun component2 ()I
-	public final fun component3 ()I
-	public final fun component4 ()I
-	public final fun copy (IIII)Lcom/nouprax/markdown/core/Scope;
-	public static synthetic fun copy$default (Lcom/nouprax/markdown/core/Scope;IIIIILjava/lang/Object;)Lcom/nouprax/markdown/core/Scope;
+	public final fun component1 ()Lcom/nouprax/markdown/core/Position;
+	public final fun component2 ()Lcom/nouprax/markdown/core/Position;
+	public final fun copy (Lcom/nouprax/markdown/core/Position;Lcom/nouprax/markdown/core/Position;)Lcom/nouprax/markdown/core/Scope;
+	public static synthetic fun copy$default (Lcom/nouprax/markdown/core/Scope;Lcom/nouprax/markdown/core/Position;Lcom/nouprax/markdown/core/Position;ILjava/lang/Object;)Lcom/nouprax/markdown/core/Scope;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getEnd ()Lcom/nouprax/markdown/core/Position;
-	public final fun getEndColumn ()I
-	public final fun getEndLine ()I
 	public final fun getStart ()Lcom/nouprax/markdown/core/Position;
-	public final fun getStartColumn ()I
-	public final fun getStartLine ()I
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }

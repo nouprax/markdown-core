@@ -2,32 +2,22 @@ import MarkdownCoreC
 
 /// A workspace link written as `[[...]]`.
 public struct CrossLink: Markup {
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let dest: Destination
-        let label: String?
-    }
-
-    let fields: Stored<Fields>
-
     /// The full authored extent, including the delimiters.
-    public var scope: Scope { fields.read { $0.scope } }
+    public let scope: Scope
     /// The declaration-side anchor, independent of the reference destination.
-    public var anchor: String? { fields.read { $0.anchor } }
+    public let anchor: String?
     /// Ordered attached classes and records.
-    public var attributes: Attributes { fields.read { $0.attributes } }
+    public let attributes: Attributes
     /// The raw workspace path and optional destination anchor.
-    public var dest: Destination { fields.read { $0.dest } }
+    public let dest: Destination
     /// The raw authored label; nil when no separator was written.
-    public var label: String? { fields.read { $0.label } }
+    public let label: String?
 }
 
-extension CrossLink.Fields {
+extension CrossLink {
     init(from node: OpaquePointer) {
         self.init(
-            scope: Scope(from: markdown_core_node_scope(node)),
+            scope: Self.scope(from: node),
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node),
             dest: Destination(from: node),

@@ -222,43 +222,31 @@ grep -q 'public enum class MarkupVisitPhase' \
     && grep -q 'public fun Markup.walk(visitor: MarkupVisitor)' \
         packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/MarkupVisitor.kt \
     || fail "Kotlin does not use the unified visitor for no-result walks"
-# ONE PAYLOAD, NO JNI IN KOTLIN/NATIVE. Every Kotlin target parses through
-# the one C payload encoder and decodes with the one decoder in
-# `src/payloadMain`: the JNI bridge hands the payload over as a `byte[]`,
-# Kotlin/Native calls the encoder through cinterop. Nothing JNI-specific may
-# reach a Kotlin/Native source set, and the decoder lives in neither the
-# common API nor a platform source set.
-grep -q '^headers = markdown_core.h markdown_core_kotlin_payload.h$' \
+grep -q '^headers = markdown_core.h$' \
     packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
     && grep -q '^package = com.nouprax.markdown.core.internal.capi$' \
         packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
-    && grep -q '^staticLibraries = libmarkdown-core-kotlin-payload.a libmarkdown-core-elements.a libmarkdown-core.a$' \
+    && grep -q '^staticLibraries = libmarkdown-core-elements.a libmarkdown-core.a$' \
         packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
-    && grep -q 'markdown_core_kotlin_payload_encode' \
+    && grep -q 'markdown_core_document_parse' \
         packages/kotlin-markdown-core/src/nativePlatformMain/kotlin/com/nouprax/markdown/core/PlatformParser.native.kt \
-    && ! grep -R -q -E 'markdown_core_kotlin_jni|jni\.h|JNIEnv' \
+    && ! grep -R -q 'markdown_core_kotlin_jni_' \
         packages/kotlin-markdown-core/src/nativePlatformMain \
         packages/kotlin-markdown-core/src/nativeInterop \
-        packages/kotlin-markdown-core/src/native/markdown_core_kotlin_payload.c \
-        packages/kotlin-markdown-core/src/native/markdown_core_kotlin_payload.h \
-    || fail "Kotlin/Native must consume the one payload encoder through cinterop, independently of JNI"
+    || fail "Kotlin/Native must cinterop the C facade directly, independently of JNI"
 if find packages/kotlin-markdown-core/src -type f -name 'NativeBridge*' | grep -q . \
     || grep -R -q -E '\bnativeParse\b|internal\.nativebridge' packages/kotlin-markdown-core/src; then
     fail "the retired cross-target NativeBridge abstraction still exists"
 fi
-for decoder_source in PayloadDecoder.kt PayloadMarkupDecoder.kt PayloadNodeKind.kt; do
-    test -f "packages/kotlin-markdown-core/src/payloadMain/kotlin/com/nouprax/markdown/core/wire/$decoder_source" \
-        || fail "the shared payload decoder is missing $decoder_source"
-done
-if find packages/kotlin-markdown-core/src/commonMain packages/kotlin-markdown-core/src/jvmMain \
-    packages/kotlin-markdown-core/src/androidMain packages/kotlin-markdown-core/src/nativePlatformMain \
-    -type f \( -name '*PayloadDecoder.kt' -o -name '*MarkupDecoder.kt' -o -name '*NodeKind.kt' \) | grep -q .; then
-    fail "the payload wire protocol leaked out of the shared payload source set"
+if find packages/kotlin-markdown-core/src/commonMain packages/kotlin-markdown-core/src/nativePlatformMain \
+    -type f \( -name 'JniPayloadDecoder.kt' -o -name 'JniMarkupDecoder.kt' -o -name 'JniNodeKind.kt' \) | grep -q .; then
+    fail "the JVM/Android JNI wire protocol leaked into a Kotlin/Native source set"
 fi
-grep -q 'holds no JNI' packages/kotlin-markdown-core/src/native/markdown_core_kotlin_payload.h \
-    && ! grep -q 'markdown_core_kotlin_jni' \
+grep -q 'JVM/Android-only JNI payload encoder' \
+    packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni_payload.h \
+    && ! grep -q 'markdown_core_kotlin_jni_payload' \
         packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
-    || fail "the JNI bridge leaked into the Kotlin/Native adapter"
+    || fail "the JNI payload encoder leaked into the Kotlin/Native adapter"
 grep -qx '_JNI_OnLoad' packages/kotlin-markdown-core/src/native/markdown_core_kotlin.exports \
     && grep -qx '    JNI_OnLoad' packages/kotlin-markdown-core/src/native/markdown_core_kotlin.def \
     && test "$(grep -cE '^        [A-Za-z0-9_]+;' packages/kotlin-markdown-core/src/native/markdown_core_kotlin.map)" -eq 1 \

@@ -1,5 +1,4 @@
 #include "attributes.h"
-#include "../core/arena.h"
 #include "../core/attributes.h"
 #include "houdini.h"
 #include "markdown_core_ctype.h"
@@ -13,10 +12,6 @@ static int escaped(const unsigned char *s, bufsize_t n, bufsize_t p) {
     return s[p] == '\\' && p + 1 < n && markdown_core_ispunct(s[p + 1]);
 }
 static int32_t scalar(const unsigned char *s, bufsize_t n, bufsize_t p, bufsize_t *width) {
-    if (s[p] < 128) {
-        *width = 1;
-        return s[p];
-    }
     int32_t cp;
     /* Valid UTF-8 is the parser's input precondition. */
     *width = markdown_core_utf8proc_iterate(s + p, n - p, &cp);
@@ -27,396 +22,170 @@ static int name_rest(int32_t cp) {
            cp == ':' || cp == '.';
 }
 
-/* Scan work accumulates locally and is published on exit. Do not write
- * p->work in byte loops: input bytes may alias the parser, preventing the
- * compiler from hoisting shared counter updates. Nested helpers add their
- * own completed work; the final += preserves those contributions. */
+/* Reverse dynamic programming over the regular member grammar. ends[p] is
+ * the end of a complete member suffix (including its closing brace), or zero.
+ * Quotes and unquoted runs need only two preceding byte states; name runs
+ * need one scalar state. Thus the index costs two offsets per input byte.
+ * Assignment continuations are separate from valid member suffixes: a bare
+ * '=' can never become a member through a whitespace or shorthand state. */
+static bufsize_t suffix(markdown_core_attribute_parser *p, bufsize_t at) { return p->ends[at].end; }
 
-/* A suffix result is -1 until evaluated, zero on grammar failure, or the
- * complete container's exclusive end. A lexical fact records the first
- * unescaped unquoted-value boundary independently of that grammar result.
- * Keys and records live in stable arenas; growing the radix index moves no
- * borrowed key. Its fixed-width offset keys bound every memo lookup. */
-typedef struct markdown_core_attribute_fact {
-    struct markdown_core_attribute_fact *member_previous, *value_previous;
-    bufsize_t at, end, unquoted_end;
-} attribute_fact;
-
-typedef struct markdown_core_attribute_arena {
-    struct markdown_core_attribute_arena *next;
-    size_t size, capacity;
-    attribute_fact facts[];
-} attribute_arena;
-
-/* One block holds every fact an ordinary container asks about. Facts are the
- * parser's scratch: they answer queries about one input extent while it is
- * being read and mean nothing once it has been, so a transaction's blocks are
- * taken from its arena's recycling pools and handed straight back when the
- * parser ends -- the storage is the transaction's, the lifetime the parser's.
- * Only a committed value is carried by the document. */
-#define MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK 4
-
-#define MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK_BYTES                                                                       \
-    (sizeof(attribute_arena) + MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK * sizeof(attribute_fact))
-
-/* Blocks do not grow. A record above the arena's largest recycling class is
- * dropped rather than pooled, so a growing block would leave exactly the
- * densest parser's largest blocks in the document -- the lifetime this was
- * meant to fix. One block size the arena accepts is used instead, and the
- * chain carries what a dense extent needs. This is what keeps that true if
- * either size is ever changed. */
-typedef char markdown_core_attribute_fact_block_is_recycled[1 - 2 * !(MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK_BYTES <=
-                                                                      MARKDOWN_CORE_ARENA_RECYCLED_MAX)];
-
-static attribute_fact *fact_at(markdown_core_attribute_parser *p, bufsize_t at) {
-    MARKDOWN_CORE_DIAGNOSTIC(p->work++;)
-    if (!p->facts.mem && !markdown_core_key_index_init(&p->facts, p->mem, 0)) {
-        p->oom = 1;
-        return NULL;
-    }
-    markdown_core_key_index_slot *slot =
-        markdown_core_key_index_entry(&p->facts, (const unsigned char *)&at, sizeof(at));
-    if (!slot) {
-        p->oom = 1;
-        return NULL;
-    }
-    if (slot->key) {
-        return slot->value.pointer;
-    }
-    attribute_arena *arena = p->arena;
-    if (!arena || arena->size == arena->capacity) {
-        arena = p->store ? markdown_core_arena_take(p->store, MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK_BYTES)
-                         : p->mem->calloc(1, MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK_BYTES);
-        if (!arena) {
-            p->oom = 1;
-            return NULL;
-        }
-        arena->next = p->arena;
-        arena->capacity = MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK;
-        p->arena = arena;
-    }
-    attribute_fact *fact = &arena->facts[arena->size++];
-    *fact = (attribute_fact){.at = at, .end = -1, .unquoted_end = -1};
-    p->fact_count++;
-    slot->value.pointer = fact;
-    markdown_core_key_index_commit(&p->facts, slot, (const unsigned char *)&fact->at);
-    return fact;
-}
-
-/* A later query can begin inside a former bare value only through a '{'.
- * Record that lexical continuation while traversing the value. Subsequent
- * queries in either source order reuse it, including escaped braces: a new
- * query starts after the escape pair, with the same lexical state. No table
- * is materialized for ordinary bytes or equals signs inside the value. */
-static bufsize_t unquoted_end(markdown_core_attribute_parser *p, attribute_fact *first) {
-    MARKDOWN_CORE_DIAGNOSTIC(size_t work = 0;)
-    if (first->unquoted_end >= 0) {
-        return first->unquoted_end;
-    }
-    attribute_fact *pending = first;
-    first->value_previous = NULL;
-    bufsize_t at = first->at;
-    while (at < p->length) {
-        unsigned char c = p->data[at];
-        MARKDOWN_CORE_DIAGNOSTIC(work++;)
-        if (horizontal(c) || newline(c) || c == '}') {
-            break;
-        }
-        bool escape = escaped(p->data, p->length, at);
-        bufsize_t brace = escape ? at + 1 : at;
-        at += escape ? 2 : 1;
-        if (p->data[brace] == '{') {
-            attribute_fact *fact = fact_at(p, brace + 1);
-            if (!fact) {
-                break;
-            }
-            if (fact->unquoted_end >= 0) {
-                at = fact->unquoted_end;
-                break;
-            }
-            fact->value_previous = pending;
-            pending = fact;
-        }
-    }
-    while (pending) {
-        attribute_fact *previous = pending->value_previous;
-        pending->unquoted_end = at;
-        pending->value_previous = NULL;
-        pending = previous;
-    }
-    MARKDOWN_CORE_DIAGNOSTIC(p->work += work;)
-    return at;
-}
-
-/* An opening quote follows '=' and is therefore never escaped by the value
- * before it. For either quote character, scans from distinct assignments
- * cannot overlap: the next such opening quote closes the earlier scan.
- * Unmatched quotes retain the grammar's unquoted-value fallback. */
-static bufsize_t quoted_end(markdown_core_attribute_parser *p, bufsize_t from) {
-    MARKDOWN_CORE_DIAGNOSTIC(size_t work = 0;)
-    unsigned char quote = p->data[from];
-    bool line_end = false;
-    bufsize_t result = 0;
-    for (bufsize_t at = from + 1; at < p->length;) {
-        unsigned char c = p->data[at];
-        MARKDOWN_CORE_DIAGNOSTIC(work++;)
-        if (c == quote) {
-            result = at + 1;
-            break;
-        }
-        if (newline(c)) {
-            if (line_end) {
-                break;
-            }
-            line_end = true;
-            at += c == '\r' && at + 1 < p->length && p->data[at + 1] == '\n' ? 2 : 1;
-        } else {
-            if (!horizontal(c)) {
-                line_end = false;
-            }
-            at += escaped(p->data, p->length, at) ? 2 : 1;
-        }
-    }
-    MARKDOWN_CORE_DIAGNOSTIC(p->work += work;)
-    return result;
-}
-
-static bufsize_t scan_name(markdown_core_attribute_parser *p, bufsize_t n, bufsize_t at);
-
-/* Iterative memoized member recognition. Candidates can join another
- * candidate's grammar only after a value; those joins share one suffix fact.
- * Each unresolved chain advances strictly, then publishes one result to all
- * its members. There is no recursive C stack or per-byte DP allocation. */
-static bufsize_t recognize(markdown_core_attribute_parser *p, attribute_fact *first) {
-    MARKDOWN_CORE_DIAGNOSTIC(size_t work = 0;)
+static int index_input(markdown_core_attribute_parser *p) {
     const unsigned char *s = p->data;
-    bufsize_t n = p->length, at = first->at, result = 0;
-    attribute_fact *pending = first, *origin = first;
-    first->member_previous = NULL;
-    while (at < n && !p->oom) {
-        unsigned char c = s[at];
-        MARKDOWN_CORE_DIAGNOSTIC(work++;)
+    bufsize_t n = p->length;
+    bufsize_t quote[2] = {n, n}, quote2[2] = {n, n};
+    bufsize_t unquoted = n, unquoted2 = n, name_end = n, spaces = n;
+    if ((size_t)n + 1 > SIZE_MAX / sizeof(*p->ends)) {
+        return 0;
+    }
+    p->ends = p->mem->calloc((size_t)n + 1, sizeof(*p->ends));
+    if (!p->ends) {
+        return 0;
+    }
+    for (bufsize_t i = n; i-- > 0;) {
+        bufsize_t q[2] = {quote[0], quote[1]}, u = unquoted;
+        unsigned char c = s[i];
+        p->work++;
         if (c == '}') {
-            result = at + 1;
-            break;
-        }
-        if (horizontal(c) || c == '-') {
-            at++;
-            continue;
-        }
-        if (newline(c)) {
-            at += c == '\r' && at + 1 < n && s[at + 1] == '\n' ? 2 : 1;
-            while (at < n && horizontal(s[at])) {
-                MARKDOWN_CORE_DIAGNOSTIC(work++;)
-                at++;
+            p->ends[i].end = i + 1;
+        } else if (horizontal(c)) {
+            p->ends[i].end = suffix(p, i + 1);
+        } else if (newline(c)) {
+            if (c == '\r' && i + 1 < n && s[i + 1] == '\n') {
+                p->ends[i].end = suffix(p, i + 1);
+            } else if (spaces == n || !newline(s[spaces])) {
+                p->ends[i].end = suffix(p, spaces);
+            } else {
+                q[0] = q[1] = n; /* A quoted value cannot cross a blank line. */
             }
-            if (at < n && newline(s[at])) {
-                break;
-            }
-            continue;
-        }
-        bufsize_t width;
-        if (c == '#' || c == '.') {
-            if (++at == n) {
-                break;
-            }
-            int32_t cp = scalar(s, n, at, &width);
-            if (!(c == '#' ? name_rest(cp) : markdown_core_utf8proc_is_letter(cp))) {
-                break;
-            }
-            at = scan_name(p, n, at);
-            continue;
-        }
-        if (!markdown_core_utf8proc_is_letter(scalar(s, n, at, &width))) {
-            break;
-        }
-        at = scan_name(p, n, at);
-        if (at == n || s[at++] != '=') {
-            break;
-        }
-        bufsize_t end = 0;
-        if (at < n && (s[at] == '\'' || s[at] == '"')) {
-            end = quoted_end(p, at);
-        }
-        if (!end) {
-            end = unquoted_end(p, origin);
-            if (end < at && !p->oom) {
-                attribute_fact *value = fact_at(p, at);
-                if (value) {
-                    end = unquoted_end(p, value);
+        } else if (c == '=') {
+            bufsize_t end = unquoted;
+            if (i + 1 < n && (s[i + 1] == '"' || s[i + 1] == '\'')) {
+                bufsize_t close = quote2[s[i + 1] == '\''];
+                if (close < n) {
+                    end = close + 1;
                 }
             }
+            p->ends[i].assignment_end = suffix(p, end);
+        } else if (c == '-') {
+            p->ends[i].end = suffix(p, i + 1);
+        } else if (c == '#' || c == '.') {
+            if (i + 1 < n) {
+                bufsize_t width;
+                int32_t cp = scalar(s, n, i + 1, &width);
+                if (c == '#' ? name_rest(cp) : markdown_core_utf8proc_is_letter(cp)) {
+                    p->ends[i].end = suffix(p, name_end);
+                }
+            }
+        } else if ((c & 0xc0) != 0x80) {
+            bufsize_t width;
+            int32_t cp = scalar(s, n, i, &width);
+            if (markdown_core_utf8proc_is_letter(cp) && name_end < n && s[name_end] == '=') {
+                p->ends[i].end = p->ends[name_end].assignment_end;
+            }
         }
-        if (p->oom) {
-            break;
+
+        if (escaped(s, n, i)) {
+            q[0] = quote2[0];
+            q[1] = quote2[1];
+            u = unquoted2;
+        } else {
+            if (c == '"') {
+                q[0] = i;
+            }
+            if (c == '\'') {
+                q[1] = i;
+            }
+            if (horizontal(c) || newline(c) || c == '}') {
+                u = i;
+            }
         }
-        attribute_fact *join = fact_at(p, end);
-        if (!join) {
-            break;
+        quote2[0] = quote[0];
+        quote2[1] = quote[1];
+        quote[0] = q[0];
+        quote[1] = q[1];
+        unquoted2 = unquoted;
+        unquoted = u;
+        if (!horizontal(c)) {
+            spaces = i;
         }
-        if (join->end >= 0) {
-            result = join->end;
-            break;
+        if ((c & 0xc0) != 0x80) {
+            bufsize_t width;
+            int32_t cp = scalar(s, n, i, &width);
+            if (!name_rest(cp)) {
+                name_end = i;
+            }
         }
-        assert(join->at > origin->at);
-        join->member_previous = pending;
-        pending = origin = join;
-        at = end;
     }
-    while (pending) {
-        attribute_fact *previous = pending->member_previous;
-        pending->end = result;
-        pending->member_previous = NULL;
-        pending = previous;
-    }
-    MARKDOWN_CORE_DIAGNOSTIC(p->work += work;)
-    return p->oom ? 0 : result;
+    return 1;
 }
 
 void markdown_core_attributes_free(markdown_core_mem *mem, markdown_core_attributes *v) {
     markdown_core_chunk_free(mem, &v->anchor);
-    for (uint32_t i = 0; i < v->class_count; i++) {
+    for (size_t i = 0; i < v->class_count; i++) {
         markdown_core_chunk_free(mem, &v->classes[i]);
     }
-    for (uint32_t i = 0; i < v->record_count; i++) {
+    for (size_t i = 0; i < v->record_count; i++) {
         markdown_core_chunk_free(mem, &v->records[i].name);
         markdown_core_chunk_free(mem, &v->records[i].value);
     }
-    if (!v->borrowed) {
-        if (v->classes) {
-            mem->free(v->classes);
-        }
-        if (v->records) {
-            mem->free(v->records);
-        }
-    }
+    mem->free(v->classes);
+    mem->free(v->records);
     memset(v, 0, sizeof(*v));
 }
 
 void markdown_core_attribute_parser_free(markdown_core_attribute_parser *p) {
-    /* A parser that asked about no fact never built an index, and an
-     * uninitialized one has nothing to clear. */
-    if (p->facts.mem) {
-        markdown_core_key_index_free(&p->facts);
-    }
-    /* A parser that decoded nothing never took a buffer, and an
-     * uninitialized one has no allocator to release it through. */
-    if (p->decoded.mem) {
-        markdown_core_strbuf_free(&p->decoded);
-    }
-    /* The index borrowed a key out of every fact, and it has just been
-     * released, so the blocks are free to go back. Every one of them is a
-     * size the arena pools, so every one of them is taken. */
-    while (p->arena) {
-        attribute_arena *next = p->arena->next;
-        if (p->store) {
-            markdown_core_arena_recycle(p->store, p->arena, MARKDOWN_CORE_ATTRIBUTE_FACT_BLOCK_BYTES);
-        } else {
-            p->mem->free(p->arena);
-        }
-        p->arena = next;
-    }
-    p->fact_count = 0;
+    p->mem->free(p->ends);
+    p->ends = NULL;
 }
 
-/* Whether a field can be written more than once. `id` keeps the last spelling
- * the grammar reads, so an assignment to it replaces the bytes an earlier one
- * stored; classes and records accumulate every occurrence and nothing ever
- * replaces theirs. */
-enum { ATTRIBUTE_ACCUMULATES = 0, ATTRIBUTE_REPLACES = 1 };
-
-/* A value's normalized bytes. The arena's are borrowed by the chunk and go
- * with the document; without an arena the chunk owns the allocator's, which
- * is what a node built outside a parse gets. The terminator is written
- * either way: every value reads back as a C string.
- *
- * Where in the arena the bytes come from follows from that first property. A
- * field nothing replaces is packed into the arena's text, where it costs its
- * length; a field a later assignment can replace is taken from the recycling
- * pools instead, so the copy the replacement supersedes goes back for it to
- * take rather than lying dead in the document arena. Pooled storage costs the
- * granule it rounds to, which is why only a field that needs it pays it. */
-static int copy(markdown_core_attribute_parser *p, markdown_core_chunk *into, const unsigned char *s, bufsize_t n,
-                int replaces) {
-    unsigned char *data;
-    if (!p->store) {
-        data = p->mem->calloc((size_t)n + 1, 1);
-    } else if (replaces) {
-        data = markdown_core_arena_take(p->store, (size_t)n + 1);
-    } else {
-        data = markdown_core_arena_text(p->store, (size_t)n + 1);
-    }
+static int copy(markdown_core_mem *mem, markdown_core_chunk *into, const unsigned char *s, bufsize_t n) {
+    unsigned char *data = mem->calloc((size_t)n + 1, 1);
     if (!data) {
         return 0;
     }
     memcpy(data, s, (size_t)n);
-    data[n] = '\0';
-    if (replaces && p->store && into->data) {
-        markdown_core_arena_recycle(p->store, into->data, (size_t)into->len + 1);
-    }
-    markdown_core_chunk_free(p->mem, into);
-    *into = (markdown_core_chunk){data, n, p->store ? 0 : 1};
+    markdown_core_chunk_free(mem, into);
+    *into = (markdown_core_chunk){data, n, 1};
     return 1;
 }
 
-/* The vector a value's occurrences land in. A transaction takes it from the
- * arena's recycling pools and copies the occurrences forward, so growth costs
- * bytes the document already owns rather than an allocation, and the vector it
- * supersedes goes straight back to the pool it came from rather than sitting
- * dead in the arena for the document's life. The value releases neither. */
-static int reserve(markdown_core_attribute_parser *p, markdown_core_attributes *v, void **items, uint32_t count,
-                   uint32_t *capacity, size_t size) {
+static int reserve(markdown_core_mem *mem, void **items, size_t count, size_t *capacity, size_t size) {
     if (count < *capacity) {
         return 1;
     }
-    if (*capacity > UINT32_MAX / 2) {
+    if (*capacity > SIZE_MAX / 2) {
         return 0;
     }
-    uint32_t grown = *capacity ? *capacity * 2 : 1;
-    if ((size_t)grown > SIZE_MAX / size) {
+    size_t grown = *capacity ? *capacity * 2 : 8;
+    if (grown > SIZE_MAX / size) {
         return 0;
     }
-    void *data;
-    if (p->store) {
-        data = markdown_core_arena_take(p->store, (size_t)grown * size);
-        if (!data) {
-            return 0;
-        }
-        if (count) {
-            memcpy(data, *items, (size_t)count * size);
-        }
-        if (*capacity) {
-            markdown_core_arena_recycle(p->store, *items, (size_t)*capacity * size);
-        }
-    } else {
-        data = p->mem->realloc(*items, (size_t)grown * size);
-    }
+    void *data = mem->realloc(*items, grown * size);
     if (!data) {
         return 0;
     }
-    v->borrowed = p->store != NULL;
     *items = data;
     *capacity = grown;
     return 1;
 }
 
-static int append_class(markdown_core_attribute_parser *p, markdown_core_attributes *v, const unsigned char *s,
-                        bufsize_t n) {
-    if (!reserve(p, v, (void **)&v->classes, v->class_count, &v->class_capacity, sizeof(*v->classes))) {
+static int append_class(markdown_core_mem *mem, markdown_core_attributes *v, const unsigned char *s, bufsize_t n) {
+    if (!reserve(mem, (void **)&v->classes, v->class_count, &v->class_capacity, sizeof(*v->classes))) {
         return 0;
     }
     markdown_core_chunk item = {0};
-    if (!copy(p, &item, s, n, ATTRIBUTE_ACCUMULATES)) {
+    if (!copy(mem, &item, s, n)) {
         return 0;
     }
     v->classes[v->class_count++] = item;
     return 1;
 }
 
-static int normalize(markdown_core_attribute_parser *p, markdown_core_attributes *v, const unsigned char *name,
-                     bufsize_t length, const unsigned char *value, bufsize_t size) {
+static int normalize(markdown_core_mem *mem, markdown_core_attributes *v, const unsigned char *name, bufsize_t length,
+                     const unsigned char *value, bufsize_t size) {
     if (length == 2 && memcmp(name, "id", 2) == 0) {
-        return copy(p, &v->anchor, value, size, ATTRIBUTE_REPLACES);
+        return copy(mem, &v->anchor, value, size);
     }
     if (length == 5 && memcmp(name, "class", 5) == 0) {
         bufsize_t word = 0, at = 0;
@@ -424,23 +193,22 @@ static int normalize(markdown_core_attribute_parser *p, markdown_core_attributes
             bufsize_t width;
             int32_t cp = scalar(value, size, at, &width);
             if (markdown_core_utf8proc_is_space(cp) || cp == 11) {
-                if (at > word && !append_class(p, v, value + word, at - word)) {
+                if (at > word && !append_class(mem, v, value + word, at - word)) {
                     return 0;
                 }
                 word = at + width;
             }
             at += width;
         }
-        return at == word || append_class(p, v, value + word, at - word);
+        return at == word || append_class(mem, v, value + word, at - word);
     }
-    if (!reserve(p, v, (void **)&v->records, v->record_count, &v->record_capacity, sizeof(*v->records))) {
+    if (!reserve(mem, (void **)&v->records, v->record_count, &v->record_capacity, sizeof(*v->records))) {
         return 0;
     }
     markdown_core_record item = {0};
-    if (!copy(p, &item.name, name, length, ATTRIBUTE_ACCUMULATES) ||
-        !copy(p, &item.value, value, size, ATTRIBUTE_ACCUMULATES)) {
-        markdown_core_chunk_free(p->mem, &item.name);
-        markdown_core_chunk_free(p->mem, &item.value);
+    if (!copy(mem, &item.name, name, length) || !copy(mem, &item.value, value, size)) {
+        markdown_core_chunk_free(mem, &item.name);
+        markdown_core_chunk_free(mem, &item.value);
         return 0;
     }
     v->records[v->record_count++] = item;
@@ -448,79 +216,66 @@ static int normalize(markdown_core_attribute_parser *p, markdown_core_attributes
 }
 
 static bufsize_t scan_name(markdown_core_attribute_parser *p, bufsize_t n, bufsize_t at) {
-    MARKDOWN_CORE_DIAGNOSTIC(size_t work = 0;)
     const unsigned char *s = p->data;
     while (at < n) {
         bufsize_t width;
-        MARKDOWN_CORE_DIAGNOSTIC(work++;)
+        p->work++;
         if (!name_rest(scalar(s, n, at, &width))) {
             break;
         }
         at += width;
     }
-    MARKDOWN_CORE_DIAGNOSTIC(p->work += work;)
     return at;
 }
 
-/* The byte after `{` that can begin a member list: blank space, a line end,
- * the `-` shorthand, an anchor or class marker, the closing brace, or the
- * first byte of a letter (every non-ASCII lead byte may start one). Any
- * other byte is a grammar failure that needs no memoized fact. */
-static int member_list_can_begin(unsigned char c) {
-    return horizontal(c) || newline(c) || c == '-' || c == '#' || c == '.' || c == '}' || markdown_core_isalpha(c) ||
-           c >= 0x80;
-}
-
 bufsize_t markdown_core_attributes_end(markdown_core_attribute_parser *p, bufsize_t start) {
-    MARKDOWN_CORE_DIAGNOSTIC(p->work++;)
+    p->work++;
     if (p->oom) {
         return 0;
     }
-    if (start < 0 || start + 1 >= p->length || p->data[start] != '{' || !member_list_can_begin(p->data[start + 1])) {
+    if (start < 0 || start >= p->length || p->data[start] != '{') {
         return 0;
     }
-    attribute_fact *fact = fact_at(p, start + 1);
-    return !fact ? 0 : fact->end >= 0 ? fact->end : recognize(p, fact);
+    if (!p->ends && !index_input(p)) {
+        p->oom = 1;
+        return 0;
+    }
+    return suffix(p, start + 1);
 }
 
 bufsize_t markdown_core_attributes_tail(markdown_core_attribute_parser *p, bufsize_t start, bufsize_t end) {
-    MARKDOWN_CORE_DIAGNOSTIC(size_t work = 0;)
     if (end <= start || p->data[end - 1] != '}') {
         return -1;
     }
-    bufsize_t result = -1;
     for (bufsize_t at = start; at < end; at++) {
-        MARKDOWN_CORE_DIAGNOSTIC(work++;)
+        p->work++;
         if (escaped(p->data, end, at)) {
             at++;
         } else if (p->data[at] == '{' && markdown_core_attributes_end(p, at) == end) {
-            result = at;
-            break;
+            return at;
         }
     }
-    MARKDOWN_CORE_DIAGNOSTIC(p->work += work;)
-    return result;
+    return -1;
 }
 
 int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t start, markdown_core_attributes *result,
                                    bufsize_t *end) {
-    MARKDOWN_CORE_DIAGNOSTIC(size_t work = 0;)
     const unsigned char *s = p->data;
     bufsize_t finish = markdown_core_attributes_end(p, start);
     if (!finish) {
         return 0;
     }
     markdown_core_attributes value = {0};
-    markdown_core_strbuf *decoded = &p->decoded;
+    markdown_core_strbuf decoded = MARKDOWN_CORE_BUF_INIT(p->mem);
     bufsize_t at = start + 1;
     while (at < finish - 1) {
-        MARKDOWN_CORE_DIAGNOSTIC(work++;)
+        p->work++;
         if (horizontal(s[at]) || newline(s[at])) {
             at++;
             continue;
         }
         if (s[at] == '-') {
-            if (!append_class(p, &value, (const unsigned char *)"unnumbered", 10)) {
+            if (!append_class(p->mem, &value, (const unsigned char *)"unnumbered", 10)) {
                 goto oom;
             }
             at++;
@@ -530,8 +285,8 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
             unsigned char marker = s[at++];
             bufsize_t from = at;
             at = scan_name(p, finish, at);
-            if (marker == '#' ? !copy(p, &value.anchor, s + from, at - from, ATTRIBUTE_REPLACES)
-                              : !append_class(p, &value, s + from, at - from)) {
+            if (marker == '#' ? !copy(p->mem, &value.anchor, s + from, at - from)
+                              : !append_class(p->mem, &value, s + from, at - from)) {
                 goto oom;
             }
             continue;
@@ -545,7 +300,7 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
         if (s[at] == '"' || s[at] == '\'') {
             unsigned char quote = s[at];
             for (bufsize_t i = at + 1; i < finish - 1; i++) {
-                MARKDOWN_CORE_DIAGNOSTIC(work++;)
+                p->work++;
                 if (escaped(s, finish, i)) {
                     i++;
                     continue;
@@ -561,71 +316,48 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
             at++;
         } else {
             while (last < finish - 1 && !horizontal(s[last]) && !newline(s[last]) && s[last] != '}') {
-                MARKDOWN_CORE_DIAGNOSTIC(work++;)
+                p->work++;
                 last += escaped(s, finish, last) ? 2 : 1;
             }
         }
-        /* A value whose bytes stand for themselves is read where it lies: no
-         * escape to unfold, no entity to resolve, no line ending to fold into
-         * a space. Only the remainder is decoded, and only such a parse ever
-         * takes the buffer it is decoded through. */
-        const unsigned char *bytes = s + at;
-        bufsize_t size = last - at;
-        bufsize_t plain = at;
-        while (plain < last && s[plain] != '\\' && !(quoted && (s[plain] == '&' || newline(s[plain])))) {
-            MARKDOWN_CORE_DIAGNOSTIC(work++;)
-            plain++;
-        }
-        if (plain < last) {
-            if (!decoded->mem) {
-                markdown_core_strbuf_init(p->mem, decoded, 0);
-            }
-            markdown_core_strbuf_clear(decoded);
-            while (at < last) {
-                MARKDOWN_CORE_DIAGNOSTIC(work++;)
-                if (escaped(s, last, at)) {
-                    markdown_core_strbuf_putc(decoded, s[at + 1]);
-                    at += 2;
-                } else if (quoted && s[at] == '&') {
-                    bufsize_t used = houdini_unescape_ent(decoded, s + at + 1, last - at - 1);
-                    if (used) {
-                        at += used + 1;
-                    } else {
-                        markdown_core_strbuf_putc(decoded, s[at++]);
-                    }
-                } else if (quoted && newline(s[at])) {
-                    if (s[at] == '\r' && at + 1 < last && s[at + 1] == '\n') {
-                        at++;
-                    }
-                    at++;
-                    markdown_core_strbuf_putc(decoded, ' ');
+        markdown_core_strbuf_clear(&decoded);
+        while (at < last) {
+            p->work++;
+            if (escaped(s, last, at)) {
+                markdown_core_strbuf_putc(&decoded, s[at + 1]);
+                at += 2;
+            } else if (quoted && s[at] == '&') {
+                bufsize_t used = houdini_unescape_ent(&decoded, s + at + 1, last - at - 1);
+                if (used) {
+                    at += used + 1;
                 } else {
-                    markdown_core_strbuf_putc(decoded, s[at++]);
+                    markdown_core_strbuf_putc(&decoded, s[at++]);
                 }
+            } else if (quoted && newline(s[at])) {
+                if (s[at] == '\r' && at + 1 < last && s[at + 1] == '\n') {
+                    at++;
+                }
+                at++;
+                markdown_core_strbuf_putc(&decoded, ' ');
+            } else {
+                markdown_core_strbuf_putc(&decoded, s[at++]);
             }
-            if (decoded->oom) {
-                goto oom;
-            }
-            bytes = decoded->ptr;
-            size = decoded->size;
         }
-        at = last;
         if (quoted) {
             at++;
         }
-        if (!normalize(p, &value, s + name, name_length, bytes, size)) {
+        if (decoded.oom || !normalize(p->mem, &value, s + name, name_length, decoded.ptr, decoded.size)) {
             goto oom;
         }
     }
-    MARKDOWN_CORE_DIAGNOSTIC(p->work += work + (size_t)(finish - start);)
-    markdown_core_strbuf_clear(decoded);
+    p->work += (size_t)(finish - start);
+    markdown_core_strbuf_free(&decoded);
     *result = value;
     *end = finish;
     return 1;
 oom:
-    MARKDOWN_CORE_DIAGNOSTIC(p->work += work;)
     p->oom = 1;
-    markdown_core_strbuf_clear(decoded);
+    markdown_core_strbuf_free(&decoded);
     markdown_core_attributes_free(p->mem, &value);
     return 0;
 }
@@ -639,7 +371,6 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
     }
     if (!inline_state->attributes.mem) {
         inline_state->attributes.mem = inline_state->mem;
-        inline_state->attributes.store = inline_state->arena;
         inline_state->attributes.data = inline_state->input.data;
         inline_state->attributes.length = inline_state->input.len;
     }
@@ -653,19 +384,7 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
 void markdown_core_inline_attach_inline_attributes(markdown_core_inline_state *inline_state, markdown_core_node *node,
                                                    bufsize_t from) {
     bufsize_t end;
-    markdown_core_attributes value = {0};
-    if (markdown_core_inline_state_attributes(inline_state, inline_state->pos, &value, &end)) {
-        markdown_core_attributes *owned = markdown_core_node_attributes_mut(node, inline_state->arena);
-        if (!owned) {
-            markdown_core_attributes_free(inline_state->mem, &value);
-            inline_state->oom = 1;
-            return;
-        }
-        markdown_core_attributes_free(inline_state->mem, owned);
-        *owned = value;
-        if (owned->anchor.len) {
-            markdown_core_inline_request_completion(inline_state);
-        }
+    if (markdown_core_inline_state_attributes(inline_state, inline_state->pos, &node->attributes, &end)) {
         inline_state->pos = end;
         markdown_core_inline_state_place(inline_state, node, from, end - 1);
     }
@@ -677,32 +396,23 @@ bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, mar
     while (info_end > 0 && markdown_core_block_is_space_or_tab(source[info_end - 1])) {
         info_end--;
     }
-    markdown_core_attribute_parser attributes = {
-        .mem = parser->mem, .store = parser->arena, .data = source, .length = length};
+    markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = source, .length = length};
     bufsize_t attribute_start = markdown_core_attributes_tail(&attributes, 0, info_end);
-    markdown_core_attributes value = {0};
-    if (attribute_start >= 0 && markdown_core_attributes_parse(&attributes, attribute_start, &value, &attribute_end)) {
-        markdown_core_attributes *owned = markdown_core_node_attributes_mut(node, parser->arena);
-        if (owned) {
-            markdown_core_attributes_free(parser->mem, owned);
-            *owned = value;
-            info_end = attribute_start;
-        } else {
-            markdown_core_attributes_free(parser->mem, &value);
-            attributes.oom = 1;
-        }
+    if (attribute_start >= 0 &&
+        markdown_core_attributes_parse(&attributes, attribute_start, &node->attributes, &attribute_end)) {
+        info_end = attribute_start;
     }
     if (attributes.oom) {
         parser->oom = true;
     }
-    MARKDOWN_CORE_DIAGNOSTIC(parser->attribute_work += attributes.work;)
+    parser->attribute_work += attributes.work;
     markdown_core_attribute_parser_free(&attributes);
     return info_end;
 }
 
 static void dispose_inline(markdown_core_inline_state *inline_state) {
     if (inline_state->attributes.mem) {
-        MARKDOWN_CORE_DIAGNOSTIC(inline_state->owner_parser->attribute_work += inline_state->attributes.work;)
+        inline_state->owner_parser->attribute_work += inline_state->attributes.work;
         markdown_core_attribute_parser_free(&inline_state->attributes);
     }
 }

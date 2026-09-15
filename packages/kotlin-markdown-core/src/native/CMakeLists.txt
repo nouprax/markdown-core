@@ -1,26 +1,7 @@
-# The payload encoder is one C source every Kotlin target uses: the JNI
-# bridge compiles it into its shared library, and Kotlin/Native links it as
-# its own static archive through cinterop, beside the engine archives.
-if(MARKDOWN_CORE_KOTLIN_PAYLOAD)
-    add_library(markdown_core_kotlin_payload STATIC markdown_core_kotlin_payload.c)
-    target_include_directories(markdown_core_kotlin_payload PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-                                                                    ${CMAKE_SOURCE_DIR}/packages/markdown-core/include)
-    target_compile_definitions(markdown_core_kotlin_payload PRIVATE MARKDOWN_CORE_STATIC_DEFINE
-                                                                    MARKDOWN_CORE_ELEMENTS_STATIC_DEFINE)
-    set_target_properties(
-        markdown_core_kotlin_payload
-        PROPERTIES OUTPUT_NAME markdown-core-kotlin-payload
-                   C_STANDARD 99
-                   C_STANDARD_REQUIRED YES
-                   C_EXTENSIONS NO
-                   POSITION_INDEPENDENT_CODE ON)
-    markdown_core_apply_build_flags(markdown_core_kotlin_payload)
-endif()
-
 if(MARKDOWN_CORE_KOTLIN_JNI)
     find_package(JNI REQUIRED)
 
-    add_library(markdown_core_kotlin_jni SHARED markdown_core_kotlin_payload.c markdown_core_kotlin_jni.c)
+    add_library(markdown_core_kotlin_jni SHARED markdown_core_kotlin_jni_payload.c markdown_core_kotlin_jni.c)
     target_include_directories(markdown_core_kotlin_jni PRIVATE ${JNI_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}
                                                                 ${CMAKE_SOURCE_DIR}/packages/markdown-core/include)
     target_compile_definitions(markdown_core_kotlin_jni PRIVATE MARKDOWN_CORE_STATIC_DEFINE
@@ -34,7 +15,6 @@ if(MARKDOWN_CORE_KOTLIN_JNI)
                    C_EXTENSIONS NO
                    C_VISIBILITY_PRESET hidden
                    POSITION_INDEPENDENT_CODE ON)
-    markdown_core_apply_build_flags(markdown_core_kotlin_jni)
     if(APPLE)
         target_link_options(markdown_core_kotlin_jni PRIVATE
                             "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/markdown_core_kotlin.exports")

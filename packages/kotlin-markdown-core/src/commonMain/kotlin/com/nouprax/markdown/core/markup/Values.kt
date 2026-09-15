@@ -8,24 +8,11 @@ public data class Position(
     public val column: Int,
 )
 
-/**
- * Authored editor start/end coordinates, not a substring or half-open range.
- *
- * The four coordinates are the fields, so every node carries one object for
- * its scope rather than three; [start] and [end] are the same coordinates as
- * positions, made on request.
- */
+/** Authored editor start/end coordinates, not a substring or half-open range. */
 public data class Scope(
-    public val startLine: Int,
-    public val startColumn: Int,
-    public val endLine: Int,
-    public val endColumn: Int,
-) {
-    public constructor(start: Position, end: Position) : this(start.line, start.column, end.line, end.column)
-
-    public val start: Position get() = Position(startLine, startColumn)
-    public val end: Position get() = Position(endLine, endColumn)
-}
+    public val start: Position,
+    public val end: Position,
+)
 
 public enum class ListFlavor { BULLET, ORDERED }
 

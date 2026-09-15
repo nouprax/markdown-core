@@ -57,11 +57,6 @@ async function collect() {
         fields.delete("boundary");
     }
     if (!fields.has("workload_version")) fields.set("workload_version", "1");
-    // The contract every comparison reads. The same measurement's detail,
-    // present since the runner reported the parse and the free apart, goes to
-    // a sidecar next to it: a comparison workflow that predates the detail
-    // still validates the contract, and one that reads the detail finds all of
-    // it or none.
     const expectedFields = [
         "runtime",
         "workload",
@@ -72,14 +67,7 @@ async function collect() {
         "median_ns",
         "peak_rss_kib"
     ];
-    const detailFields = new Map([
-        ["min_ns", "minNs"],
-        ["free_median_ns", "freeMedianNs"],
-        ["nodes", "nodes"],
-        ["input_sha256", "inputSha256"]
-    ]);
-    const contractNames = [...fields.keys()].filter((name) => !detailFields.has(name));
-    if (contractNames.sort().join("\n") !== [...expectedFields].sort().join("\n")) {
+    if ([...fields.keys()].sort().join("\n") !== [...expectedFields].sort().join("\n")) {
         throw new Error(`benchmark fields changed: ${[...fields.keys()].sort().join(", ")}`);
     }
 
@@ -100,23 +88,6 @@ async function collect() {
     validateDocument(document, sourceSha);
     await mkdir(path.dirname(output), { recursive: true });
     await writeFile(output, `${JSON.stringify(document, null, 2)}\n`);
-
-    const present = [...detailFields.keys()].filter((field) => fields.has(field));
-    if (present.length === 0) return;
-    if (present.length !== detailFields.size) {
-        throw new Error(`incomplete benchmark detail: ${present.join(", ")}`);
-    }
-    const detail = { schema: 1, sourceSha };
-    for (const [field, key] of detailFields) {
-        detail[key] = field === "input_sha256" ? fields.get(field) : integer(fields, field);
-    }
-    validateDetail(detail, sourceSha);
-    await writeFile(detailPath(output), `${JSON.stringify(detail, null, 2)}\n`);
-}
-
-/** The sidecar the detail of a contract artifact is written to and read from. */
-function detailPath(file) {
-    return file.endsWith(".json") ? `${file.slice(0, -".json".length)}.detail.json` : `${file}.detail.json`;
 }
 
 async function validate() {
@@ -124,40 +95,6 @@ async function validate() {
     const sourceSha = required("source-sha");
     const document = JSON.parse(await readFile(input, "utf8"));
     validateDocument(document, sourceSha);
-    // A sidecar next to the contract is the same measurement's detail, or
-    // nothing: a comparison that shows the detail reads the whole tuple.
-    const detail = args.get("detail") ?? detailPath(input);
-    if (await exists(detail)) {
-        validateDetail(JSON.parse(await readFile(detail, "utf8")), sourceSha);
-    } else if (args.has("detail")) {
-        throw new Error(`missing benchmark detail: ${detail}`);
-    }
-}
-
-async function exists(file) {
-    try {
-        await stat(file);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
-function validateDetail(detail, sourceSha) {
-    const exactKeys = ["freeMedianNs", "inputSha256", "minNs", "nodes", "schema", "sourceSha"];
-    if (!detail || Object.keys(detail).sort().join("\n") !== exactKeys.join("\n")) {
-        throw new Error("benchmark detail fields changed");
-    }
-    if (
-        detail.schema !== 1 ||
-        detail.sourceSha !== sourceSha ||
-        !positive(detail.minNs) ||
-        !nonnegative(detail.freeMedianNs) ||
-        !positive(detail.nodes) ||
-        !/^[0-9a-f]{64}$/u.test(detail.inputSha256)
-    ) {
-        throw new Error("invalid benchmark detail");
-    }
 }
 
 function validateDocument(document, sourceSha) {
@@ -236,5 +173,5 @@ function required(name) {
 }
 
 function usage() {
-    return "usage: pr-benchmark-result.mjs collect --log FILE --build-dir DIR --output FILE --source-sha SHA --origin ORIGIN | validate --input FILE --source-sha SHA [--detail FILE]";
+    return "usage: pr-benchmark-result.mjs collect --log FILE --build-dir DIR --output FILE --source-sha SHA --origin ORIGIN | validate --input FILE --source-sha SHA";
 }

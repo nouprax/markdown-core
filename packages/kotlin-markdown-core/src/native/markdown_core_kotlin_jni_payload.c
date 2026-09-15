@@ -1,4 +1,4 @@
-#include "markdown_core_kotlin_payload.h"
+#include "markdown_core_kotlin_jni_payload.h"
 
 #include "markdown_core.h"
 
@@ -6,76 +6,74 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef enum payload_failure { PAYLOAD_OK = 0, PAYLOAD_ALLOCATION, PAYLOAD_INTERNAL } payload_failure;
+typedef enum jni_payload_failure {
+    JNI_PAYLOAD_OK = 0,
+    JNI_PAYLOAD_ALLOCATION,
+    JNI_PAYLOAD_INTERNAL
+} jni_payload_failure;
 
-typedef struct payload_buffer {
+typedef struct jni_payload_buffer {
     uint8_t *data;
     size_t size;
     size_t capacity;
-    payload_failure failure;
-} payload_buffer;
+    jni_payload_failure failure;
+} jni_payload_buffer;
 
-typedef enum payload_action_kind {
-    PAYLOAD_WRITE_NODE,
-    PAYLOAD_WRITE_SIBLINGS,
-    PAYLOAD_WRITE_CHILDREN,
-    PAYLOAD_WRITE_CHAIN,
-    PAYLOAD_WRITE_DEFINITION_BODIES,
-    PAYLOAD_WRITE_DEFINITION_BODY
-} payload_action_kind;
+typedef enum jni_payload_action_kind {
+    JNI_PAYLOAD_WRITE_NODE,
+    JNI_PAYLOAD_WRITE_SIBLINGS,
+    JNI_PAYLOAD_WRITE_CHILDREN,
+    JNI_PAYLOAD_WRITE_CHAIN,
+    JNI_PAYLOAD_WRITE_DEFINITION_BODIES,
+    JNI_PAYLOAD_WRITE_DEFINITION_BODY
+} jni_payload_action_kind;
 
-/* A sibling or body action carries the offset of the count it stands for:
- * the count is written as a placeholder when the list is scheduled and
- * filled in when the chain ends, so a chain is walked once, as it is
- * written, and never first to count it. `written` is how many the action
- * has already scheduled. */
-typedef struct payload_action {
-    payload_action_kind kind;
+typedef struct jni_payload_action {
+    jni_payload_action_kind kind;
     const markdown_core_node *node;
-    size_t written;
-    size_t count_offset;
+    size_t remaining;
     const markdown_core_definition_body *body;
-} payload_action;
+} jni_payload_action;
 
-typedef struct payload_stack {
-    payload_action *actions;
+typedef struct jni_payload_stack {
+    jni_payload_action *actions;
     size_t count;
     size_t capacity;
-} payload_stack;
+} jni_payload_stack;
 
 /* Every occurrence of one reference definition reads through one resource in
  * the C tree. This table numbers each distinct resource in the order the
  * payload first meets it, so a destination and title cross the boundary once
  * however often the definition is used. */
-typedef struct payload_resource_slot {
+typedef struct jni_payload_resource_slot {
     const markdown_core_resource *resource;
     int32_t ordinal;
-} payload_resource_slot;
+} jni_payload_resource_slot;
 
-typedef struct payload_resources {
-    payload_resource_slot *slots;
+typedef struct jni_payload_resources {
+    jni_payload_resource_slot *slots;
     size_t count;
     size_t capacity;
-} payload_resources;
+} jni_payload_resources;
 
-static const uint8_t payload_magic[] = {'M', 'K', 'J', '1'};
-static const uint8_t internal_error_bytes[] = "could not encode the AST payload";
+static const uint8_t jni_payload_magic[] = {'M', 'K', 'J', '1'};
+static const uint8_t internal_error_bytes[] = "could not encode JNI AST payload";
 
-/* Grows the buffer so `additional` more bytes fit. The first growth takes
- * the caller's estimate, so a payload sized from its source reallocates
- * rarely instead of doubling up from one kilobyte. */
-static bool grow(payload_buffer *buffer, size_t additional) {
+static void reserve(jni_payload_buffer *buffer, size_t additional) {
     size_t required;
     size_t capacity;
     uint8_t *data;
-    if (buffer->failure != PAYLOAD_OK) {
-        return false;
+    if (buffer->failure != JNI_PAYLOAD_OK) {
+        return;
     }
     if (additional > SIZE_MAX - buffer->size) {
-        buffer->failure = PAYLOAD_ALLOCATION;
-        return false;
+        buffer->failure = JNI_PAYLOAD_ALLOCATION;
+        return;
     }
     required = buffer->size + additional;
+    if (required <= buffer->capacity) {
+        return;
+    }
     capacity = buffer->capacity == 0 ? 1024 : buffer->capacity;
     while (capacity < required) {
         if (capacity > SIZE_MAX / 2) {
@@ -86,122 +84,88 @@ static bool grow(payload_buffer *buffer, size_t additional) {
     }
     data = (uint8_t *)realloc(buffer->data, capacity);
     if (data == NULL) {
-        buffer->failure = PAYLOAD_ALLOCATION;
-        return false;
+        buffer->failure = JNI_PAYLOAD_ALLOCATION;
+        return;
     }
     buffer->data = data;
     buffer->capacity = capacity;
-    return true;
 }
 
-/* True when `additional` more bytes fit, growing if they do not: the one
- * check a field pays before its bytes are stored in place. */
-static inline bool ensure(payload_buffer *buffer, size_t additional) {
-    if (additional <= buffer->capacity - buffer->size && buffer->failure == PAYLOAD_OK) {
-        return true;
-    }
-    return grow(buffer, additional);
-}
-
-static void put_bytes(payload_buffer *buffer, const uint8_t *bytes, size_t length) {
-    if (ensure(buffer, length) && length != 0) {
+static void put_bytes(jni_payload_buffer *buffer, const uint8_t *bytes, size_t length) {
+    reserve(buffer, length);
+    if (buffer->failure == JNI_PAYLOAD_OK && length != 0) {
         memcpy(buffer->data + buffer->size, bytes, length);
         buffer->size += length;
     }
 }
 
-static inline void store_i32(uint8_t *at, int32_t value) {
+static void put_u8(jni_payload_buffer *buffer, uint8_t value) { put_bytes(buffer, &value, 1); }
+
+static void put_i32(jni_payload_buffer *buffer, int32_t value) {
     uint32_t bits = (uint32_t)value;
-    at[0] = (uint8_t)bits;
-    at[1] = (uint8_t)(bits >> 8);
-    at[2] = (uint8_t)(bits >> 16);
-    at[3] = (uint8_t)(bits >> 24);
-}
-
-static inline void put_u8(payload_buffer *buffer, uint8_t value) {
-    if (ensure(buffer, 1)) {
-        buffer->data[buffer->size++] = value;
+    size_t index;
+    for (index = 0; index < 4; ++index) {
+        put_u8(buffer, (uint8_t)(bits >> (index * 8)));
     }
 }
 
-static inline void put_i32(payload_buffer *buffer, int32_t value) {
-    if (ensure(buffer, 4)) {
-        store_i32(buffer->data + buffer->size, value);
-        buffer->size += 4;
+static void put_i64(jni_payload_buffer *buffer, int64_t value) {
+    uint64_t bits = (uint64_t)value;
+    size_t index;
+    for (index = 0; index < 8; ++index) {
+        put_u8(buffer, (uint8_t)(bits >> (index * 8)));
     }
 }
 
-static inline void put_i64(payload_buffer *buffer, int64_t value) {
-    if (ensure(buffer, 8)) {
-        uint64_t bits = (uint64_t)value;
-        uint8_t *at = buffer->data + buffer->size;
-        size_t index;
-        for (index = 0; index < 8; ++index) {
-            at[index] = (uint8_t)(bits >> (index * 8));
-        }
-        buffer->size += 8;
-    }
+static void put_scope(jni_payload_buffer *buffer, markdown_core_scope scope) {
+    put_i32(buffer, scope.start.line);
+    put_i32(buffer, scope.start.column);
+    put_i32(buffer, scope.end.line);
+    put_i32(buffer, scope.end.column);
 }
 
-static void put_scope(payload_buffer *buffer, markdown_core_scope scope) {
-    if (ensure(buffer, 16)) {
-        uint8_t *at = buffer->data + buffer->size;
-        store_i32(at, scope.start.line);
-        store_i32(at + 4, scope.start.column);
-        store_i32(at + 8, scope.end.line);
-        store_i32(at + 12, scope.end.column);
-        buffer->size += 16;
-    }
-}
+static void put_optional_string(jni_payload_buffer *buffer, markdown_core_optional_string value);
 
-static void put_optional_string(payload_buffer *buffer, markdown_core_optional_string value);
-
-static void put_string(payload_buffer *buffer, markdown_core_string value, bool present) {
+static void put_string(jni_payload_buffer *buffer, markdown_core_string value, bool present) {
     if (!present) {
         put_i32(buffer, -1);
         return;
     }
     if (value.length > INT32_MAX) {
-        buffer->failure = PAYLOAD_ALLOCATION;
+        buffer->failure = JNI_PAYLOAD_ALLOCATION;
         return;
     }
-    if (ensure(buffer, 4 + value.length)) {
-        uint8_t *at = buffer->data + buffer->size;
-        store_i32(at, (int32_t)value.length);
-        if (value.length != 0) {
-            memcpy(at + 4, value.data, value.length);
-        }
-        buffer->size += 4 + value.length;
-    }
+    put_i32(buffer, (int32_t)value.length);
+    put_bytes(buffer, value.data, value.length);
 }
 
 /* Optional-string presence is explicit; an empty present string is distinct
  * from an absent string. */
-static void put_optional_string(payload_buffer *buffer, markdown_core_optional_string value) {
+static void put_optional_string(jni_payload_buffer *buffer, markdown_core_optional_string value) {
     put_string(buffer, value.value, value.has_value);
 }
 
-static void write_error(payload_buffer *buffer, markdown_core_error_code code, markdown_core_string message) {
+static void write_error(jni_payload_buffer *buffer, markdown_core_error_code code, markdown_core_string message) {
     put_u8(buffer, 1);
     put_i32(buffer, code);
     put_string(buffer, message, true);
 }
 
-static void push_action(payload_buffer *buffer, payload_stack *stack, payload_action action) {
+static void push_action(jni_payload_buffer *buffer, jni_payload_stack *stack, jni_payload_action action) {
     size_t capacity;
-    payload_action *actions;
-    if (buffer->failure != PAYLOAD_OK) {
+    jni_payload_action *actions;
+    if (buffer->failure != JNI_PAYLOAD_OK) {
         return;
     }
     if (stack->count == stack->capacity) {
         capacity = stack->capacity == 0 ? 64 : stack->capacity * 2;
         if (capacity < stack->capacity || capacity > SIZE_MAX / sizeof(*stack->actions)) {
-            buffer->failure = PAYLOAD_ALLOCATION;
+            buffer->failure = JNI_PAYLOAD_ALLOCATION;
             return;
         }
-        actions = (payload_action *)realloc(stack->actions, capacity * sizeof(*stack->actions));
+        actions = (jni_payload_action *)realloc(stack->actions, capacity * sizeof(*stack->actions));
         if (actions == NULL) {
-            buffer->failure = PAYLOAD_ALLOCATION;
+            buffer->failure = JNI_PAYLOAD_ALLOCATION;
             return;
         }
         stack->actions = actions;
@@ -222,11 +186,11 @@ static size_t hash_resource(const markdown_core_resource *resource) {
 
 /* The slot holding `resource`, or the empty slot it would take. The table is
  * never more than half full, so the probe always ends. */
-static payload_resource_slot *find_resource_slot(payload_resource_slot *slots, size_t capacity,
-                                                 const markdown_core_resource *resource) {
+static jni_payload_resource_slot *find_resource_slot(jni_payload_resource_slot *slots, size_t capacity,
+                                                     const markdown_core_resource *resource) {
     size_t position = hash_resource(resource) & (capacity - 1);
     for (;;) {
-        payload_resource_slot *slot = &slots[position];
+        jni_payload_resource_slot *slot = &slots[position];
         if (slot->resource == NULL || slot->resource == resource) {
             return slot;
         }
@@ -234,19 +198,19 @@ static payload_resource_slot *find_resource_slot(payload_resource_slot *slots, s
     }
 }
 
-static bool grow_resources(payload_resources *resources) {
+static bool grow_resources(jni_payload_resources *resources) {
     size_t capacity = resources->capacity == 0 ? 64 : resources->capacity * 2;
-    payload_resource_slot *slots;
+    jni_payload_resource_slot *slots;
     size_t index;
     if (capacity < resources->capacity || capacity > SIZE_MAX / sizeof(*slots)) {
         return false;
     }
-    slots = (payload_resource_slot *)calloc(capacity, sizeof(*slots));
+    slots = (jni_payload_resource_slot *)calloc(capacity, sizeof(*slots));
     if (slots == NULL) {
         return false;
     }
     for (index = 0; index < resources->capacity; ++index) {
-        const payload_resource_slot *source = &resources->slots[index];
+        const jni_payload_resource_slot *source = &resources->slots[index];
         if (source->resource != NULL) {
             *find_resource_slot(slots, capacity, source->resource) = *source;
         }
@@ -259,18 +223,18 @@ static bool grow_resources(payload_resources *resources) {
 
 /* The ordinal of `resource` in first-sight order; `first_sight` says whether
  * this call is the sight that assigned it. */
-static int32_t resource_ordinal(payload_buffer *buffer, payload_resources *resources,
+static int32_t resource_ordinal(jni_payload_buffer *buffer, jni_payload_resources *resources,
                                 const markdown_core_resource *resource, bool *first_sight) {
-    payload_resource_slot *slot;
+    jni_payload_resource_slot *slot;
     *first_sight = false;
     if (resources->count + 1 > resources->capacity / 2 && !grow_resources(resources)) {
-        buffer->failure = PAYLOAD_ALLOCATION;
+        buffer->failure = JNI_PAYLOAD_ALLOCATION;
         return -1;
     }
     slot = find_resource_slot(resources->slots, resources->capacity, resource);
     if (slot->resource == NULL) {
         if (resources->count > INT32_MAX) {
-            buffer->failure = PAYLOAD_ALLOCATION;
+            buffer->failure = JNI_PAYLOAD_ALLOCATION;
             return -1;
         }
         slot->resource = resource;
@@ -281,48 +245,54 @@ static int32_t resource_ordinal(payload_buffer *buffer, payload_resources *resou
     return slot->ordinal;
 }
 
-/* Writes the count a list stands for once its chain has been walked. */
-static void fill_count(payload_buffer *buffer, size_t count_offset, size_t count) {
-    if (buffer->failure != PAYLOAD_OK) {
-        return;
-    }
+static void schedule_nodes(jni_payload_buffer *buffer, jni_payload_stack *stack, const markdown_core_node *node,
+                           size_t count) {
     if (count > INT32_MAX) {
-        buffer->failure = PAYLOAD_ALLOCATION;
+        buffer->failure = JNI_PAYLOAD_ALLOCATION;
         return;
     }
-    store_i32(buffer->data + count_offset, (int32_t)count);
-}
-
-/* Schedules the chain starting at `first` as one counted list: the count is
- * a placeholder the sibling action fills in when it reaches the end of the
- * chain, so the chain is walked once. An empty chain is the count zero. */
-static void schedule_nodes(payload_buffer *buffer, payload_stack *stack, const markdown_core_node *first) {
-    size_t count_offset = buffer->size;
-    put_i32(buffer, 0);
-    if (first != NULL) {
-        payload_action action = {
-            .kind = PAYLOAD_WRITE_SIBLINGS, .node = first, .written = 0, .count_offset = count_offset};
+    put_i32(buffer, (int32_t)count);
+    if ((count == 0) != (node == NULL)) {
+        buffer->failure = JNI_PAYLOAD_INTERNAL;
+        return;
+    }
+    if (count != 0) {
+        jni_payload_action action = {.kind = JNI_PAYLOAD_WRITE_SIBLINGS, .node = node, .remaining = count};
         push_action(buffer, stack, action);
     }
 }
 
-static void schedule_children(payload_buffer *buffer, payload_stack *stack, const markdown_core_node *node) {
-    schedule_nodes(buffer, stack, markdown_core_node_get_first_child(node));
+static void schedule_children(jni_payload_buffer *buffer, jni_payload_stack *stack, const markdown_core_node *node) {
+    schedule_nodes(buffer, stack, markdown_core_node_get_first_child(node), markdown_core_node_child_count(node));
 }
 
-static void write_attributes(payload_buffer *buffer, const markdown_core_attribute_value *attributes) {
+/* A chain a value owns -- an affix or a footnote's content -- has no owner
+ * to count it, so it is counted by walking. */
+static size_t chain_length(const markdown_core_node *node) {
+    size_t count = 0;
+    for (; node; node = markdown_core_node_get_next_sibling(node)) {
+        count++;
+    }
+    return count;
+}
+
+static void schedule_chain(jni_payload_buffer *buffer, jni_payload_stack *stack, const markdown_core_node *first) {
+    schedule_nodes(buffer, stack, first, chain_length(first));
+}
+
+static void write_attributes(jni_payload_buffer *buffer, const markdown_core_attribute_value *attributes) {
     put_optional_string(buffer, markdown_core_attribute_value_anchor(attributes));
     size_t classes = markdown_core_attribute_value_class_count(attributes),
            records = markdown_core_attribute_value_record_count(attributes);
     if (classes > INT32_MAX || records > INT32_MAX) {
-        buffer->failure = PAYLOAD_ALLOCATION;
+        buffer->failure = JNI_PAYLOAD_ALLOCATION;
         return;
     }
     put_i32(buffer, (int32_t)classes);
     for (size_t i = 0; i < classes; i++) {
         markdown_core_string value;
         if (!markdown_core_attribute_value_class_at(attributes, i, &value)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_string(buffer, value, true);
@@ -331,7 +301,7 @@ static void write_attributes(payload_buffer *buffer, const markdown_core_attribu
     for (size_t i = 0; i < records; i++) {
         markdown_core_string name, value;
         if (!markdown_core_attribute_value_record_at(attributes, i, &name, &value)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_string(buffer, name, true);
@@ -339,7 +309,7 @@ static void write_attributes(payload_buffer *buffer, const markdown_core_attribu
     }
 }
 
-static void write_metadata_value(payload_buffer *buffer, const markdown_core_metadata_value *record) {
+static void write_metadata_value(jni_payload_buffer *buffer, const markdown_core_metadata_value *record) {
     put_u8(buffer, record ? 1 : 0);
     if (!record) {
         return;
@@ -349,7 +319,7 @@ static void write_metadata_value(payload_buffer *buffer, const markdown_core_met
     if (kind == MARKDOWN_CORE_METADATA_SCALAR) {
         markdown_core_metadata_scalar value;
         if (!markdown_core_metadata_value_scalar(record, &value)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_u8(buffer, (uint8_t)value.kind);
@@ -364,31 +334,31 @@ static void write_metadata_value(payload_buffer *buffer, const markdown_core_met
             put_string(buffer, value.value.string, true);
             break;
         default:
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
     } else if (kind == MARKDOWN_CORE_METADATA_LIST) {
         size_t items = markdown_core_metadata_value_item_count(record);
         if (items > INT32_MAX) {
-            buffer->failure = PAYLOAD_ALLOCATION;
+            buffer->failure = JNI_PAYLOAD_ALLOCATION;
             return;
         }
         put_i32(buffer, (int32_t)items);
         for (size_t j = 0; j < items; j++) {
             markdown_core_metadata_list_item item;
             if (!markdown_core_metadata_value_item_at(record, j, &item)) {
-                buffer->failure = PAYLOAD_INTERNAL;
+                buffer->failure = JNI_PAYLOAD_INTERNAL;
                 return;
             }
             put_u8(buffer, (uint8_t)item.kind);
             put_string(buffer, item.value, true);
         }
     } else {
-        buffer->failure = PAYLOAD_INTERNAL;
+        buffer->failure = JNI_PAYLOAD_INTERNAL;
         return;
     }
 }
-static void write_metadata(payload_buffer *buffer, const markdown_core_node *metadata) {
+static void write_metadata(jni_payload_buffer *buffer, const markdown_core_node *metadata) {
     write_metadata_value(buffer, markdown_core_metadata_name(metadata));
     write_metadata_value(buffer, markdown_core_metadata_title(metadata));
     write_metadata_value(buffer, markdown_core_metadata_subtitle(metadata));
@@ -401,11 +371,11 @@ static void write_metadata(payload_buffer *buffer, const markdown_core_node *met
     write_metadata_value(buffer, markdown_core_metadata_comment(metadata));
 }
 
-static void put_dimensions(payload_buffer *buffer, const markdown_core_dimensions *dimensions) {
+static void put_dimensions(jni_payload_buffer *buffer, const markdown_core_dimensions *dimensions) {
     if (dimensions &&
         (dimensions->width < 1 ||
          (dimensions->height.has_value && (dimensions->height.value < 1 || dimensions->height.value > INT32_MAX)))) {
-        buffer->failure = PAYLOAD_INTERNAL;
+        buffer->failure = JNI_PAYLOAD_INTERNAL;
         return;
     }
     put_u8(buffer, dimensions ? 1 : 0);
@@ -418,23 +388,19 @@ static void put_dimensions(payload_buffer *buffer, const markdown_core_dimension
     }
 }
 
-static void write_node(payload_buffer *buffer, payload_stack *stack, payload_resources *resources,
+static void write_node(jni_payload_buffer *buffer, jni_payload_stack *stack, jni_payload_resources *resources,
                        const markdown_core_node *node) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_string first = {0};
+    markdown_core_string second = {0};
     markdown_core_string third = {0};
     markdown_core_optional_string optional_first = {0};
     markdown_core_optional_string optional_second = {0};
 
-    /* One reservation covers the header and any kind's fixed fields; each
-     * store below then finds its room already there. */
-    if (!ensure(buffer, 64)) {
-        return;
-    }
     put_u8(buffer, (uint8_t)kind);
     put_scope(buffer, markdown_core_node_scope(node));
     write_attributes(buffer, markdown_core_node_primary_attributes(node));
-    if (!ensure(buffer, 64)) {
+    if (buffer->failure != JNI_PAYLOAD_OK) {
         return;
     }
 
@@ -445,27 +411,41 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
          * because a present title holds at least one node -- then the
          * content. */
         markdown_core_optional_bool collapsed;
-        payload_action children = {.kind = PAYLOAD_WRITE_CHILDREN, .node = node};
+        const markdown_core_node *title;
+        const markdown_core_node *cursor;
+        size_t count = 0;
         if (!markdown_core_node_callout_properties(node, &optional_first, &collapsed)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_optional_string(buffer, optional_first);
         put_u8(buffer, collapsed.has_value ? (collapsed.value ? 1 : 0) : UINT8_MAX);
-        push_action(buffer, stack, children);
-        schedule_nodes(buffer, stack, markdown_core_node_callout_title(node));
+        title = markdown_core_node_callout_title(node);
+        for (cursor = title; cursor; cursor = markdown_core_node_get_next_sibling(cursor)) {
+            count++;
+        }
+        if (title != NULL) {
+            jni_payload_action children = {.kind = JNI_PAYLOAD_WRITE_CHILDREN, .node = node};
+            push_action(buffer, stack, children);
+            schedule_nodes(buffer, stack, title, count);
+        } else {
+            schedule_nodes(buffer, stack, NULL, 0);
+            schedule_children(buffer, stack, node);
+        }
         break;
     }
     case MARKDOWN_CORE_KIND_DOCUMENT: {
         const markdown_core_node *metadata = markdown_core_node_document_metadata(node);
         put_u8(buffer, metadata ? 1 : 0);
-        push_action(buffer, stack,
-                    (payload_action){.kind = PAYLOAD_WRITE_CHAIN, .node = markdown_core_node_document_specimens(node)});
-        push_action(buffer, stack,
-                    (payload_action){.kind = PAYLOAD_WRITE_CHAIN, .node = markdown_core_node_document_footnotes(node)});
-        push_action(buffer, stack, (payload_action){.kind = PAYLOAD_WRITE_CHILDREN, .node = node});
+        push_action(
+            buffer, stack,
+            (jni_payload_action){.kind = JNI_PAYLOAD_WRITE_CHAIN, .node = markdown_core_node_document_specimens(node)});
+        push_action(
+            buffer, stack,
+            (jni_payload_action){.kind = JNI_PAYLOAD_WRITE_CHAIN, .node = markdown_core_node_document_footnotes(node)});
+        push_action(buffer, stack, (jni_payload_action){.kind = JNI_PAYLOAD_WRITE_CHILDREN, .node = node});
         if (metadata) {
-            push_action(buffer, stack, (payload_action){.kind = PAYLOAD_WRITE_NODE, .node = metadata});
+            push_action(buffer, stack, (jni_payload_action){.kind = JNI_PAYLOAD_WRITE_NODE, .node = metadata});
         }
         break;
     }
@@ -474,7 +454,7 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
         break;
     case MARKDOWN_CORE_KIND_FOOTNOTE:
         if (!markdown_core_footnote_id(node, &first)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_string(buffer, first, true);
@@ -483,7 +463,7 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
     case MARKDOWN_CORE_KIND_SPECIMEN: {
         markdown_core_optional_i64 start;
         if (!markdown_core_specimen_properties(node, &optional_first, &start)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_optional_string(buffer, optional_first);
@@ -495,7 +475,7 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
     case MARKDOWN_CORE_KIND_CITATION: {
         markdown_core_referent referent;
         if (!markdown_core_citation_referent(node, &referent)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_u8(buffer, (uint8_t)referent.kind);
@@ -509,12 +489,12 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
             put_string(buffer, referent.id, true);
             break;
         default:
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         push_action(buffer, stack,
-                    (payload_action){.kind = PAYLOAD_WRITE_CHAIN, .node = markdown_core_citation_suffix(node)});
-        schedule_nodes(buffer, stack, markdown_core_citation_prefix(node));
+                    (jni_payload_action){.kind = JNI_PAYLOAD_WRITE_CHAIN, .node = markdown_core_citation_suffix(node)});
+        schedule_chain(buffer, stack, markdown_core_citation_prefix(node));
         break;
     }
     case MARKDOWN_CORE_KIND_PARAGRAPH:
@@ -534,7 +514,7 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
     case MARKDOWN_CORE_KIND_HEADING: {
         int32_t level = 0;
         if (!markdown_core_node_heading_level(node, &level)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_i32(buffer, level);
@@ -552,7 +532,7 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
         markdown_core_optional_i64 start;
         bool tight = false;
         if (!markdown_core_node_list_properties(node, &flavor, &start, &variant, &delimiter, &tight)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_i32(buffer, (int32_t)flavor);
@@ -569,7 +549,7 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
     case MARKDOWN_CORE_KIND_LIST_ITEM: {
         markdown_core_optional_string marker;
         if (!markdown_core_node_list_item_marker(node, &marker)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_optional_string(buffer, marker);
@@ -581,7 +561,7 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
         bool closed = false;
         if (!markdown_core_node_code_block_properties(node, &optional_first, &optional_second, &third, &fenced,
                                                       &closed)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_optional_string(buffer, optional_first);
@@ -597,7 +577,7 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
     case MARKDOWN_CORE_KIND_HTML:
     case MARKDOWN_CORE_KIND_COMMENT:
         if (!markdown_core_node_literal(node, &first)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_string(buffer, first, true);
@@ -605,7 +585,7 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
     case MARKDOWN_CORE_KIND_FORMULA: {
         markdown_core_placement mode;
         if (!markdown_core_node_formula_properties(node, &mode, &first)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_i32(buffer, (int32_t)mode);
@@ -615,7 +595,7 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK: {
         markdown_core_placement mode;
         if (!markdown_core_node_formula_properties(node, &mode, &first) || mode != MARKDOWN_CORE_PLACEMENT_STANDALONE) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_string(buffer, first, true);
@@ -624,18 +604,18 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
     case MARKDOWN_CORE_KIND_TABLE: {
         size_t count, head, content, foot;
         if (!markdown_core_node_table_properties(node, &count, &head, &content, &foot)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         if (count > INT32_MAX || head > INT32_MAX || content > INT32_MAX || foot > INT32_MAX) {
-            buffer->failure = PAYLOAD_ALLOCATION;
+            buffer->failure = JNI_PAYLOAD_ALLOCATION;
             return;
         }
         put_i32(buffer, (int32_t)count);
         for (size_t index = 0; index < count; ++index) {
             markdown_core_table_column column;
             if (!markdown_core_node_table_column_at(node, index, &column)) {
-                buffer->failure = PAYLOAD_INTERNAL;
+                buffer->failure = JNI_PAYLOAD_INTERNAL;
                 return;
             }
             put_u8(buffer, (uint8_t)column.flow);
@@ -652,8 +632,8 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
         const markdown_core_node *caption = markdown_core_node_table_caption(node);
         put_u8(buffer, caption ? 1 : 0);
         if (caption) {
-            payload_action children = {.kind = PAYLOAD_WRITE_CHILDREN, .node = node};
-            payload_action field = {.kind = PAYLOAD_WRITE_NODE, .node = caption};
+            jni_payload_action children = {.kind = JNI_PAYLOAD_WRITE_CHILDREN, .node = node};
+            jni_payload_action field = {.kind = JNI_PAYLOAD_WRITE_NODE, .node = caption};
             push_action(buffer, stack, children);
             push_action(buffer, stack, field);
         } else {
@@ -664,14 +644,14 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
     case MARKDOWN_CORE_KIND_DEFINITION: {
         bool compact;
         if (!markdown_core_node_definition_compact(node, &compact)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_u8(buffer, compact ? 1 : 0);
-        payload_action bodies = {.kind = PAYLOAD_WRITE_DEFINITION_BODIES,
-                                 .body = markdown_core_node_definition_bodies(node)};
+        jni_payload_action bodies = {.kind = JNI_PAYLOAD_WRITE_DEFINITION_BODIES,
+                                     .body = markdown_core_node_definition_bodies(node)};
         push_action(buffer, stack, bodies);
-        schedule_nodes(buffer, stack, markdown_core_node_definition_term(node));
+        schedule_chain(buffer, stack, markdown_core_node_definition_term(node));
         break;
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
@@ -679,15 +659,15 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
         /* A label is a node-valued field, not directive content. Preserve that
          * boundary on the wire instead of flattening it into the child list. */
         if (!markdown_core_node_directive_properties(node, &optional_first)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_optional_string(buffer, optional_first);
         const markdown_core_node *label = markdown_core_node_directive_label(node);
         put_u8(buffer, label ? 1 : 0);
         if (label != NULL) {
-            payload_action children = {.kind = PAYLOAD_WRITE_CHILDREN, .node = node};
-            payload_action label_node = {.kind = PAYLOAD_WRITE_NODE, .node = label};
+            jni_payload_action children = {.kind = JNI_PAYLOAD_WRITE_CHILDREN, .node = node};
+            jni_payload_action label_node = {.kind = JNI_PAYLOAD_WRITE_NODE, .node = label};
             push_action(buffer, stack, children);
             push_action(buffer, stack, label_node);
         } else {
@@ -700,13 +680,13 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
         break;
     case MARKDOWN_CORE_KIND_CITE:
         /* Citation nodes belong to the citations field, outside ordinary content. */
-        schedule_nodes(buffer, stack, markdown_core_node_cite_citations(node));
+        schedule_chain(buffer, stack, markdown_core_node_cite_citations(node));
         break;
     case MARKDOWN_CORE_KIND_CROSS_LINK:
     case MARKDOWN_CORE_KIND_CROSS_EMBEDDED: {
         markdown_core_destination destination;
         if (!markdown_core_node_destination(node, &destination)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_i32(buffer, (int32_t)destination.kind);
@@ -728,18 +708,18 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
         bool first_sight = false;
         int32_t ordinal;
         if (resource == NULL) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         ordinal = resource_ordinal(buffer, resources, resource, &first_sight);
-        if (buffer->failure != PAYLOAD_OK) {
+        if (buffer->failure != JNI_PAYLOAD_OK) {
             return;
         }
         put_i32(buffer, ordinal);
         if (first_sight) {
             if (!markdown_core_node_destination(node, &destination) ||
                 !markdown_core_node_title(node, &optional_first)) {
-                buffer->failure = PAYLOAD_INTERNAL;
+                buffer->failure = JNI_PAYLOAD_INTERNAL;
                 return;
             }
             /* The branch ordinal leads and only that branch's fields follow it. */
@@ -753,7 +733,7 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
                 put_optional_string(buffer, destination.anchor);
                 break;
             default:
-                buffer->failure = PAYLOAD_INTERNAL;
+                buffer->failure = JNI_PAYLOAD_INTERNAL;
                 return;
             }
             put_optional_string(buffer, optional_first);
@@ -768,7 +748,7 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
     case MARKDOWN_CORE_KIND_TABLE_CELL: {
         int64_t rowspan, colspan;
         if (!markdown_core_node_table_cell_spans(node, &rowspan, &colspan)) {
-            buffer->failure = PAYLOAD_INTERNAL;
+            buffer->failure = JNI_PAYLOAD_INTERNAL;
             return;
         }
         put_i64(buffer, rowspan);
@@ -778,79 +758,77 @@ static void write_node(payload_buffer *buffer, payload_stack *stack, payload_res
     }
 
     default:
-        buffer->failure = PAYLOAD_INTERNAL;
+        buffer->failure = JNI_PAYLOAD_INTERNAL;
         break;
     }
 }
 
-static void write_tree(payload_buffer *buffer, const markdown_core_node *root) {
-    payload_stack stack = {0};
-    payload_resources resources = {0};
-    payload_action root_action = {.kind = PAYLOAD_WRITE_NODE, .node = root};
+static void write_tree(jni_payload_buffer *buffer, const markdown_core_node *root) {
+    jni_payload_stack stack = {0};
+    jni_payload_resources resources = {0};
+    jni_payload_action root_action = {.kind = JNI_PAYLOAD_WRITE_NODE, .node = root};
     push_action(buffer, &stack, root_action);
-    while (stack.count != 0 && buffer->failure == PAYLOAD_OK) {
-        payload_action action = stack.actions[--stack.count];
+    while (stack.count != 0 && buffer->failure == JNI_PAYLOAD_OK) {
+        jni_payload_action action = stack.actions[--stack.count];
         switch (action.kind) {
-        case PAYLOAD_WRITE_NODE:
+        case JNI_PAYLOAD_WRITE_NODE:
             if (action.node == NULL) {
-                buffer->failure = PAYLOAD_INTERNAL;
+                buffer->failure = JNI_PAYLOAD_INTERNAL;
             } else {
                 write_node(buffer, &stack, &resources, action.node);
             }
             break;
-        case PAYLOAD_WRITE_SIBLINGS: {
+        case JNI_PAYLOAD_WRITE_SIBLINGS: {
             const markdown_core_node *next;
-            payload_action node_action = {0};
-            size_t written = action.written + 1;
-            if (action.node == NULL) {
-                buffer->failure = PAYLOAD_INTERNAL;
+            jni_payload_action node_action = {0};
+            if (action.node == NULL || action.remaining == 0) {
+                buffer->failure = JNI_PAYLOAD_INTERNAL;
                 break;
             }
             next = markdown_core_node_get_next_sibling(action.node);
-            if (next != NULL) {
-                payload_action siblings = {.kind = PAYLOAD_WRITE_SIBLINGS,
-                                           .node = next,
-                                           .written = written,
-                                           .count_offset = action.count_offset};
-                push_action(buffer, &stack, siblings);
-            } else {
-                fill_count(buffer, action.count_offset, written);
+            if ((action.remaining == 1) != (next == NULL)) {
+                buffer->failure = JNI_PAYLOAD_INTERNAL;
+                break;
             }
-            node_action.kind = PAYLOAD_WRITE_NODE;
+            if (action.remaining > 1) {
+                jni_payload_action siblings = {
+                    .kind = JNI_PAYLOAD_WRITE_SIBLINGS, .node = next, .remaining = action.remaining - 1};
+                push_action(buffer, &stack, siblings);
+            }
+            node_action.kind = JNI_PAYLOAD_WRITE_NODE;
             node_action.node = action.node;
+            node_action.remaining = 0;
             push_action(buffer, &stack, node_action);
             break;
         }
-        case PAYLOAD_WRITE_CHILDREN:
+        case JNI_PAYLOAD_WRITE_CHILDREN:
             schedule_children(buffer, &stack, action.node);
             break;
-        case PAYLOAD_WRITE_CHAIN:
-            schedule_nodes(buffer, &stack, action.node);
+        case JNI_PAYLOAD_WRITE_CHAIN:
+            schedule_chain(buffer, &stack, action.node);
             break;
-        case PAYLOAD_WRITE_DEFINITION_BODIES: {
-            /* A definition has at least one body; the count fills in as
-             * the last body is scheduled. */
-            if (action.body == NULL) {
-                buffer->failure = PAYLOAD_INTERNAL;
+        case JNI_PAYLOAD_WRITE_DEFINITION_BODIES: {
+            size_t count = 0;
+            for (const markdown_core_definition_body *body = action.body; body;
+                 body = markdown_core_definition_body_next(body)) {
+                count++;
+            }
+            if (!count || count > INT32_MAX) {
+                buffer->failure = JNI_PAYLOAD_INTERNAL;
                 break;
             }
-            action.count_offset = buffer->size;
-            put_i32(buffer, 0);
-            action.kind = PAYLOAD_WRITE_DEFINITION_BODY;
-            action.written = 0;
+            put_i32(buffer, (int32_t)count);
+            action.kind = JNI_PAYLOAD_WRITE_DEFINITION_BODY;
             push_action(buffer, &stack, action);
             break;
         }
-        case PAYLOAD_WRITE_DEFINITION_BODY: {
+        case JNI_PAYLOAD_WRITE_DEFINITION_BODY: {
             const markdown_core_definition_body *body = action.body;
             action.body = markdown_core_definition_body_next(body);
-            action.written++;
             if (action.body) {
                 push_action(buffer, &stack, action);
-            } else {
-                fill_count(buffer, action.count_offset, action.written);
             }
-            schedule_nodes(buffer, &stack, markdown_core_definition_body_content(body));
+            schedule_chain(buffer, &stack, markdown_core_definition_body_content(body));
             break;
         }
         }
@@ -859,12 +837,11 @@ static void write_tree(payload_buffer *buffer, const markdown_core_node *root) {
     free(resources.slots);
 }
 
-bool markdown_core_kotlin_payload_encode(const uint8_t *source, size_t length, uint8_t **output,
-                                         size_t *output_length) {
+bool markdown_core_kotlin_jni_encode(const uint8_t *source, size_t length, uint8_t **output, size_t *output_length) {
     markdown_core_string internal_error = {internal_error_bytes, sizeof(internal_error_bytes) - 1};
     markdown_core_error *error = NULL;
     markdown_core_document *document;
-    payload_buffer buffer = {0};
+    jni_payload_buffer buffer = {0};
     const markdown_core_node *root;
 
     if (output == NULL || output_length == NULL) {
@@ -874,13 +851,7 @@ bool markdown_core_kotlin_payload_encode(const uint8_t *source, size_t length, u
     *output_length = 0;
     document = markdown_core_document_parse(source, length, &error);
 
-    /* A payload runs a few times its source: node headers cost more than
-     * the bytes that produced them. Sizing the buffer from the source up
-     * front leaves the doubling to the documents that outrun the estimate. */
-    if (length <= (SIZE_MAX - 4096) / 4) {
-        grow(&buffer, length * 4 + 4096);
-    }
-    put_bytes(&buffer, payload_magic, sizeof(payload_magic));
+    put_bytes(&buffer, jni_payload_magic, sizeof(jni_payload_magic));
     if (document == NULL) {
         markdown_core_error_code code =
             error == NULL ? MARKDOWN_CORE_ERROR_INTERNAL : markdown_core_error_get_code(error);
@@ -891,20 +862,20 @@ bool markdown_core_kotlin_payload_encode(const uint8_t *source, size_t length, u
         put_u8(&buffer, 0);
         root = markdown_core_document_root(document);
         if (root == NULL) {
-            buffer.failure = PAYLOAD_INTERNAL;
+            buffer.failure = JNI_PAYLOAD_INTERNAL;
         } else {
             write_tree(&buffer, root);
         }
         markdown_core_document_free(document);
     }
 
-    if (buffer.failure == PAYLOAD_INTERNAL) {
+    if (buffer.failure == JNI_PAYLOAD_INTERNAL) {
         free(buffer.data);
         memset(&buffer, 0, sizeof(buffer));
-        put_bytes(&buffer, payload_magic, sizeof(payload_magic));
+        put_bytes(&buffer, jni_payload_magic, sizeof(jni_payload_magic));
         write_error(&buffer, MARKDOWN_CORE_ERROR_INTERNAL, internal_error);
     }
-    if (buffer.failure != PAYLOAD_OK) {
+    if (buffer.failure != JNI_PAYLOAD_OK) {
         free(buffer.data);
         return false;
     }
@@ -913,4 +884,4 @@ bool markdown_core_kotlin_payload_encode(const uint8_t *source, size_t length, u
     return true;
 }
 
-void markdown_core_kotlin_payload_free(uint8_t *output) { free(output); }
+void markdown_core_kotlin_jni_payload_free(uint8_t *output) { free(output); }

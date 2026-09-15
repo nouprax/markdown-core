@@ -36,13 +36,8 @@ markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem);
 markdown_core_map_record *markdown_core_reference_create(markdown_core_mem *mem, markdown_core_map *map,
                                                          markdown_core_chunk *label,
                                                          struct markdown_core_resource *resource);
-/* The resource references to `record` read through, made on first use for a
- * declaration that had none; NULL only on allocation failure. */
-markdown_core_resource *markdown_core_reference_resource(markdown_core_map *map, markdown_core_map_record *record);
 markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *mem);
-/* Declares the label and returns its record, whose normalized spelling the
- * definition's id copies; NULL when the label is empty or the map failed. */
-markdown_core_map_record *markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label);
+void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label);
 
 #ifdef __cplusplus
 }

@@ -9,21 +9,21 @@ static bool S_scan_block_identifier(markdown_core_parser *parser, const unsigned
                                     block_identifier *candidate) {
     bufsize_t end = length;
     while (end && markdown_core_is_line_end(data[end - 1])) {
-        MARKDOWN_CORE_DIAGNOSTIC(parser->block_identifier_work++;)
+        parser->block_identifier_work++;
         end--;
     }
     while (end && markdown_core_block_is_space_or_tab(data[end - 1])) {
-        MARKDOWN_CORE_DIAGNOSTIC(parser->block_identifier_work++;)
+        parser->block_identifier_work++;
         end--;
     }
-    MARKDOWN_CORE_DIAGNOSTIC(parser->block_identifier_work++;)
+    parser->block_identifier_work++;
     if (end < 3 || data[end - 1] != '#') {
         return false;
     }
     bufsize_t start = end - 1;
     while (start) {
         unsigned char c = data[start - 1];
-        MARKDOWN_CORE_DIAGNOSTIC(parser->block_identifier_work++;)
+        parser->block_identifier_work++;
         if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-')) {
             break;
         }
@@ -35,7 +35,7 @@ static bool S_scan_block_identifier(markdown_core_parser *parser, const unsigned
     candidate->identifier = (markdown_core_chunk){(unsigned char *)data + start, end - start - 1, 0};
     bufsize_t cut = start - 1;
     while (cut && markdown_core_block_is_space_or_tab(data[cut - 1])) {
-        MARKDOWN_CORE_DIAGNOSTIC(parser->block_identifier_work++;)
+        parser->block_identifier_work++;
         cut--;
     }
     candidate->own_line = !cut || markdown_core_is_line_end(data[cut - 1]);
@@ -56,7 +56,7 @@ static bool S_scan_block_identifier(markdown_core_parser *parser, const unsigned
 
 static bool S_attach_block_identifier(markdown_core_parser *parser, markdown_core_node *owner,
                                       const block_identifier *candidate) {
-    if (owner->attributes && owner->attributes->anchor.len) {
+    if (owner->attributes.anchor.len) {
         return false;
     }
     markdown_core_chunk identifier = candidate->identifier;
@@ -64,20 +64,14 @@ static bool S_attach_block_identifier(markdown_core_parser *parser, markdown_cor
         parser->oom = true;
         return false;
     }
-    markdown_core_attributes *attributes = markdown_core_node_attributes_mut(owner, parser->arena);
-    if (!attributes) {
-        markdown_core_chunk_free(parser->mem, &identifier);
-        parser->oom = true;
-        return false;
-    }
-    markdown_core_chunk_free(parser->mem, &attributes->anchor);
-    attributes->anchor = identifier;
+    markdown_core_chunk_free(parser->mem, &owner->attributes.anchor);
+    owner->attributes.anchor = identifier;
     return true;
 }
 
 void markdown_core_block_attach_paragraph_identifier(markdown_core_parser *parser, markdown_core_node *paragraph) {
     block_identifier candidate;
-    if (!S_scan_block_identifier(parser, paragraph->content->ptr, paragraph->content->size, &candidate)) {
+    if (!S_scan_block_identifier(parser, paragraph->content.ptr, paragraph->content.size, &candidate)) {
         return;
     }
     markdown_core_node *owner = paragraph;
@@ -86,11 +80,11 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_parser *parse
     if (parent && markdown_core_block_type(parent) == MARKDOWN_CORE_NODE_LIST_ITEM &&
         parent->first_child == paragraph &&
         markdown_core_parser_content_place(
-            parser, paragraph, (bufsize_t)(candidate.identifier.data - paragraph->content->ptr), &line, &column) &&
+            parser, paragraph, (bufsize_t)(candidate.identifier.data - paragraph->content.ptr), &line, &column) &&
         line == parent->start_line) {
         owner = parent;
     }
-    bufsize_t at = (bufsize_t)(candidate.identifier.data - paragraph->content->ptr) + paragraph->content_mark_offset;
+    bufsize_t at = (bufsize_t)(candidate.identifier.data - paragraph->content.ptr) + paragraph->content_mark_offset;
     int indent = paragraph->content_mark_count
                      ? parser->line_marks[markdown_core_block_content_mark_at(parser, paragraph, at)].indent
                      : 0;
@@ -98,7 +92,7 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_parser *parse
         return;
     }
     if (S_attach_block_identifier(parser, owner, &candidate)) {
-        markdown_core_strbuf_truncate(paragraph->content, candidate.content_end);
+        markdown_core_strbuf_truncate(&paragraph->content, candidate.content_end);
     }
 }
 
@@ -107,7 +101,7 @@ bool markdown_core_block_attach_identifier_line(markdown_core_parser *parser, ma
     markdown_core_node *owner = parent->last_child;
     block_identifier candidate;
     if (parser->indent >= CODE_INDENT || input->data[parser->first_nonspace] != '#' || !owner ||
-        (owner->attributes && owner->attributes->anchor.len) ||
+        owner->attributes.anchor.len ||
         (markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_LIST &&
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_CALLOUT &&
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_TABLE) ||
@@ -118,9 +112,15 @@ bool markdown_core_block_attach_identifier_line(markdown_core_parser *parser, ma
     }
     bool followed_by_boundary = parser->lookahead_cursor == parser->lookahead_end;
     if (!followed_by_boundary) {
-        const markdown_core_block_peek *peek =
-            markdown_core_parser_peek_block_line(parser, parent, MARKDOWN_CORE_NODE_PARAGRAPH);
-        followed_by_boundary = peek->blanks > 0;
+        markdown_core_block_lookahead lookahead;
+        markdown_core_chunk next;
+        int first_nonspace, indent, blank_lines;
+        if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
+            return false;
+        }
+        markdown_core_parser_lookahead_next(&lookahead, &next, &first_nonspace, &indent, &blank_lines);
+        followed_by_boundary = blank_lines > 0;
+        markdown_core_parser_lookahead_end(&lookahead);
     }
     if (!followed_by_boundary || parser->oom || !S_attach_block_identifier(parser, owner, &candidate)) {
         return false;

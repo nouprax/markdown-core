@@ -20,9 +20,8 @@ packages/markdown-core/tests/canonical-ast/
 # Generated, copied, and package-manager content
 packages/markdown-core/core/case_fold.inc
 packages/markdown-core/core/entities.inc
-packages/markdown-core/core/unicode_categories.inc
+packages/markdown-core/core/punctuation_or_symbol.inc
 packages/markdown-core/core/anchor_scalars.inc
-packages/markdown-core/elements/core-registry.inc
 node_modules/
 dist/
 build/

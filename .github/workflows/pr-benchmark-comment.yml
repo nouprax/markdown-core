@@ -175,10 +175,6 @@ jobs:
                       node baseline-source/scripts/pr-benchmark-result.mjs validate \
                           --input "$downloaded" --source-sha "$BASE_SHA"; then
                       cp "$downloaded" benchmark-results/base.json
-                      # The same measurement's detail, when the base's runner reported it.
-                      if test -f trusted-baseline/downloaded/baseline.detail.json; then
-                          cp trusted-baseline/downloaded/baseline.detail.json benchmark-results/base.detail.json
-                      fi
                       echo "usable=true" >>"$GITHUB_OUTPUT"
                   else
                       echo "usable=false" >>"$GITHUB_OUTPUT"
@@ -207,17 +203,12 @@ jobs:
                       --source-sha "$BASE_SHA" \
                       --origin fallback-build
                   cp trusted-baseline/baseline.json benchmark-results/base.json
-                  if test -f trusted-baseline/baseline.detail.json; then
-                      cp trusted-baseline/baseline.detail.json benchmark-results/base.detail.json
-                  fi
             - name: Publish the trusted exact-base benchmark for later PR runs
               if: ${{ steps.comparison.outputs.current == 'true' && steps.baseline.outputs.usable != 'true' }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: pr-benchmark-baseline-${{ steps.comparison.outputs.base_sha }}
-                  path: |
-                      trusted-baseline/baseline.json
-                      trusted-baseline/baseline.detail.json
+                  path: trusted-baseline/baseline.json
                   if-no-files-found: error
                   retention-days: 30
             - name: Download the PR-controlled head measurement as untrusted data
@@ -257,13 +248,6 @@ jobs:
                           "workloadVersion",
                       ];
 
-                      // The same measurement's detail, in the sidecar the runner has
-                      // written since it reported the parse and the free apart. It is
-                      // one tuple: a sidecar missing any of it is not a runner's output
-                      // and is refused whole, and a side without one compares on the
-                      // contract alone.
-                      const detailKeys = ["freeMedianNs", "inputSha256", "minNs", "nodes", "schema", "sourceSha"];
-
                       function readMetric(file, expectedSha, allowedOrigins) {
                           if (!fs.existsSync(file) || fs.statSync(file).size > 32768) return null;
                           try {
@@ -296,28 +280,6 @@ jobs:
                           }
                       }
 
-                      function readDetail(file, expectedSha) {
-                          if (!fs.existsSync(file) || fs.statSync(file).size > 32768) return null;
-                          try {
-                              const detail = JSON.parse(fs.readFileSync(file, "utf8"));
-                              const valid =
-                                  detail &&
-                                  Object.keys(detail).sort().join("\n") === detailKeys.join("\n") &&
-                                  detail.schema === 1 &&
-                                  detail.sourceSha === expectedSha &&
-                                  Number.isSafeInteger(detail.minNs) &&
-                                  detail.minNs > 0 &&
-                                  Number.isSafeInteger(detail.freeMedianNs) &&
-                                  detail.freeMedianNs >= 0 &&
-                                  Number.isSafeInteger(detail.nodes) &&
-                                  detail.nodes > 0 &&
-                                  /^[0-9a-f]{64}$/u.test(detail.inputSha256);
-                              return valid ? detail : null;
-                          } catch {
-                              return null;
-                          }
-                      }
-
                       function percent(current, baseline) {
                           if (!Number.isFinite(baseline) || baseline === 0) return "n/a";
                           const value = ((current - baseline) / baseline) * 100;
@@ -342,23 +304,15 @@ jobs:
                           process.env.BASE_SHA,
                           new Set(["main-build", "fallback-build"]),
                       );
-                      const headDetail = head
-                          ? readDetail("benchmark-results/head/head.detail.json", process.env.HEAD_SHA)
-                          : null;
-                      const baseDetail = base
-                          ? readDetail("benchmark-results/base.detail.json", process.env.BASE_SHA)
-                          : null;
                       const lines = [marker, "## PR benchmark", ""];
                       if (head && base) {
-                          const detail = headDetail !== null && baseDetail !== null;
                           const contractMatches =
                               head.runtime === base.runtime &&
                               head.workload === base.workload &&
                               head.workloadVersion === base.workloadVersion &&
                               head.bytes === base.bytes &&
                               head.warmup === base.warmup &&
-                              head.repeats === base.repeats &&
-                              (!detail || headDetail.inputSha256 === baseDetail.inputSha256);
+                              head.repeats === base.repeats;
                           const baselineLabel =
                               base.origin === "main-build"
                                   ? "published exact-base baseline"
@@ -370,18 +324,6 @@ jobs:
                               "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
                               `| C | ${head.workload} (v${head.workloadVersion}) | ${head.bytes.toLocaleString("en-US")} B | ${(head.medianNs / 1e6).toFixed(3)} ms | ${(base.medianNs / 1e6).toFixed(3)} ms | ${contractMatches ? percent(head.medianNs, base.medianNs) : "n/a"} | ${head.memoryKiB.toLocaleString("en-US")} KiB | ${base.memoryKiB.toLocaleString("en-US")} KiB | ${contractMatches ? percent(head.memoryKiB, base.memoryKiB) : "n/a"} |`,
                               "",
-                          );
-                          if (detail) {
-                              lines.push(
-                                  "| Detail | Head | Base | Diff |",
-                                  "| --- | ---: | ---: | ---: |",
-                                  `| Parse, minimum | ${(headDetail.minNs / 1e6).toFixed(3)} ms | ${(baseDetail.minNs / 1e6).toFixed(3)} ms | ${contractMatches ? percent(headDetail.minNs, baseDetail.minNs) : "n/a"} |`,
-                                  `| Free, median | ${(headDetail.freeMedianNs / 1e6).toFixed(3)} ms | ${(baseDetail.freeMedianNs / 1e6).toFixed(3)} ms | ${contractMatches ? percent(headDetail.freeMedianNs, baseDetail.freeMedianNs) : "n/a"} |`,
-                                  `| Nodes | ${headDetail.nodes.toLocaleString("en-US")} | ${baseDetail.nodes.toLocaleString("en-US")} | ${contractMatches ? percent(headDetail.nodes, baseDetail.nodes) : "n/a"} |`,
-                                  "",
-                              );
-                          }
-                          lines.push(
                               "### Binary size",
                               "",
                               "| Artifact | Head | Base | Diff |",

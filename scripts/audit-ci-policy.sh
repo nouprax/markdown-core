@@ -98,10 +98,7 @@ grep -Fq 'name: PR Benchmark' "$pr_benchmark"
 grep -Fq 'workflows: [PR Benchmark]' "$pr_benchmark_comment"
 grep -Fq 'pr-benchmark-baseline-${{ github.sha }}' "$pr_benchmark"
 grep -Fq 'name: pr-benchmark-head' "$pr_benchmark"
-# The head measurement is the contract and, next to it, the same measurement's
-# detail sidecar, both from the head job's own result directory.
-grep -Fq 'build/pr-benchmark/head.json' "$pr_benchmark"
-grep -Fq 'build/pr-benchmark/head.detail.json' "$pr_benchmark"
+grep -Fq 'path: build/pr-benchmark/head.json' "$pr_benchmark"
 if [ "$(grep -Fc 'mkdir -p build/pr-benchmark' "$pr_benchmark")" -ne 2 ]; then
     echo "main and PR-head benchmark producers must create their result directory" >&2
     exit 1
@@ -139,50 +136,21 @@ if grep -Eq 'workflows: \[CI\]|run\.name === "CI"|successful main CI' \
     echo "PR benchmark still depends on the normal main CI pipeline" >&2
     exit 1
 fi
-# THE BINDING TIMING LANES ARE OPT-IN AND INFORMATIONAL. Each binding times
-# its public parse on the C lane's workloads from one entry a person runs on
-# purpose (`pnpm benchmark:es|kotlin|swift`); no CI workflow runs one, no
-# test suite contains one, and the Swift release manifest never ships one.
-for lane in \
+for retired in \
     packages/es-markdown-core/scripts/benchmark.mjs \
     packages/kotlin-markdown-core/src/jvmBenchmark/kotlin/com/nouprax/markdown/core/benchmark/Benchmark.kt \
     packages/swift-markdown-core/Benchmarks/MarkdownCoreBenchmarks/main.swift; do
-    if [ ! -e "$lane" ]; then
-        echo "binding timing lane is missing: $lane" >&2
+    if [ -e "$retired" ]; then
+        echo "retired binding wall-clock diagnostic still exists: $retired" >&2
         exit 1
     fi
 done
-for entry in 'benchmark:es' 'benchmark:kotlin' 'benchmark:swift'; do
-    grep -Fq "\"$entry\"" package.json || {
-        echo "package.json does not route the $entry lane" >&2
-        exit 1
-    }
-done
-grep -Fq 'register<JavaExec>("jvmBenchmark")' packages/kotlin-markdown-core/build.gradle.kts || {
-    echo "the Kotlin benchmark lane is not an opt-in task" >&2
-    exit 1
-}
-grep -Fq 'name: "MarkdownCoreBenchmarks"' packages/swift-markdown-core/Benchmarks/Package.swift || {
-    echo "the Swift benchmark lane is not a package of its own" >&2
-    exit 1
-}
-if grep -Fq 'MarkdownCoreBenchmarks' Package.swift; then
-    echo "the Swift development manifest carries the benchmark lane, so the test build would stage it" >&2
-    exit 1
-fi
-if grep -Eq 'benchmark:(es|kotlin|swift)|jvmBenchmark|MarkdownCoreBenchmarks|scripts/benchmark\.mjs' \
-    "$ci" "$pr_benchmark" "$pr_benchmark_comment" .github/workflows/release.yml .github/workflows/release-dry-run.yml; then
-    echo "a binding timing lane is run by a workflow; the lanes are opt-in" >&2
-    exit 1
-fi
-if grep -Eq 'dependsOn\(.*"jvmBenchmark"' packages/kotlin-markdown-core/build.gradle.kts; then
-    echo "a Kotlin test or check task depends on the benchmark lane" >&2
-    exit 1
-fi
-if grep -RqE 'benchmark\.mjs|Benchmark\.kt|MarkdownCoreBenchmarks' \
-    packages/es-markdown-core/scripts/run-tests.mjs packages/es-markdown-core/scripts/run-conformance.mjs \
-    packages/swift-markdown-core/Tests; then
-    echo "a binding test suite reaches into a timing lane" >&2
+if grep -Eq 'MarkdownCoreBenchmarks|kotlinBenchmark|jvmBenchmark|scripts/benchmark\.mjs|benchmark:(swift|kotlin|es)' \
+    Package.swift \
+    package.json \
+    packages/kotlin-markdown-core/build.gradle.kts \
+    packages/es-markdown-core/package.json; then
+    echo "a retired binding wall-clock diagnostic is still routed by a package graph" >&2
     exit 1
 fi
 if grep -R -nE 'START_TIMING|END_TIMING|TIMING[[:space:]]*[<>]=?|takes less than [0-9]+ms' \

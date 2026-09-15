@@ -38,19 +38,19 @@ public struct Citation: Markup {
     let fields: Stored<Fields>
 
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public var scope: Scope { fields.read { $0.scope } }
+    public var scope: Scope { fields.scope }
     /// The optional anchor attached to this node.
-    public var anchor: String? { fields.read { $0.anchor } }
+    public var anchor: String? { fields.anchor }
     /// The ordered attributes attached to this node.
-    public var attributes: Attributes { fields.read { $0.attributes } }
+    public var attributes: Attributes { fields.attributes }
     /// What it names.
-    public var referent: CitationReferent { fields.read { $0.referent } }
+    public var referent: CitationReferent { fields.referent }
     /// The inline content before the referent, owned by the citation; empty
     /// for an inherited call.
-    public var prefix: MarkupCollection<any Markup> { fields.children { $0.prefix } }
+    public var prefix: MarkupCollection<any Markup> { fields.prefix }
     /// The inline content after the referent, owned by the citation; empty
     /// for an inherited call.
-    public var suffix: MarkupCollection<any Markup> { fields.children { $0.suffix } }
+    public var suffix: MarkupCollection<any Markup> { fields.suffix }
 
     /// Dispatches this node to its typed visitor method.
 }
@@ -68,13 +68,13 @@ public struct Cite: Markup {
     let fields: Stored<Fields>
 
     /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public var scope: Scope { fields.read { $0.scope } }
+    public var scope: Scope { fields.scope }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.read { $0.anchor } }
+    public var anchor: String? { fields.anchor }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.read { $0.attributes } }
+    public var attributes: Attributes { fields.attributes }
     /// Never empty: every cite is authored with at least one item.
-    public var citations: MarkupCollection<Citation> { fields.elements { $0.citations } }
+    public var citations: MarkupCollection<Citation> { fields.citations }
 }
 
 extension BibMode {

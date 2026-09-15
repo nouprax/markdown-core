@@ -31,15 +31,7 @@ class State {
     // Output frames contain no markup or traversal actions.
     private readonly frames: OutputFrame[] = [];
     private readonly remainingNodes: number[] = [];
-    /**
-     * The connector segments of every open nesting level, and where the
-     * segments above each depth end: a line copies its lead-in once and
-     * extends the segments by the one its own connector decides, instead of
-     * deriving every level again per line.
-     */
-    private prefix = "";
-    private readonly prefixEnds: number[] = [0];
-    private output = "";
+    private readonly lines: string[] = [];
 
     /** Each callback formats its node; the walker controls traversal. */
     private readonly visitor: MarkupVisitor = {
@@ -490,7 +482,7 @@ class State {
     }
 
     result(): string {
-        return this.output;
+        return `${this.lines.join("\n")}\n`;
     }
 
     private container(kind: string, node: Markup, fields: readonly string[], children: readonly Markup[]): void {
@@ -526,19 +518,19 @@ class State {
      */
 
     private emit(text: string): void {
-        const depth = this.remainingNodes.length;
-        if (depth === 0) {
-            this.output += `${text}\n`;
+        if (this.remainingNodes.length === 0) {
+            this.lines.push(text);
             return;
         }
 
-        const parent = depth - 1;
-        const remaining = this.remainingNodes[parent]! - 1;
-        this.remainingNodes[parent] = remaining;
-        const above = this.prefix.slice(0, this.prefixEnds[parent]);
-        this.output += `${above}${remaining === 0 ? "└── " : "├── "}${text}\n`;
-        this.prefix = above + (remaining > 0 ? "│   " : "    ");
-        this.prefixEnds[depth] = this.prefix.length;
+        const parent = this.remainingNodes.length - 1;
+        const prefix = this.remainingNodes
+            .slice(0, -1)
+            .map((remaining) => (remaining > 0 ? "│   " : "    "))
+            .join("");
+        const connector = this.remainingNodes[parent] === 1 ? "└── " : "├── ";
+        this.lines.push(prefix + connector + text);
+        this.remainingNodes[parent] = this.remainingNodes[parent]! - 1;
     }
 
     private start(): void {

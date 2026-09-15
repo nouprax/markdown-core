@@ -1,5 +1,4 @@
 #include "list.h"
-#include <string.h>
 #include "tasklist.h"
 #define BLOCK_PEEK(input, at) ((input)->data[(at)])
 #include "block_internal.h"
@@ -34,7 +33,7 @@ static bool ordered_numeral(markdown_core_parser *parser, markdown_core_chunk *i
             return false;
         }
         for (bufsize_t at = begin; at < end; at++) {
-            MARKDOWN_CORE_DIAGNOSTIC(parser->list_marker_work++;)
+            parser->list_marker_work++;
             if (!markdown_core_isdigit(input->data[at])) {
                 return false;
             }
@@ -53,7 +52,7 @@ static bool ordered_numeral(markdown_core_parser *parser, markdown_core_chunk *i
             bufsize_t width = terms[term].text[1] ? 2 : 1;
             unsigned char offset = variant.lowercased ? 'a' - 'A' : 0;
             while (at + width <= end) {
-                MARKDOWN_CORE_DIAGNOSTIC(parser->list_marker_work++;)
+                parser->list_marker_work++;
                 if (input->data[at] != terms[term].text[0] + offset ||
                     (width == 2 && input->data[at + 1] != terms[term].text[1] + offset)) {
                     break;
@@ -89,7 +88,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_parser *par
     unsigned char c = BLOCK_PEEK(input, pos);
     const markdown_core_list *committed = container->kind == MARKDOWN_CORE_NODE_LIST ? container->as.list : NULL;
     *data = (markdown_core_list){0};
-    MARKDOWN_CORE_DIAGNOSTIC(parser->list_marker_work++;)
+    parser->list_marker_work++;
     if (c == '*' || c == '-' || c == '+') {
         data->list_type = MARKDOWN_CORE_BULLET_LIST;
         data->bullet_char = c;
@@ -101,18 +100,9 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_parser *par
         c = BLOCK_PEEK(input, pos);
         if (c == '#') {
             pos++;
-        } else if (markdown_core_isdigit(c)) {
-            while (markdown_core_isdigit(BLOCK_PEEK(input, pos))) {
-                MARKDOWN_CORE_DIAGNOSTIC(parser->list_marker_work++;)
-                pos++;
-            }
-        } else if (markdown_core_isalpha(c)) {
-            /* A single letter is an alphabetic marker; a longer run can only
-             * be a roman numeral, so the scan stops at the first byte that is
-             * no roman letter instead of reading a whole word. */
-            pos++;
-            while (strchr("ivxlcdmIVXLCDM", BLOCK_PEEK(input, pos)) && BLOCK_PEEK(input, pos)) {
-                MARKDOWN_CORE_DIAGNOSTIC(parser->list_marker_work++;)
+        } else {
+            while (markdown_core_isalnum(BLOCK_PEEK(input, pos))) {
+                parser->list_marker_work++;
                 pos++;
             }
         }
@@ -160,7 +150,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_parser *par
             int initial_column = column;
             bufsize_t at = pos;
             while (markdown_core_block_is_space_or_tab(BLOCK_PEEK(input, at))) {
-                MARKDOWN_CORE_DIAGNOSTIC(parser->list_marker_work++;)
+                parser->list_marker_work++;
                 column += input->data[at++] == '\t' ? 4 - column % 4 : 1;
                 if (column - initial_column >= 2) {
                     break;
@@ -177,7 +167,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_parser *par
     if (interrupts_paragraph) {
         bufsize_t at = pos;
         while (markdown_core_block_is_space_or_tab(BLOCK_PEEK(input, at))) {
-            MARKDOWN_CORE_DIAGNOSTIC(parser->list_marker_work++;)
+            parser->list_marker_work++;
             at++;
         }
         if (markdown_core_is_line_end(BLOCK_PEEK(input, at))) {
@@ -241,27 +231,9 @@ static bool markdown_core_list_open(markdown_core_parser *parser, markdown_core_
     return true;
 }
 
-/* A letter begins a marker only as `a.`, `A)` or a roman numeral before
- * `.` or `)`. Most lines begin with a letter and are prose: those few bytes
- * are read here, the shape the marker parser reads for a letter, before a
- * marker is parsed at all, and no marker the parser accepts is refused. */
-static bool letter_marker_shape(const markdown_core_chunk *input, bufsize_t at) {
-    if (!markdown_core_isalpha(BLOCK_PEEK(input, at))) {
-        return true;
-    }
-    at++;
-    while (strchr("ivxlcdmIVXLCDM", BLOCK_PEEK(input, at)) && BLOCK_PEEK(input, at)) {
-        at++;
-    }
-    return BLOCK_PEEK(input, at) == '.' || BLOCK_PEEK(input, at) == ')';
-}
-
 static bool markdown_core_list_scan(markdown_core_parser *parser, block_start_context *context, block_start *start) {
     markdown_core_chunk *input = context->input;
     int first = context->first;
-    if (!letter_marker_shape(input, first)) {
-        return false;
-    }
     if (!((start->matched = markdown_core_block_parse_list_marker(
                parser, input, first, context->container, context->column, context->paragraph, &start->list)))) {
         return false;
@@ -315,7 +287,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .blank_runs = true,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_list_scan,
-    .block_start_bytes = "*-+#(0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
 };
 
 int markdown_core_block_consume_item_marker(markdown_core_parser *parser, markdown_core_chunk *input,

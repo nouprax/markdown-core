@@ -68,10 +68,9 @@ independently of correctness. ES has a separate `run-conformance.mjs` entry.
 Conformance checks field shapes, nullability, scopes, binding mappings, and
 reviewed canonical dumps. It is required even when correctness passes.
 
-Each binding tests its public API and native ownership boundary. The Kotlin
-payload decoder is one implementation for the JVM, Android, and Kotlin/Native,
-so its wire tests live in one shared test source set and run on every target;
-only the JNI transport tests stay JVM-specific. ES type and runtime consumers install the actual
+Each binding tests its public API and native ownership boundary. JVM/Android
+JNI decoder tests stay in the applicable source sets; they do not become
+Kotlin/Native payload tests. ES type and runtime consumers install the actual
 `npm pack` tarball and resolve declarations through package exports. Browser
 checks use real headless Chrome/Chromium over HTTP ESM/Wasm loading, rather than
 substituting a Node run. The C++ installed consumer and Swift consumer package
@@ -166,75 +165,6 @@ The `benchmark` label/runner exists only with `MARKDOWN_CORE_BENCHMARKS=ON` and
 is absent from default, sanitizer, required-CI, and release test artifacts.
 Measurements cover representative documents and adversarial shapes, using
 tracked samples or deterministic generation without runtime downloads.
-
-The workloads are one shared module (`tests/support/bench_workloads.c`): each
-case is a tracked sample or an in-process generator with its parameters, is
-versioned with its workload, and is identified by the SHA-256 of the bytes it
-produced, so two measurements can prove they read the same input. A sample
-repeated for the representative workload is separated from its next copy by a
-blank line, so the repeated shape is the sample's shape. Doubling series cover
-the sample block, quote nesting, directives, unclosed links and emphasis, one
-long fenced block, one long paragraph, references with their definitions at the
-end, leading blank lines, and nested spans over independent autolinks.
-
-Two lanes read the workloads. The timing lane, `bench_runner`, parses through
-the public facade and times the parse and the free of each document apart,
-reports every sample with the minimum and the median, throughput from the bytes
-and time per node from the tree, and writes the whole measurement as JSON with
-`--json` (the `metric` line of `binding_baseline` keeps the PR benchmark's
-contract and adds the same measurement's detail, which the collector writes
-to a sidecar next to the contract artifact, so a comparison workflow from
-before the detail still validates the contract). The work-invariant lane,
-`work_runner`, links the diagnostics build with an injected allocator and
-reports counts instead of time: the parser's deterministic work counters, the
-nodes built, the allocations and the bytes they asked for, the peak of live
-bytes and the bytes a document retains. Those counts are an exact contract per
-case in `benchmarks/work-invariants.txt`: `benchmark_work_invariants` fails on
-any difference, and on a doubling series whose work grows by more than 2.25x
-across a doubling, so a change of work is a reviewed line in a diff; the
-expectations are regenerated with `work_runner --all --samples DIR --write FILE`
-when the change is intended. The finishing phases of a parse are timed through
-the parser's phase clock, which a setup hook installs, and reported by the work
-lane as information only.
-
-Two more lanes read the same workloads on request. The reference lane is the
-timing lane with `--reference cmark`: a `bench_runner` configured with
-`MARKDOWN_CORE_BENCH_CMARK=ON` links the pinned cmark oracle
-(`scripts/init-environment.sh --install oracle-cmark`) and times its parse and
-free of the same bytes beside the engine's, reporting both and their ratio, so
-a reader can place a measurement against an implementation they know. The
-instruction lane, `scripts/benchmark-instructions.mjs`, runs `bench_runner`
-under callgrind twice per case, once with `--dry-run` (the input is built,
-nothing is parsed) and once with `--instructions` (one parse and one free),
-and reports the difference: the instructions of that parse, exact for one
-build and one input, with the reference counted the same way when asked.
-Neither lane decides anything; a changed count is a line to read in a diff.
-
-The timing lane also reports, per case, the minor page faults its measured
-parses took per parse: memory the process allocator handed back to the system
-after a free is faulted in and zeroed by the kernel again on the next parse,
-a cost no instruction count shows. `--allocator retain` asks glibc, through
-`mallopt`, to keep what the parses free (no mapping of its own for a block
-below 32 MB, no trim of the heap top, a 64 MB top pad), so the same
-measurement beside the default shows how much of a workload's time is that
-hand-back; it is a setting of the process's allocator for the measurement,
-never one the library makes, and is refused where there is no `mallopt`.
-
-Each binding has a timing lane of its own, opt-in and informational like the
-C lanes: `pnpm benchmark:es`, `pnpm benchmark:kotlin` (the `jvmBenchmark`
-Gradle task) and `pnpm benchmark:swift` (the `MarkdownCoreBenchmarks` package
-beside the Swift tests, a release `swift run`; the development manifest does
-not carry it, so no test build stages it) time the public parse -- source
-string in, value tree out -- and a walk of the tree with an empty visitor, on
-the same bytes the C timing lane reads: the `binding_baseline` generator and
-the tracked samples repeated with a blank line between copies, each case named
-with the SHA-256 of its input, so a binding's number stands beside the
-engine's for the same document. They report the minimum and the median of every
-repeat, throughput and time per node, and write the same JSON shape as
-`bench_runner --json` with `--json`. No workflow runs them and no test suite
-reaches them (`scripts/audit-ci-policy.sh`); the Kotlin/Native and Swift test
-binaries are release builds so that a number taken from a test run describes
-the library a consumer links.
 
 The separate PR benchmark measures a versioned parser workload and library
 size against the exact base SHA. The untrusted PR producer builds only the

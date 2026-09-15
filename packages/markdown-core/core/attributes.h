@@ -1,10 +1,7 @@
 #ifndef MARKDOWN_CORE_ATTRIBUTES_H
 #define MARKDOWN_CORE_ATTRIBUTES_H
 
-#include <stdint.h>
 #include "chunk.h"
-#include "diagnostics.h"
-#include "map.h"
 
 typedef struct {
     markdown_core_chunk name;
@@ -16,41 +13,23 @@ typedef struct {
 typedef struct markdown_core_attribute_value {
     markdown_core_chunk anchor;
     markdown_core_chunk *classes;
+    size_t class_count, class_capacity;
     markdown_core_record *records;
-    /* Counts and capacities are bounded by the extent they were read from,
-     * which is a `bufsize_t`; the accessors still answer in `size_t`. */
-    uint32_t class_count, class_capacity;
-    uint32_t record_count, record_capacity;
-    /* The vectors were taken from a parse transaction's arena and go with the
-     * document: releasing the value walks them for what the chunks own and
-     * hands neither vector back to the allocator. */
-    uint32_t borrowed;
+    size_t record_count, record_capacity;
 } markdown_core_attributes;
 
-/* Demand-driven facts belong to one immutable input extent. Only queried
- * member suffixes, value joins and braces encountered inside a value need
- * records; ordinary source bytes never allocate index entries. */
+/* An index belongs to one immutable input extent. It recognizes every suffix
+ * once, so overlapping failed candidates cannot repeatedly scan that extent.
+ * Values are allocated and decoded only after recognition succeeds. */
 typedef struct {
     markdown_core_mem *mem;
-    /* The parse transaction's arena, when there is one: the normalized bytes
-     * of every value are taken from it and the chunks borrow them, so a
-     * parse costs no allocation per attribute and the tree releases none.
-     * NULL outside a transaction, where each value is the allocator's. */
-    struct markdown_core_arena *store;
     const unsigned char *data;
     bufsize_t length;
-    /* Facts recorded so far, whether or not they are indexed yet. */
-    uint32_t fact_count;
-    markdown_core_key_index facts;
-    struct markdown_core_attribute_arena *arena;
-    /* The one buffer the values that need decoding are decoded through, kept
-     * for the parser's life: a value's bytes are copied out of it before the
-     * next is read, so a parser that meets an escape or an entity takes one
-     * buffer for all of them, and one that meets neither takes none. */
-    markdown_core_strbuf decoded;
-#if MARKDOWN_CORE_DIAGNOSTICS
+    struct markdown_core_attribute_suffix {
+        bufsize_t end;
+        bufsize_t assignment_end;
+    } *ends;
     size_t work;
-#endif
     int oom;
 } markdown_core_attribute_parser;
 
