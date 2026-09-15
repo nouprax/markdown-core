@@ -327,6 +327,11 @@ const COMPILER_PROGRAMS = ["cc1", "collect2", "as", "ld"];
  * and verifyStageSymbols refuses the run. That coupling is worth knowing if
  * that check is ever loosened.
  *
+ * Asked with every flag the build hands the driver, compile and link both.
+ * `-B` selects these programs and rides in either variable, so a probe that
+ * saw only the compile flags would keep hashing the default `ld` while
+ * `LDFLAGS=-B/tmp/tools` linked the runners with another one.
+ *
  * A bare name means the driver will search PATH, so PATH is asked. A relative
  * path -- what `-B./tools` produces -- is refused instead: it resolves against
  * whatever directory the compiler runs in, and the two engines are configured
@@ -454,7 +459,7 @@ function toolchain(profile) {
         compiler: first(run(profile.compiler, ["--version"])),
         compilerDigest: compilerConfiguration(profile.compiler, flags),
         compilerBinaries: agreed(`the compiler's programs (${profile.compiler})`, () =>
-            compilerBinaries(profile.compiler, flags)
+            compilerBinaries(profile.compiler, `${flags} ${process.env.LDFLAGS ?? ""}`)
         ),
         libc: required("C library", [
             ["ldd", ["--version"]],
