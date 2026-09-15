@@ -156,7 +156,17 @@ function countRun(options, workload, name, implementation, stage, copies) {
     });
     if (result.error) throw new Error(`cannot run valgrind: ${result.error.message}`);
     if (result.status !== 0) throw new Error(`${name}: bench_runner failed under callgrind:\n${result.stderr}`);
-    return { collected: parseCollected(result.stderr), report: parseInstructionsLine(result.stdout) };
+    const collected = parseCollected(result.stderr);
+    /* A window that opened counts something. Zero means it never opened --
+     * the runner was built without the client requests, or callgrind was
+     * given no --instr-atstart=no to turn back on -- and a zero reported as
+     * a count is the failure this lane exists to stop. */
+    if (collected === 0) {
+        throw new Error(
+            `${name}: callgrind collected nothing for stage=${stage}; the instrumentation window never opened`
+        );
+    }
+    return { collected, report: parseInstructionsLine(result.stdout) };
 }
 
 function main() {

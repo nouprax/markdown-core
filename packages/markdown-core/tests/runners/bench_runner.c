@@ -598,6 +598,16 @@ int main(int argc, char **argv) {
     if (!workload_name || !options.samples_dir || options.repeats < 1 || options.warmup < 0) {
         return usage();
     }
+#if !defined(MARKDOWN_CORE_BENCH_CALLGRIND)
+    if (options.instructions) {
+        /* Without the client requests the window never opens, callgrind
+         * collects nothing, and a zero would be reported as a measurement.
+         * Refuse instead: a lane that cannot count must not look like one
+         * that counted zero. */
+        fputs("bench_runner: --instructions needs valgrind/callgrind.h at build time\n", stderr);
+        return 1;
+    }
+#endif
     if (options.reference && strcmp(options.reference, "cmark") != 0) {
         fprintf(stderr, "unknown reference: %s (only cmark)\n", options.reference);
         return 2;
