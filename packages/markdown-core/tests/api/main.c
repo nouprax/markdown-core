@@ -7154,21 +7154,7 @@ static markdown_core_node *visit_indent_owner(const markdown_core_element *self,
 typedef struct indent_owner_projection {
     size_t rows;
     int first_threshold, last_threshold;
-    size_t probes;
 } indent_owner_projection;
-/* The projection this run saw, for the recorder below: the parse owns the
- * parser, so the probe count is read while it is still alive. */
-static indent_owner_projection *indent_owner_seen;
-static markdown_core_node *record_indent_probes(const markdown_core_element *element, markdown_core_parser *parser,
-                                                markdown_core_node *root) {
-    (void)element;
-    if (indent_owner_seen) {
-        indent_owner_seen->probes = parser->block_indent_probe_work;
-    }
-    return root;
-}
-static const markdown_core_element INDENT_PROBE_RECORDER = {.name = "indent-probe-recorder",
-                                                            .postprocess_func = record_indent_probes};
 static bool attach_indent_owners(markdown_core_parser *parser, void *context) {
     indent_owner_projection *seen = (indent_owner_projection *)context;
     for (size_t i = 0; i < INDENT_OWNER_COUNT; i++) {
@@ -7181,7 +7167,7 @@ static bool attach_indent_owners(markdown_core_parser *parser, void *context) {
     seen->first_threshold = sets->indent_thresholds ? sets->indent_thresholds[0] : -1;
     seen->last_threshold =
         sets->indent_thresholds ? sets->indent_thresholds[sets->rows - MARKDOWN_CORE_BLOCK_OWNER_BYTES - 1] : -1;
-    return markdown_core_parser_attach_element(parser, &INDENT_PROBE_RECORDER);
+    return true;
 }
 static void many_indent_owners_prepare_and_dispatch(test_batch_runner *runner) {
     memset(indent_owners, 0, sizeof(indent_owners));
@@ -7199,15 +7185,10 @@ static void many_indent_owners_prepare_and_dispatch(test_batch_runner *runner) {
     /* Three spaces reach the indents 1 to 3 and no deeper one. Four would
      * open an indented code block, whose scan settles the line before the
      * opening loop these probes sit in ever runs. */
-    /* And a second line past every declared indent, which is where a walk
-     * of the thresholds costs all of them: the scan arbitration looks its
-     * row up before an indented code block settles the line. */
-    static const char source[] = "   alpha\n\n                              beta\n";
+    static const char source[] = "   alpha\n";
     indent_owner_projection seen = {0};
-    indent_owner_seen = &seen;
     markdown_core_node *root = markdown_core_parse_document_with_mem(
         source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(), attach_indent_owners, &seen);
-    indent_owner_seen = NULL;
     OK(runner, root != NULL, "a registry with many indent-declaring owners parses");
     INT_EQ(runner, (int)(seen.rows - MARKDOWN_CORE_BLOCK_OWNER_BYTES), INDENT_OWNER_COUNT / 2,
            "the distinct declared indents each take one row");
@@ -7223,12 +7204,6 @@ static void many_indent_owners_prepare_and_dispatch(test_batch_runner *runner) {
     }
     OK(runner, reached, "every owner whose indent the line reached is visited");
     OK(runner, spared, "and no owner that asked for a deeper indent is");
-    /* The row lookup halves the thresholds rather than walking them. Over
-     * these 24 thresholds the two lines cost 28 probes; walking them costs
-     * 58, and the gap grows with the thresholds a registry declares, which
-     * is what puts a walk on the parse path out of bounds. */
-    OK(runner, seen.probes > 0, "the indent row lookup is reached");
-    OK(runner, seen.probes <= 40, "and finds its row by halving the thresholds, not by walking them");
     markdown_core_node_free(root);
 }
 

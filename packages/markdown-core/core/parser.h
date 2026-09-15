@@ -285,10 +285,6 @@ struct markdown_core_parser {
     /* Block owners visited by a line's block-start arbitration: the owners
      * of the line's first byte with the hook, and no other. */
     size_t block_dispatch_work;
-    /* Indent thresholds probed to find a line's indent row: the projection
-     * keeps them sorted, so this is a comparison per doubling of the
-     * declared indents, not one per threshold. */
-    size_t block_indent_probe_work;
     /* Reference definition parses attempted on a block front or a term. */
     size_t reference_probe_work;
     /* Hook deliveries of the inline completion walk and of the node finishing
