@@ -165,6 +165,32 @@ function parseArguments(argv) {
  * which is the direction that has to be safe: calling two differing streams
  * comparable is the failure, and a spurious rebuild is not.
  */
+/**
+ * The build's environment is built rather than inherited, for the reason the
+ * measurement's is.
+ *
+ * A compiler reads more than its command line. `CPATH` and `C_INCLUDE_PATH` add
+ * include directories that appear on no compile line at all, so a header can be
+ * swapped underneath a build while `compile_commands.json` -- which is where the
+ * identity reads the engines' real options -- shows character-for-character the
+ * same command. Verified: a project compiled against an injected `injected.h`
+ * through `CPATH`, and its compile command mentioned no such directory.
+ *
+ * Only what a build needs is carried across, plus the two variables the
+ * identity deliberately honours and records. Everything else is absent by
+ * construction, which is the half of this that was missing: the measurement got
+ * an allowlist earlier and the build that produced it did not.
+ */
+const BUILD_VARIABLES = ["PATH", "HOME", "TMPDIR", "CFLAGS", "LDFLAGS"];
+
+function buildEnvironment() {
+    const environment = { LC_ALL: "C", LANG: "C" };
+    for (const name of BUILD_VARIABLES) {
+        if (process.env[name] !== undefined) environment[name] = process.env[name];
+    }
+    return environment;
+}
+
 function resolveTarget(compiler, flags) {
     /* Through a shell, because a shell is what splits these flags when the
      * build runs them: CMake stores the string verbatim and the generated
@@ -174,7 +200,10 @@ function resolveTarget(compiler, flags) {
      * compiles perfectly. The string reaches a shell either way, so asking
      * this question adds no exposure the build does not already have. */
     const ask = (option) => {
-        const probe = spawnSync("/bin/sh", ["-c", `${compiler} ${flags} -Q ${option}`], { encoding: "utf8" });
+        const probe = spawnSync("/bin/sh", ["-c", `${compiler} ${flags} -Q ${option}`], {
+            encoding: "utf8",
+            env: buildEnvironment()
+        });
         return probe.status === 0 ? (probe.stdout ?? "") : null;
     };
     const target = ask("--help=target");
@@ -308,19 +337,23 @@ function pinnedCmark() {
 function buildCmark(profile, cmark, out, versions) {
     const buildDir = path.join(out, "cmark");
     discardForeignTree(buildDir, profile, versions);
-    run("cmake", [
-        "-S",
-        cmark.checkout,
-        "-B",
-        buildDir,
-        "-DCMAKE_BUILD_TYPE=Release",
-        "-DBUILD_TESTING=OFF",
-        "-DBUILD_SHARED_LIBS=OFF",
-        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-        `-DCMAKE_C_COMPILER=${profile.compiler}`,
-        `-DCMAKE_C_FLAGS_RELEASE=${profile.flags}`
-    ]);
-    run("cmake", ["--build", buildDir, "--parallel"]);
+    run(
+        "cmake",
+        [
+            "-S",
+            cmark.checkout,
+            "-B",
+            buildDir,
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DBUILD_TESTING=OFF",
+            "-DBUILD_SHARED_LIBS=OFF",
+            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            `-DCMAKE_C_COMPILER=${profile.compiler}`,
+            `-DCMAKE_C_FLAGS_RELEASE=${profile.flags}`
+        ],
+        { env: buildEnvironment() }
+    );
+    run("cmake", ["--build", buildDir, "--parallel"], { env: buildEnvironment() });
     stampTree(buildDir, profile, versions);
     return path.join(buildDir, "src");
 }
@@ -482,14 +515,18 @@ function stampTree(buildDir, profile, versions) {
 
 function buildRunners(profile, cmark, cmarkBuildDir, versions) {
     discardForeignTree(profile.binaryDir, profile, versions);
-    run("cmake", [
-        "--preset",
-        "benchmark",
-        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-        `-DMARKDOWN_CORE_CMARK_SOURCE_DIR=${path.join(cmark.checkout, "src")}`,
-        `-DMARKDOWN_CORE_CMARK_BUILD_DIR=${cmarkBuildDir}`
-    ]);
-    run("cmake", ["--build", "--preset", "benchmark", "--parallel"]);
+    run(
+        "cmake",
+        [
+            "--preset",
+            "benchmark",
+            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            `-DMARKDOWN_CORE_CMARK_SOURCE_DIR=${path.join(cmark.checkout, "src")}`,
+            `-DMARKDOWN_CORE_CMARK_BUILD_DIR=${cmarkBuildDir}`
+        ],
+        { env: buildEnvironment() }
+    );
+    run("cmake", ["--build", "--preset", "benchmark", "--parallel"], { env: buildEnvironment() });
     stampTree(profile.binaryDir, profile, versions);
 }
 

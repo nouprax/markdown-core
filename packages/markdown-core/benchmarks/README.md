@@ -148,6 +148,15 @@ They are excluded rather than recorded because what the counts should describe
 is the pinned build parsing the corpus and not what the surrounding shell
 arranged around it.
 
+The build gets the same treatment, and for a sharper reason than the
+measurement did: a compiler reads more than its command line. `CPATH` and
+`C_INCLUDE_PATH` add include directories that appear on no compile line at all,
+so a header can be swapped underneath a build while `compile_commands.json` —
+where this report reads the engines' real options — shows character-for-character
+the same command. The configure and build steps therefore run with `PATH`,
+`HOME`, `TMPDIR`, the C locale, and `CFLAGS`/`LDFLAGS`, which the identity
+deliberately honours and records. Nothing else reaches them.
+
 The profiler's own configuration is isolated for the same reason. Valgrind takes
 options from `~/.valgrindrc`, then `VALGRIND_OPTS`, then `./.valgrindrc`, before
 its command line — so every option the driver does not pass explicitly is the

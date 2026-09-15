@@ -212,6 +212,14 @@ if grep -Fq '...process.env' scripts/benchmark-stages.mjs; then
     echo "the stage benchmark hands the caller's whole environment to the measurement" >&2
     exit 1
 fi
+# The build's environment is built too. A compiler reads more than its command
+# line: CPATH and C_INCLUDE_PATH add include directories that appear on no
+# compile line, so a header can be swapped under a build while the recorded
+# compile commands are character-for-character identical.
+grep -Fq 'buildEnvironment' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark builds under the caller's environment" >&2
+    exit 1
+}
 # The profiler reads rc files before its command line, so the options the driver
 # does not pass are the caller's unless HOME and the working directory are the
 # driver's own.
