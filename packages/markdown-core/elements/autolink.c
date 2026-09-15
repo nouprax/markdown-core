@@ -788,12 +788,14 @@ static markdown_core_node *postprocess(const markdown_core_element *element, mar
     return root;
 }
 
+static const markdown_core_node_type AUTOLINK_POSTPROCESS_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
     .name = "autolink",
     .match_inline = match,
     .postprocess_func = postprocess,
     /* `postprocess_text` only ever rewrites a Text node. */
-    .postprocess_kinds = {.inlines = MARKDOWN_CORE_NODE_KIND_BIT(MARKDOWN_CORE_NODE_TEXT)},
+    .postprocess_kinds = AUTOLINK_POSTPROCESS_KINDS,
     .terminates_text = "<:w",
     .dispatch = "<:w",
 };

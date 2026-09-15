@@ -791,6 +791,10 @@ static markdown_core_node *postprocess(const markdown_core_element *element, mar
  * anyway, and it must stay in dispatch because `handle_backslash` asks whether any
  * element claims `\\` before taking a core fast path. */
 
+static const markdown_core_node_type FORMULA_POSTPROCESS_KINDS[] = {
+    MARKDOWN_CORE_NODE_FORMULA_BLOCK, MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_FORMULA,
+    MARKDOWN_CORE_NODE_NONE};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .interrupts_paragraph = true,
 
@@ -808,9 +812,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
      * requires the paragraph's only child to be a Formula, so Formula is what
      * the set has to name, not Paragraph. A document with none of the three
      * has nothing for this pass to find. */
-    .postprocess_kinds = {.blocks = MARKDOWN_CORE_NODE_KIND_BIT(MARKDOWN_CORE_NODE_FORMULA_BLOCK) |
-                                    MARKDOWN_CORE_NODE_KIND_BIT(MARKDOWN_CORE_NODE_CODE_BLOCK),
-                          .inlines = MARKDOWN_CORE_NODE_KIND_BIT(MARKDOWN_CORE_NODE_FORMULA)},
+    .postprocess_kinds = FORMULA_POSTPROCESS_KINDS,
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,
     .accepts_lines_func = accepts_lines,

@@ -47,26 +47,21 @@ const markdown_core_element *markdown_core_structure_for_kind(markdown_core_node
 const markdown_core_element *markdown_core_node_structure(const markdown_core_node *node);
 
 /* What the block dispatcher may know about a hook's grammar without entering
- * it.
+ * it: the COMPLETE set of first non-space bytes that can lead the hook to claim
+ * a line. NULL means ungated -- the hook is asked about every line, which is
+ * what every hook did before gates existed, so an element that declares nothing
+ * keeps exactly its old behaviour.
  *
- * `bytes` is the COMPLETE set of first non-space bytes that can lead the hook
- * to claim a line. NULL means ungated: the hook is asked about every line,
- * which is what every hook did before gates existed, so an element that
- * declares nothing keeps exactly its old behaviour. A byte wrongly left out of
- * a declared set does not make the parser slower, it makes it WRONG -- the
- * construct is silently never recognised -- which is why the set belongs to
- * the element that owns the grammar and why an audit checks it.
+ * A byte wrongly left out of a declared set does not make the parser slower, it
+ * makes it WRONG: the construct is silently never recognised. So the set
+ * belongs to the element that owns the grammar, and api_test checks it against
+ * that grammar rather than against a fixture.
  *
- * `relaxed_containers` names the block kinds whose presence suspends the byte
- * test. Some grammars accept any first byte, but only while a particular block
- * is open: a table header splits an open paragraph, a table row continues an
- * open table. Such an element declares its narrow bytes plus those kinds,
- * rather than declaring all 256 bytes and charging every line of prose for a
- * table that cannot start there. Bit N is the block kind whose value masks to
- * N; zero means the byte test always applies. */
+ * A gate is a statement about ONE LINE. A grammar decided by a later line --
+ * a Pandoc simple table, whose prose header is only a table because the NEXT
+ * line is dashes -- cannot be expressed here and must not be gated. */
 typedef struct markdown_core_block_gate {
     const char *bytes;
-    uint32_t relaxed_containers;
 } markdown_core_block_gate;
 
 struct markdown_core_element {
@@ -157,7 +152,8 @@ struct markdown_core_element {
     markdown_core_contains_inlines_func contains_inlines_func;
     markdown_core_accepts_lines_func accepts_lines_func;
     markdown_core_postprocess_func postprocess_func;
-    /* The node kinds `postprocess_func` can act on.
+    /* The node kinds `postprocess_func` can act on, terminated by
+     * MARKDOWN_CORE_NODE_NONE; NULL declares nothing.
      *
      * A postprocess pass is a WHOLE-TREE WALK, and it costs the same whether
      * the document contains anything for it or not -- formula's own comment
@@ -166,12 +162,16 @@ struct markdown_core_element {
      * skip the pass entirely for a document that produced none of them, the
      * way an absent list marker already costs the list opener nothing.
      *
+     * The kinds are declared as KINDS rather than as a precomputed bit set so
+     * that each one keeps its namespace: block and inline values collide once
+     * masked, and a Formula written where a block kind belongs has to be
+     * detectable rather than silently becoming some unrelated block's bit.
+     * The engine projects them per parse.
+     *
      * The set is intersected with the kinds the parse actually produced, taken
      * when the block tree is complete. A pass whose trigger kind is CREATED by
-     * an earlier pass must therefore name that creator kind too; leaving the
-     * set empty declares nothing and the pass always runs, which is what every
-     * pass did before this existed. */
-    markdown_core_node_kind_set postprocess_kinds;
+     * an earlier pass must therefore name that creator kind too. */
+    const markdown_core_node_type *postprocess_kinds;
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;

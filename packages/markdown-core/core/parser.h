@@ -223,7 +223,6 @@ struct markdown_core_parser {
      * walking a declared set. A NULL map means the family declared nothing and
      * every owner is asked, which is the behaviour a gate replaces. */
     uint8_t *block_gate_bytes[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
-    uint32_t *block_gate_relaxed[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     uint8_t *block_gate_allocation;
     /* Every node kind this parse produced, accumulated by the consolidation
      * walk that already visits every node just before the postprocess passes

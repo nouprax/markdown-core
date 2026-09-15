@@ -390,15 +390,6 @@ typedef struct markdown_core_node_kind_set {
     uint32_t inlines;
 } markdown_core_node_kind_set;
 
-/* The constant form of the two helpers above, for a descriptor initializer,
- * which cannot call a function. It does not check whether `kind` is a block or
- * an inline one -- the field it initializes says which -- so api_test checks
- * every declared set against the runtime helpers rather than trusting it. */
-#define MARKDOWN_CORE_NODE_KIND_BIT(kind)                                                                              \
-    (1u << (((unsigned)(kind) & MARKDOWN_CORE_NODE_VALUE_MASK) >= 31u                                                  \
-                ? 31u                                                                                                  \
-                : ((unsigned)(kind) & MARKDOWN_CORE_NODE_VALUE_MASK)))
-
 /* Add `kind` to `set`. */
 void markdown_core_node_kind_set_add(markdown_core_node_kind_set *set, markdown_core_node_type kind);
 

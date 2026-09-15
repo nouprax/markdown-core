@@ -1774,7 +1774,7 @@ static bool S_element_implements(const markdown_core_element *element, markdown_
  * gate by adding a descriptor field and a case here; the dispatcher below does
  * not change and never learns an element's name. */
 static markdown_core_block_gate S_element_gate(const markdown_core_element *element, markdown_core_block_hook hook) {
-    markdown_core_block_gate ungated = {NULL, 0};
+    markdown_core_block_gate ungated = {NULL};
 
     switch (hook) {
     case MARKDOWN_CORE_BLOCK_HOOK_OPEN:
@@ -1791,33 +1791,14 @@ static markdown_core_block_gate S_element_gate(const markdown_core_element *elem
 
 #define BLOCK_GATE_MAP_BYTES 32
 
-/* The block kinds live where the line is being offered: the container it would
- * open inside, and the block it would continue lazily. A gate that suspends
- * its byte test for either is asked about every byte. */
-static uint32_t S_live_container_kinds(const markdown_core_parser *parser, const markdown_core_node *container) {
-    uint32_t live = 0;
-
-    if (container) {
-        live |= markdown_core_node_block_kind_bit(container->kind);
-    }
-    if (parser->current) {
-        live |= markdown_core_node_block_kind_bit(parser->current->kind);
-    }
-    return live;
-}
-
 /* Whether the owner at `index` in `hook`'s family can claim a line whose first
  * non-space byte is `byte`. `byte` is negative for a line with no non-space
- * byte at all, which no declared set can name, so only a relaxed gate admits
- * it -- a blank line still has to reach an element that continues a table. */
-static bool S_gate_admits(const markdown_core_parser *parser, markdown_core_block_hook hook, size_t index, int byte,
-                          uint32_t live) {
+ * byte at all, which no declared set can name, so a gated owner is not asked
+ * about it. */
+static bool S_gate_admits(const markdown_core_parser *parser, markdown_core_block_hook hook, size_t index, int byte) {
     const uint8_t *map = parser->block_gate_bytes[hook];
 
     if (!map) {
-        return true;
-    }
-    if (parser->block_gate_relaxed[hook][index] & live) {
         return true;
     }
     if (byte < 0) {
@@ -1845,7 +1826,6 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
     memset(parser->block_hooks, 0, sizeof(parser->block_hooks));
     memset(parser->block_hook_counts, 0, sizeof(parser->block_hook_counts));
     memset(parser->block_gate_bytes, 0, sizeof(parser->block_gate_bytes));
-    memset(parser->block_gate_relaxed, 0, sizeof(parser->block_gate_relaxed));
 
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
         for (size_t i = 0; i < parser->element_count; i++) {
@@ -1880,7 +1860,7 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
     /* A family with no declared gate keeps a NULL map and every owner is asked,
      * so adding the first declaration to a family is what turns gating on for
      * it -- an element that declares nothing is never skipped. */
-    size_t gate_bytes = 0, gate_relaxed = 0;
+    size_t gate_bytes = 0;
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
         bool declared = false;
         for (size_t i = 0; i < totals[hook]; i++) {
@@ -1890,22 +1870,20 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
         }
         if (declared) {
             gate_bytes += totals[hook] * BLOCK_GATE_MAP_BYTES;
-            gate_relaxed += totals[hook];
         }
     }
     if (!gate_bytes) {
         return;
     }
 
-    uint8_t *maps = parser->mem->calloc(gate_bytes + gate_relaxed * sizeof(uint32_t), 1);
+    uint8_t *maps = parser->mem->calloc(gate_bytes, 1);
     if (!maps) {
         parser->oom = true;
         return;
     }
     parser->block_gate_allocation = maps;
 
-    uint32_t *relaxed = (uint32_t *)(void *)(maps + gate_bytes);
-    size_t map_at = 0, relaxed_at = 0;
+    size_t map_at = 0;
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
         bool declared = false;
         for (size_t i = 0; i < totals[hook]; i++) {
@@ -1917,12 +1895,10 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
             continue;
         }
         parser->block_gate_bytes[hook] = maps + map_at;
-        parser->block_gate_relaxed[hook] = relaxed + relaxed_at;
         for (size_t i = 0; i < totals[hook]; i++) {
             markdown_core_block_gate gate =
                 S_element_gate(parser->block_hooks[hook][i], (markdown_core_block_hook)hook);
             uint8_t *map = maps + map_at + i * BLOCK_GATE_MAP_BYTES;
-            relaxed[relaxed_at + i] = gate.relaxed_containers;
             if (!gate.bytes) {
                 memset(map, 0xff, BLOCK_GATE_MAP_BYTES);
                 continue;
@@ -1932,7 +1908,6 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
             }
         }
         map_at += totals[hook] * BLOCK_GATE_MAP_BYTES;
-        relaxed_at += totals[hook];
     }
 }
 
@@ -2050,13 +2025,11 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             size_t opener_count = parser->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_OPEN];
             int opener_byte =
                 parser->first_nonspace < input->len ? (int)(unsigned char)input->data[parser->first_nonspace] : -1;
-            uint32_t live_containers = S_live_container_kinds(parser, *container);
 
             for (size_t element_index = 0; element_index < opener_count; element_index++) {
                 const markdown_core_element *element = openers[element_index];
 
-                if (!S_gate_admits(parser, MARKDOWN_CORE_BLOCK_HOOK_OPEN, element_index, opener_byte,
-                                   live_containers)) {
+                if (!S_gate_admits(parser, MARKDOWN_CORE_BLOCK_HOOK_OPEN, element_index, opener_byte)) {
                     continue;
                 }
 
@@ -2470,10 +2443,20 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         /* An empty declaration means the pass always runs, so an element that
          * says nothing keeps the behaviour it had. One that declares its kinds
          * is skipped for a document that produced none of them, and skipping
-         * costs the whole pass: the root enumeration AND the walk inside it. */
-        if ((element->postprocess_kinds.blocks || element->postprocess_kinds.inlines) &&
-            !markdown_core_node_kind_set_intersects(&element->postprocess_kinds, &parser->kinds_seen)) {
-            continue;
+         * costs the whole pass: the root enumeration AND the walk inside it.
+         *
+         * The declared kinds are projected here rather than stored as a bit set
+         * on the descriptor, so each kind keeps the namespace that tells a
+         * block from an inline; the list is a handful of entries per element,
+         * read once per parse. */
+        if (element->postprocess_kinds) {
+            markdown_core_node_kind_set declared = {0, 0};
+            for (const markdown_core_node_type *kind = element->postprocess_kinds; *kind; kind++) {
+                markdown_core_node_kind_set_add(&declared, *kind);
+            }
+            if (!markdown_core_node_kind_set_intersects(&declared, &parser->kinds_seen)) {
+                continue;
+            }
         }
         if (!S_apply_tree_phase(parser, &parser->root, S_postprocess_tree, (void *)element)) {
             parser->oom = true;

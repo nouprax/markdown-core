@@ -1500,17 +1500,18 @@ static markdown_core_node *count_postprocess_present(const markdown_core_element
     return root;
 }
 
+static const markdown_core_node_type OBSERVER_ABSENT_KINDS[] = {MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_node_type OBSERVER_PRESENT_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
+
 static bool attach_postprocess_observers(markdown_core_parser *parser, void *context) {
     /* One pass declares a kind this document cannot contain, the other a kind
      * every paragraph of prose contains. */
-    static const markdown_core_element absent = {
-        .name = "postprocess-absent-observer",
-        .postprocess_func = count_postprocess_absent,
-        .postprocess_kinds = {.blocks = MARKDOWN_CORE_NODE_KIND_BIT(MARKDOWN_CORE_NODE_CODE_BLOCK)}};
-    static const markdown_core_element present = {
-        .name = "postprocess-present-observer",
-        .postprocess_func = count_postprocess_present,
-        .postprocess_kinds = {.inlines = MARKDOWN_CORE_NODE_KIND_BIT(MARKDOWN_CORE_NODE_TEXT)}};
+    static const markdown_core_element absent = {.name = "postprocess-absent-observer",
+                                                 .postprocess_func = count_postprocess_absent,
+                                                 .postprocess_kinds = OBSERVER_ABSENT_KINDS};
+    static const markdown_core_element present = {.name = "postprocess-present-observer",
+                                                  .postprocess_func = count_postprocess_present,
+                                                  .postprocess_kinds = OBSERVER_PRESENT_KINDS};
     (void)context;
     return markdown_core_parser_attach_element(parser, &absent) &&
            markdown_core_parser_attach_element(parser, &present);
@@ -1542,63 +1543,6 @@ static void postprocess_skips_absent_kinds(test_batch_runner *runner) {
  * field it fills says which. So check every set the dialect declares against
  * the runtime helpers, which can: a Formula bit parked in `.blocks` would make
  * the pass skip documents that do contain formulas. */
-typedef struct {
-    size_t declared;
-    size_t malformed;
-    size_t without_pass;
-} kind_set_sweep;
-
-static bool sweep_postprocess_kind_sets(markdown_core_parser *parser, void *context) {
-    kind_set_sweep *sweep = context;
-    const markdown_core_element *const *elements = parser->elements;
-    size_t element_count = parser->element_count;
-
-    for (size_t i = 0; i < element_count; i++) {
-        const markdown_core_element *element = elements[i];
-        const markdown_core_node_kind_set *set = &element->postprocess_kinds;
-        if (!set->blocks && !set->inlines) {
-            continue;
-        }
-        sweep->declared++;
-        if (!element->postprocess_func) {
-            sweep->without_pass++;
-        }
-        for (unsigned bit = 0; bit < 32; bit++) {
-            /* A bit is well formed when some kind of that namespace claims it.
-             * Bit 31 is the shared overflow bit and belongs to no single kind. */
-            if (bit == 31) {
-                continue;
-            }
-            if (set->blocks & (1u << bit)) {
-                markdown_core_node_type kind = (markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_BLOCK | bit);
-                if (markdown_core_node_block_kind_bit(kind) != (1u << bit)) {
-                    sweep->malformed++;
-                }
-            }
-            if (set->inlines & (1u << bit)) {
-                markdown_core_node_type kind = (markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_INLINE | bit);
-                if (markdown_core_node_inline_kind_bit(kind) != (1u << bit)) {
-                    sweep->malformed++;
-                }
-            }
-        }
-    }
-    return true;
-}
-
-static void postprocess_kind_sets_are_well_formed(test_batch_runner *runner) {
-    kind_set_sweep sweep = {0, 0, 0};
-    static const char probe_source[] = "probe\n";
-    markdown_core_node *probe_doc = markdown_core_parse_document_with_mem(probe_source, sizeof(probe_source) - 1,
-                                                                          markdown_core_get_default_mem_allocator(),
-                                                                          sweep_postprocess_kind_sets, &sweep);
-
-    OK(runner, sweep.declared > 0, "at least one pass declares its kinds for this law to bind");
-    INT_EQ(runner, (int)sweep.without_pass, 0, "only a pass declares the kinds it acts on");
-    INT_EQ(runner, (int)sweep.malformed, 0, "every declared postprocess kind bit round-trips through its namespace");
-    markdown_core_node_free(probe_doc);
-}
-
 typedef struct {
     size_t gated;
     size_t violations;
@@ -1650,6 +1594,67 @@ static bool sweep_block_gates(markdown_core_parser *parser, void *context) {
         }
     }
     return true;
+}
+
+typedef struct {
+    size_t declared;
+    size_t malformed;
+    size_t without_pass;
+} kind_set_sweep;
+
+static bool sweep_postprocess_kind_sets(markdown_core_parser *parser, void *context) {
+    kind_set_sweep *sweep = context;
+    const markdown_core_element *const *elements = parser->elements;
+    size_t element_count = parser->element_count;
+
+    for (size_t i = 0; i < element_count; i++) {
+        const markdown_core_element *element = elements[i];
+        if (!element->postprocess_kinds) {
+            continue;
+        }
+        sweep->declared++;
+        if (!element->postprocess_func) {
+            sweep->without_pass++;
+        }
+        for (const markdown_core_node_type *kind = element->postprocess_kinds; *kind; kind++) {
+            /* Exactly one namespace must claim the kind. This is checkable only
+             * because the declaration keeps the KIND: block and inline values
+             * collide once masked -- masked 12 is a TableRow and an Embedded
+             * alike -- so a bit set reconstructed from a stored mask would
+             * agree with whichever namespace the reader already assumed, and a
+             * Formula written where a block kind belongs would pass. */
+            uint32_t as_block = markdown_core_node_block_kind_bit(*kind);
+            uint32_t as_inline = markdown_core_node_inline_kind_bit(*kind);
+            markdown_core_node_kind_set set = {0, 0};
+
+            if ((as_block == 0) == (as_inline == 0)) {
+                sweep->malformed++;
+                continue;
+            }
+            markdown_core_node_kind_set_add(&set, *kind);
+            if (set.blocks != as_block || set.inlines != as_inline) {
+                sweep->malformed++;
+            }
+        }
+    }
+    return true;
+}
+
+/* A pass declares the kinds it acts on, and the engine skips it when a document
+ * produced none of them. A kind written into the wrong namespace would skip the
+ * documents that DO feed the pass, silently, so the declarations are checked
+ * for well-formedness -- and separately, above, for actually taking effect. */
+static void postprocess_kind_sets_are_well_formed(test_batch_runner *runner) {
+    kind_set_sweep sweep = {0, 0, 0};
+    static const char probe_source[] = "probe\n";
+    markdown_core_node *probe_doc = markdown_core_parse_document_with_mem(probe_source, sizeof(probe_source) - 1,
+                                                                          markdown_core_get_default_mem_allocator(),
+                                                                          sweep_postprocess_kind_sets, &sweep);
+
+    OK(runner, sweep.declared > 0, "at least one pass declares its kinds for this law to bind");
+    INT_EQ(runner, (int)sweep.without_pass, 0, "only a pass declares the kinds it acts on");
+    INT_EQ(runner, (int)sweep.malformed, 0, "every declared postprocess kind belongs to exactly one namespace");
+    markdown_core_node_free(probe_doc);
 }
 
 static void block_gate_admits_every_opener(test_batch_runner *runner) {
