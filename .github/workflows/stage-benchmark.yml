@@ -2,9 +2,15 @@ name: Stage Benchmark
 
 # What a parse costs Markdown Core, stage by stage, next to what the same bytes
 # cost cmark. Callgrind counts instructions and data references rather than
-# time, so a hosted runner reports the same numbers a laptop does and the result
-# is worth reading; the pipeline this replaced measured wall clock on a shared
+# time, so a shared runner's load and speed cannot reach the result and this one
+# is worth reading; the pipeline this replaced measured wall clock on that same
 # runner and could only ever be informational.
+#
+# Not the same as machine-independent. The counts depend on the compiler, the C
+# library, what the C library dispatched on, and the corpus, all of which the
+# report records in an identity table -- and two reports whose tables differ are
+# not comparable at all, counts or ratios. What this job produces is comparable
+# to another run of this job, not to whatever a contributor ran locally.
 #
 # The report goes to the run's job summary and an artifact. It is deliberately
 # NOT a pull-request comment: a comment needs `pull-requests: write`, and a

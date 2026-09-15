@@ -171,10 +171,19 @@ release are outside both stages: they are fixed cost that no document-size
 argument applies to. The contract is in the
 [benchmark README](../../packages/markdown-core/benchmarks/README.md).
 
-Instruction and data-reference counts are a property of the program, so a
-hosted runner reports the same numbers a developer's machine does and the
-result survives being read. That is why no wall-clock pipeline remains: every
-one this repository has had measured a shared runner as much as the parser.
+Instruction and data-reference counts do not depend on how fast the machine was
+or what else was running on it, so a hosted runner is as good a place to measure
+as a quiet laptop. That is why no wall-clock pipeline remains: every one this
+repository has had measured a shared runner as much as the parser.
+
+They are not independent of the machine, though, and the report says so rather
+than implying otherwise. Every report heads with an identity table — resolved
+compiler, C library and valgrind versions, the compiler's full code generation
+target, both engines' real compile options, what the C library dispatched on,
+and a digest of the corpus — and **two reports whose tables differ are not
+comparable at all**, counts or ratios. A hosted runner and a developer's machine
+reproduce each other only as far as that table matches.
+
 The counts are still not time — they do not price a cache miss, a branch miss,
 or a stall — so they are evidence for an optimization, never a threshold.
 
@@ -182,10 +191,12 @@ The runners exist only with `MARKDOWN_CORE_BENCHMARKS=ON` and are registered
 with neither CTest nor any required gate, so no preset change can turn a
 measurement into a merge gate. The engine has no measurement mode: it keeps one
 parse entry with no feed/finish lifecycle, and the stage split is read out of
-the recorded call graph afterwards. The profiling flavour differs from Release
-only by debug information and by keeping the single-call-site stage boundary out
-of line; the driver verifies both boundaries survived the build rather than
-reporting a folded-away stage as a cheap one.
+the recorded call graph afterwards. The profiling flavour differs from Release by
+debug information, by keeping the single-call-site stage boundary out of line,
+and by `-fvisibility=hidden` — which cmark sets for its own build and Markdown
+Core's static objects did not, worth 2.1% of the source stage and 5.9% of the AST
+stage until both engines got it. The driver verifies both boundaries survived the
+build rather than reporting a folded-away stage as a cheap one.
 
 Each case is also measured at twice the size, because a stage whose cost stops
 being linear in the input is a complexity finding rather than a tuning one. A
