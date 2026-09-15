@@ -273,6 +273,13 @@ grep -Fq 'dispatchIdentity' scripts/benchmark-stages.mjs || {
     echo "the stage benchmark does not record what the C library dispatched on" >&2
     exit 1
 }
+# `ldd --version` names a release, not the build of it that ran: a distribution
+# patch or a local rebuild keeps that line and changes the instructions inside
+# memcpy and strlen, which are inside the stage costs.
+grep -Fq 'loadedLibraries' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark identifies the C library by its version line alone" >&2
+    exit 1
+}
 # The toolchain is half the identity: the same binaries over different documents
 # also move every count. The report names the workload it measured by digest,
 # so an edited manifest or sample cannot be read as a parser change.

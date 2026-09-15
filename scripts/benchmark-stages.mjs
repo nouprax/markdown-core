@@ -629,18 +629,31 @@ function compiledFlags(buildDir, target) {
     /* Include directories and the output and input paths are per-project by
      * construction and say nothing about code generation; everything else the
      * compiler was handed is kept, warnings included, because this is a record
-     * of the build rather than a filter of it. */
-    const normalize = (command) => {
+     * of the build rather than a filter of it.
+     *
+     * The two paths are dropped by identity, using the database's own `file`
+     * and `output`, rather than by how they are spelled. Dropping every token
+     * that ends in .c or .o also swallowed the ARGUMENT of any option taking
+     * one: `-imacros a.c` and `-imacros b.c` both normalised to `-imacros`,
+     * and macros reach code generation. An option's argument is part of the
+     * option; only the unit being compiled and the file it is written to are
+     * per-project noise. */
+    const normalize = (entry) => {
+        const command = entry.command ?? (entry.arguments ?? []).join(" ");
         const tokens = command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/gu) ?? [];
+        const bare = (token) => token.replace(/^["']|["']$/gu, "");
+        const input = path.resolve(entry.directory, entry.file);
+        const output = entry.output ? path.resolve(entry.directory, bare(entry.output)) : null;
         const kept = [];
         for (let index = 1; index < tokens.length; index++) {
             const token = tokens[index];
-            if (token === "-c" || token === "-o" || token === "-I" || token === "-isystem") {
+            if (token === "-o" || token === "-I" || token === "-isystem") {
                 index++;
                 continue;
             }
             if (token.startsWith("-I") || token.startsWith("-isystem")) continue;
-            if (/\.(?:c|o|obj)$/u.test(token.replace(/^["']|["']$/gu, ""))) continue;
+            const resolved = path.resolve(entry.directory, bare(token));
+            if (resolved === input || (output !== null && resolved === output)) continue;
             kept.push(token);
         }
         return kept.join(" ");
@@ -653,7 +666,7 @@ function compiledFlags(buildDir, target) {
     const units = entries
         .map((entry) => ({
             file: path.relative(root, path.resolve(entry.directory, entry.file)),
-            flags: normalize(entry.command ?? (entry.arguments ?? []).join(" "))
+            flags: normalize(entry)
         }))
         .sort((left, right) => left.file.localeCompare(right.file));
     const distinct = [...new Set(units.map((unit) => unit.flags))].sort();
@@ -1077,6 +1090,42 @@ function measurementEnvironment(root) {
  * glibc, while the set of routines a parse happens to call is a property of the
  * code, which would make every commit incomparable with the one before it.
  */
+/**
+ * The C library the measured binaries actually load, by its bytes.
+ *
+ * `ldd --version` names a release. A distribution patch, a local rebuild or a
+ * different build of the same release keeps that line and changes the
+ * instructions inside memcpy and strlen -- which run inside the stage costs,
+ * and which the two engines call in different proportions. The dispatch digest
+ * does not cover this either: it records what glibc dispatches ON, the CPU
+ * features, not which implementation those features selected.
+ *
+ * So the objects are digested by content, keyed by soname rather than by path
+ * so that the same library installed in two places compares equal. The vdso is
+ * skipped: the kernel provides it and there is no file to read.
+ */
+function loadedLibraries(runner) {
+    const resolved = [...run("ldd", [runner]).matchAll(/=>\s*(\/\S+)|^\s*(\/\S+)/gmu)]
+        .map((match) => match[1] ?? match[2])
+        .filter((file) => fs.existsSync(file));
+    if (!resolved.length) {
+        fail(`the shared libraries of ${path.relative(root, runner)} could not be identified`);
+    }
+    const objects = resolved
+        .map(
+            (file) =>
+                `${path.basename(file)}\u0000${crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex")}`
+        )
+        .sort();
+    return {
+        summary: resolved
+            .map((file) => path.basename(file))
+            .sort()
+            .join(" "),
+        digest: crypto.createHash("sha256").update(objects.join("\n")).digest("hex")
+    };
+}
+
 function dispatchIdentity(profile, root) {
     const runner = path.join(profile.binaryDir, ENGINES["markdown-core"].runner);
     const loader = /(\/\S*ld-linux\S*\.so\S*)/u.exec(run("ldd", [runner]))?.[1];
@@ -1269,6 +1318,7 @@ function markdownReport(report) {
         "| --- | --- |",
         `| Compiler | \`${report.toolchain.compiler}\` (\`${report.toolchain.compilerDigest.slice(0, 16)}\`) |`,
         `| C library | \`${report.toolchain.libc}\` |`,
+        `| C library objects | \`${report.toolchain.libraries.summary}\` (\`${report.toolchain.libraries.digest.slice(0, 16)}\`) |`,
         `| Profiler | \`${report.toolchain.valgrind}\` |`,
         `| Architecture | \`${report.toolchain.architecture}\` |`,
         `| Code generation target | \`${report.toolchain.target}\` (\`${report.toolchain.targetDigest.slice(0, 16)}\`) |`,
@@ -1512,6 +1562,7 @@ function main() {
     versions.flags = coreFlags.compile;
     versions.linkFlags = coreFlags.link;
     versions.dispatch = dispatchIdentity(profile, root);
+    versions.libraries = loadedLibraries(path.join(profile.binaryDir, ENGINES["markdown-core"].runner));
     /* Split rather than left as two long lines for a reader to diff by eye: what
      * both engines got, and what only one of them did. Order is not meaning
      * here, so this compares as sets. */
