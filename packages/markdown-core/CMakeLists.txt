@@ -19,15 +19,17 @@ if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
 endif()
 
 option(MARKDOWN_CORE_TESTS "Build markdown-core tests and enable testing" ON)
-option(MARKDOWN_CORE_BENCHMARKS "Build opt-in local benchmark tools" OFF)
+option(MARKDOWN_CORE_BENCHMARKS "Build the opt-in callgrind stage runners" OFF)
 option(MARKDOWN_CORE_STATIC "Build static libmarkdown-core library" ON)
 option(MARKDOWN_CORE_SHARED "Build shared libmarkdown-core library" ON)
 option(MARKDOWN_CORE_LIB_FUZZER "Build libFuzzer fuzzing harness" OFF)
 option(MARKDOWN_CORE_FUZZ_QUADRATIC "Build quadratic fuzzing harness" OFF)
 option(MARKDOWN_CORE_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
-if(MARKDOWN_CORE_BENCHMARKS AND NOT MARKDOWN_CORE_TESTS)
-    message(FATAL_ERROR "MARKDOWN_CORE_BENCHMARKS=ON requires MARKDOWN_CORE_TESTS=ON")
+# The stage runners link the static engine directly, because the boundaries
+# the measurement reads are internal to the parse transaction.
+if(MARKDOWN_CORE_BENCHMARKS AND NOT MARKDOWN_CORE_STATIC)
+    message(FATAL_ERROR "MARKDOWN_CORE_BENCHMARKS=ON requires MARKDOWN_CORE_STATIC=ON")
 endif()
 
 if(MARKDOWN_CORE_WARNINGS_AS_ERRORS)
@@ -93,6 +95,9 @@ if(MARKDOWN_CORE_TESTS)
 endif()
 if(MARKDOWN_CORE_FUZZ_QUADRATIC)
     add_subdirectory(fuzz)
+endif()
+if(MARKDOWN_CORE_BENCHMARKS)
+    add_subdirectory(benchmarks)
 endif()
 
 if(NOT CMAKE_BUILD_TYPE)

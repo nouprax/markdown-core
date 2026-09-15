@@ -4,9 +4,10 @@
 #   api facade consumer spec elements regression pathological fuzz packaging
 #
 # The default correctness preset excludes conformance. Performance measurement
-# is not part of the test graph unless MARKDOWN_CORE_BENCHMARKS is explicitly
-# enabled for a local benchmark build. Every suite is native (C/C++); the test
-# tree has no scripting-language dependency and never touches the network.
+# is not in this graph at all: the stage benchmark lives in ../benchmarks and
+# runs under callgrind from its own driver, so no timing can ever reach CTest.
+# Every suite is native (C/C++); the test tree has no scripting-language
+# dependency and never touches the network.
 
 set(MARKDOWN_CORE_TEST_FIXTURES_DIR "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures")
 set(MARKDOWN_CORE_CANONICAL_AST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../specs/canonical-ast")
@@ -396,39 +397,6 @@ markdown_core_add_test(
 
 # packaging: corpus/workspace policy guard.
 markdown_core_add_test(packaging_corpus_guard packaging 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
-
-# Performance measurement is a developer tool, not a correctness oracle. It is
-# absent from normal and sanitizer builds so CI artifacts cannot accidentally
-# promote hosted-runner timing into a merge gate. The explicit benchmark preset
-# enables this block and reports measurements without wall-clock assertions.
-if(MARKDOWN_CORE_BENCHMARKS)
-    set(MARKDOWN_CORE_BENCH_SAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks/samples")
-    # The public flavour on purpose: the PR benchmark times the product library
-    # and reports the size of the shared library this target therefore builds.
-    markdown_core_add_runner(bench_runner runners/bench_runner.c)
-    target_include_directories(bench_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
-    markdown_core_add_test(benchmark_corpus_guard benchmark 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
-    set(MARKDOWN_CORE_BENCH_WORKLOADS
-        binding_baseline
-        representative
-        large_document
-        deep_nesting
-        elements
-        tables
-        adversarial)
-    foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
-        markdown_core_add_test(
-            benchmark_${workload}
-            benchmark
-            600
-            bench_runner
-            --workload
-            ${workload}
-            --samples
-            "${MARKDOWN_CORE_BENCH_SAMPLES_DIR}")
-        set_tests_properties(benchmark_${workload} PROPERTIES RUN_SERIAL TRUE)
-    endforeach()
-endif()
 
 if(WIN32 AND MARKDOWN_CORE_SHARED)
     file(TO_NATIVE_PATH ${MARKDOWN_CORE_CORE_BINARY_DIR} WIN_SRC_DLL_DIR)

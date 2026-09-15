@@ -1,0 +1,199 @@
+{
+    "schemaVersion": 1,
+    "targetBytes": 65536,
+    "cases": [
+        {
+            "name": "block-bq-flat",
+            "dialect": "commonmark",
+            "samples": ["block-bq-flat.md"]
+        },
+        {
+            "name": "block-bq-nested",
+            "dialect": "commonmark",
+            "samples": ["block-bq-nested.md"]
+        },
+        {
+            "name": "block-code",
+            "dialect": "commonmark",
+            "samples": ["block-code.md"]
+        },
+        {
+            "name": "block-fences",
+            "dialect": "commonmark",
+            "samples": ["block-fences.md"]
+        },
+        {
+            "name": "block-heading",
+            "dialect": "commonmark",
+            "samples": ["block-heading.md"]
+        },
+        {
+            "name": "block-hr",
+            "dialect": "commonmark",
+            "samples": ["block-hr.md"]
+        },
+        {
+            "name": "block-html",
+            "dialect": "commonmark",
+            "samples": ["block-html.md"]
+        },
+        {
+            "name": "block-lheading",
+            "dialect": "commonmark",
+            "samples": ["block-lheading.md"]
+        },
+        {
+            "name": "block-list-flat",
+            "dialect": "commonmark",
+            "samples": ["block-list-flat.md"]
+        },
+        {
+            "name": "block-list-nested",
+            "dialect": "commonmark",
+            "samples": ["block-list-nested.md"]
+        },
+        {
+            "name": "block-ref-flat",
+            "dialect": "commonmark",
+            "samples": ["block-ref-flat.md"]
+        },
+        {
+            "name": "block-ref-nested",
+            "dialect": "commonmark",
+            "samples": ["block-ref-nested.md"]
+        },
+        {
+            "name": "inline-autolink",
+            "dialect": "commonmark",
+            "samples": ["inline-autolink.md"]
+        },
+        {
+            "name": "inline-backticks",
+            "dialect": "commonmark",
+            "samples": ["inline-backticks.md"]
+        },
+        {
+            "name": "inline-em-flat",
+            "dialect": "commonmark",
+            "samples": ["inline-em-flat.md"]
+        },
+        {
+            "name": "inline-em-nested",
+            "dialect": "commonmark",
+            "samples": ["inline-em-nested.md"]
+        },
+        {
+            "name": "inline-em-worst",
+            "dialect": "commonmark",
+            "samples": ["inline-em-worst.md"]
+        },
+        {
+            "name": "inline-entity",
+            "dialect": "commonmark",
+            "samples": ["inline-entity.md"]
+        },
+        {
+            "name": "inline-escape",
+            "dialect": "commonmark",
+            "samples": ["inline-escape.md"]
+        },
+        {
+            "name": "inline-html",
+            "dialect": "commonmark",
+            "samples": ["inline-html.md"]
+        },
+        {
+            "name": "inline-links-flat",
+            "dialect": "commonmark",
+            "samples": ["inline-links-flat.md"]
+        },
+        {
+            "name": "inline-links-nested",
+            "dialect": "commonmark",
+            "samples": ["inline-links-nested.md"]
+        },
+        {
+            "name": "inline-newlines",
+            "dialect": "commonmark",
+            "samples": ["inline-newlines.md"]
+        },
+        {
+            "name": "lorem1",
+            "dialect": "commonmark",
+            "samples": ["lorem1.md"]
+        },
+        {
+            "name": "rawtabs",
+            "dialect": "commonmark",
+            "samples": ["rawtabs.md"]
+        },
+        {
+            "name": "directive",
+            "dialect": "extended",
+            "samples": ["directive.md"]
+        },
+        {
+            "name": "mixed-commonmark",
+            "dialect": "commonmark",
+            "samples": [
+                "block-bq-flat.md",
+                "block-bq-nested.md",
+                "block-code.md",
+                "block-fences.md",
+                "block-heading.md",
+                "block-hr.md",
+                "block-html.md",
+                "block-lheading.md",
+                "block-list-flat.md",
+                "block-list-nested.md",
+                "block-ref-flat.md",
+                "block-ref-nested.md",
+                "inline-autolink.md",
+                "inline-backticks.md",
+                "inline-em-flat.md",
+                "inline-em-nested.md",
+                "inline-em-worst.md",
+                "inline-entity.md",
+                "inline-escape.md",
+                "inline-html.md",
+                "inline-links-flat.md",
+                "inline-links-nested.md",
+                "inline-newlines.md",
+                "lorem1.md",
+                "rawtabs.md"
+            ]
+        },
+        {
+            "name": "mixed-extended",
+            "dialect": "extended",
+            "samples": [
+                "block-bq-flat.md",
+                "block-bq-nested.md",
+                "block-code.md",
+                "block-fences.md",
+                "block-heading.md",
+                "block-hr.md",
+                "block-html.md",
+                "block-lheading.md",
+                "block-list-flat.md",
+                "block-list-nested.md",
+                "block-ref-flat.md",
+                "block-ref-nested.md",
+                "directive.md",
+                "inline-autolink.md",
+                "inline-backticks.md",
+                "inline-em-flat.md",
+                "inline-em-nested.md",
+                "inline-em-worst.md",
+                "inline-entity.md",
+                "inline-escape.md",
+                "inline-html.md",
+                "inline-links-flat.md",
+                "inline-links-nested.md",
+                "inline-newlines.md",
+                "lorem1.md",
+                "rawtabs.md"
+            ]
+        }
+    ]
+}

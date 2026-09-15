@@ -46,7 +46,7 @@ family router. Diagnostic sharding uses the native filters.
 C data-driven runners also offer `spec_runner --list/--example/--section`,
 `pathological_runner --list/--case`, and `concurrency_runner --case`.
 `scripts/audit-test-topology.sh` compares discovery with CTest registration.
-The optional benchmark runner's workload list is separate from test discovery.
+The stage benchmark's runners are not in the test graph at all.
 
 ## Correctness and conformance
 
@@ -160,27 +160,38 @@ its artifact-specific CTest tree.
 
 ## Benchmarks and external corpora
 
-`pnpm benchmark:c-host` explicitly configures an isolated C measurement build.
-The `benchmark` label/runner exists only with `MARKDOWN_CORE_BENCHMARKS=ON` and
-is absent from default, sanitizer, required-CI, and release test artifacts.
-Measurements cover representative documents and adversarial shapes, using
-tracked samples or deterministic generation without runtime downloads.
+Performance measurement is a comparison against another parser, not against a
+previous run of this one. `pnpm benchmark:stages` runs Markdown Core and the
+pinned cmark over byte-identical documents under callgrind and reports what
+each engine spends on the two parse paths: source bytes into block buffers,
+and those buffers into an AST. cmark splits exactly those two paths across
+`cmark_parser_feed` and `cmark_parser_finish`, so the boundary is a real one on
+both sides. Parser allocation, dialect attachment, element discovery, and tree
+release are outside both stages: they are fixed cost that no document-size
+argument applies to. The contract is in the
+[benchmark README](../../packages/markdown-core/benchmarks/README.md).
 
-The separate PR benchmark measures a versioned parser workload and library
-size against the exact base SHA. The untrusted PR producer builds only the
-head and uploads its result. A privileged default-branch workflow uses a
-trusted exact-SHA baseline or builds that base itself with persisted credentials
-disabled. It never checks out or executes PR-head code. Both JSON inputs are
-validated for origin, SHA, schema, workload, and numeric bounds before a
-comparison comment is written.
+Instruction and data-reference counts are a property of the program, so a
+hosted runner reports the same numbers a developer's machine does and the
+result survives being read. That is why no wall-clock pipeline remains: every
+one this repository has had measured a shared runner as much as the parser.
+The counts are still not time — they do not price a cache miss, a branch miss,
+or a stall — so they are evidence for an optimization, never a threshold.
 
-Timing and RSS on hosted runners are informational and do not set pass/fail
-thresholds. Binary-size comparisons require matching toolchain inputs. A future
-performance gate requires a controlled environment, statistical design,
-versioned workloads, and an explicit false-positive budget. A timing concern
-becomes a correctness gate only when expressed as a reproducible semantic,
-operation-count, or resource invariant. Bindings do not maintain additional
-short wall-clock/RSS benchmark loops.
+The runners exist only with `MARKDOWN_CORE_BENCHMARKS=ON` and are registered
+with neither CTest nor any required gate, so no preset change can turn a
+measurement into a merge gate. The engine has no measurement mode: it keeps one
+parse entry with no feed/finish lifecycle, and the stage split is read out of
+the recorded call graph afterwards. The profiling flavour differs from Release
+only by debug information and by keeping the single-call-site stage boundary out
+of line; the driver verifies both boundaries survived the build rather than
+reporting a folded-away stage as a cheap one.
+
+Each case is also measured at twice the size, because a stage whose cost stops
+being linear in the input is a complexity finding rather than a tuning one. A
+timing concern becomes a correctness gate only when expressed as a reproducible
+semantic, operation-count, or resource invariant. Bindings do not maintain
+wall-clock or RSS benchmark loops.
 
 External test corpora follow the owning package's
 [manifest, license, and hash policy](../../packages/markdown-core/tests/corpora/README.md).
@@ -196,8 +207,8 @@ cross-host Maven artifact producers. When full validation is required, a
 failed, cancelled, skipped, or missing producer blocks readiness; a manual
 dry run has a different context.
 
-Every CI, CodeQL, release dry-run, and PR benchmark run first uses the shared
-`changes.yml` preflight. Repository integrity, documentation contracts, test
+Every CI, CodeQL, release dry-run, and stage benchmark run first uses the
+shared `changes.yml` preflight. Repository integrity, documentation contracts, test
 topology, and documented release coordinates are checked even for
 documentation-only changes. Required workflows always start; their gates may
 skip only after a successful preflight explicitly permits it. A failed preflight
@@ -227,7 +238,7 @@ from a successful run for the same repository, event, ref, and PR. Re-running a
 workflow replaces its record; failed-job retries can retain the original record
 for that fixed snapshot. Missing, expired, incomplete, or unreadable evidence
 falls back to full validation. Manual, scheduled, and formal release runs always
-execute fully. A skipped PR benchmark produces no comparison comment.
+execute fully. A skipped stage benchmark produces no report.
 
 `pnpm audit:tests` checks contracts without compiling. After an existing C build,
 `scripts/audit-test-topology.sh build/cmake` additionally checks dynamic discovery,
@@ -235,7 +246,10 @@ nonempty labels, and disjoint correctness/conformance selection. Audits must not
 rebuild C or Swift just to inspect their topology.
 
 CI policy audits enforce required execution, release/test artifact boundaries,
-and benchmark trust boundaries. Source layout, router implementation text,
+and the stage benchmark's measurement contract: its stage boundaries, its
+pinned profile flags, the absence of profiler instrumentation or a benchmark
+parse lifecycle in the product sources, and the absence of any retired
+wall-clock pipeline. Source layout, router implementation text,
 managed-device orchestration details, and Action major versions are not CI
 contracts to enforce through static string matching. Element inventories compare
 actual descriptor identities and attachment tables, detecting missing, duplicate,

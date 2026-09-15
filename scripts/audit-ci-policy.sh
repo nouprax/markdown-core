@@ -9,8 +9,7 @@ changes=.github/workflows/changes.yml
 codeql=.github/workflows/codeql.yml
 release=.github/workflows/release.yml
 release_dry_run=.github/workflows/release-dry-run.yml
-pr_benchmark=.github/workflows/pr-benchmark.yml
-pr_benchmark_comment=.github/workflows/pr-benchmark-comment.yml
+stage_benchmark=.github/workflows/stage-benchmark.yml
 ruleset=.github/rulesets/main.json
 owner_review_ruleset=.github/rulesets/owner-review.json
 release_ruleset=.github/rulesets/release-tags.json
@@ -65,8 +64,7 @@ for required in \
     "$codeql" \
     "$release" \
     "$release_dry_run" \
-    "$pr_benchmark" \
-    "$pr_benchmark_comment" \
+    "$stage_benchmark" \
     "$ruleset" \
     "$owner_review_ruleset" \
     "$release_ruleset" \
@@ -78,83 +76,104 @@ for required in \
     fi
 done
 
-node --test scripts/tests/ci-changes.test.mjs
+node --test scripts/tests/ci-changes.test.mjs scripts/tests/callgrind.test.mjs
 
-# Retire the old cross-runtime metrics pipeline. The replacement is a single C
-# parser workload in an independent workflow; it is informational, exact-base
-# keyed, and never part of required CI.
+# THE PERFORMANCE PIPELINE MEASURES WORK, NOT TIME. Every hosted-runner
+# wall-clock pipeline this repository has had was retired for the same reason:
+# a number a neighbouring build can move is not evidence, and a comparison
+# against a moving baseline needs a trust protocol to be safe at all. The
+# replacement counts instructions and data references under callgrind and
+# compares against a pinned cmark, so neither the runner nor a base build is
+# part of the result.
 for retired in \
     .github/workflows/benchmark.yml \
+    .github/workflows/pr-benchmark.yml \
+    .github/workflows/pr-benchmark-comment.yml \
     .github/workflows/pr-metrics.yml \
     .github/workflows/pr-metrics-comment.yml \
-    scripts/collect-pr-metrics.mjs; do
-    if [ -e "$retired" ]; then
-        echo "retired hosted-runner performance pipeline still exists: $retired" >&2
-        exit 1
-    fi
-done
-test -x scripts/pr-benchmark-result.mjs
-grep -Fq 'name: PR Benchmark' "$pr_benchmark"
-grep -Fq 'workflows: [PR Benchmark]' "$pr_benchmark_comment"
-grep -Fq 'pr-benchmark-baseline-${{ github.sha }}' "$pr_benchmark"
-grep -Fq 'name: pr-benchmark-head' "$pr_benchmark"
-grep -Fq 'path: build/pr-benchmark/head.json' "$pr_benchmark"
-if [ "$(grep -Fc 'mkdir -p build/pr-benchmark' "$pr_benchmark")" -ne 2 ]; then
-    echo "main and PR-head benchmark producers must create their result directory" >&2
-    exit 1
-fi
-head_benchmark_job=$(job_body measure-head "$pr_benchmark")
-if grep -Eq 'base\.json|baseline-source|pull_request\.base|pr-benchmark-baseline' <<<"$head_benchmark_job"; then
-    echo "PR-controlled benchmark job can access or publish trusted baseline data" >&2
-    exit 1
-fi
-grep -Fq 'pr-benchmark-baseline-${{ steps.comparison.outputs.base_sha }}' "$pr_benchmark_comment"
-grep -Fq 'github.rest.actions.listArtifactsForRepo' "$pr_benchmark_comment"
-grep -Fq 'const artifactName = `pr-benchmark-baseline-${process.env.BASE_SHA}`' "$pr_benchmark_comment"
-grep -Fq 'const trustedMain =' "$pr_benchmark_comment"
-grep -Fq 'const trustedFallback =' "$pr_benchmark_comment"
-grep -Fq 'run.path === ".github/workflows/pr-benchmark-comment.yml"' "$pr_benchmark_comment"
-grep -Fq 'steps.baseline.outputs.usable != '"'"'true'"'"'' "$pr_benchmark_comment"
-grep -Fq 'ref: ${{ steps.comparison.outputs.base_sha }}' "$pr_benchmark_comment"
-grep -Fq 'persist-credentials: false' "$pr_benchmark_comment"
-grep -Fq 'the privileged workflow will build and publish it' "$pr_benchmark_comment"
-if [ "$(grep -c 'uses: actions/checkout@' "$pr_benchmark_comment")" -ne 1 ]; then
-    echo "privileged benchmark workflow must checkout exactly one tree: the exact PR base" >&2
-    exit 1
-fi
-if grep -Eq '^[[:space:]]+issues: write$' "$pr_benchmark_comment"; then
-    echo "privileged benchmark workflow has unnecessary issue-wide write permission" >&2
-    exit 1
-fi
-grep -Fq '"boundary" in metric' "$pr_benchmark_comment"
-if grep -Eq '\|[^\n]*Boundary[^\n]*\|' "$pr_benchmark_comment"; then
-    echo "PR benchmark comment still renders a boundary column" >&2
-    exit 1
-fi
-if grep -Eq 'workflows: \[CI\]|run\.name === "CI"|successful main CI' \
-    "$pr_benchmark" "$pr_benchmark_comment"; then
-    echo "PR benchmark still depends on the normal main CI pipeline" >&2
-    exit 1
-fi
-for retired in \
+    scripts/collect-pr-metrics.mjs \
+    scripts/pr-benchmark-result.mjs \
+    packages/markdown-core/tests/runners/bench_runner.c \
     packages/es-markdown-core/scripts/benchmark.mjs \
     packages/kotlin-markdown-core/src/jvmBenchmark/kotlin/com/nouprax/markdown/core/benchmark/Benchmark.kt \
     packages/swift-markdown-core/Benchmarks/MarkdownCoreBenchmarks/main.swift; do
     if [ -e "$retired" ]; then
-        echo "retired binding wall-clock diagnostic still exists: $retired" >&2
+        echo "retired hosted-runner wall-clock pipeline still exists: $retired" >&2
         exit 1
     fi
 done
-if grep -Eq 'MarkdownCoreBenchmarks|kotlinBenchmark|jvmBenchmark|scripts/benchmark\.mjs|benchmark:(swift|kotlin|es)' \
+if grep -Eq 'MarkdownCoreBenchmarks|kotlinBenchmark|jvmBenchmark|scripts/benchmark\.mjs|benchmark:(swift|kotlin|es|c-host)' \
     Package.swift \
     package.json \
     packages/kotlin-markdown-core/build.gradle.kts \
     packages/es-markdown-core/package.json; then
-    echo "a retired binding wall-clock diagnostic is still routed by a package graph" >&2
+    echo "a retired wall-clock diagnostic is still routed by a package graph" >&2
+    exit 1
+fi
+
+# The measurement's own contract. Each of these is a way the comparison stops
+# being one without failing: a stage that stops being read from the call graph,
+# an engine built with flags the other was not, a corpus only one side sees, or
+# a report that reaches a privileged context as text.
+test -x scripts/benchmark-stages.mjs
+grep -Fq 'name: Stage Benchmark' "$stage_benchmark"
+grep -Fq 'node scripts/benchmark-stages.mjs' "$stage_benchmark"
+grep -Fq 'install --no-install-recommends --yes valgrind' "$stage_benchmark"
+grep -Fq 'scripts/init-environment.sh --install oracle-cmark' "$stage_benchmark"
+grep -Fq 'GITHUB_STEP_SUMMARY' "$stage_benchmark"
+# The report is a job summary and an artifact, never a comment: a workflow that
+# both runs pull-request code and holds a write token is the shape that made the
+# previous pipeline need two workflows and an artifact-validation protocol.
+if grep -Eq '^[[:space:]]+(pull-requests|issues|contents):[[:space:]]+write$' "$stage_benchmark"; then
+    echo "the stage benchmark holds a write token while executing pull-request code" >&2
+    exit 1
+fi
+if grep -Eq 'createComment|updateComment|issues\.create' "$stage_benchmark"; then
+    echo "the stage benchmark writes untrusted measurement text back to a pull request" >&2
+    exit 1
+fi
+# One harness, one corpus: both runners are the same driver source over the same
+# generated document, and the driver checks each engine's receipt against it.
+grep -Fq 'stage_runner.c markdown_core_stages.c' packages/markdown-core/benchmarks/CMakeLists.txt
+grep -Fq 'stage_runner.c cmark_stages.c' packages/markdown-core/benchmarks/CMakeLists.txt
+grep -Fq 'receiptBytes !== document.bytes' scripts/benchmark-stages.mjs
+for boundary in \
+    'markdown_core_parse_document_with_mem' \
+    'S_parse_source' \
+    'S_finish_parse' \
+    'cmark_parser_feed' \
+    'cmark_parser_finish'; do
+    grep -Fq "$boundary" scripts/benchmark-stages.mjs || {
+        echo "the stage benchmark no longer names the $boundary boundary" >&2
+        exit 1
+    }
+done
+# Both engines must be compiled from one pinned description, and the flags must
+# keep the boundaries out of line: -O3 alone folds S_finish_parse into its
+# caller, which reports the AST stage as absent rather than as cheap.
+grep -Fq '"CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG -g -fno-inline-functions-called-once"' CMakePresets.json
+grep -Fq 'CMAKE_C_FLAGS_RELEASE' scripts/benchmark-stages.mjs
+grep -Fq 'verifyStageSymbols' scripts/benchmark-stages.mjs
+# The engine keeps ONE parse entry and no measurement mode: the split is read
+# out of the call graph afterwards, never built into the product.
+if grep -R -nE 'markdown_core_parser_(begin|feed|read|finish)\b|MARKDOWN_CORE_(PARSE_)?PHASE' \
+    packages/markdown-core/core packages/markdown-core/elements packages/markdown-core/include; then
+    echo "a benchmark-only parse lifecycle leaked into the engine" >&2
+    exit 1
+fi
+if grep -R -nE 'valgrind/callgrind\.h|CALLGRIND_' \
+    packages/markdown-core/core packages/markdown-core/elements packages/markdown-core/include; then
+    echo "profiler instrumentation leaked into the product sources" >&2
+    exit 1
+fi
+# A measurement runner registered with CTest is a measurement one preset change
+# away from being a merge gate.
+if grep -Eq '(add_test|markdown_core_add_test)' packages/markdown-core/benchmarks/CMakeLists.txt; then
+    echo "the stage runners are registered as tests" >&2
     exit 1
 fi
 if grep -R -nE 'START_TIMING|END_TIMING|TIMING[[:space:]]*[<>]=?|takes less than [0-9]+ms' \
-    packages/markdown-core/tests --exclude=bench_runner.c; then
+    packages/markdown-core/tests; then
     echo "a wall-clock assertion leaked into the C correctness graph" >&2
     exit 1
 fi

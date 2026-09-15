@@ -13,11 +13,14 @@
         },
         {
             "name": "benchmark",
-            "displayName": "Local benchmark tools",
+            "displayName": "Callgrind stage profiling",
             "binaryDir": "${sourceDir}/build/benchmark",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
-                "MARKDOWN_CORE_BENCHMARKS": "ON"
+                "CMAKE_C_COMPILER": "gcc",
+                "CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG -g -fno-inline-functions-called-once",
+                "MARKDOWN_CORE_BENCHMARKS": "ON",
+                "MARKDOWN_CORE_TESTS": "OFF"
             }
         },
         {
@@ -73,14 +76,6 @@
             "configurePreset": "default",
             "output": { "outputOnFailure": true },
             "filter": { "include": { "label": "^conformance$" } }
-        },
-        {
-            "name": "benchmark",
-            "displayName": "Opt-in local measurements (never a CI gate)",
-            "configurePreset": "benchmark",
-            "output": { "outputOnFailure": true, "verbosity": "verbose" },
-            "filter": { "include": { "label": "^benchmark$" } },
-            "execution": { "jobs": 1 }
         },
         {
             "name": "correctness-asan",

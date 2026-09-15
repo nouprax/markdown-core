@@ -23,7 +23,7 @@
         "audit:surface": "scripts/audit-public-surface.sh",
         "audit:tests": "scripts/audit-test-topology.sh",
         "audit:toolchains": "scripts/audit-toolchain-versions.sh",
-        "benchmark:c-host": "cmake --preset benchmark && cmake --build --preset benchmark --parallel && ctest --preset benchmark",
+        "benchmark:stages": "node scripts/benchmark-stages.mjs",
         "build:c": "cmake --preset default && cmake --build --preset default --parallel",
         "build:swift": "swift build",
         "check:contracts": "node scripts/check-canonical-ast-fixtures.mjs && scripts/gradle.sh :packages:kotlin-markdown-core:contracts:list-naming:compileKotlin",
