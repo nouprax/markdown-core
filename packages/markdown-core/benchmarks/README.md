@@ -116,6 +116,15 @@ They are excluded rather than recorded because what the counts should describe
 is the pinned build parsing the corpus and not what the surrounding shell
 arranged around it.
 
+The profiler's own configuration is isolated for the same reason. Valgrind takes
+options from `~/.valgrindrc`, then `VALGRIND_OPTS`, then `./.valgrindrc`, before
+its command line — so every option the driver does not pass explicitly is the
+caller's to set, and those are exactly the ones that decide what gets counted. A
+`~/.valgrindrc` holding `--collect-atstart=no` takes a measurement's summary to
+**0** while the identity table stays identical. `VALGRIND_OPTS` is gone with
+everything else unnamed; the two rc files are reached through `HOME` and the
+working directory, so both point at an empty directory the driver owns.
+
 The cmark side is linked from the static archive the driver just built,
 with the library lookup constrained to static suffixes: CMake searches `.so`
 ahead of `.a`, and configuring with `BUILD_SHARED_LIBS=OFF` does not remove what

@@ -207,6 +207,13 @@ if grep -Fq '...process.env' scripts/benchmark-stages.mjs; then
     echo "the stage benchmark hands the caller's whole environment to the measurement" >&2
     exit 1
 fi
+# The profiler reads rc files before its command line, so the options the driver
+# does not pass are the caller's unless HOME and the working directory are the
+# driver's own.
+grep -Fq 'measurementRoot' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark lets the caller's valgrindrc configure the measurement" >&2
+    exit 1
+}
 # The oracle is the pinned commit only if nothing untracked is shadowing it: a
 # stray src/config.h is neither tracked nor ignored, and the source directory
 # precedes the build directory on the include path.

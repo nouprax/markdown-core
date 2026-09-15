@@ -637,13 +637,32 @@ function runnerIdentity(profile) {
  *
  * Valgrind sets its own loader variables for the client, so it is undisturbed.
  */
-const MEASUREMENT_PATH_VARIABLES = ["PATH", "HOME", "TMPDIR"];
+/**
+ * The profiler's own configuration is isolated too, not just the environment.
+ *
+ * Valgrind takes options from `~/.valgrindrc`, then VALGRIND_OPTS, then
+ * `./.valgrindrc`, before its command line -- so every option this driver does
+ * not pass explicitly is the caller's to set, and the ones that matter most are
+ * exactly the ones not passed here. A home directory rc file containing
+ * `--collect-atstart=no` takes this measurement's summary to 0 with the
+ * report's identity table unchanged.
+ *
+ * VALGRIND_OPTS is already gone with everything else unnamed. The two rc files
+ * are reached by HOME and by the working directory instead, so both point at an
+ * empty directory this driver owns and neither file exists.
+ */
+function measurementRoot(out) {
+    const directory = path.join(out, "measurement-root");
+    fs.mkdirSync(directory, { recursive: true });
+    const rc = path.join(directory, ".valgrindrc");
+    if (fs.existsSync(rc)) fail(`${rc} would configure the profiler out from under the measurement`);
+    return directory;
+}
 
-function measurementEnvironment() {
-    const environment = { LC_ALL: "C", LANG: "C" };
-    for (const name of MEASUREMENT_PATH_VARIABLES) {
-        if (process.env[name] !== undefined) environment[name] = process.env[name];
-    }
+function measurementEnvironment(root) {
+    /* PATH is the only thing carried across: it is how `valgrind` is found. */
+    const environment = { LC_ALL: "C", LANG: "C", HOME: root, TMPDIR: root };
+    if (process.env.PATH !== undefined) environment.PATH = process.env.PATH;
     return environment;
 }
 
@@ -651,6 +670,7 @@ function measure(profile, engine, document, out) {
     const definition = ENGINES[engine];
     const dump = path.join(out, "callgrind", `${engine}.${document.case}.x${document.scale}.out`);
     fs.mkdirSync(path.dirname(dump), { recursive: true });
+    const root = measurementRoot(out);
     const stdout = run(
         "valgrind",
         [
@@ -671,7 +691,9 @@ function measure(profile, engine, document, out) {
             "--document",
             document.file
         ],
-        { env: measurementEnvironment() }
+        /* Every path above is absolute, so the child can be run from the
+         * directory that exists to hold no configuration. */
+        { env: measurementEnvironment(root), cwd: root }
     );
 
     const receipt = /bytes=(\d+) root_children=(\d+)/u.exec(stdout);
@@ -810,7 +832,11 @@ function markdownReport(report) {
             " exported LD_PRELOAD, GLIBC_TUNABLES or MALLOC_PERTURB_ would otherwise" +
             " change what the stages execute while this table stayed identical, and the" +
             " last of those is worth nearly 48% on one case. Naming variables to remove" +
-            " would leave the next one admitted; an unnamed variable is absent here.",
+            " would leave the next one admitted; an unnamed variable is absent here." +
+            " The profiler's own configuration is isolated the same way: valgrind reads" +
+            " `~/.valgrindrc` and `./.valgrindrc` before its command line, so every" +
+            " option not passed below is otherwise the caller's to set, and the child" +
+            " runs from an empty directory that serves as both.",
         "",
         "Counts do not depend on the machine's speed, its load, or what else was" +
             " running: re-running this commit on this toolchain reproduces every number" +
