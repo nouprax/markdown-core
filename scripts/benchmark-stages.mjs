@@ -272,6 +272,31 @@ function toolchain(profile) {
 }
 
 /**
+ * Where a path actually lands, as far as it exists today.
+ *
+ * `path.resolve` and `path.relative` compare spelling, and a symlink is a
+ * path that lands somewhere its spelling does not say. Neither directory has
+ * to exist when this is asked, so the deepest ancestor that does exist is
+ * canonicalised and the rest appended: what does not exist cannot be a link.
+ */
+function realPath(target) {
+    const pending = [];
+    let existing = target;
+    for (;;) {
+        try {
+            return path.join(fs.realpathSync(existing), ...pending);
+        } catch {
+            const parent = path.dirname(existing);
+            if (parent === existing) {
+                return target;
+            }
+            pending.unshift(path.basename(existing));
+            existing = parent;
+        }
+    }
+}
+
+/**
  * The two build trees must not contain one another.
  *
  * The cmark tree lives under the output directory and the profile tree is
@@ -279,16 +304,27 @@ function toolchain(profile) {
  * discarding a foreign-stamped profile tree takes the freshly built cmark
  * archive with it and the configure that follows cannot find it. The
  * arrangement is refused rather than half-supported.
+ *
+ * Both sides are canonicalised first. Comparing what the caller typed would
+ * accept `--out` through a symlink into the profile tree, and the failure that
+ * follows names a missing cmark library rather than the arrangement that
+ * removed it.
  */
 function refuseOverlappingTrees(options, profile) {
+    const out = realPath(options.out);
+    const binaryDir = realPath(profile.binaryDir);
     const inside = (child, parent) => {
         const relative = path.relative(parent, child);
         return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
     };
-    if (inside(options.out, profile.binaryDir) || inside(profile.binaryDir, options.out)) {
+    if (inside(out, binaryDir) || inside(binaryDir, out)) {
+        const shown = (typed, real) =>
+            typed === real
+                ? path.relative(root, typed)
+                : `${path.relative(root, typed)} (${path.relative(root, real)})`;
         fail(
-            `--out ${path.relative(root, options.out)} overlaps the profile build tree ` +
-                `${path.relative(root, profile.binaryDir)}; one would delete the other's build. Choose a path ` +
+            `--out ${shown(options.out, out)} overlaps the profile build tree ` +
+                `${shown(profile.binaryDir, binaryDir)}; one would delete the other's build. Choose a path ` +
                 "outside it."
         );
     }

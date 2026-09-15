@@ -258,6 +258,14 @@ grep -Fq 'build/benchmark-stages/corpus' "$stage_benchmark" || {
     echo "the stage benchmark does not publish the corpus its digest names" >&2
     exit 1
 }
+# The output directory and the profile tree must not contain one another, and
+# containment is a question about where a path lands rather than how it is
+# spelled: a symlink into the profile tree reads as outside it, and the run
+# that follows deletes its own freshly built cmark archive.
+grep -Fq 'realPath' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark compares build trees by spelling, not by where they land" >&2
+    exit 1
+}
 # The preset places the profile build tree and the driver addresses it from a
 # dozen call sites. A second copy of that path in the driver would let the two
 # drift: `cmake --preset` would build one tree while the cleanup, the symbol
