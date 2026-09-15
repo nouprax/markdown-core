@@ -89,13 +89,21 @@ by the driver. The flags are Release plus two additions:
   and it is larger than most changes anyone would bring this benchmark to judge.
 
 The report does not stop there and claim the two compile lines match, because
-they do not. It prints both, read out of each tree's `compile_commands.json` for
-the object that is actually linked — Markdown Core compiles its `blocks.c` twice,
-once into the shared library and once into the static one the runner links, and
-only the second is the measured code. What remains different between the engines
-is language level, defines and warning flags, none of which reach code
-generation; what must be identical is the pinned set above, and the driver fails
-if either engine's real compile line is missing any of it.
+they do not. It reads both out of each tree's `compile_commands.json` — for the
+object that is actually linked, since Markdown Core compiles its `blocks.c`
+twice, once into the shared library and once into the static one the runner
+links, and only the second is the measured code — and then splits them into what
+both engines got and what only one of them did.
+
+That split is what to read, and the report does not tell you it is harmless.
+Warning flags cannot reach code generation. A define can: a `*_STATIC_DEFINE` is
+a visibility switch, which is the same mechanism that made `-fvisibility=hidden`
+worth 5.9% above. So a ratio here is a fact about the two parsers only as far as
+those two rows are inert, and judging that is left to whoever reads the report
+rather than asserted on their behalf.
+
+What the driver does guarantee is the pinned set: it fails if either engine's
+real compile line is missing any of it.
 
 Nothing in the product is arranged for this. The engine has no measurement
 mode, no phase hooks, and no benchmark-only code path; the profiling flavour

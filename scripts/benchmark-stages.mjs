@@ -884,12 +884,15 @@ function markdownReport(report) {
             " this driver pins present on both -- checked against each engine's real compile" +
             " line rather than assumed from what was passed to CMake.",
         "",
-        "Their compile lines are NOT identical, and the table below gives both rather than" +
-            " claiming otherwise. Each project sets its own language level, warning set and" +
-            " target properties, and CMake derives options from those that appear in no" +
-            " cache variable. Most of what differs cannot reach code generation -- warning" +
-            " flags do not -- but not all of it: read the two lines before reading a ratio" +
-            " as a fact about the parsers alone.",
+        "Their compile lines are NOT identical. Each project sets its own language level," +
+            " warning set and target properties, and CMake derives options from those that" +
+            " appear in no cache variable, so the table splits what both engines got from" +
+            " what only one of them did. The split is the thing to read: warning flags" +
+            " cannot reach code generation, but a define can -- a `*_STATIC_DEFINE` is a" +
+            " visibility switch -- and so can anything else that turns up in those two" +
+            " rows. A ratio is a fact about the two parsers only as far as those rows are" +
+            " inert, which is a judgement this report leaves to whoever reads it rather" +
+            " than making on their behalf. The full lines are in `stages.json`.",
         "",
         "| | |",
         "| --- | --- |",
@@ -900,8 +903,9 @@ function markdownReport(report) {
         `| Code generation target | \`${report.toolchain.target}\` (\`${report.toolchain.targetDigest.slice(0, 16)}\`) |`,
         `| Shared cache C flags | \`${report.toolchain.flags}\` |`,
         `| Shared link flags | \`${report.toolchain.linkFlags || "(none)"}\` |`,
-        `| Markdown Core compile line | \`${report.toolchain.compiled["markdown-core"]}\` |`,
-        `| cmark compile line | \`${report.toolchain.compiled.cmark}\` |`,
+        `| Compile options both engines got | \`${report.toolchain.compiled.shared}\` |`,
+        `| Markdown Core only | \`${report.toolchain.compiled["markdown-core only"] || "(nothing)"}\` |`,
+        `| cmark only | \`${report.toolchain.compiled["cmark only"] || "(nothing)"}\` |`,
         `| Corpus | \`${report.corpus.digest.slice(0, 16)}\` (${report.corpus.cases} documents) |`,
         "",
         "The measurement runs in an environment built rather than inherited: a path," +
@@ -1107,7 +1111,19 @@ function main() {
     }
     versions.flags = coreFlags.compile;
     versions.linkFlags = coreFlags.link;
-    versions.compiled = compiled;
+    /* Split rather than left as two long lines for a reader to diff by eye: what
+     * both engines got, and what only one of them did. Order is not meaning
+     * here, so this compares as sets. */
+    const tokens = (engine) => compiled[engine].split(" ").filter(Boolean);
+    const only = (engine, other) => tokens(engine).filter((flag) => !tokens(other).includes(flag));
+    versions.compiled = {
+        ...compiled,
+        shared: tokens("markdown-core")
+            .filter((flag) => tokens("cmark").includes(flag))
+            .join(" "),
+        "markdown-core only": only("markdown-core", "cmark").join(" "),
+        "cmark only": only("cmark", "markdown-core").join(" ")
+    };
     versions.architecture = process.arch;
     const binaries = runnerIdentity(profile);
 
