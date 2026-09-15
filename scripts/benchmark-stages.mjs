@@ -615,10 +615,18 @@ function buildCorpus(options) {
     const directory = path.join(options.out, "corpus");
     fs.mkdirSync(directory, { recursive: true });
 
+    /* Every requested name has to exist, not just one of them. A run filtered
+     * to `--case mixed-commonmark --case chain-braket-open` would otherwise
+     * measure the first, drop the typo silently, and report an experiment the
+     * caller did not ask for -- with the adversarial case they wanted absent. */
+    const named = new Set(manifest.cases.map((entry) => entry.name));
+    const unknown = options.cases.filter((name) => !named.has(name));
+    if (unknown.length) {
+        fail(`no corpus case is named ${unknown.join(", ")}; the manifest has ${[...named].sort().join(", ")}`);
+    }
     const selected = options.cases.length
         ? manifest.cases.filter((entry) => options.cases.includes(entry.name))
         : manifest.cases;
-    if (!selected.length) fail(`no corpus case matched ${options.cases.join(", ")}`);
 
     const documents = [];
     for (const entry of selected) {
@@ -778,9 +786,16 @@ function dispatchIdentity(profile, root) {
     const runner = path.join(profile.binaryDir, ENGINES["markdown-core"].runner);
     const loader = /(\/\S*ld-linux\S*\.so\S*)/u.exec(run("ldd", [runner]))?.[1];
     if (!loader) fail(`the dynamic loader for ${path.relative(root, runner)} could not be identified`);
+    /* Same isolation as the measurement itself, working directory included:
+     * valgrind reads `./.valgrindrc` as well as `~/.valgrindrc`, so a probe run
+     * from the repository would take options the measured child does not -- and
+     * a callgrind-only option there fails outright under `--tool=none`, which
+     * would turn a stray file in someone's checkout into a refused benchmark. */
+    const isolated = measurementRoot(path.dirname(profile.binaryDir));
     const probe = spawnSync("valgrind", ["--tool=none", "--quiet", loader, "--list-diagnostics"], {
         encoding: "utf8",
-        env: measurementEnvironment(measurementRoot(path.dirname(profile.binaryDir)))
+        env: measurementEnvironment(isolated),
+        cwd: isolated
     });
     const features = (probe.stdout ?? "")
         .split("\n")
