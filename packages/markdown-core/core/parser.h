@@ -67,16 +67,31 @@ typedef struct {
     bool dispatches, terminates;
 } markdown_core_inline_candidate;
 
+/* The row of the block owner sets that holds the owners of an indented line
+ * rather than of a first byte, one past the 256 bytes. */
+#define MARKDOWN_CORE_BLOCK_OWNER_INDENT_ROW 256
+#define MARKDOWN_CORE_BLOCK_OWNER_ROWS (MARKDOWN_CORE_BLOCK_OWNER_INDENT_ROW + 1)
+
 /* The block owners of one first byte, as a bit per owner in registry order
  * (`markdown_core_registry.block_owners`): the owners with the hook that
  * accept lines starting at the byte, so a block-start arbitration visits
  * those and no other. An owner that declared no byte set is in every byte's
- * set. Each set is byte-major, `words` 64-bit words per byte -- as many as
+ * set. Each set is row-major, `words` 64-bit words per row -- as many as
  * the registry's owners need, one for up to 64 of them -- so owner `n` is
- * bit `n % 64` of word `n / 64` of its byte. */
+ * bit `n % 64` of word `n / 64` of its row.
+ *
+ * The row after the bytes holds the owners that accept a line of any first
+ * byte once its indent reaches `indent_floor` (`block_start_indent`), which
+ * is how a block that begins at an indent rather than at a byte declares
+ * itself. An arbitration reads it as a second row and ors the two, and below
+ * the floor it reads the byte's row twice, so the shape does not change with
+ * the line. `indent_floor` is the lowest indent any owner declared, or
+ * INT_MAX when none did; an owner that declared a higher one is visited from
+ * the floor up and refuses there as it would have anyway. */
 typedef struct {
-    const uint64_t *scan, *interrupt, *open, *paragraph; /* 256 * words entries each */
+    const uint64_t *scan, *interrupt, *open, *paragraph; /* ROWS * words entries each */
     size_t words;
+    int indent_floor;
 } markdown_core_block_owner_sets;
 
 /* The elements that implement an inline root's `init_inline`, then

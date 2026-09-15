@@ -111,11 +111,17 @@ fallback precedence. One ordered dispatch loop handles all three. Its byte index
 preserves candidate order and set membership without walking unrelated
 descriptors for each token. Block owners are projected the same way: each
 element with block hooks declares `block_start_bytes`, the first non-space
-bytes at which any of its hooks can accept (NULL for every byte), and the
-projection keeps, per first byte and per hook, the set of owners accepting it
-as one bit per owner, so a line's block-start arbitration visits only the
-owners of its byte that implement the hook, in registry order, and examines
-no other. An owner whose bytes are broad narrows them itself before it
+bytes at which any of its hooks can accept (NULL for every byte), and
+`block_start_indent`, the indent from which they accept a line of any first
+byte (zero for none), and the projection keeps, per first byte and per hook,
+the set of owners accepting it as one bit per owner, plus one further row per
+hook for the owners an indent admits, so a line's block-start arbitration
+visits only the owners of its byte and of its indent that implement the hook,
+in registry order, and examines no other. The indent is how a block that
+begins at an indent rather than at a byte declares itself: an indented code
+block claims no byte, while the fences of the same element claim theirs, so a
+line of prose is no longer dispatched to the code block that cannot open on
+it. An owner whose bytes are broad narrows them itself before it
 parses: the list claims every letter for alphabetic and roman markers, and
 reads the few bytes that make a letter a marker (`a.`, `A)`, a numeral before
 `.` or `)`) before parsing one, so a line of prose that begins with a letter

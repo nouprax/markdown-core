@@ -5624,10 +5624,13 @@ static void core_registry_is_its_own_projection(test_batch_runner *runner) {
     for (size_t i = 0; same && i < markdown_core_inline_structure_count; i++) {
         same = markdown_core_inline_traits[i] == markdown_core_structure_traits(markdown_core_inline_structure[i]);
     }
-    same = same && memcmp(built.block_owner_sets.scan, core->block_owner_sets.scan, 256 * sizeof(uint64_t)) == 0 &&
-           memcmp(built.block_owner_sets.interrupt, core->block_owner_sets.interrupt, 256 * sizeof(uint64_t)) == 0 &&
-           memcmp(built.block_owner_sets.open, core->block_owner_sets.open, 256 * sizeof(uint64_t)) == 0 &&
-           memcmp(built.block_owner_sets.paragraph, core->block_owner_sets.paragraph, 256 * sizeof(uint64_t)) == 0;
+    size_t rows_size = MARKDOWN_CORE_BLOCK_OWNER_ROWS * built.block_owner_sets.words * sizeof(uint64_t);
+    same = same && built.block_owner_sets.words == core->block_owner_sets.words &&
+           built.block_owner_sets.indent_floor == core->block_owner_sets.indent_floor &&
+           memcmp(built.block_owner_sets.scan, core->block_owner_sets.scan, rows_size) == 0 &&
+           memcmp(built.block_owner_sets.interrupt, core->block_owner_sets.interrupt, rows_size) == 0 &&
+           memcmp(built.block_owner_sets.open, core->block_owner_sets.open, rows_size) == 0 &&
+           memcmp(built.block_owner_sets.paragraph, core->block_owner_sets.paragraph, rows_size) == 0;
     size_t hooks = built.inline_hooks.init_count + built.inline_hooks.finish_count + built.inline_hooks.dispose_count;
     for (size_t i = 0; same && i < hooks; i++) {
         same = built.inline_hooks.elements[i] == core->inline_hooks.elements[i];
@@ -6985,6 +6988,63 @@ static void block_owner_sets_grow_with_the_registry(test_batch_runner *runner) {
            "every owner, on either side of the word boundary, is visited for the line's first byte");
     OK(runner, markdown_core_core_registry()->block_owner_sets.words == 1, "the core registry keeps one word per byte");
     markdown_core_node_free(root);
+}
+
+/* An owner is reached by its bytes or by its indent. One that declares both
+ * is visited for a line that matches either and for no other line, so a
+ * grammar whose block begins at an indent (an indented code block) declares
+ * that instead of claiming every byte. */
+static size_t indent_gate_visits;
+static markdown_core_node *visit_indent_gate(markdown_core_parser *parser, markdown_core_node *node,
+                                             markdown_core_chunk *input, bool lazy) {
+    (void)parser;
+    (void)node;
+    (void)input;
+    (void)lazy;
+    indent_gate_visits++;
+    return NULL;
+}
+static markdown_core_element indent_gate_owner;
+static bool attach_indent_gate(markdown_core_parser *parser, void *context) {
+    (void)context;
+    return markdown_core_parser_attach_element(parser, &indent_gate_owner);
+}
+static void owners_are_reached_by_their_bytes_or_their_indent(test_batch_runner *runner) {
+    static const struct {
+        const char *source, *what;
+        size_t visits;
+    } cases[] = {
+        /* Neither: a paragraph line of a byte the owner did not declare. */
+        {"alpha\n", "a line of another byte", 0},
+        /* Its byte, below the indent. */
+        {"@alpha\n", "a line of its byte", 1},
+        /* Its indent, of a byte it did not declare. */
+        {"    alpha\n", "an indented line of another byte", 1},
+        /* Three spaces are not the indent, and the byte is not its byte. */
+        {"   alpha\n", "a line indented below the floor", 0},
+        /* Both at once is still one visit: the two rows are ored, not read
+           in turn. */
+        {"    @alpha\n", "an indented line of its byte", 1},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        memset(&indent_gate_owner, 0, sizeof(indent_gate_owner));
+        indent_gate_owner.name = "indent-gate";
+        indent_gate_owner.maximum_block_indent = INT_MAX;
+        indent_gate_owner.block_start_bytes = "@";
+        indent_gate_owner.block_start_indent = 4;
+        /* The interruption loop, which every line reaches whatever another
+         * owner's scan already matched, so the count is of the dispatch and
+         * not of what won the line. */
+        indent_gate_owner.try_interrupting_block = visit_indent_gate;
+        indent_gate_visits = 0;
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem(cases[i].source, strlen(cases[i].source),
+                                                  markdown_core_get_default_mem_allocator(), attach_indent_gate, NULL);
+        OK(runner, root != NULL, "%s parses", cases[i].what);
+        INT_EQ(runner, (int)indent_gate_visits, (int)cases[i].visits, "%s visits the owner %zu time(s)", cases[i].what,
+               cases[i].visits);
+        markdown_core_node_free(root);
+    }
 }
 
 static void terms_and_headers_from_the_line_below(test_batch_runner *runner) {
@@ -8650,6 +8710,7 @@ int main(int argc, char **argv) {
     terms_and_headers_from_the_line_below(runner);
     finishers_see_the_node_a_hook_put_in_place(runner);
     block_owner_sets_grow_with_the_registry(runner);
+    owners_are_reached_by_their_bytes_or_their_indent(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

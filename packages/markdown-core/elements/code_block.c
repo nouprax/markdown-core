@@ -196,6 +196,11 @@ static bool blank_line(markdown_core_parser *parser, markdown_core_node *node) {
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .name = "code_block",
     .maximum_block_indent = INT_MAX,
+    /* The two code blocks of this element declare themselves differently:
+     * a fence by its byte, an indented block by its indent. scan_code reads
+     * the same two above, in the same order. */
+    .block_start_bytes = "`~",
+    .block_start_indent = CODE_INDENT,
     .scan_block_start = scan_code,
     .last_block_matches = continue_code,
     .content_mode = MARKDOWN_CORE_CONTENT_LITERAL,

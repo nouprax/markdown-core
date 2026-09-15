@@ -1,3 +1,5 @@
+#include <limits.h>
+
 #include "document.h"
 #include "attributes.h"
 #include "code_block.h"

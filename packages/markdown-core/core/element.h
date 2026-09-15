@@ -145,6 +145,13 @@ struct markdown_core_element {
      * byte, including a line end; an element whose grammar begins with a
      * known byte is not consulted for lines that begin otherwise. */
     const char *block_start_bytes;
+    /* The indent from which those hooks accept a line of any first byte, for
+     * an element one of whose blocks begins at an indent rather than at a
+     * byte -- an indented code block is the whole of that grammar, and the
+     * fences of the same element still declare their bytes above. Zero means
+     * no such block: the byte set alone decides. An element with both is
+     * consulted for a line that matches either. */
+    int block_start_indent;
     bool (*scan_block_start)(markdown_core_parser *, struct markdown_core_block_start_context *,
                              struct markdown_core_block_start *);
     /* Last refusal before an ordinary paragraph, after opaque blocks/tables. */
