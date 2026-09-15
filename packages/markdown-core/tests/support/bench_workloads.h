@@ -45,6 +45,17 @@ int bench_workload_version(const char *workload);
  * allocation fails), -2 for an unknown workload, 0 otherwise. */
 int bench_workload_visit(const char *workload, const char *samples_dir, bench_case_visitor visit, void *context);
 
+/* The same, with the sample workload's replication factor overridden:
+ * `copies` of each tracked sample instead of its own 200. Zero keeps the
+ * workload's factor. Only the sample-based workload replicates a file on
+ * disk, so only it reads this; a generated workload's scale is its own.
+ *
+ * The instruction lane reads a case twice, once replicated and once at
+ * `copies = 1`: replication measures throughput, and the unreplicated read
+ * is the only one where a parse's fixed cost is not amortized away. */
+int bench_workload_visit_copies(const char *workload, const char *samples_dir, size_t copies, bench_case_visitor visit,
+                                void *context);
+
 /* SHA-256 of `length` bytes, as 64 lowercase hex digits plus a NUL. */
 void bench_sha256_hex(const void *data, size_t length, char hex[65]);
 

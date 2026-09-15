@@ -441,6 +441,16 @@ if(MARKDOWN_CORE_BENCHMARKS)
     markdown_core_add_runner(bench_runner runners/bench_runner.c)
     target_include_directories(bench_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
     target_link_libraries(bench_runner markdown-core-bench-workloads)
+
+    # The instruction lane counts one region rather than one process, so it
+    # needs valgrind's client-request header. Without it the runner still
+    # builds and every other lane works; only --instructions has nothing to
+    # collect.
+    include(CheckIncludeFile)
+    check_include_file("valgrind/callgrind.h" MARKDOWN_CORE_HAVE_CALLGRIND_H)
+    if(MARKDOWN_CORE_HAVE_CALLGRIND_H)
+        target_compile_definitions(bench_runner PRIVATE MARKDOWN_CORE_BENCH_CALLGRIND=1)
+    endif()
     # The reference lane: the pinned cmark oracle, built by
     # `scripts/init-environment.sh --install oracle-cmark`, linked into
     # bench_runner so that `--reference cmark` times the same bytes through it.

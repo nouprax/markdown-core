@@ -476,19 +476,26 @@ static int visit_input(const workload *w, const char *name, const char *generato
 }
 
 int bench_workload_visit(const char *name, const char *samples_dir, bench_case_visitor visit, void *context) {
+    return bench_workload_visit_copies(name, samples_dir, 0, visit, context);
+}
+
+int bench_workload_visit_copies(const char *name, const char *samples_dir, size_t copies, bench_case_visitor visit,
+                                void *context) {
     const workload *w = find_workload(name);
     size_t i;
     if (!w) {
         return -2;
     }
     if (!w->cases) {
-        /* representative: every tracked sample, 200 copies each */
+        /* representative: every tracked sample, 200 copies each unless the
+         * caller asked for another count. */
+        size_t each = copies ? copies : 200;
         for (i = 0; i < SAMPLE_COUNT; i++) {
             text t = {0};
             char parameters[128];
             int result;
-            generate_sample(&t, samples_dir, SAMPLES[i], 200);
-            snprintf(parameters, sizeof(parameters), "sample=%s copies=200", SAMPLES[i]);
+            generate_sample(&t, samples_dir, SAMPLES[i], each);
+            snprintf(parameters, sizeof(parameters), "sample=%s copies=%zu", SAMPLES[i], each);
             result = visit_input(w, SAMPLES[i], "sample", parameters, 0, 0, &t, visit, context);
             if (result) {
                 return result;

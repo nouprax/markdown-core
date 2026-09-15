@@ -32,24 +32,34 @@ export function parseCollected(stderr) {
 
 /** The runner's own line for the case it ran: `instructions case=... bytes=... sha256=...`. */
 export function parseInstructionsLine(stdout) {
-    const match = /^instructions case=(\S+) implementation=(\S+) bytes=(\d+) parses=(\d) sha256=([0-9a-f]{64})$/mu.exec(
-        stdout
-    );
+    const match =
+        /^instructions case=(\S+) implementation=(\S+) stage=(\S+) bytes=(\d+) parses=(\d) sha256=([0-9a-f]{64})$/mu.exec(
+            stdout
+        );
     if (!match) throw new Error("bench_runner reported no instructions line");
     return {
         name: match[1],
         implementation: match[2],
-        bytes: Number(match[3]),
-        parses: Number(match[4]),
-        sha256: match[5]
+        stage: match[3],
+        bytes: Number(match[4]),
+        parses: Number(match[5]),
+        sha256: match[6]
     };
 }
 
-/** One row of the report from the four counts of a case. */
+/** One row of the report. `coreIr` is the parse window and nothing else --
+ * it is what this lane optimizes. The free window and the unreplicated read
+ * ride along as context: teardown is not a target, and the fixed cost of a
+ * parse is only visible before replication amortizes it away. */
 export function caseRow(name, bytes, sha256, counts) {
-    const row = { name, bytes, inputSha256: sha256, coreIr: counts.core - counts.coreDry };
+    const row = { name, bytes, inputSha256: sha256, coreIr: counts.core };
+    if (counts.coreFree !== undefined) row.coreFreeIr = counts.coreFree;
+    if (counts.coreRaw !== undefined) {
+        row.rawBytes = counts.rawBytes;
+        row.coreRawIr = counts.coreRaw;
+    }
     if (counts.cmark !== undefined) {
-        row.cmarkIr = counts.cmark - counts.cmarkDry;
+        row.cmarkIr = counts.cmark;
         row.ratio = row.cmarkIr > 0 ? row.coreIr / row.cmarkIr : null;
     }
     return row;
@@ -57,6 +67,8 @@ export function caseRow(name, bytes, sha256, counts) {
 
 export function formatRow(row) {
     let line = `instructions case=${row.name} bytes=${row.bytes} core_ir=${row.coreIr}`;
+    if (row.coreFreeIr !== undefined) line += ` core_free_ir=${row.coreFreeIr}`;
+    if (row.coreRawIr !== undefined) line += ` raw_bytes=${row.rawBytes} core_raw_ir=${row.coreRawIr}`;
     if (row.cmarkIr !== undefined) {
         line += ` cmark_ir=${row.cmarkIr} ratio=${row.ratio === null ? "n/a" : row.ratio.toFixed(3)}`;
     }
@@ -91,10 +103,16 @@ function runnerLines(runner, args) {
     return execFileSync(runner, args, { encoding: "utf8" }).split("\n").filter(Boolean);
 }
 
-/** One counted run: the instructions callgrind collected and the runner's own report. */
-function countRun(options, workload, name, implementation, dryRun) {
+/** One counted stage: callgrind collects only the window the runner opens
+ * around the parse, or around the free, so nothing has to be subtracted back
+ * out. LD_BIND_NOW resolves the shared library's lazily bound PLT entries at
+ * load time -- otherwise the first call into it resolves them inside the
+ * window, which is 3,542 instructions and 41.5% of an empty document's
+ * parse, and which the statically linked reference never pays. */
+function countRun(options, workload, name, implementation, stage, copies) {
     const args = [
         "--tool=callgrind",
+        "--instr-atstart=no",
         "--callgrind-out-file=/dev/null",
         options.runner,
         "--workload",
@@ -105,10 +123,15 @@ function countRun(options, workload, name, implementation, dryRun) {
         options.samples,
         "--instructions",
         "--implementation",
-        implementation
+        implementation,
+        "--stage",
+        stage
     ];
-    if (dryRun) args.push("--dry-run");
-    const result = spawnSync("valgrind", args, { encoding: "utf8" });
+    if (copies) args.push("--copies", String(copies));
+    const result = spawnSync("valgrind", args, {
+        encoding: "utf8",
+        env: { ...process.env, LD_BIND_NOW: "1" }
+    });
     if (result.error) throw new Error(`cannot run valgrind: ${result.error.message}`);
     if (result.status !== 0) throw new Error(`${name}: bench_runner failed under callgrind:\n${result.stderr}`);
     return { collected: parseCollected(result.stderr), report: parseInstructionsLine(result.stdout) };
@@ -122,12 +145,20 @@ function main() {
         const cases = runnerLines(options.runner, ["--list", "--workload", workload, "--samples", options.samples]);
         const rows = [];
         for (const name of cases) {
-            const core = countRun(options, workload, name, "core", false);
-            const coreDry = countRun(options, workload, name, "core", true);
-            const counts = { core: core.collected, coreDry: coreDry.collected };
+            const core = countRun(options, workload, name, "core", "parse", 0);
+            const counts = {
+                core: core.collected,
+                coreFree: countRun(options, workload, name, "core", "free", 0).collected
+            };
+            /* The same case read at the size it has on disk. Only the sample
+             * workload replicates a file, so only there does this differ. */
+            const raw = countRun(options, workload, name, "core", "parse", 1);
+            if (raw.report.bytes !== core.report.bytes) {
+                counts.coreRaw = raw.collected;
+                counts.rawBytes = raw.report.bytes;
+            }
             if (options.reference) {
-                counts.cmark = countRun(options, workload, name, "cmark", false).collected;
-                counts.cmarkDry = countRun(options, workload, name, "cmark", true).collected;
+                counts.cmark = countRun(options, workload, name, "cmark", "parse", 0).collected;
             }
             const row = caseRow(name, core.report.bytes, core.report.sha256, counts);
             rows.push(row);

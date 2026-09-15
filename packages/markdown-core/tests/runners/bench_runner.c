@@ -48,6 +48,22 @@
 #endif
 
 #include <markdown_core.h>
+
+/* The instruction lane counts one region rather than two processes: callgrind
+ * runs with --instr-atstart=no and only the window below is collected, so the
+ * runner's own work -- reading the sample, replicating it, hashing it -- is
+ * never counted and never has to be subtracted back out. Without the header
+ * the runner still builds; the lane then has nothing to collect. */
+#if defined(MARKDOWN_CORE_BENCH_CALLGRIND)
+#include <valgrind/callgrind.h>
+#else
+#define CALLGRIND_START_INSTRUMENTATION                                                                                \
+    do {                                                                                                               \
+    } while (0)
+#define CALLGRIND_STOP_INSTRUMENTATION                                                                                 \
+    do {                                                                                                               \
+    } while (0)
+#endif
 #ifdef MARKDOWN_CORE_BENCH_CMARK
 #include <cmark.h>
 #endif
@@ -75,6 +91,11 @@ typedef struct bench_options {
     int warmup;
     int instructions;
     int dry_run;
+    /* The instruction lane's stage and replication: `free` counts teardown
+     * instead of the parse, and `copies` overrides the sample workload's
+     * replication so a case can be read at its size on disk. */
+    int free_stage;
+    size_t copies;
 } bench_options;
 
 typedef struct bench_sample {
@@ -178,6 +199,76 @@ static int bench_reference_once(const char *input, size_t length, bench_sample *
 #define BENCH_REFERENCE_VERSION ""
 #endif
 
+/* One stage of one parse, counted on its own: the window holds the parse, or
+ * the teardown, and nothing else. `free` is measured apart from `parse`
+ * because teardown is not what this lane is optimizing.
+ *
+ * The measured parse is the process's first, so the allocator is cold, as it
+ * was when the lane subtracted two processes. The lazily bound PLT entries
+ * of the shared library must therefore be resolved before the window rather
+ * than by a warmup parse, which would also warm the allocator's free lists
+ * and quietly measure a second parse instead of a first: the driver runs
+ * both sides with LD_BIND_NOW=1 (scripts/benchmark-instructions.mjs), which
+ * resolves them at load time. Unresolved, they are 3,542 instructions --
+ * 41.5% of what an empty document's parse used to report -- and the
+ * statically linked reference never paid them. */
+static int bench_instrumented(const bench_options *options, const char *input, size_t length, int free_stage) {
+    markdown_core_document *document;
+    markdown_core_error *error = NULL;
+
+    if (free_stage) {
+        document = markdown_core_document_parse((const uint8_t *)input, length, &error);
+        if (!document) {
+            markdown_core_error_free(error);
+            return -1;
+        }
+        CALLGRIND_START_INSTRUMENTATION;
+        markdown_core_document_free(document);
+        CALLGRIND_STOP_INSTRUMENTATION;
+        return 0;
+    }
+
+    CALLGRIND_START_INSTRUMENTATION;
+    document = markdown_core_document_parse((const uint8_t *)input, length, &error);
+    CALLGRIND_STOP_INSTRUMENTATION;
+    if (!document) {
+        markdown_core_error_free(error);
+        return -1;
+    }
+    markdown_core_document_free(document);
+    (void)options;
+    return 0;
+}
+
+#ifdef MARKDOWN_CORE_BENCH_CMARK
+/* The reference, through the same stages. cmark_parse_document is
+ * cmark_parser_new, feed, finish, cmark_parser_free, so the window here holds
+ * what ours does: a whole document parse, setup and teardown included. */
+static int bench_instrumented_reference(const char *input, size_t length, int free_stage) {
+    cmark_node *document;
+
+    if (free_stage) {
+        document = cmark_parse_document(input, length, CMARK_OPT_DEFAULT);
+        if (!document) {
+            return -1;
+        }
+        CALLGRIND_START_INSTRUMENTATION;
+        cmark_node_free(document);
+        CALLGRIND_STOP_INSTRUMENTATION;
+        return 0;
+    }
+
+    CALLGRIND_START_INSTRUMENTATION;
+    document = cmark_parse_document(input, length, CMARK_OPT_DEFAULT);
+    CALLGRIND_STOP_INSTRUMENTATION;
+    if (!document) {
+        return -1;
+    }
+    cmark_node_free(document);
+    return 0;
+}
+#endif
+
 static int bench_once(const bench_options *options, const char *input, size_t length, bench_sample *sample) {
     return options->implementation && strcmp(options->implementation, "cmark") == 0
                ? bench_reference_once(input, length, sample)
@@ -221,15 +312,27 @@ static int measure_case(const bench_case *input, void *context) {
     }
     run->matched++;
     if (options->dry_run || options->instructions) {
-        /* The instruction lane: the input is built either way; one parse
-         * and free, or none, is the whole difference between the two runs. */
-        if (!options->dry_run && bench_once(options, input->data, input->length, &warm) != 0) {
+        /* The instruction lane: callgrind collects only the window inside
+         * bench_instrumented, so nothing here has to be subtracted back out.
+         * --dry-run stays as the empty control it always was, and now counts
+         * nothing at all. */
+        int failed = 0;
+        if (!options->dry_run) {
+#ifdef MARKDOWN_CORE_BENCH_CMARK
+            failed = options->implementation && strcmp(options->implementation, "cmark") == 0
+                         ? bench_instrumented_reference(input->data, input->length, options->free_stage)
+                         : bench_instrumented(options, input->data, input->length, options->free_stage);
+#else
+            failed = bench_instrumented(options, input->data, input->length, options->free_stage);
+#endif
+        }
+        if (failed) {
             fprintf(stderr, "%s: parse failed\n", input->name);
             return 1;
         }
-        printf("instructions case=%s implementation=%s bytes=%zu parses=%d sha256=%s\n", input->name,
-               options->implementation ? options->implementation : "core", input->length, options->dry_run ? 0 : 1,
-               input->sha256);
+        printf("instructions case=%s implementation=%s stage=%s bytes=%zu parses=%d sha256=%s\n", input->name,
+               options->implementation ? options->implementation : "core", options->free_stage ? "free" : "parse",
+               input->length, options->dry_run ? 0 : 1, input->sha256);
         return 0;
     }
 
@@ -382,7 +485,7 @@ static int run_workload(const char *workload, const bench_options *options) {
                 options->warmup, options->repeats > BENCH_MAX_REPEATS ? BENCH_MAX_REPEATS : options->repeats,
                 options->allocator ? options->allocator : "default");
     }
-    result = bench_workload_visit(workload, options->samples_dir, measure_case, &run);
+    result = bench_workload_visit_copies(workload, options->samples_dir, options->copies, measure_case, &run);
     if (result == -2) {
         fprintf(stderr, "unknown workload: %s\n", workload);
     } else if (result == -1) {
@@ -409,6 +512,7 @@ static int usage(void) {
           "       bench_runner --workload NAME --samples DIR [--case NAME] [--repeats N] [--warmup N]\n"
           "                    [--json FILE] [--source-sha SHA] [--reference cmark]\n"
           "                    [--instructions [--implementation core|cmark]] [--dry-run]\n"
+          "                    [--stage parse|free] [--copies N]\n"
           "                    [--allocator default|retain]\n",
           stderr);
     return 2;
@@ -468,6 +572,10 @@ int main(int argc, char **argv) {
             options.instructions = 1;
         } else if (strcmp(argv[i], "--dry-run") == 0) {
             options.dry_run = 1;
+        } else if (strcmp(argv[i], "--stage") == 0 && i + 1 < (size_t)argc) {
+            options.free_stage = strcmp(argv[++i], "free") == 0;
+        } else if (strcmp(argv[i], "--copies") == 0 && i + 1 < (size_t)argc) {
+            options.copies = (size_t)strtoul(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "--allocator") == 0 && i + 1 < (size_t)argc) {
             options.allocator = argv[++i];
         } else {
