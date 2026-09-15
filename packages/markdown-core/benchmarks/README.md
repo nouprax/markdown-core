@@ -100,8 +100,27 @@ precisely to stop them interacting — so a container nested D deep stays at its
 original D however many copies are concatenated, and work quadratic in D would
 still report linear growth in bytes. A chain case makes D the size, so D
 doubles when the document doubles and a cost quadratic in D shows up as a 4x
-growth ratio. The four chain cases scale block-container nesting, list nesting,
-the delimiter stack, and an unclosed bracket chain.
+growth ratio.
+
+Each chain case names the dimension it scales, because the shape and the
+dimension are not the same thing:
+
+| Case | Unit | Scales |
+| --- | --- | --- |
+| `chain-quote-depth` | `> ` | block-container nesting depth |
+| `chain-list-depth` | `- ` | list nesting depth |
+| `chain-emphasis-run` | `*a_ ` | live delimiter-stack depth |
+| `chain-bracket-open` | `[a ` | live bracket-stack depth |
+| `chain-link-candidates` | `[a](b` | count of bounded failed link candidates |
+
+`chain-link-candidates` is the one to read carefully. It looks like a bracket
+chain and is not: every `[` is closed by the `]` two bytes later, so no opener
+survives and the live bracket depth is one at any size. What grows is the
+number of failed link candidates, each of which is separately bounded — the
+destination scan gives up after 32 unbalanced parentheses
+([`link.c`](../elements/link.c), `manual_scan_link_url_2`). That is a real cost
+dimension and worth measuring; it is just a count, not a depth, which is why
+`chain-bracket-open` exists beside it.
 
 Every case is also measured at twice the size, and the growth table names which
 dimension grew. A stage whose cost is linear in what was scaled reports a
@@ -118,6 +137,9 @@ same source — so the report records the resolved compiler, libc and valgrind
 versions, and absolute counts are comparable only against a report whose
 toolchain table matches.
 
-The engine-to-cmark ratio is the quantity that survives that: both engines are
-built by the same toolchain within one run, so the ratio measures the two
-parsers rather than the image they were built on.
+The ratio is not exempt. A compiler upgrade need not change both engines by the
+same proportion, so a toolchain roll moves the ratio too. **Two reports whose
+toolchain tables differ are not comparable at all** — not their counts, not
+their ratios — and a difference between them cannot be read as a code change.
+What holds inside one report is that both engines met the same compiler, so the
+ratio there is a fact about the two parsers rather than about the build.

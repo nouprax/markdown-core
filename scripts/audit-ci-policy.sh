@@ -154,6 +154,13 @@ done
 grep -Fq '"CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG -g -fno-inline-functions-called-once"' CMakePresets.json
 grep -Fq 'CMAKE_C_FLAGS_RELEASE' scripts/benchmark-stages.mjs
 grep -Fq 'verifyStageSymbols' scripts/benchmark-stages.mjs
+# Both engines are rebuilt on every run. Nothing in a compiled binary says which
+# source produced it, so an option to reuse one is an option for the report to
+# state this commit's pins over another revision's instruction counts.
+if grep -Eq 'skip-build|options\.build' scripts/benchmark-stages.mjs; then
+    echo "the stage benchmark can reuse binaries it did not build" >&2
+    exit 1
+fi
 # The engine keeps ONE parse entry and no measurement mode: the split is read
 # out of the call graph afterwards, never built into the product.
 if grep -R -nE 'markdown_core_parser_(begin|feed|read|finish)\b|MARKDOWN_CORE_(PARSE_)?PHASE' \

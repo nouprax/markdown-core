@@ -29,11 +29,13 @@
  * measurement an optimization is argued from.
  *
  * They are not independent of the TOOLCHAIN: another compiler or C library
- * emits a different instruction stream for the same source. The report records
- * the resolved compiler, libc and valgrind versions so absolute counts are only
- * ever compared against a matching environment; the engine-to-cmark ratio is
- * the quantity that survives an image roll, because both sides were built by
- * whichever toolchain produced that report.
+ * emits a different instruction stream for the same source, and it need not
+ * change both engines by the same proportion, so a toolchain roll moves the
+ * ratio too. The report records the resolved compiler, libc and valgrind
+ * versions, and two reports whose toolchains differ are not comparable at all
+ * -- not their counts and not their ratios. What holds inside ONE report is
+ * that both engines met the same compiler, so the ratio there is a fact about
+ * the two parsers rather than about the build.
  *
  * WHAT THE NUMBERS ARE NOT. Ir is work, not time: it does not price a cache
  * miss, a branch miss, or a dependency stall. A change that trades three
@@ -41,11 +43,12 @@
  * here. Dr/Dw are reported alongside for exactly that reason.
  *
  *   node scripts/benchmark-stages.mjs [--out DIR] [--case NAME]... [--scale N]
- *                                     [--skip-build] [--quiet]
+ *                                     [--quiet]
  */
 
 import { Buffer } from "node:buffer";
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -101,13 +104,11 @@ function run(command, args, options = {}) {
 }
 
 function parseArguments(argv) {
-    const options = { out: path.join(root, "build/benchmark-stages"), cases: [], scale: 2, build: true, quiet: false };
+    const options = { out: path.join(root, "build/benchmark-stages"), cases: [], scale: 2, quiet: false };
     for (let index = 0; index < argv.length; index++) {
         const flag = argv[index];
         const value = argv[index + 1];
-        if (flag === "--skip-build") {
-            options.build = false;
-        } else if (flag === "--quiet") {
+        if (flag === "--quiet") {
             options.quiet = true;
         } else if (!value) {
             fail(`${flag} needs a value`);
@@ -352,6 +353,19 @@ function buildCorpus(options) {
     return { targetBytes: manifest.targetBytes, documents };
 }
 
+/** The exact bytes measured, so a report's numbers can be traced to a binary. */
+function runnerIdentity(profile) {
+    const identity = {};
+    for (const [engine, definition] of Object.entries(ENGINES)) {
+        const binary = path.join(profile.binaryDir, definition.runner);
+        identity[engine] = {
+            sha256: crypto.createHash("sha256").update(fs.readFileSync(binary)).digest("hex"),
+            builtAt: new Date(fs.statSync(binary).mtimeMs).toISOString()
+        };
+    }
+    return identity;
+}
+
 function measure(profile, engine, document, out) {
     const definition = ENGINES[engine];
     const dump = path.join(out, "callgrind", `${engine}.${document.case}.x${document.scale}.out`);
@@ -449,8 +463,8 @@ function markdownReport(report) {
     lines.push(
         `Markdown Core against cmark \`${report.cmark.version}\` (\`${report.cmark.commit.slice(0, 12)}\`)` +
             " on the same corpus. Both engines are compiled by the same toolchain with" +
-            ` \`${report.profile.flags}\`, so the ratio between them is a property of the` +
-            " two parsers.",
+            ` \`${report.profile.flags}\`, so within this report the ratio between them is a` +
+            " fact about the two parsers rather than about the build.",
         "",
         "| | |",
         "| --- | --- |",
@@ -461,10 +475,13 @@ function markdownReport(report) {
         "Counts do not depend on the machine's speed, its load, or what else was" +
             " running: re-running this commit on this toolchain reproduces every number" +
             " exactly. They DO depend on the toolchain -- another compiler or C library" +
-            " emits a different instruction stream for the same source -- so absolute" +
-            " counts are comparable only against a report whose table above matches." +
-            " The ratio columns survive a toolchain change, because both engines were" +
-            " built by whichever toolchain produced the report.",
+            " emits a different instruction stream for the same source, and it need not" +
+            " change both engines by the same proportion, so a toolchain roll moves the" +
+            " ratio columns too.",
+        "",
+        "**Compare this report only against one whose table above is identical.**" +
+            " Across differing toolchains nothing here is comparable, ratios included," +
+            " and a difference cannot be read as a code change.",
         ""
     );
 
@@ -581,11 +598,15 @@ function main() {
     const versions = toolchain(profile);
 
     fs.mkdirSync(options.out, { recursive: true });
-    if (options.build) {
-        const cmarkBuildDir = buildCmark(profile, cmark, options.out);
-        buildRunners(profile, cmark, cmarkBuildDir);
-    }
+    /* Always built, never reused. Nothing in a compiled binary says which
+     * source produced it, so a reuse option is a way for the report to state
+     * this commit's pins over another revision's instruction counts -- and an
+     * up-to-date rebuild of both engines costs about two seconds against a
+     * measurement that takes minutes. There is no flag to get it wrong with. */
+    const cmarkBuildDir = buildCmark(profile, cmark, options.out);
+    buildRunners(profile, cmark, cmarkBuildDir);
     verifyStageSymbols(profile);
+    const binaries = runnerIdentity(profile);
 
     const corpus = buildCorpus(options);
     const cases = [];
@@ -615,6 +636,8 @@ function main() {
     const report = {
         schemaVersion: 2,
         toolchain: versions,
+        /* The exact bytes measured, so a report's numbers trace to a binary. */
+        binaries,
         profile: { compiler: profile.compiler, flags: profile.flags },
         cmark: { version: cmark.version, commit: cmark.commit },
         corpus: { targetBytes: corpus.targetBytes, cases: corpus.documents.length },

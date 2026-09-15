@@ -201,7 +201,8 @@
             "chain": {
                 "unit": "> ",
                 "tail": "deep\n"
-            }
+            },
+            "scales": "block-container nesting depth"
         },
         {
             "name": "chain-list-depth",
@@ -209,7 +210,8 @@
             "chain": {
                 "unit": "- ",
                 "tail": "leaf\n"
-            }
+            },
+            "scales": "list nesting depth"
         },
         {
             "name": "chain-emphasis-run",
@@ -217,13 +219,24 @@
             "chain": {
                 "unit": "*a_ ",
                 "tail": "\n"
-            }
+            },
+            "scales": "live delimiter-stack depth"
         },
         {
-            "name": "chain-bracket-run",
+            "name": "chain-link-candidates",
             "dialect": "commonmark",
             "chain": {
                 "unit": "[a](b",
+                "tail": "\n"
+            },
+            "scales": "count of bounded failed link candidates"
+        },
+        {
+            "name": "chain-bracket-open",
+            "dialect": "commonmark",
+            "scales": "live bracket-stack depth",
+            "chain": {
+                "unit": "[a ",
                 "tail": "\n"
             }
         }
