@@ -347,7 +347,9 @@ function coverage(report) {
         }
     }
     if (!shares.length) return "an unknown share of";
-    const percent = (value) => `${(value * 100).toFixed(1)}%`;
+    /* Two decimals: a stage split covering 99.98% of the path must not be
+     * reported as covering all of it. */
+    const percent = (value) => `${(value * 100).toFixed(2)}%`;
     return `${percent(Math.min(...shares))} to ${percent(Math.max(...shares))}`;
 }
 
@@ -449,10 +451,10 @@ function markdownReport(report) {
 
     lines.push(
         `The two stages cover ${coverage(report)} of each engine's parse path across the` +
-            " corpus. The rest is parser allocation, dialect attachment, element discovery," +
-            " and tree release: fixed cost that no document-size argument applies to, which" +
-            " is why it is excluded rather than amortized into a number that looks like" +
-            " parsing.",
+            " corpus. The rest is parser allocation, dialect attachment and element" +
+            " discovery -- setup that no document-size argument applies to -- plus releasing" +
+            " the finished tree, which is not parsing either. Amortizing any of it into the" +
+            " stages would produce a number that looks like parsing and isn't.",
         "",
         "Ir counts executed instructions and Dr/Dw count data references. Neither prices a" +
             " cache miss, a branch miss or a stall, so a change that trades instructions for" +
