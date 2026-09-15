@@ -141,6 +141,27 @@ function parseArguments(argv) {
  * from an image roll instead of subtracting two numbers that were never
  * comparable.
  */
+/**
+ * What the compiler will actually generate for, not what the flags say.
+ *
+ * `-march=native` is resolved by the compiler against the host CPU, so two
+ * machines with the same gcc, libc and flag text generate different
+ * instruction streams; recording the literal string would call those reports
+ * comparable. Asking the compiler closes that, and closes the same gap for
+ * flags nobody passed: distribution builds differ in their default -march,
+ * so the resolved target belongs in the identity however it was arrived at.
+ */
+function resolveTarget(compiler, flags) {
+    const probe = spawnSync(compiler, [...flags.split(/\s+/u).filter(Boolean), "-Q", "--help=target"], {
+        encoding: "utf8"
+    });
+    if (probe.status !== 0) return "unknown";
+    const value = (name) => new RegExp(`^\\s+-m${name}=\\s+(\\S+)`, "mu").exec(probe.stdout ?? "")?.[1];
+    const march = value("arch");
+    const mtune = value("tune");
+    return march || mtune ? `march=${march ?? "?"} mtune=${mtune ?? "?"}` : "unknown";
+}
+
 function toolchain(profile) {
     const first = (text) => text.split("\n")[0].trim();
     const optional = (command, args) => {
@@ -150,8 +171,32 @@ function toolchain(profile) {
     return {
         compiler: first(run(profile.compiler, ["--version"])),
         libc: optional("ldd", ["--version"]),
-        valgrind: optional("valgrind", ["--version"])
+        valgrind: optional("valgrind", ["--version"]),
+        target: resolveTarget(profile.compiler, `${process.env.CFLAGS ?? ""} ${profile.flags}`)
     };
+}
+
+/**
+ * The two build trees must not contain one another.
+ *
+ * The cmark tree lives under the output directory and the profile tree is
+ * fixed by the preset. If the output directory sits inside the profile tree,
+ * discarding a foreign-stamped profile tree takes the freshly built cmark
+ * archive with it and the configure that follows cannot find it. The
+ * arrangement is refused rather than half-supported.
+ */
+function refuseOverlappingTrees(options, profile) {
+    const inside = (child, parent) => {
+        const relative = path.relative(parent, child);
+        return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+    };
+    if (inside(options.out, profile.binaryDir) || inside(profile.binaryDir, options.out)) {
+        fail(
+            `--out ${path.relative(root, options.out)} overlaps the profile build tree ` +
+                `${path.relative(root, profile.binaryDir)}; one would delete the other's build. Choose a path ` +
+                "outside it."
+        );
+    }
 }
 
 function profileBuild() {
@@ -242,7 +287,8 @@ function stampOf(profile, versions) {
         process.env.CFLAGS ?? "",
         process.arch,
         versions.compiler,
-        versions.libc
+        versions.libc,
+        versions.target
     ].join("\n");
 }
 
@@ -605,6 +651,7 @@ function markdownReport(report) {
         `| C library | \`${report.toolchain.libc}\` |`,
         `| Profiler | \`${report.toolchain.valgrind}\` |`,
         `| Architecture | \`${report.toolchain.architecture}\` |`,
+        `| Code generation target | \`${report.toolchain.target}\` |`,
         `| Effective C flags | \`${report.toolchain.flags}\` |`,
         "",
         "Counts do not depend on the machine's speed, its load, or what else was" +
@@ -619,8 +666,9 @@ function markdownReport(report) {
             " and a difference cannot be read as a code change. The table carries the" +
             " EFFECTIVE compile flags rather than the preset's, because CMake folds the" +
             " CFLAGS environment variable into every compile line ahead of them, and it" +
-            " carries the target architecture, because one compiler string builds for" +
-            " more than one target.",
+            " carries the architecture and the compiler's RESOLVED code generation" +
+            " target, because `-march=native` and a distribution's default -march both" +
+            " name themselves identically on machines that generate different code.",
         ""
     );
 
@@ -729,6 +777,7 @@ function markdownReport(report) {
 function main() {
     const options = parseArguments(process.argv.slice(2));
     const profile = profileBuild();
+    refuseOverlappingTrees(options, profile);
     const cmark = pinnedCmark();
 
     if (spawnSync("valgrind", ["--version"], { encoding: "utf8" }).status !== 0) {
