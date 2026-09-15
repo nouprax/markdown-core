@@ -5,163 +5,117 @@
         {
             "name": "block-bq-flat",
             "dialect": "commonmark",
-            "samples": [
-                "block-bq-flat.md"
-            ]
+            "samples": ["block-bq-flat.md"]
         },
         {
             "name": "block-bq-nested",
             "dialect": "commonmark",
-            "samples": [
-                "block-bq-nested.md"
-            ]
+            "samples": ["block-bq-nested.md"]
         },
         {
             "name": "block-callout",
             "dialect": "extended",
-            "samples": [
-                "block-callout.md"
-            ]
+            "samples": ["block-callout.md"]
         },
         {
             "name": "block-code",
             "dialect": "commonmark",
-            "samples": [
-                "block-code.md"
-            ]
+            "samples": ["block-code.md"]
         },
         {
             "name": "block-definition-list",
             "dialect": "extended",
-            "samples": [
-                "block-definition-list.md"
-            ]
+            "samples": ["block-definition-list.md"]
         },
         {
             "name": "block-fences",
             "dialect": "commonmark",
-            "samples": [
-                "block-fences.md"
-            ]
+            "samples": ["block-fences.md"]
         },
         {
             "name": "block-heading",
             "dialect": "commonmark",
-            "samples": [
-                "block-heading.md"
-            ]
+            "samples": ["block-heading.md"]
         },
         {
             "name": "block-hr",
             "dialect": "commonmark",
-            "samples": [
-                "block-hr.md"
-            ]
+            "samples": ["block-hr.md"]
         },
         {
             "name": "block-html",
             "dialect": "commonmark",
-            "samples": [
-                "block-html.md"
-            ]
+            "samples": ["block-html.md"]
         },
         {
             "name": "block-html-rich",
             "dialect": "commonmark",
-            "samples": [
-                "block-html-rich.md"
-            ]
+            "samples": ["block-html-rich.md"]
         },
         {
             "name": "block-identifier",
             "dialect": "extended",
-            "samples": [
-                "block-identifier.md"
-            ]
+            "samples": ["block-identifier.md"]
         },
         {
             "name": "block-lheading",
             "dialect": "commonmark",
-            "samples": [
-                "block-lheading.md"
-            ]
+            "samples": ["block-lheading.md"]
         },
         {
             "name": "block-list-flat",
             "dialect": "commonmark",
-            "samples": [
-                "block-list-flat.md"
-            ]
+            "samples": ["block-list-flat.md"]
         },
         {
             "name": "block-list-nested",
             "dialect": "commonmark",
-            "samples": [
-                "block-list-nested.md"
-            ]
+            "samples": ["block-list-nested.md"]
         },
         {
             "name": "block-metadata",
             "dialect": "extended",
-            "samples": [
-                "block-metadata.md"
-            ]
+            "samples": ["block-metadata.md"]
         },
         {
             "name": "block-ref-flat",
             "dialect": "commonmark",
-            "samples": [
-                "block-ref-flat.md"
-            ]
+            "samples": ["block-ref-flat.md"]
         },
         {
             "name": "block-ref-nested",
             "dialect": "commonmark",
-            "samples": [
-                "block-ref-nested.md"
-            ]
+            "samples": ["block-ref-nested.md"]
         },
         {
             "name": "block-specimen",
             "dialect": "extended",
-            "samples": [
-                "block-specimen.md"
-            ]
+            "samples": ["block-specimen.md"]
         },
         {
             "name": "block-table-grid",
             "dialect": "extended",
-            "samples": [
-                "block-table-grid.md"
-            ]
+            "samples": ["block-table-grid.md"]
         },
         {
             "name": "block-table-multiline",
             "dialect": "extended",
-            "samples": [
-                "block-table-multiline.md"
-            ]
+            "samples": ["block-table-multiline.md"]
         },
         {
             "name": "block-table-pipe",
             "dialect": "extended",
-            "samples": [
-                "block-table-pipe.md"
-            ]
+            "samples": ["block-table-pipe.md"]
         },
         {
             "name": "block-table-simple",
             "dialect": "extended",
-            "samples": [
-                "block-table-simple.md"
-            ]
+            "samples": ["block-table-simple.md"]
         },
         {
             "name": "block-tasklist",
             "dialect": "extended",
-            "samples": [
-                "block-tasklist.md"
-            ]
+            "samples": ["block-tasklist.md"]
         },
         {
             "name": "chain-bracket-open",
@@ -211,163 +165,117 @@
         {
             "name": "directive",
             "dialect": "extended",
-            "samples": [
-                "directive.md"
-            ]
+            "samples": ["directive.md"]
         },
         {
             "name": "inline-autolink",
             "dialect": "commonmark",
-            "samples": [
-                "inline-autolink.md"
-            ]
+            "samples": ["inline-autolink.md"]
         },
         {
             "name": "inline-autolink-rich",
             "dialect": "commonmark",
-            "samples": [
-                "inline-autolink-rich.md"
-            ]
+            "samples": ["inline-autolink-rich.md"]
         },
         {
             "name": "inline-backticks",
             "dialect": "commonmark",
-            "samples": [
-                "inline-backticks.md"
-            ]
+            "samples": ["inline-backticks.md"]
         },
         {
             "name": "inline-citation",
             "dialect": "extended",
-            "samples": [
-                "inline-citation.md"
-            ]
+            "samples": ["inline-citation.md"]
         },
         {
             "name": "inline-comment",
             "dialect": "extended",
-            "samples": [
-                "inline-comment.md"
-            ]
+            "samples": ["inline-comment.md"]
         },
         {
             "name": "inline-cross-link",
             "dialect": "extended",
-            "samples": [
-                "inline-cross-link.md"
-            ]
+            "samples": ["inline-cross-link.md"]
         },
         {
             "name": "inline-delimiter-runs",
             "dialect": "extended",
-            "samples": [
-                "inline-delimiter-runs.md"
-            ]
+            "samples": ["inline-delimiter-runs.md"]
         },
         {
             "name": "inline-em-flat",
             "dialect": "commonmark",
-            "samples": [
-                "inline-em-flat.md"
-            ]
+            "samples": ["inline-em-flat.md"]
         },
         {
             "name": "inline-em-nested",
             "dialect": "commonmark",
-            "samples": [
-                "inline-em-nested.md"
-            ]
+            "samples": ["inline-em-nested.md"]
         },
         {
             "name": "inline-em-worst",
             "dialect": "commonmark",
-            "samples": [
-                "inline-em-worst.md"
-            ]
+            "samples": ["inline-em-worst.md"]
         },
         {
             "name": "inline-embedded",
             "dialect": "commonmark",
-            "samples": [
-                "inline-embedded.md"
-            ]
+            "samples": ["inline-embedded.md"]
         },
         {
             "name": "inline-entity",
             "dialect": "commonmark",
-            "samples": [
-                "inline-entity.md"
-            ]
+            "samples": ["inline-entity.md"]
         },
         {
             "name": "inline-escape",
             "dialect": "commonmark",
-            "samples": [
-                "inline-escape.md"
-            ]
+            "samples": ["inline-escape.md"]
         },
         {
             "name": "inline-footnote",
             "dialect": "extended",
-            "samples": [
-                "inline-footnote.md"
-            ]
+            "samples": ["inline-footnote.md"]
         },
         {
             "name": "inline-formula",
             "dialect": "extended",
-            "samples": [
-                "inline-formula.md"
-            ]
+            "samples": ["inline-formula.md"]
         },
         {
             "name": "inline-html",
             "dialect": "commonmark",
-            "samples": [
-                "inline-html.md"
-            ]
+            "samples": ["inline-html.md"]
         },
         {
             "name": "inline-links-flat",
             "dialect": "commonmark",
-            "samples": [
-                "inline-links-flat.md"
-            ]
+            "samples": ["inline-links-flat.md"]
         },
         {
             "name": "inline-links-nested",
             "dialect": "commonmark",
-            "samples": [
-                "inline-links-nested.md"
-            ]
+            "samples": ["inline-links-nested.md"]
         },
         {
             "name": "inline-newlines",
             "dialect": "commonmark",
-            "samples": [
-                "inline-newlines.md"
-            ]
+            "samples": ["inline-newlines.md"]
         },
         {
             "name": "inline-span",
             "dialect": "extended",
-            "samples": [
-                "inline-span.md"
-            ]
+            "samples": ["inline-span.md"]
         },
         {
             "name": "lorem1",
             "dialect": "commonmark",
-            "samples": [
-                "lorem1.md"
-            ]
+            "samples": ["lorem1.md"]
         },
         {
             "name": "rawtabs",
             "dialect": "commonmark",
-            "samples": [
-                "rawtabs.md"
-            ]
+            "samples": ["rawtabs.md"]
         },
         {
             "name": "mixed-commonmark",

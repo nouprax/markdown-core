@@ -132,7 +132,8 @@ function kindsProduced(cli, documents) {
 }
 
 function coverageBuild(buildDir) {
-    const run = (command, args) => execFileSync(command, args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const run = (command, args) =>
+        execFileSync(command, args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     run("cmake", [
         "-S",
         root,
@@ -160,7 +161,10 @@ function readCoverage(buildDir) {
     walk(buildDir);
     let output = "";
     for (const dir of [...directories].sort()) {
-        const gcda = fs.readdirSync(dir).filter((n) => n.endsWith(".gcda")).map((n) => path.join(dir, n));
+        const gcda = fs
+            .readdirSync(dir)
+            .filter((n) => n.endsWith(".gcda"))
+            .map((n) => path.join(dir, n));
         const result = spawnSync("gcov", ["-n", "-o", dir, ...gcda], { cwd: dir, encoding: "utf8" });
         output += result.stdout ?? "";
     }

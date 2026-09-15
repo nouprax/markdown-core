@@ -109,7 +109,13 @@ function run(command, args, options = {}) {
 }
 
 function parseArguments(argv) {
-    const options = { out: path.join(root, "build/benchmark-stages"), cases: [], scale: 2, quiet: false, corpusOnly: false };
+    const options = {
+        out: path.join(root, "build/benchmark-stages"),
+        cases: [],
+        scale: 2,
+        quiet: false,
+        corpusOnly: false
+    };
     for (let index = 0; index < argv.length; index++) {
         const flag = argv[index];
         const value = argv[index + 1];
