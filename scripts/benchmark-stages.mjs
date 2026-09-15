@@ -735,6 +735,52 @@ function measurementEnvironment(root) {
     return environment;
 }
 
+/**
+ * What glibc will dispatch on, seen from inside the measurement.
+ *
+ * The C library picks an implementation per routine at load time from the CPU
+ * it detects -- `__memcpy_avx_unaligned_erms` and `__strlen_avx2` here, plain
+ * SSE2 variants on a host without AVX2 -- and those instructions are inside the
+ * stage costs, because the parsers call them constantly and in different
+ * proportions. So two hosts with the same compiler, C library, valgrind and
+ * compiler target can still produce different counts AND a different ratio,
+ * which the identity would otherwise declare comparable.
+ *
+ * What it dispatches on is not the raw host: valgrind masks CPUID, and on this
+ * machine glibc sees max_cpuid 0xd under it against 0x1f native. So the
+ * question has to be asked through valgrind, of the loader that will run the
+ * measured binary, which is what this does.
+ *
+ * Recorded rather than pinned to a fixed capability set. Constraining dispatch
+ * would need GLIBC_TUNABLES in the measurement environment -- the one variable
+ * whose removal is load-bearing two functions up -- and would measure a libc
+ * nobody runs. And recorded as the CPU FEATURES rather than as the routines
+ * that were selected: the feature set depends only on the host, valgrind and
+ * glibc, while the set of routines a parse happens to call is a property of the
+ * code, which would make every commit incomparable with the one before it.
+ */
+function dispatchIdentity(profile, root) {
+    const runner = path.join(profile.binaryDir, ENGINES["markdown-core"].runner);
+    const loader = /(\/\S*ld-linux\S*\.so\S*)/u.exec(run("ldd", [runner]))?.[1];
+    if (!loader) fail(`the dynamic loader for ${path.relative(root, runner)} could not be identified`);
+    const probe = spawnSync("valgrind", ["--tool=none", "--quiet", loader, "--list-diagnostics"], {
+        encoding: "utf8",
+        env: measurementEnvironment(measurementRoot(path.dirname(profile.binaryDir)))
+    });
+    const features = (probe.stdout ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.includes("cpu_features"))
+        .sort();
+    if (probe.status !== 0 || !features.length) {
+        fail(
+            `${loader} would not report the CPU features glibc dispatches on, so this report cannot say ` +
+                "which C library implementations it measured (glibc 2.33 or newer provides --list-diagnostics)"
+        );
+    }
+    return crypto.createHash("sha256").update(features.join("\n")).digest("hex");
+}
+
 function measure(profile, engine, document, out) {
     const definition = ENGINES[engine];
     const dump = path.join(out, "callgrind", `${engine}.${document.case}.x${document.scale}.out`);
@@ -906,6 +952,7 @@ function markdownReport(report) {
         `| Compile options both engines got | \`${report.toolchain.compiled.shared}\` |`,
         `| Markdown Core only | \`${report.toolchain.compiled["markdown-core only"] || "(nothing)"}\` |`,
         `| cmark only | \`${report.toolchain.compiled["cmark only"] || "(nothing)"}\` |`,
+        `| C library dispatch | \`${report.toolchain.dispatch.slice(0, 16)}\` |`,
         `| Corpus | \`${report.corpus.digest.slice(0, 16)}\` (${report.corpus.cases} documents) |`,
         "",
         "The measurement runs in an environment built rather than inherited: a path," +
@@ -1111,6 +1158,7 @@ function main() {
     }
     versions.flags = coreFlags.compile;
     versions.linkFlags = coreFlags.link;
+    versions.dispatch = dispatchIdentity(profile, root);
     /* Split rather than left as two long lines for a reader to diff by eye: what
      * both engines got, and what only one of them did. Order is not meaning
      * here, so this compares as sets. */

@@ -224,6 +224,29 @@ where they steer unrolling and prefetching. So the table shows the names for a
 reader and a digest of every switch and param beside them, and the digest is
 what the comparison rule runs on.
 
+The C library's dispatch is part of it as well. glibc picks an implementation
+per routine at load time from the CPU it detects — `__memcpy_avx_unaligned_erms`
+and `__strlen_avx2` on this host, plain SSE2 variants on one without AVX2 — and
+those instructions sit inside the stage costs, because both parsers call them
+constantly and in different proportions. Two hosts agreeing on compiler, C
+library, valgrind and compiler target can therefore produce different counts
+*and* a different ratio.
+
+What dispatch actually sees is not the raw host: valgrind masks CPUID, and glibc
+under it reports `max_cpuid` `0xd` here against `0x1f` natively. So the report
+asks the question through valgrind, of the loader that will run the measured
+binary, and records a digest of the CPU features it answers with. The two views
+digest differently, which is the check that it discriminates rather than
+recording a constant.
+
+It is recorded rather than pinned to a fixed capability set, because
+constraining dispatch would need `GLIBC_TUNABLES` inside the measurement — the
+one variable whose removal is load-bearing above — and would measure a C library
+nobody runs. And it records the CPU features rather than the routines that were
+chosen: the feature set is a property of the host, valgrind and glibc, while the
+set of routines a parse happens to call is a property of the code, which would
+make every commit incomparable with the one before it.
+
 The corpus is part of that table too. The report carries one digest over every
 document measured, content and all, because an edited `corpus.json`, an edited
 sample, or a change to how documents are generated moves every count while the

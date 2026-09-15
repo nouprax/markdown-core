@@ -232,6 +232,13 @@ grep -Fq 'CMAKE_FIND_LIBRARY_SUFFIXES' packages/markdown-core/benchmarks/CMakeLi
     echo "the cmark oracle is linked by an unconstrained library lookup" >&2
     exit 1
 }
+# The C library dispatches per routine on the CPU it detects, and those
+# instructions are inside the stage costs -- so the host's capabilities are part
+# of the identity, asked through valgrind because valgrind masks CPUID.
+grep -Fq 'dispatchIdentity' scripts/benchmark-stages.mjs || {
+    echo "the stage benchmark does not record what the C library dispatched on" >&2
+    exit 1
+}
 # The toolchain is half the identity: the same binaries over different documents
 # also move every count. The report names the workload it measured by digest,
 # so an edited manifest or sample cannot be read as a parser change.
