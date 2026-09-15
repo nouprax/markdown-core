@@ -1,15 +1,37 @@
 #!/usr/bin/env node
 /**
  * The instruction lane of the C benchmark: deterministic instruction counts
- * for the workload cases, one parse and free each, counted by callgrind.
+ * for the workload cases, counted by callgrind over one window each.
  *
- * For every case, bench_runner runs twice under `valgrind --tool=callgrind`:
- * once with --dry-run, which builds the input and parses nothing, and once
- * with --instructions, which parses and frees it exactly once. The
- * difference of the two counts is the instructions the parse and the free
- * cost, with the runner's own work (reading a sample, generating an input,
- * hashing it) cancelled out. A runner built with MARKDOWN_CORE_BENCH_CMARK
- * counts the pinned cmark oracle the same way with --reference cmark.
+ * callgrind runs with --instr-atstart=no, and bench_runner opens the window
+ * around the stage being counted. Nothing is subtracted: reading a sample,
+ * replicating it and hashing it all happen outside the window and cost
+ * nothing, whatever they cost. The runs are given LD_BIND_NOW=1 so the
+ * shared library's lazily bound PLT entries are resolved at load time rather
+ * than by the first call inside the window.
+ *
+ * What each window holds, so that the two implementations are read the same
+ * way:
+ *
+ *   core   markdown_core_document_parse -- the document wrapper, the
+ *          parser, the registry it borrows, the source through
+ *          S_parse_source, S_finish_parse, and the parser's release.
+ *   cmark  cmark_parse_document -- cmark_parser_new, the feed, the finish,
+ *          and cmark_parser_free.
+ *
+ * Both therefore hold a whole document parse, setup and teardown included,
+ * and neither holds the teardown of the tree it produced: `stage=free`
+ * counts that on its own. The parse a document pays beyond what any parse
+ * pays is the case's count less the empty_document case's count for the
+ * same implementation -- the lane reports both rather than netting them,
+ * because the fixed cost is not what it optimizes and folding it in is how
+ * it stayed invisible.
+ *
+ * Every case that replicates a file on disk is also read once at
+ * --copies 1. Replication amortizes the fixed cost away (on block-hr.md it
+ * is 20.8% of the parse at the file's own size and 0.1% at 200 copies), so
+ * the replicated read answers throughput and the unreplicated one answers
+ * what a parse costs before it reads a byte.
  *
  * Like the timing lane it is an opt-in local measurement, never a CI gate:
  * the numbers are exact for one build and one input, so a change of them is
