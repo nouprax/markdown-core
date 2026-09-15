@@ -124,12 +124,23 @@ function parseArguments(argv) {
             options.cases.push(value);
             index++;
         } else if (flag === "--scale") {
-            /* Digits and nothing else. Number.parseInt reads the leading digits
-             * of "2x", "1.5" and "1e3" and discards the rest, so a mistyped
-             * scale would quietly measure a different experiment than the one
-             * asked for and the report would not say so. */
-            if (!/^\d+$/u.test(value)) fail(`--scale must be a positive integer, not ${value}`);
-            options.scale = Number.parseInt(value, 10);
+            /* Digits and nothing else, naming a number JavaScript can hold
+             * exactly.
+             *
+             * Number.parseInt reads the leading digits of "2x", "1.5" and
+             * "1e3" and discards the rest, so those would quietly measure a
+             * different experiment than the one asked for. Digits alone are
+             * not enough either: 309 of them parse to Infinity and the range
+             * check below is happy with it, and 9007199254740993 comes back as
+             * ...992. Both must hold -- the value has to survive the round
+             * trip AND be a safe integer, since 10^20 survives the round trip
+             * and is neither exact nor a number this can count up to. */
+            const digits = /^\d+$/u.test(value) ? value.replace(/^0+(?=\d)/u, "") : null;
+            const scale = digits === null ? Number.NaN : Number(digits);
+            if (!Number.isSafeInteger(scale) || String(scale) !== digits) {
+                fail(`--scale must be a positive integer, not ${value}`);
+            }
+            options.scale = scale;
             index++;
         } else {
             fail(`unknown argument: ${flag}`);
