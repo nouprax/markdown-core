@@ -2464,10 +2464,19 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
 
     for (size_t i = 0; i < parser->element_count && !parser->oom; i++) {
         const markdown_core_element *element = parser->elements[i];
-        if (element->postprocess_func) {
-            if (!S_apply_tree_phase(parser, &parser->root, S_postprocess_tree, (void *)element)) {
-                parser->oom = true;
-            }
+        if (!element->postprocess_func) {
+            continue;
+        }
+        /* An empty declaration means the pass always runs, so an element that
+         * says nothing keeps the behaviour it had. One that declares its kinds
+         * is skipped for a document that produced none of them, and skipping
+         * costs the whole pass: the root enumeration AND the walk inside it. */
+        if ((element->postprocess_kinds.blocks || element->postprocess_kinds.inlines) &&
+            !markdown_core_node_kind_set_intersects(&element->postprocess_kinds, &parser->kinds_seen)) {
+            continue;
+        }
+        if (!S_apply_tree_phase(parser, &parser->root, S_postprocess_tree, (void *)element)) {
+            parser->oom = true;
         }
     }
     if (parser->oom) {

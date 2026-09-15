@@ -803,6 +803,14 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .open_block_gate = {.bytes = "$\\"},
     .probe_block = probe_formula_block,
     .postprocess_func = postprocess,
+    /* `postprocess_node` acts on a FormulaBlock, on a CodeBlock whose info
+     * string names a formula, and on a Paragraph -- but that last branch also
+     * requires the paragraph's only child to be a Formula, so Formula is what
+     * the set has to name, not Paragraph. A document with none of the three
+     * has nothing for this pass to find. */
+    .postprocess_kinds = {.blocks = MARKDOWN_CORE_NODE_KIND_BIT(MARKDOWN_CORE_NODE_FORMULA_BLOCK) |
+                                    MARKDOWN_CORE_NODE_KIND_BIT(MARKDOWN_CORE_NODE_CODE_BLOCK),
+                          .inlines = MARKDOWN_CORE_NODE_KIND_BIT(MARKDOWN_CORE_NODE_FORMULA)},
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,
     .accepts_lines_func = accepts_lines,

@@ -157,6 +157,21 @@ struct markdown_core_element {
     markdown_core_contains_inlines_func contains_inlines_func;
     markdown_core_accepts_lines_func accepts_lines_func;
     markdown_core_postprocess_func postprocess_func;
+    /* The node kinds `postprocess_func` can act on.
+     *
+     * A postprocess pass is a WHOLE-TREE WALK, and it costs the same whether
+     * the document contains anything for it or not -- formula's own comment
+     * records that its pass stays iterative so it is safe on a deep tree "even
+     * when the tree contains no formula". Declaring the kinds lets the engine
+     * skip the pass entirely for a document that produced none of them, the
+     * way an absent list marker already costs the list opener nothing.
+     *
+     * The set is intersected with the kinds the parse actually produced, taken
+     * when the block tree is complete. A pass whose trigger kind is CREATED by
+     * an earlier pass must therefore name that creator kind too; leaving the
+     * set empty declares nothing and the pass always runs, which is what every
+     * pass did before this existed. */
+    markdown_core_node_kind_set postprocess_kinds;
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;

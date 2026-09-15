@@ -225,6 +225,10 @@ struct markdown_core_parser {
     uint8_t *block_gate_bytes[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     uint32_t *block_gate_relaxed[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     uint8_t *block_gate_allocation;
+    /* Every node kind this parse produced, accumulated by the consolidation
+     * walk that already visits every node just before the postprocess passes
+     * run, so the record costs no traversal of its own. */
+    markdown_core_node_kind_set kinds_seen;
     markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
      * the special/emphasis-skip characters of the attached inline elements.

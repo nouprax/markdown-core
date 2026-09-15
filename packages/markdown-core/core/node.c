@@ -1167,3 +1167,26 @@ uint32_t markdown_core_node_block_kind_bit(markdown_core_node_type kind) {
     }
     return 1u << value;
 }
+
+uint32_t markdown_core_node_inline_kind_bit(markdown_core_node_type kind) {
+    unsigned value;
+
+    if ((kind & MARKDOWN_CORE_NODE_TYPE_MASK) != MARKDOWN_CORE_NODE_TYPE_INLINE) {
+        return 0;
+    }
+    value = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+    if (value >= 31) {
+        return 1u << 31;
+    }
+    return 1u << value;
+}
+
+void markdown_core_node_kind_set_add(markdown_core_node_kind_set *set, markdown_core_node_type kind) {
+    set->blocks |= markdown_core_node_block_kind_bit(kind);
+    set->inlines |= markdown_core_node_inline_kind_bit(kind);
+}
+
+bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a,
+                                            const markdown_core_node_kind_set *b) {
+    return (a->blocks & b->blocks) != 0 || (a->inlines & b->inlines) != 0;
+}

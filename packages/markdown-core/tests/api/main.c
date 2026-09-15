@@ -1482,29 +1482,154 @@ static bool attach_dispatch_observers(markdown_core_parser *parser, void *contex
  * the byte set alone decides -- a gate that leans on a container kind is
  * checked for the case where that container is absent, which is the case that
  * loses documents. */
-static void block_gate_admits_every_opener(test_batch_runner *runner) {
-    size_t element_count = 0;
-    const markdown_core_element *const *elements = markdown_core_core_elements(&element_count);
-    size_t gated = 0, violations = 0;
-    int first_bad_byte = -1;
-    const char *first_bad_element = NULL;
+static int postprocess_runs[2];
+
+static markdown_core_node *count_postprocess_absent(const markdown_core_element *element, markdown_core_parser *parser,
+                                                    markdown_core_node *root) {
+    (void)element;
+    (void)parser;
+    postprocess_runs[0]++;
+    return root;
+}
+
+static markdown_core_node *count_postprocess_present(const markdown_core_element *element, markdown_core_parser *parser,
+                                                     markdown_core_node *root) {
+    (void)element;
+    (void)parser;
+    postprocess_runs[1]++;
+    return root;
+}
+
+static bool attach_postprocess_observers(markdown_core_parser *parser, void *context) {
+    /* One pass declares a kind this document cannot contain, the other a kind
+     * every paragraph of prose contains. */
+    static const markdown_core_element absent = {
+        .name = "postprocess-absent-observer",
+        .postprocess_func = count_postprocess_absent,
+        .postprocess_kinds = {.blocks = MARKDOWN_CORE_NODE_KIND_BIT(MARKDOWN_CORE_NODE_CODE_BLOCK)}};
+    static const markdown_core_element present = {
+        .name = "postprocess-present-observer",
+        .postprocess_func = count_postprocess_present,
+        .postprocess_kinds = {.inlines = MARKDOWN_CORE_NODE_KIND_BIT(MARKDOWN_CORE_NODE_TEXT)}};
+    (void)context;
+    return markdown_core_parser_attach_element(parser, &absent) &&
+           markdown_core_parser_attach_element(parser, &present);
+}
+
+/* A postprocess pass is a whole-tree walk, so a pass that cannot match anything
+ * still costs the tree. Declaring the kinds it acts on is what lets the engine
+ * skip it -- and skipping is invisible in the output, which is exactly why it
+ * is asserted by counting runs rather than by comparing a dump.
+ *
+ * Counting runs, not time: a pass that is skipped runs zero times on a document
+ * that cannot feed it, and exactly once on one that can. */
+static void postprocess_skips_absent_kinds(test_batch_runner *runner) {
+    static const char source[] = "just some prose\n";
+    markdown_core_node *doc;
+
+    postprocess_runs[0] = 0;
+    postprocess_runs[1] = 0;
+    doc = markdown_core_parse_document_with_mem(source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(),
+                                                attach_postprocess_observers, NULL);
+    OK(runner, doc != NULL, "a document with observing postprocess passes parses");
+    INT_EQ(runner, postprocess_runs[0], 0, "a pass whose declared kinds never occurred does not walk the tree");
+    INT_EQ(runner, postprocess_runs[1], 1, "a pass whose declared kind occurred runs exactly once");
+    markdown_core_node_free(doc);
+}
+
+/* A declared kind set is written with a macro, because a descriptor cannot call
+ * a function, and the macro cannot tell a block kind from an inline one -- the
+ * field it fills says which. So check every set the dialect declares against
+ * the runtime helpers, which can: a Formula bit parked in `.blocks` would make
+ * the pass skip documents that do contain formulas. */
+typedef struct {
+    size_t declared;
+    size_t malformed;
+    size_t without_pass;
+} kind_set_sweep;
+
+static bool sweep_postprocess_kind_sets(markdown_core_parser *parser, void *context) {
+    kind_set_sweep *sweep = context;
+    const markdown_core_element *const *elements = parser->elements;
+    size_t element_count = parser->element_count;
+
+    for (size_t i = 0; i < element_count; i++) {
+        const markdown_core_element *element = elements[i];
+        const markdown_core_node_kind_set *set = &element->postprocess_kinds;
+        if (!set->blocks && !set->inlines) {
+            continue;
+        }
+        sweep->declared++;
+        if (!element->postprocess_func) {
+            sweep->without_pass++;
+        }
+        for (unsigned bit = 0; bit < 32; bit++) {
+            /* A bit is well formed when some kind of that namespace claims it.
+             * Bit 31 is the shared overflow bit and belongs to no single kind. */
+            if (bit == 31) {
+                continue;
+            }
+            if (set->blocks & (1u << bit)) {
+                markdown_core_node_type kind = (markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_BLOCK | bit);
+                if (markdown_core_node_block_kind_bit(kind) != (1u << bit)) {
+                    sweep->malformed++;
+                }
+            }
+            if (set->inlines & (1u << bit)) {
+                markdown_core_node_type kind = (markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_INLINE | bit);
+                if (markdown_core_node_inline_kind_bit(kind) != (1u << bit)) {
+                    sweep->malformed++;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+static void postprocess_kind_sets_are_well_formed(test_batch_runner *runner) {
+    kind_set_sweep sweep = {0, 0, 0};
+    static const char probe_source[] = "probe\n";
+    markdown_core_node *probe_doc = markdown_core_parse_document_with_mem(probe_source, sizeof(probe_source) - 1,
+                                                                          markdown_core_get_default_mem_allocator(),
+                                                                          sweep_postprocess_kind_sets, &sweep);
+
+    OK(runner, sweep.declared > 0, "at least one pass declares its kinds for this law to bind");
+    INT_EQ(runner, (int)sweep.without_pass, 0, "only a pass declares the kinds it acts on");
+    INT_EQ(runner, (int)sweep.malformed, 0, "every declared postprocess kind bit round-trips through its namespace");
+    markdown_core_node_free(probe_doc);
+}
+
+typedef struct {
+    size_t gated;
+    size_t violations;
+    int first_bad_byte;
+    const char *first_bad_element;
+} gate_sweep;
+
+/* Sweep the registry the engine itself selected, from inside setup, rather
+ * than selecting a second copy of the dialect: only the parse transaction may
+ * do that, and audit-element-attach-order holds the line. */
+static bool sweep_block_gates(markdown_core_parser *parser, void *context) {
+    gate_sweep *sweep = context;
+    const markdown_core_element *const *elements = parser->elements;
+    size_t element_count = parser->element_count;
 
     for (size_t i = 0; i < element_count; i++) {
         const markdown_core_element *element = elements[i];
         if (!element->try_opening_block || !element->open_block_gate.bytes) {
             continue;
         }
-        gated++;
+        sweep->gated++;
         for (int byte = 1; byte < 256; byte++) {
             unsigned char line[8];
-            markdown_core_parser parser = {0};
+            markdown_core_parser probe = {0};
             markdown_core_node *parent;
             markdown_core_node *opened;
 
             if (byte == '\n' || byte == '\r' || strchr(element->open_block_gate.bytes, byte)) {
                 continue;
             }
-            parser.mem = markdown_core_get_default_mem_allocator();
+            probe.mem = markdown_core_get_default_mem_allocator();
             parent = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
             if (!parent) {
                 continue;
@@ -1513,17 +1638,29 @@ static void block_gate_admits_every_opener(test_batch_runner *runner) {
             line[1] = (unsigned char)byte;
             line[2] = (unsigned char)byte;
             line[3] = '\n';
-            opened = element->try_opening_block(element, 0, &parser, parent, line, 4);
+            opened = element->try_opening_block(element, 0, &probe, parent, line, 4);
             if (opened) {
-                violations++;
-                if (first_bad_byte < 0) {
-                    first_bad_byte = byte;
-                    first_bad_element = element->name;
+                sweep->violations++;
+                if (sweep->first_bad_byte < 0) {
+                    sweep->first_bad_byte = byte;
+                    sweep->first_bad_element = element->name;
                 }
             }
             markdown_core_node_free(parent);
         }
     }
+    return true;
+}
+
+static void block_gate_admits_every_opener(test_batch_runner *runner) {
+    gate_sweep sweep = {0, 0, -1, NULL};
+    static const char probe_source[] = "probe\n";
+    markdown_core_node *probe_doc = markdown_core_parse_document_with_mem(
+        probe_source, sizeof(probe_source) - 1, markdown_core_get_default_mem_allocator(), sweep_block_gates, &sweep);
+    size_t gated = sweep.gated, violations = sweep.violations;
+    int first_bad_byte = sweep.first_bad_byte;
+    const char *first_bad_element = sweep.first_bad_element;
+    markdown_core_node_free(probe_doc);
 
     OK(runner, gated > 0, "at least one element declares a block-start gate for this law to bind");
     OK(runner, violations == 0, "no gated opener claims a line its gate excludes");
@@ -5671,6 +5808,8 @@ int main(void) {
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
+    postprocess_skips_absent_kinds(runner);
+    postprocess_kind_sets_are_well_formed(runner);
     block_gate_admits_every_opener(runner);
     inline_dispatch_ownership(runner);
     no_node_is_its_own_ancestor(runner);
