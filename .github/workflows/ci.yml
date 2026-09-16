@@ -89,7 +89,7 @@ jobs:
             - name: Lint C
               run: pnpm lint:c
             - name: Audit corpus reach
-              run: pnpm audit:corpus-coverage
+              run: pnpm audit:corpus-reach
 
     health-check-es:
         needs: changes

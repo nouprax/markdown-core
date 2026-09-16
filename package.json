@@ -9,7 +9,7 @@
     },
     "scripts": {
         "audit:ast-projections": "node scripts/audit-ast-projections.mjs",
-        "audit:corpus-coverage": "node scripts/audit-corpus-coverage.mjs",
+        "audit:corpus-reach": "node scripts/audit-corpus-reach.mjs",
         "audit:ci": "scripts/audit-ci-policy.sh",
         "audit:element-attach-order": "node scripts/audit-element-attach-order.mjs",
         "audit:element-special-chars": "node scripts/audit-element-special-chars.mjs",

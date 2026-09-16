@@ -1407,12 +1407,37 @@ function measure(profile, engine, document, out) {
  * Self cost, not inclusive: an inclusive ranking puts the drivers on top --
  * every line goes through `S_process_line` -- and buries the work. */
 function hotPaths(profile) {
+    /* Callgrind collects from process start, so `profile.self` holds the whole
+     * executable: the loader, reading the file, freeing the source buffer,
+     * printing the receipt. Ranking that and printing it beside a parse cost is
+     * a claim about the parse made from a measurement of the program -- the
+     * same mistake as counting the serializer. Measured it is under 1% here,
+     * which is exactly why it would have gone unnoticed.
+     *
+     * So the ranking is restricted to what the parse entry can reach. A leaf
+     * shared with the rest of the program, `free` being the obvious one, is
+     * still counted whole; this narrows the claim rather than making it exact. */
+    const callees = new Map();
+    for (const edge of profile.edges.values()) {
+        const from = baseName(edge.caller);
+        if (!callees.has(from)) callees.set(from, new Set());
+        callees.get(from).add(baseName(edge.callee));
+    }
+    const reachable = new Set();
+    const pending = [baseName(ENGINE_ENTRY)];
+    while (pending.length) {
+        const name = pending.pop();
+        if (reachable.has(name)) continue;
+        reachable.add(name);
+        for (const callee of callees.get(name) ?? []) pending.push(callee);
+    }
     const totals = new Map();
     let whole = 0;
     for (const [name, cost] of profile.self) {
         const ir = costRecord(profile, cost).Ir ?? 0;
         if (!ir) continue;
         const fn = baseName(name);
+        if (!reachable.has(fn)) continue;
         totals.set(fn, (totals.get(fn) ?? 0) + ir);
         whole += ir;
     }
@@ -1567,7 +1592,12 @@ function markdownReport(report) {
     if (ranked.length) {
         const median = (values) => {
             const sorted = values.slice().sort((left, right) => left - right);
-            return sorted[Math.floor(sorted.length / 2)] ?? 0;
+            if (!sorted.length) return 0;
+            const middle = Math.floor(sorted.length / 2);
+            /* An even group has two middle values and neither one of them is the
+             * median; the CommonMark group has 34 cases, so taking the upper
+             * published a number that was not the median of anything. */
+            return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
         };
         lines.push("### Ratio against the reference", "");
         lines.push(

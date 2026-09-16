@@ -182,7 +182,7 @@
         },
         {
             "name": "inline-autolink-rich",
-            "dialect": "commonmark",
+            "dialect": "extended",
             "samples": ["inline-autolink-rich.md"]
         },
         {

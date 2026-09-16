@@ -1,55 +1,35 @@
 /**
- * WHAT THE STAGE CORPUS ACTUALLY REACHES.
+ * WHAT THE STAGE BENCHMARK CAN STILL SEE.
  *
- * The staged benchmark reports instruction counts per parse phase, and those
- * counts only describe the code the corpus reaches. A construct absent from the
- * corpus is not reported as slow or as fast; it is not reported at all, and the
- * profile silently describes a subset of the parser as though it were the
- * whole.
+ * The point of the staged benchmark is to locate hot paths. It can only report
+ * on code some document drives: a construct absent from the corpus is not
+ * reported as slow or as fast, it is not reported at all, and the profile
+ * describes a subset of the parser while reading like the whole.
  *
- * That was not hypothetical. Measured on the 33-case corpus this audit was
- * written against, `table.c` ran at 39.0% and the corpus produced 26 of the 43
- * node kinds the dialect names. The largest single cost in the source stage was
- * table's REFUSAL path on documents containing no table, while every grammar
- * that builds one went unmeasured.
+ * That was not hypothetical. On the 33-case corpus this was written against,
+ * the corpus built 26 of the 43 node kinds the dialect names, and the largest
+ * single cost in the source stage was table's REFUSAL path on documents
+ * containing no table -- every grammar that builds one went unmeasured.
  *
- * THE LAW IS ABOUT NODES, NOT LINES. The obvious rule -- no element file at
- * zero coverage -- is VACUOUS, and measurably so: the block dispatcher asks
- * every attached element about every line, so an element whose grammar never
- * claims anything still runs. Stripping every callout from the corpus leaves
- * `callout.c` at 40.4%, not 0%, purely from being asked and declining.
+ * THIS IS NOT A COVERAGE GATE, and must not become one. Coverage was how the
+ * blindness was diagnosed; it is not the goal, and a percentage climbing is not
+ * progress. This repository retired execution coverage for that reason --
+ * `scripts/audit-ci-policy.sh` refuses a coverage job outright, "use semantic
+ * contract tests" -- so nothing here reports a ratio and nothing here has a
+ * floor. Two laws, each naming a specific thing that is true or false:
  *
- * So the law is that every node kind the dialect can name must actually be
- * BUILT somewhere in the corpus. Declining costs an element nothing here: only
- * a claimed construct puts a node in a tree. On the corpus that prompted this,
- * the rule fails on 17 kinds -- Formula, Strikethrough, Cite, Mark, Insertion,
- * Span, Superscript, Subscript, DefinitionList, Definition, TableCaption,
- * Citation, Footnote, Specimen, Metadata and the rest -- which is exactly the
- * set the profile was blind to.
+ *   Every node kind the dialect names must be BUILT by some document. The
+ *   obvious alternative -- no element file at zero coverage -- is VACUOUS: the
+ *   block dispatcher asks every attached element about every line, so stripping
+ *   every callout still leaves `callout.c` at 40.4% from being asked and
+ *   declining. Only a claimed construct puts a node in a tree.
  *
- * ONE KIND IS NOT ONE GRAMMAR. Several grammars can build the same kind, so the
- * census above cannot tell them apart: the grid, pipe, simple and multiline
- * table parsers all produce `Table`, `TableRow` and `TableCell`, and deleting
- * the grid case still leaves every kind built by the other three. Task markers
- * and bare autolinks have no kind of their own at all.
+ *   Every grammar entry the corpus must measure must have RUN, because one kind
+ *   is not one grammar: the grid, pipe, simple and multiline table parsers all
+ *   build `Table`, so deleting the grid case leaves every kind built while the
+ *   benchmark silently stops measuring that parser.
  *
- * So a case may also declare, in the manifest, the grammar ENTRY it exists to
- * drive, and that function is required to have run. Measured, the discrimination
- * is not marginal: the grid case drives `table_parse_grid` to 79.1% while the
- * other three only brush its guard clause at 6.1%, which is why the bar is a
- * majority of the function rather than merely reaching it.
- *
- * The line measurement carries two denominators,
- * because they mean different things. Hand-written code is the parser: a line
- * the corpus never runs is a line the profile cannot see, and that is what the
- * floor is set on. Generated code is not: `*_scanners.c` are re2c DFAs and
- * `*.inc` are Unicode tables, whose line counts are dominated by state
- * transitions and codepoint ranges. A representative corpus will never hit
- * those, nor should it try -- chasing that number would mean filling the corpus
- * with inputs chosen to walk a state machine rather than inputs that look like
- * documents. They are reported and deliberately not gated.
- *
- *   node scripts/audit-corpus-coverage.mjs [--floor N] [--json FILE]
+ *   node scripts/audit-corpus-reach.mjs [--json FILE]
  */
 
 import { execFileSync, spawn, spawnSync } from "node:child_process";
@@ -62,38 +42,16 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const KIND_TABLE = path.join(root, "packages/markdown-core/elements/ast.c");
 
-/* Set just under the measured value so ordinary drift does not fail the build,
- * while a corpus that stops reaching the parser does. Raise it when the corpus
- * genuinely improves; never lower it to make a red build green. */
-const DEFAULT_FLOOR = 71.0;
-
 function fail(message) {
-    process.stderr.write(`corpus coverage audit FAILED\n  ${message}\n`);
+    process.stderr.write(`corpus reach audit FAILED\n  ${message}\n`);
     process.exit(1);
 }
 
-const isGenerated = (file) => file.endsWith("_scanners.c") || file.endsWith(".inc");
-/* The parse phase is source to tree, and these two are neither.
- *
- * `core/main.c` is the CLI that drives a document through it. `elements/ast.c`
- * is the canonical-AST projection and serializer -- the thing that WRITES a
- * tree, 1,174 lines of it, which nothing in `blocks.c` or `inlines.c` calls.
- * Counting either flattered the number this audit exists to report: while the
- * census dumped every document, `ast.c` read 84.7% covered and lifted the whole
- * figure from 66.2% to 75.2%, describing the writer as though it were the
- * parser. The benchmark does not measure serialization, so this must not
- * either. */
-const isParsePhase = (file) => file !== "core/main.c" && file !== "elements/ast.c";
-
 function parseArguments(argv) {
-    const options = { floor: DEFAULT_FLOOR, json: null };
+    const options = { json: null };
     for (let i = 0; i < argv.length; i++) {
         const flag = argv[i];
-        if (flag === "--floor") {
-            const value = Number(argv[++i]);
-            if (!Number.isFinite(value) || value < 0 || value > 100) fail("--floor takes a percentage");
-            options.floor = value;
-        } else if (flag === "--json") options.json = argv[++i];
+        if (flag === "--json") options.json = argv[++i];
         else fail(`unknown flag ${flag}`);
     }
     return options;
@@ -153,7 +111,7 @@ async function kindsProduced(cli, documents) {
          * asking these for a tree costs gigabytes of RSS in the child whatever
          * this end does with the stream -- enough to lose a hosted runner. They
          * are shapes for depth, not for constructs, and contribute no kind that
-         * the other cases do not build; the coverage passes below still run
+         * the other cases do not build; the grammar pass below still runs
          * them, through a binary that never dumps. */
         if (path.basename(document).startsWith("chain-")) continue;
         const child = spawn(cli, [document], { stdio: ["ignore", "pipe", "ignore"], timeout: 600_000 });
@@ -199,7 +157,7 @@ function resetCounters(buildDir) {
     }
 }
 
-/* Per-function coverage for one document, read with the counters reset so the
+/* Which functions this one document drove, read with the counters reset so the
  * result is that document's alone rather than the corpus's. */
 function functionsFor(cli, buildDir, document) {
     resetCounters(buildDir);
@@ -226,10 +184,10 @@ function functionsFor(cli, buildDir, document) {
  *
  * `markdown-core` is the dump CLI: the kind census needs a tree it can read.
  * `markdown_core_stage_runner` parses and frees without dumping, and that is
- * what the coverage passes use -- `elements/ast.c` is the SERIALIZER, 1,174
+ * what the grammar pass uses -- `elements/ast.c` is the SERIALIZER, 1,174
  * lines of it, and running the dumper counted the writer as parse phase and
  * flattered the number this audit exists to report. */
-function coverageBuild(buildDir) {
+function instrumentedBuild(buildDir) {
     const run = (command, args) =>
         execFileSync(command, args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     run("cmake", [
@@ -285,40 +243,6 @@ function gcdaDirectories(buildDir) {
     return [...directories].sort();
 }
 
-function readCoverage(buildDir) {
-    let output = "";
-    for (const dir of gcdaDirectories(buildDir)) {
-        const gcda = fs
-            .readdirSync(dir)
-            .filter((n) => n.endsWith(".gcda"))
-            .map((n) => path.join(dir, n));
-        const result = spawnSync("gcov", ["-n", "-o", dir, ...gcda], { cwd: dir, encoding: "utf8" });
-        output += result.stdout ?? "";
-    }
-    const files = {};
-    for (const match of output.matchAll(/File '([^']+)'\nLines executed:([\d.]+)% of (\d+)/g)) {
-        const [, file, percent, total] = match;
-        if (!file.includes("/packages/markdown-core/")) continue;
-        const key = file.split("/packages/markdown-core/")[1];
-        if (key.startsWith("tests/") || key.startsWith("benchmarks/") || key.endsWith(".h")) continue;
-        if (!isParsePhase(key)) continue;
-        const lines = Number(total);
-        files[key] = { percent: Number(percent), lines, executed: Math.round((lines * Number(percent)) / 100) };
-    }
-    if (!Object.keys(files).length) fail("gcov reported no parse-phase files; the coverage build produced no data");
-    return files;
-}
-
-function summarise(files) {
-    const group = (predicate) => {
-        const entries = Object.entries(files).filter(([key]) => predicate(key));
-        const lines = entries.reduce((sum, [, v]) => sum + v.lines, 0);
-        const executed = entries.reduce((sum, [, v]) => sum + v.executed, 0);
-        return { entries, lines, executed, percent: lines ? (executed / lines) * 100 : 100 };
-    };
-    return { handWritten: group((key) => !isGenerated(key)), generated: group(isGenerated) };
-}
-
 const options = parseArguments(process.argv.slice(2));
 const kinds = dialectKinds();
 const corpusDir = fs.mkdtempSync(path.join(os.tmpdir(), "corpus-reach-"));
@@ -331,7 +255,6 @@ const required = requiredGrammars();
 const driven = new Set();
 const undriven = [];
 let unbuilt;
-let coverage;
 {
     const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), "corpus-coverage-"));
     try {
@@ -339,7 +262,7 @@ let coverage;
          * whatever `build/` happened to hold would let a source change that
          * stops building a kind still report every kind built, which is the
          * same staleness the corpus itself was fixed for. */
-        const binaries = coverageBuild(buildDir);
+        const binaries = instrumentedBuild(buildDir);
         const produced = await kindsProduced(binaries.dump, documents);
         unbuilt = kinds.filter((kind) => !produced.has(kind));
         /* The census ran the dumper, whose lines are not the parse phase, so
@@ -359,34 +282,6 @@ let coverage;
                 undriven.push(`${name} is driven by no case, so the benchmark no longer measures that grammar`);
             }
         }
-        /* Then the whole corpus, for the aggregate. */
-        resetCounters(buildDir);
-        for (const document of documents) {
-            requireClean(
-                spawnSync(binaries.parse, ["--document", document], { stdio: "ignore", timeout: 600_000 }),
-                "the parse runner",
-                document
-            );
-        }
-        coverage = summarise(readCoverage(buildDir));
-        process.stdout.write(
-            `  hand-written      ${coverage.handWritten.executed}/${coverage.handWritten.lines} = ` +
-                `${coverage.handWritten.percent.toFixed(1)}%\n` +
-                `  generated         ${coverage.generated.executed}/${coverage.generated.lines} = ` +
-                `${coverage.generated.percent.toFixed(1)}% (not gated)\n\n` +
-                "Hand-written files the corpus reaches least:\n" +
-                coverage.handWritten.entries
-                    .slice()
-                    .sort((a, b) => b[1].lines - b[1].executed - (a[1].lines - a[1].executed))
-                    .slice(0, 10)
-                    .map(
-                        ([key, v]) =>
-                            `  ${key.padEnd(38)} ${v.percent.toFixed(1).padStart(5)}%  ` +
-                            `${String(v.lines - v.executed).padStart(5)} unreached`
-                    )
-                    .join("\n") +
-                "\n"
-        );
     } finally {
         fs.rmSync(buildDir, { recursive: true, force: true });
     }
@@ -404,12 +299,7 @@ if (options.json) {
         `${JSON.stringify(
             {
                 documents: documents.length,
-                kinds: { named: kinds.length, built: kinds.length - unbuilt.length, unbuilt },
-                coverage: coverage && {
-                    handWritten: { percent: coverage.handWritten.percent, lines: coverage.handWritten.lines },
-                    generated: { percent: coverage.generated.percent, lines: coverage.generated.lines },
-                    floor: options.floor
-                }
+                kinds: { named: kinds.length, built: kinds.length - unbuilt.length, unbuilt }
             },
             null,
             4
@@ -427,14 +317,8 @@ if (unbuilt.length) {
 if (undriven.length) {
     failures.push(`grammars the corpus must measure and no longer does:\n    ${undriven.join("\n    ")}`);
 }
-if (coverage && coverage.handWritten.percent < options.floor) {
-    failures.push(
-        `hand-written parse coverage ${coverage.handWritten.percent.toFixed(1)}% is below the ` +
-            `${options.floor.toFixed(1)}% floor`
-    );
-}
 if (failures.length) {
-    process.stderr.write(`corpus coverage audit FAILED\n${failures.map((m) => `  ${m}`).join("\n")}\n`);
+    process.stderr.write(`corpus reach audit FAILED\n${failures.map((m) => `  ${m}`).join("\n")}\n`);
     process.exit(1);
 }
-process.stdout.write("corpus coverage audit passed\n");
+process.stdout.write("corpus reach audit passed\n");
