@@ -1272,10 +1272,27 @@ function measure(profile, engine, document, out, unmatchedFields) {
      * reaches this work without declaring it is a case whose ratio is about to
      * silently include it, and the only way to say so is to have looked. */
     const unmatched = [];
+    /* Whether the case did this work AT ALL, counted separately from what the
+     * work cost. The two are not the same question: `finish_document` calls
+     * `markdown_core_block_finalize_heading_anchors` unconditionally, and the
+     * callee still runs its prologue over an empty collection, so the edge
+     * costs 53 Ir on a document with no heading in it. Reading "did this case
+     * carry dialect output?" off a NON-ZERO COST would therefore answer yes for
+     * all 62 cases. The witness is a call count into work that only a real
+     * occurrence reaches, so it is 0 exactly when the tree carries nothing. */
+    const witnesses = {};
     for (const [field, declaration] of Object.entries(unmatchedFields ?? {})) {
+        if (typeof declaration.witness !== "string" || !declaration.witness.includes("->")) {
+            fail(
+                `corpus.json: unmatchedFields.${field} has no witness edge, so nothing can say whether a case ` +
+                    `carries it -- the corpus audit checks the same thing and one of the two ran without the other`
+            );
+        }
+        const [caller, callee] = declaration.witness.split("->").map((half) => half.trim());
+        witnesses[field] = edgesBetween(profileByName, caller, callee).reduce((total, edge) => total + edge.calls, 0);
         for (const spec of declaration.excludes ?? []) {
-            const [caller, callee] = spec.split("->").map((half) => half.trim());
-            const edges = edgesBetween(profileByName, caller, callee);
+            const [from, to] = spec.split("->").map((half) => half.trim());
+            const edges = edgesBetween(profileByName, from, to);
             const ir = edges.reduce((total, edge) => total + (costRecord(profileByName, edge.cost).Ir ?? 0), 0);
             const calls = edges.reduce((total, edge) => total + edge.calls, 0);
             if (ir) unmatched.push({ field, stage: declaration.stage, edge: spec, calls, ir });
@@ -1301,6 +1318,7 @@ function measure(profile, engine, document, out, unmatchedFields) {
         outsideStagesIr: STAGES.reduce((total, stage) => total - stages[stage].cost.Ir, parsePathIr),
         stages,
         unmatched,
+        witnesses,
         hotPaths: hotPaths(profileByName),
         dump
     };
@@ -1508,21 +1526,35 @@ function markdownReport(report) {
      * left for a reader to spot, and it is this check that stops the exclusion
      * being a way to make any number smaller. */
     const unmatchedOf = (item) => {
+        /* Only a case whose number is a DIVISION against a reference is held to
+         * this, and only such a case has anything subtracted. A case already
+         * reported as a bound has no comparison to protect, and `block-metadata`
+         * and `mixed-extended` do contain headings -- holding them to a
+         * declaration they are not allowed to make (see `declaredUnmatched` in
+         * the corpus audit) would abort every run. Keyed on the corpus's syntax
+         * label rather than on the group the case lands in, because the
+         * declaration is one of the things that decides the group. */
+        if (item.dialect !== "commonmark" && !item.gfm) return 0;
         const declared = new Set(item.unmatched ?? []);
-        const seen = item.engines["markdown-core"]?.unmatched ?? [];
+        const engine = item.engines["markdown-core"] ?? {};
+        const seen = engine.unmatched ?? [];
         let total = 0;
-        for (const entry of seen) {
-            if (!declared.has(entry.field)) {
+        for (const [field, calls] of Object.entries(engine.witnesses ?? {})) {
+            /* The witness, not the cost: the outer call runs on every document
+             * and costs a few instructions over an empty collection, so a
+             * non-zero cost would report every case as carrying the field. */
+            const carries = calls > 0;
+            if (carries && !declared.has(field)) {
                 fail(
-                    `${item.case} reaches ${entry.edge} for ${entry.ir} Ir, which cmark has no counterpart ` +
-                        `for, and does not declare "${entry.field}" -- so its ratio would quietly include it`
+                    `${item.case} does ${calls} of the work behind "${field}", which cmark has no counterpart ` +
+                        `for, and does not declare it -- so its ratio would quietly include it`
                 );
             }
-            total += entry.ir;
-        }
-        for (const field of declared) {
-            if (!seen.some((entry) => entry.field === field)) {
-                fail(`${item.case} declares unmatched "${field}" and reaches none of the edges that do that work`);
+            if (!carries && declared.has(field)) {
+                fail(`${item.case} declares unmatched "${field}" and never does the work behind it`);
+            }
+            if (carries) {
+                total += seen.filter((entry) => entry.field === field).reduce((sum, entry) => sum + entry.ir, 0);
             }
         }
         return total;
@@ -1536,6 +1568,7 @@ function markdownReport(report) {
             const core = stageIr(item.engines, "markdown-core");
             const cmarkIr = stageIr(item.engines, "cmark");
             const gfmIr = stageIr(item.engines, "cmark-gfm");
+            const excluded = unmatchedOf(item);
             /* A dialect construct cmark does not implement still gets a
              * same-job ratio, through the document that IS the same tree: what
              * this parser spent on the dialect spelling, over what cmark spent
@@ -1578,24 +1611,24 @@ function markdownReport(report) {
                           shape: twinCore && twinCmark ? twinCore / twinCmark : null
                       }
                     : null,
-                /* The comparison that means something: the closest reference
-                 * that implements what the document contains, or the reference
-                 * on the document that is the same tree. */
-                /* What this case builds that the reference does not, taken
-                 * off THIS side so the two numbers are over the same job again.
+                /* What this case builds that the reference does not, taken off
+                 * THIS side so the two numbers are over the same job again.
                  * Heading anchors are the case: the dialect derives one for
                  * every heading, so the trees differ -- but the difference is a
                  * named set of call edges with no counterpart on cmark's side,
                  * and once it is subtracted what remains is work both engines
                  * did. The heading's own inline parse stays in, because cmark
                  * runs it too. */
-                unmatchedIr: unmatchedOf(item),
+                unmatchedIr: excluded,
+                /* The comparison that means something: the closest reference
+                 * that implements what the document contains, or the reference
+                 * on the document that is the same tree. */
                 sameJob: gfmIr
-                    ? (core - unmatchedOf(item)) / gfmIr
+                    ? (core - excluded) / gfmIr
                     : twinCmark
-                      ? (core - unmatchedOf(item)) / twinCmark
+                      ? (core - excluded) / twinCmark
                       : item.dialect === "commonmark" && cmarkIr
-                        ? (core - unmatchedOf(item)) / cmarkIr
+                        ? (core - excluded) / cmarkIr
                         : null
             };
         })
@@ -2071,6 +2104,7 @@ function main() {
                 rootChildren: measured.rootChildren,
                 hotPaths: measured.hotPaths,
                 unmatched: measured.unmatched,
+                witnesses: measured.witnesses,
                 stages: Object.fromEntries(
                     STAGES.map((stage) => [
                         stage,

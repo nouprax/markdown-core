@@ -389,6 +389,12 @@ function unmatchedFields() {
         if (typeof spec.reason !== "string" || !spec.reason.trim()) {
             fail(`corpus.json: unmatchedFields.${field} must say why cmark has no counterpart for it`);
         }
+        if (typeof spec.witness !== "string" || !/^\S+\s*->\s*\S+$/u.test(spec.witness)) {
+            fail(
+                `corpus.json: unmatchedFields.${field} must name a witness edge "caller -> callee" whose CALL ` +
+                    `COUNT is zero exactly when the tree carries nothing`
+            );
+        }
         if (!Array.isArray(spec.excludes) || !spec.excludes.length) {
             fail(
                 `corpus.json: unmatchedFields.${field} must name the call edges that do this work, or the ` +

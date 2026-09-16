@@ -3,7 +3,8 @@
     "targetBytes": 65536,
     "unmatchedFields": {
         "anchor": {
-            "reason": "cmark's node has no anchor field. This dialect derives a slug for EVERY heading and registers it as a reference label, so a document holding a heading is not the tree cmark builds -- a permanent property of the dialect, not of any sample. The ratio is still a comparison once that work is taken off this side, because every edge below has no counterpart on cmark's: the heading's own inline parse is NOT excluded, since cmark runs it too inside cmark_parse_inlines.",
+            "reason": "cmark's node has no anchor field. This dialect derives a slug for EVERY heading and registers it as a reference label, so a document holding a heading is not the tree cmark builds -- a permanent property of the dialect, not of any sample. The ratio is still a comparison once that work is taken off this side, because every edge below has no counterpart on cmark's: the heading's own inline parse is NOT excluded, since cmark runs it too inside cmark_parse_inlines. `witness` is a call count rather than a cost because finish_document calls markdown_core_block_finalize_heading_anchors unconditionally and the callee still runs its prologue over an empty collection, so that edge costs 53 Ir on a document with no heading in it -- reading occurrence off a non-zero cost would report all 62 cases as carrying an anchor.",
+            "witness": "markdown_core_block_prepare_headings -> markdown_core_prepare_heading",
             "stage": "buffer_to_ast",
             "excludes": [
                 "finish_document -> markdown_core_block_finalize_heading_anchors",
