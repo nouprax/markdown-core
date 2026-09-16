@@ -628,6 +628,26 @@
             "builds": ["CodeBlock"]
         },
         {
+            "name": "pair-ldirective-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "::note[Label {n}]\n\n",
+                "scales": "leaf directives"
+            },
+            "builds": ["DirectiveBlock", "DirectiveLabel"]
+        },
+        {
+            "name": "pair-ldirective-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "## Label {n}\n\n",
+                "match": "pair-ldirective-dialect",
+                "scales": "ATX headings"
+            },
+            "carries": ["anchor"],
+            "builds": ["Heading"]
+        },
+        {
             "name": "pair-cdirective-dialect",
             "dialect": "extended",
             "generated": {
@@ -1006,6 +1026,15 @@
             "claim": "A properties envelope and a fenced code block are the same production: a leaf block opened and closed by a delimiter line, whose body is NOT parsed as Markdown. Same shape, different terminal -- `---` against a run of three or more backticks. What each does with the body afterwards, decode it into named fields or keep it literal, is the measurement and not part of the pairing. This pair is shaped unlike every other one in the corpus and deliberately so: properties.md says only one envelope is recognised, at the document's start, so the workload CANNOT scale by repeating the construct. It scales by the member lines inside a single envelope, which is why both sides carry a head and a tail and why `units` counts lines here rather than constructs. The earlier refusal -- once per document, no count to scale -- mistook the construct for the dimension."
         },
         {
+            "case": "pair-ldirective-dialect",
+            "isomorph": "pair-ldirective-common",
+            "counts": {
+                "case": "DirectiveBlock",
+                "isomorph": "Heading"
+            },
+            "claim": "A leaf directive and an ATX heading are the same production: a LEAF block recognised by a marker run at the start of its single line, the marker consumed into a FIELD, and the rest of the line parsed as INLINES owned by the block. `##` becomes level=2 and `::note` becomes name=\"note\"; what follows is inline content either way. That the dialect hangs those inlines under a DirectiveLabel group where the heading holds them directly is node materialisation, which is never grounds to refuse. This pair publishes SAME-JOB ONLY. The isomorph half is a heading, and this dialect derives an anchor on every heading where neither reference does, so the isomorph's tree carries a field no reference builds -- which lands in twinCore, inflating Grammar's denominator and Shape's numerator while cancelling out of same-job. The corpus states that derivation under `unpairable`, the twin declares the field it carries, and the driver suppresses the two contaminated columns rather than printing them low and high. The dialect half derives nothing: a leaf directive's anchor is null."
+        },
+        {
             "case": "pair-cdirective-dialect",
             "isomorph": "pair-cdirective-common",
             "counts": {
@@ -1107,11 +1136,6 @@
             "whyTheEarlierProofWasWrong": "Both the multiline and the grid table were refused because their cells hold BLOCK content and no reference table has block cells. That answers the wrong question: the criterion asks for a reference PRODUCTION of this shape, not a reference table. The grid half of that refusal is now a built pair -- a one-column grid cell against a loose list item, both a per-line positional cut whose remainder is parsed as blocks -- so the block-cell argument is settled and this entry is only about what the grid pair does not reach.",
             "whatIsGenuinelyUnsettled": "The multiline table cannot be reduced to one column the way the grid table can. It establishes its columns from a SEGMENTED dash line, and a single unbroken dash run is a thematic break or a setext underline, so there is no one-column multiline table to pair. That leaves its row production at K>=2: one line cut into K ranges at positions established by one earlier line. A reference container cuts each line ONCE, at a prefix, and K side-by-side containers are K productions rather than one. Whether the K-way cut pairs with anything, or whether the honest move is to pair at the CELL level and let the row-level slicing show up as the dialect side's extra, is the thing to decide.",
             "status": "OPEN -- to be built and tested, not asserted either way"
-        },
-        {
-            "production": "leaf directive `::name[label]{attrs}`",
-            "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
-            "status": "OPEN -- demoted pending a re-derivation that survives attack"
         },
         {
             "production": "table caption, TRAILING form only",

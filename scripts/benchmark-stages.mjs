@@ -1651,12 +1651,26 @@ function markdownReport(report) {
                           units: twin.units,
                           coreIr: twinCore,
                           cmarkIr: twinCmark,
+                          /* The fields the ISOMORPH's tree carries that no
+                           * reference builds. They decide which of the three
+                           * numbers below survives, and the corpus records the
+                           * derivation under `unpairable`: the three are
+                           * grammar = core/twinCore, shape = twinCore/twinCmark
+                           * and sameJob = core/twinCmark, and twinCore CANCELS
+                           * out of the last one. So a twin that costs this
+                           * parser something the reference never spent -- an
+                           * ATX heading, where this dialect derives an anchor
+                           * and cmark does not -- inflates the denominator of
+                           * Grammar and the numerator of Shape while leaving
+                           * Same-job clean. Those two are suppressed rather
+                           * than printed low and high. */
+                          contaminates: twin.carries,
                           /* What this grammar costs over a CommonMark grammar
                            * building the same tree, inside one parser. */
-                          grammar: twinCore ? core / twinCore : null,
+                          grammar: twinCore && !twin.carries.length ? core / twinCore : null,
                           /* What this parser costs on the shape itself, where
                            * the reference did the same job. */
-                          shape: twinCore && twinCmark ? twinCore / twinCmark : null
+                          shape: twinCore && twinCmark && !twin.carries.length ? twinCore / twinCmark : null
                       }
                     : null,
                 /* The reference that did equivalent work, in order of how
@@ -1841,38 +1855,71 @@ function markdownReport(report) {
                 );
             }
             lines.push("");
+            const suppressed = pairs.filter((item) => item.isomorph.contaminates?.length);
+            if (suppressed.length) {
+                lines.push(
+                    "A dash in Grammar and Shape on a pair whose Same-job column is filled is a" +
+                        " SUPPRESSION, not a missing measurement. The three numbers are" +
+                        " grammar = core/twinCore, shape = twinCore/twinCmark and" +
+                        " sameJob = core/twinCmark, so twinCore cancels out of the last one." +
+                        " Where the isomorph's tree carries a field no reference builds, this" +
+                        " parser spent something on the isomorph half that the reference never" +
+                        " spent: that lands in twinCore, which inflates Grammar's denominator" +
+                        " and Shape's numerator and leaves Same-job untouched. Printing the two" +
+                        " would publish a dialect grammar as cheaper than it is and a shape as" +
+                        " dearer. Suppressed here:",
+                    "",
+                    ...suppressed.map(
+                        (item) =>
+                            `- **${item.case}** -- its isomorph \`${item.isomorph.case}\` carries` +
+                            ` ${item.isomorph.contaminates.join(", ")}.`
+                    ),
+                    ""
+                );
+            }
             lines.push(
                 "What each pair claims to hold constant, from `corpus.json`:",
                 "",
                 ...pairs.map((item) => `- **${item.case}** -- ${item.isomorph.claim}`),
                 ""
             );
+            /* The reasons a construct has no row are READ FROM THE CORPUS, never
+             * restated here. A hard-coded list went stale the moment a proof
+             * fell, and ten of them fell in one day -- this report would have
+             * gone on publishing that a grid table, a definition list, a
+             * callout and a directive cannot pair while `corpus.json` held the
+             * pairs for all four. `unpairable` is a proof that has survived
+             * attack; `openCandidates` is a candidate that has not been settled
+             * either way, which is not the same claim and is not printed as
+             * one. */
+            const proofs = JSON.parse(fs.readFileSync(path.join(BENCHMARKS, "corpus.json"), "utf8"));
             lines.push(
-                "A construct with no row here has no isomorph, and the reason is always the" +
-                    " same kind of reason: CommonMark has no production of that shape. Read off" +
-                    " the grammars rather than the sources --",
-                "",
-                "- A **grid table** cell holds blocks; a pipe table cell holds inlines.",
-                "- A **definition list** groups a term's inlines with a following block under" +
-                    " one node, and nothing in CommonMark groups two lines that way.",
-                "- A **callout** consumes a token off its container's first line into the" +
-                    " container's own fields and parses the rest as a separate inline list;" +
-                    " CommonMark's block quote consumes nothing and owns only blocks.",
-                "- A **directive** is a FENCED CONTAINER. CommonMark's only fence opens a leaf" +
-                    " whose body is literal, so the fence rules match and the body does not.",
-                "- A **derived anchor** declares nothing: a heading whose identifier comes from" +
-                    " its own text has no name in the source to bind. The EXPLICIT anchor does" +
-                    " declare, which is why `pair-anchor-dialect` exists and `block-heading`" +
-                    " and `block-identifier` stay bounds.",
-                "- A **properties envelope** is recognised once, at the document's start. Even" +
-                    " where its fence rules match a fenced code block's, there is no count to" +
-                    " scale, so there is no workload to pair.",
-                "- A **citation group** decomposes one bracket group into a list of keyed" +
-                    " items with parsed affixes, and no CommonMark production decomposes a" +
-                    " bracket group. (The BARE key does pair -- see `pair-cite-dialect` -- so" +
-                    " `inline-citation`, whose sample is dominated by the group form, is the" +
-                    " bound and the bare form is not.)",
-                "",
+                "A construct with no row here has no isomorph. The reasons are the corpus's," +
+                    " quoted from `corpus.json` rather than restated, and they come in two" +
+                    " kinds that must not be read as one.",
+                ""
+            );
+            if (proofs.unpairable?.length) {
+                lines.push(
+                    "**Proved unpairable** -- an argument off the two GRAMMARS that has been" + " attacked and held:",
+                    "",
+                    ...proofs.unpairable.map((entry) => `- **${entry.production}** -- ${entry.proof}`),
+                    ""
+                );
+            }
+            if (proofs.openCandidates?.length) {
+                lines.push(
+                    "**Open** -- a pair that has NOT been built and has NOT been proved" +
+                        " impossible. These are bounds today because nobody has settled them," +
+                        " which is a different sentence from the one above:",
+                    "",
+                    ...proofs.openCandidates.map(
+                        (entry) => `- **${entry.production}** -- ${entry.whatIsGenuinelyUnsettled ?? entry.status}`
+                    ),
+                    ""
+                );
+            }
+            lines.push(
                 "Note what is NOT a reason to refuse a pair: that the two sides materialise" +
                     " different numbers of nodes. A bare citation key was nearly left a bound on" +
                     " exactly that ground -- one `Link` over a `Text` against a `Cite` over a" +

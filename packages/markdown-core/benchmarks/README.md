@@ -333,9 +333,22 @@ are declared as `logicalIsomorphs`:
 | `A block #name#` | `[name]: #name` | `cmark` | one block, one name-to-target binding, entering a table of names |
 | `[body]{.c}` | `[body](/c)` | `cmark` | bracket, inline body, bracket, raw paired-delimiter suffix decoded into the node |
 | `[[target]]` | `[](/target)` | `cmark` | fixed delimiters, raw body not parsed as inline, one leaf holding a destination, no lookup |
+| `![[img.png]]` | `![](/img.png)` | `cmark` | the same, with the embedding prefix in front of it |
 | `(@label) body` | `[^label]: body` | `cmark-gfm` | a labelled opener owning block content, leaving ordinary content for a side list |
 | `- [~] item` | `- [x] item` | `cmark-gfm` | one scalar in brackets at the start of item content, removed from it and stored on the item |
 | `@key` | `www.key` | `cmark-gfm` | an unbracketed trigger at a word boundary, a raw run stored without inline parsing and without resolution |
+| `$$ … $$` | ` ``` … ``` ` | `cmark` | a leaf block opened and closed by a delimiter line whose body is not parsed as Markdown |
+| ` ```formula ` | ` ```text ` | `cmark` | the same fence with an info string that selects what the body means |
+| `%% … %%` block | ` ``` … ``` ` | `cmark` | the same, with a two-byte delimiter |
+| `--- … ---` envelope | ` ``` … ``` ` | `cmark` | the same again; recognised once per document, so it scales by member **lines** |
+| `::note[Label]` | `## Label` | `cmark` | a leaf block whose marker run is consumed into a field and whose rest of line is inlines |
+| `:::note … :::` | `> quoted` | `cmark` | a container block: a start condition, a per-line continuation condition, contents parsed as blocks |
+| `> [!note] title` | `- [x] item` | `cmark-gfm` | a bracketed token at the start of a container's first line, taken out of the content and kept as a field |
+| `Term` / `: body` | `- Term` / `  body` | `cmark` | a first line parsed as inlines plus block content bound to it by indentation, under one node |
+| simple table | pipe table | `cmark-gfm` | a line cut into K ranges, each parsed as inlines, once per row |
+| headerless simple table | pipe table | `cmark-gfm` | the same row production, with the head left empty rather than designated |
+| one-column grid cell | loose list item | `cmark` | a per-line positional cut at a width established by an earlier line, remainder parsed as **blocks** |
+| `Table: X` before a table | GFM header line | `cmark-gfm` | a paragraph-shaped line already scanned, retroactively claimed by a table a later line announces |
 
 The reference is whichever engine implements the isomorph's production, which is
 not always cmark: pairing a GFM production against cmark would divide by an
@@ -349,6 +362,14 @@ dialect half is `generated` to the byte target and the CommonMark half is
 generated name carries an index, so both sides bind the same number of
 **distinct** identifiers; a repeated literal would leave one side with a
 one-entry table against thousands.
+
+`{n}` writes that index as it is. `{n:K}` writes it zero-padded to K digits, and
+a case whose construct is **column-aligned** must use it. A grid table
+establishes its columns from the positions of the `+` characters in its border
+line and requires every row line to close its cells at exactly those columns, so
+an index that gains a digit at ten and again at a hundred would silently stop the
+construct being recognised part way down the document — the case would still
+generate, and would measure a paragraph.
 
 ### The three numbers
 
@@ -371,6 +392,20 @@ On a declaration pair the two Ir/B columns are each over their own document's
 bytes, and those differ by construction — so Grammar is not their quotient. It
 is the total over the total at an equal count of the construct, which is the
 only denominator the pair holds fixed.
+
+**Two of the three can be suppressed while the third stands.** Write them out:
+`grammar = core/twinCore`, `shape = twinCore/twinCmark`, `sameJob =
+core/twinCmark`. `twinCore` cancels out of the last one. So where the
+*isomorph's* tree carries a field no reference builds — an ATX heading, where
+this dialect derives an anchor and cmark does not — this parser spent something
+on the isomorph half the reference never spent, and it lands in `twinCore`:
+Grammar's denominator is inflated so it reads low, Shape's numerator is inflated
+so it reads high, and Same-job is untouched. The twin declares the field under
+`carries`, the driver prints a dash in those two columns rather than a number it
+would have to caveat, and the report says which pairs were suppressed and why.
+`pair-ldirective-dialect` is the one that needs this: nothing else in CommonMark
+is a leaf block whose marker run becomes a field and whose rest of line becomes
+inlines.
 
 Neither half of a pair joins `mixed-commonmark` or `mixed-extended`. A pair is a
 pair of isolation probes, written to mirror each other; a document written twice
@@ -398,40 +433,68 @@ For a **declaration** pair, where there is no identical tree to compare:
   as one stays a paragraph, and the count doubles.
 - where the two sides build the **same kind**, an equal count proves nothing on
   its own (an item whose marker went unread is still a list item), so the pair
-  must name the field that distinguishes them and the audit refuses a pair that
-  does not.
+  must name either a `binding` or a `fallback`, and the audit refuses a pair
+  that names neither.
 - where a pair names a `binding`, every node of the kind on a declaring side
   must carry it, and a side that declares *out of band* must carry none at all.
   That asymmetry is the anchor pair: an explicit anchor binds on the block it
   sits on, a link reference definition binds into the reference map and leaves
-  no node.
+  no node. `declares` takes one field name where both sides spell the binding
+  the same way, and **one per side** where they do not — a callout binds its
+  `variant` and a task item binds its `marker`, and naming only one of them
+  would leave the other side's recognition unproven.
+- where a pair names a `fallback`, that kind must be **absent from both
+  documents**. It is the other way a same-kind pair can be held: a construct
+  that degrades into a different kind when it stops being recognised — a simple
+  table whose dash run goes unread is a paragraph, not a table — makes the count
+  evidence after all, and what makes it evidence is that the fallback never
+  appears. A task marker has no fallback in this sense, which is why that pair
+  names a binding instead.
+- where a pair names `alsoCounts`, those kinds must match too. A pair's claim
+  can name more than one construct, and counting only the primary one leaves the
+  rest unheld: the grid-cell pair counts `Paragraph` alongside the cell because
+  *block parsing of the contents* is the second half of the criterion, and the
+  specimen pair counts the **call** as well as the definition.
 
 Each of those fails when broken, which was verified by mutating the corpus
 rather than by reading the code.
 
 ### Constructs with no isomorph
 
-A construct with no row in the pair table has no CommonMark or GFM production of
-the same shape, and the reason is recorded per construct rather than waved at.
-Read off the grammars:
+A construct with no row in the pair table has no row for one of **two** reasons,
+and reading them as one is what kept this list wrong for months. The reasons live
+in `corpus.json`, not here and not in the report: `scripts/benchmark-stages.mjs`
+quotes them out of the manifest when it writes the report, so a proof that falls
+stops being published the moment it is withdrawn. A hard-coded list went stale
+the instant one did — and ten fell in a single day, leaving this file asserting
+that a grid table, a definition list, a callout and a directive could not pair
+while the manifest already held the pairs for all four.
 
-| Construct | Why nothing pairs with it |
+- **`unpairable`** is a *proof*: an argument off the two grammars that has been
+  attacked and held. There are three, and one of them (`inline footnote`) carries
+  its own caveat that nobody but its author has attacked it.
+- **`openCandidates`** is a *candidate*: a pair that has not been built and has
+  not been proved impossible. It is a bound today because nobody has settled it,
+  which is a weaker sentence and is printed as one.
+
+What makes a proof survive is its **shape**. Nine of the ten that fell were
+single-construct assertions — "no reference *table* has block cells", "CommonMark's
+only *fence* opens a leaf" — which answer whether the reference has a
+*construct* of this kind rather than a *production* of this shape. The one that
+held (`inline footnote`) is an exhaustive enumeration over every inline
+production of both grammars. Write the enumeration or do not write the proof.
+
+Known reference productions that the fallen proofs did not expect, kept here so
+the next proof has to get past them:
+
+| The reference does have | which is why |
 | --- | --- |
-| grid table | a grid cell holds a paragraph, a pipe cell holds inlines |
-| definition list | the definition groups a term's inlines with a following block under one node |
-| callout | it consumes a token off its container's first line into the container's own fields and parses the rest as a separate inline list |
-| directive | it is a fenced *container*; CommonMark's only fence opens a leaf whose body is literal |
-| properties envelope | recognised once, at the document's start, so there is no count to scale |
-| citation group | it decomposes one bracket group into a list of keyed items with parsed affixes; the **bare** key is a different production and does pair, as `pair-cite-dialect` |
-| derived anchor | a heading whose identifier comes from its own text declares nothing — there is no name in the source to bind, and no production derives one |
-| `==a====b==` ↔ `**a****b**` | our run splitter divides adjacent closers, CommonMark's does not |
-| comment ↔ strong emphasis | strong parses its body, a comment keeps it literal |
-
-The last three rows are the ones worth keeping in view: each looked isomorphic
-and was not. The derived anchor is the sharpest case in the table — the
-*explicit* anchor declares a name and therefore pairs, while the derived one has
-no isomorph at all, which is why `pair-anchor-dialect` is in the pair table and
-`block-heading` is a bound.
+| promotion by what *follows* — GFM's delimiter row claims the paragraph line above it | the leading table caption pairs |
+| a first line's inlines grouped with following indented blocks under one node — a loose list item | the definition list pairs |
+| a per-line positional cut whose remainder is parsed as **blocks** — a list item's indent width | the grid cell pairs |
+| a container category with a start condition, a continuation condition and block contents | the container directive pairs |
+| a bracketed token at the start of a container's first line taken into a field — GFM's task marker | the callout pairs |
+| a paragraph annihilated into a declaration — CommonMark's link reference definition | the anchor pair works at all |
 
 **What is never a reason to refuse a pair** is that the two sides materialise
 different numbers of nodes. That is reasoning off the implementations, which is
@@ -440,6 +503,14 @@ ratio reports. The bare citation key was nearly left a bound on exactly that
 ground — one `Link` over a `Text` against a `Cite` over a `Citation` with two
 affix slots — and pairing it is what turned that asymmetry into a number
 (Grammar 1.13x) instead of an excuse.
+
+Two **substitution** pairs were tried and do not hold, which is a different
+failure from having no isomorph at all:
+
+| Tried | Why the bytes are not the same job |
+| --- | --- |
+| `==a====b==` ↔ `**a****b**` | our run splitter divides adjacent closers, CommonMark's does not |
+| comment ↔ strong emphasis | strong parses its body, a comment keeps it literal |
 
 A kind's own bookkeeping may differ where the manifest names it: `Formula`
 records which spelling opened it in `mode`, which a code span has no equivalent
@@ -469,6 +540,13 @@ A case carrying one is reported as a **bound** — it is not ranked, and it is n
 in any group's median — unless the corpus pairs it, because a pair is exactly
 the thing that puts the same declaration in front of the reference. That is why
 `pair-anchor-dialect` carries `anchor` and still gets a ratio.
+
+A field on the **isomorph** half is a different case with a different cost. It
+does not touch the same-job ratio, because `twinCore` cancels out of it; it
+costs Grammar and Shape, which are suppressed for that pair. *The three numbers*
+above writes the algebra out. `pair-ldirective-common` is the one twin that
+carries a field, and it carries `anchor` because this dialect derives one on
+every heading.
 
 The audit checks the declarations against the parser's dump **in both
 directions**. A missing declaration publishes a bound as a comparison, which is
