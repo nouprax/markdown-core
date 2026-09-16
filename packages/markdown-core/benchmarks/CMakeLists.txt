@@ -58,7 +58,7 @@ if(MARKDOWN_CORE_CMARK_GFM_SOURCE_DIR AND MARKDOWN_CORE_CMARK_GFM_BUILD_DIR)
     endif()
     # Re-resolved and static-only for the same reasons as cmark above.
     unset(MARKDOWN_CORE_CMARK_GFM_LIBRARY CACHE)
-    unset(MARKDOWN_CORE_CMARK_GFM_EXTENSIONS_LIBRARY CACHE)
+    unset(MARKDOWN_CORE_CMARK_GFM_PLUGINS_LIBRARY CACHE)
     set(_markdown_core_find_suffixes "${CMAKE_FIND_LIBRARY_SUFFIXES}")
     set(CMAKE_FIND_LIBRARY_SUFFIXES "${CMAKE_STATIC_LIBRARY_SUFFIX}")
     find_library(
@@ -67,7 +67,7 @@ if(MARKDOWN_CORE_CMARK_GFM_SOURCE_DIR AND MARKDOWN_CORE_CMARK_GFM_BUILD_DIR)
         PATHS "${MARKDOWN_CORE_CMARK_GFM_BUILD_DIR}/src"
         NO_DEFAULT_PATH REQUIRED)
     find_library(
-        MARKDOWN_CORE_CMARK_GFM_EXTENSIONS_LIBRARY
+        MARKDOWN_CORE_CMARK_GFM_PLUGINS_LIBRARY
         NAMES cmark-gfm-extensions
         PATHS "${MARKDOWN_CORE_CMARK_GFM_BUILD_DIR}/extensions"
         NO_DEFAULT_PATH REQUIRED)
@@ -79,6 +79,6 @@ if(MARKDOWN_CORE_CMARK_GFM_SOURCE_DIR AND MARKDOWN_CORE_CMARK_GFM_BUILD_DIR)
                 "${MARKDOWN_CORE_CMARK_GFM_SOURCE_DIR}/extensions" "${MARKDOWN_CORE_CMARK_GFM_BUILD_DIR}/src")
     target_compile_definitions(cmark_gfm_stage_runner PRIVATE CMARK_GFM_STATIC_DEFINE)
     # Extensions first: they call back into the core archive.
-    target_link_libraries(cmark_gfm_stage_runner PRIVATE "${MARKDOWN_CORE_CMARK_GFM_EXTENSIONS_LIBRARY}"
+    target_link_libraries(cmark_gfm_stage_runner PRIVATE "${MARKDOWN_CORE_CMARK_GFM_PLUGINS_LIBRARY}"
                                                          "${MARKDOWN_CORE_CMARK_GFM_LIBRARY}")
 endif()

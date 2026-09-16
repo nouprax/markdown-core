@@ -63,9 +63,9 @@ jobs:
               run: |
                   sudo apt-get update
                   sudo apt-get install --no-install-recommends --yes valgrind
-            - name: Build the pinned cmark oracle checkout
-              run: scripts/init-environment.sh --install oracle-cmark
-            - name: Measure both engines on the same corpus
+            - name: Build the pinned reference checkouts
+              run: scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm
+            - name: Measure every engine on the same corpus
               run: node scripts/benchmark-stages.mjs --scale 2
             - name: Publish the report to the run summary
               if: ${{ always() }}
