@@ -63,6 +63,22 @@ function oracle(name, binary, versionKey, commitKey) {
             `the ${name} oracle checkout is at ${head}, but ${name} ${version} is pinned to ${commit}; run: ${install}`
         );
     }
+    /* HEAD is not the tree. `--install` checks the commit out without cleaning
+     * what is already there, so an edited source file or a stale build sits at
+     * the pinned commit and this would certify every pair against it while
+     * calling the result pinned. The benchmark driver rejects a dirty oracle
+     * for the same reason and this is the same check, untracked files
+     * included: a stray `src/config.h` is not tracked and not ignored by
+     * cmark's .gitignore, and the source directory is on the include path
+     * ahead of the build directory, so it shadows the generated header and the
+     * binary is no longer the pinned commit while a tracked-only check calls
+     * the tree clean. */
+    const dirty = execFileSync("git", ["-C", checkout, "status", "--porcelain", "--untracked-files=all"], {
+        encoding: "utf8"
+    }).trim();
+    if (dirty) {
+        fail(`the ${name} oracle checkout has local modifications, so it is not ${name} ${version}:\n${dirty}`);
+    }
     return file;
 }
 
@@ -116,6 +132,12 @@ function main() {
             : reference.html;
 
     const failures = [];
+    /* Failed PAIRS, not failure messages. One pair appends a message per
+     * construct it counts plus one per absence, so subtracting the message
+     * count reports fewer pairs checked than were checked and goes negative
+     * once a pair breaks on more kinds than there are pairs. Every message is
+     * still printed; only the tally reads this. */
+    const broken = new Set();
     const declarations = manifest.logicalIsomorphs ?? [];
     for (const pair of declarations) {
         /* EVERY construct the pair's claim counts, not only the primary one. A
@@ -138,6 +160,7 @@ function main() {
                         `is supposed to have built it`
                 );
                 broke = true;
+                broken.add(pair.case);
                 continue;
             }
             const twin = ours(pair.isomorph, kind);
@@ -149,6 +172,7 @@ function main() {
                         `reference did the same job on this document, and it did not`
                 );
                 broke = true;
+                broken.add(pair.case);
                 continue;
             }
             shown.push(`${kind}=${twin}`);
@@ -173,6 +197,7 @@ function main() {
                         `it. An absence this parser alone confirms is half an invariant`
                 );
                 broke = true;
+                broken.add(pair.case);
                 continue;
             }
             const built = theirs(pair.isomorph, kind, declared);
@@ -183,6 +208,7 @@ function main() {
                         `pair claims it does`
                 );
                 broke = true;
+                broken.add(pair.case);
                 continue;
             }
             shown.push(`${kind}=0`);
@@ -192,7 +218,7 @@ function main() {
     }
 
     process.stdout.write(
-        `\n  pairs checked against the reference ${declarations.length - failures.length}/${declarations.length}\n`
+        `\n  pairs checked against the reference ${declarations.length - broken.size}/${declarations.length}\n`
     );
     if (failures.length) {
         process.stderr.write(`corpus pair audit FAILED\n    ${failures.join("\n    ")}\n`);
