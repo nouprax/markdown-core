@@ -916,7 +916,7 @@
         },
         {
             "production": "formula paragraph promotion",
-            "proof": "A paragraph whose only content is one standalone formula becomes a FormulaBlock. That is not a syntactic production at all -- nothing in the source opens or closes it -- but a promotion of a finished node decided by what its single child turned out to be. Neither grammar re-kinds a block from the identity of its sole child; CommonMark's one shape-driven re-kinding, the setext heading, is triggered by a following underline in the SOURCE, not by the content of the paragraph."
+            "proof": "NARROWED, because the reason first given was false. It said neither grammar re-kinds a block from the identity of its content, and that CommonMark's one shape-driven re-kinding, the setext heading, is triggered by a following underline in the SOURCE rather than by content. CommonMark does have content-driven paragraph disposal: a paragraph whose only content is a link reference definition is ANNIHILATED at close, in cmark and here alike, verified on both. So 'examine a finished paragraph's content and dispose of it' is a production both grammars have. What is still unsettled, and is the only thing left holding this apart: the disposal produces a node here -- `$$x$$` alone becomes a FormulaBlock -- and produces NOTHING there, and the subsequent operations differ, one re-kinding a block and the other registering a name in the reference map. Those are weaker grounds than any pair in this corpus rests on, so treat this as open rather than settled."
         },
         {
             "production": "anonymous and reset specimen definitions -- `(@) body`, `(5@) body`",
