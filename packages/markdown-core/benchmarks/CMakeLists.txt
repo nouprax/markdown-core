@@ -18,15 +18,6 @@ target_include_directories(markdown_core_stage_runner PRIVATE "${CMAKE_CURRENT_S
 # the measured binary regardless of the library's exported surface.
 target_link_libraries(markdown_core_stage_runner PRIVATE libmarkdown-core-public-static)
 
-# The same runner over the same driver source, linked against the engine twin
-# that omits the auto-anchor phase. Two binaries differing in one define is what
-# lets the report state a heading ratio as a comparison: both sides built the
-# same tree from the same bytes, so nothing has to be subtracted from either.
-add_executable(markdown_core_noanchor_stage_runner stage_runner.c markdown_core_stages.c)
-target_include_directories(markdown_core_noanchor_stage_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
-                                                                       "${CMAKE_CURRENT_SOURCE_DIR}/../include")
-target_link_libraries(markdown_core_noanchor_stage_runner PRIVATE libmarkdown-core-noanchor-static)
-
 if(MARKDOWN_CORE_CMARK_SOURCE_DIR AND MARKDOWN_CORE_CMARK_BUILD_DIR)
     if(NOT EXISTS "${MARKDOWN_CORE_CMARK_SOURCE_DIR}/cmark.h")
         message(FATAL_ERROR "MARKDOWN_CORE_CMARK_SOURCE_DIR does not hold cmark.h: ${MARKDOWN_CORE_CMARK_SOURCE_DIR}")

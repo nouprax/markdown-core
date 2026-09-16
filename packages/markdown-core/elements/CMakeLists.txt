@@ -162,29 +162,6 @@ if(MARKDOWN_CORE_STATIC OR MARKDOWN_CORE_SHARED)
     if(NOT MARKDOWN_CORE_SHARED)
         set(MARKDOWN_CORE_EXPORT_TARGET ${PUBLIC_STATIC_LIBRARY})
     endif()
-
-    # A MEASUREMENT-ONLY twin of the engine above: same sources, same flags, one
-    # extra define that omits the auto-anchor phase. It exists so a profile can
-    # run this parser and a reference over the SAME feature set, instead of
-    # measuring both and subtracting the difference afterwards -- subtraction
-    # cannot see second-order effects, and no list of call edges ever finishes.
-    #
-    # It is never installed, never exported, and built only under
-    # MARKDOWN_CORE_BENCHMARKS. The shipped library keeps the promise in
-    # markdown_core.h: one dialect, every feature always on, no options.
-    if(MARKDOWN_CORE_BENCHMARKS)
-        add_library(libmarkdown-core-noanchor-static STATIC ${MARKDOWN_CORE_ENGINE_SOURCES} ${LIBRARY_SOURCES})
-        target_compile_definitions(
-            libmarkdown-core-noanchor-static
-            PUBLIC MARKDOWN_CORE_STATIC_DEFINE MARKDOWN_CORE_ELEMENTS_STATIC_DEFINE
-            PRIVATE MARKDOWN_CORE_BENCH_OMIT_ANCHORS)
-        set_target_properties(libmarkdown-core-noanchor-static PROPERTIES OUTPUT_NAME "markdown-core-noanchor"
-                                                                          POSITION_INDEPENDENT_CODE ON)
-        target_include_directories(
-            libmarkdown-core-noanchor-static
-            PRIVATE ${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
-            PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>)
-    endif()
 endif()
 
 set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_NO_WARNINGS ON)

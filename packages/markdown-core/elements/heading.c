@@ -71,15 +71,11 @@ void markdown_core_block_reserve_node_anchor(markdown_core_parser *parser, ancho
 }
 
 void markdown_core_block_prepare_headings(markdown_core_parser *parser, markdown_core_heading_collection *headings) {
-#if !defined(MARKDOWN_CORE_BENCH_OMIT_ANCHORS)
-    /* Source order decides which of two colliding slugs keeps the bare anchor
-     * and which gets the `-1` suffix. With anchors omitted nothing reads it. */
     if (!markdown_core_order_source_entries(parser->mem, headings->values, headings->count, sizeof(*headings->values),
                                             markdown_core_source_key)) {
         parser->oom = true;
         return;
     }
-#endif
     /* The reference map compares explicitness and original source positions,
      * independently of mapped-input scheduling and declaration closure order. */
     for (size_t i = 0; i < headings->count && !parser->oom; i++) {
@@ -318,12 +314,6 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
     if (!parser->oom && !inline_state.oom) {
         markdown_core_inline_finish_citation_tokens(&inline_state, &inline_state.citations);
         markdown_core_inline_process_delimiters(parser, &inline_state, 0, NULL);
-#if !defined(MARKDOWN_CORE_BENCH_OMIT_ANCHORS)
-        /* Every heading is registered as an implicit reference label. cmark has
-         * no counterpart, so a measurement build that compares the two on the
-         * same feature set must not do it. The heading's own inline parse above
-         * is NOT part of this: `cmark_parse_inlines` runs that too, and it
-         * stays in under every build. */
         markdown_core_chunk label = {inline_state.input.data, inline_state.heading_label_end, 0};
         if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
@@ -342,7 +332,6 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
                 heading->resource = record ? record->resource : NULL;
             }
         }
-#endif
     }
     markdown_core_inline_clear_inlines(&inline_state);
 }

@@ -92,23 +92,6 @@ const ENGINES = {
             buffer_to_ast: { caller: "bench_parse_document", callee: "cmark_parser_finish" }
         }
     },
-    /* This parser again, built from the same sources with one define that omits
-     * the auto-anchor phase. cmark derives no slug and registers no implicit
-     * heading reference, so on a document holding a heading the default build is
-     * not doing cmark's job. The way to compare them is to RUN the same feature
-     * set, not to measure both and subtract the difference: subtraction cannot
-     * see second-order effects -- an allocation not made changes the heap every
-     * later allocation meets -- and a list of call edges is never demonstrably
-     * finished. Two binaries differing in one define have neither problem, and
-     * the heading-free cases measure equal under both, which is a control the
-     * measurement produces rather than a claim this report makes. */
-    "markdown-core-noanchor": {
-        runner: "packages/markdown-core/benchmarks/markdown_core_noanchor_stage_runner",
-        stages: {
-            source_to_buffer: { caller: "markdown_core_parse_document_with_mem", callee: "S_parse_source" },
-            buffer_to_ast: { caller: "markdown_core_parse_document_with_mem", callee: "S_finish_parse" }
-        }
-    },
     /* Same stage split, same API, same codebase -- and it implements tables,
      * strikethrough, bare autolinks, task lists and footnotes, so for those
      * constructs a ratio against it compares two parsers doing one job. */
@@ -1957,17 +1940,7 @@ function main() {
          * reference that reads the document as paragraphs is not a second
          * opinion, and paying callgrind for one would buy a number nobody can
          * read. */
-        /* The GFM reference is only meaningful where the document holds a GFM
-         * construct. The anchor-free twin is only meaningful where a ratio is
-         * published at all, and it is measured on EVERY such case rather than
-         * only the ones holding a heading: on a heading-free document it must
-         * come out equal to the default build, and that equality is a control
-         * the measurement produces rather than a claim the report makes. */
-        const applicable = Object.keys(ENGINES).filter((engine) => {
-            if (engine === "cmark-gfm") return document.gfm === true;
-            if (engine === "markdown-core-noanchor") return document.dialect === "commonmark" || document.gfm === true;
-            return true;
-        });
+        const applicable = Object.keys(ENGINES).filter((engine) => engine !== "cmark-gfm" || document.gfm === true);
         for (const engine of applicable) {
             const measured = measure(profile, engine, document, options.out);
             if (measured.receiptBytes !== document.bytes) {
