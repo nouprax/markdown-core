@@ -896,15 +896,11 @@
         },
         {
             "production": "leaf directive `::name[label]{attrs}`",
-            "proof": "A one-line block carrying a raw name, a label parsed as INLINE content, raw attributes, and no block content. The only CommonMark one-line block whose body is parsed as inline content is the ATX/setext heading, and the corollary above removes the heading from the corpus's vocabulary. A thematic break owns nothing, a link reference definition parses no inlines and builds no node, and an HTML block takes its body literally. No candidate remains."
+            "proof": "A one-line block carrying a raw name, a label parsed as INLINE content, raw attributes, and no block content. The only CommonMark one-line block whose body is parsed as inline content is the ATX/setext heading, and the corollary above removes the heading from the corpus's vocabulary. A thematic break owns nothing, a link reference definition parses no inlines and builds no node, and an HTML block takes its body literally. No candidate remains. WEAKER THAN IT READS: this closes the heading candidate but does not dispose of the one-line PARAGRAPH, which is also a one-line block whose body is parsed as inline content. The argument that a marker-triggered production differs from a fallback one is the argument that would close it, and it has not actually been made here."
         },
         {
             "production": "container directive `:::name ... :::`",
             "proof": "A container block whose body is parsed as BLOCKS, delimited by an opening fence line and a closer of at least the same length. CommonMark's only fenced construct is the code block, which is a LEAF whose body is literal; its two container blocks, the block quote and the list item, determine their body line by line from a per-line prefix rather than from a terminator line. Fence-delimited against prefix-determined is a difference in the continuation rule, not in a terminal."
-        },
-        {
-            "production": "definition list",
-            "proof": "A `Definition` owns a term as an inline run and a body as a block sequence, under one node. CommonMark has no production that groups a preceding line's inlines with a following block under a single node: a list item and a block quote own blocks only, a setext heading owns inlines only, and a link reference definition owns raw strings and builds no node at all."
         },
         {
             "production": "inline footnote `^[body]`",
@@ -932,6 +928,13 @@
             "production": "multiline table, and the grid table with it",
             "whyTheEarlierProofWasWrong": "Both were refused because their cells hold BLOCK content and no reference table has block cells. That answers the wrong question. The criterion is not whether a reference has a TABLE of this shape, it is whether a reference has a PRODUCTION of this shape -- and a cell holding blocks is per-line positional slicing followed by block parsing, which both CommonMark containers do. A block quote strips `> ` from each line, a list item strips an indent width established by its marker, a multiline cell takes a column range established by the segmented boundary; all three join the remainders and parse them as blocks. The trees show it: a one-column multiline cell and a list item both produce Paragraph > Text, SoftBreak, Text with identical content.",
             "candidate": "A one-column multiline table of N rows against a bullet list of N items. What is genuinely unequal, and must be stated rather than hidden: the table carries three container levels (TableBody, TableRow, TableCell) where the list carries one (ListItem). That is node materialisation and is NOT grounds to refuse a pair -- it is the measurement. What still needs deciding before this is built is whether the 2D case pairs at all: an N-column table slices each line into N ranges established by one boundary line, and N parallel lists are not one production.",
+            "status": "OPEN -- to be built and tested, not asserted either way"
+        },
+        {
+            "production": "definition list",
+            "whyTheEarlierProofWasWrong": "It said CommonMark has no production that groups a preceding line's inlines with a following block under a single node. A LOOSE LIST ITEM does exactly that. Side by side: a Definition owns DefinitionTerm(Text \"Markdown\") plus DefinitionBody(Paragraph, Paragraph); a loose ListItem owns Paragraph(\"Markdown\") plus Paragraph, Paragraph. Both are a first line parsed as inline content with block content bound to it by indentation, under one node. That the definition materialises the term and body as owned groups where the list item keeps flat children is node materialisation, which this corpus's own rule says is never grounds to refuse a pair.",
+            "candidate": "`term\\n: body` against `- term\\n\\n  body`, sized by count of definitions against list items.",
+            "whatIsGenuinelyUnsettled": "Where the marker sits. A list item is recognised at its own first line; a definition promotes the PRECEDING line when the `: ` marker arrives on the next one, so it needs lookahead. That is a real difference in the recognition and it is the thing to decide. It is not decisive on its own, because GFM already has promotion-by-what-follows: a pipe table's header is a paragraph line promoted by the delimiter row beneath it.",
             "status": "OPEN -- to be built and tested, not asserted either way"
         }
     ]
