@@ -394,7 +394,8 @@
             "name": "pair-anchor-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "A paragraph carrying its own identifier #anchor-{n}#\n\n"
+                "unit": "A paragraph carrying its own identifier #anchor-{n}#\n\n",
+                "scales": "block identifier declarations"
             },
             "carries": ["anchor"],
             "builds": ["Paragraph"]
@@ -404,7 +405,8 @@
             "dialect": "commonmark",
             "counted": {
                 "unit": "A paragraph carrying its own identifier\n\n[anchor-{n}]: #anchor-{n}\n\n",
-                "match": "pair-anchor-dialect"
+                "match": "pair-anchor-dialect",
+                "scales": "link reference definitions"
             },
             "builds": ["Paragraph"]
         },
@@ -413,7 +415,8 @@
             "dialect": "extended",
             "generated": {
                 "unit": "(@spec-{n}) A numbered example.\n\n",
-                "tail": "\nThe document body.\n"
+                "tail": "\nThe document body.\n",
+                "scales": "specimen declarations"
             },
             "builds": ["Specimen"]
         },
@@ -423,7 +426,8 @@
             "counted": {
                 "unit": "[^spec-{n}]: A numbered example.\n\n",
                 "match": "pair-specimen-dialect",
-                "tail": "\nThe document body.\n"
+                "tail": "\nThe document body.\n",
+                "scales": "footnote definitions"
             },
             "gfm": true,
             "builds": ["Footnote"]
@@ -432,7 +436,8 @@
             "name": "pair-task-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "- [~] Task item {n}\n"
+                "unit": "- [~] Task item {n}\n",
+                "scales": "task-marked list items"
             },
             "builds": ["ListItem"]
         },
@@ -441,7 +446,8 @@
             "dialect": "extended",
             "counted": {
                 "unit": "- [x] Task item {n}\n",
-                "match": "pair-task-dialect"
+                "match": "pair-task-dialect",
+                "scales": "task-marked list items"
             },
             "gfm": true,
             "builds": ["ListItem"]
@@ -450,7 +456,8 @@
             "name": "pair-span-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "A [body {n}]{.c} in prose.\n\n"
+                "unit": "A [body {n}]{.c} in prose.\n\n",
+                "scales": "bracketed spans"
             },
             "builds": ["Span"]
         },
@@ -459,7 +466,8 @@
             "dialect": "commonmark",
             "counted": {
                 "unit": "A [body {n}](/c) in prose.\n\n",
-                "match": "pair-span-dialect"
+                "match": "pair-span-dialect",
+                "scales": "inline links"
             },
             "builds": ["Link"]
         },
@@ -467,7 +475,8 @@
             "name": "pair-xlink-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "See [[target-{n}]] here.\n\n"
+                "unit": "See [[target-{n}]] here.\n\n",
+                "scales": "cross links"
             },
             "builds": ["CrossLink"]
         },
@@ -476,7 +485,8 @@
             "dialect": "commonmark",
             "counted": {
                 "unit": "See [](/target-{n}) here.\n\n",
-                "match": "pair-xlink-dialect"
+                "match": "pair-xlink-dialect",
+                "scales": "inline links"
             },
             "builds": ["Link"]
         },
@@ -625,7 +635,7 @@
                 "declares": "anchor",
                 "sides": ["case"]
             },
-            "claim": "An explicit anchor DECLARES a name and binds it to the block it sits on. A link reference definition declares a name and binds it to a target. Same grammar shape -- one block, one name-to-target binding -- and the same subsequent operation, which is the binding entering the document's table of names. The two spellings differ in length, so the pair is generated to an equal COUNT of declarations rather than to equal bytes, and each name is indexed so both sides bind the same number of distinct identifiers. DERIVED anchors are deliberately not paired here: a heading whose anchor comes from its own text declares nothing, and CommonMark has no production that derives a binding, so there is no isomorph to write and block-heading stays a bound."
+            "claim": "An explicit anchor DECLARES a name and binds it to the block it sits on; a link reference definition declares a name and binds it to a target. Same grammar shape -- one block, one name-to-target binding -- and the same subsequent operation at the level of the language: the name becomes addressable, so `[[Note#^id]]` resolves the one and `[id]` resolves the other. Both are read off the grammars. What each implementation then DOES behind that binding -- when it allocates, what it defers, what it skips -- is not part of the pairing; it is the thing being measured, and a pair rewritten until both engines run the same machinery would read 1.00x and measure nothing. DERIVED anchors are deliberately not paired: a heading whose anchor comes from its own text declares nothing, there is no name in the source to bind, and CommonMark has no production that derives one -- so block-heading has no isomorph and is reported as a bound. The two spellings differ in length, so the pair is generated to an equal COUNT of declarations rather than to equal bytes, and each name is indexed so both sides bind the same number of distinct identifiers."
         },
         {
             "case": "pair-specimen-dialect",

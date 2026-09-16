@@ -1082,8 +1082,15 @@ function buildCorpus(options, manifest) {
                  * the case was renamed to prevent. */
                 growth: entry.chain
                     ? (entry.scales ?? "structure")
-                    : entry.counted || entry.generated
-                      ? "declarations"
+                    : (entry.generated ?? entry.counted)
+                      ? /* Named by the case, because a generated case scales
+                         * whatever its unit holds and that is not one thing:
+                         * the anchor pair scales declarations, the span pair
+                         * scales spans and links. A single label for the mode
+                         * would describe the anchor pair and misdescribe the
+                         * rest, in the one column that exists to say which
+                         * dimension grew. */
+                        ((entry.generated ?? entry.counted).scales ?? "constructs")
                       : "documents",
                 scale,
                 units: built.length,
