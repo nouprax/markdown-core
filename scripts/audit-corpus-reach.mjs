@@ -80,6 +80,29 @@ function dialectKinds() {
  * enumerated. The audit would then pass on the previous revision's corpus,
  * which is the one failure a coverage gate must not have. Writing it costs a
  * fraction of a second, so there is nothing to reuse it for. */
+/* A sample with no case of its own is a construct the benchmark can no longer
+ * profile in isolation.
+ *
+ * `mixed-extended` concatenates every sample, so deleting a dedicated case
+ * leaves its construct still parsed, still building its kinds, and still
+ * invisible to any law that asks whether SOME document did it -- while the one
+ * document that could have shown that construct's cost on its own is gone. The
+ * check is structural because it can be: the manifest either gives a sample a
+ * case to itself or it does not. */
+function samplesWithoutTheirOwnCase() {
+    const manifest = JSON.parse(
+        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
+    );
+    const dedicated = new Set();
+    for (const entry of manifest.cases ?? []) {
+        if (entry.samples?.length === 1) dedicated.add(entry.samples[0]);
+    }
+    return fs
+        .readdirSync(path.join(root, "packages/markdown-core/benchmarks/samples"))
+        .filter((name) => name.endsWith(".md") && !dedicated.has(name))
+        .sort();
+}
+
 function corpusDocuments(directory) {
     execFileSync(
         "node",
@@ -115,8 +138,9 @@ async function kindsProduced(cli, documents) {
          * asking these for a tree costs gigabytes of RSS in the child whatever
          * this end does with the stream -- enough to lose a hosted runner. They
          * are shapes for depth, not for constructs, and contribute no kind that
-         * the other cases do not build; the grammar pass below still runs
-         * them, through a binary that never dumps. */
+         * the other cases do not build. They are still PARSED below, through a
+         * binary that never dumps -- only the tree is skipped, never the
+         * document. */
         if (path.basename(document).startsWith("chain-")) continue;
         const child = spawn(cli, [document], { stdio: ["ignore", "pipe", "ignore"], timeout: 600_000 });
         const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
@@ -263,6 +287,9 @@ const documents = corpusDocuments(corpusDir);
 process.stdout.write(`Corpus reach over ${documents.length} documents\n\n`);
 
 const required = requiredGrammars();
+const sampleCount = fs
+    .readdirSync(path.join(root, "packages/markdown-core/benchmarks/samples"))
+    .filter((name) => name.endsWith(".md")).length;
 const driven = new Set();
 const undriven = [];
 let unbuilt;
@@ -279,9 +306,19 @@ let unbuilt;
         /* The census ran the dumper, whose lines are not the parse phase, so
          * its counters are discarded before anything is measured. */
         resetCounters(buildDir);
-        /* Only the named cases are run here, each alone with the counters
-         * reset, so what that document drives is separated from what the
-         * corpus drives together. */
+        /* Every document is parsed, including the complexity shapes the census
+         * skips: a `chain-*` case that starts crashing or timing out is a
+         * benchmark that will fail on its own adversarial inputs, and skipping
+         * the tree is not a reason to skip the parse. */
+        for (const document of documents) {
+            requireClean(
+                spawnSync(binaries.parse, ["--document", document], { stdio: "ignore", timeout: 600_000 }),
+                "the parse runner",
+                document
+            );
+        }
+        /* Then the named cases, each alone with the counters reset, so what that
+         * document drives is separated from what the corpus drives together. */
         for (const [grammar, name] of required) {
             const document = documents.find((file) => path.basename(file) === `${name}.x1.md`);
             if (!document) {
@@ -306,9 +343,11 @@ let unbuilt;
 }
 process.stdout.write("\n");
 
+const orphaned = samplesWithoutTheirOwnCase();
 process.stdout.write(
     `  node kinds built     ${kinds.length - unbuilt.length}/${kinds.length}\n` +
-        `  grammars driven      ${required.length - undriven.length}/${required.length}\n`
+        `  grammars driven      ${required.length - undriven.length}/${required.length}\n` +
+        `  samples with a case  ${sampleCount - orphaned.length}/${sampleCount}\n`
 );
 
 if (options.json) {
@@ -326,6 +365,12 @@ if (options.json) {
 }
 
 const failures = [];
+if (orphaned.length) {
+    failures.push(
+        `these samples have no case of their own, so the benchmark cannot profile them apart from ` +
+            `the concatenation they are embedded in: ${orphaned.join(", ")}`
+    );
+}
 if (unbuilt.length) {
     failures.push(
         `the corpus never builds these node kinds, so the staged profile says nothing about the grammars ` +
