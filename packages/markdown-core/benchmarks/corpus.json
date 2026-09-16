@@ -414,8 +414,7 @@
             "name": "pair-specimen-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "(@spec-{n}) A numbered example.\n\n",
-                "tail": "\nThe document body.\n",
+                "unit": "As @spec-{n} shows.\n\n(@spec-{n}) A numbered example.\n\n",
                 "scales": "specimen declarations"
             },
             "builds": ["Specimen"]
@@ -424,9 +423,8 @@
             "name": "pair-specimen-common",
             "dialect": "extended",
             "counted": {
-                "unit": "[^spec-{n}]: A numbered example.\n\n",
+                "unit": "As [^spec-{n}] shows.\n\n[^spec-{n}]: A numbered example.\n\n",
                 "match": "pair-specimen-dialect",
-                "tail": "\nThe document body.\n",
                 "scales": "footnote definitions"
             },
             "gfm": true,
@@ -664,7 +662,7 @@
                 "case": "Specimen",
                 "isomorph": "Footnote"
             },
-            "claim": "A specimen definition and a GFM footnote definition are the same production: a one-line opener carrying a label, then block content the opener owns, and a node that leaves ordinary document content for a side list the document holds. The dialect spec says the specimen goes to Document.specimens and leaves no implicit call in content; the footnote spec says the definition goes to Document.footnotes and not into the paragraph or the document's content. Same shape, same subsequent operation -- a label entering a table of names while the block it introduces leaves the content tree. The reference is cmark-gfm, which is the engine that has this production; cmark reads the paired document as prose. Both sides leave ordinary content EMPTY -- that is the production -- so each carries the same one-line tail, without which neither document has a content tree for the runner to accept."
+            "claim": "A specimen definition and a GFM footnote definition are the same production: a one-line opener carrying a label, then block content the opener owns, and a node that leaves ordinary document content for a side list the document holds. Both specs say so in the same words -- Document.specimens, Document.footnotes, not in the content. Each unit also carries a REFERENCE to its label, on both sides, because the two grammars differ on an unreferenced definition: this dialect keeps a specimen nobody cites, and GFM DISCARDS a footnote definition nobody calls. Without the call the reference side parsed to nothing at all and the denominator was cmark-gfm throwing text away -- a bound wearing the name of a comparison. With it, both sides hold one call in ordinary content and one definition owning block content in a side list, which is also the fuller match: declare, and refer."
         },
         {
             "case": "pair-task-dialect",
