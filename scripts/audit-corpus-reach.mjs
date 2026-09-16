@@ -89,6 +89,28 @@ function dialectKinds() {
  * document that could have shown that construct's cost on its own is gone. The
  * check is structural because it can be: the manifest either gives a sample a
  * case to itself or it does not. */
+/* What each dedicated case must still build, read from the manifest.
+ *
+ * Existence is not enough and the earlier rule only asked for that: a sample
+ * keeps its case while its CONTENT drifts, and the construct quietly stops
+ * being parsed. Rewriting `inline-embedded.md` as ordinary link text left the
+ * case in place, and `Embedded` still appeared elsewhere in the corpus, so
+ * every law passed with the dedicated image profile gone.
+ *
+ * Checked against the case's OWN document, which is why a shared kind still
+ * works as proof -- `Embedded` appearing in `inline-links-flat` says nothing
+ * about whether `inline-embedded` still builds one. */
+function declaredBuilds() {
+    const manifest = JSON.parse(
+        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
+    );
+    const declared = new Map();
+    for (const entry of manifest.cases ?? []) {
+        if (entry.builds?.length) declared.set(entry.name, entry.builds);
+    }
+    return declared;
+}
+
 function samplesWithoutTheirOwnCase() {
     const manifest = JSON.parse(
         fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
@@ -131,6 +153,7 @@ function corpusDocuments(directory) {
  * not, so the child is executed directly with its arguments as arguments. */
 async function kindsProduced(cli, documents) {
     const seen = new Set();
+    const perCase = new Map();
     for (const document of documents) {
         /* The complexity shapes are excluded, and only here. `chain-list-depth`
          * is 32,765 levels deep, and `markdown_core_document_dump` materialises
@@ -142,17 +165,22 @@ async function kindsProduced(cli, documents) {
          * binary that never dumps -- only the tree is skipped, never the
          * document. */
         if (path.basename(document).startsWith("chain-")) continue;
+        const mine = new Set();
         const child = spawn(cli, [document], { stdio: ["ignore", "pipe", "ignore"], timeout: 600_000 });
         const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
         for await (const line of lines) {
             const match = /([A-Za-z]+) scope=/.exec(line);
-            if (match) seen.add(match[1]);
+            if (match) {
+                seen.add(match[1]);
+                mine.add(match[1]);
+            }
         }
+        perCase.set(path.basename(document).replace(/\.x1\.md$/u, ""), mine);
         const [code, signal] = await new Promise((resolve) => child.on("close", (c, s) => resolve([c, s])));
         if (signal) fail(`the dump CLI was killed by ${signal} on ${path.basename(document)}`);
         if (code !== 0) fail(`the dump CLI exited ${code} on ${path.basename(document)}`);
     }
-    return seen;
+    return { seen, perCase };
 }
 
 /* A function only brushed by a guard clause is not a grammar the corpus drives,
@@ -292,6 +320,7 @@ const sampleCount = fs
     .filter((name) => name.endsWith(".md")).length;
 const driven = new Set();
 const undriven = [];
+const drifted = [];
 let unbuilt;
 {
     const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), "corpus-coverage-"));
@@ -301,8 +330,19 @@ let unbuilt;
          * stops building a kind still report every kind built, which is the
          * same staleness the corpus itself was fixed for. */
         const binaries = instrumentedBuild(buildDir);
-        const produced = await kindsProduced(binaries.dump, documents);
-        unbuilt = kinds.filter((kind) => !produced.has(kind));
+        const census = await kindsProduced(binaries.dump, documents);
+        unbuilt = kinds.filter((kind) => !census.seen.has(kind));
+        for (const [name, expected] of declaredBuilds()) {
+            const built = census.perCase.get(name);
+            if (!built) {
+                drifted.push(`${name} declares what it builds but the corpus holds no document for it`);
+                continue;
+            }
+            const missing = expected.filter((kind) => !built.has(kind));
+            if (missing.length) {
+                drifted.push(`${name} no longer builds ${missing.join(", ")}, so its sample stopped being that case`);
+            }
+        }
         /* The census ran the dumper, whose lines are not the parse phase, so
          * its counters are discarded before anything is measured. */
         resetCounters(buildDir);
@@ -347,7 +387,8 @@ const orphaned = samplesWithoutTheirOwnCase();
 process.stdout.write(
     `  node kinds built     ${kinds.length - unbuilt.length}/${kinds.length}\n` +
         `  grammars driven      ${required.length - undriven.length}/${required.length}\n` +
-        `  samples with a case  ${sampleCount - orphaned.length}/${sampleCount}\n`
+        `  samples with a case  ${sampleCount - orphaned.length}/${sampleCount}\n` +
+        `  cases still building ${declaredBuilds().size - drifted.length}/${declaredBuilds().size}\n`
 );
 
 if (options.json) {
@@ -365,6 +406,9 @@ if (options.json) {
 }
 
 const failures = [];
+if (drifted.length) {
+    failures.push(`these cases no longer build what they exist for:\n    ${drifted.join("\n    ")}`);
+}
 if (orphaned.length) {
     failures.push(
         `these samples have no case of their own, so the benchmark cannot profile them apart from ` +
