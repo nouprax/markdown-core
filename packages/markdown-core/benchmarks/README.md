@@ -520,6 +520,20 @@ output and requires it to agree — for **every** construct the pair counts, the
 claiming the reference built those too, and checking the container alone would
 pass a reference that emitted one list per unit and lost everything inside it.
 
+Substitution pairs are checked there too, and their claim is wider, so the
+check is. A substitution pair does not name a construct: its two halves are the
+same bytes under a change of marker and parse to the *same tree*, and the
+reach audit establishes that through this parser alone. The same-job ratio it
+feeds is `core / cmark` on the CommonMark half — so if this parser's CommonMark
+behaviour regressed, or a paired sample moved into a context cmark reads
+differently, both halves would still agree with each other and the report would
+divide by an engine doing a different job. The audit therefore compares the
+**whole kind census** of the CommonMark half against cmark's own output, kind by
+kind, using the `substitutionReference` map from our kind to cmark's element.
+A kind that map does not name is a failure rather than a skip, and an entry in
+it that no substitution pair builds is a failure too — a declaration nothing
+reaches rots exactly the way a stale `shared` entry does.
+
 A pair held by a `fallback` is checked there too, and for the same reason. Its
 invariant is an **absence**, and the reach audit can only establish an absence
 through *this* parser: if the reference stopped consuming the twin's construct —
