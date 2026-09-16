@@ -349,6 +349,10 @@ are declared as `logicalIsomorphs`:
 | headerless simple table | pipe table | `cmark-gfm` | the same row production, with the head left empty rather than designated |
 | one-column grid cell | loose list item | `cmark` | a per-line positional cut at a width established by an earlier line, remainder parsed as **blocks** |
 | `Table: X` before a table | GFM header line | `cmark-gfm` | a paragraph-shaped line already scanned, retroactively claimed by a table a later line announces |
+| `: X` after a table | a loose list item's continuation | `cmark` | a construct a blank line does not close, absorbing the next line that matches its continuation rule |
+| `:note[body]` | `![body](/note)` | `cmark` | a sigil-introduced inline leaf carrying one raw run and one bracketed run parsed as inlines |
+| `$$y$$` alone in a paragraph | `[a]: /b` alone in a paragraph | `cmark` | a paragraph whose entire accumulated content is one construct does not survive its own close |
+| `(5@label) body` | `[^label]: body` | `cmark-gfm` | the same as the plain specimen, with the digit run the plain form does not carry |
 
 The reference is whichever engine implements the isomorph's production, which is
 not always cmark: pairing a GFM production against cmark would divide by an
@@ -476,11 +480,13 @@ that a grid table, a definition list, a callout and a directive could not pair
 while the manifest already held the pairs for all four.
 
 - **`unpairable`** is a *proof*: an argument off the two grammars that has been
-  attacked and held. There are three, and one of them (`inline footnote`) carries
-  its own caveat that nobody but its author has attacked it.
+  attacked and held. There are five, and three of them carry the caveat that
+  nobody but their author has attacked them.
 - **`openCandidates`** is a *candidate*: a pair that has not been built and has
   not been proved impossible. It is a bound today because nobody has settled it,
-  which is a weaker sentence and is printed as one.
+  which is a weaker sentence and is printed as one. **It is empty.** Every
+  construct in the dialect is now either paired, or written in a syntax a
+  reference reads the same way, or carries one of the five proofs.
 
 What makes a proof survive is its **shape**. Nine of the ten that fell were
 single-construct assertions — "no reference *table* has block cells", "CommonMark's

@@ -648,6 +648,25 @@
             "builds": ["List", "ListItem"]
         },
         {
+            "name": "pair-idirective-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "A :note[body {n}] here.\n\n",
+                "scales": "inline directives"
+            },
+            "builds": ["Directive", "DirectiveLabel"]
+        },
+        {
+            "name": "pair-idirective-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "A ![body {n}](/note-{n}) here.\n\n",
+                "match": "pair-idirective-dialect",
+                "scales": "images"
+            },
+            "builds": ["Embedded"]
+        },
+        {
             "name": "pair-formulapromo-dialect",
             "dialect": "extended",
             "generated": {
@@ -1107,6 +1126,25 @@
             "claim": "The TRAILING table caption and a loose list item's continuation are the same production: a construct that a BLANK LINE DOES NOT CLOSE, absorbing the next line that matches its own continuation rule as a child holding inline content. A blank line closes every other leaf and container in CommonMark; a list is the exception, and this table is the dialect's. The continuation rules differ -- the caption's is the `: ` marker, the list item's is the content indent -- and that is what the pair measures. The earlier proof is the same one withdrawn for the leading form, and it was wrong here for a different reason: it said neither grammar adopts a FINISHED neighbouring block, but neither construct is finished at the blank line. The table is not done until the optional caption is resolved, exactly as a list is not done until a line arrives that is not one of its items. Both sides carry a thematic break to end the construct, and the twin carries three blocks per item against the table's three inline-bearing lines so the inline work matches. What holds the dialect side is the `absent` declaration: a caption line that went unread is a Paragraph, and this document must build none. The twin cannot be held the same way -- a list item holds Paragraphs whether or not it absorbed anything -- so the absence is declared per side rather than for both."
         },
         {
+            "case": "pair-idirective-dialect",
+            "isomorph": "pair-idirective-common",
+            "counts": {
+                "case": "Directive",
+                "isomorph": "Embedded"
+            },
+            "alsoCounts": [
+                {
+                    "case": "Text",
+                    "isomorph": "Text"
+                },
+                {
+                    "case": "Paragraph",
+                    "isomorph": "Paragraph"
+                }
+            ],
+            "claim": "An inline directive and an image are the same production: a SIGIL-introduced inline leaf carrying one RAW run and one BRACKETED run that is parsed as inlines, recognised mid-line and left where it was found. `:note[body]` is the sigil `:`, the raw name `note` and the bracketed body; `![body](/note)` is the sigil `!`, the bracketed body and the raw destination. Same parts, same count of them, and the pair counts Text as well so the inline parsing of the bracketed run is checked on both sides rather than assumed -- 150 against 150 per 50 units. What differs is the ORDER: this dialect must read a name before it knows it has a directive at all, where the reference reads the bracket first and the destination after. That is the thing being measured. That the directive hangs its body under a DirectiveLabel group where the image holds the same inlines directly and carries a destination instead is node materialisation, which is never grounds to refuse. Directive was the last kind in the manifest's coverage list with neither a pair nor a document a reference reads the same way."
+        },
+        {
             "case": "pair-formulapromo-dialect",
             "isomorph": "pair-formulapromo-common",
             "counts": {
@@ -1238,14 +1276,11 @@
         {
             "production": "anonymous specimen definition `(@) body`",
             "proof": "An exhaustive enumeration over the HOISTING productions of both reference grammars, which is the shape a proof here has to have. An anonymous specimen is an opener owning block content whose node is moved OUT of the content tree into a document-owned side list, with NO name registered. Enumerate every production in CommonMark and GFM that moves something out of the content tree: the link reference definition, which annihilates its source and registers a name; and the GFM footnote definition, which hoists its node and registers a name. That is the complete list -- two -- and BOTH require a non-empty label. Checked rather than asserted: cmark-gfm leaves `[^]: body` as an ordinary paragraph, and CommonMark's label rule requires at least one non-whitespace character, so neither will accept the empty label the anonymous form needs. Dropping the hoist to reach something nameless -- a bullet list item opens a sequence member with no identity and owns block content by indentation -- drops a subsequent operation that the criterion requires to match, and the second clause is not optional. The REST of the specimen production pairs twice: pair-specimen-dialect for the labelled form and pair-specimenstart-dialect for the numbered one. It is the empty label alone that has no counterpart. NOTE the honest caveat, the same one the inline footnote carries: this proof has not been attacked by anyone but its author."
+        },
+        {
+            "production": "multiline table, the ROW production at two columns or more",
+            "proof": "An exhaustive enumeration over the LINE-CUTTING productions of both reference grammars, and it is narrow on purpose: everything else about this table is paired. A multiline row cuts ONE line into K parallel pieces at positions established by one earlier boundary line, appends each piece to its own cell buffer, and parses each buffer as BLOCKS -- checked on the parser, where `- item` in a cell becomes a List and `# Head` becomes a Heading, so it is block parsing and not a joined paragraph. Enumerate every reference production that cuts a line. Every CONTAINER cuts a PREFIX and yields exactly ONE remainder: a block quote strips its marker, a list item strips its content indent, and nesting them cuts the same line repeatedly rather than into parallel pieces. Exactly one reference production cuts a line into K>=2 parallel pieces, GFM's pipe table row, and it parses its pieces as INLINES. So a K-way cut whose pieces are block-parsed exists in neither grammar, and the criterion's second clause -- the subsequent operation must match -- is what the pipe row fails. The one-column reduction that saved the grid table is not available either: a multiline table takes its columns from a SEGMENTED dash line, and a single unbroken dash run is a thematic break or a setext underline. What must NOT be read into this: both FACTORS of the production are separately paired and both have same-job numbers. pair-simpletable-dialect is the K-way POSITIONAL cut with inline cells against the GFM pipe row, and pair-gridcell-dialect is the positional cut with BLOCK cells at K=1 against a list item's content indent. It is only their composition that has no reference production. NOTE the honest caveat, the same one the other enumerations carry: this proof has not been attacked by anyone but its author."
         }
     ],
-    "openCandidates": [
-        {
-            "production": "multiline table, ROW production",
-            "whyTheEarlierProofWasWrong": "Both the multiline and the grid table were refused because their cells hold BLOCK content and no reference table has block cells. That answers the wrong question: the criterion asks for a reference PRODUCTION of this shape, not a reference table. The grid half of that refusal is now a built pair -- a one-column grid cell against a loose list item, both a per-line positional cut whose remainder is parsed as blocks -- so the block-cell argument is settled and this entry is only about what the grid pair does not reach.",
-            "whatIsGenuinelyUnsettled": "The multiline table cannot be reduced to one column the way the grid table can. It establishes its columns from a SEGMENTED dash line, and a single unbroken dash run is a thematic break or a setext underline, so there is no one-column multiline table to pair. That leaves its row production at K>=2: one line cut into K ranges at positions established by one earlier line. A reference container cuts each line ONCE, at a prefix, and K side-by-side containers are K productions rather than one. Whether the K-way cut pairs with anything, or whether the honest move is to pair at the CELL level and let the row-level slicing show up as the dialect side's extra, is the thing to decide.",
-            "status": "OPEN -- to be built and tested, not asserted either way"
-        }
-    ]
+    "openCandidates": []
 }
