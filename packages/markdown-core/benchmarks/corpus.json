@@ -911,8 +911,8 @@
             "proof": "The cells hold inlines, as in the headed form, so the cell-content argument does not apply. What does apply is the head group: tables.md says the header may be omitted \"when a matching footer closes the table\", producing a table with an EMPTY head group and alignment inferred from the first body line. GFM's pipe table cannot express that -- its delimiter row must be preceded by a header line, and the header is what establishes the columns -- so there is no reference production that yields a table without a head."
         },
         {
-            "production": "table caption",
-            "proof": "A paragraph-shaped block introduced by `Table:`, `table:` or `:` whose content is parsed as inlines, which is then RE-PARENTED into an adjacent complete table as an owned child, before or after it, across blank lines. Neither grammar has a production that takes a finished neighbouring block and adopts it. The nearest candidate is GFM's pipe-table header, where a paragraph is absorbed by the delimiter row that follows it, but that paragraph is consumed as part of the table's own OPENING production and cannot attach to a table that has already ended -- which is exactly what a trailing caption does."
+            "production": "table caption, TRAILING form only",
+            "proof": "A caption that FOLLOWS its table attaches to a table that has already ended, across blank lines. Neither grammar adopts a block into a structure that is already closed. This proof is now scoped to the trailing form only: it was written for both and it is false for the leading form, which is recorded as an open candidate."
         },
         {
             "production": "formula paragraph promotion",
@@ -935,6 +935,13 @@
             "whyTheEarlierProofWasWrong": "It said CommonMark has no production that groups a preceding line's inlines with a following block under a single node. A LOOSE LIST ITEM does exactly that. Side by side: a Definition owns DefinitionTerm(Text \"Markdown\") plus DefinitionBody(Paragraph, Paragraph); a loose ListItem owns Paragraph(\"Markdown\") plus Paragraph, Paragraph. Both are a first line parsed as inline content with block content bound to it by indentation, under one node. That the definition materialises the term and body as owned groups where the list item keeps flat children is node materialisation, which this corpus's own rule says is never grounds to refuse a pair.",
             "candidate": "`term\\n: body` against `- term\\n\\n  body`, sized by count of definitions against list items.",
             "whatIsGenuinelyUnsettled": "Where the marker sits. A list item is recognised at its own first line; a definition promotes the PRECEDING line when the `: ` marker arrives on the next one, so it needs lookahead. That is a real difference in the recognition and it is the thing to decide. It is not decisive on its own, because GFM already has promotion-by-what-follows: a pipe table's header is a paragraph line promoted by the delimiter row beneath it.",
+            "status": "OPEN -- to be built and tested, not asserted either way"
+        },
+        {
+            "production": "table caption, LEADING form",
+            "whyTheEarlierProofWasWrong": "It said neither grammar has a production that takes a finished neighbouring block and adopts it. GFM's pipe-table header is exactly that: a paragraph line absorbed by the table announced beneath it. The trees are parallel -- a leading `Table: X` puts its inlines in an owned TableCaption child of the Table, and a GFM header line puts its inlines in owned table_cell children of table_header. Both are a paragraph-shaped line immediately preceding a table whose inlines end up owned by that table rather than left as a sibling paragraph. I wrote the proof for the trailing form and applied it to both.",
+            "candidate": "`Table: X` before a table, against a GFM header line before its delimiter row.",
+            "whatIsGenuinelyUnsettled": "What each absorbed line becomes: a caption node holding one inline run, against a header row holding N cells each holding an inline run. Whether that is one production with a different result shape or two productions is the thing to decide -- and node materialisation is not the deciding argument.",
             "status": "OPEN -- to be built and tested, not asserted either way"
         }
     ]
