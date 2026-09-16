@@ -1007,6 +1007,7 @@
                 "inline-links-flat.md",
                 "inline-links-nested.md",
                 "inline-newlines.md",
+                "inline-reference.md",
                 "lorem1.md",
                 "rawtabs.md"
             ],
@@ -1062,6 +1063,7 @@
                 "inline-links-flat.md",
                 "inline-links-nested.md",
                 "inline-newlines.md",
+                "inline-reference.md",
                 "inline-span.md",
                 "lorem1.md",
                 "rawtabs.md"

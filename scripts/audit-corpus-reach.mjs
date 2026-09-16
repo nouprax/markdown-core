@@ -294,6 +294,63 @@ function samplesWithoutTheirOwnCase() {
         .sort();
 }
 
+/**
+ * EVERY SAMPLE IN THE AGGREGATE ITS DIALECT PUTS IT IN.
+ *
+ * The concatenated cases exist so a construct is measured beside the others
+ * rather than only in isolation, and the contract is that every sample enters
+ * one. Two exceptions, both principled: a PAIR's halves stay out, because they
+ * are written to mirror each other and a document written twice would enter the
+ * aggregate twice and tilt it toward whatever the pair isolates; and an EXTENDED
+ * sample stays out of the CommonMark aggregate, which would otherwise stop being
+ * CommonMark.
+ *
+ * Stated in the README and checked nowhere until a sample was added and left out
+ * of both. The audit knew only that a sample had its own case, which that sample
+ * did.
+ */
+function samplesOutsideTheirAggregate() {
+    const manifest = JSON.parse(
+        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
+    );
+    const cases = manifest.cases ?? [];
+    const aggregate = (name) => new Set(cases.find((entry) => entry.name === name)?.samples ?? []);
+    const commonmark = aggregate("mixed-commonmark");
+    const extended = aggregate("mixed-extended");
+    const paired = new Set();
+    for (const declaration of [...(manifest.isomorphs ?? []), ...(manifest.logicalIsomorphs ?? [])]) {
+        paired.add(declaration.case ?? declaration.name);
+        paired.add(declaration.isomorph);
+    }
+    const failures = [];
+    /* And no aggregate holds one twice. A sample listed twice enters the
+     * concatenation twice and tilts it toward whatever that sample isolates,
+     * which is the same objection that keeps a pair's halves out entirely. */
+    for (const name of ["mixed-commonmark", "mixed-extended"]) {
+        const samples = cases.find((entry) => entry.name === name)?.samples ?? [];
+        const seen = new Set();
+        for (const sample of samples) {
+            if (seen.has(sample)) failures.push(`${name} holds ${sample} twice, so it enters the aggregate twice`);
+            seen.add(sample);
+        }
+    }
+    for (const entry of cases) {
+        if (entry.name.startsWith("mixed-") || paired.has(entry.name)) continue;
+        for (const sample of entry.samples ?? []) {
+            if (!extended.has(sample)) {
+                failures.push(`${sample} belongs to ${entry.name} and is in neither aggregate`);
+            }
+            if (entry.dialect === "commonmark" && !commonmark.has(sample)) {
+                failures.push(`${sample} is a CommonMark sample and mixed-commonmark does not hold it`);
+            }
+            if (entry.dialect !== "commonmark" && commonmark.has(sample)) {
+                failures.push(`${sample} is an extended sample and mixed-commonmark holds it anyway`);
+            }
+        }
+    }
+    return failures;
+}
+
 function corpusDocuments(directory) {
     execFileSync(
         "node",
@@ -1042,10 +1099,12 @@ let exempt;
 process.stdout.write("\n");
 
 const orphaned = samplesWithoutTheirOwnCase();
+const strayed = samplesOutsideTheirAggregate();
 process.stdout.write(
     `  node kinds built     ${kinds.length - unbuilt.length}/${kinds.length}\n` +
         `  grammars driven      ${required.length - undriven.length}/${required.length}\n` +
         `  samples with a case  ${sampleCount - orphaned.length}/${sampleCount}\n` +
+        `  samples in their aggregate ${strayed.length ? `${strayed.length} are NOT` : "all"}\n` +
         `  cases still building ${declaredBuilds().size - drifted.length}/${declaredBuilds().size}\n` +
         `  isomorph pairs held  ${pairs.length - notIsomorphic.length}/${pairs.length}\n` +
         `  logical pairs held   ${logical.length - unequalPairs.broken.size}/${logical.length}\n` +
@@ -1080,13 +1139,12 @@ if (options.json) {
 }
 
 const failures = [];
-/* A RATCHET, not a target. The corpus reaches 131 declared states and publishes
- * a same-job ratio for some of them; the rest are bounds, and closing one means
- * writing a case or building a pair. The floor exists so that number can only
- * go up: a change that quietly stopped a case demonstrating a state -- an edited
- * unit, a retired sample -- would otherwise show as a passing audit and a
- * smaller number nobody was watching. Raise it in the same commit that earns it.
- */
+if (strayed.length) {
+    failures.push(
+        `the concatenated cases exist so a construct is measured beside the others, and these samples are ` +
+            `not in the aggregate their dialect puts them in:\n    ${strayed.join("\n    ")}`
+    );
+}
 failures.push(...exempt.failures);
 /* An exemption that is no longer needed is a stale claim, and stale claims are
  * what this corpus keeps failing on. A state the corpus HAS learned to measure
