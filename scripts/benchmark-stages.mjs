@@ -1836,17 +1836,19 @@ function markdownReport(report) {
                 "- A **properties envelope** is recognised once, at the document's start. Even" +
                     " where its fence rules match a fenced code block's, there is no count to" +
                     " scale, so there is no workload to pair.",
-                "- **Citations** decompose one bracket group into a list of keyed items with" +
-                    " parsed affixes. No CommonMark production decomposes a bracket group.",
+                "- A **citation group** decomposes one bracket group into a list of keyed" +
+                    " items with parsed affixes, and no CommonMark production decomposes a" +
+                    " bracket group. (The BARE key does pair -- see `pair-cite-dialect` -- so" +
+                    " `inline-citation`, whose sample is dominated by the group form, is the" +
+                    " bound and the bare form is not.)",
                 "",
-                "One candidate was considered against cmark-gfm and rejected: a bare **citation" +
-                    " key** and a GFM extended autolink are the same shape in the source -- a" +
-                    " recognised prefix at a word boundary followed by a raw run -- but not in" +
-                    " what they build. The autolink materialises a `Link` holding one `Text`" +
-                    " child; the citation materialises a `Cite`, a `Citation` and two affix" +
-                    " slots. Four nodes against two is not one production measured twice, and" +
-                    " the extra nodes are on the dialect side, so pairing them would have" +
-                    " flattered the reference rather than this parser. It stays a bound.",
+                "Note what is NOT a reason to refuse a pair: that the two sides materialise" +
+                    " different numbers of nodes. A bare citation key was nearly left a bound on" +
+                    " exactly that ground -- one `Link` over a `Text` against a `Cite` over a" +
+                    " `Citation` with two affix slots -- and that is reasoning off the" +
+                    " implementations, which is the one thing the criterion forbids. The two" +
+                    " productions have the same shape, so they pair, and the node counts are" +
+                    " part of what the ratio reports.",
                 "",
                 "Those are bounds, and a bound is reported as a bound.",
                 ""

@@ -491,6 +491,26 @@
             "builds": ["Link"]
         },
         {
+            "name": "pair-cite-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "See @key-{n} here.\n\n",
+                "scales": "bare citation keys"
+            },
+            "builds": ["Cite", "Citation"]
+        },
+        {
+            "name": "pair-cite-common",
+            "dialect": "extended",
+            "counted": {
+                "unit": "See www.key-{n} here.\n\n",
+                "match": "pair-cite-dialect",
+                "scales": "www autolinks"
+            },
+            "gfm": true,
+            "builds": ["Link"]
+        },
+        {
             "name": "pair-comment-common",
             "dialect": "commonmark",
             "samples": ["pair-comment-common.md"],
@@ -676,6 +696,15 @@
                 "isomorph": "Link"
             },
             "claim": "A cross link and an empty-text inline link are the same production: fixed bracket delimiters around a body that is NOT parsed as inline, producing one leaf node that stores the body as a destination and has no children. Neither resolves it -- the cross-link spec is explicit that the parser stores the strings and the application finds the resource, and an inline link's destination is likewise stored, not looked up -- so the subsequent operation matches too. The empty text is deliberate: a cross link has no inline body, and pairing it against a link that did have one would hand the reference an inline parse this side never performs. Not the same length, so the pair is generated to an equal COUNT."
+        },
+        {
+            "case": "pair-cite-dialect",
+            "isomorph": "pair-cite-common",
+            "counts": {
+                "case": "Cite",
+                "isomorph": "Link"
+            },
+            "claim": "A bare citation key and a GFM `www.` autolink are the same production: an UNBRACKETED recognition triggered by a literal prefix at a word boundary, consuming a raw run bounded by a character class, producing one inline that stores the run without parsing it as inline and without resolving it. Both specs state the boundary condition in the same terms -- a citation opener must follow a scalar that is not a letter, number or underscore, so `foo@bar` is not one, and the `www.` form needs an eligible boundary -- and both state that nothing is looked up: the parser does not resolve bibliography keys, and an autolink's destination is stored. That shared shape is what makes the pair; scanning ordinary text for a trigger is the grammatical feature being measured, which is why this pairs with an unbracketed autolink rather than with a delimited `<...>` one. How many NODES each side materialises for that production -- one Link over a Text here, a Cite over a Citation with two affix slots there -- is emphatically not part of the pairing. It is the measurement, and refusing the pair over it would be designing the corpus by reading the implementations, which drives every ratio to 1.00x."
         }
     ]
 }

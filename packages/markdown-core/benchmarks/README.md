@@ -335,6 +335,7 @@ are declared as `logicalIsomorphs`:
 | `[[target]]` | `[](/target)` | `cmark` | fixed delimiters, raw body not parsed as inline, one leaf holding a destination, no lookup |
 | `(@label) body` | `[^label]: body` | `cmark-gfm` | a labelled opener owning block content, leaving ordinary content for a side list |
 | `- [~] item` | `- [x] item` | `cmark-gfm` | one scalar in brackets at the start of item content, removed from it and stored on the item |
+| `@key` | `www.key` | `cmark-gfm` | an unbracketed trigger at a word boundary, a raw run stored without inline parsing and without resolution |
 
 The reference is whichever engine implements the isomorph's production, which is
 not always cmark: pairing a GFM production against cmark would divide by an
@@ -422,6 +423,12 @@ Read off the grammars:
 | directive | it is a fenced *container*; CommonMark's only fence opens a leaf whose body is literal |
 | properties envelope | recognised once, at the document's start, so there is no count to scale |
 | citation group | it decomposes one bracket group into a list of keyed items with parsed affixes |
+
+The **bare** citation key is a different production and it does pair — see
+`pair-cite-dialect`. What is not a reason to refuse a pair is that the two sides
+materialise different numbers of nodes: that is reasoning off the
+implementations, which is the one thing the criterion forbids, and the node
+counts are part of what the ratio reports.
 | derived anchor | a heading whose identifier comes from its own text declares nothing — there is no name in the source to bind, and no production derives one |
 | `==a====b==` ↔ `**a****b**` | our run splitter divides adjacent closers, CommonMark's does not |
 | comment ↔ strong emphasis | strong parses its body, a comment keeps it literal |
