@@ -1641,7 +1641,7 @@ function markdownReport(report) {
                            * which invariant held it: equal bytes under a marker
                            * substitution, or an equal count of declarations in
                            * two spellings of different length. */
-                          by: bySubstitution.has(item.case) ? "substitution" : "declaration",
+                          by: bySubstitution.has(item.case) ? "substitution" : "count",
                           reference: twinReference,
                           /* Its own bytes, not this case's: a logical isomorph
                            * is a different length by construction, so dividing
@@ -1757,13 +1757,25 @@ function markdownReport(report) {
                 "cmark",
                 ranked.filter(
                     (item) =>
-                        item.dialect === "commonmark" && !item.gfm && !item.carries.length && !isIsomorph.has(item.case)
+                        !item.isomorph &&
+                        item.dialect === "commonmark" &&
+                        !item.gfm &&
+                        !item.carries.length &&
+                        !isIsomorph.has(item.case)
                 )
             ],
             [
+                /* A PAIRED case belongs to its pair's group whatever its own
+                 * `gfm` flag says, and the flag is tested after the pair rather
+                 * than before it. `pair-tcaption-dialect` is a pipe table, so it
+                 * carries the flag, and its same-job denominator is cmark on the
+                 * CommonMark half -- classifying it by the flag counted it twice
+                 * and let a cmark-derived ratio into the cmark-gfm median. */
                 "GFM extensions",
                 "cmark-gfm",
-                ranked.filter((item) => item.gfm && !item.carries.length && !isIsomorph.has(item.case))
+                ranked.filter(
+                    (item) => !item.isomorph && item.gfm && !item.carries.length && !isIsomorph.has(item.case)
+                )
             ],
             ["Dialect, via an isomorph", "the isomorph's own reference", ranked.filter((item) => item.isomorph)],
             [
@@ -1803,16 +1815,23 @@ function markdownReport(report) {
                     " halves are the same bytes and parse to the SAME TREE: same spans, same" +
                     " literals, same children, differing only in which grammar built each" +
                     " node. `` $x$ `` against `` `x` `` is this kind.",
-                "- **Declaration** -- two spellings of one declaration, where the subsequent" +
-                    " operation is what matches: an explicit anchor binds a name to the block" +
-                    " it sits on, a link reference definition binds a name to a target, and" +
-                    " either way the binding enters the document's table of names. The two" +
-                    " spellings are different lengths, so the corpus generates them to an" +
-                    " equal COUNT of declarations instead of to equal bytes.",
+                "- **Count** -- two spellings of one production, sized to an equal COUNT of" +
+                    " the construct rather than to equal bytes, because the two spellings are" +
+                    " different lengths and a byte target would hand one side more of the" +
+                    " construct than the other. What matches is the grammar shape and, where" +
+                    " there is one, the subsequent operation: an explicit anchor binds a name" +
+                    " to the block it sits on and a link reference definition binds a name to" +
+                    " a target, a grid cell and a list item each cut a line positionally and" +
+                    " parse the remainder as blocks, a callout and a task item each take a" +
+                    " bracketed token off a container's first line into a field. Most of these" +
+                    " declare nothing, which is why the column reads `count` rather than" +
+                    " `declaration`.",
                 "",
                 "`scripts/audit-corpus-reach.mjs` checks both invariants against the parser" +
-                    " rather than taking them on faith -- the tree for a substitution pair," +
-                    " the declaration count for a logical one.",
+                    " rather than taking them on faith -- the tree for a substitution pair, and" +
+                    " for a count pair the construct count on both sides plus whichever of" +
+                    " `alsoCounts`, `binding`, `fallback`, `absent` and `demonstrates` that" +
+                    " pair names.",
                 "",
                 "That splits the ratio into two questions that have different answers:",
                 "",
@@ -1831,10 +1850,10 @@ function markdownReport(report) {
                     " all, however large the bound against cmark on the dialect document" +
                     " looked.",
                 "",
-                "On a DECLARATION pair the two Ir/B columns are each over their own" +
-                    " document's bytes, and those differ by construction -- so Grammar is not" +
-                    " their quotient. It is the total over the total at an equal count of" +
-                    " declarations, which is the only denominator the pair holds fixed.",
+                "On a COUNT pair the two Ir/B columns are each over their own document's" +
+                    " bytes, and those differ by construction -- so Grammar is not their" +
+                    " quotient. It is the total over the total at an equal count of the" +
+                    " construct, which is the only denominator the pair holds fixed.",
                 ""
             );
             lines.push(
@@ -1857,17 +1876,17 @@ function markdownReport(report) {
             lines.push("");
             const suppressed = pairs.filter((item) => item.isomorph.contaminates?.length);
             if (suppressed.length) {
+                /* The rule is QUOTED from the manifest, like every other claim
+                 * here, so that a report cannot go on publishing an argument the
+                 * corpus has withdrawn. */
+                const rules = JSON.parse(fs.readFileSync(path.join(BENCHMARKS, "corpus.json"), "utf8")).suppressions;
                 lines.push(
                     "A dash in Grammar and Shape on a pair whose Same-job column is filled is a" +
-                        " SUPPRESSION, not a missing measurement. The three numbers are" +
-                        " grammar = core/twinCore, shape = twinCore/twinCmark and" +
-                        " sameJob = core/twinCmark, so twinCore cancels out of the last one." +
-                        " Where the isomorph's tree carries a field no reference builds, this" +
-                        " parser spent something on the isomorph half that the reference never" +
-                        " spent: that lands in twinCore, which inflates Grammar's denominator" +
-                        " and Shape's numerator and leaves Same-job untouched. Printing the two" +
-                        " would publish a dialect grammar as cheaper than it is and a shape as" +
-                        " dearer. Suppressed here:",
+                        " SUPPRESSION, not a missing measurement. Why, from `corpus.json`:",
+                    "",
+                    ...(rules ?? []).map((entry) => `- **${entry.rule}** -- ${entry.statement}`),
+                    "",
+                    "Suppressed here:",
                     "",
                     ...suppressed.map(
                         (item) =>
@@ -1954,10 +1973,12 @@ function markdownReport(report) {
                 .map((entry) => `\`${entry.name}\` ${(entry.share * 100).toFixed(1)}%`)
                 .join(", ");
             const ratio = item.sameJob ?? item.cmarkRatio;
-            const reference = item.gfm
-                ? "cmark-gfm"
-                : item.isomorph
-                  ? `${item.isomorph.reference}, isomorph`
+            /* Same precedence as the group table: the reference that produced
+             * the ratio, not the flag on the case. */
+            const reference = item.isomorph
+                ? `${item.isomorph.reference}, isomorph`
+                : item.gfm
+                  ? "cmark-gfm"
                   : item.carries.length
                     ? `(bound; tree carries ${item.carries.join(", ")})`
                     : item.dialect === "commonmark"
@@ -2109,6 +2130,26 @@ function main() {
     if (options.corpusOnly) {
         fs.mkdirSync(options.out, { recursive: true });
         const only = buildCorpus(options, manifest);
+        /* What each document was generated to HOLD, written beside it. The
+         * corpus-reach audit counts constructs in the parser's dump and has no
+         * other way to learn how many the generator emitted, so it could check
+         * that two sides agree with each other and never that either agrees
+         * with what was asked for. Both sides recognising the same SUBSET of
+         * their units, or a unit template quietly emitting two of the construct
+         * instead of one, passed. This is the generator's own arithmetic,
+         * published rather than re-derived. */
+        fs.writeFileSync(
+            path.join(options.out, "units.json"),
+            `${JSON.stringify(
+                Object.fromEntries(
+                    only.documents
+                        .filter((document) => document.scale === 1)
+                        .map((document) => [document.case, document.units])
+                ),
+                null,
+                4
+            )}\n`
+        );
         if (!options.quiet) {
             process.stdout.write(
                 `wrote ${only.documents.length} documents to ${path.relative(root, path.join(options.out, "corpus"))} ` +

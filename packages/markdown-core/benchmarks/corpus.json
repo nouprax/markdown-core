@@ -1,7 +1,6 @@
 {
     "schemaVersion": 2,
     "targetBytes": 65536,
-    "stateFloor": 129,
     "statesBoundByProof": {
         "footnote.content.inline": "inline footnote `^[body]`",
         "specimen.id.null": "anonymous specimen definition `(@) body`"
@@ -1082,7 +1081,15 @@
                 "declares": "anchor",
                 "sides": ["case"]
             },
-            "claim": "An explicit anchor DECLARES a name and binds it to the block it sits on; a link reference definition declares a name and binds it to a target. Same grammar shape -- one block, one name-to-target binding -- and the same subsequent operation at the level of the language: the name becomes addressable, so `[[Note#^id]]` resolves the one and `[id]` resolves the other. Both are read off the grammars. What each implementation then DOES behind that binding -- when it allocates, what it defers, what it skips -- is not part of the pairing; it is the thing being measured, and a pair rewritten until both engines run the same machinery would read 1.00x and measure nothing. DERIVED anchors are deliberately not paired: a heading whose anchor comes from its own text declares nothing, there is no name in the source to bind, and CommonMark has no production that derives one -- so block-heading has no isomorph and is reported as a bound. The two spellings differ in length, so the pair is generated to an equal COUNT of declarations rather than to equal bytes, and each name is indexed so both sides bind the same number of distinct identifiers."
+            "claim": "An explicit anchor DECLARES a name and binds it to the block it sits on; a link reference definition declares a name and binds it to a target. Same grammar shape -- one block, one name-to-target binding -- and the same subsequent operation at the level of the language: the name becomes addressable, so `[[Note#^id]]` resolves the one and `[id]` resolves the other. Both are read off the grammars. What each implementation then DOES behind that binding -- when it allocates, what it defers, what it skips -- is not part of the pairing; it is the thing being measured, and a pair rewritten until both engines run the same machinery would read 1.00x and measure nothing. DERIVED anchors are deliberately not paired: a heading whose anchor comes from its own text declares nothing, there is no name in the source to bind, and CommonMark has no production that derives one -- so block-heading has no isomorph and is reported as a bound. The two spellings differ in length, so the pair is generated to an equal COUNT of declarations rather than to equal bytes, and each name is indexed so both sides bind the same number of distinct identifiers.",
+            "perUnit": {
+                "case": {
+                    "each": 1
+                },
+                "isomorph": {
+                    "each": 1
+                }
+            }
         },
         {
             "case": "pair-specimen-dialect",
@@ -1097,7 +1104,15 @@
                     "isomorph": "Cite"
                 }
             ],
-            "claim": "A specimen definition and a GFM footnote definition are the same production: a one-line opener carrying a label, block content the opener owns, and a node that leaves ordinary document content for a side list the document holds -- Document.specimens against Document.footnotes, in both specs' own words. Each unit also carries a REFERENCE on both sides, for two reasons. First, the grammars differ on an unreferenced definition: this dialect keeps a specimen nobody cites, GFM DISCARDS a footnote nobody calls, so without the call the reference side parsed to nothing and the denominator was cmark-gfm throwing text away. Second, the reference must be the PARENTHESIZED form. specimens.md gives two reference forms and they are different productions: `(@label)` is a fixed delimiter pair around a sigil and a raw label, which is the GFM footnote call's shape with a different terminal, while the BARE `@label` is an unbracketed word-boundary trigger -- the autolink shape, paired separately as pair-cite. Pairing the bare form against a bracketed `[^label]` call matched the definitions and mismatched the calls."
+            "claim": "A specimen definition and a GFM footnote definition are the same production: a one-line opener carrying a label, block content the opener owns, and a node that leaves ordinary document content for a side list the document holds -- Document.specimens against Document.footnotes, in both specs' own words. Each unit also carries a REFERENCE on both sides, for two reasons. First, the grammars differ on an unreferenced definition: this dialect keeps a specimen nobody cites, GFM DISCARDS a footnote nobody calls, so without the call the reference side parsed to nothing and the denominator was cmark-gfm throwing text away. Second, the reference must be the PARENTHESIZED form. specimens.md gives two reference forms and they are different productions: `(@label)` is a fixed delimiter pair around a sigil and a raw label, which is the GFM footnote call's shape with a different terminal, while the BARE `@label` is an unbracketed word-boundary trigger -- the autolink shape, paired separately as pair-cite. Pairing the bare form against a bracketed `[^label]` call matched the definitions and mismatched the calls.",
+            "perUnit": {
+                "case": {
+                    "each": 1
+                },
+                "isomorph": {
+                    "each": 1
+                }
+            }
         },
         {
             "case": "pair-task-dialect",
@@ -1110,7 +1125,15 @@
                 "declares": "marker",
                 "sides": ["case", "isomorph"]
             },
-            "claim": "A task marker is one Unicode scalar in brackets at the start of a list item's content, removed from the content and stored on the item. GFM's task list item is that production with the scalar restricted to a space or `x`; this dialect keeps the authored scalar instead of mapping it. Same production, one terminal wider -- which is what makes this pair, and what it measures. Both sides build ListItem, so an equal count proves nothing on its own; the pair names `marker` and the audit requires every item on BOTH sides to carry one, because an item whose marker went unread is still a list item. The reference is cmark-gfm."
+            "claim": "A task marker is one Unicode scalar in brackets at the start of a list item's content, removed from the content and stored on the item. GFM's task list item is that production with the scalar restricted to a space or `x`; this dialect keeps the authored scalar instead of mapping it. Same production, one terminal wider -- which is what makes this pair, and what it measures. Both sides build ListItem, so an equal count proves nothing on its own; the pair names `marker` and the audit requires every item on BOTH sides to carry one, because an item whose marker went unread is still a list item. The reference is cmark-gfm.",
+            "perUnit": {
+                "case": {
+                    "each": 1
+                },
+                "isomorph": {
+                    "each": 1
+                }
+            }
         },
         {
             "case": "pair-span-dialect",
@@ -1122,6 +1145,14 @@
             "claim": "A bracketed span and an inline link are the same production: an opening bracket, a body parsed as inline content, a closing bracket, and an immediately following paired-delimiter suffix taken raw and decoded into fields of the one node the production builds. The dialect spec says so directly -- a span is decided in the same bracket alternation as a link, and a valid link wins the position -- so the two are alternatives at one point in the grammar and not merely alike. The suffix is where they differ and nothing else is: `{.c}` decodes into attributes, `(/c)` decodes into a destination. Neither looks anything up. The two spellings are the same length here, so the pair is byte for byte as well as count for count.",
             "demonstrates": {
                 "case": ["span.content.populated", "span.content.empty"]
+            },
+            "perUnit": {
+                "case": {
+                    "each": 2
+                },
+                "isomorph": {
+                    "each": 2
+                }
             }
         },
         {
@@ -1143,6 +1174,14 @@
                     "destination.cross.anchor.value"
                 ],
                 "isomorph": ["link.title.null", "link.title.empty", "escaping.empty-string"]
+            },
+            "perUnit": {
+                "case": {
+                    "each": 5
+                },
+                "isomorph": {
+                    "each": 5
+                }
             }
         },
         {
@@ -1155,7 +1194,15 @@
             "demonstrates": {
                 "case": ["citation.bib.mode.normal", "citation.prefix.populated", "citation.suffix.populated"]
             },
-            "claim": "A BRACKETED citation group and an inline link are the same production: one bracketed construct, part of it parsed as INLINES and part of it stored RAW and unresolved. `[see @key, p. 3]` parses the prefix and the suffix as inlines and keeps `key` raw; `[see , p. 3](/key)` parses the same inlines and keeps the same raw run. Same parts, same count of them. What differs is WHERE the raw run is found -- this dialect scans for a keyed trigger INSIDE the bracket, the reference takes what the parens delimit after it -- and that is the thing being measured, the same difference the inline-directive pair measures from the other side. Neither side resolves anything, which is why the twin is an inline link and not a shortcut reference: a reference would add a map insert and a lookup that this grammar does not perform, and the pair would stop being the same job. The BARE form `@key` is a different production, an unbracketed word-boundary trigger, and pairs separately as pair-cite-dialect."
+            "claim": "A BRACKETED citation group and an inline link are the same production: one bracketed construct, part of it parsed as INLINES and part of it stored RAW and unresolved. `[see @key, p. 3]` parses the prefix and the suffix as inlines and keeps `key` raw; `[see , p. 3](/key)` parses the same inlines and keeps the same raw run. Same parts, same count of them. What differs is WHERE the raw run is found -- this dialect scans for a keyed trigger INSIDE the bracket, the reference takes what the parens delimit after it -- and that is the thing being measured, the same difference the inline-directive pair measures from the other side. Neither side resolves anything, which is why the twin is an inline link and not a shortcut reference: a reference would add a map insert and a lookup that this grammar does not perform, and the pair would stop being the same job. The BARE form `@key` is a different production, an unbracketed word-boundary trigger, and pairs separately as pair-cite-dialect.",
+            "perUnit": {
+                "case": {
+                    "each": 2
+                },
+                "isomorph": {
+                    "each": 2
+                }
+            }
         },
         {
             "case": "pair-cite-dialect",
@@ -1167,6 +1214,14 @@
             "claim": "A bare citation key and a GFM `www.` autolink are the same production: an UNBRACKETED recognition triggered by a literal prefix at a word boundary, consuming a raw run bounded by a character class, producing one inline that stores the run without parsing it as inline and without resolving it. Both specs state the boundary condition in the same terms -- a citation opener must follow a scalar that is not a letter, number or underscore, so `foo@bar` is not one, and the `www.` form needs an eligible boundary -- and both state that nothing is looked up: the parser does not resolve bibliography keys, and an autolink's destination is stored. That shared shape is what makes the pair; scanning ordinary text for a trigger is the grammatical feature being measured, which is why this pairs with an unbracketed autolink rather than with a delimited `<...>` one. How many NODES each side materialises for that production -- one Link over a Text here, a Cite over a Citation with two affix slots there -- is emphatically not part of the pairing. It is the measurement, and refusing the pair over it would be designing the corpus by reading the implementations, which drives every ratio to 1.00x.",
             "demonstrates": {
                 "case": ["citation.bib.mode.authorInText", "citation.bib.mode.suppressAuthor"]
+            },
+            "perUnit": {
+                "case": {
+                    "each": 2
+                },
+                "isomorph": {
+                    "each": 2
+                }
             }
         },
         {
@@ -1176,7 +1231,15 @@
                 "case": "FormulaBlock",
                 "isomorph": "CodeBlock"
             },
-            "claim": "A block formula and a fenced code block are the same production: a LEAF block opened and closed by a run of one repeated character, whose body is taken LITERALLY rather than parsed, producing one node that carries the body as a literal and has no children. Same shape, different terminal -- the `$x$` against `` `x` `` rule, lifted to the block level, and the inline halves of exactly this pair are already held by substitution as pair-formula. The two fences are two and three characters long, so this half cannot be a byte-for-byte substitution and is generated to an equal COUNT of blocks."
+            "claim": "A block formula and a fenced code block are the same production: a LEAF block opened and closed by a run of one repeated character, whose body is taken LITERALLY rather than parsed, producing one node that carries the body as a literal and has no children. Same shape, different terminal -- the `$x$` against `` `x` `` rule, lifted to the block level, and the inline halves of exactly this pair are already held by substitution as pair-formula. The two fences are two and three characters long, so this half cannot be a byte-for-byte substitution and is generated to an equal COUNT of blocks.",
+            "perUnit": {
+                "case": {
+                    "each": 1
+                },
+                "isomorph": {
+                    "each": 1
+                }
+            }
         },
         {
             "case": "pair-embed-dialect",
@@ -1196,6 +1259,14 @@
                     "crossEmbedded.dimensions.width-height"
                 ],
                 "isomorph": ["embedded.dimensions.null", "embedded.title.null"]
+            },
+            "perUnit": {
+                "case": {
+                    "each": 5
+                },
+                "isomorph": {
+                    "each": 5
+                }
             }
         },
         {
@@ -1206,7 +1277,15 @@
                 "isomorph": "Table"
             },
             "fallback": "Paragraph",
-            "claim": "A simple table and a GFM pipe table are the same production: a header line, a separator line that fixes the columns, body rows, terminated by a blank line, and CELLS THAT HOLD INLINES. tables.md says so three times for the simple form -- 'inline content in its cells', 'Segments are trimmed before inline parsing', and the explicit statement that block openers do not fire inside one, so 'heading, quote, and fence-looking lines remain inline cell text'. Only the cell separator differs: a column POSITION established by the dash-run line against a `|` scalar. The spec adds that all four table spellings 'produce the same Table model' and that 'the AST does not store a separate table kind for each spelling'. THIS CORRECTS A RECORDED REASON: the bounds table refused every table flavour on the ground that a grid cell holds a paragraph where a pipe cell holds inlines. That is true of the GRID table and of nothing else, and it was applied to the simple table without checking."
+            "claim": "A simple table and a GFM pipe table are the same production: a header line, a separator line that fixes the columns, body rows, terminated by a blank line, and CELLS THAT HOLD INLINES. tables.md says so three times for the simple form -- 'inline content in its cells', 'Segments are trimmed before inline parsing', and the explicit statement that block openers do not fire inside one, so 'heading, quote, and fence-looking lines remain inline cell text'. Only the cell separator differs: a column POSITION established by the dash-run line against a `|` scalar. The spec adds that all four table spellings 'produce the same Table model' and that 'the AST does not store a separate table kind for each spelling'. THIS CORRECTS A RECORDED REASON: the bounds table refused every table flavour on the ground that a grid cell holds a paragraph where a pipe cell holds inlines. That is true of the GRID table and of nothing else, and it was applied to the simple table without checking.",
+            "perUnit": {
+                "case": {
+                    "each": 1
+                },
+                "isomorph": {
+                    "each": 1
+                }
+            }
         },
         {
             "case": "pair-blockcomment-dialect",
@@ -1215,7 +1294,15 @@
                 "case": "Comment",
                 "isomorph": "CodeBlock"
             },
-            "claim": "A block comment and a fenced code block are the same production: an opening delimiter line with zero to three leading spaces after container prefixes and only whitespace after the marker, a body kept LITERAL and not parsed as Markdown, and a closing delimiter line of the same marker within the same container; either can interrupt a paragraph. comments.md calls them 'Fences' in its own words. Same shape, different terminal -- `%%` against a run of three or more backticks -- which is the `$x$` against `` `x` `` rule at block level. It cannot be a substitution: mapping `%` to a backtick turns the two-byte line into a two-backtick run, which is not a fence at all, so the pair is sized by count. The INLINE comment is a separate production and is paired separately, by substitution, as pair-comment."
+            "claim": "A block comment and a fenced code block are the same production: an opening delimiter line with zero to three leading spaces after container prefixes and only whitespace after the marker, a body kept LITERAL and not parsed as Markdown, and a closing delimiter line of the same marker within the same container; either can interrupt a paragraph. comments.md calls them 'Fences' in its own words. Same shape, different terminal -- `%%` against a run of three or more backticks -- which is the `$x$` against `` `x` `` rule at block level. It cannot be a substitution: mapping `%` to a backtick turns the two-byte line into a two-backtick run, which is not a fence at all, so the pair is sized by count. The INLINE comment is a separate production and is paired separately, by substitution, as pair-comment.",
+            "perUnit": {
+                "case": {
+                    "each": 1
+                },
+                "isomorph": {
+                    "each": 1
+                }
+            }
         },
         {
             "case": "pair-formulafence-dialect",
@@ -1224,7 +1311,15 @@
                 "case": "FormulaBlock",
                 "isomorph": "CodeBlock"
             },
-            "claim": "A fence whose info string is exactly `formula` is a formula block, and formulas.md and code.md both say so; every other info string keeps ordinary code-block behaviour. So this is not a production of the same SHAPE as a code fence, it IS the code fence production with one token changed, which makes it the narrowest pair in the corpus and a deliberate one: the fence scanner is held byte for byte identical and the only thing that varies is the info-string comparison and the routing of the finished leaf to a different kind. It measures none of the `$$` delimiter-line grammar, which is a separate production paired separately as pair-formulablock."
+            "claim": "A fence whose info string is exactly `formula` is a formula block, and formulas.md and code.md both say so; every other info string keeps ordinary code-block behaviour. So this is not a production of the same SHAPE as a code fence, it IS the code fence production with one token changed, which makes it the narrowest pair in the corpus and a deliberate one: the fence scanner is held byte for byte identical and the only thing that varies is the info-string comparison and the routing of the finished leaf to a different kind. It measures none of the `$$` delimiter-line grammar, which is a separate production paired separately as pair-formulablock.",
+            "perUnit": {
+                "case": {
+                    "each": 1
+                },
+                "isomorph": {
+                    "each": 1
+                }
+            }
         },
         {
             "case": "pair-metadataempty-dialect",
@@ -1236,7 +1331,17 @@
             "demonstrates": {
                 "case": ["document.metadata.empty"]
             },
-            "claim": "The EMPTY envelope, against the same fenced code block the populated one pairs with and for the same reason: a leaf block opened and closed by a delimiter line whose body is not parsed as Markdown. Every member line here carries a key the envelope does not recognise, so all ten fields stay null while the lines are still scanned -- which is what `document.metadata.empty` is, and the only way to reach it in a document that also scales, because a document holds at most one envelope and the populated pair needs that one. Run against pair-metadata-dialect the difference between the two ratios is what DECODING costs over scanning, with the line count and the twin held identical."
+            "claim": "The EMPTY envelope, against the same fenced code block the populated one pairs with and for the same reason: a leaf block opened and closed by a delimiter line whose body is not parsed as Markdown. Every member line here carries a key the envelope does not recognise, so all ten fields stay null while the lines are still scanned -- which is what `document.metadata.empty` is, and the only way to reach it in a document that also scales, because a document holds at most one envelope and the populated pair needs that one. Run against pair-metadata-dialect the difference between the two ratios is what DECODING costs over scanning, with the line count and the twin held identical.",
+            "perUnit": {
+                "case": {
+                    "each": 0,
+                    "plus": 1
+                },
+                "isomorph": {
+                    "each": 0,
+                    "plus": 1
+                }
+            }
         },
         {
             "case": "pair-metadata-dialect",
@@ -1257,6 +1362,16 @@
                     "metadata.list.populated",
                     "metadata.list.empty"
                 ]
+            },
+            "perUnit": {
+                "case": {
+                    "each": 0,
+                    "plus": 1
+                },
+                "isomorph": {
+                    "each": 0,
+                    "plus": 1
+                }
             }
         },
         {
@@ -1279,7 +1394,18 @@
             "absent": {
                 "case": ["Paragraph"]
             },
-            "claim": "The TRAILING table caption and a loose list item's continuation are the same production: a construct that a BLANK LINE DOES NOT CLOSE, absorbing the next line that matches its own continuation rule as a child holding inline content. A blank line closes every other leaf and container in CommonMark; a list is the exception, and this table is the dialect's. The continuation rules differ -- the caption's is the `: ` marker, the list item's is the content indent -- and that is what the pair measures. The earlier proof is the same one withdrawn for the leading form, and it was wrong here for a different reason: it said neither grammar adopts a FINISHED neighbouring block, but neither construct is finished at the blank line. The table is not done until the optional caption is resolved, exactly as a list is not done until a line arrives that is not one of its items. Both sides carry a thematic break to end the construct, and the twin carries three blocks per item against the table's three inline-bearing lines so the inline work matches. What holds the dialect side is the `absent` declaration: a caption line that went unread is a Paragraph, and this document must build none. The twin cannot be held the same way -- a list item holds Paragraphs whether or not it absorbed anything -- so the absence is declared per side rather than for both."
+            "claim": "The TRAILING table caption and a loose list item's continuation are the same production: a construct that a BLANK LINE DOES NOT CLOSE, absorbing the next line that matches its own continuation rule as a child holding inline content. A blank line closes every other leaf and container in CommonMark; a list is the exception, and this table is the dialect's. The continuation rules differ -- the caption's is the `: ` marker, the list item's is the content indent -- and that is what the pair measures. The earlier proof is the same one withdrawn for the leading form, and it was wrong here for a different reason: it said neither grammar adopts a FINISHED neighbouring block, but neither construct is finished at the blank line. The table is not done until the optional caption is resolved, exactly as a list is not done until a line arrives that is not one of its items. Both sides carry a thematic break to end the construct, and the twin carries three blocks per item against the table's three inline-bearing lines so the inline work matches. What holds the dialect side is the `absent` declaration: a caption line that went unread is a Paragraph, and this document must build none. The twin cannot be held the same way -- a list item holds Paragraphs whether or not it absorbed anything -- so the absence is declared per side rather than for both. The twin is held by its list being LOOSE. If the continuation lines stopped being absorbed they would become siblings of the list, leaving one item with one block and no blank line inside it -- a TIGHT list -- while the List, ListItem and ThematicBreak counts all stayed exactly as declared. `list.tight.false` is the state that cannot survive that, so the pair names it.",
+            "demonstrates": {
+                "isomorph": ["list.tight.false"]
+            },
+            "perUnit": {
+                "case": {
+                    "each": 1
+                },
+                "isomorph": {
+                    "each": 1
+                }
+            }
         },
         {
             "case": "pair-idirective-dialect",
@@ -1306,6 +1432,14 @@
                     "markup.attributes.records",
                     "markup.attributes.classes"
                 ]
+            },
+            "perUnit": {
+                "case": {
+                    "each": 3
+                },
+                "isomorph": {
+                    "each": 3
+                }
             }
         },
         {
@@ -1339,7 +1473,15 @@
                 ],
                 "isomorph": ["list.variant.decimal", "list.delimiter.period"]
             },
-            "claim": "A fancy ordered list and a CommonMark ordered list are the same production: an item opened by a SEQUENCE TOKEN followed by a DELIMITER, where the token fixes the list's start and the delimiter is part of what makes two adjacent lists one list or two. What differs is the alphabet the token is drawn from -- a letter, a roman numeral or `#` against a decimal run -- and the delimiter set, `)` and `(...)` alongside `.`. Both are read once, on the first item, and every later item's token is read and discarded, which is CommonMark's own rule for the start number. Each unit carries all seven spellings against seven decimal lists, separated by thematic breaks on both sides so the same number of LISTS is built from the same number of lines: 350 lists, 700 items, 700 paragraphs and 350 breaks per 50 units on each side. The pair counts List on both sides, so an equal count proves nothing by itself -- a marker the parser stopped reading leaves a list either way -- and the field that tells them apart prints UNQUOTED, so it is not a binding. It is named as a STATE instead: the dialect side must demonstrate every variant and delimiter the manifest declares for this grammar and the reference side its decimal-and-period pair, checked by the same predicates the conformance corpus is held to."
+            "claim": "A fancy ordered list and a CommonMark ordered list are the same production: an item opened by a SEQUENCE TOKEN followed by a DELIMITER, where the token fixes the list's start and the delimiter is part of what makes two adjacent lists one list or two. What differs is the alphabet the token is drawn from -- a letter, a roman numeral or `#` against a decimal run -- and the delimiter set, `)` and `(...)` alongside `.`. Both are read once, on the first item, and every later item's token is read and discarded, which is CommonMark's own rule for the start number. Each unit carries all seven spellings against seven decimal lists, separated by thematic breaks on both sides so the same number of LISTS is built from the same number of lines: 350 lists, 700 items, 700 paragraphs and 350 breaks per 50 units on each side. The pair counts List on both sides, so an equal count proves nothing by itself -- a marker the parser stopped reading leaves a list either way -- and the field that tells them apart prints UNQUOTED, so it is not a binding. It is named as a STATE instead: the dialect side must demonstrate every variant and delimiter the manifest declares for this grammar and the reference side its decimal-and-period pair, checked by the same predicates the conformance corpus is held to.",
+            "perUnit": {
+                "case": {
+                    "each": 7
+                },
+                "isomorph": {
+                    "each": 7
+                }
+            }
         },
         {
             "case": "pair-formulapromo-dialect",
@@ -1349,7 +1491,15 @@
                 "isomorph": "ThematicBreak"
             },
             "fallback": "Paragraph",
-            "claim": "Formula promotion and link-reference-definition annihilation are the same production: a paragraph whose ENTIRE ACCUMULATED CONTENT is one construct does not survive its own close. Both are decided by the content rather than by the opening line or the following one -- `$$y$$` with anything after it on the next line stays a paragraph holding a Formula inline, checked on the parser, so the condition can only be evaluated once the paragraph's content is known. CommonMark's link reference definition is the reference production with that property: a paragraph whose whole content is one definition is removed rather than built. What each puts in the paragraph's place differs -- a leaf block holding a literal against a name-to-target binding and no node at all -- and that is the measurement, not the pairing. The COUNT is carried by a thematic break in each unit, because the reference side builds nothing to count: the pair is held instead by the fallback, Paragraph, being absent from BOTH documents. That absence is the whole invariant. A formula that stopped being promoted is a paragraph holding a Formula; a definition the parser declined to read is a paragraph holding text; both were checked by breaking each side and watching the paragraph appear."
+            "claim": "Formula promotion and link-reference-definition annihilation are the same production: a paragraph whose ENTIRE ACCUMULATED CONTENT is one construct does not survive its own close. Both are decided by the content rather than by the opening line or the following one -- `$$y$$` with anything after it on the next line stays a paragraph holding a Formula inline, checked on the parser, so the condition can only be evaluated once the paragraph's content is known. CommonMark's link reference definition is the reference production with that property: a paragraph whose whole content is one definition is removed rather than built. What each puts in the paragraph's place differs -- a leaf block holding a literal against a name-to-target binding and no node at all -- and that is the measurement, not the pairing. The COUNT is carried by a thematic break in each unit, because the reference side builds nothing to count: the pair is held instead by the fallback, Paragraph, being absent from BOTH documents. That absence is the whole invariant. A formula that stopped being promoted is a paragraph holding a Formula; a definition the parser declined to read is a paragraph holding text; both were checked by breaking each side and watching the paragraph appear.",
+            "perUnit": {
+                "case": {
+                    "each": 1
+                },
+                "isomorph": {
+                    "each": 1
+                }
+            }
         },
         {
             "case": "pair-specimenstart-dialect",
@@ -1364,7 +1514,15 @@
                     "isomorph": "Cite"
                 }
             ],
-            "claim": "The RESET form of a specimen definition, paired against the same GFM footnote definition as the plain form and for the same reasons -- one opener carrying a label, block content the opener owns, a node hoisted into a side list the document holds, and a call on each side because GFM discards a footnote nobody calls. What this pair adds is the digit run: `(5@label)` carries an explicit number where `(@label)` carries none, which is the `specimen.start.value` state and had no same-job number before. Run it against pair-specimen-dialect and the difference between the two ratios is what the number costs, with everything else held identical down to the twin's bytes. The numbering rule is an ordered list's: consecutive definitions are ONE sequence whose start comes from its first member and whose later members' digits are read and discarded, and a definition separated from the previous one begins a new sequence with its own start. Each unit here is separated by its own call paragraph, so every definition starts a sequence and every one records start=5 -- checked on the parser rather than assumed, because an earlier reading of two ADJACENT resets said the second recorded nothing, and the rule that explains both readings is the sequence boundary."
+            "claim": "The RESET form of a specimen definition, paired against the same GFM footnote definition as the plain form and for the same reasons -- one opener carrying a label, block content the opener owns, a node hoisted into a side list the document holds, and a call on each side because GFM discards a footnote nobody calls. What this pair adds is the digit run: `(5@label)` carries an explicit number where `(@label)` carries none, which is the `specimen.start.value` state and had no same-job number before. Run it against pair-specimen-dialect and the difference between the two ratios is what the number costs, with everything else held identical down to the twin's bytes. The numbering rule is an ordered list's: consecutive definitions are ONE sequence whose start comes from its first member and whose later members' digits are read and discarded, and a definition separated from the previous one begins a new sequence with its own start. Each unit here is separated by its own call paragraph, so every definition starts a sequence and every one records start=5 -- checked on the parser rather than assumed, because an earlier reading of two ADJACENT resets said the second recorded nothing, and the rule that explains both readings is the sequence boundary.",
+            "perUnit": {
+                "case": {
+                    "each": 1
+                },
+                "isomorph": {
+                    "each": 1
+                }
+            }
         },
         {
             "case": "pair-ldirective-dialect",
@@ -1373,7 +1531,15 @@
                 "case": "DirectiveBlock",
                 "isomorph": "Heading"
             },
-            "claim": "A leaf directive and an ATX heading are the same production: a LEAF block recognised by a marker run at the start of its single line, the marker consumed into a FIELD, and the rest of the line parsed as INLINES owned by the block. `##` becomes level=2 and `::note` becomes name=\"note\"; what follows is inline content either way. That the dialect hangs those inlines under a DirectiveLabel group where the heading holds them directly is node materialisation, which is never grounds to refuse. This pair publishes SAME-JOB ONLY. The isomorph half is a heading, and this dialect derives an anchor on every heading where neither reference does, so the isomorph's tree carries a field no reference builds -- which lands in twinCore, inflating Grammar's denominator and Shape's numerator while cancelling out of same-job. The corpus states that derivation under `unpairable`, the twin declares the field it carries, and the driver suppresses the two contaminated columns rather than printing them low and high. The dialect half derives nothing: a leaf directive's anchor is null."
+            "claim": "A leaf directive and an ATX heading are the same production: a LEAF block recognised by a marker run at the start of its single line, the marker consumed into a FIELD, and the rest of the line parsed as INLINES owned by the block. `##` becomes level=2 and `::note` becomes name=\"note\"; what follows is inline content either way. That the dialect hangs those inlines under a DirectiveLabel group where the heading holds them directly is node materialisation, which is never grounds to refuse. This pair publishes SAME-JOB ONLY. The isomorph half is a heading, and this dialect derives an anchor on every heading where neither reference does, so the isomorph's tree carries a field no reference builds -- which lands in twinCore, inflating Grammar's denominator and Shape's numerator while cancelling out of same-job. The corpus states that derivation under `unpairable`, the twin declares the field it carries, and the driver suppresses the two contaminated columns rather than printing them low and high. The dialect half derives nothing: a leaf directive's anchor is null.",
+            "perUnit": {
+                "case": {
+                    "each": 1
+                },
+                "isomorph": {
+                    "each": 1
+                }
+            }
         },
         {
             "case": "pair-cdirective-dialect",
@@ -1391,6 +1557,14 @@
             "claim": "A container directive and a block quote are the same production: a CONTAINER BLOCK -- a start condition, a per-line continuation condition, and contents parsed as BLOCKS. CommonMark defines that category itself and puts the block quote and the list item in it; the container directive is a third member of it. What differs is which continuation condition: a block quote continues while its lines carry the marker, a directive continues until its closing fence. That is the thing being measured. The pair counts Paragraph alongside the container because block parsing of the contents is the second half of the criterion and 50 against 50 per 50 units is what shows it matches. The earlier refusal said CommonMark's only FENCE opens a leaf, which compares the fence construct rather than the container production -- the reference here is not the fenced code block, it is the block quote. What the reader should discount for: a fenced container spends two delimiter lines per unit where a prefix container spends none, so at equal COUNT the dialect document is about three times the lines. That is the cost of the grammar rather than a hidden inequality, and it is why the pair is sized by count and says so.",
             "demonstrates": {
                 "case": ["directiveBlock.name.null", "markup.attributes.classes"]
+            },
+            "perUnit": {
+                "case": {
+                    "each": 2
+                },
+                "isomorph": {
+                    "each": 2
+                }
             }
         },
         {
@@ -1416,6 +1590,14 @@
                     "callout.collapsed.false",
                     "callout.title.populated"
                 ]
+            },
+            "perUnit": {
+                "case": {
+                    "each": 3
+                },
+                "isomorph": {
+                    "each": 3
+                }
             }
         },
         {
@@ -1432,7 +1614,17 @@
                 }
             ],
             "fallback": "Paragraph",
-            "claim": "A headerless simple table and a GFM pipe table are the same ROW production: a line cut into K ranges, each range's content parsed as INLINES, repeated for as many lines as the table holds. The cut is positional in one grammar and delimited in the other, which is the difference being measured; the subsequent operation is the same on both sides, and the pair counts TableRow alongside TableCell so that both halves of the criterion are checked rather than only the second. Where the two grammars genuinely differ is that GFM DESIGNATES its first row the head and the simple table's headerless form leaves every row in the body -- a destination for a row already parsed, not a different production, which is why both sides carry one extra row so that the same number of LINES becomes the same number of cells. The earlier refusal argued from GFM's table REQUIRING a header, which is a fact about the reference's table rather than about its row-and-cell production. Held by the absence of Paragraph: both spellings collapse into one the moment the table stops being recognised, and with an index that gains a digit the collapse would be silent, so both sides use the zero-padded form."
+            "claim": "A headerless simple table and a GFM pipe table are the same ROW production: a line cut into K ranges, each range's content parsed as INLINES, repeated for as many lines as the table holds. The cut is positional in one grammar and delimited in the other, which is the difference being measured; the subsequent operation is the same on both sides, and the pair counts TableRow alongside TableCell so that both halves of the criterion are checked rather than only the second. Where the two grammars genuinely differ is that GFM DESIGNATES its first row the head and the simple table's headerless form leaves every row in the body -- a destination for a row already parsed, not a different production, which is why both sides carry one extra row so that the same number of LINES becomes the same number of cells. The earlier refusal argued from GFM's table REQUIRING a header, which is a fact about the reference's table rather than about its row-and-cell production. Held by the absence of Paragraph: both spellings collapse into one the moment the table stops being recognised, and with an index that gains a digit the collapse would be silent, so both sides use the zero-padded form.",
+            "perUnit": {
+                "case": {
+                    "each": 2,
+                    "plus": 2
+                },
+                "isomorph": {
+                    "each": 2,
+                    "plus": 2
+                }
+            }
         },
         {
             "case": "pair-sparsegrid-dialect",
@@ -1464,7 +1656,15 @@
                     "table.column.relative.value"
                 ]
             },
-            "claim": "The SPARSE grid table, cell for cell against the same loose list item pair-gridcell-dialect uses and for the same reason: a per-line positional cut at a width established by an earlier line, whose joined remainders are parsed as BLOCKS. Where that pair carries one plain cell, this one carries every cell shape the grammar admits -- a cell spanning two rows, a cell spanning two columns, a cell with no content at all, a row with no cells, a populated foot and an empty caption -- against seven list items of which two are empty and one holds two blocks, so the cells, the blocks and the inline runs all match: 7 cells, 6 paragraphs and 6 text nodes per unit on each side. Reading the two ratios together is what separates the cost of the SPANS from the cost of the cut: everything else about the two pairs is the same production against the same reference."
+            "claim": "The SPARSE grid table, cell for cell against the same loose list item pair-gridcell-dialect uses and for the same reason: a per-line positional cut at a width established by an earlier line, whose joined remainders are parsed as BLOCKS. Where that pair carries one plain cell, this one carries every cell shape the grammar admits -- a cell spanning two rows, a cell spanning two columns, a cell with no content at all, a row with no cells, a populated foot and an empty caption -- against seven list items of which two are empty and one holds two blocks, so the cells, the blocks and the inline runs all match: 7 cells, 6 paragraphs and 6 text nodes per unit on each side. Reading the two ratios together is what separates the cost of the SPANS from the cost of the cut: everything else about the two pairs is the same production against the same reference.",
+            "perUnit": {
+                "case": {
+                    "each": 7
+                },
+                "isomorph": {
+                    "each": 7
+                }
+            }
         },
         {
             "case": "pair-gridcell-dialect",
@@ -1479,7 +1679,15 @@
                     "isomorph": "Paragraph"
                 }
             ],
-            "claim": "A grid table cell and a loose list item are the same production: a per-line POSITIONAL cut at a width established by an earlier line, whose joined remainders are then parsed as BLOCKS. A list item establishes its indent width from its own marker and strips that width off every following line; a grid cell takes the range between two column positions established by the border line and strips it off every line of the row. Both then parse what is left as block content, which is why the pair also counts Paragraph: the subsequent operation is the second half of the criterion, and 100 paragraphs against 100 paragraphs is what shows it matches. The earlier refusal said no reference table has block cells, which answers the wrong question -- the criterion asks for a reference PRODUCTION of this shape, not a reference table. The grid table is used rather than the multiline table because only the grid form is recognisable with ONE column: a multiline table establishes its columns from a SEGMENTED dash line, and a single unbroken dash run is a thematic break or a setext underline, so the one-column multiline table does not exist to be paired. Both sides use the zero-padded index, because a grid row must close its cell at the border's column and an index gaining a digit part way through would silently turn the rest of the document into a paragraph."
+            "claim": "A grid table cell and a loose list item are the same production: a per-line POSITIONAL cut at a width established by an earlier line, whose joined remainders are then parsed as BLOCKS. A list item establishes its indent width from its own marker and strips that width off every following line; a grid cell takes the range between two column positions established by the border line and strips it off every line of the row. Both then parse what is left as block content, which is why the pair also counts Paragraph: the subsequent operation is the second half of the criterion, and 100 paragraphs against 100 paragraphs is what shows it matches. The earlier refusal said no reference table has block cells, which answers the wrong question -- the criterion asks for a reference PRODUCTION of this shape, not a reference table. The grid table is used rather than the multiline table because only the grid form is recognisable with ONE column: a multiline table establishes its columns from a SEGMENTED dash line, and a single unbroken dash run is a thematic break or a setext underline, so the one-column multiline table does not exist to be paired. Both sides use the zero-padded index, because a grid row must close its cell at the border's column and an index gaining a digit part way through would silently turn the rest of the document into a paragraph.",
+            "perUnit": {
+                "case": {
+                    "each": 1
+                },
+                "isomorph": {
+                    "each": 1
+                }
+            }
         },
         {
             "case": "pair-caption-dialect",
@@ -1489,7 +1697,21 @@
                 "isomorph": "Table"
             },
             "fallback": "Paragraph",
-            "claim": "A LEADING table caption and a GFM table header line are the same production: a paragraph-shaped line already scanned, retroactively claimed by a table that a LATER line announces. GFM's delimiter row promotes the line above it into the table; the dialect's table promotes the `Table: ` line above it into the same table. The two units are line for line the same shape -- four lines, one of them a delimiter row, three carrying inlines, the first of those adopted by lookbehind -- and both sides build one table with three Text nodes per unit, which is the equality the pair rests on. That the dialect materialises the adopted line as a TableCaption owning its inlines where GFM materialises it as a header row owning a cell owning its inlines is node materialisation, which is never grounds to refuse. The pair is held by the ABSENCE of Paragraph on either side: both spellings degrade to a paragraph the moment the adoption stops being recognised, so a paragraph appearing anywhere in either document means some of it is no longer the construct being paired. This replaces a withdrawn proof that said neither grammar adopts a finished neighbouring block; the proof was written for the TRAILING form and wrongly applied to both."
+            "claim": "A LEADING table caption and a GFM table header line are the same production: a paragraph-shaped line already scanned, retroactively claimed by a table that a LATER line announces. GFM's delimiter row promotes the line above it into the table; the dialect's table promotes the `Table: ` line above it into the same table. The two units are line for line the same shape -- four lines, one of them a delimiter row, three carrying inlines, the first of those adopted by lookbehind -- and both sides build one table with three Text nodes per unit, which is the equality the pair rests on and is checked rather than asserted: Text is counted on both sides, so inline parsing of the adopted line regressing while the table still parses cannot slip through an equal Table count. That the dialect materialises the adopted line as a TableCaption owning its inlines where GFM materialises it as a header row owning a cell owning its inlines is node materialisation, which is never grounds to refuse. The pair is held by the ABSENCE of Paragraph on either side: both spellings degrade to a paragraph the moment the adoption stops being recognised, so a paragraph appearing anywhere in either document means some of it is no longer the construct being paired. This replaces a withdrawn proof that said neither grammar adopts a finished neighbouring block; the proof was written for the TRAILING form and wrongly applied to both.",
+            "alsoCounts": [
+                {
+                    "case": "Text",
+                    "isomorph": "Text"
+                }
+            ],
+            "perUnit": {
+                "case": {
+                    "each": 1
+                },
+                "isomorph": {
+                    "each": 1
+                }
+            }
         },
         {
             "case": "pair-deflist-dialect",
@@ -1506,6 +1728,20 @@
                     "definition.bodies.multiple",
                     "definition.body.empty"
                 ]
+            },
+            "alsoCounts": [
+                {
+                    "case": "Text",
+                    "isomorph": "Text"
+                }
+            ],
+            "perUnit": {
+                "case": {
+                    "each": 3
+                },
+                "isomorph": {
+                    "each": 3
+                }
             }
         }
     ],
@@ -1513,10 +1749,6 @@
         {
             "production": "derived heading anchor",
             "proof": "RE-DERIVED, because the first statement was the construct-not-production error and happened to survive it. Wrong version: CommonMark has no production that derives a binding from a node's own content. That invites the obvious counter -- a link reference definition also NORMALISES a string and registers it in a name table, which is the same subsequent operation, and it is exactly the reasoning that produced the discarded 1.27x pair. The real difference is in the production, not the operation: a link reference definition IS a binding declaration and builds no block; a derived anchor is a binding attached as a SIDE EFFECT to a block that carries inline content and exists independently of it. Neither reference grammar attaches a derived binding to a content-bearing block, so there is nothing of that shape to write. This also explains why the EXPLICIT anchor pairs and this does not: `#name#` declares, and a declaration is what a link reference definition is."
-        },
-        {
-            "production": "a heading as the reference half -- CONTAMINATES Grammar and Shape, NOT same-job",
-            "proof": "WITHDRAWN AS STATED, and the correction runs the other way. The claim was that a heading can never be the reference half of a pair anywhere in this corpus, because this dialect derives an anchor on every heading including in plain CommonMark. The premise is true and the conclusion does not follow. Take the three numbers as the driver computes them: grammar = core/twinCore, shape = twinCore/twinCmark, sameJob = core/twinCmark. The anchor derivation lands in twinCore -- this parser's cost on the isomorph half -- and twinCore CANCELS out of sameJob, which is this parser on the DIALECT document over the REFERENCE on the isomorph. The dialect document has no headings and cmark derives no anchors, so sameJob is clean. What is contaminated is Grammar, whose denominator is inflated so it reads low, and Shape, whose numerator is inflated so it reads high. A heading isomorph therefore yields a valid same-job ratio -- the number the ranking sorts on -- and two numbers that must be suppressed."
         },
         {
             "production": "inline footnote `^[body]`",
@@ -1529,6 +1761,12 @@
         {
             "production": "multiline table, the ROW production at two columns or more",
             "proof": "An exhaustive enumeration over the LINE-CUTTING productions of both reference grammars, and it is narrow on purpose: everything else about this table is paired. A multiline row cuts ONE line into K parallel pieces at positions established by one earlier boundary line, appends each piece to its own cell buffer, and parses each buffer as BLOCKS -- checked on the parser, where `- item` in a cell becomes a List and `# Head` becomes a Heading, so it is block parsing and not a joined paragraph. Enumerate every reference production that cuts a line. Every CONTAINER cuts a PREFIX and yields exactly ONE remainder: a block quote strips its marker, a list item strips its content indent, and nesting them cuts the same line repeatedly rather than into parallel pieces. Exactly one reference production cuts a line into K>=2 parallel pieces, GFM's pipe table row, and it parses its pieces as INLINES. So a K-way cut whose pieces are block-parsed exists in neither grammar, and the criterion's second clause -- the subsequent operation must match -- is what the pipe row fails. The one-column reduction that saved the grid table is not available either: a multiline table takes its columns from a SEGMENTED dash line, and a single unbroken dash run is a thematic break or a setext underline. What must NOT be read into this: both FACTORS of the production are separately paired and both have same-job numbers. pair-simpletable-dialect is the K-way POSITIONAL cut with inline cells against the GFM pipe row, and pair-gridcell-dialect is the positional cut with BLOCK cells at K=1 against a list item's content indent. It is only their composition that has no reference production. NOTE the honest caveat, the same one the other enumerations carry: this proof has not been attacked by anyone but its author."
+        }
+    ],
+    "suppressions": [
+        {
+            "rule": "a heading as the isomorph half -- CONTAMINATES Grammar and Shape, NOT same-job",
+            "statement": "WITHDRAWN AS STATED, and the correction runs the other way. The claim was that a heading can never be the reference half of a pair anywhere in this corpus, because this dialect derives an anchor on every heading including in plain CommonMark. The premise is true and the conclusion does not follow. Take the three numbers as the driver computes them: grammar = core/twinCore, shape = twinCore/twinCmark, sameJob = core/twinCmark. The anchor derivation lands in twinCore -- this parser's cost on the isomorph half -- and twinCore CANCELS out of sameJob, which is this parser on the DIALECT document over the REFERENCE on the isomorph. The dialect document has no headings and cmark derives no anchors, so sameJob is clean. What is contaminated is Grammar, whose denominator is inflated so it reads low, and Shape, whose numerator is inflated so it reads high. A heading isomorph therefore yields a valid same-job ratio -- the number the ranking sorts on -- and two numbers that must be suppressed."
         }
     ],
     "openCandidates": []

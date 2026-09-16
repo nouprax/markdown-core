@@ -460,6 +460,15 @@ For a **declaration** pair, where there is no identical tree to compare:
   evidence after all, and what makes it evidence is that the fallback never
   appears. A task marker has no fallback in this sense, which is why that pair
   names a binding instead.
+- where a pair names `perUnit`, each side's construct count must equal what the
+  GENERATOR emitted — `each × units + plus` — and not merely what the other side
+  built. Equal totals say the two documents agree with each other and nothing
+  about whether either agrees with what was asked for: both sides recognising
+  the same subset of their units, or a unit template quietly emitting two of the
+  construct where the claim says one, passes an equality check untouched. The
+  metadata pairs are the case worth naming: an envelope is recognised once per
+  document, so their units are member *lines*, one unit is worth no `Metadata`
+  node at all, and the single node comes from the head.
 - where a pair names `demonstrates`, each side it lists must reach every
   declared grammar **state** named for it. This is the third way a same-kind
   pair can be held, and it reaches what a field cannot: two ordered lists build
@@ -496,10 +505,11 @@ the summary line counts them. The predicates are the repository's own, in
 `scripts/lib/canonical-states.mjs`, shared with the conformance-fixture checker
 so the two cannot disagree about what a state is.
 
-`corpus.json` carries a `stateFloor`, and the audit fails below it. It is a
-ratchet rather than a target: a change that quietly stopped a case demonstrating
-a state — an edited unit, a retired sample — would otherwise pass the audit while
-the number shrank with nobody watching. Raise it in the commit that earns it.
+The audit fails unless **every** declared state either has a same-job ratio or
+is named in `statesBoundByProof`. That is the ratchet, and it is an *identity*
+rather than a count: a floor on how many states are measured passes a change
+that loses one and gains another, which is exactly the silent regression a floor
+is written to catch.
 
 **It stands at 129 of 131, and the other two cannot be closed.** They are
 reachable only through a construct this corpus has *proved* unpairable — an
@@ -509,7 +519,7 @@ shape exists to write one against. Each is declared in `statesBoundByProof`
 against the `unpairable` entry that binds it, and the audit checks that
 declaration in both directions: the proof must exist, and the state must really
 still be a bound. A state the corpus learns to measure loses its exemption in
-the same change, or the count would understate itself with nobody noticing.
+the same change, or the claim would understate the corpus.
 
 So the corpus is complete in the only sense that can be checked: every declared
 grammar state either has a same-job ratio or has a written proof that it cannot.
@@ -526,8 +536,11 @@ that a grid table, a definition list, a callout and a directive could not pair
 while the manifest already held the pairs for all four.
 
 - **`unpairable`** is a *proof*: an argument off the two grammars that has been
-  attacked and held. There are five, and three of them carry the caveat that
-  nobody but their author has attacked them.
+  attacked and held. There are four, and three of them carry the caveat that
+  nobody but their author has attacked them. A fifth entry lived here and did
+  not belong: it concluded that a heading *can* be an isomorph half, with only
+  two of the three numbers suppressed. That is a rule about what to publish, not
+  a production that cannot pair, and it is now under `suppressions`.
 - **`openCandidates`** is a *candidate*: a pair that has not been built and has
   not been proved impossible. It is a bound today because nobody has settled it,
   which is a weaker sentence and is printed as one. **It is empty.** Every
@@ -593,10 +606,17 @@ reference builds it, and every case declares the ones its tree carries:
 "referenceless": { "anchor": "Neither reference derives or stores a per-block identifier. …" }
 ```
 
-A case carrying one is reported as a **bound** — it is not ranked, and it is not
-in any group's median — unless the corpus pairs it, because a pair is exactly
-the thing that puts the same declaration in front of the reference. That is why
-`pair-anchor-dialect` carries `anchor` and still gets a ratio.
+A case carrying one is reported as a **bound** — it publishes no same-job ratio
+— unless the corpus pairs it, because a pair is exactly the thing that puts the
+same declaration in front of the reference. That is why `pair-anchor-dialect`
+carries `anchor` and still gets a ratio.
+
+A bound is still *ranked*, and separately: it sorts by its ratio against cmark
+on its own bytes, it is the `Dialect-only (no reference)` group and contributes
+to that group's median, and it is eligible for the cost table. What it never
+does is sit in a same-job group or a same-job median, because the number it
+carries is not one. Saying it is "not ranked" would be a second wrong reading of
+the same figure — the first was publishing it as a comparison.
 
 A field on the **isomorph** half is a different case with a different cost. It
 does not touch the same-job ratio, because `twinCore` cancels out of it; it

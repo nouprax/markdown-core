@@ -511,9 +511,35 @@ function logicalIsomorphs() {
     );
 }
 
-function logicalPairFailures(census, pairs) {
-    const failures = [];
+/* What the GENERATOR said it emitted, written beside the corpus it wrote. */
+function generatedUnits(directory) {
+    const file = path.join(directory, "units.json");
+    if (!fs.existsSync(file)) fail(`the corpus generator wrote no ${path.basename(file)} beside its documents`);
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function logicalPairFailures(census, pairs, units) {
+    /* The messages, AND the set of pairs they came from. One pair can break
+     * several invariants at once -- a binding pair fails once per side, and a
+     * pair naming three states can fail three times -- so subtracting the
+     * MESSAGE count from the pair count under-reported how many held, and with
+     * enough messages would have printed a negative numerator. The collector
+     * records which pair was being checked when each message was pushed, so
+     * every existing `failures.push` stays as it is. */
+    const messages = [];
+    const broken = new Set();
+    let current = null;
+    const failures = {
+        get length() {
+            return messages.length;
+        },
+        push(message) {
+            messages.push(message);
+            if (current !== null) broken.add(current);
+        }
+    };
     for (const pair of pairs) {
+        current = pair.case;
         const sides = {
             case: { name: pair.case, kind: pair.counts.case },
             isomorph: { name: pair.isomorph, kind: pair.counts.isomorph }
@@ -621,6 +647,35 @@ function logicalPairFailures(census, pairs) {
                 );
             }
         }
+        /* THE COUNT AGAINST THE GENERATOR'S ARITHMETIC, not just against the
+         * other side. Equal nonzero totals say the two documents agree with each
+         * other and nothing about whether either agrees with what was ASKED for:
+         * both sides recognising the same subset of their units, or a unit
+         * template quietly emitting two of the construct where the claim says
+         * one, passes that check untouched. So each side declares how many of
+         * the construct one unit is worth, plus whatever a head or tail
+         * contributes once. The metadata pairs are the case worth naming -- an
+         * envelope is recognised once per document, so their units are MEMBER
+         * LINES and one unit is worth NO metadata node at all, with the single
+         * node coming from the head. */
+        for (const [side, expected] of Object.entries(pair.perUnit ?? {})) {
+            const { name, kind } = sides[side];
+            const emitted = units[name];
+            if (emitted === undefined) {
+                failures.push(`${name} declares constructs per unit and the generator recorded no unit count for it`);
+                continue;
+            }
+            const built = (side === "case" ? counts : twinCounts).get(kind) ?? 0;
+            const want = expected.each * emitted + (expected.plus ?? 0);
+            if (built !== want) {
+                failures.push(
+                    `${name} was generated with ${emitted} units and declares ${expected.each} ${kind} each` +
+                        `${expected.plus ? ` plus ${expected.plus}` : ""}, which is ${want}, but the parser built ` +
+                        `${built}. An equal count on the two sides is agreement between the documents; this is ` +
+                        `agreement with what the corpus asked for`
+                );
+            }
+        }
         /* A kind a NAMED SIDE must not build at all. `fallback` is the same
          * check applied to both sides at once, and where a pair's two spellings
          * degrade differently there is no kind to name for both: a trailing
@@ -673,7 +728,7 @@ function logicalPairFailures(census, pairs) {
             }
         }
     }
-    return failures;
+    return { messages, broken };
 }
 
 /**
@@ -731,15 +786,6 @@ function statesBoundByProof() {
         }
     }
     return { declared, failures };
-}
-
-function declaredStateFloor() {
-    const manifest = JSON.parse(
-        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
-    );
-    const floor = manifest.stateFloor;
-    if (!Number.isInteger(floor) || floor < 0) fail("corpus.json: stateFloor must be a whole number of states");
-    return floor;
 }
 
 function corpusCases() {
@@ -940,7 +986,7 @@ let exempt;
          * a property of the two documents as written, and the corpus repeats
          * each of them to a byte target, which says nothing further about it. */
         notIsomorphic = isomorphFailures(binaries.dump, pairs);
-        unequalPairs = logicalPairFailures(census, logical);
+        unequalPairs = logicalPairFailures(census, logical, generatedUnits(corpusDir));
         miscarried = carriedFailures(binaries.dump, census, path.dirname(documents[0]), referenceless);
         states = stateReach(census, corpusCases(), pairs, logical);
         exempt = statesBoundByProof();
@@ -1002,7 +1048,7 @@ process.stdout.write(
         `  samples with a case  ${sampleCount - orphaned.length}/${sampleCount}\n` +
         `  cases still building ${declaredBuilds().size - drifted.length}/${declaredBuilds().size}\n` +
         `  isomorph pairs held  ${pairs.length - notIsomorphic.length}/${pairs.length}\n` +
-        `  logical pairs held   ${logical.length - unequalPairs.length}/${logical.length}\n` +
+        `  logical pairs held   ${logical.length - unequalPairs.broken.size}/${logical.length}\n` +
         `  referenceless fields ${referenceless.length}, declared by every case that carries one` +
         `${miscarried.length ? ` -- ${miscarried.length} do not` : ""}\n` +
         `  grammar states measured ${states.measured.length}/${Object.keys(stateValidators).length}` +
@@ -1044,23 +1090,30 @@ const failures = [];
 failures.push(...exempt.failures);
 /* An exemption that is no longer needed is a stale claim, and stale claims are
  * what this corpus keeps failing on. A state the corpus HAS learned to measure
- * must lose its exemption in the same change, or the count below understates
- * itself and nobody notices. */
+ * must lose its exemption in the same change. */
 for (const state of Object.keys(exempt.declared)) {
     if (states.measured.includes(state)) {
         failures.push(
             `${state} is declared bound by a proof and the corpus now measures it with a same-job ` +
-                `ratio. Remove the exemption rather than leaving a number that understates itself`
+                `ratio. Remove the exemption rather than leaving a claim that understates the corpus`
         );
     }
 }
+/* THE RATCHET, and it is an identity rather than a count. A floor on how MANY
+ * states are measured passes a change that loses one and gains another, which
+ * is exactly the silent regression the floor was written to catch. Coverage is
+ * complete, so the invariant can be stated outright instead: every declared
+ * grammar state is either measured with a same-job ratio or exempt against a
+ * named proof, and anything else is named here. */
 {
-    const floor = declaredStateFloor();
-    if (states.measured.length < floor) {
+    const missing = Object.keys(stateValidators).filter(
+        (state) => !states.measured.includes(state) && !(state in exempt.declared)
+    );
+    if (missing.length) {
         failures.push(
-            `the corpus measures ${states.measured.length} of ${Object.keys(stateValidators).length} declared ` +
-                `grammar states with a same-job ratio, under the ${floor} recorded in corpus.json. Run with ` +
-                `--states to see which ones are bounds and which are unreached`
+            `these declared grammar states have neither a same-job ratio nor an entry in ` +
+                `statesBoundByProof, so the corpus measures them only as bounds and says nowhere why:` +
+                `\n    ${missing.join("\n    ")}`
         );
     }
 }
@@ -1076,10 +1129,10 @@ if (miscarried.length) {
             `line up with what their trees carry:\n    ${miscarried.join("\n    ")}`
     );
 }
-if (unequalPairs.length) {
+if (unequalPairs.messages.length) {
     failures.push(
         `a logical pair compares two spellings of one declaration, and these no longer hold ` +
-            `what that claims:\n    ${unequalPairs.join("\n    ")}`
+            `what that claims:\n    ${unequalPairs.messages.join("\n    ")}`
     );
 }
 if (drifted.length) {
