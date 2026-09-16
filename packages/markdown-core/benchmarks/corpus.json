@@ -1,7 +1,7 @@
 {
     "schemaVersion": 2,
     "targetBytes": 65536,
-    "stateFloor": 89,
+    "stateFloor": 95,
     "requiredGrammars": {
         "S_attach_block_identifier": "block-identifier",
         "autolink_delim": "inline-autolink-rich",
@@ -606,11 +606,34 @@
             "builds": ["CodeBlock"]
         },
         {
-            "name": "pair-metadata-dialect",
+            "name": "pair-metadataempty-dialect",
             "dialect": "extended",
             "generated": {
                 "head": "---\n",
-                "unit": "keywords: value {n}\n",
+                "unit": "unknown-{n}: value {n}\n",
+                "tail": "---\n\nBody.\n",
+                "scales": "unrecognised member lines"
+            },
+            "builds": ["Metadata"]
+        },
+        {
+            "name": "pair-metadataempty-common",
+            "dialect": "commonmark",
+            "counted": {
+                "head": "```\n",
+                "unit": "unknown-{n}: value {n}\n",
+                "match": "pair-metadataempty-dialect",
+                "tail": "```\n\nBody.\n",
+                "scales": "fenced body lines"
+            },
+            "builds": ["CodeBlock"]
+        },
+        {
+            "name": "pair-metadata-dialect",
+            "dialect": "extended",
+            "generated": {
+                "head": "---\nname: \"Note\"\ntime: 9007199254740993\nstate: true\ncomment:\nauthors: [one, 2]\nkeywords: []\n",
+                "unit": "date: value {n}\n",
                 "tail": "---\n\nBody.\n",
                 "scales": "envelope member lines"
             },
@@ -620,8 +643,8 @@
             "name": "pair-metadata-common",
             "dialect": "commonmark",
             "counted": {
-                "head": "```\n",
-                "unit": "keywords: value {n}\n",
+                "head": "```\nname: \"Note\"\ntime: 9007199254740993\nstate: true\ncomment:\nauthors: [one, 2]\nkeywords: []\n",
+                "unit": "date: value {n}\n",
                 "match": "pair-metadata-dialect",
                 "tail": "```\n\nBody.\n",
                 "scales": "fenced body lines"
@@ -1115,13 +1138,37 @@
             "claim": "A fence whose info string is exactly `formula` is a formula block, and formulas.md and code.md both say so; every other info string keeps ordinary code-block behaviour. So this is not a production of the same SHAPE as a code fence, it IS the code fence production with one token changed, which makes it the narrowest pair in the corpus and a deliberate one: the fence scanner is held byte for byte identical and the only thing that varies is the info-string comparison and the routing of the finished leaf to a different kind. It measures none of the `$$` delimiter-line grammar, which is a separate production paired separately as pair-formulablock."
         },
         {
+            "case": "pair-metadataempty-dialect",
+            "isomorph": "pair-metadataempty-common",
+            "counts": {
+                "case": "Metadata",
+                "isomorph": "CodeBlock"
+            },
+            "demonstrates": {
+                "case": ["document.metadata.empty"]
+            },
+            "claim": "The EMPTY envelope, against the same fenced code block the populated one pairs with and for the same reason: a leaf block opened and closed by a delimiter line whose body is not parsed as Markdown. Every member line here carries a key the envelope does not recognise, so all ten fields stay null while the lines are still scanned -- which is what `document.metadata.empty` is, and the only way to reach it in a document that also scales, because a document holds at most one envelope and the populated pair needs that one. Run against pair-metadata-dialect the difference between the two ratios is what DECODING costs over scanning, with the line count and the twin held identical."
+        },
+        {
             "case": "pair-metadata-dialect",
             "isomorph": "pair-metadata-common",
             "counts": {
                 "case": "Metadata",
                 "isomorph": "CodeBlock"
             },
-            "claim": "A properties envelope and a fenced code block are the same production: a leaf block opened and closed by a delimiter line, whose body is NOT parsed as Markdown. Same shape, different terminal -- `---` against a run of three or more backticks. What each does with the body afterwards, decode it into named fields or keep it literal, is the measurement and not part of the pairing. This pair is shaped unlike every other one in the corpus and deliberately so: properties.md says only one envelope is recognised, at the document's start, so the workload CANNOT scale by repeating the construct. It scales by the member lines inside a single envelope, which is why both sides carry a head and a tail and why `units` counts lines here rather than constructs. The earlier refusal -- once per document, no count to scale -- mistook the construct for the dimension."
+            "claim": "A properties envelope and a fenced code block are the same production: a leaf block opened and closed by a delimiter line, whose body is NOT parsed as Markdown. Same shape, different terminal -- `---` against a run of three or more backticks. What each does with the body afterwards, decode it into named fields or keep it literal, is the measurement and not part of the pairing. This pair is shaped unlike every other one in the corpus and deliberately so: properties.md says only one envelope is recognised, at the document's start, so the workload CANNOT scale by repeating the construct. It scales by the member lines inside a single envelope, which is why both sides carry a head and a tail and why `units` counts lines here rather than constructs. The earlier refusal -- once per document, no count to scale -- mistook the construct for the dimension. The head carries one member of every shape the envelope decodes -- a quoted text, a number past 2^53, a bool, a key with no value, a populated list and an empty one -- and the twin's fence carries the SAME six lines, so both sides scan them and only one side decodes them. That asymmetry is the measurement and is the reason those six states have a same-job number at all; they are named under `demonstrates` so an edited head cannot drop one silently.",
+            "demonstrates": {
+                "case": [
+                    "document.metadata.present",
+                    "metadata.fields.populated",
+                    "metadata.scalar.text",
+                    "metadata.scalar.number",
+                    "metadata.scalar.bool",
+                    "metadata.scalar.null",
+                    "metadata.list.populated",
+                    "metadata.list.empty"
+                ]
+            }
         },
         {
             "case": "pair-tcaption-dialect",
