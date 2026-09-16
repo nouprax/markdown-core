@@ -1647,20 +1647,71 @@ function markdownReport(report) {
     /* A ratio is only a comparison where both engines did the same job. */
     const stageIr = (engines, engine) =>
         engines[engine] ? STAGES.reduce((sum, stage) => sum + engines[engine].stages[stage].ir, 0) : null;
+    /* The pairing, and which cases exist only to be the other half of one. An
+     * isomorph is a CommonMark document written to match a dialect document,
+     * not a construct anyone writes, so it belongs in the pair table and not in
+     * the CommonMark median it would otherwise move. */
+    const paired = new Map((report.isomorphs ?? []).map((declaration) => [declaration.case, declaration]));
+    const isIsomorph = new Set((report.isomorphs ?? []).map((declaration) => declaration.isomorph));
+    const atScaleOne = new Map(report.cases.filter((item) => item.scale === 1).map((item) => [item.case, item]));
     const ranked = report.cases
         .filter((item) => item.scale === 1 && item.engines["markdown-core"])
         .map((item) => {
             const core = stageIr(item.engines, "markdown-core");
             const cmarkIr = stageIr(item.engines, "cmark");
             const gfmIr = stageIr(item.engines, "cmark-gfm");
+            /* A dialect construct cmark does not implement still gets a
+             * same-job ratio, through the document that IS the same tree: what
+             * this parser spent on the dialect spelling, over what cmark spent
+             * building the same tree from the CommonMark spelling. */
+            const declaration = paired.get(item.case);
+            const twin = declaration ? atScaleOne.get(declaration.isomorph) : null;
+            const twinCore = twin ? stageIr(twin.engines, "markdown-core") : null;
+            const twinCmark = twin ? stageIr(twin.engines, "cmark") : null;
+            if (twin && (twin.bytes !== item.bytes || twin.units !== item.units)) {
+                /* The substitution is character for character, so the two
+                 * documents are the same length and the corpus repeats each of
+                 * them the same number of times. Different totals mean the pair
+                 * is no longer measuring one workload twice, and comparing the
+                 * sums would divide one document's cost by another's. */
+                fail(
+                    `${item.case} and ${declaration.isomorph} are paired but were measured at ` +
+                        `${item.bytes}/${twin.bytes} bytes over ${item.units}/${twin.units} copies`
+                );
+            }
             return {
                 ...item,
                 coreIr: core,
                 cmarkRatio: cmarkIr ? core / cmarkIr : null,
                 gfmRatio: gfmIr ? core / gfmIr : null,
+                /* Only where the other half was actually measured: a
+                 * `--case`-filtered run that named one side of a pair has no
+                 * comparison to report, and falls back to the bound rather than
+                 * printing a pair row of dashes. */
+                isomorph: twin
+                    ? {
+                          case: declaration.isomorph,
+                          claim: declaration.claim,
+                          coreIr: twinCore,
+                          cmarkIr: twinCmark,
+                          /* What this grammar costs over a CommonMark grammar
+                           * building the same tree, inside one parser. */
+                          grammar: twinCore ? core / twinCore : null,
+                          /* What this parser costs on the shape itself, where
+                           * the reference did the same job. */
+                          shape: twinCore && twinCmark ? twinCore / twinCmark : null
+                      }
+                    : null,
                 /* The comparison that means something: the closest reference
-                 * that implements what the document contains. */
-                sameJob: gfmIr ? core / gfmIr : item.dialect === "commonmark" && cmarkIr ? core / cmarkIr : null
+                 * that implements what the document contains, or the reference
+                 * on the document that is the same tree. */
+                sameJob: gfmIr
+                    ? core / gfmIr
+                    : twinCmark
+                      ? core / twinCmark
+                      : item.dialect === "commonmark" && cmarkIr
+                        ? core / cmarkIr
+                        : null
             };
         })
         .sort((left, right) => (right.sameJob ?? right.cmarkRatio ?? 0) - (left.sameJob ?? left.cmarkRatio ?? 0));
@@ -1683,9 +1734,13 @@ function markdownReport(report) {
             "",
             "cmark implements the CommonMark cases. cmark-gfm implements tables, task lists," +
                 " bare autolinks and footnotes, and is measured only on the cases that hold" +
-                " them. Nothing implements the rest: cmark reads `:::note` as a paragraph and" +
-                " `$$x$$` as text, so its number there is the cost of NOT having the feature." +
-                " That bounds what a construct costs and does not say it is slow.",
+                " them. For a few dialect constructs neither one implements, an ISOMORPH" +
+                " stands in: the same document written twice, once with the dialect marker" +
+                " and once with a CommonMark marker of the same shape, so cmark builds the" +
+                " same tree and the ratio is a comparison again. Nothing implements what is" +
+                " left: cmark reads `:::note` as a paragraph, so its number there is the cost" +
+                " of NOT having the feature. That bounds what a construct costs and does not" +
+                " say it is slow.",
             "",
             "The pipe-table case is what the distinction is worth: **8.53x against cmark," +
                 " 1.37x against cmark-gfm**. The first number is almost entirely this parser" +
@@ -1694,12 +1749,17 @@ function markdownReport(report) {
         );
         lines.push("| Group | Reference | Cases | Median | Worst |", "| --- | --- | ---: | ---: | --- |");
         const groups = [
-            ["CommonMark", "cmark", ranked.filter((item) => item.dialect === "commonmark" && !item.gfm)],
+            [
+                "CommonMark",
+                "cmark",
+                ranked.filter((item) => item.dialect === "commonmark" && !item.gfm && !isIsomorph.has(item.case))
+            ],
             ["GFM extensions", "cmark-gfm", ranked.filter((item) => item.gfm)],
+            ["Dialect, via an isomorph", "cmark, on the isomorph", ranked.filter((item) => item.isomorph)],
             [
                 "Dialect-only (no reference)",
                 "cmark, as a bound",
-                ranked.filter((item) => item.dialect !== "commonmark" && !item.gfm)
+                ranked.filter((item) => item.dialect !== "commonmark" && !item.gfm && !item.isomorph)
             ]
         ];
         for (const [label, reference, group] of groups) {
@@ -1713,6 +1773,68 @@ function markdownReport(report) {
             );
         }
         lines.push("");
+
+        const pairs = ranked.filter((item) => item.isomorph);
+        if (pairs.length) {
+            lines.push("### What the marker costs", "");
+            lines.push(
+                "Each row is one document written twice -- once with the dialect marker and" +
+                    " once with a CommonMark marker of the same shape, the same bytes under a" +
+                    " single-character substitution. Both spellings parse to the SAME TREE:" +
+                    " same spans, same literals, same children, differing only in which" +
+                    " grammar built each node, which" +
+                    " `scripts/audit-corpus-reach.mjs` checks against the parser rather than" +
+                    " taking on faith.",
+                "",
+                "That splits the ratio into two questions that have different answers:",
+                "",
+                "- **Grammar** is this parser on the dialect spelling over this parser on the" +
+                    " CommonMark spelling. One parser, one tree, two grammars -- so a number" +
+                    " above 1 is this grammar, and nothing else, and it names the file to open.",
+                "- **Shape** is this parser over cmark on the CommonMark spelling, where both" +
+                    " did the same job. It is what the parser costs on that shape before any" +
+                    " dialect construct is involved, and no change to a dialect grammar will" +
+                    " move it.",
+                "",
+                "Their product is the same-job ratio in the group table above. A pair that" +
+                    " reads 1.0x on Grammar and 3x on Shape is not an extension problem at" +
+                    " all, however large the bound against cmark on the dialect document" +
+                    " looked.",
+                ""
+            );
+            lines.push(
+                "| Dialect case | Isomorph | Dialect Ir/B | Isomorph Ir/B | cmark Ir/B | Grammar | Shape | Same-job |",
+                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
+            );
+            for (const item of pairs) {
+                const pair = item.isomorph;
+                lines.push(
+                    `| ${item.case} | ${pair.case} | ${(item.coreIr / item.bytes).toFixed(1)} |` +
+                        ` ${pair.coreIr === null ? "-" : (pair.coreIr / item.bytes).toFixed(1)} |` +
+                        ` ${pair.cmarkIr === null ? "-" : (pair.cmarkIr / item.bytes).toFixed(1)} |` +
+                        ` ${pair.grammar === null ? "-" : `${pair.grammar.toFixed(2)}x`} |` +
+                        ` ${pair.shape === null ? "-" : `${pair.shape.toFixed(2)}x`} |` +
+                        ` ${item.sameJob === null ? "-" : `${item.sameJob.toFixed(2)}x`} |`
+                );
+            }
+            lines.push("");
+            lines.push(
+                "What each pair claims to hold constant, from `corpus.json`:",
+                "",
+                ...pairs.map((item) => `- **${item.case}** -- ${item.isomorph.claim}`),
+                ""
+            );
+            lines.push(
+                "A construct with no row here has no isomorph, and the honest reason is that" +
+                    " none of the candidates survived the check. A grid table is not a pipe" +
+                    " table (a grid cell holds a paragraph, a pipe cell holds inlines), a" +
+                    " definition list is not a bullet list (the definition groups term and" +
+                    " body under one node), and a comment is not strong emphasis (strong" +
+                    " parses its body, a comment keeps it literal). Those stay bounds, and a" +
+                    " bound is reported as a bound.",
+                ""
+            );
+        }
 
         lines.push("### Where the cost is", "");
         lines.push(
@@ -1735,7 +1857,13 @@ function markdownReport(report) {
                 .map((entry) => `\`${entry.name}\` ${(entry.share * 100).toFixed(1)}%`)
                 .join(", ");
             const ratio = item.sameJob ?? item.cmarkRatio;
-            const reference = item.gfm ? "cmark-gfm" : item.dialect === "commonmark" ? "cmark" : "(bound)";
+            const reference = item.gfm
+                ? "cmark-gfm"
+                : item.isomorph
+                  ? "cmark, isomorph"
+                  : item.dialect === "commonmark"
+                    ? "cmark"
+                    : "(bound)";
             lines.push(
                 `| ${item.case} | ${reference} | ${ratio === null ? "-" : `${ratio.toFixed(2)}x`} |` +
                     ` ${(item.coreIr / item.bytes).toFixed(1)} | ${hot || "(not recorded)"} |`
@@ -1999,6 +2127,11 @@ function main() {
         profile: { compiler: profile.compiler, flags: profile.flags },
         cmark: { version: cmark.version, commit: cmark.commit },
         corpus: { targetBytes: corpus.targetBytes, cases: corpus.documents.length, digest: corpus.digest },
+        /* Which pairs were in force, recorded beside the counts: a ratio for a
+         * dialect construct is only readable against the pairing that produced
+         * it, and `scripts/audit-corpus-reach.mjs` is what holds the pairing to
+         * being true. */
+        isomorphs: manifest.isomorphs ?? [],
         artifacts: path.relative(root, options.out),
         cases
     };

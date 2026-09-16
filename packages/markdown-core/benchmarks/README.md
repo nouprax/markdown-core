@@ -1,16 +1,22 @@
 # Parse stage benchmark
 
 What it costs Markdown Core to parse a document, stage by stage, next to what
-it costs cmark to parse the same bytes. The comparison exists to give an
-optimization somewhere to argue from: a claim that a change made the parser
-faster should name a stage and a number.
+it costs a reference implementation to parse the same bytes. The comparison
+exists to give an optimization somewhere to argue from: a claim that a change
+made the parser faster should name a stage and a number.
+
+A ratio is only a comparison where both parsers did the same job, so which
+reference a case is read against is part of the measurement. cmark answers for
+CommonMark, cmark-gfm for the GFM constructs, and for a few dialect constructs
+neither implements, an [isomorph pair](#isomorph-pairs) puts cmark back in the
+comparison by giving it a document that builds the same tree.
 
 ```sh
-scripts/init-environment.sh --install oracle-cmark   # once
+scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm   # once
 node scripts/benchmark-stages.mjs
 ```
 
-The driver builds both engines, runs them under callgrind, and writes
+The driver builds all three engines, runs them under callgrind, and writes
 `build/benchmark-stages/stages.md`, `stages.json`, and the raw dumps.
 
 ## The two stages
@@ -176,11 +182,20 @@ the build directory on the include path.
 
 ## The corpus
 
-`corpus.json` names the documents. All but one sample come from cmark's own
-benchmark corpus, so the CommonMark cases are input both engines were written
-against. `directive.md` is repository syntax that cmark does not recognize, and
-its case is marked `extended`: Markdown Core is doing strictly more recognition
-work there, and the ratio is not an apples-to-apples one.
+`corpus.json` names the documents. The CommonMark samples come from cmark's own
+benchmark corpus, so those cases are input both engines were written against.
+The rest are repository syntax written for this corpus, and their cases are
+marked `extended`: Markdown Core is doing strictly more recognition work there,
+so the number against cmark is a bound rather than a comparison.
+
+Which constructs the corpus reaches is a separate question from how it is
+measured, and `scripts/audit-corpus-reach.mjs` is what answers it. A construct
+no document builds is not reported as fast or as slow, it is not reported at
+all — and the profile still reads like the whole parser. That audit is not a
+coverage gate and must not become one: it states specific facts (every node kind
+the dialect names is built by some document; each grammar the corpus must
+measure runs in the case that exists to drive it; every sample has a case of its
+own to be profiled in) rather than a percentage to climb.
 
 A `samples` case is built by repeating its samples to at least `targetBytes`,
 with a blank line between repeats so that repeating cannot merge the last block
@@ -222,6 +237,62 @@ Every case is also measured at twice the size, and the growth table names which
 dimension grew. A stage whose cost is linear in what was scaled reports a
 growth ratio equal to the byte ratio; anything else is a complexity finding,
 which is a correctness question rather than a tuning one.
+
+## Isomorph pairs
+
+cmark reads `++adds++` as a paragraph and `$x$` as text. The ratio against it on
+one of those documents is the cost of *not* having the feature: it bounds what
+the construct costs and cannot say whether the construct is slow, which is the
+only question the profile exists to answer.
+
+An isomorph pair answers it. The same document is written twice — once with the
+dialect marker, once with a CommonMark marker of the same shape — and the two
+are the same bytes under a single-character substitution:
+
+| Dialect | Isomorph | Substitution |
+| --- | --- | --- |
+| `++adds++` `==mark==` `^sup^` `~sub~` | `**adds**` `**mark**` `*sup*` `*sub*` | `+` `=` `^` `~` → `*` |
+| `%%hidden%%` | ` ``hidden`` ` | `%` → `` ` `` |
+| `$x$` | `` `x` `` | `$` → `` ` `` |
+
+Both spellings then parse to the same tree — same spans, same literals, same
+children — so three numbers decompose the ratio:
+
+- **Grammar**, this parser on the dialect spelling over this parser on the
+  isomorph. One parser, one tree, two grammars, so a number above 1 is this
+  grammar and nothing else, and it names the file to open.
+- **Shape**, this parser over cmark on the isomorph, where both did the same
+  job. It is what the parser costs on that shape before any dialect construct
+  is involved, and no change to a dialect grammar will move it.
+- Their product, which is a same-job ratio for a construct cmark does not
+  implement, because cmark built the same tree from the isomorphic document.
+
+The split is the point. A pair reading 1.0x on Grammar and 3x on Shape is not an
+extension problem at all, however large the bound against cmark looked.
+
+**The pairing is checked, not claimed.** `scripts/audit-corpus-reach.mjs`
+requires the substitution to reproduce the isomorph byte for byte, and requires
+the two dumps to be identical once the kind names are erased. A pair whose two
+documents parse to different trees is two measurements presented as one, and the
+report would attribute the difference in the trees to a grammar.
+
+That check is not a formality — the pairs it rejected are the reason it exists:
+
+| Rejected pair | Why it is not isomorphic |
+| --- | --- |
+| grid table ↔ pipe table | a grid cell holds a paragraph, a pipe cell holds inlines |
+| definition list ↔ bullet list | the definition groups term and body under one node |
+| comment ↔ strong emphasis | strong parses its body, a comment keeps it literal |
+| `==a====b==` ↔ `**a****b**` | our run splitter divides adjacent closers, CommonMark's does not |
+
+Each looked isomorphic and was not. Constructs with no surviving isomorph stay
+bounds, and a bound is reported as a bound.
+
+A kind's own bookkeeping may differ where the manifest names it: `Formula`
+records which spelling opened it in `mode`, which a code span has no equivalent
+of. Those exceptions are declared per pair in `corpus.json`, and an exception
+matching nothing in the dialect document fails the audit, so an allowance
+cannot outlive the difference it was written for.
 
 ## What the counts are a property of
 

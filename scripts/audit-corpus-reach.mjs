@@ -111,6 +111,159 @@ function declaredBuilds() {
     return declared;
 }
 
+/**
+ * ISOMORPH PAIRS: where a ratio for a dialect-only construct comes from.
+ *
+ * cmark reads `++adds++` as a paragraph and `$x$` as text, so the ratio
+ * against it on a dialect document is the cost of NOT having the feature. It
+ * bounds what the construct costs and cannot say whether the construct is
+ * slow, which is the only question the profile exists to answer.
+ *
+ * An isomorph pair answers it. The same document is written twice, once with
+ * the dialect marker and once with a CommonMark marker of the same shape, and
+ * the two are the SAME BYTES under a single-character substitution --
+ * `++adds++` and `**adds**`, `%%hidden%%` and ``` ``hidden`` ```, `$x$` and
+ * `` `x` ``. Three numbers then decompose the ratio:
+ *
+ *   ours(dialect) / ours(isomorph)   what this grammar costs over a
+ *                                    CommonMark grammar building the same tree
+ *   ours(isomorph) / cmark(isomorph) what this parser costs on the shape
+ *                                    itself, where cmark did the same job
+ *
+ * and their product is ours(dialect) / cmark(isomorph): a same-job ratio for a
+ * construct cmark does not implement, because cmark built the same tree from
+ * the isomorphic document. The first factor is the one that names a grammar to
+ * go look at.
+ *
+ * THE PAIRING IS A FACT, NOT A CLAIM, and this is what checks it. A pair whose
+ * two documents parse to different trees is two different measurements
+ * presented as one, and the report would attribute the difference in the trees
+ * to the grammar. So: the substitution must reproduce the isomorph byte for
+ * byte, and the two dumps must be identical once the kind names are erased --
+ * same spans, same literals, same children, same attributes, differing only in
+ * which grammar built each node.
+ *
+ * It is not a formality. The pairs it REJECTED are the reason it exists: a
+ * grid table against a pipe table (a grid cell holds a paragraph, a pipe cell
+ * holds inlines), a definition list against a bullet list (the definition
+ * groups term and body under one node, the list does not), and a comment
+ * against strong emphasis (strong parses its body, a comment keeps it
+ * literal). Each of those looked isomorphic and was not.
+ */
+function isomorphPairs() {
+    const manifest = JSON.parse(
+        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
+    );
+    const declarations = manifest.isomorphs ?? [];
+    if (!Array.isArray(declarations)) fail("corpus.json: isomorphs must be a list of pairs");
+    const cases = new Map((manifest.cases ?? []).map((entry) => [entry.name, entry]));
+    const pairs = [];
+    for (const declaration of declarations) {
+        const { case: name, isomorph, substitution, ignore = [], claim } = declaration;
+        const both = [name, isomorph];
+        for (const side of both) {
+            const entry = cases.get(side);
+            if (!entry) fail(`corpus.json: isomorph pair names case ${side}, which the manifest does not define`);
+            if (entry.samples?.length !== 1) {
+                fail(`corpus.json: isomorph pair side ${side} must be one case over one sample`);
+            }
+        }
+        if (!claim) fail(`corpus.json: isomorph pair ${name} states no claim about why the two are the same shape`);
+        /* The dialect side has to be the side with something to isolate, and
+         * the isomorph side has to be one a reference actually implements --
+         * otherwise the pair produces two bounds rather than a ratio. */
+        if (cases.get(name).dialect !== "extended") {
+            fail(`corpus.json: isomorph pair ${name} is not an extended-dialect case, so it isolates nothing`);
+        }
+        if (cases.get(isomorph).dialect !== "commonmark" && cases.get(isomorph).gfm !== true) {
+            fail(`corpus.json: isomorph ${isomorph} is neither CommonMark nor GFM, so no reference implements it`);
+        }
+        if (!substitution || typeof substitution !== "object" || Array.isArray(substitution)) {
+            fail(`corpus.json: isomorph pair ${name} declares no substitution`);
+        }
+        /* Single characters both sides, so the two documents have the same
+         * length and every node lands on the same source position. A
+         * substitution that changed a length would still produce a tree, and
+         * every `scope=` in the comparison below would then differ for a reason
+         * that has nothing to do with either grammar. */
+        for (const [from, to] of Object.entries(substitution)) {
+            if ([...from].length !== 1 || [...to].length !== 1) {
+                fail(`corpus.json: isomorph pair ${name} substitutes ${from} for ${to}, which is not byte for byte`);
+            }
+            if (from === to) fail(`corpus.json: isomorph pair ${name} substitutes ${from} for itself`);
+        }
+        pairs.push({
+            name,
+            isomorph,
+            ignore,
+            sample: (side) => path.join(root, "packages/markdown-core/benchmarks/samples", cases.get(side).samples[0]),
+            /* One pass over the characters, not one replacement per entry: run
+             * in sequence, `+`->`*` followed by `~`->`*` is the same thing, but
+             * `+`->`~` followed by `~`->`*` is not what the manifest says. */
+            apply: (text) => [...text].map((character) => substitution[character] ?? character).join("")
+        });
+    }
+    return pairs;
+}
+
+/* The kind name is what the pair is allowed to differ in, so it is what the
+ * comparison erases; a kind's own bookkeeping field is erased only where the
+ * manifest names it, and only if it is really there. */
+function canonicalDump(text, ignore) {
+    return text
+        .split("\n")
+        .map((line) => {
+            let canonical = line.replace(/^([\s│├└─]*)[A-Za-z]+\b/u, "$1KIND");
+            for (const key of ignore) {
+                canonical = canonical.replace(new RegExp(`\\s${key}=(?:"(?:[^"\\\\]|\\\\.)*"|\\S+)`, "gu"), "");
+            }
+            return canonical;
+        })
+        .join("\n");
+}
+
+function isomorphFailures(cli, pairs) {
+    const failures = [];
+    for (const pair of pairs) {
+        const dialect = fs.readFileSync(pair.sample(pair.name), "utf8");
+        const common = fs.readFileSync(pair.sample(pair.isomorph), "utf8");
+        const substituted = pair.apply(dialect);
+        if (substituted === dialect) {
+            failures.push(`${pair.name}: the declared substitution changes nothing in the dialect document`);
+            continue;
+        }
+        if (substituted !== common) {
+            failures.push(
+                `${pair.name}: substituting in the dialect document does not reproduce ${pair.isomorph}, ` +
+                    `so the two are not the same document under a change of marker`
+            );
+            continue;
+        }
+        const dumps = [pair.name, pair.isomorph].map((side) => {
+            const result = spawnSync(cli, [pair.sample(side)], { encoding: "utf8", timeout: 600_000 });
+            requireClean(result, "the dump CLI", pair.sample(side));
+            return result.stdout;
+        });
+        /* A named exception that matches nothing is an allowance for a
+         * difference that is no longer there, and the next one to appear would
+         * pass under it. */
+        for (const key of pair.ignore) {
+            if (!new RegExp(`\\s${key}=`, "u").test(dumps[0])) {
+                failures.push(`${pair.name}: ignores ${key}=, which no node in its dialect document carries`);
+            }
+        }
+        const [left, right] = dumps.map((dump) => canonicalDump(dump, pair.ignore));
+        if (left !== right) {
+            const at = left.split("\n").findIndex((line, index) => line !== right.split("\n")[index]);
+            failures.push(
+                `${pair.name} and ${pair.isomorph} do not parse to the same tree, first at line ${at + 1}:\n` +
+                    `      ${left.split("\n")[at]}\n      ${right.split("\n")[at]}`
+            );
+        }
+    }
+    return failures;
+}
+
 function samplesWithoutTheirOwnCase() {
     const manifest = JSON.parse(
         fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
@@ -321,6 +474,8 @@ const sampleCount = fs
 const driven = new Set();
 const undriven = [];
 const drifted = [];
+const pairs = isomorphPairs();
+let notIsomorphic;
 let unbuilt;
 {
     const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), "corpus-coverage-"));
@@ -332,6 +487,10 @@ let unbuilt;
         const binaries = instrumentedBuild(buildDir);
         const census = await kindsProduced(binaries.dump, documents);
         unbuilt = kinds.filter((kind) => !census.seen.has(kind));
+        /* Read off the SAMPLES rather than the generated corpus: the pairing is
+         * a property of the two documents as written, and the corpus repeats
+         * each of them to a byte target, which says nothing further about it. */
+        notIsomorphic = isomorphFailures(binaries.dump, pairs);
         for (const [name, expected] of declaredBuilds()) {
             const built = census.perCase.get(name);
             if (!built) {
@@ -388,7 +547,8 @@ process.stdout.write(
     `  node kinds built     ${kinds.length - unbuilt.length}/${kinds.length}\n` +
         `  grammars driven      ${required.length - undriven.length}/${required.length}\n` +
         `  samples with a case  ${sampleCount - orphaned.length}/${sampleCount}\n` +
-        `  cases still building ${declaredBuilds().size - drifted.length}/${declaredBuilds().size}\n`
+        `  cases still building ${declaredBuilds().size - drifted.length}/${declaredBuilds().size}\n` +
+        `  isomorph pairs held  ${pairs.length - notIsomorphic.length}/${pairs.length}\n`
 );
 
 if (options.json) {
@@ -406,6 +566,12 @@ if (options.json) {
 }
 
 const failures = [];
+if (notIsomorphic.length) {
+    failures.push(
+        `these pairs are not the same document under a change of marker, so the ratio between them ` +
+            `would attribute a difference in the trees to a grammar:\n    ${notIsomorphic.join("\n    ")}`
+    );
+}
 if (drifted.length) {
     failures.push(`these cases no longer build what they exist for:\n    ${drifted.join("\n    ")}`);
 }

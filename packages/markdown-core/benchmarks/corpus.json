@@ -11,6 +11,36 @@
         "handle_entity": "inline-entity",
         "scan_delimiter": "inline-em-worst"
     },
+    "isomorphs": [
+        {
+            "case": "pair-runs-dialect",
+            "isomorph": "pair-runs-common",
+            "substitution": {
+                "+": "*",
+                "=": "*",
+                "^": "*",
+                "~": "*"
+            },
+            "claim": "Insertion, Mark, Superscript, Subscript and Strikethrough are delimiter runs opened and closed by a repeated byte, and the same scanner disambiguates the one-byte and two-byte spellings. CommonMark emphasis and strong are that scan with a different byte, so the isomorph builds the same tree over the same spans."
+        },
+        {
+            "case": "pair-comment-dialect",
+            "isomorph": "pair-comment-common",
+            "substitution": {
+                "%": "`"
+            },
+            "claim": "An inline comment is a leaf opened and closed by a two-byte run whose body is taken literally rather than parsed as inline. A two-backtick code span is exactly that shape, which is why the pair holds and why pairing a comment with strong emphasis does not: strong parses its body."
+        },
+        {
+            "case": "pair-formula-dialect",
+            "isomorph": "pair-formula-common",
+            "substitution": {
+                "$": "`"
+            },
+            "ignore": ["mode"],
+            "claim": "An inline formula is a leaf opened and closed by a one-byte run whose body is taken literally; a one-backtick code span is the same shape. Formula additionally records which spelling opened it in `mode`, which is that kind's own business rather than a difference in what was built, and is named here so the exception is visible rather than assumed."
+        }
+    ],
     "cases": [
         {
             "name": "block-bq-flat",
@@ -328,6 +358,42 @@
             "dialect": "commonmark",
             "samples": ["lorem1.md"],
             "builds": ["Strong", "Link"]
+        },
+        {
+            "name": "pair-comment-common",
+            "dialect": "commonmark",
+            "samples": ["pair-comment-common.md"],
+            "builds": ["Code"]
+        },
+        {
+            "name": "pair-comment-dialect",
+            "dialect": "extended",
+            "samples": ["pair-comment-dialect.md"],
+            "builds": ["Comment"]
+        },
+        {
+            "name": "pair-formula-common",
+            "dialect": "commonmark",
+            "samples": ["pair-formula-common.md"],
+            "builds": ["Code"]
+        },
+        {
+            "name": "pair-formula-dialect",
+            "dialect": "extended",
+            "samples": ["pair-formula-dialect.md"],
+            "builds": ["Formula"]
+        },
+        {
+            "name": "pair-runs-common",
+            "dialect": "commonmark",
+            "samples": ["pair-runs-common.md"],
+            "builds": ["Strong", "Emphasis"]
+        },
+        {
+            "name": "pair-runs-dialect",
+            "dialect": "extended",
+            "samples": ["pair-runs-dialect.md"],
+            "builds": ["Insertion", "Mark", "Superscript", "Subscript"]
         },
         {
             "name": "rawtabs",
