@@ -1171,6 +1171,77 @@ function dispatchIdentity(profile, root) {
     return crypto.createHash("sha256").update(features.join("\n")).digest("hex");
 }
 
+/* Everything reachable from the callee side of each excluded edge, so a
+ * function doing that feature's work can be recognised wherever it sits under
+ * the boundary rather than only at its rim. */
+function reachedFrom(profile, specs) {
+    const callees = new Map();
+    for (const edge of profile.edges.values()) {
+        const from = baseName(edge.caller);
+        if (!callees.has(from)) callees.set(from, new Set());
+        callees.get(from).add(baseName(edge.callee));
+    }
+    const seen = new Set();
+    const pending = specs.map((spec) => spec.split("->")[1].trim());
+    while (pending.length) {
+        const name = pending.pop();
+        if (seen.has(name)) continue;
+        seen.add(name);
+        for (const callee of callees.get(name) ?? []) pending.push(callee);
+    }
+    return seen;
+}
+
+/* Enumerating call edges to take a feature out of a ratio is only honest while
+ * the enumeration is complete, and nothing about a list of edges says when it
+ * has stopped being. This derives the candidates instead of trusting the list:
+ * a function that runs on EVERY case carrying the field and on NONE of the
+ * cases that do not is, by construction, work that only the field's presence
+ * causes. Each one must then be either inside an excluded subtree, or named in
+ * `shared` with the reason the reference does it too.
+ *
+ * It cannot catch a wrong classification -- calling anchor work "shared" hides
+ * it just as well -- but it does catch the failure that actually happened here,
+ * which is a heading-only function nobody had thought about. A new one stops
+ * the run until someone says which side it is on. */
+function requireCompleteExclusions(cases, ran, excludedReach, unmatchedFields) {
+    for (const [field, declaration] of Object.entries(unmatchedFields)) {
+        const carries = [];
+        const plain = [];
+        for (const item of cases) {
+            if (item.scale !== 1 || !ran.has(item.case)) continue;
+            /* Only where the field could change a number: a bound is not a
+             * comparison, so nothing is carved out of it and nothing about it
+             * needs classifying. */
+            if (item.dialect !== "commonmark" && !item.gfm) continue;
+            ((item.engines["markdown-core"]?.witnesses?.[field] ?? 0) > 0 ? carries : plain).push(item.case);
+        }
+        if (!carries.length || !plain.length) continue;
+        let only = new Set(ran.get(carries[0]));
+        for (const name of carries.slice(1)) only = new Set([...only].filter((fn) => ran.get(name).has(fn)));
+        for (const name of plain) for (const fn of ran.get(name)) only.delete(fn);
+        const shared = new Set(Object.keys(declaration.shared ?? {}));
+        const unclassified = [...only].filter(
+            (fn) => !shared.has(fn) && !carries.every((name) => excludedReach.get(name).has(fn))
+        );
+        if (unclassified.length) {
+            fail(
+                `these functions run on every case carrying "${field}" and on none of the cases without it, ` +
+                    `and are neither inside an excluded subtree nor declared shared, so the exclusion is ` +
+                    `incomplete and the ratio still carries work the reference may never do: ` +
+                    `${unclassified.sort().join(", ")}`
+            );
+        }
+        for (const fn of shared) {
+            /* A `shared` entry for something no case runs is a note about code
+             * that has moved, kept true by nobody. */
+            if (!carries.some((name) => ran.get(name).has(fn))) {
+                fail(`unmatchedFields.${field}.shared names ${fn}, which no case carrying the field runs`);
+            }
+        }
+    }
+}
+
 function measure(profile, engine, document, out, unmatchedFields) {
     const definition = ENGINES[engine];
     const dump = path.join(out, "callgrind", `${engine}.${document.case}.x${document.scale}.out`);
@@ -1290,12 +1361,12 @@ function measure(profile, engine, document, out, unmatchedFields) {
         }
         const [caller, callee] = declaration.witness.split("->").map((half) => half.trim());
         witnesses[field] = edgesBetween(profileByName, caller, callee).reduce((total, edge) => total + edge.calls, 0);
-        for (const spec of declaration.excludes ?? []) {
+        for (const [spec, stage] of Object.entries(declaration.excludes ?? {})) {
             const [from, to] = spec.split("->").map((half) => half.trim());
             const edges = edgesBetween(profileByName, from, to);
             const ir = edges.reduce((total, edge) => total + (costRecord(profileByName, edge.cost).Ir ?? 0), 0);
             const calls = edges.reduce((total, edge) => total + edge.calls, 0);
-            if (ir) unmatched.push({ field, stage: declaration.stage, edge: spec, calls, ir });
+            if (ir) unmatched.push({ field, stage, edge: spec, calls, ir });
         }
     }
     for (const entry of unmatched) {
@@ -1319,6 +1390,17 @@ function measure(profile, engine, document, out, unmatchedFields) {
         stages,
         unmatched,
         witnesses,
+        /* Every function this document ran, and everything the excluded edges
+         * reach. The completeness law below needs both: enumerating call edges
+         * to carve a feature out of a ratio is only honest if something can say
+         * when the enumeration has stopped being complete. */
+        ran: [...new Set([...profileByName.self.keys()].map((name) => baseName(name)))],
+        excludedReach: [
+            ...reachedFrom(
+                profileByName,
+                unmatched.map((entry) => entry.edge)
+            )
+        ],
         hotPaths: hotPaths(profileByName),
         dump
     };
@@ -2085,6 +2167,11 @@ function main() {
 
     const corpus = buildCorpus(options, manifest);
     const cases = [];
+    /* Kept beside the cases rather than in them: these are inputs to the
+     * completeness law below, not findings anyone reads, and stages.json is a
+     * report. */
+    const ran = new Map();
+    const excludedReach = new Map();
     for (const document of corpus.documents) {
         const engines = {};
         /* cmark is measured on every document as the CommonMark floor. cmark-gfm
@@ -2097,6 +2184,10 @@ function main() {
             const measured = measure(profile, engine, document, options.out, manifest.unmatchedFields ?? {});
             if (measured.receiptBytes !== document.bytes) {
                 fail(`${engine}: ${document.case} saw ${measured.receiptBytes} bytes, expected ${document.bytes}`);
+            }
+            if (engine === "markdown-core" && document.scale === 1) {
+                ran.set(document.case, new Set(measured.ran));
+                excludedReach.set(document.case, new Set(measured.excludedReach));
             }
             engines[engine] = {
                 parsePathIr: measured.parsePathIr,
@@ -2116,6 +2207,7 @@ function main() {
         if (!options.quiet) console.error(`measured ${document.case} x${document.scale}`);
         cases.push({ ...document, file: path.relative(options.out, document.file), engines });
     }
+    requireCompleteExclusions(cases, ran, excludedReach, manifest.unmatchedFields ?? {});
 
     const report = {
         schemaVersion: 2,

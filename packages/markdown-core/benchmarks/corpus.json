@@ -3,16 +3,25 @@
     "targetBytes": 65536,
     "unmatchedFields": {
         "anchor": {
-            "reason": "cmark's node has no anchor field. This dialect derives a slug for EVERY heading and registers it as a reference label, so a document holding a heading is not the tree cmark builds -- a permanent property of the dialect, not of any sample. The ratio is still a comparison once that work is taken off this side, because every edge below has no counterpart on cmark's: the heading's own inline parse is NOT excluded, since cmark runs it too inside cmark_parse_inlines. `witness` is a call count rather than a cost because finish_document calls markdown_core_block_finalize_heading_anchors unconditionally and the callee still runs its prologue over an empty collection, so that edge costs 53 Ir on a document with no heading in it -- reading occurrence off a non-zero cost would report all 62 cases as carrying an anchor.",
+            "reason": "cmark's node has no anchor field. This dialect derives a slug for EVERY heading and registers it as a reference label, so a document holding a heading is not the tree cmark builds -- a permanent property of the dialect, not of any sample. The ratio is a comparison again once that work is taken off this side. The edges are listed with the stage each sits in, because the heading registry is built while blocks are parsed and the anchors are derived when the document is finished.",
             "witness": "markdown_core_block_prepare_headings -> markdown_core_prepare_heading",
-            "stage": "buffer_to_ast",
-            "excludes": [
-                "finish_document -> markdown_core_block_finalize_heading_anchors",
-                "markdown_core_prepare_heading -> markdown_core_reference_create",
-                "markdown_core_prepare_heading -> markdown_core_resource_new",
-                "markdown_core_prepare_heading -> markdown_core_inline_reference_label_length",
-                "markdown_core_block_prepare_headings -> markdown_core_order_source_entries"
-            ]
+            "excludes": {
+                "markdown_core_block_finalize -> markdown_core_block_register_heading": "source_to_buffer",
+                "finish_document -> markdown_core_block_finalize_heading_anchors": "buffer_to_ast",
+                "observe_inline -> markdown_core_block_reserve_node_anchor": "buffer_to_ast",
+                "prepare_document -> markdown_core_key_index_init": "buffer_to_ast",
+                "markdown_core_prepare_heading -> markdown_core_reference_create": "buffer_to_ast",
+                "markdown_core_prepare_heading -> markdown_core_resource_new": "buffer_to_ast",
+                "markdown_core_prepare_heading -> markdown_core_inline_reference_label_length": "buffer_to_ast",
+                "markdown_core_block_prepare_headings -> markdown_core_order_source_entries": "buffer_to_ast"
+            },
+            "shared": {
+                "continue_heading": "Heading block continuation. cmark decides the same thing for the same lines in S_process_line.",
+                "markdown_core_heading_begin_inlines": "Starts the heading's inline parse, which cmark also runs on heading content inside cmark_parse_inlines.",
+                "markdown_core_heading_claim_tail": "Consumes the optional closing run of an ATX heading. That is CommonMark syntax and cmark strips it too.",
+                "markdown_core_prepare_heading": "The loop that runs each heading's inline parse early. The parse is work cmark also does; the anchor-only callees it makes are excluded by edge above, so only its own scheduling stays in.",
+                "markdown_core_inline_clear_inlines": "Tears down the inline state that markdown_core_prepare_heading set up. Running the heading's inline parse EARLY is a dialect scheduling choice, but the parse itself is work cmark also does, so its setup and teardown stay on this side of the comparison. Classified shared rather than excluded on purpose: where it is arguable, leaving the work in makes this parser's ratio worse, not better."
+            }
         }
     },
     "requiredGrammars": {

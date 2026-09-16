@@ -395,17 +395,26 @@ function unmatchedFields() {
                     `COUNT is zero exactly when the tree carries nothing`
             );
         }
-        if (!Array.isArray(spec.excludes) || !spec.excludes.length) {
+        const excludes = Object.entries(spec.excludes ?? {});
+        if (!excludes.length) {
             fail(
                 `corpus.json: unmatchedFields.${field} must name the call edges that do this work, or the ` +
                     `driver has nothing to take off this side and the ratio stays uncomparable`
             );
         }
-        for (const edge of spec.excludes) {
-            if (typeof edge !== "string" || !/^\S+\s*->\s*\S+$/u.test(edge)) {
+        for (const [edge, stage] of excludes) {
+            if (!/^\S+\s*->\s*\S+$/u.test(edge)) {
                 fail(
                     `corpus.json: unmatchedFields.${field} exclusion ${JSON.stringify(edge)} is not "caller -> callee"`
                 );
+            }
+            if (stage !== "source_to_buffer" && stage !== "buffer_to_ast") {
+                fail(`corpus.json: unmatchedFields.${field} exclusion ${edge} names no measured stage`);
+            }
+        }
+        for (const [fn, reason] of Object.entries(spec.shared ?? {})) {
+            if (typeof reason !== "string" || !reason.trim()) {
+                fail(`corpus.json: unmatchedFields.${field}.shared.${fn} must say why the reference does it too`);
             }
         }
     }
