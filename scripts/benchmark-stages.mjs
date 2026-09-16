@@ -1554,8 +1554,15 @@ function markdownReport(report) {
              * building the same tree from the CommonMark spelling. */
             const declaration = paired.get(item.case);
             const twin = declaration ? atScaleOne.get(declaration.isomorph) : null;
+            /* The isomorph's OWN reference, not always cmark. A dialect
+             * construct can pair with a GFM production -- a task marker with a
+             * GFM task list item, a specimen with a GFM footnote definition --
+             * and the engine that implements the isomorph is the one that did
+             * the same job on it. Reading cmark there would divide by an engine
+             * that parsed the paired document as ordinary prose. */
+            const twinReference = twin?.gfm ? "cmark-gfm" : "cmark";
             const twinCore = twin ? stageIr(twin.engines, "markdown-core") : null;
-            const twinCmark = twin ? stageIr(twin.engines, "cmark") : null;
+            const twinCmark = twin ? stageIr(twin.engines, twinReference) : null;
             if (twin && twin.units !== item.units) {
                 fail(
                     `${item.case} and ${declaration.isomorph} are paired but carry ${item.units} and ` +
@@ -1592,6 +1599,7 @@ function markdownReport(report) {
                            * substitution, or an equal count of declarations in
                            * two spellings of different length. */
                           by: bySubstitution.has(item.case) ? "substitution" : "declaration",
+                          reference: twinReference,
                           /* Its own bytes, not this case's: a logical isomorph
                            * is a different length by construction, so dividing
                            * its cost by this document's size would be reading
@@ -1677,8 +1685,8 @@ function markdownReport(report) {
                 "cmark",
                 ranked.filter((item) => item.dialect === "commonmark" && !item.gfm && !isIsomorph.has(item.case))
             ],
-            ["GFM extensions", "cmark-gfm", ranked.filter((item) => item.gfm)],
-            ["Dialect, via an isomorph", "cmark, on the isomorph", ranked.filter((item) => item.isomorph)],
+            ["GFM extensions", "cmark-gfm", ranked.filter((item) => item.gfm && !isIsomorph.has(item.case))],
+            ["Dialect, via an isomorph", "the isomorph's own reference", ranked.filter((item) => item.isomorph)],
             [
                 "Dialect-only (no reference)",
                 "cmark, as a bound",
@@ -1730,10 +1738,12 @@ function markdownReport(report) {
                 "- **Grammar** is this parser on the dialect spelling over this parser on the" +
                     " CommonMark spelling. One parser, one tree, two grammars -- so a number" +
                     " above 1 is this grammar, and nothing else, and it names the file to open.",
-                "- **Shape** is this parser over cmark on the CommonMark spelling, where both" +
-                    " did the same job. It is what the parser costs on that shape before any" +
-                    " dialect construct is involved, and no change to a dialect grammar will" +
-                    " move it.",
+                "- **Shape** is this parser over the isomorph's own reference on the" +
+                    " CommonMark spelling, where both did the same job. It is what the parser" +
+                    " costs on that shape before any dialect construct is involved, and no" +
+                    " change to a dialect grammar will move it. The reference is cmark, or" +
+                    " cmark-gfm where the paired production is a GFM one -- reading cmark there" +
+                    " would divide by an engine that saw the paired document as prose.",
                 "",
                 "Their product is the same-job ratio in the group table above. A pair that" +
                     " reads 1.0x on Grammar and 3x on Shape is not an extension problem at" +
@@ -1747,14 +1757,15 @@ function markdownReport(report) {
                 ""
             );
             lines.push(
-                "| Dialect case | Isomorph | Paired by | Dialect Ir/B | Isomorph Ir/B |" +
-                    " cmark Ir/B | Grammar | Shape | Same-job |",
-                "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
+                "| Dialect case | Isomorph | Paired by | Reference | Dialect Ir/B |" +
+                    " Isomorph Ir/B | Reference Ir/B | Grammar | Shape | Same-job |",
+                "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
             );
             for (const item of pairs) {
                 const pair = item.isomorph;
                 lines.push(
-                    `| ${item.case} | ${pair.case} | ${pair.by} | ${(item.coreIr / item.bytes).toFixed(1)} |` +
+                    `| ${item.case} | ${pair.case} | ${pair.by} | \`${pair.reference}\` |` +
+                        ` ${(item.coreIr / item.bytes).toFixed(1)} |` +
                         ` ${pair.coreIr === null ? "-" : (pair.coreIr / pair.bytes).toFixed(1)} |` +
                         ` ${pair.cmarkIr === null ? "-" : (pair.cmarkIr / pair.bytes).toFixed(1)} |` +
                         ` ${pair.grammar === null ? "-" : `${pair.grammar.toFixed(2)}x`} |` +
@@ -1828,7 +1839,7 @@ function markdownReport(report) {
             const reference = item.gfm
                 ? "cmark-gfm"
                 : item.isomorph
-                  ? "cmark, isomorph"
+                  ? `${item.isomorph.reference}, isomorph`
                   : item.dialect === "commonmark"
                     ? "cmark"
                     : "(bound)";

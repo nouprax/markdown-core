@@ -399,6 +399,44 @@
             "builds": ["Paragraph"]
         },
         {
+            "name": "pair-specimen-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "(@spec-{n}) A numbered example.\n\n",
+                "tail": "\nThe document body.\n"
+            },
+            "builds": ["Specimen"]
+        },
+        {
+            "name": "pair-specimen-common",
+            "dialect": "extended",
+            "counted": {
+                "unit": "[^spec-{n}]: A numbered example.\n\n",
+                "match": "pair-specimen-dialect",
+                "tail": "\nThe document body.\n"
+            },
+            "gfm": true,
+            "builds": ["Footnote"]
+        },
+        {
+            "name": "pair-task-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "- [~] Task item {n}\n"
+            },
+            "builds": ["ListItem"]
+        },
+        {
+            "name": "pair-task-common",
+            "dialect": "extended",
+            "counted": {
+                "unit": "- [x] Task item {n}\n",
+                "match": "pair-task-dialect"
+            },
+            "gfm": true,
+            "builds": ["ListItem"]
+        },
+        {
             "name": "pair-span-dialect",
             "dialect": "extended",
             "generated": {
@@ -572,10 +610,32 @@
                 "isomorph": "Paragraph"
             },
             "binding": {
-                "block": "Paragraph",
-                "declares": "anchor"
+                "declares": "anchor",
+                "sides": ["case"]
             },
             "claim": "An explicit anchor DECLARES a name and binds it to the block it sits on. A link reference definition declares a name and binds it to a target. Same grammar shape -- one block, one name-to-target binding -- and the same subsequent operation, which is the binding entering the document's table of names. The two spellings differ in length, so the pair is generated to an equal COUNT of declarations rather than to equal bytes, and each name is indexed so both sides bind the same number of distinct identifiers. DERIVED anchors are deliberately not paired here: a heading whose anchor comes from its own text declares nothing, and CommonMark has no production that derives a binding, so there is no isomorph to write and block-heading stays a bound."
+        },
+        {
+            "case": "pair-specimen-dialect",
+            "isomorph": "pair-specimen-common",
+            "counts": {
+                "case": "Specimen",
+                "isomorph": "Footnote"
+            },
+            "claim": "A specimen definition and a GFM footnote definition are the same production: a one-line opener carrying a label, then block content the opener owns, and a node that leaves ordinary document content for a side list the document holds. The dialect spec says the specimen goes to Document.specimens and leaves no implicit call in content; the footnote spec says the definition goes to Document.footnotes and not into the paragraph or the document's content. Same shape, same subsequent operation -- a label entering a table of names while the block it introduces leaves the content tree. The reference is cmark-gfm, which is the engine that has this production; cmark reads the paired document as prose. Both sides leave ordinary content EMPTY -- that is the production -- so each carries the same one-line tail, without which neither document has a content tree for the runner to accept."
+        },
+        {
+            "case": "pair-task-dialect",
+            "isomorph": "pair-task-common",
+            "counts": {
+                "case": "ListItem",
+                "isomorph": "ListItem"
+            },
+            "binding": {
+                "declares": "marker",
+                "sides": ["case", "isomorph"]
+            },
+            "claim": "A task marker is one Unicode scalar in brackets at the start of a list item's content, removed from the content and stored on the item. GFM's task list item is that production with the scalar restricted to a space or `x`; this dialect keeps the authored scalar instead of mapping it. Same production, one terminal wider -- which is what makes this pair, and what it measures. Both sides build ListItem, so an equal count proves nothing on its own; the pair names `marker` and the audit requires every item on BOTH sides to carry one, because an item whose marker went unread is still a list item. The reference is cmark-gfm."
         },
         {
             "case": "pair-span-dialect",

@@ -344,12 +344,12 @@ async function kindsProduced(cli, documents) {
                  * like a declaration, which is not the same question. */
                 counts.set(match[1], (counts.get(match[1]) ?? 0) + 1);
                 /* And which of them carry a BINDING, which is the other half of
-                 * what a logical pair claims. Read off the head of the line --
-                 * everything before `attributes={` -- so a literal that happens
-                 * to contain `name="` is text and is not counted as one. A null
-                 * attribute prints unquoted, so only a real binding matches. */
-                const head = line.slice(0, line.indexOf(" attributes="));
-                for (const [, name] of head.matchAll(/ ([a-z][a-z-]*)="/gu)) {
+                 * what a logical pair claims. The two free-text fields are
+                 * removed first -- a literal or an attribute value containing
+                 * `name="` is text, not a field of the node -- and a null field
+                 * prints unquoted, so only a real binding matches. */
+                const fields = line.replace(/ literal="(?:[^"\\]|\\.)*"/gu, "").replace(/ attributes=\{[^}]*\}/gu, "");
+                for (const [, name] of fields.matchAll(/ ([a-z][a-z-]*)="/gu)) {
                     const key = `${match[1]}.${name}`;
                     bound.set(key, (bound.get(key) ?? 0) + 1);
                 }
@@ -403,40 +403,62 @@ function logicalIsomorphs() {
 function logicalPairFailures(census, pairs) {
     const failures = [];
     for (const pair of pairs) {
+        const sides = {
+            case: { name: pair.case, kind: pair.counts.case },
+            isomorph: { name: pair.isomorph, kind: pair.counts.isomorph }
+        };
         const counts = census.perCaseCounts.get(pair.case);
         const twinCounts = census.perCaseCounts.get(pair.isomorph);
         if (!counts || !twinCounts) {
             failures.push(`${pair.case} is paired with ${pair.isomorph}, and the corpus did not build both documents`);
             continue;
         }
-        const built = counts.get(pair.counts.case) ?? 0;
-        const twinBuilt = twinCounts.get(pair.counts.isomorph) ?? 0;
+        const built = counts.get(sides.case.kind) ?? 0;
+        const twinBuilt = twinCounts.get(sides.isomorph.kind) ?? 0;
         if (built !== twinBuilt || built === 0) {
             failures.push(
-                `${pair.case} builds ${built} ${pair.counts.case} nodes and ${pair.isomorph} builds ` +
-                    `${twinBuilt} ${pair.counts.isomorph}. A logical pair compares two spellings of one ` +
+                `${pair.case} builds ${built} ${sides.case.kind} nodes and ${pair.isomorph} builds ` +
+                    `${twinBuilt} ${sides.isomorph.kind}. A logical pair compares two spellings of one ` +
                     `production only while both documents hold the same number of it, and a count of zero ` +
                     `means one side stopped building the construct the pair is about`
             );
         }
-        if (!pair.binding) continue;
-        const { block, declares } = pair.binding;
-        const blocks = counts.get(block) ?? 0;
-        const bound = census.perCaseBound.get(pair.case)?.get(`${block}.${declares}`) ?? 0;
-        if (bound !== blocks) {
+        /* Where the two spellings build DIFFERENT kinds, the count above is
+         * already proof that each side recognised its own: a span that stopped
+         * being a span is a link or a text run, and its count goes to zero.
+         * Where they build the SAME kind it proves nothing -- a task marker the
+         * parser stopped reading is still a list item -- so the pair must name
+         * the field that tells the two apart, and the audit refuses a pair that
+         * does not. */
+        if (sides.case.kind === sides.isomorph.kind && !pair.binding) {
             failures.push(
-                `${pair.case} builds ${blocks} ${block} nodes but only ${bound} of them bind ${declares}. ` +
-                    `The pair claims every block on this side DECLARES; a block that declares nothing has ` +
-                    `no counterpart in the reference document's definitions`
+                `${pair.case} and ${pair.isomorph} both build ${sides.case.kind}, so an equal count is ` +
+                    `not evidence that either side still parses as the pair claims. Such a pair must ` +
+                    `name the binding that distinguishes them`
             );
         }
-        const twinBound = census.perCaseBound.get(pair.isomorph)?.get(`${block}.${declares}`) ?? 0;
-        if (twinBound !== 0) {
-            failures.push(
-                `${pair.isomorph} carries ${twinBound} ${declares} bindings in its tree. The reference side ` +
-                    `of a logical pair declares OUT OF BAND -- into the reference map -- and a binding that ` +
-                    `reached the tree means the corpus wrote the dialect spelling on both sides`
-            );
+        if (!pair.binding) continue;
+        const { declares } = pair.binding;
+        for (const [side, { name, kind }] of Object.entries(sides)) {
+            const nodes = (side === "case" ? counts : twinCounts).get(kind) ?? 0;
+            const bound = census.perCaseBound.get(name)?.get(`${kind}.${declares}`) ?? 0;
+            /* Every node of the kind on a declaring side, and none at all on a
+             * side that declares OUT OF BAND -- an anchor binds on the block it
+             * sits on, a link reference definition binds into the reference map
+             * and leaves no node at all, and that asymmetry is the pair. */
+            const expected = pair.binding.sides.includes(side) ? nodes : 0;
+            if (bound !== expected) {
+                failures.push(
+                    `${name} builds ${nodes} ${kind} nodes and ${bound} of them bind ${declares}, ` +
+                        `where the pair claims ${expected}. ${
+                            expected
+                                ? "Every node on this side must declare; one that declares nothing has no " +
+                                  "counterpart on the other side"
+                                : "This side declares out of band, and a binding that reached the tree means " +
+                                  "the corpus wrote the other side's spelling here"
+                        }`
+                );
+            }
         }
     }
     return failures;
