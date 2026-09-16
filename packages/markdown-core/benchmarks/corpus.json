@@ -888,39 +888,15 @@
     "unpairable": [
         {
             "production": "derived heading anchor",
-            "proof": "A heading's identifier is derived from its own text, so there is no name in the source to bind. CommonMark has no production that derives a binding from a node's own content, so there is nothing of this shape to write on a reference side. block-heading, block-lheading and mixed-commonmark are bounds for this reason and carry the field declaration that keeps them out of the ranking."
+            "proof": "RE-DERIVED, because the first statement was the construct-not-production error and happened to survive it. Wrong version: CommonMark has no production that derives a binding from a node's own content. That invites the obvious counter -- a link reference definition also NORMALISES a string and registers it in a name table, which is the same subsequent operation, and it is exactly the reasoning that produced the discarded 1.27x pair. The real difference is in the production, not the operation: a link reference definition IS a binding declaration and builds no block; a derived anchor is a binding attached as a SIDE EFFECT to a block that carries inline content and exists independently of it. Neither reference grammar attaches a derived binding to a content-bearing block, so there is nothing of that shape to write. This also explains why the EXPLICIT anchor pairs and this does not: `#name#` declares, and a declaration is what a link reference definition is."
         },
         {
             "production": "a heading as the reference half -- CONTAMINATES Grammar and Shape, NOT same-job",
             "proof": "WITHDRAWN AS STATED, and the correction runs the other way. The claim was that a heading can never be the reference half of a pair anywhere in this corpus, because this dialect derives an anchor on every heading including in plain CommonMark. The premise is true and the conclusion does not follow. Take the three numbers as the driver computes them: grammar = core/twinCore, shape = twinCore/twinCmark, sameJob = core/twinCmark. The anchor derivation lands in twinCore -- this parser's cost on the isomorph half -- and twinCore CANCELS out of sameJob, which is this parser on the DIALECT document over the REFERENCE on the isomorph. The dialect document has no headings and cmark derives no anchors, so sameJob is clean. What is contaminated is Grammar, whose denominator is inflated so it reads low, and Shape, whose numerator is inflated so it reads high. A heading isomorph therefore yields a valid same-job ratio -- the number the ranking sorts on -- and two numbers that must be suppressed."
         },
         {
-            "production": "leaf directive `::name[label]{attrs}`",
-            "proof": "REOPENED. This was closed by the heading corollary above, which has been withdrawn: a heading CAN be the reference half for same-job purposes. The only CommonMark one-line block whose body is parsed as inline content is the ATX or setext heading, and that candidate is now available again. What would have to be built is a pair that publishes same-job and suppresses Grammar and Shape, which the driver does not currently support, and the one-line paragraph remains undisposed of as a second candidate."
-        },
-        {
-            "production": "container directive `:::name ... :::`",
-            "proof": "A container block whose body is parsed as BLOCKS, delimited by an opening fence line and a closer of at least the same length. CommonMark's only fenced construct is the code block, which is a LEAF whose body is literal; its two container blocks, the block quote and the list item, determine their body line by line from a per-line prefix rather than from a terminator line. Fence-delimited against prefix-determined is a difference in the continuation rule, not in a terminal."
-        },
-        {
             "production": "inline footnote `^[body]`",
-            "proof": "An inline recognised mid-line whose body is parsed as INLINE content and whose node is hoisted out of the content tree into a document-owned side list. Neither grammar hoists an inline: every CommonMark and GFM inline production -- code span, emphasis, strong, link, image, autolink, raw HTML, break, entity, text, and GFM's strikethrough and autolink literal -- leaves its node where it was recognised. GFM's footnote hoists a BLOCK definition, not an inline."
-        },
-        {
-            "production": "headerless simple table",
-            "proof": "The cells hold inlines, as in the headed form, so the cell-content argument does not apply. What does apply is the head group: tables.md says the header may be omitted \"when a matching footer closes the table\", producing a table with an EMPTY head group and alignment inferred from the first body line. GFM's pipe table cannot express that -- its delimiter row must be preceded by a header line, and the header is what establishes the columns -- so there is no reference production that yields a table without a head."
-        },
-        {
-            "production": "table caption, TRAILING form only",
-            "proof": "A caption that FOLLOWS its table attaches to a table that has already ended, across blank lines. Neither grammar adopts a block into a structure that is already closed. This proof is now scoped to the trailing form only: it was written for both and it is false for the leading form, which is recorded as an open candidate."
-        },
-        {
-            "production": "formula paragraph promotion",
-            "proof": "NARROWED, because the reason first given was false. It said neither grammar re-kinds a block from the identity of its content, and that CommonMark's one shape-driven re-kinding, the setext heading, is triggered by a following underline in the SOURCE rather than by content. CommonMark does have content-driven paragraph disposal: a paragraph whose only content is a link reference definition is ANNIHILATED at close, in cmark and here alike, verified on both. So 'examine a finished paragraph's content and dispose of it' is a production both grammars have. What is still unsettled, and is the only thing left holding this apart: the disposal produces a node here -- `$$x$$` alone becomes a FormulaBlock -- and produces NOTHING there, and the subsequent operations differ, one re-kinding a block and the other registering a name in the reference map. Those are weaker grounds than any pair in this corpus rests on, so treat this as open rather than settled."
-        },
-        {
-            "production": "anonymous and reset specimen definitions -- `(@) body`, `(5@) body`",
-            "proof": "The labelled specimen pairs with a GFM footnote definition. These two forms do not: the label is optional, an explicit one-to-nine-digit start may precede the sigil, and adjacent definitions form a source group that carries the numbering. A GFM footnote definition has no counter, no group and no start field, so there is no production of this shape to put in front of the reference."
+            "proof": "The only proof here with the right SHAPE -- an exhaustive enumeration over both grammars rather than a claim about one construct -- and it is restated as one. An inline footnote is recognised mid-line, its body is parsed as INLINE content, and its node is hoisted out of the content tree into a document-owned side list. Enumerate every inline production of both grammars: code span, emphasis, strong, link, image, autolink, raw HTML, hard break, soft break, entity, text; plus GFM's strikethrough, autolink literal and footnote reference. Every one of them leaves its node where it was recognised. Hoisting exists in GFM only for the footnote DEFINITION, which is a block. So the enumeration is complete and the shape is absent from both grammars. NOTE the honest caveat: nine of the ten claims withdrawn today were single-construct assertions, and this one has not been attacked by anyone but its author."
         }
     ],
     "openCandidates": [
@@ -943,6 +919,36 @@
             "candidate": "`Table: X` before a table, against a GFM header line before its delimiter row.",
             "whatIsGenuinelyUnsettled": "What each absorbed line becomes: a caption node holding one inline run, against a header row holding N cells each holding an inline run. Whether that is one production with a different result shape or two productions is the thing to decide -- and node materialisation is not the deciding argument.",
             "status": "OPEN -- to be built and tested, not asserted either way"
+        },
+        {
+            "production": "leaf directive `::name[label]{attrs}`",
+            "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
+            "status": "OPEN -- demoted pending a re-derivation that survives attack"
+        },
+        {
+            "production": "container directive `:::name ... :::`",
+            "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
+            "status": "OPEN -- demoted pending a re-derivation that survives attack"
+        },
+        {
+            "production": "headerless simple table",
+            "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
+            "status": "OPEN -- demoted pending a re-derivation that survives attack"
+        },
+        {
+            "production": "table caption, TRAILING form only",
+            "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
+            "status": "OPEN -- demoted pending a re-derivation that survives attack"
+        },
+        {
+            "production": "formula paragraph promotion",
+            "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
+            "status": "OPEN -- demoted pending a re-derivation that survives attack"
+        },
+        {
+            "production": "anonymous and reset specimen definitions -- `(@) body`, `(5@) body`",
+            "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
+            "status": "OPEN -- demoted pending a re-derivation that survives attack"
         }
     ]
 }
