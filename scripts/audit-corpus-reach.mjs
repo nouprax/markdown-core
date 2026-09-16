@@ -524,6 +524,24 @@ function logicalPairFailures(census, pairs) {
                     `name the binding that distinguishes them`
             );
         }
+        /* A pair whose claim names more than one construct must have all of them
+         * checked. The specimen pair carries a CALL as well as a definition on
+         * each side, and counting definitions alone leaves the call unheld: an
+         * unreferenced specimen is retained on this side, so if `@spec-{n}`
+         * stopped being recognised the definition counts would still match while
+         * the reference side went on parsing footnote calls, and the ratio would
+         * no longer measure the workload the pair declares. */
+        for (const also of pair.alsoCounts ?? []) {
+            const here = counts.get(also.case) ?? 0;
+            const there = twinCounts.get(also.isomorph) ?? 0;
+            if (here !== there || here === 0) {
+                failures.push(
+                    `${pair.case} builds ${here} ${also.case} and ${pair.isomorph} builds ${there} ` +
+                        `${also.isomorph}. The pair's workload names this construct too, so an equal ` +
+                        `count of the primary one is not evidence that both sides still do the same job`
+                );
+            }
+        }
         if (!pair.binding) continue;
         const { declares } = pair.binding;
         for (const [side, { name, kind }] of Object.entries(sides)) {

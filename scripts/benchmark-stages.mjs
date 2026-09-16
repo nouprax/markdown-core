@@ -1956,8 +1956,13 @@ function markdownReport(report) {
             "### Growth against input size",
             "",
             "Each case is measured again at a larger size. A stage whose cost is linear in" +
-                " what was scaled reports a growth ratio equal to the byte ratio; a stage" +
-                " quadratic in it reports the square.",
+                " what was scaled reports a growth ratio equal to the BASELINE column; a" +
+                " stage quadratic in it reports the square. The baseline is the dimension" +
+                " the `scaled` column names, which is not always bytes: a generated or" +
+                " counted case is judged against its CONSTRUCT count, because `{n}` gains a" +
+                " digit as the document grows and doubling the byte target multiplies the" +
+                " count by 1.98 rather than 2 -- reading that against bytes would report" +
+                " perfectly linear per-construct work as a percent sublinear.",
             "",
             "The `scaled` column names the dimension that grew, taken from the corpus" +
                 " rather than from the case's shape: a chain case can grow a nesting depth," +
@@ -1968,12 +1973,26 @@ function markdownReport(report) {
                 " depth is the size, which is the dimension a copied document cannot" +
                 " reach.",
             "",
-            "| Case | Scaled | Byte ratio | Stage | Core growth | cmark growth |",
+            "| Case | Scaled | Baseline | Stage | Core growth | cmark growth |",
             "| --- | --- | ---: | --- | ---: | ---: |"
         );
         for (const entry of scaled) {
             const base = report.cases.find((item) => item.case === entry.case && item.scale === 1);
             if (!base) continue;
+            /* The baseline is the dimension the `scaled` column NAMES, which for a
+             * generated or counted case is the construct count and not the byte
+             * count. Those are not the same number: `{n}` gains a digit as the
+             * document grows, so doubling the byte target multiplies the count by
+             * 1.98 rather than 2, and judging per-construct linear work against a
+             * 2.00x byte ratio reports it as 0.8% to 1.6% sublinear -- an artefact
+             * of the index, in the one table that exists to find real
+             * sublinearity. `units` is the named dimension in every mode -- copies
+             * for a samples case, depth for a chain case, constructs for these --
+             * and for the first two it is exactly proportional to bytes, so
+             * reading it always is both uniform and correct. */
+            const byUnits = Boolean(entry.units && base.units);
+            const denominator = byUnits ? entry.units / base.units : entry.bytes / base.bytes;
+            const label = byUnits ? `${denominator.toFixed(3)}x units` : `${denominator.toFixed(2)}x bytes`;
             for (const stage of STAGES) {
                 const core = entry.engines["markdown-core"]?.stages[stage];
                 const coreBase = base.engines["markdown-core"]?.stages[stage];
@@ -1981,7 +2000,7 @@ function markdownReport(report) {
                 const cmarkBase = base.engines.cmark?.stages[stage];
                 if (!core || !coreBase || !cmark || !cmarkBase) continue;
                 lines.push(
-                    `| ${entry.case} | ${entry.growth} | ${(entry.bytes / base.bytes).toFixed(2)}x |` +
+                    `| ${entry.case} | ${entry.growth} | ${label} |` +
                         ` ${stage} | ${ratio(core.ir, coreBase.ir)} | ${ratio(cmark.ir, cmarkBase.ir)} |`
                 );
             }

@@ -547,6 +547,64 @@
             "builds": ["Embedded"]
         },
         {
+            "name": "pair-simpletable-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "Name      Count\n--------  ------\nApples    {n}\nPears     {n}\n\n",
+                "scales": "simple tables"
+            },
+            "builds": ["Table", "TableCell"]
+        },
+        {
+            "name": "pair-simpletable-common",
+            "dialect": "extended",
+            "counted": {
+                "unit": "| Name | Count |\n| --- | --- |\n| Apples | {n} |\n| Pears | {n} |\n\n",
+                "match": "pair-simpletable-dialect",
+                "scales": "pipe tables"
+            },
+            "gfm": true,
+            "builds": ["Table", "TableCell"]
+        },
+        {
+            "name": "pair-blockcomment-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "%%\nAn editorial note {n} that **stays literal**.\n%%\n\n",
+                "scales": "block comments"
+            },
+            "builds": ["Comment"]
+        },
+        {
+            "name": "pair-blockcomment-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "```\nAn editorial note {n} that **stays literal**.\n```\n\n",
+                "match": "pair-blockcomment-dialect",
+                "scales": "fenced code blocks"
+            },
+            "builds": ["CodeBlock"]
+        },
+        {
+            "name": "pair-formulafence-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "```formula\nE_{n} = m c^2\n```\n\n",
+                "scales": "formula code fences"
+            },
+            "builds": ["FormulaBlock"]
+        },
+        {
+            "name": "pair-formulafence-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "```text\nE_{n} = m c^2\n```\n\n",
+                "match": "pair-formulafence-dialect",
+                "scales": "code fences"
+            },
+            "builds": ["CodeBlock"]
+        },
+        {
             "name": "pair-comment-common",
             "dialect": "commonmark",
             "samples": ["pair-comment-common.md"],
@@ -700,6 +758,12 @@
                 "case": "Specimen",
                 "isomorph": "Footnote"
             },
+            "alsoCounts": [
+                {
+                    "case": "Cite",
+                    "isomorph": "Cite"
+                }
+            ],
             "claim": "A specimen definition and a GFM footnote definition are the same production: a one-line opener carrying a label, then block content the opener owns, and a node that leaves ordinary document content for a side list the document holds. Both specs say so in the same words -- Document.specimens, Document.footnotes, not in the content. Each unit also carries a REFERENCE to its label, on both sides, because the two grammars differ on an unreferenced definition: this dialect keeps a specimen nobody cites, and GFM DISCARDS a footnote definition nobody calls. Without the call the reference side parsed to nothing at all and the denominator was cmark-gfm throwing text away -- a bound wearing the name of a comparison. With it, both sides hold one call in ordinary content and one definition owning block content in a side list, which is also the fuller match: declare, and refer."
         },
         {
@@ -759,6 +823,33 @@
                 "isomorph": "Embedded"
             },
             "claim": "A cross embed and an image are the same production: a `!` sigil immediately before a bracket-delimited destination that is NOT parsed as inline content, producing one leaf inline that stores the destination and has no children. The alt text is deliberately empty on the reference side -- a cross embed has no inline body, so an image that carried one would hand the reference an inline parse this side never performs, and with it empty both sides build a childless leaf. Neither resolves the destination: the cross-link spec says the parser stores the strings and the application finds the resource, and an image's destination is likewise stored. Not the same length, so the pair is generated to an equal COUNT."
+        },
+        {
+            "case": "pair-simpletable-dialect",
+            "isomorph": "pair-simpletable-common",
+            "counts": {
+                "case": "Table",
+                "isomorph": "Table"
+            },
+            "claim": "A simple table and a GFM pipe table are the same production: a header line, a separator line that fixes the columns, body rows, terminated by a blank line, and CELLS THAT HOLD INLINES. tables.md says so three times for the simple form -- 'inline content in its cells', 'Segments are trimmed before inline parsing', and the explicit statement that block openers do not fire inside one, so 'heading, quote, and fence-looking lines remain inline cell text'. Only the cell separator differs: a column POSITION established by the dash-run line against a `|` scalar. The spec adds that all four table spellings 'produce the same Table model' and that 'the AST does not store a separate table kind for each spelling'. THIS CORRECTS A RECORDED REASON: the bounds table refused every table flavour on the ground that a grid cell holds a paragraph where a pipe cell holds inlines. That is true of the GRID table and of nothing else, and it was applied to the simple table without checking."
+        },
+        {
+            "case": "pair-blockcomment-dialect",
+            "isomorph": "pair-blockcomment-common",
+            "counts": {
+                "case": "Comment",
+                "isomorph": "CodeBlock"
+            },
+            "claim": "A block comment and a fenced code block are the same production: an opening delimiter line with zero to three leading spaces after container prefixes and only whitespace after the marker, a body kept LITERAL and not parsed as Markdown, and a closing delimiter line of the same marker within the same container; either can interrupt a paragraph. comments.md calls them 'Fences' in its own words. Same shape, different terminal -- `%%` against a run of three or more backticks -- which is the `$x$` against `` `x` `` rule at block level. It cannot be a substitution: mapping `%` to a backtick turns the two-byte line into a two-backtick run, which is not a fence at all, so the pair is sized by count. The INLINE comment is a separate production and is paired separately, by substitution, as pair-comment."
+        },
+        {
+            "case": "pair-formulafence-dialect",
+            "isomorph": "pair-formulafence-common",
+            "counts": {
+                "case": "FormulaBlock",
+                "isomorph": "CodeBlock"
+            },
+            "claim": "A fence whose info string is exactly `formula` is a formula block, and formulas.md and code.md both say so; every other info string keeps ordinary code-block behaviour. So this is not a production of the same SHAPE as a code fence, it IS the code fence production with one token changed, which makes it the narrowest pair in the corpus and a deliberate one: the fence scanner is held byte for byte identical and the only thing that varies is the info-string comparison and the routing of the finished leaf to a different kind. It measures none of the `$$` delimiter-line grammar, which is a separate production paired separately as pair-formulablock."
         }
     ]
 }
