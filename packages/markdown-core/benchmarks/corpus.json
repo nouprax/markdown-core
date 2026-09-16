@@ -628,6 +628,29 @@
             "builds": ["CodeBlock"]
         },
         {
+            "name": "pair-headless-dialect",
+            "dialect": "extended",
+            "generated": {
+                "head": "----------  ----------\nRow header  Val header\n",
+                "unit": "Row {n:6}  Val {n:6}\n",
+                "tail": "----------  ----------\n",
+                "scales": "body rows"
+            },
+            "builds": ["Table", "TableCell"]
+        },
+        {
+            "name": "pair-headless-common",
+            "dialect": "extended",
+            "counted": {
+                "head": "| Row | Val |\n| --- | --- |\n",
+                "unit": "| Row {n:6} | Val {n:6} |\n",
+                "match": "pair-headless-dialect",
+                "scales": "body rows"
+            },
+            "gfm": true,
+            "builds": ["Table", "TableCell"]
+        },
+        {
             "name": "pair-gridcell-dialect",
             "dialect": "extended",
             "generated": {
@@ -944,6 +967,22 @@
             "claim": "A properties envelope and a fenced code block are the same production: a leaf block opened and closed by a delimiter line, whose body is NOT parsed as Markdown. Same shape, different terminal -- `---` against a run of three or more backticks. What each does with the body afterwards, decode it into named fields or keep it literal, is the measurement and not part of the pairing. This pair is shaped unlike every other one in the corpus and deliberately so: properties.md says only one envelope is recognised, at the document's start, so the workload CANNOT scale by repeating the construct. It scales by the member lines inside a single envelope, which is why both sides carry a head and a tail and why `units` counts lines here rather than constructs. The earlier refusal -- once per document, no count to scale -- mistook the construct for the dimension."
         },
         {
+            "case": "pair-headless-dialect",
+            "isomorph": "pair-headless-common",
+            "counts": {
+                "case": "TableCell",
+                "isomorph": "TableCell"
+            },
+            "alsoCounts": [
+                {
+                    "case": "TableRow",
+                    "isomorph": "TableRow"
+                }
+            ],
+            "fallback": "Paragraph",
+            "claim": "A headerless simple table and a GFM pipe table are the same ROW production: a line cut into K ranges, each range's content parsed as INLINES, repeated for as many lines as the table holds. The cut is positional in one grammar and delimited in the other, which is the difference being measured; the subsequent operation is the same on both sides, and the pair counts TableRow alongside TableCell so that both halves of the criterion are checked rather than only the second. Where the two grammars genuinely differ is that GFM DESIGNATES its first row the head and the simple table's headerless form leaves every row in the body -- a destination for a row already parsed, not a different production, which is why both sides carry one extra row so that the same number of LINES becomes the same number of cells. The earlier refusal argued from GFM's table REQUIRING a header, which is a fact about the reference's table rather than about its row-and-cell production. Held by the absence of Paragraph: both spellings collapse into one the moment the table stops being recognised, and with an index that gains a digit the collapse would be silent, so both sides use the zero-padded form."
+        },
+        {
             "case": "pair-gridcell-dialect",
             "isomorph": "pair-gridcell-common",
             "counts": {
@@ -1006,11 +1045,6 @@
         },
         {
             "production": "container directive `:::name ... :::`",
-            "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
-            "status": "OPEN -- demoted pending a re-derivation that survives attack"
-        },
-        {
-            "production": "headerless simple table",
             "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
             "status": "OPEN -- demoted pending a re-derivation that survives attack"
         },
