@@ -628,6 +628,25 @@
             "builds": ["CodeBlock"]
         },
         {
+            "name": "pair-cdirective-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": ":::note\nBody paragraph {n}.\n:::\n\n",
+                "scales": "container directives"
+            },
+            "builds": ["DirectiveBlock"]
+        },
+        {
+            "name": "pair-cdirective-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "> Body paragraph {n}.\n\n",
+                "match": "pair-cdirective-dialect",
+                "scales": "block quotes"
+            },
+            "builds": ["Callout"]
+        },
+        {
             "name": "pair-callout-dialect",
             "dialect": "extended",
             "generated": {
@@ -987,6 +1006,21 @@
             "claim": "A properties envelope and a fenced code block are the same production: a leaf block opened and closed by a delimiter line, whose body is NOT parsed as Markdown. Same shape, different terminal -- `---` against a run of three or more backticks. What each does with the body afterwards, decode it into named fields or keep it literal, is the measurement and not part of the pairing. This pair is shaped unlike every other one in the corpus and deliberately so: properties.md says only one envelope is recognised, at the document's start, so the workload CANNOT scale by repeating the construct. It scales by the member lines inside a single envelope, which is why both sides carry a head and a tail and why `units` counts lines here rather than constructs. The earlier refusal -- once per document, no count to scale -- mistook the construct for the dimension."
         },
         {
+            "case": "pair-cdirective-dialect",
+            "isomorph": "pair-cdirective-common",
+            "counts": {
+                "case": "DirectiveBlock",
+                "isomorph": "Callout"
+            },
+            "alsoCounts": [
+                {
+                    "case": "Paragraph",
+                    "isomorph": "Paragraph"
+                }
+            ],
+            "claim": "A container directive and a block quote are the same production: a CONTAINER BLOCK -- a start condition, a per-line continuation condition, and contents parsed as BLOCKS. CommonMark defines that category itself and puts the block quote and the list item in it; the container directive is a third member of it. What differs is which continuation condition: a block quote continues while its lines carry the marker, a directive continues until its closing fence. That is the thing being measured. The pair counts Paragraph alongside the container because block parsing of the contents is the second half of the criterion and 50 against 50 per 50 units is what shows it matches. The earlier refusal said CommonMark's only FENCE opens a leaf, which compares the fence construct rather than the container production -- the reference here is not the fenced code block, it is the block quote. What the reader should discount for: a fenced container spends two delimiter lines per unit where a prefix container spends none, so at equal COUNT the dialect document is about three times the lines. That is the cost of the grammar rather than a hidden inequality, and it is why the pair is sized by count and says so."
+        },
+        {
             "case": "pair-callout-dialect",
             "isomorph": "pair-callout-common",
             "counts": {
@@ -1076,11 +1110,6 @@
         },
         {
             "production": "leaf directive `::name[label]{attrs}`",
-            "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
-            "status": "OPEN -- demoted pending a re-derivation that survives attack"
-        },
-        {
-            "production": "container directive `:::name ... :::`",
             "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
             "status": "OPEN -- demoted pending a re-derivation that survives attack"
         },
