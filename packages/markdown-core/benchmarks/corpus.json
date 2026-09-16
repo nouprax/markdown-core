@@ -89,19 +89,6 @@
             "builds": ["Heading"]
         },
         {
-            "name": "pair-heading-common",
-            "dialect": "commonmark",
-            "counted": {
-                "unit": "[heading-{n}]: /u\n",
-                "match": {
-                    "case": "block-heading",
-                    "pattern": "^#{1,6} "
-                },
-                "tail": "\nx\n"
-            },
-            "builds": ["Paragraph"]
-        },
-        {
             "name": "block-hr",
             "dialect": "commonmark",
             "samples": ["block-hr.md"],
@@ -395,6 +382,23 @@
             "builds": ["Strong", "Link"]
         },
         {
+            "name": "pair-anchor-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "A paragraph carrying its own identifier #anchor-{n}#\n\n"
+            },
+            "builds": ["Paragraph"]
+        },
+        {
+            "name": "pair-anchor-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "A paragraph carrying its own identifier\n\n[anchor-{n}]: #anchor-{n}\n\n",
+                "match": "pair-anchor-dialect"
+            },
+            "builds": ["Paragraph"]
+        },
+        {
             "name": "pair-comment-common",
             "dialect": "commonmark",
             "samples": ["pair-comment-common.md"],
@@ -525,14 +529,15 @@
             ]
         }
     ],
-    "stressPairs": [
+    "logicalIsomorphs": [
         {
-            "case": "block-heading",
-            "reference": "pair-heading-common",
-            "equivalent": "reference-map registration",
-            "claim": "This dialect derives a slug for every heading and registers it as an implicit reference label, de-duplicating across the whole document. cmark registers a reference for every link reference definition and normalises its label the same way. Neither builds the other's tree, so no substitution pairs them -- but both walk one single-line block construct per item, normalise a label, probe a reference map and grow it by one entry, and the pair is sized so the COUNT of those items is equal rather than the byte length. What is NOT equal is named here rather than buried: this parser also builds a Heading node and its inline content, which cmark does not do on a definition line, and cmark parses a destination, which this parser does not do on a heading. The pair measures reference-map pressure at equal count; it is not a claim about heading parsing.",
-            "caseKind": "Heading",
-            "referencePattern": "^\\[heading-[0-9]+\\]: "
+            "case": "pair-anchor-dialect",
+            "isomorph": "pair-anchor-common",
+            "binding": {
+                "block": "Paragraph",
+                "declares": "anchor"
+            },
+            "claim": "An explicit anchor DECLARES a name and binds it to the block it sits on. A link reference definition declares a name and binds it to a target. Same grammar shape -- one block, one name-to-target binding -- and the same subsequent operation, which is the binding entering the document's table of names. The two spellings differ in length, so the pair is generated to an equal COUNT of declarations rather than to equal bytes, and each name is indexed so both sides bind the same number of distinct identifiers. DERIVED anchors are deliberately not paired here: a heading whose anchor comes from its own text declares nothing, and CommonMark has no production that derives a binding, so there is no isomorph to write and block-heading stays a bound."
         }
     ]
 }

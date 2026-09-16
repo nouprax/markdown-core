@@ -315,6 +315,7 @@ async function kindsProduced(cli, documents) {
     const seen = new Set();
     const perCase = new Map();
     const perCaseCounts = new Map();
+    const perCaseBound = new Map();
     for (const document of documents) {
         /* The complexity shapes are excluded, and only here. `chain-list-depth`
          * is 32,765 levels deep, and `markdown_core_document_dump` materialises
@@ -328,6 +329,7 @@ async function kindsProduced(cli, documents) {
         if (path.basename(document).startsWith("chain-")) continue;
         const mine = new Set();
         const counts = new Map();
+        const bound = new Map();
         const child = spawn(cli, [document], { stdio: ["ignore", "pipe", "ignore"], timeout: 600_000 });
         const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
         for await (const line of lines) {
@@ -335,62 +337,101 @@ async function kindsProduced(cli, documents) {
             if (match) {
                 seen.add(match[1]);
                 mine.add(match[1]);
-                /* Counted, not just noted. A stress pair is built on the two
-                 * sides carrying an EQUAL NUMBER of the construct, and the
+                /* Counted, not just noted. A logical isomorph is built on the
+                 * two sides carrying an EQUAL NUMBER of the construct, and the
                  * parser is the only thing that knows how many a document
                  * really has -- a pattern over the source counts what looks
-                 * like a heading, which is not the same question. */
+                 * like a declaration, which is not the same question. */
                 counts.set(match[1], (counts.get(match[1]) ?? 0) + 1);
+                /* And which of them carry a BINDING, which is the other half of
+                 * what a logical pair claims. Read off the head of the line --
+                 * everything before `attributes={` -- so a literal that happens
+                 * to contain `name="` is text and is not counted as one. A null
+                 * attribute prints unquoted, so only a real binding matches. */
+                const head = line.slice(0, line.indexOf(" attributes="));
+                for (const [, name] of head.matchAll(/ ([a-z][a-z-]*)="/gu)) {
+                    const key = `${match[1]}.${name}`;
+                    bound.set(key, (bound.get(key) ?? 0) + 1);
+                }
             }
         }
         const name = path.basename(document).replace(/\.x1\.md$/u, "");
         perCase.set(name, mine);
         perCaseCounts.set(name, counts);
+        perCaseBound.set(name, bound);
         const [code, signal] = await new Promise((resolve) => child.on("close", (c, s) => resolve([c, s])));
         if (signal) fail(`the dump CLI was killed by ${signal} on ${path.basename(document)}`);
         if (code !== 0) fail(`the dump CLI exited ${code} on ${path.basename(document)}`);
     }
-    return { seen, perCase, perCaseCounts };
+    return { seen, perCase, perCaseCounts, perCaseBound };
 }
 
 /**
- * The equal-count invariant a stress pair rests on, checked against the parser.
+ * The invariants a LOGICAL isomorph rests on, checked against the parser.
  *
- * Where no substitution can pair a dialect construct with a CommonMark one, the
- * corpus generates a PARITY WORKLOAD instead: a document that drives the
- * reference's equivalent machinery the same number of times. That number is the
- * whole claim. The generator sizes the pair from a pattern over the sample,
- * which is a guess about what the parser will do with those bytes -- a `#` in a
- * fenced block looks like a heading and is not one, and a setext heading is one
- * and does not look like it. So the count is verified here, where the parser has
- * actually run: the case's side is counted off its own tree, and the reference's
- * side off the generated document, whose shape the corpus declares.
+ * A substitution isomorph is the same document under a change of marker, so the
+ * pair is held by the two trees being identical. Where no substitution can pair
+ * a dialect construct with a CommonMark one, the corpus pairs the GRAMMAR
+ * instead: two productions of the same shape whose subsequent operation is the
+ * same. An explicit anchor binds a name to the block it sits on; a link
+ * reference definition binds a name to a target. One block and one
+ * name-to-target binding either way -- but written out, they are not the same
+ * bytes and not the same tree, so nothing about the pair can be read off a
+ * comparison of the two dumps.
+ *
+ * Two things are read off the parser instead, and they are what the pair claims:
+ *
+ *   Both sides built the SAME NUMBER OF BLOCKS. The corpus generates them to an
+ *   equal count of declarations, which is arithmetic; this is the parser
+ *   agreeing that the bytes it was handed came out that way. It is also what
+ *   proves the reference side's declarations were CONSUMED: a definition the
+ *   parser declined to read as one stays a paragraph, and the count doubles.
+ *
+ *   The declaring side BOUND that many names, and the reference side bound none
+ *   in its tree -- its bindings are in the reference map, which is the whole
+ *   reason the two spellings pair and the whole reason their trees differ.
  */
-function stressPairs() {
+function logicalIsomorphs() {
     return (
         JSON.parse(fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8"))
-            .stressPairs ?? []
+            .logicalIsomorphs ?? []
     );
 }
 
-function stressPairCounts(perCaseCounts, corpusDirectory, pairs) {
+function logicalPairFailures(census, pairs) {
     const failures = [];
     for (const pair of pairs) {
-        const counts = perCaseCounts.get(pair.case);
-        if (!counts) continue;
-        const built = counts.get(pair.caseKind) ?? 0;
-        const document = path.join(corpusDirectory, `${pair.reference}.x1.md`);
-        if (!fs.existsSync(document)) {
-            failures.push(`${pair.case} is paired with ${pair.reference}, which the corpus did not generate`);
+        const { block, declares } = pair.binding;
+        const counts = census.perCaseCounts.get(pair.case);
+        const twinCounts = census.perCaseCounts.get(pair.isomorph);
+        if (!counts || !twinCounts) {
+            failures.push(`${pair.case} is paired with ${pair.isomorph}, and the corpus did not build both documents`);
             continue;
         }
-        const emitted = (fs.readFileSync(document, "utf8").match(new RegExp(pair.referencePattern, "gmu")) ?? [])
-            .length;
-        if (built !== emitted) {
+        const built = counts.get(block) ?? 0;
+        const twinBuilt = twinCounts.get(block) ?? 0;
+        if (built !== twinBuilt) {
             failures.push(
-                `${pair.case} builds ${built} ${pair.caseKind} nodes but ${pair.reference} carries ${emitted} ` +
-                    `of its paired construct. A stress pair compares two workloads only because their counts ` +
-                    `are equal; unequal counts make the ratio a comparison of one document's size with another's`
+                `${pair.case} builds ${built} ${block} nodes and ${pair.isomorph} builds ${twinBuilt}. ` +
+                    `A logical pair compares two spellings of one declaration only while both documents ` +
+                    `hold the same number of it; unequal counts make the ratio a comparison of one ` +
+                    `document's size with another's`
+            );
+        }
+        const bound = census.perCaseBound.get(pair.case)?.get(`${block}.${declares}`) ?? 0;
+        if (bound !== built) {
+            failures.push(
+                `${pair.case} builds ${built} ${block} nodes but only ${bound} of them bind ${declares}. ` +
+                    `The pair claims every block on this side DECLARES; a block that declares nothing has ` +
+                    `no counterpart in the reference document's definitions`
+            );
+        }
+        const twinBound = census.perCaseBound.get(pair.isomorph)?.get(`${block}.${declares}`) ?? 0;
+        if (twinBound !== 0) {
+            failures.push(
+                `${pair.isomorph} carries ${twinBound} ${declares} bindings in its tree. The reference side ` +
+                    `of a logical pair declares OUT OF BAND -- into the reference map -- and a binding that ` +
+                    `reached the tree means the corpus wrote the dialect spelling on both sides`
             );
         }
     }
@@ -536,6 +577,7 @@ const driven = new Set();
 const undriven = [];
 const drifted = [];
 const pairs = isomorphPairs();
+const logical = logicalIsomorphs();
 let notIsomorphic;
 let unequalPairs;
 let unbuilt;
@@ -553,7 +595,7 @@ let unbuilt;
          * a property of the two documents as written, and the corpus repeats
          * each of them to a byte target, which says nothing further about it. */
         notIsomorphic = isomorphFailures(binaries.dump, pairs);
-        unequalPairs = stressPairCounts(census.perCaseCounts, path.dirname(documents[0]), stressPairs());
+        unequalPairs = logicalPairFailures(census, logical);
         for (const [name, expected] of declaredBuilds()) {
             const built = census.perCase.get(name);
             if (!built) {
@@ -612,7 +654,7 @@ process.stdout.write(
         `  samples with a case  ${sampleCount - orphaned.length}/${sampleCount}\n` +
         `  cases still building ${declaredBuilds().size - drifted.length}/${declaredBuilds().size}\n` +
         `  isomorph pairs held  ${pairs.length - notIsomorphic.length}/${pairs.length}\n` +
-        `  stress pairs matched ${stressPairs().length - unequalPairs.length}/${stressPairs().length}\n`
+        `  logical pairs held   ${logical.length - unequalPairs.length}/${logical.length}\n`
 );
 
 if (options.json) {
@@ -638,8 +680,8 @@ if (notIsomorphic.length) {
 }
 if (unequalPairs.length) {
     failures.push(
-        `a stress pair compares two workloads only because they carry an equal count of the ` +
-            `construct, and these no longer do:\n    ${unequalPairs.join("\n    ")}`
+        `a logical pair compares two spellings of one declaration, and these no longer hold ` +
+            `what that claims:\n    ${unequalPairs.join("\n    ")}`
     );
 }
 if (drifted.length) {
