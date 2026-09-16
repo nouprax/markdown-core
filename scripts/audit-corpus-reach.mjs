@@ -517,12 +517,32 @@ function logicalPairFailures(census, pairs) {
          * parser stopped reading is still a list item -- so the pair must name
          * the field that tells the two apart, and the audit refuses a pair that
          * does not. */
-        if (sides.case.kind === sides.isomorph.kind && !pair.binding) {
+        if (sides.case.kind === sides.isomorph.kind && !pair.binding && !pair.fallback) {
             failures.push(
                 `${pair.case} and ${pair.isomorph} both build ${sides.case.kind}, so an equal count is ` +
                     `not evidence that either side still parses as the pair claims. Such a pair must ` +
-                    `name the binding that distinguishes them`
+                    `name either the binding that distinguishes them or the kind they FALL BACK to when ` +
+                    `the construct stops being recognised`
             );
+        }
+        /* The other way a same-kind pair can be held. Where a construct that
+         * stops being recognised DEGRADES into a different kind -- a simple
+         * table whose dash run is no longer read is a paragraph, not a table --
+         * the count is evidence after all, and what makes it evidence is that
+         * the fallback is absent. A task marker has no fallback in this sense:
+         * an item whose marker went unread is still a list item, which is why
+         * that pair names a binding instead. */
+        for (const [side, { name }] of Object.entries(sides)) {
+            if (!pair.fallback) break;
+            const counts_ = side === "case" ? counts : twinCounts;
+            const fell = counts_.get(pair.fallback) ?? 0;
+            if (fell !== 0) {
+                failures.push(
+                    `${name} builds ${fell} ${pair.fallback}, which is what this construct degrades to ` +
+                        `when it stops being recognised. The pair is held by that kind being absent, so ` +
+                        `its presence means some of the document is no longer the construct being paired`
+                );
+            }
         }
         /* A pair whose claim names more than one construct must have all of them
          * checked. The specimen pair carries a CALL as well as a definition on

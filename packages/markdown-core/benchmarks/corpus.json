@@ -831,6 +831,7 @@
                 "case": "Table",
                 "isomorph": "Table"
             },
+            "fallback": "Paragraph",
             "claim": "A simple table and a GFM pipe table are the same production: a header line, a separator line that fixes the columns, body rows, terminated by a blank line, and CELLS THAT HOLD INLINES. tables.md says so three times for the simple form -- 'inline content in its cells', 'Segments are trimmed before inline parsing', and the explicit statement that block openers do not fire inside one, so 'heading, quote, and fence-looking lines remain inline cell text'. Only the cell separator differs: a column POSITION established by the dash-run line against a `|` scalar. The spec adds that all four table spellings 'produce the same Table model' and that 'the AST does not store a separate table kind for each spelling'. THIS CORRECTS A RECORDED REASON: the bounds table refused every table flavour on the ground that a grid cell holds a paragraph where a pipe cell holds inlines. That is true of the GRID table and of nothing else, and it was applied to the simple table without checking."
         },
         {
