@@ -48,3 +48,37 @@ if(MARKDOWN_CORE_CMARK_SOURCE_DIR AND MARKDOWN_CORE_CMARK_BUILD_DIR)
     target_compile_definitions(cmark_stage_runner PRIVATE CMARK_STATIC_DEFINE)
     target_link_libraries(cmark_stage_runner PRIVATE "${MARKDOWN_CORE_CMARK_LIBRARY}")
 endif()
+
+if(MARKDOWN_CORE_CMARK_GFM_SOURCE_DIR AND MARKDOWN_CORE_CMARK_GFM_BUILD_DIR)
+    if(NOT EXISTS "${MARKDOWN_CORE_CMARK_GFM_SOURCE_DIR}/src/cmark-gfm.h")
+        message(
+            FATAL_ERROR
+                "MARKDOWN_CORE_CMARK_GFM_SOURCE_DIR does not hold src/cmark-gfm.h: ${MARKDOWN_CORE_CMARK_GFM_SOURCE_DIR}"
+        )
+    endif()
+    # Re-resolved and static-only for the same reasons as cmark above.
+    unset(MARKDOWN_CORE_CMARK_GFM_LIBRARY CACHE)
+    unset(MARKDOWN_CORE_CMARK_GFM_EXTENSIONS_LIBRARY CACHE)
+    set(_markdown_core_find_suffixes "${CMAKE_FIND_LIBRARY_SUFFIXES}")
+    set(CMAKE_FIND_LIBRARY_SUFFIXES "${CMAKE_STATIC_LIBRARY_SUFFIX}")
+    find_library(
+        MARKDOWN_CORE_CMARK_GFM_LIBRARY
+        NAMES cmark-gfm
+        PATHS "${MARKDOWN_CORE_CMARK_GFM_BUILD_DIR}/src"
+        NO_DEFAULT_PATH REQUIRED)
+    find_library(
+        MARKDOWN_CORE_CMARK_GFM_EXTENSIONS_LIBRARY
+        NAMES cmark-gfm-extensions
+        PATHS "${MARKDOWN_CORE_CMARK_GFM_BUILD_DIR}/extensions"
+        NO_DEFAULT_PATH REQUIRED)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES "${_markdown_core_find_suffixes}")
+    add_executable(cmark_gfm_stage_runner stage_runner.c cmark_gfm_stages.c)
+    target_include_directories(
+        cmark_gfm_stage_runner
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${MARKDOWN_CORE_CMARK_GFM_SOURCE_DIR}/src"
+                "${MARKDOWN_CORE_CMARK_GFM_SOURCE_DIR}/extensions" "${MARKDOWN_CORE_CMARK_GFM_BUILD_DIR}/src")
+    target_compile_definitions(cmark_gfm_stage_runner PRIVATE CMARK_GFM_STATIC_DEFINE)
+    # Extensions first: they call back into the core archive.
+    target_link_libraries(cmark_gfm_stage_runner PRIVATE "${MARKDOWN_CORE_CMARK_GFM_EXTENSIONS_LIBRARY}"
+                                                         "${MARKDOWN_CORE_CMARK_GFM_LIBRARY}")
+endif()

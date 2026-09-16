@@ -85,6 +85,16 @@ const ENGINES = {
             source_to_buffer: { caller: "bench_parse_document", callee: "cmark_parser_feed" },
             buffer_to_ast: { caller: "bench_parse_document", callee: "cmark_parser_finish" }
         }
+    },
+    /* Same stage split, same API, same codebase -- and it implements tables,
+     * strikethrough, bare autolinks, task lists and footnotes, so for those
+     * constructs a ratio against it compares two parsers doing one job. */
+    "cmark-gfm": {
+        runner: "packages/markdown-core/benchmarks/cmark_gfm_stage_runner",
+        stages: {
+            source_to_buffer: { caller: "bench_parse_document", callee: "cmark_parser_feed" },
+            buffer_to_ast: { caller: "bench_parse_document", callee: "cmark_parser_finish" }
+        }
     }
 };
 
@@ -619,6 +629,58 @@ function pinnedCmark() {
     return { version, commit, checkout };
 }
 
+/* The pinned GFM oracle, located exactly as cmark is: the pin lives in
+ * init-environment.sh and this reads it rather than keeping a second copy. */
+function pinnedCmarkGfm() {
+    const script = fs.readFileSync(path.join(root, "scripts/init-environment.sh"), "utf8");
+    const version = /^CMARK_GFM_VERSION=(.+)$/mu.exec(script)?.[1];
+    const commit = /^CMARK_GFM_COMMIT=([0-9a-f]{40})$/mu.exec(script)?.[1];
+    if (!version || !commit) fail("scripts/init-environment.sh does not pin cmark-gfm");
+    const checkout = path.join(root, ".tools/cmark-gfm", version);
+    const install = "scripts/init-environment.sh --install oracle-cmark-gfm";
+    if (!fs.existsSync(path.join(checkout, "src/cmark-gfm.h"))) {
+        fail(`the pinned cmark-gfm oracle is not installed; run: ${install}`);
+    }
+    const head = run("git", ["-C", checkout, "rev-parse", "HEAD"]).trim();
+    if (head !== commit) {
+        fail(
+            `the cmark-gfm oracle checkout is at ${head}, but cmark-gfm ${version} is pinned to ${commit}; ` +
+                `run: ${install}`
+        );
+    }
+    return { version, commit, checkout };
+}
+
+/* Rebuilt with the profile's compiler and flags rather than read from whatever
+ * init-environment produced, for the same reason cmark is: the report's central
+ * claim is that every engine met the same compiler. */
+function buildCmarkGfm(profile, gfm, out, versions) {
+    const buildDir = path.join(out, "cmark-gfm");
+    discardForeignTree(buildDir, profile, versions);
+    run(
+        "cmake",
+        [
+            "-S",
+            gfm.checkout,
+            "-B",
+            buildDir,
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMARK_TESTS=OFF",
+            "-DCMARK_SHARED=OFF",
+            "-DBUILD_TESTING=OFF",
+            "-DBUILD_SHARED_LIBS=OFF",
+            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            `-DCMAKE_C_COMPILER=${profile.compiler}`,
+            `-DCMAKE_C_FLAGS_RELEASE=${profile.flags}`
+        ],
+        { env: buildEnvironment() }
+    );
+    run("cmake", ["--build", buildDir, "--parallel"], { env: buildEnvironment() });
+    stampTree(buildDir, profile, versions);
+    return buildDir;
+}
+
 function buildCmark(profile, cmark, out, versions) {
     const buildDir = path.join(out, "cmark");
     discardForeignTree(buildDir, profile, versions);
@@ -813,7 +875,7 @@ function stampTree(buildDir, profile, versions) {
     fs.writeFileSync(path.join(buildDir, STAMP), stampOf(profile, versions));
 }
 
-function buildRunners(profile, cmark, cmarkBuildDir, versions) {
+function buildRunners(profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions) {
     discardForeignTree(profile.binaryDir, profile, versions);
     run(
         "cmake",
@@ -822,7 +884,9 @@ function buildRunners(profile, cmark, cmarkBuildDir, versions) {
             PROFILE_PRESET,
             "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
             `-DMARKDOWN_CORE_CMARK_SOURCE_DIR=${path.join(cmark.checkout, "src")}`,
-            `-DMARKDOWN_CORE_CMARK_BUILD_DIR=${cmarkBuildDir}`
+            `-DMARKDOWN_CORE_CMARK_BUILD_DIR=${cmarkBuildDir}`,
+            `-DMARKDOWN_CORE_CMARK_GFM_SOURCE_DIR=${gfm.checkout}`,
+            `-DMARKDOWN_CORE_CMARK_GFM_BUILD_DIR=${gfmBuildDir}`
         ],
         { env: buildEnvironment() }
     );
@@ -1082,6 +1146,7 @@ function buildCorpus(options, manifest) {
             documents.push({
                 case: entry.name,
                 dialect: entry.dialect,
+                gfm: entry.gfm === true,
                 /* What the growth table is varying. `documents` cases add
                  * independent copies; a chain case grows one structure, and
                  * WHICH dimension is not the same question as the shape --
@@ -1580,14 +1645,25 @@ function markdownReport(report) {
     );
 
     /* A ratio is only a comparison where both engines did the same job. */
+    const stageIr = (engines, engine) =>
+        engines[engine] ? STAGES.reduce((sum, stage) => sum + engines[engine].stages[stage].ir, 0) : null;
     const ranked = report.cases
-        .filter((item) => item.scale === 1 && item.engines["markdown-core"] && item.engines.cmark)
+        .filter((item) => item.scale === 1 && item.engines["markdown-core"])
         .map((item) => {
-            const core = STAGES.reduce((sum, stage) => sum + item.engines["markdown-core"].stages[stage].ir, 0);
-            const reference = STAGES.reduce((sum, stage) => sum + item.engines.cmark.stages[stage].ir, 0);
-            return { ...item, coreIr: core, referenceIr: reference, ratio: reference ? core / reference : 0 };
+            const core = stageIr(item.engines, "markdown-core");
+            const cmarkIr = stageIr(item.engines, "cmark");
+            const gfmIr = stageIr(item.engines, "cmark-gfm");
+            return {
+                ...item,
+                coreIr: core,
+                cmarkRatio: cmarkIr ? core / cmarkIr : null,
+                gfmRatio: gfmIr ? core / gfmIr : null,
+                /* The comparison that means something: the closest reference
+                 * that implements what the document contains. */
+                sameJob: gfmIr ? core / gfmIr : item.dialect === "commonmark" && cmarkIr ? core / cmarkIr : null
+            };
         })
-        .sort((left, right) => right.ratio - left.ratio);
+        .sort((left, right) => (right.sameJob ?? right.cmarkRatio ?? 0) - (left.sameJob ?? left.cmarkRatio ?? 0));
 
     if (ranked.length) {
         const median = (values) => {
@@ -1595,34 +1671,45 @@ function markdownReport(report) {
             if (!sorted.length) return 0;
             const middle = Math.floor(sorted.length / 2);
             /* An even group has two middle values and neither one of them is the
-             * median; the CommonMark group has 34 cases, so taking the upper
-             * published a number that was not the median of anything. */
+             * median; the CommonMark group has an even count, so taking the
+             * upper published a number that was not the median of anything. */
             return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
         };
         lines.push("### Ratio against the reference", "");
         lines.push(
-            "cmark implements the CommonMark cases. It does NOT implement the extended" +
-                " ones, so those two groups are reported apart and never averaged together.",
+            "A ratio compares only where both parsers did the same job, so the cases are" +
+                " grouped by which reference implements what they contain, and the groups are" +
+                " never averaged together.",
             "",
-            "An extended case's ratio is not this parser being slower at the same job. cmark" +
-                " reads `| a | b |` as a paragraph and builds no table, reads `> [!NOTE]` as a" +
-                " plain block quote, and reads `$$x$$` as text. Its number there is the cost of" +
-                " NOT implementing the construct, so the ratio measures work this parser does" +
-                " and the reference does not. It bounds what the construct costs; it does not" +
-                " say the construct is slow.",
+            "cmark implements the CommonMark cases. cmark-gfm implements tables, task lists," +
+                " bare autolinks and footnotes, and is measured only on the cases that hold" +
+                " them. Nothing implements the rest: cmark reads `:::note` as a paragraph and" +
+                " `$$x$$` as text, so its number there is the cost of NOT having the feature." +
+                " That bounds what a construct costs and does not say it is slow.",
+            "",
+            "The pipe-table case is what the distinction is worth: **8.53x against cmark," +
+                " 1.37x against cmark-gfm**. The first number is almost entirely this parser" +
+                " building a table while the reference reads paragraphs.",
             ""
         );
-        lines.push("| Group | Cases | Median ratio | Worst |", "| --- | ---: | ---: | --- |");
-        for (const [group, label] of [
-            ["commonmark", "CommonMark (same job)"],
-            ["extended", "Extended (work cmark does not do)"]
-        ]) {
-            const group_ = ranked.filter((item) => item.dialect === group);
-            if (!group_.length) continue;
-            const worst = group_[0];
+        lines.push("| Group | Reference | Cases | Median | Worst |", "| --- | --- | ---: | ---: | --- |");
+        const groups = [
+            ["CommonMark", "cmark", ranked.filter((item) => item.dialect === "commonmark" && !item.gfm)],
+            ["GFM extensions", "cmark-gfm", ranked.filter((item) => item.gfm)],
+            [
+                "Dialect-only (no reference)",
+                "cmark, as a bound",
+                ranked.filter((item) => item.dialect !== "commonmark" && !item.gfm)
+            ]
+        ];
+        for (const [label, reference, group] of groups) {
+            if (!group.length) continue;
+            const values = group.map((item) => item.sameJob ?? item.cmarkRatio).filter((value) => value !== null);
+            if (!values.length) continue;
+            const worst = group[0];
             lines.push(
-                `| ${label} | ${group_.length} | ${median(group_.map((item) => item.ratio)).toFixed(2)}x |` +
-                    ` ${worst.ratio.toFixed(2)}x \`${worst.case}\` |`
+                `| ${label} | \`${reference}\` | ${group.length} | ${median(values).toFixed(2)}x |` +
+                    ` ${(worst.sameJob ?? worst.cmarkRatio).toFixed(2)}x \`${worst.case}\` |`
             );
         }
         lines.push("");
@@ -1635,17 +1722,22 @@ function markdownReport(report) {
                 " -- on a grid table it reads `S_process_line`, which every line goes" +
                 " through -- so it cannot answer that question.",
             "",
-            "Ranked by ratio, so the most suspicious case is first.",
+            "Ranked by the same-job ratio where there is one, and by the bound otherwise.",
             ""
         );
-        lines.push("| Case | Dialect | Ratio | Core Ir/B | Dominant self cost |", "| --- | --- | ---: | ---: | --- |");
+        lines.push(
+            "| Case | Reference | Ratio | Core Ir/B | Dominant self cost |",
+            "| --- | --- | ---: | ---: | --- |"
+        );
         for (const item of ranked.slice(0, 16)) {
             const hot = (item.engines["markdown-core"].hotPaths ?? [])
                 .slice(0, 3)
                 .map((entry) => `\`${entry.name}\` ${(entry.share * 100).toFixed(1)}%`)
                 .join(", ");
+            const ratio = item.sameJob ?? item.cmarkRatio;
+            const reference = item.gfm ? "cmark-gfm" : item.dialect === "commonmark" ? "cmark" : "(bound)";
             lines.push(
-                `| ${item.case} | ${item.dialect} | ${item.ratio.toFixed(2)}x |` +
+                `| ${item.case} | ${reference} | ${ratio === null ? "-" : `${ratio.toFixed(2)}x`} |` +
                     ` ${(item.coreIr / item.bytes).toFixed(1)} | ${hot || "(not recorded)"} |`
             );
         }
@@ -1783,6 +1875,7 @@ function main() {
     const profile = profileBuild();
     refuseOverlappingTrees(options, profile);
     const cmark = pinnedCmark();
+    const gfm = pinnedCmarkGfm();
 
     if (spawnSync("valgrind", ["--version"], { encoding: "utf8" }).status !== 0) {
         fail("valgrind is required; install it and re-run");
@@ -1796,7 +1889,8 @@ function main() {
      * up-to-date rebuild of both engines costs about two seconds against a
      * measurement that takes minutes. There is no flag to get it wrong with. */
     const cmarkBuildDir = buildCmark(profile, cmark, options.out, versions);
-    buildRunners(profile, cmark, cmarkBuildDir, versions);
+    const gfmBuildDir = buildCmarkGfm(profile, gfm, options.out, versions);
+    buildRunners(profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions);
     verifyStageSymbols(profile);
     verifyBuildProvenance(profile, versions);
     /* The report's central claim is that both engines met the same compiler
@@ -1869,7 +1963,13 @@ function main() {
     const cases = [];
     for (const document of corpus.documents) {
         const engines = {};
-        for (const engine of Object.keys(ENGINES)) {
+        /* cmark is measured on every document as the CommonMark floor. cmark-gfm
+         * is measured only where it implements the case's constructs, because a
+         * reference that reads the document as paragraphs is not a second
+         * opinion, and paying callgrind for one would buy a number nobody can
+         * read. */
+        const applicable = Object.keys(ENGINES).filter((engine) => engine !== "cmark-gfm" || document.gfm === true);
+        for (const engine of applicable) {
             const measured = measure(profile, engine, document, options.out);
             if (measured.receiptBytes !== document.bytes) {
                 fail(`${engine}: ${document.case} saw ${measured.receiptBytes} bytes, expected ${document.bytes}`);

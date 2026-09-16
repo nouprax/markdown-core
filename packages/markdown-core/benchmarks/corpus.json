@@ -113,7 +113,8 @@
         {
             "name": "block-table-pipe",
             "dialect": "extended",
-            "samples": ["block-table-pipe.md"]
+            "samples": ["block-table-pipe.md"],
+            "gfm": true
         },
         {
             "name": "block-table-simple",
@@ -123,7 +124,8 @@
         {
             "name": "block-tasklist",
             "dialect": "extended",
-            "samples": ["block-tasklist.md"]
+            "samples": ["block-tasklist.md"],
+            "gfm": true
         },
         {
             "name": "chain-bracket-open",
@@ -183,7 +185,8 @@
         {
             "name": "inline-autolink-rich",
             "dialect": "extended",
-            "samples": ["inline-autolink-rich.md"]
+            "samples": ["inline-autolink-rich.md"],
+            "gfm": true
         },
         {
             "name": "inline-backticks",
@@ -243,7 +246,8 @@
         {
             "name": "inline-footnote",
             "dialect": "extended",
-            "samples": ["inline-footnote.md"]
+            "samples": ["inline-footnote.md"],
+            "gfm": true
         },
         {
             "name": "inline-formula",
