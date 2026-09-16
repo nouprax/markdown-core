@@ -414,7 +414,7 @@
             "name": "pair-specimen-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "As @spec-{n} shows.\n\n(@spec-{n}) A numbered example.\n\n",
+                "unit": "As (@spec-{n}) shows.\n\n(@spec-{n}) A numbered example.\n\n",
                 "scales": "specimen declarations"
             },
             "builds": ["Specimen"]
@@ -764,7 +764,7 @@
                     "isomorph": "Cite"
                 }
             ],
-            "claim": "A specimen definition and a GFM footnote definition are the same production: a one-line opener carrying a label, then block content the opener owns, and a node that leaves ordinary document content for a side list the document holds. Both specs say so in the same words -- Document.specimens, Document.footnotes, not in the content. Each unit also carries a REFERENCE to its label, on both sides, because the two grammars differ on an unreferenced definition: this dialect keeps a specimen nobody cites, and GFM DISCARDS a footnote definition nobody calls. Without the call the reference side parsed to nothing at all and the denominator was cmark-gfm throwing text away -- a bound wearing the name of a comparison. With it, both sides hold one call in ordinary content and one definition owning block content in a side list, which is also the fuller match: declare, and refer."
+            "claim": "A specimen definition and a GFM footnote definition are the same production: a one-line opener carrying a label, block content the opener owns, and a node that leaves ordinary document content for a side list the document holds -- Document.specimens against Document.footnotes, in both specs' own words. Each unit also carries a REFERENCE on both sides, for two reasons. First, the grammars differ on an unreferenced definition: this dialect keeps a specimen nobody cites, GFM DISCARDS a footnote nobody calls, so without the call the reference side parsed to nothing and the denominator was cmark-gfm throwing text away. Second, the reference must be the PARENTHESIZED form. specimens.md gives two reference forms and they are different productions: `(@label)` is a fixed delimiter pair around a sigil and a raw label, which is the GFM footnote call's shape with a different terminal, while the BARE `@label` is an unbracketed word-boundary trigger -- the autolink shape, paired separately as pair-cite. Pairing the bare form against a bracketed `[^label]` call matched the definitions and mismatched the calls."
         },
         {
             "case": "pair-task-dialect",
