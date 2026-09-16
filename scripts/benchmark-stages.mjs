@@ -870,7 +870,21 @@ function documentsUnit(entry) {
  * generated declaration distinct, which the pairing needs: a repeated literal
  * name would leave one side binding one identifier and the other binding
  * thousands, and those are not the same workload however alike they read.
+ *
+ * `{n}` is the index as written; `{n:K}` is the same index zero-padded to K
+ * digits. A grid table establishes its columns by the positions of the `+`
+ * characters in its border line and requires every row line to close its cells
+ * at exactly those columns, so an index that gains a digit at ten, at a hundred
+ * and at a thousand would silently stop the construct being recognised part way
+ * through the document -- the case would still generate, and would measure a
+ * paragraph. Any case whose construct is column-aligned uses the padded form.
  */
+function unitText(template, index) {
+    return template
+        .replaceAll(/\{n:(\d+)\}/gu, (_, width) => String(index).padStart(Number(width), "0"))
+        .replaceAll("{n}", String(index));
+}
+
 function generatedText(generated, target) {
     let text = "";
     let units = 0;
@@ -881,7 +895,7 @@ function generatedText(generated, target) {
      * output. Each unit's own length is what the target is counted in. */
     let bytes = 0;
     while (bytes < target) {
-        const unit = generated.unit.replaceAll("{n}", String(units));
+        const unit = unitText(generated.unit, units);
         text += unit;
         bytes += Buffer.byteLength(unit);
         units += 1;
@@ -912,7 +926,7 @@ function generatedText(generated, target) {
 function countedText(counted, units) {
     let text = "";
     for (let index = 0; index < units; index++) {
-        text += counted.unit.replaceAll("{n}", String(index));
+        text += unitText(counted.unit, index);
     }
     return { text: (counted.head ?? "") + text + (counted.tail ?? ""), length: units };
 }
