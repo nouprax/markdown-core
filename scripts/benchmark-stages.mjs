@@ -1225,13 +1225,26 @@ function requireCompleteExclusions(cases, ran, excludedReach, unmatchedFields, f
             ((item.engines["markdown-core"]?.witnesses?.[field] ?? 0) > 0 ? carries : plain).push(item.case);
         }
         if (!carries.length || !plain.length) continue;
-        let only = new Set(ran.get(carries[0]));
-        for (const name of carries.slice(1)) only = new Set([...only].filter((fn) => ran.get(name).has(fn)));
-        for (const name of plain) for (const fn of ran.get(name)) only.delete(fn);
         const shared = new Set(Object.keys(declaration.shared ?? {}));
-        const unclassified = [...only].filter(
-            (fn) => !shared.has(fn) && !carries.every((name) => excludedReach.get(name).has(fn))
-        );
+        const covered = (fn) => shared.has(fn) || carries.every((name) => excludedReach.get(name).has(fn));
+        /* Functions only the field's presence RUNS. */
+        let only = new Set(Object.keys(ran.get(carries[0])));
+        for (const name of carries.slice(1)) only = new Set([...only].filter((fn) => fn in ran.get(name)));
+        for (const name of plain) for (const fn of Object.keys(ran.get(name))) only.delete(fn);
+        /* And the ones the field's presence only makes EXPENSIVE. These are the
+         * blind spot in the test above, and the one that actually bit: a
+         * function like `markdown_core_block_dispose_headings` runs on every
+         * document, costs 48 Ir over an empty collection and 25,442 over a full
+         * one, so "does it run here" cannot see it. Comparing against the
+         * HIGHEST cost the function reaches on any compared case without the
+         * field keeps this free of a tuned threshold: a function that is dearer
+         * on every carrying case than it ever gets without the field is doing
+         * work the field caused. */
+        for (const fn of new Set(carries.flatMap((name) => Object.keys(ran.get(name))))) {
+            const floor = Math.max(0, ...plain.map((name) => ran.get(name)[fn] ?? 0));
+            if (carries.every((name) => (ran.get(name)[fn] ?? 0) > floor)) only.add(fn);
+        }
+        const unclassified = [...only].filter((fn) => !covered(fn));
         if (unclassified.length) {
             fail(
                 `these functions run on every case carrying "${field}" and on none of the cases without it, ` +
@@ -1243,7 +1256,7 @@ function requireCompleteExclusions(cases, ran, excludedReach, unmatchedFields, f
         for (const fn of shared) {
             /* A `shared` entry for something no case runs is a note about code
              * that has moved, kept true by nobody. */
-            if (!carries.some((name) => ran.get(name).has(fn))) {
+            if (!carries.some((name) => fn in ran.get(name))) {
                 fail(`unmatchedFields.${field}.shared names ${fn}, which no case carrying the field runs`);
             }
         }
@@ -1402,7 +1415,11 @@ function measure(profile, engine, document, out, unmatchedFields) {
          * reach. The completeness law below needs both: enumerating call edges
          * to carve a feature out of a ratio is only honest if something can say
          * when the enumeration has stopped being complete. */
-        ran: [...new Set([...profileByName.self.keys()].map((name) => baseName(name)))],
+        ran: [...profileByName.self.entries()].reduce((total, [name, cost]) => {
+            const fn = baseName(name);
+            total[fn] = (total[fn] ?? 0) + (costRecord(profileByName, cost).Ir ?? 0);
+            return total;
+        }, {}),
         excludedReach: [
             ...reachedFrom(
                 profileByName,
@@ -1740,11 +1757,13 @@ function markdownReport(report) {
                 " grouped by which reference implements what they contain, and the groups are" +
                 " never averaged together.",
             "",
-            "A case is in the CommonMark group because BOTH its syntax and its output" +
-                " are CommonMark. Syntax alone is not enough: this dialect derives an anchor" +
+            "Syntax alone does not make a case comparable. This dialect derives an anchor" +
                 " for every heading, so a document holding one is not the tree cmark builds," +
-                " and its number is a bound however ordinary the source looked. Those cases" +
-                " are separated out below, with the field that separates them named.",
+                " however ordinary the source looks. Those cases stay in the CommonMark group" +
+                " and the work that produces the anchor comes off this side first, by named" +
+                " call edge; what is left is what both engines did. The section after this one" +
+                " lists every edge taken out, every function deliberately left in, and what" +
+                " each case's number was before and after.",
             "",
             "cmark implements the CommonMark cases. cmark-gfm implements tables, task lists," +
                 " bare autolinks and footnotes, and is measured only on the cases that hold" +
@@ -2215,7 +2234,7 @@ function main() {
                 fail(`${engine}: ${document.case} saw ${measured.receiptBytes} bytes, expected ${document.bytes}`);
             }
             if (engine === "markdown-core" && document.scale === 1) {
-                ran.set(document.case, new Set(measured.ran));
+                ran.set(document.case, measured.ran);
                 excludedReach.set(document.case, new Set(measured.excludedReach));
             }
             engines[engine] = {

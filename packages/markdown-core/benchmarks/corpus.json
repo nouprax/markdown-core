@@ -13,14 +13,17 @@
                 "markdown_core_prepare_heading -> markdown_core_reference_create": "buffer_to_ast",
                 "markdown_core_prepare_heading -> markdown_core_resource_new": "buffer_to_ast",
                 "markdown_core_prepare_heading -> markdown_core_inline_reference_label_length": "buffer_to_ast",
-                "markdown_core_block_prepare_headings -> markdown_core_order_source_entries": "buffer_to_ast"
+                "markdown_core_block_prepare_headings -> markdown_core_order_source_entries": "buffer_to_ast",
+                "finish_document -> markdown_core_block_dispose_headings": "buffer_to_ast",
+                "finish_document -> markdown_core_key_index_free": "buffer_to_ast"
             },
             "shared": {
                 "continue_heading": "Heading block continuation. cmark decides the same thing for the same lines in S_process_line.",
                 "markdown_core_heading_begin_inlines": "Starts the heading's inline parse, which cmark also runs on heading content inside cmark_parse_inlines.",
                 "markdown_core_heading_claim_tail": "Consumes the optional closing run of an ATX heading. That is CommonMark syntax and cmark strips it too.",
                 "markdown_core_prepare_heading": "The loop that runs each heading's inline parse early. The parse is work cmark also does; the anchor-only callees it makes are excluded by edge above, so only its own scheduling stays in.",
-                "markdown_core_inline_clear_inlines": "Tears down the inline state that markdown_core_prepare_heading set up. Running the heading's inline parse EARLY is a dialect scheduling choice, but the parse itself is work cmark also does, so its setup and teardown stay on this side of the comparison. Classified shared rather than excluded on purpose: where it is arguable, leaving the work in makes this parser's ratio worse, not better."
+                "markdown_core_inline_clear_inlines": "Tears down the inline state that markdown_core_prepare_heading set up. Running the heading's inline parse EARLY is a dialect scheduling choice, but the parse itself is work cmark also does, so its setup and teardown stay on this side of the comparison. Classified shared rather than excluded on purpose: where it is arguable, leaving the work in makes this parser's ratio worse, not better.",
+                "markdown_core_block_prepare_headings": "The loop over the heading collection. It calls markdown_core_prepare_heading, which runs the heading's inline parse that cmark also runs, and markdown_core_order_source_entries, which is excluded by edge. Its own body is the scheduling around those, classified shared for the same reason prepare_heading is: where the call is arguable, leaving the work in makes this parser's ratio worse."
             }
         }
     },
