@@ -537,7 +537,7 @@ const undriven = [];
 const drifted = [];
 const pairs = isomorphPairs();
 let notIsomorphic;
-let unequalPairs = [];
+let unequalPairs;
 let unbuilt;
 {
     const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), "corpus-coverage-"));
