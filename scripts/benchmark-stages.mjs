@@ -863,6 +863,48 @@ function documentsUnit(entry) {
  * document reaches its size, so D doubles when the document doubles and cost
  * quadratic in D shows up as a 4x growth ratio.
  */
+/**
+ * A case whose size is a CONSTRUCT COUNT taken from another case, not a byte
+ * target.
+ *
+ * This exists for the reference side of a stress pair. Where an external
+ * reference cannot produce what this dialect produces, the corpus generates a
+ * document that puts the SAME pressure on the reference's equivalent machinery,
+ * and "the same pressure" is counted in constructs rather than bytes: this
+ * dialect registers one implicit reference per heading, so the paired document
+ * needs one link reference definition per heading, and `# h\n` and
+ * `[h-1234]: /u\n` are not the same length. Sizing the pair by bytes would hand
+ * the reference roughly half the work and call the result a comparison.
+ *
+ * `{n}` in the unit is replaced by the zero-based index, so the labels are
+ * distinct. That is not cosmetic: this dialect de-duplicates anchors across the
+ * whole document and synthesises `heading`, `heading-1`, `heading-2` ... so its
+ * reference map grows with the document. A repeated literal label would leave
+ * the reference with a one-entry map against this parser's thousands, which is
+ * a different workload wearing the same name.
+ */
+function countedText(counted, scale, manifest, entries) {
+    const matched = entries.find((entry) => entry.name === counted.match.case);
+    if (!matched) fail(`corpus case names an unknown stress-pair match: ${counted.match.case}`);
+    if (!matched.samples) fail(`a stress-pair match must be a sample case: ${counted.match.case}`);
+    const unit = documentsUnit(matched);
+    const target = (matched.targetBytes ?? manifest.targetBytes) * scale;
+    const repeats = Math.max(1, Math.ceil(target / Buffer.byteLength(unit)));
+    const constructs = repeats * counted.match.perUnit;
+    let text = "";
+    for (let index = 0; index < constructs; index++) {
+        text += counted.unit.replaceAll("{n}", String(index));
+    }
+    /* A link reference definition builds no node -- it is consumed into the
+     * reference map -- so a document of nothing else parses to an empty tree and
+     * the runner refuses it, correctly, as measuring nothing. The tail exists to
+     * give the document one node. It is deliberately the smallest thing that
+     * does: the definitions must stay UNRESOLVED, because the implicit heading
+     * references this pairs against are registered and never looked up either. */
+    text += counted.tail ?? "";
+    return { text, length: constructs };
+}
+
 function chainText(chain, target) {
     const tail = chain.tail ?? "";
     const unit = Buffer.byteLength(chain.unit);
@@ -989,18 +1031,21 @@ function buildCorpus(options, manifest) {
 
     const documents = [];
     for (const entry of selected) {
-        if (Boolean(entry.samples) === Boolean(entry.chain)) {
-            fail(`corpus case ${entry.name} must name exactly one of "samples" or "chain"`);
+        const modes = [entry.samples, entry.chain, entry.counted].filter(Boolean).length;
+        if (modes !== 1) {
+            fail(`corpus case ${entry.name} must name exactly one of "samples", "chain" or "counted"`);
         }
-        const unit = entry.chain ? null : documentsUnit(entry);
+        const unit = entry.samples ? documentsUnit(entry) : null;
         for (let scale = 1; scale <= options.scale; scale++) {
             const target = (entry.targetBytes ?? manifest.targetBytes) * scale;
             const built = entry.chain
                 ? chainText(entry.chain, target)
-                : (() => {
-                      const repeats = Math.max(1, Math.ceil(target / Buffer.byteLength(unit)));
-                      return { text: unit.repeat(repeats), length: repeats };
-                  })();
+                : entry.counted
+                  ? countedText(entry.counted, scale, manifest, manifest.cases)
+                  : (() => {
+                        const repeats = Math.max(1, Math.ceil(target / Buffer.byteLength(unit)));
+                        return { text: unit.repeat(repeats), length: repeats };
+                    })();
             const file = path.join(directory, `${entry.name}.x${scale}.md`);
             fs.writeFileSync(file, built.text);
             documents.push({
@@ -1014,7 +1059,11 @@ function buildCorpus(options, manifest) {
                  * failures, not a depth, so a table that called it "structure"
                  * alongside the nesting cases would invite exactly the reading
                  * the case was renamed to prevent. */
-                growth: entry.chain ? (entry.scales ?? "structure") : "documents",
+                growth: entry.chain
+                    ? (entry.scales ?? "structure")
+                    : entry.counted
+                      ? "matched constructs"
+                      : "documents",
                 scale,
                 units: built.length,
                 bytes: Buffer.byteLength(built.text),
@@ -1467,6 +1516,15 @@ function markdownReport(report) {
      * the CommonMark median it would otherwise move. */
     const paired = new Map((report.isomorphs ?? []).map((declaration) => [declaration.case, declaration]));
     const isIsomorph = new Set((report.isomorphs ?? []).map((declaration) => declaration.isomorph));
+    /* A stress pair, for what no substitution reaches. An isomorph pairs two
+     * SPELLINGS of one tree; this pairs two constructs that put equal pressure
+     * on the same machinery when neither engine can build the other's tree. The
+     * heading anchor is the case: every heading here registers an implicit
+     * reference, cmark registers one per link reference definition, and the two
+     * documents are generated with an equal COUNT of those items rather than an
+     * equal byte length. */
+    const stressed = new Map((report.stressPairs ?? []).map((declaration) => [declaration.case, declaration]));
+    const isStressReference = new Set((report.stressPairs ?? []).map((declaration) => declaration.reference));
     const atScaleOne = new Map(report.cases.filter((item) => item.scale === 1).map((item) => [item.case, item]));
     const ranked = report.cases
         .filter((item) => item.scale === 1 && item.engines["markdown-core"])
@@ -1502,6 +1560,22 @@ function markdownReport(report) {
                  * `--case`-filtered run that named one side of a pair has no
                  * comparison to report, and falls back to the bound rather than
                  * printing a pair row of dashes. */
+                /* Measured on the paired document, which is the reference for
+                 * this case instead of cmark on the case's own bytes. */
+                stress: (() => {
+                    const pair = stressed.get(item.case);
+                    const other = pair ? atScaleOne.get(pair.reference) : null;
+                    if (!other) return null;
+                    const referenceIr = stageIr(other.engines, "cmark");
+                    return {
+                        case: pair.reference,
+                        equivalent: pair.equivalent,
+                        claim: pair.claim,
+                        referenceIr,
+                        units: { case: item.units, reference: other.units },
+                        ratio: referenceIr ? core / referenceIr : null
+                    };
+                })(),
                 isomorph: twin
                     ? {
                           case: declaration.isomorph,
@@ -1519,13 +1593,27 @@ function markdownReport(report) {
                 /* The comparison that means something: the closest reference
                  * that implements what the document contains, or the reference
                  * on the document that is the same tree. */
+                /* The reference that did equivalent work, in order of how
+                 * directly it did it: cmark-gfm where it implements the
+                 * construct, the isomorph where a substitution builds the same
+                 * tree, the stress pair where neither is possible and the
+                 * corpus instead sized an equivalent workload, and cmark on the
+                 * case's own bytes when the two engines already agree. A stress
+                 * pair outranks plain cmark precisely because plain cmark on
+                 * those bytes is the number that is NOT a comparison. */
                 sameJob: gfmIr
                     ? core / gfmIr
                     : twinCmark
                       ? core / twinCmark
-                      : item.dialect === "commonmark" && cmarkIr
-                        ? core / cmarkIr
-                        : null
+                      : stressed.has(item.case)
+                        ? (() => {
+                              const other = atScaleOne.get(stressed.get(item.case).reference);
+                              const referenceIr = other ? stageIr(other.engines, "cmark") : null;
+                              return referenceIr ? core / referenceIr : null;
+                          })()
+                        : item.dialect === "commonmark" && cmarkIr
+                          ? core / cmarkIr
+                          : null
             };
         })
         .sort((left, right) => (right.sameJob ?? right.cmarkRatio ?? 0) - (left.sameJob ?? left.cmarkRatio ?? 0));
@@ -1576,7 +1664,17 @@ function markdownReport(report) {
             [
                 "CommonMark",
                 "cmark",
-                ranked.filter((item) => item.dialect === "commonmark" && !item.gfm && !isIsomorph.has(item.case))
+                ranked.filter(
+                    (item) =>
+                        item.dialect === "commonmark" &&
+                        !item.gfm &&
+                        !isIsomorph.has(item.case) &&
+                        /* Written to be the other half of a stress pair, not
+                         * because anyone writes documents of bare link
+                         * reference definitions. It is the reference, so it is
+                         * not also a case in the group it references. */
+                        !isStressReference.has(item.case)
+                )
             ],
             ["GFM extensions", "cmark-gfm", ranked.filter((item) => item.gfm)],
             ["Dialect, via an isomorph", "cmark, on the isomorph", ranked.filter((item) => item.isomorph)],
@@ -1980,6 +2078,11 @@ function main() {
          * it, and `scripts/audit-corpus-reach.mjs` is what holds the pairing to
          * being true. */
         isomorphs: manifest.isomorphs ?? [],
+        /* Recorded beside the pairs for the same reason: which document was the
+         * reference is the whole meaning of the number, and a stress pair says
+         * so more loudly than an isomorph does, because the two documents are
+         * not the same bytes and were never meant to be. */
+        stressPairs: manifest.stressPairs ?? [],
         artifacts: path.relative(root, options.out),
         cases
     };

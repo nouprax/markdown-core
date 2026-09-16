@@ -89,6 +89,19 @@
             "builds": ["Heading"]
         },
         {
+            "name": "pair-heading-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "[heading-{n}]: /u\n",
+                "match": {
+                    "case": "block-heading",
+                    "perUnit": 6
+                },
+                "tail": "\nx\n"
+            },
+            "builds": ["Paragraph"]
+        },
+        {
             "name": "block-hr",
             "dialect": "commonmark",
             "samples": ["block-hr.md"],
@@ -510,6 +523,14 @@
                 "lorem1.md",
                 "rawtabs.md"
             ]
+        }
+    ],
+    "stressPairs": [
+        {
+            "case": "block-heading",
+            "reference": "pair-heading-common",
+            "equivalent": "reference-map registration",
+            "claim": "This dialect derives a slug for every heading and registers it as an implicit reference label, de-duplicating across the whole document. cmark registers a reference for every link reference definition and normalises its label the same way. Neither builds the other's tree, so no substitution pairs them -- but both walk one single-line block construct per item, normalise a label, probe a reference map and grow it by one entry, and the pair is sized so the COUNT of those items is equal rather than the byte length. What is NOT equal is named here rather than buried: this parser also builds a Heading node and its inline content, which cmark does not do on a definition line, and cmark parses a destination, which this parser does not do on a heading. The pair measures reference-map pressure at equal count; it is not a claim about heading parsing."
         }
     ]
 }
