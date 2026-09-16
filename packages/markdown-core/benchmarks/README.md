@@ -422,22 +422,24 @@ Read off the grammars:
 | callout | it consumes a token off its container's first line into the container's own fields and parses the rest as a separate inline list |
 | directive | it is a fenced *container*; CommonMark's only fence opens a leaf whose body is literal |
 | properties envelope | recognised once, at the document's start, so there is no count to scale |
-| citation group | it decomposes one bracket group into a list of keyed items with parsed affixes |
-
-The **bare** citation key is a different production and it does pair — see
-`pair-cite-dialect`. What is not a reason to refuse a pair is that the two sides
-materialise different numbers of nodes: that is reasoning off the
-implementations, which is the one thing the criterion forbids, and the node
-counts are part of what the ratio reports.
+| citation group | it decomposes one bracket group into a list of keyed items with parsed affixes; the **bare** key is a different production and does pair, as `pair-cite-dialect` |
 | derived anchor | a heading whose identifier comes from its own text declares nothing — there is no name in the source to bind, and no production derives one |
 | `==a====b==` ↔ `**a****b**` | our run splitter divides adjacent closers, CommonMark's does not |
 | comment ↔ strong emphasis | strong parses its body, a comment keeps it literal |
 
-The last four are the ones worth keeping in view. Each of the first three looked
-isomorphic and was not. The derived anchor is the sharpest: the *explicit* anchor
-does declare a name and therefore pairs, while the derived one has no isomorph at
-all — which is why `pair-anchor-dialect` is in the pair table and `block-heading`
-is a bound.
+The last three rows are the ones worth keeping in view: each looked isomorphic
+and was not. The derived anchor is the sharpest case in the table — the
+*explicit* anchor declares a name and therefore pairs, while the derived one has
+no isomorph at all, which is why `pair-anchor-dialect` is in the pair table and
+`block-heading` is a bound.
+
+**What is never a reason to refuse a pair** is that the two sides materialise
+different numbers of nodes. That is reasoning off the implementations, which is
+the one thing the criterion forbids, and the node counts are part of what the
+ratio reports. The bare citation key was nearly left a bound on exactly that
+ground — one `Link` over a `Text` against a `Cite` over a `Citation` with two
+affix slots — and pairing it is what turned that asymmetry into a number
+(Grammar 1.13x) instead of an excuse.
 
 A kind's own bookkeeping may differ where the manifest names it: `Formula`
 records which spelling opened it in `mode`, which a code span has no equivalent
