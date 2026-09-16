@@ -565,8 +565,16 @@ function logicalPairFailures(census, pairs) {
         if (!pair.binding) continue;
         const { declares } = pair.binding;
         for (const [side, { name, kind }] of Object.entries(sides)) {
+            /* One field name where both sides spell the binding the same way, and
+             * one per side where they do not. A callout binds its variant and a
+             * task item binds its marker, and those are the same production --
+             * a bracketed token at the start of a container's first line, taken
+             * out of the content and kept as a field -- under two field names.
+             * Naming only one of them would leave the other side's recognition
+             * unproven, which is exactly what a binding exists to prove. */
+            const field = typeof declares === "string" ? declares : declares[side];
             const nodes = (side === "case" ? counts : twinCounts).get(kind) ?? 0;
-            const bound = census.perCaseBound.get(name)?.get(`${kind}.${declares}`) ?? 0;
+            const bound = census.perCaseBound.get(name)?.get(`${kind}.${field}`) ?? 0;
             /* Every node of the kind on a declaring side, and none at all on a
              * side that declares OUT OF BAND -- an anchor binds on the block it
              * sits on, a link reference definition binds into the reference map
@@ -574,7 +582,7 @@ function logicalPairFailures(census, pairs) {
             const expected = pair.binding.sides.includes(side) ? nodes : 0;
             if (bound !== expected) {
                 failures.push(
-                    `${name} builds ${nodes} ${kind} nodes and ${bound} of them bind ${declares}, ` +
+                    `${name} builds ${nodes} ${kind} nodes and ${bound} of them bind ${field}, ` +
                         `where the pair claims ${expected}. ${
                             expected
                                 ? "Every node on this side must declare; one that declares nothing has no " +

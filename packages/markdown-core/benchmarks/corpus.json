@@ -628,6 +628,26 @@
             "builds": ["CodeBlock"]
         },
         {
+            "name": "pair-callout-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "> [!note] Callout title {n}\n\n",
+                "scales": "callout declarations"
+            },
+            "builds": ["Callout"]
+        },
+        {
+            "name": "pair-callout-common",
+            "dialect": "extended",
+            "counted": {
+                "unit": "- [x] Callout title {n}\n\n",
+                "match": "pair-callout-dialect",
+                "scales": "task markers"
+            },
+            "gfm": true,
+            "builds": ["List", "ListItem"]
+        },
+        {
             "name": "pair-headless-dialect",
             "dialect": "extended",
             "generated": {
@@ -965,6 +985,22 @@
                 "isomorph": "CodeBlock"
             },
             "claim": "A properties envelope and a fenced code block are the same production: a leaf block opened and closed by a delimiter line, whose body is NOT parsed as Markdown. Same shape, different terminal -- `---` against a run of three or more backticks. What each does with the body afterwards, decode it into named fields or keep it literal, is the measurement and not part of the pairing. This pair is shaped unlike every other one in the corpus and deliberately so: properties.md says only one envelope is recognised, at the document's start, so the workload CANNOT scale by repeating the construct. It scales by the member lines inside a single envelope, which is why both sides carry a head and a tail and why `units` counts lines here rather than constructs. The earlier refusal -- once per document, no count to scale -- mistook the construct for the dimension."
+        },
+        {
+            "case": "pair-callout-dialect",
+            "isomorph": "pair-callout-common",
+            "counts": {
+                "case": "Callout",
+                "isomorph": "ListItem"
+            },
+            "binding": {
+                "declares": {
+                    "case": "variant",
+                    "isomorph": "marker"
+                },
+                "sides": ["case", "isomorph"]
+            },
+            "claim": "A callout marker and a GFM task marker are the same production: a bracketed token at the START of a container's first line, taken out of the content and kept as a FIELD, with the rest of that line parsed as inlines owned by the container. `[!note]` on a block quote's first line becomes the callout's variant; `[x]` on a list item's first line becomes the item's marker. Counting alone would prove nothing here, because a callout whose `[!note]` went unread is still a block quote and a list item whose `[x]` went unread is still a list item -- so the pair names the binding on BOTH sides, each under the field name its own kind uses, and the audit checks that every node of the counted kind carries it. That the dialect puts the remaining inlines in a Title group where the list item wraps them in a Paragraph is node materialisation, which is never grounds to refuse. Without this pair the dialect callout form was a bound: its syntax is a CommonMark block quote and its tree is not, so a reference on the same bytes built a different tree."
         },
         {
             "case": "pair-headless-dialect",
