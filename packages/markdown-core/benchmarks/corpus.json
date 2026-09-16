@@ -509,6 +509,44 @@
             "builds": ["Link"]
         },
         {
+            "name": "pair-formulablock-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "$$\nE = mc^2 + {n}\n$$\n\n",
+                "scales": "block formulas"
+            },
+            "builds": ["FormulaBlock"]
+        },
+        {
+            "name": "pair-formulablock-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "```\nE = mc^2 + {n}\n```\n\n",
+                "match": "pair-formulablock-dialect",
+                "scales": "fenced code blocks"
+            },
+            "builds": ["CodeBlock"]
+        },
+        {
+            "name": "pair-embed-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "See ![[diagram-{n}.png]] here.\n\n",
+                "scales": "cross embeds"
+            },
+            "builds": ["CrossEmbedded"]
+        },
+        {
+            "name": "pair-embed-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "See ![](/diagram-{n}.png) here.\n\n",
+                "match": "pair-embed-dialect",
+                "scales": "images"
+            },
+            "builds": ["Embedded"]
+        },
+        {
             "name": "pair-comment-common",
             "dialect": "commonmark",
             "samples": ["pair-comment-common.md"],
@@ -703,6 +741,24 @@
                 "isomorph": "Link"
             },
             "claim": "A bare citation key and a GFM `www.` autolink are the same production: an UNBRACKETED recognition triggered by a literal prefix at a word boundary, consuming a raw run bounded by a character class, producing one inline that stores the run without parsing it as inline and without resolving it. Both specs state the boundary condition in the same terms -- a citation opener must follow a scalar that is not a letter, number or underscore, so `foo@bar` is not one, and the `www.` form needs an eligible boundary -- and both state that nothing is looked up: the parser does not resolve bibliography keys, and an autolink's destination is stored. That shared shape is what makes the pair; scanning ordinary text for a trigger is the grammatical feature being measured, which is why this pairs with an unbracketed autolink rather than with a delimited `<...>` one. How many NODES each side materialises for that production -- one Link over a Text here, a Cite over a Citation with two affix slots there -- is emphatically not part of the pairing. It is the measurement, and refusing the pair over it would be designing the corpus by reading the implementations, which drives every ratio to 1.00x."
+        },
+        {
+            "case": "pair-formulablock-dialect",
+            "isomorph": "pair-formulablock-common",
+            "counts": {
+                "case": "FormulaBlock",
+                "isomorph": "CodeBlock"
+            },
+            "claim": "A block formula and a fenced code block are the same production: a LEAF block opened and closed by a run of one repeated character, whose body is taken LITERALLY rather than parsed, producing one node that carries the body as a literal and has no children. Same shape, different terminal -- the `$x$` against `` `x` `` rule, lifted to the block level, and the inline halves of exactly this pair are already held by substitution as pair-formula. The two fences are two and three characters long, so this half cannot be a byte-for-byte substitution and is generated to an equal COUNT of blocks."
+        },
+        {
+            "case": "pair-embed-dialect",
+            "isomorph": "pair-embed-common",
+            "counts": {
+                "case": "CrossEmbedded",
+                "isomorph": "Embedded"
+            },
+            "claim": "A cross embed and an image are the same production: a `!` sigil immediately before a bracket-delimited destination that is NOT parsed as inline content, producing one leaf inline that stores the destination and has no children. The alt text is deliberately empty on the reference side -- a cross embed has no inline body, so an image that carried one would hand the reference an inline parse this side never performs, and with it empty both sides build a childless leaf. Neither resolves the destination: the cross-link spec says the parser stores the strings and the application finds the resource, and an image's destination is likewise stored. Not the same length, so the pair is generated to an equal COUNT."
         }
     ]
 }
