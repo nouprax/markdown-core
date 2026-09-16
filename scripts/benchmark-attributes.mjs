@@ -37,13 +37,14 @@
  */
 
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { baseName, callEdge, costRecord, foldNames, parseCallgrind } from "./lib/callgrind.mjs";
-import { compiledFlags } from "./lib/compile-identity.mjs";
+import { compiledFlags, effectiveFlags } from "./lib/compile-identity.mjs";
 import { CACHE, measurementEnvironment, measurementRoot } from "./lib/measurement.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -139,8 +140,19 @@ function parseArguments(argv) {
             options.out = path.resolve(root, argv[++i]);
         } else if (flag === "--lists") {
             if (!value) fail("--lists needs a value");
-            if (!/^[1-9]\d*$/u.test(value)) fail(`--lists takes a whole number of attribute lists, not ${value}`);
-            options.lists = Number(argv[++i]);
+            /* Digits alone are not enough, for the reason the stage benchmark
+             * spells out on `--scale`: 309 of them parse to Infinity and 254
+             * lists would be written until memory ran out, and
+             * 9007199254740993 comes back as ...992, quietly measuring a
+             * different workload than the one asked for. The value has to
+             * survive the round trip AND be a safe integer. */
+            const digits = /^\d+$/u.test(value) ? value.replace(/^0+(?=\d)/u, "") : null;
+            const lists = digits === null ? Number.NaN : Number(digits);
+            if (!Number.isSafeInteger(lists) || String(lists) !== digits || lists < 1) {
+                fail(`--lists takes a positive whole number of attribute lists, not ${value}`);
+            }
+            options.lists = lists;
+            i++;
         } else {
             fail(`unknown flag ${flag}`);
         }
@@ -296,6 +308,46 @@ function objectIdentity(buildDir, target, profile, label) {
     return { units: record.units, distinct: record.distinct.length, digest: record.digest };
 }
 
+/**
+ * WHAT PRODUCED THE COUNTS, resolved rather than named.
+ *
+ * The preset says `gcc`, and `gcc` is a name PATH resolves to whatever the
+ * runner image ships this month. Recording the literal name while telling a
+ * reader that matching rows make two reports comparable is the wrong way
+ * round: the rows have to move when the environment does, or the rule they
+ * carry is a claim nothing can check. A rolled compiler, C library or
+ * profiler changes the instruction stream without touching a line of either
+ * grammar.
+ *
+ * The compiler is asked how it was configured, with the profile's own flags,
+ * and the answer is digested -- `--version` alone is a marketing string and
+ * says nothing about the target or the defaults a distribution built in. The C
+ * library and the profiler are recorded by their own version banners.
+ *
+ * NARROWER THAN THE STAGE BENCHMARK'S TABLE, and the report says so. That one
+ * additionally digests the resolved code-generation target and what glibc
+ * dispatches on from inside valgrind, neither of which is here. Two attribute
+ * reports agreeing on these rows is a weaker statement than two stage reports
+ * agreeing on theirs.
+ */
+function resolvedToolchain(profile) {
+    const line = (command, args) => {
+        const probe = spawnSync(command, args, { encoding: "utf8" });
+        if (probe.status !== 0) fail(`${command} ${args.join(" ")} would not report its version`);
+        return `${probe.stdout ?? ""}${probe.stderr ?? ""}`.trim().split("\n")[0];
+    };
+    /* gcc and clang both write the configuration banner to stderr and exit 0. */
+    const probe = spawnSync("/bin/sh", ["-c", `${profile.compiler} ${profile.flags} -v`], { encoding: "utf8" });
+    const banner = probe.status === 0 ? `${probe.stderr ?? ""}${probe.stdout ?? ""}` : "";
+    if (!banner.trim()) fail(`the compiler would not report how it was configured: ${profile.compiler}`);
+    return {
+        compiler: line(profile.compiler, ["--version"]),
+        compilerDigest: crypto.createHash("sha256").update(banner).digest("hex"),
+        libc: line("ldd", ["--version"]),
+        valgrind: line("valgrind", ["--version"])
+    };
+}
+
 /* The compiler and options both grammars are measured under, read from the
  * same preset the stage benchmark uses so the two reports describe one build. */
 function profileBuild() {
@@ -340,7 +392,22 @@ function build(profile, lexbor, out) {
         "markdown-core": objectIdentity(binaryDir, "libmarkdown-core-public-static", profile, "markdown-core"),
         lexbor: objectIdentity(lexborBuild, "lexbor_static", profile, "lexbor")
     };
-    return { binaryDir, objects };
+    /* Read out of each tree's own cache rather than taken from what this
+     * driver passed: CMake initializes `CMAKE_C_FLAGS` from CFLAGS and
+     * `CMAKE_EXE_LINKER_FLAGS` from LDFLAGS at first configure, so an exported
+     * `-march=native` or `-static` outlives the shell it was set in and
+     * describes a binary the preset alone does not. */
+    const effective = {
+        "markdown-core": effectiveFlags(binaryDir),
+        lexbor: effectiveFlags(lexborBuild)
+    };
+    if (effective["markdown-core"].compile !== effective.lexbor.compile) {
+        fail(
+            "the two trees were configured with different compile flags, so the ratio would be about the builds:\n" +
+                `  markdown-core: ${effective["markdown-core"].compile}\n  lexbor: ${effective.lexbor.compile}`
+        );
+    }
+    return { binaryDir, objects, effective };
 }
 
 /**
@@ -528,8 +595,11 @@ function markdownReport(report) {
         "",
         `| | |`,
         "| --- | --- |",
-        `| Compiler | \`${report.toolchain.compiler}\` |`,
-        `| Profile flags | \`${report.toolchain.flags}\` |`,
+        `| Compiler | \`${report.toolchain.compiler}\` (\`${report.toolchain.compilerDigest.slice(0, 16)}\`) |`,
+        `| C library | \`${report.toolchain.libc}\` |`,
+        `| Profiler | \`${report.toolchain.valgrind}\` |`,
+        `| Effective compile flags | \`${report.toolchain.flags}\` |`,
+        `| Effective link flags | \`${report.toolchain.linkFlags || "(none)"}\` |`,
         `| Measured objects | ${Object.entries(report.toolchain.objects)
             .map(
                 ([name, record]) =>
@@ -542,7 +612,11 @@ function markdownReport(report) {
         "",
         "Absolute counts depend on the toolchain, so two reports are comparable only when" +
             " those rows match; `packages/markdown-core/benchmarks/README.md` sets out why" +
-            " that is stricter than it sounds. **lexbor is compiled here, from the pinned" +
+            " that is stricter than it sounds, and this table is NARROWER than the one" +
+            " there: it does not digest the resolved code-generation target or what glibc" +
+            " dispatches on from inside valgrind, so two attribute reports agreeing on" +
+            " these rows is a weaker statement than two stage reports agreeing on theirs." +
+            " **lexbor is compiled here, from the pinned" +
             " source, by that compiler with those options** -- not linked from an archive" +
             " someone's environment setup produced -- and every object of both baselines is" +
             " checked to have received the pinned flags, so the ratio is about the two" +
@@ -573,7 +647,13 @@ function main() {
     }
     const report = {
         schemaVersion: 1,
-        toolchain: { compiler: profile.compiler, flags: profile.flags, objects: built.objects },
+        toolchain: {
+            ...resolvedToolchain(profile),
+            preset: profile.compiler,
+            flags: built.effective["markdown-core"].compile,
+            linkFlags: built.effective["markdown-core"].link,
+            objects: built.objects
+        },
         lexbor: { version: lexbor.version, commit: lexbor.commit },
         artifacts: options.out,
         specifications: SPECIFICATIONS.length,

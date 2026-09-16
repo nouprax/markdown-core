@@ -99,3 +99,29 @@ export function compiledFlags(root, buildDir, target, fail) {
             .digest("hex")
     };
 }
+
+/**
+ * The flags a tree's compile and link lines actually carry.
+ *
+ * The preset's `CMAKE_C_FLAGS_RELEASE` is one of four cache variables that
+ * reach a command line, and the other three come from the environment: CMake
+ * initializes `CMAKE_C_FLAGS` from CFLAGS and puts it FIRST on every compile
+ * line, and `CMAKE_EXE_LINKER_FLAGS` from LDFLAGS on every link line. The
+ * link line is not a detail the instruction counts are indifferent to -- an
+ * inherited `-static` moves the C library's code into the measured binary and
+ * changes the stream every stage is counted from.
+ *
+ * So the description of a build is read out of its own cache rather than
+ * taken from what the driver passed, and the whole set is read: a comparison
+ * whose two trees agree on the compile flags and disagree on the link flags is
+ * still a comparison between two binaries built differently.
+ */
+export function effectiveFlags(buildDir) {
+    const cache = fs.readFileSync(path.join(buildDir, "CMakeCache.txt"), "utf8");
+    const entry = (name) => new RegExp(`^${name}:[A-Z]+=(.*)$`, "mu").exec(cache)?.[1] ?? "";
+    const join = (...names) => names.map(entry).join(" ").replace(/\s+/gu, " ").trim();
+    return {
+        compile: join("CMAKE_C_FLAGS", "CMAKE_C_FLAGS_RELEASE"),
+        link: join("CMAKE_EXE_LINKER_FLAGS", "CMAKE_EXE_LINKER_FLAGS_RELEASE")
+    };
+}

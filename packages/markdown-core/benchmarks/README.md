@@ -391,6 +391,16 @@ of the runner, not of the product: the parser still has no measurement mode and
 no benchmark-only path, and the entry points it calls are the ones `link.c` and
 `heading.c` call.
 
+The report records the resolved compiler, C library and profiler, a digest of
+how the compiler says it was configured, and the compile and link flags read
+back out of each tree's own cache — because `gcc` is a name PATH resolves to
+whatever the image ships this month, and a table that cannot move when the
+environment does cannot carry a comparability rule. That table is **narrower**
+than the stage benchmark's: it does not digest the resolved code-generation
+target or what glibc dispatches on from inside valgrind. Two attribute reports
+agreeing on its rows is a weaker statement than two stage reports agreeing on
+theirs, and the report says so rather than leaving a reader to assume parity.
+
 lexbor is a performance baseline and nothing else. No behaviour is judged
 against it, it registers no deltas, and it is not one of the parser oracles in
 `specs/oracles/`.
