@@ -907,12 +907,32 @@
             "proof": "A `Definition` owns a term as an inline run and a body as a block sequence, under one node. CommonMark has no production that groups a preceding line's inlines with a following block under a single node: a list item and a block quote own blocks only, a setext heading owns inlines only, and a link reference definition owns raw strings and builds no node at all."
         },
         {
-            "production": "grid table, and its merged cells, boundary-only rows, foot row groups and authored relative widths",
-            "proof": "A grid cell's content is parsed as BLOCKS, where a pipe cell's and a simple cell's are parsed as inlines -- this is the ONE table flavour the distinction was ever true of. Neither CommonMark nor GFM has a table production with block cells, and GFM's pipe table has no spans, no boundary-only row, no foot group and no authored widths, so there is nothing of those shapes to put in front of a reference."
-        },
-        {
             "production": "inline footnote `^[body]`",
             "proof": "An inline recognised mid-line whose body is parsed as INLINE content and whose node is hoisted out of the content tree into a document-owned side list. Neither grammar hoists an inline: every CommonMark and GFM inline production -- code span, emphasis, strong, link, image, autolink, raw HTML, break, entity, text, and GFM's strikethrough and autolink literal -- leaves its node where it was recognised. GFM's footnote hoists a BLOCK definition, not an inline."
+        },
+        {
+            "production": "headerless simple table",
+            "proof": "The cells hold inlines, as in the headed form, so the cell-content argument does not apply. What does apply is the head group: tables.md says the header may be omitted \"when a matching footer closes the table\", producing a table with an EMPTY head group and alignment inferred from the first body line. GFM's pipe table cannot express that -- its delimiter row must be preceded by a header line, and the header is what establishes the columns -- so there is no reference production that yields a table without a head."
+        },
+        {
+            "production": "table caption",
+            "proof": "A paragraph-shaped block introduced by `Table:`, `table:` or `:` whose content is parsed as inlines, which is then RE-PARENTED into an adjacent complete table as an owned child, before or after it, across blank lines. Neither grammar has a production that takes a finished neighbouring block and adopts it. The nearest candidate is GFM's pipe-table header, where a paragraph is absorbed by the delimiter row that follows it, but that paragraph is consumed as part of the table's own OPENING production and cannot attach to a table that has already ended -- which is exactly what a trailing caption does."
+        },
+        {
+            "production": "formula paragraph promotion",
+            "proof": "A paragraph whose only content is one standalone formula becomes a FormulaBlock. That is not a syntactic production at all -- nothing in the source opens or closes it -- but a promotion of a finished node decided by what its single child turned out to be. Neither grammar re-kinds a block from the identity of its sole child; CommonMark's one shape-driven re-kinding, the setext heading, is triggered by a following underline in the SOURCE, not by the content of the paragraph."
+        },
+        {
+            "production": "anonymous and reset specimen definitions -- `(@) body`, `(5@) body`",
+            "proof": "The labelled specimen pairs with a GFM footnote definition. These two forms do not: the label is optional, an explicit one-to-nine-digit start may precede the sigil, and adjacent definitions form a source group that carries the numbering. A GFM footnote definition has no counter, no group and no start field, so there is no production of this shape to put in front of the reference."
+        }
+    ],
+    "openCandidates": [
+        {
+            "production": "multiline table, and the grid table with it",
+            "whyTheEarlierProofWasWrong": "Both were refused because their cells hold BLOCK content and no reference table has block cells. That answers the wrong question. The criterion is not whether a reference has a TABLE of this shape, it is whether a reference has a PRODUCTION of this shape -- and a cell holding blocks is per-line positional slicing followed by block parsing, which both CommonMark containers do. A block quote strips `> ` from each line, a list item strips an indent width established by its marker, a multiline cell takes a column range established by the segmented boundary; all three join the remainders and parse them as blocks. The trees show it: a one-column multiline cell and a list item both produce Paragraph > Text, SoftBreak, Text with identical content.",
+            "candidate": "A one-column multiline table of N rows against a bullet list of N items. What is genuinely unequal, and must be stated rather than hidden: the table carries three container levels (TableBody, TableRow, TableCell) where the list carries one (ListItem). That is node materialisation and is NOT grounds to refuse a pair -- it is the measurement. What still needs deciding before this is built is whether the 2D case pairs at all: an N-column table slices each line into N ranges established by one boundary line, and N parallel lists are not one production.",
+            "status": "OPEN -- to be built and tested, not asserted either way"
         }
     ]
 }
