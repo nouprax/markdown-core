@@ -1232,8 +1232,20 @@ function requireCompleteExclusions(cases, ran, excludedReach, unmatchedFields, f
      * not, and the inference degrades immediately -- two cases is enough to
      * indict `open_atx`, which opens an ATX heading and is exactly the shared
      * work this is meant to leave alone. So a filtered run does not get to
-     * decide the question either way. */
-    if (filtered) return;
+     * decide the question either way.
+     *
+     * Returning here is not the end of it. A run that cannot judge the
+     * subtraction must not publish a subtracted ratio as a comparison either,
+     * so `report.completenessJudged` carries the same fact to the renderer,
+     * which withholds those cases from every group and prints their arithmetic
+     * under a heading that says it is unchecked. */
+    if (filtered) {
+        console.error(
+            "note: a --case run cannot judge whether an exclusion is complete, so same-job ratios " +
+                "for cases holding an unmatched field are withheld from this report"
+        );
+        return;
+    }
     for (const [field, declaration] of Object.entries(unmatchedFields)) {
         const carries = [];
         const plain = [];
@@ -1695,6 +1707,11 @@ function markdownReport(report) {
         }
         return total;
     };
+    /* A subtraction whose completeness nothing checked cannot produce a
+     * same-job number: the whole point of the check is that a list of edges
+     * says nothing about when it stopped covering the feature, so an unchecked
+     * list leaves work of unknown size in the numerator. */
+    const judged = report.completenessJudged !== false;
     const paired = new Map((report.isomorphs ?? []).map((declaration) => [declaration.case, declaration]));
     const isIsomorph = new Set((report.isomorphs ?? []).map((declaration) => declaration.isomorph));
     const atScaleOne = new Map(report.cases.filter((item) => item.scale === 1).map((item) => [item.case, item]));
@@ -1756,16 +1773,25 @@ function markdownReport(report) {
                  * did. The heading's own inline parse stays in, because cmark
                  * runs it too. */
                 unmatchedIr: excluded,
+                /* Subtracted, but on a run that could not check the subtraction
+                 * covers the whole feature. Kept out of `sameJob` below so no
+                 * table prints it as a comparison, and surfaced so the section
+                 * on the exclusion can show the arithmetic anyway -- the
+                 * numbers are still what the focused experiment is for. */
+                provisional: excluded > 0 && !judged,
                 /* The comparison that means something: the closest reference
                  * that implements what the document contains, or the reference
                  * on the document that is the same tree. */
-                sameJob: gfmIr
-                    ? (core - excluded) / gfmIr
-                    : twinCmark
-                      ? (core - excluded) / twinCmark
-                      : item.dialect === "commonmark" && cmarkIr
-                        ? (core - excluded) / cmarkIr
-                        : null
+                sameJob:
+                    excluded > 0 && !judged
+                        ? null
+                        : gfmIr
+                          ? (core - excluded) / gfmIr
+                          : twinCmark
+                            ? (core - excluded) / twinCmark
+                            : item.dialect === "commonmark" && cmarkIr
+                              ? (core - excluded) / cmarkIr
+                              : null
             };
         })
         .sort((left, right) => (right.sameJob ?? right.cmarkRatio ?? 0) - (left.sameJob ?? left.cmarkRatio ?? 0));
@@ -1834,17 +1860,35 @@ function markdownReport(report) {
                 ranked.filter((item) => item.dialect !== "commonmark" && !item.gfm && !item.isomorph)
             ]
         ];
-        for (const [label, reference, group] of groups) {
-            if (!group.length) continue;
+        for (const [label, reference, all] of groups) {
+            if (!all.length) continue;
+            /* A case whose subtraction nothing checked has no number to put in
+             * a median. Its RAW ratio is not a substitute: it is the number
+             * this whole section exists to stop being read as a comparison. */
+            const group = all.filter((item) => !item.provisional);
             const values = group.map((item) => item.sameJob ?? item.cmarkRatio).filter((value) => value !== null);
             if (!values.length) continue;
             const worst = group[0];
+            const withheld = all.length - group.length;
             lines.push(
-                `| ${label} | \`${reference}\` | ${group.length} | ${median(values).toFixed(2)}x |` +
+                `| ${label} | \`${reference}\` | ${group.length}${withheld ? ` (+${withheld} withheld)` : ""} |` +
+                    ` ${median(values).toFixed(2)}x |` +
                     ` ${(worst.sameJob ?? worst.cmarkRatio).toFixed(2)}x \`${worst.case}\` |`
             );
         }
         lines.push("");
+        if (ranked.some((item) => item.provisional)) {
+            lines.push(
+                "**This run could not judge whether the subtraction below is complete**, because that" +
+                    " derivation needs every compared document and this run measured a subset. The" +
+                    " cases holding a field cmark has no counterpart for are therefore withheld from" +
+                    " the groups above rather than published: subtracted, their number would rest on" +
+                    " a list nothing checked; unsubtracted, it would be the bound this section exists" +
+                    " to stop being read as a comparison. Their arithmetic is still shown below, for" +
+                    " the focused experiment it is for. Run the whole corpus for a same-job number.",
+                ""
+            );
+        }
 
         const held = ranked.filter((item) => (item.unmatched ?? []).length);
         if (held.length) {
@@ -1871,7 +1915,10 @@ function markdownReport(report) {
                     " feature, so the candidates are derived instead -- every function whose" +
                     " behaviour tracks the field across the corpus, either by running only on the" +
                     " cases carrying it or by costing more on every one of them than it ever does" +
-                    " without it -- and each must be excluded or listed below as shared." +
+                    " without it -- and each must be excluded or listed below as shared. That" +
+                    " derivation needs every compared document, so a `--case` run cannot make it," +
+                    " and such a run withholds the same-job ratio rather than publishing one" +
+                    " nothing checked." +
                     " PLACEMENT: an exclusion larger than the stage it claims to sit in" +
                     " is refused. THE TREE: `scripts/audit-corpus-reach.mjs` reads the field off" +
                     " the case's own AST dump and fails when the dump and the declaration" +
@@ -1894,15 +1941,27 @@ function markdownReport(report) {
                 ""
             );
             lines.push(
-                "| Case | Field | Excluded Ir | Against cmark, raw | Same job |",
+                `| Case | Field | Excluded Ir | Against cmark, raw | ${
+                    report.completenessJudged === false ? "After subtracting (UNCHECKED)" : "Same job"
+                } |`,
                 "| --- | --- | ---: | ---: | ---: |"
             );
             for (const item of held) {
+                /* On a run that could not judge completeness `sameJob` is
+                 * withheld, so the arithmetic is recomputed here to be shown
+                 * under a heading that says what it is. Printing nothing would
+                 * hide the one thing the focused run was for; printing it as
+                 * "Same job" is the claim this section exists to stop. */
+                const after =
+                    item.sameJob ??
+                    (item.provisional && item.cmarkRatio !== null
+                        ? (item.coreIr - (item.unmatchedIr ?? 0)) / (item.coreIr / item.cmarkRatio)
+                        : null);
                 lines.push(
                     `| ${item.case} | ${item.unmatched.map((field) => `\`${field}\``).join(", ")} |` +
                         ` ${(item.unmatchedIr ?? 0).toLocaleString("en-US")} |` +
                         ` ${item.cmarkRatio === null ? "-" : `${item.cmarkRatio.toFixed(2)}x`} |` +
-                        ` **${item.sameJob === null ? "-" : `${item.sameJob.toFixed(2)}x`}** |`
+                        ` ${after === null ? "-" : `${item.provisional ? "" : "**"}${after.toFixed(2)}x${item.provisional ? "" : "**"}`} |`
                 );
             }
             lines.push("");
@@ -2004,13 +2063,15 @@ function markdownReport(report) {
                 .map((entry) => `\`${entry.name}\` ${(entry.share * 100).toFixed(1)}%`)
                 .join(", ");
             const ratio = item.sameJob ?? item.cmarkRatio;
-            const reference = item.gfm
-                ? "cmark-gfm"
-                : item.isomorph
-                  ? "cmark, isomorph"
-                  : item.dialect === "commonmark"
-                    ? "cmark"
-                    : "(bound)";
+            const reference = item.provisional
+                ? "raw, not checked"
+                : item.gfm
+                  ? "cmark-gfm"
+                  : item.isomorph
+                    ? "cmark, isomorph"
+                    : item.dialect === "commonmark"
+                      ? "cmark"
+                      : "(bound)";
             lines.push(
                 `| ${item.case} | ${reference} | ${ratio === null ? "-" : `${ratio.toFixed(2)}x`} |` +
                     ` ${(item.coreIr / item.bytes).toFixed(1)} | ${hot || "(not recorded)"} |`
@@ -2300,6 +2361,13 @@ function main() {
 
     const report = {
         schemaVersion: 2,
+        /* Whether anything established that the exclusion below is COMPLETE.
+         * The derivation needs every compared document, so a `--case` run
+         * cannot judge it, and a subtracted ratio nothing has checked is not a
+         * same-job ratio -- it is this parser's own arithmetic. Recorded here
+         * rather than inferred by the renderer so a stored report says which
+         * kind of run produced it. */
+        completenessJudged: options.cases.length === 0,
         toolchain: versions,
         /* The exact bytes measured, so a report's numbers trace to a binary. */
         binaries,
