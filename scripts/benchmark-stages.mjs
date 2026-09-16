@@ -863,6 +863,93 @@ function documentsUnit(entry) {
  * document reaches its size, so D doubles when the document doubles and cost
  * quadratic in D shows up as a 4x growth ratio.
  */
+/**
+ * A case generated from a numbered unit rather than from a sample file.
+ *
+ * Both halves of a LOGICAL ISOMORPH are built this way. The index keeps every
+ * generated declaration distinct, which the pairing needs: a repeated literal
+ * name would leave one side binding one identifier and the other binding
+ * thousands, and those are not the same workload however alike they read.
+ *
+ * `{n}` is the index as written; `{n:K}` is the same index zero-padded to K
+ * digits. A grid table establishes its columns by the positions of the `+`
+ * characters in its border line and requires every row line to close its cells
+ * at exactly those columns, so an index that gains a digit at ten, at a hundred
+ * and at a thousand would silently stop the construct being recognised part way
+ * through the document -- the case would still generate, and would measure a
+ * paragraph. Any case whose construct is column-aligned uses the padded form.
+ */
+function unitText(template, index) {
+    return template
+        .replaceAll(/\{n:(\d+)\}/gu, (_, width) => {
+            const written = String(index);
+            /* `padStart` never truncates, so an index past the declared width
+             * silently writes one character too many -- and a column-aligned
+             * construct stops closing at its border the moment that happens.
+             * The case still generates, the counts on the two sides still
+             * agree because both halves are built from the same index, and what
+             * gets measured is a paragraph. The reach audit cannot see it
+             * either: it reads the x1 documents, and the overflow arrives at a
+             * larger scale. So it is refused here, where the width is known. */
+            if (written.length > Number(width)) {
+                fail(
+                    `a generated unit writes index ${written} into {n:${width}}, which is ${width} digits wide. ` +
+                        `The placeholder exists to keep a column-aligned construct closing at its border, and an ` +
+                        `index that outgrows it breaks the construct silently. Widen the placeholder and the ` +
+                        `columns that depend on it`
+                );
+            }
+            return written.padStart(Number(width), "0");
+        })
+        .replaceAll("{n}", String(index));
+}
+
+function generatedText(generated, target) {
+    let text = "";
+    let units = 0;
+    /* The running total is carried, not recomputed. Measuring the whole
+     * accumulated document once per unit is quadratic in the document and, since
+     * `--scale N` builds every size up to N, cubic in the scale: on a 256 KiB
+     * target that is 395 ms of generation against 1.6 ms here, for byte-identical
+     * output. Each unit's own length is what the target is counted in. */
+    let bytes = 0;
+    while (bytes < target) {
+        const unit = unitText(generated.unit, units);
+        text += unit;
+        bytes += Buffer.byteLength(unit);
+        units += 1;
+    }
+    return { text: (generated.head ?? "") + text + (generated.tail ?? ""), length: units };
+}
+
+/**
+ * A `head` exists for the one production that is recognised ONCE per document.
+ * A properties envelope may only open a document, so its workload cannot scale
+ * by repeating the construct -- it scales by the MEMBER LINES inside a single
+ * envelope, which means the opening delimiter has to be emitted before the
+ * repeated unit and the closing one after. Every other mode repeats a whole
+ * construct and needs no head.
+ */
+
+/**
+ * The other half of a logical isomorph, generated to the SAME COUNT.
+ *
+ * Not to the same byte length. Two spellings of one construct are paired
+ * because they express the same thing, and when one spelling needs more bytes
+ * than the other, sizing both to a byte target gives them different numbers of
+ * the construct -- a comparison of one document's size with another's, wearing
+ * the name of a comparison of two grammars. The count comes from what the
+ * partner's generator actually emitted, so nothing has to be counted back out
+ * of the text by pattern.
+ */
+function countedText(counted, units) {
+    let text = "";
+    for (let index = 0; index < units; index++) {
+        text += unitText(counted.unit, index);
+    }
+    return { text: (counted.head ?? "") + text + (counted.tail ?? ""), length: units };
+}
+
 function chainText(chain, target) {
     const tail = chain.tail ?? "";
     const unit = Buffer.byteLength(chain.unit);
@@ -983,30 +1070,59 @@ function refuseUnknownCases(options, manifest) {
 function buildCorpus(options, manifest) {
     const directory = path.join(options.out, "corpus");
     fs.mkdirSync(directory, { recursive: true });
-    const selected = options.cases.length
-        ? manifest.cases.filter((entry) => options.cases.includes(entry.name))
-        : manifest.cases;
+    /* A paired case drags its other half in. Naming one alone would measure a
+     * case whose comparison lives on a document the run never built, and a
+     * counted case sized against a generated partner that was never generated
+     * has no count to match at all. The pair is not optional context; it IS the
+     * comparison. */
+    const wanted = new Set(options.cases);
+    for (const pair of [...(manifest.isomorphs ?? []), ...(manifest.logicalIsomorphs ?? [])]) {
+        if (wanted.has(pair.case)) wanted.add(pair.isomorph);
+        if (wanted.has(pair.isomorph)) wanted.add(pair.case);
+    }
+    const selected = options.cases.length ? manifest.cases.filter((entry) => wanted.has(entry.name)) : manifest.cases;
 
     const documents = [];
-    for (const entry of selected) {
-        if (Boolean(entry.samples) === Boolean(entry.chain)) {
-            fail(`corpus case ${entry.name} must name exactly one of "samples" or "chain"`);
+    /* What each generated case actually emitted, so its partner is built to the
+     * same count rather than to a guess at one. */
+    const emitted = new Map();
+    const partnerUnits = (match, scale) => {
+        const key = `${match}|${scale}`;
+        if (!emitted.has(key)) {
+            fail(`a counted case pairs with ${match}, which must be a "generated" case declared before it`);
         }
-        const unit = entry.chain ? null : documentsUnit(entry);
+        return emitted.get(key);
+    };
+    for (const entry of selected) {
+        const modes = [entry.samples, entry.chain, entry.counted, entry.generated].filter(Boolean).length;
+        if (modes !== 1) {
+            fail(`corpus case ${entry.name} must name exactly one of "samples", "chain", "generated" or "counted"`);
+        }
+        const unit = entry.samples ? documentsUnit(entry) : null;
         for (let scale = 1; scale <= options.scale; scale++) {
             const target = (entry.targetBytes ?? manifest.targetBytes) * scale;
             const built = entry.chain
                 ? chainText(entry.chain, target)
-                : (() => {
-                      const repeats = Math.max(1, Math.ceil(target / Buffer.byteLength(unit)));
-                      return { text: unit.repeat(repeats), length: repeats };
-                  })();
+                : entry.generated
+                  ? generatedText(entry.generated, target)
+                  : entry.counted
+                    ? countedText(entry.counted, partnerUnits(entry.counted.match, scale))
+                    : (() => {
+                          const repeats = Math.max(1, Math.ceil(target / Buffer.byteLength(unit)));
+                          return { text: unit.repeat(repeats), length: repeats };
+                      })();
+            if (entry.generated) emitted.set(`${entry.name}|${scale}`, built.length);
             const file = path.join(directory, `${entry.name}.x${scale}.md`);
             fs.writeFileSync(file, built.text);
             documents.push({
                 case: entry.name,
                 dialect: entry.dialect,
                 gfm: entry.gfm === true,
+                /* The fields this case's tree carries that no reference builds.
+                 * `dialect` asserts what the SYNTAX is; this says what the
+                 * OUTPUT is, and reading the first as though it were the second
+                 * is what published a feature's price as a parsing ratio. */
+                carries: entry.carries ?? [],
                 /* What the growth table is varying. `documents` cases add
                  * independent copies; a chain case grows one structure, and
                  * WHICH dimension is not the same question as the shape --
@@ -1014,7 +1130,18 @@ function buildCorpus(options, manifest) {
                  * failures, not a depth, so a table that called it "structure"
                  * alongside the nesting cases would invite exactly the reading
                  * the case was renamed to prevent. */
-                growth: entry.chain ? (entry.scales ?? "structure") : "documents",
+                growth: entry.chain
+                    ? (entry.scales ?? "structure")
+                    : (entry.generated ?? entry.counted)
+                      ? /* Named by the case, because a generated case scales
+                         * whatever its unit holds and that is not one thing:
+                         * the anchor pair scales declarations, the span pair
+                         * scales spans and links. A single label for the mode
+                         * would describe the anchor pair and misdescribe the
+                         * rest, in the one column that exists to say which
+                         * dimension grew. */
+                        ((entry.generated ?? entry.counted).scales ?? "constructs")
+                      : "documents",
                 scale,
                 units: built.length,
                 bytes: Buffer.byteLength(built.text),
@@ -1465,8 +1592,17 @@ function markdownReport(report) {
      * isomorph is a CommonMark document written to match a dialect document,
      * not a construct anyone writes, so it belongs in the pair table and not in
      * the CommonMark median it would otherwise move. */
-    const paired = new Map((report.isomorphs ?? []).map((declaration) => [declaration.case, declaration]));
-    const isIsomorph = new Set((report.isomorphs ?? []).map((declaration) => declaration.isomorph));
+    /* Two ways a pair can be established, one decomposition either way. A
+     * SUBSTITUTION isomorph is the same document under a change of marker, so
+     * both halves are the same length. A LOGICAL isomorph is two spellings of
+     * one declaration -- an explicit anchor here, a link reference definition
+     * there -- which are not the same length, so the corpus generates them to an
+     * equal count of declarations instead. Both give the same three numbers. */
+    const declarations = [...(report.isomorphs ?? []), ...(report.logicalIsomorphs ?? [])];
+    const paired = new Map(declarations.map((declaration) => [declaration.case, declaration]));
+    const isIsomorph = new Set(declarations.map((declaration) => declaration.isomorph));
+    const bySubstitution = new Set((report.isomorphs ?? []).map((declaration) => declaration.case));
+
     const atScaleOne = new Map(report.cases.filter((item) => item.scale === 1).map((item) => [item.case, item]));
     const ranked = report.cases
         .filter((item) => item.scale === 1 && item.engines["markdown-core"])
@@ -1480,9 +1616,23 @@ function markdownReport(report) {
              * building the same tree from the CommonMark spelling. */
             const declaration = paired.get(item.case);
             const twin = declaration ? atScaleOne.get(declaration.isomorph) : null;
+            /* The isomorph's OWN reference, not always cmark. A dialect
+             * construct can pair with a GFM production -- a task marker with a
+             * GFM task list item, a specimen with a GFM footnote definition --
+             * and the engine that implements the isomorph is the one that did
+             * the same job on it. Reading cmark there would divide by an engine
+             * that parsed the paired document as ordinary prose. */
+            const twinReference = twin?.gfm ? "cmark-gfm" : "cmark";
             const twinCore = twin ? stageIr(twin.engines, "markdown-core") : null;
-            const twinCmark = twin ? stageIr(twin.engines, "cmark") : null;
-            if (twin && (twin.bytes !== item.bytes || twin.units !== item.units)) {
+            const twinCmark = twin ? stageIr(twin.engines, twinReference) : null;
+            if (twin && twin.units !== item.units) {
+                fail(
+                    `${item.case} and ${declaration.isomorph} are paired but carry ${item.units} and ` +
+                        `${twin.units} of the construct. A pair compares two spellings of one thing only ` +
+                        `while both documents hold the same number of it`
+                );
+            }
+            if (twin && bySubstitution.has(item.case) && twin.bytes !== item.bytes) {
                 /* The substitution is character for character, so the two
                  * documents are the same length and the corpus repeats each of
                  * them the same number of times. Different totals mean the pair
@@ -1506,26 +1656,74 @@ function markdownReport(report) {
                     ? {
                           case: declaration.isomorph,
                           claim: declaration.claim,
+                          /* How the pair was established, because it decides
+                           * which invariant held it: equal bytes under a marker
+                           * substitution, or an equal count of declarations in
+                           * two spellings of different length. */
+                          by: bySubstitution.has(item.case) ? "substitution" : "count",
+                          reference: twinReference,
+                          /* Its own bytes, not this case's: a logical isomorph
+                           * is a different length by construction, so dividing
+                           * its cost by this document's size would be reading
+                           * one document's Ir over another document's bytes. */
+                          bytes: twin.bytes,
+                          units: twin.units,
                           coreIr: twinCore,
                           cmarkIr: twinCmark,
+                          /* The fields the ISOMORPH's tree carries that no
+                           * reference builds. They decide which of the three
+                           * numbers below survives, and the corpus records the
+                           * derivation under `unpairable`: the three are
+                           * grammar = core/twinCore, shape = twinCore/twinCmark
+                           * and sameJob = core/twinCmark, and twinCore CANCELS
+                           * out of the last one. So a twin that costs this
+                           * parser something the reference never spent -- an
+                           * ATX heading, where this dialect derives an anchor
+                           * and cmark does not -- inflates the denominator of
+                           * Grammar and the numerator of Shape while leaving
+                           * Same-job clean. Those two are suppressed rather
+                           * than printed low and high. */
+                          contaminates: twin.carries,
                           /* What this grammar costs over a CommonMark grammar
                            * building the same tree, inside one parser. */
-                          grammar: twinCore ? core / twinCore : null,
+                          grammar: twinCore && !twin.carries.length ? core / twinCore : null,
                           /* What this parser costs on the shape itself, where
                            * the reference did the same job. */
-                          shape: twinCore && twinCmark ? twinCore / twinCmark : null
+                          shape: twinCore && twinCmark && !twin.carries.length ? twinCore / twinCmark : null
                       }
                     : null,
-                /* The comparison that means something: the closest reference
-                 * that implements what the document contains, or the reference
-                 * on the document that is the same tree. */
-                sameJob: gfmIr
-                    ? core / gfmIr
-                    : twinCmark
-                      ? core / twinCmark
-                      : item.dialect === "commonmark" && cmarkIr
-                        ? core / cmarkIr
-                        : null
+                /* The reference that did equivalent work, in order of how
+                 * directly it did it: cmark-gfm where it implements the
+                 * construct, the isomorph where the corpus wrote the same
+                 * workload in a CommonMark grammar, and cmark on the case's own
+                 * bytes when the two engines already agree on what to build.
+                 *
+                 * A dialect case with no isomorph publishes none of those. Its
+                 * own bytes are exactly where the two engines disagree, so
+                 * dividing by a reference on them is not a comparison at all; it
+                 * is reported as a bound and ranked as one.
+                 *
+                 * So is a case whose SYNTAX is CommonMark and whose TREE is not.
+                 * A document of plain ATX headings is CommonMark source, and
+                 * every heading in it carries an identifier this dialect derived
+                 * and no reference has a counterpart for -- so the reference on
+                 * those bytes built a different tree, and the quotient is the
+                 * price of a feature wearing the name of a parsing ratio. A pair
+                 * is the only thing that lifts it back to a comparison, because
+                 * a pair is what puts the same declaration in front of the
+                 * reference; that is why the paired case is tested first here
+                 * and why `pair-anchor-dialect` carries the field and still gets
+                 * a ratio. `scripts/audit-corpus-reach.mjs` holds each case's
+                 * declaration against the parser's dump, in both directions. */
+                sameJob: twinCmark
+                    ? core / twinCmark
+                    : item.carries.length
+                      ? null
+                      : gfmIr
+                        ? core / gfmIr
+                        : item.dialect === "commonmark" && cmarkIr
+                          ? core / cmarkIr
+                          : null
             };
         })
         .sort((left, right) => (right.sameJob ?? right.cmarkRatio ?? 0) - (left.sameJob ?? left.cmarkRatio ?? 0));
@@ -1541,6 +1739,20 @@ function markdownReport(report) {
             return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
         };
         lines.push("### Ratio against the reference", "");
+        /* Read off this run, both halves of it. The paragraph used to describe
+         * every pair as the same document under a change of marker for which
+         * cmark builds the same tree. That is true of the SUBSTITUTION pairs
+         * and false of the count pairs, which are deliberately different
+         * lengths and usually different trees -- a specimen against a footnote
+         * -- so the report stated the wrong invariant for most of the rows it
+         * was introducing. The `:::note` example was the same failure one level
+         * down: it named a construct that has since been paired, as though it
+         * were still measured as a bound. */
+        const paired = ranked.filter((item) => item.isomorph);
+        const substituted = paired.filter((item) => item.isomorph.by === "substitution");
+        const bounded = ranked.filter(
+            (item) => (item.dialect !== "commonmark" || item.carries.length) && !item.gfm && !item.isomorph
+        );
         lines.push(
             "A ratio compares only where both parsers did the same job, so the cases are" +
                 " grouped by which reference implements what they contain, and the groups are" +
@@ -1548,16 +1760,49 @@ function markdownReport(report) {
             "",
             "cmark implements the CommonMark cases. cmark-gfm implements tables, task lists," +
                 " bare autolinks and footnotes, and is measured only on the cases that hold" +
-                " them. For a few dialect constructs neither one implements, an ISOMORPH" +
-                " stands in: the same document written twice, once with the dialect marker" +
-                " and once with a CommonMark marker of the same shape, so cmark builds the" +
-                " same tree and the ratio is a comparison again. Nothing implements what is" +
-                " left: cmark reads `:::note` as a paragraph, so its number there is the cost" +
-                " of NOT having the feature. That bounds what a construct costs and does not" +
-                " say it is slow.",
-            "",
-            ""
+                " them."
         );
+        if (paired.length) {
+            /* Named only where they occur. A `--case`-filtered run can measure
+             * pairs of one kind, and printing "0 of the 1 pairs" alongside "the
+             * other 0" describes a corpus that is not the one being reported. */
+            const byCount = paired.length - substituted.length;
+            const kinds = [];
+            if (substituted.length) {
+                kinds.push(
+                    `${substituted.length} by SUBSTITUTION -- the same bytes under a change of` +
+                        ` marker, parsing to the same tree`
+                );
+            }
+            if (byCount) {
+                kinds.push(
+                    `${byCount} by COUNT -- two spellings of different lengths, sized to an equal` +
+                        ` number of the construct rather than to equal bytes, so the trees they` +
+                        ` build are usually not the same one`
+                );
+            }
+            lines.push(
+                "",
+                `For dialect constructs neither one implements, a PAIR stands in: one` +
+                    ` production written twice, once in the dialect grammar and once in a` +
+                    ` CommonMark grammar of the same shape, so the reference does the same job` +
+                    ` and the ratio is a comparison again. A pair is held constant in one of two` +
+                    ` ways, and which one decides what a row claims: of the ${paired.length}` +
+                    ` pair${paired.length === 1 ? "" : "s"} here, ${kinds.join(", and ")}.` +
+                    ` "What the grammar costs" below says what each kind holds and what the` +
+                    ` audit checks.`
+            );
+        }
+        if (bounded.length) {
+            lines.push(
+                "",
+                `Nothing implements what is left. cmark reads the document in` +
+                    ` \`${bounded[0].case}\` as ordinary prose, so its number there is the cost of` +
+                    " NOT having the feature. That" +
+                    " bounds what a construct costs and does not say it is slow."
+            );
+        }
+        lines.push("", "");
         /* Read off this run. Written as prose it froze at the numbers of the
          * run that wrote it, so the sentence making the case for the
          * distinction went on asserting them while the tables below reported
@@ -1576,14 +1821,35 @@ function markdownReport(report) {
             [
                 "CommonMark",
                 "cmark",
-                ranked.filter((item) => item.dialect === "commonmark" && !item.gfm && !isIsomorph.has(item.case))
+                ranked.filter(
+                    (item) =>
+                        !item.isomorph &&
+                        item.dialect === "commonmark" &&
+                        !item.gfm &&
+                        !item.carries.length &&
+                        !isIsomorph.has(item.case)
+                )
             ],
-            ["GFM extensions", "cmark-gfm", ranked.filter((item) => item.gfm)],
-            ["Dialect, via an isomorph", "cmark, on the isomorph", ranked.filter((item) => item.isomorph)],
+            [
+                /* A PAIRED case belongs to its pair's group whatever its own
+                 * `gfm` flag says, and the flag is tested after the pair rather
+                 * than before it. `pair-tcaption-dialect` is a pipe table, so it
+                 * carries the flag, and its same-job denominator is cmark on the
+                 * CommonMark half -- classifying it by the flag counted it twice
+                 * and let a cmark-derived ratio into the cmark-gfm median. */
+                "GFM extensions",
+                "cmark-gfm",
+                ranked.filter(
+                    (item) => !item.isomorph && item.gfm && !item.carries.length && !isIsomorph.has(item.case)
+                )
+            ],
+            ["Dialect, via an isomorph", "the isomorph's own reference", ranked.filter((item) => item.isomorph)],
             [
                 "Dialect-only (no reference)",
                 "cmark, as a bound",
-                ranked.filter((item) => item.dialect !== "commonmark" && !item.gfm && !item.isomorph)
+                ranked.filter(
+                    (item) => (item.dialect !== "commonmark" || item.carries.length) && !item.gfm && !item.isomorph
+                )
             ]
         ];
         for (const [label, reference, group] of groups) {
@@ -1600,62 +1866,154 @@ function markdownReport(report) {
 
         const pairs = ranked.filter((item) => item.isomorph);
         if (pairs.length) {
-            lines.push("### What the marker costs", "");
+            lines.push("### What the grammar costs", "");
             lines.push(
-                "Each row is one document written twice -- once with the dialect marker and" +
-                    " once with a CommonMark marker of the same shape, the same bytes under a" +
-                    " single-character substitution. Both spellings parse to the SAME TREE:" +
-                    " same spans, same literals, same children, differing only in which" +
-                    " grammar built each node, which" +
-                    " `scripts/audit-corpus-reach.mjs` checks against the parser rather than" +
-                    " taking on faith.",
+                "Each row is one workload written twice -- once in the dialect grammar and" +
+                    " once in a CommonMark grammar of the same shape. The pairing is read off" +
+                    " the GRAMMAR, never off either implementation: a pair designed by" +
+                    " matching what machinery each engine happens to run would drive every" +
+                    " ratio to 1.00x and measure nothing.",
+                "",
+                "Two productions pair when they have the same shape, and the corpus holds" +
+                    " that constant in one of two ways:",
+                "",
+                "- **Substitution** -- the same document under a change of marker, so both" +
+                    " halves are the same bytes and parse to the SAME TREE: same spans, same" +
+                    " literals, same children, differing only in which grammar built each" +
+                    " node. `` $x$ `` against `` `x` `` is this kind.",
+                "- **Count** -- two spellings of one production, sized to an equal COUNT of" +
+                    " the construct rather than to equal bytes, because the two spellings are" +
+                    " different lengths and a byte target would hand one side more of the" +
+                    " construct than the other. What matches is the grammar shape and, where" +
+                    " there is one, the subsequent operation: an explicit anchor binds a name" +
+                    " to the block it sits on and a link reference definition binds a name to" +
+                    " a target, a grid cell and a list item each cut a line positionally and" +
+                    " parse the remainder as blocks, a callout and a task item each take a" +
+                    " bracketed token off a container's first line into a field. Most of these" +
+                    " declare nothing, which is why the column reads `count` rather than" +
+                    " `declaration`.",
+                "",
+                "`scripts/audit-corpus-reach.mjs` checks both invariants against the parser" +
+                    " rather than taking them on faith -- the tree for a substitution pair, and" +
+                    " for a count pair the construct count on both sides plus whichever of" +
+                    " `alsoCounts`, `binding`, `fallback`, `absent` and `demonstrates` that" +
+                    " pair names.",
                 "",
                 "That splits the ratio into two questions that have different answers:",
                 "",
                 "- **Grammar** is this parser on the dialect spelling over this parser on the" +
                     " CommonMark spelling. One parser, one tree, two grammars -- so a number" +
                     " above 1 is this grammar, and nothing else, and it names the file to open.",
-                "- **Shape** is this parser over cmark on the CommonMark spelling, where both" +
-                    " did the same job. It is what the parser costs on that shape before any" +
-                    " dialect construct is involved, and no change to a dialect grammar will" +
-                    " move it.",
+                "- **Shape** is this parser over the isomorph's own reference on the" +
+                    " CommonMark spelling, where both did the same job. It is what the parser" +
+                    " costs on that shape before any dialect construct is involved, and no" +
+                    " change to a dialect grammar will move it. The reference is cmark, or" +
+                    " cmark-gfm where the paired production is a GFM one -- reading cmark there" +
+                    " would divide by an engine that saw the paired document as prose.",
                 "",
                 "Their product is the same-job ratio in the group table above. A pair that" +
                     " reads 1.0x on Grammar and 3x on Shape is not an extension problem at" +
                     " all, however large the bound against cmark on the dialect document" +
                     " looked.",
+                "",
+                "On a COUNT pair the two Ir/B columns are each over their own document's" +
+                    " bytes, and those differ by construction -- so Grammar is not their" +
+                    " quotient. It is the total over the total at an equal count of the" +
+                    " construct, which is the only denominator the pair holds fixed.",
                 ""
             );
             lines.push(
-                "| Dialect case | Isomorph | Dialect Ir/B | Isomorph Ir/B | cmark Ir/B | Grammar | Shape | Same-job |",
-                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
+                "| Dialect case | Isomorph | Paired by | Reference | Dialect Ir/B |" +
+                    " Isomorph Ir/B | Reference Ir/B | Grammar | Shape | Same-job |",
+                "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
             );
             for (const item of pairs) {
                 const pair = item.isomorph;
                 lines.push(
-                    `| ${item.case} | ${pair.case} | ${(item.coreIr / item.bytes).toFixed(1)} |` +
-                        ` ${pair.coreIr === null ? "-" : (pair.coreIr / item.bytes).toFixed(1)} |` +
-                        ` ${pair.cmarkIr === null ? "-" : (pair.cmarkIr / item.bytes).toFixed(1)} |` +
+                    `| ${item.case} | ${pair.case} | ${pair.by} | \`${pair.reference}\` |` +
+                        ` ${(item.coreIr / item.bytes).toFixed(1)} |` +
+                        ` ${pair.coreIr === null ? "-" : (pair.coreIr / pair.bytes).toFixed(1)} |` +
+                        ` ${pair.cmarkIr === null ? "-" : (pair.cmarkIr / pair.bytes).toFixed(1)} |` +
                         ` ${pair.grammar === null ? "-" : `${pair.grammar.toFixed(2)}x`} |` +
                         ` ${pair.shape === null ? "-" : `${pair.shape.toFixed(2)}x`} |` +
                         ` ${item.sameJob === null ? "-" : `${item.sameJob.toFixed(2)}x`} |`
                 );
             }
             lines.push("");
+            const suppressed = pairs.filter((item) => item.isomorph.contaminates?.length);
+            if (suppressed.length) {
+                /* The rule is QUOTED from the manifest, like every other claim
+                 * here, so that a report cannot go on publishing an argument the
+                 * corpus has withdrawn. */
+                const rules = JSON.parse(fs.readFileSync(path.join(BENCHMARKS, "corpus.json"), "utf8")).suppressions;
+                lines.push(
+                    "A dash in Grammar and Shape on a pair whose Same-job column is filled is a" +
+                        " SUPPRESSION, not a missing measurement. Why, from `corpus.json`:",
+                    "",
+                    ...(rules ?? []).map((entry) => `- **${entry.rule}** -- ${entry.statement}`),
+                    "",
+                    "Suppressed here:",
+                    "",
+                    ...suppressed.map(
+                        (item) =>
+                            `- **${item.case}** -- its isomorph \`${item.isomorph.case}\` carries` +
+                            ` ${item.isomorph.contaminates.join(", ")}.`
+                    ),
+                    ""
+                );
+            }
             lines.push(
                 "What each pair claims to hold constant, from `corpus.json`:",
                 "",
                 ...pairs.map((item) => `- **${item.case}** -- ${item.isomorph.claim}`),
                 ""
             );
+            /* The reasons a construct has no row are READ FROM THE CORPUS, never
+             * restated here. A hard-coded list went stale the moment a proof
+             * fell, and ten of them fell in one day -- this report would have
+             * gone on publishing that a grid table, a definition list, a
+             * callout and a directive cannot pair while `corpus.json` held the
+             * pairs for all four. `unpairable` is a proof that has survived
+             * attack; `openCandidates` is a candidate that has not been settled
+             * either way, which is not the same claim and is not printed as
+             * one. */
+            const proofs = JSON.parse(fs.readFileSync(path.join(BENCHMARKS, "corpus.json"), "utf8"));
             lines.push(
-                "A construct with no row here has no isomorph, and the honest reason is that" +
-                    " none of the candidates survived the check. A grid table is not a pipe" +
-                    " table (a grid cell holds a paragraph, a pipe cell holds inlines), a" +
-                    " definition list is not a bullet list (the definition groups term and" +
-                    " body under one node), and a comment is not strong emphasis (strong" +
-                    " parses its body, a comment keeps it literal). Those stay bounds, and a" +
-                    " bound is reported as a bound.",
+                "A construct with no row here has no isomorph. The reasons are the corpus's," +
+                    " quoted from `corpus.json` rather than restated, and they come in two" +
+                    " kinds that must not be read as one.",
+                ""
+            );
+            if (proofs.unpairable?.length) {
+                lines.push(
+                    "**Proved unpairable** -- an argument off the two GRAMMARS that has been" + " attacked and held:",
+                    "",
+                    ...proofs.unpairable.map((entry) => `- **${entry.production}** -- ${entry.proof}`),
+                    ""
+                );
+            }
+            if (proofs.openCandidates?.length) {
+                lines.push(
+                    "**Open** -- a pair that has NOT been built and has NOT been proved" +
+                        " impossible. These are bounds today because nobody has settled them," +
+                        " which is a different sentence from the one above:",
+                    "",
+                    ...proofs.openCandidates.map(
+                        (entry) => `- **${entry.production}** -- ${entry.whatIsGenuinelyUnsettled ?? entry.status}`
+                    ),
+                    ""
+                );
+            }
+            lines.push(
+                "Note what is NOT a reason to refuse a pair: that the two sides materialise" +
+                    " different numbers of nodes. A bare citation key was nearly left a bound on" +
+                    " exactly that ground -- one `Link` over a `Text` against a `Cite` over a" +
+                    " `Citation` with two affix slots -- and that is reasoning off the" +
+                    " implementations, which is the one thing the criterion forbids. The two" +
+                    " productions have the same shape, so they pair, and the node counts are" +
+                    " part of what the ratio reports.",
+                "",
+                "Those are bounds, and a bound is reported as a bound.",
                 ""
             );
         }
@@ -1681,13 +2039,17 @@ function markdownReport(report) {
                 .map((entry) => `\`${entry.name}\` ${(entry.share * 100).toFixed(1)}%`)
                 .join(", ");
             const ratio = item.sameJob ?? item.cmarkRatio;
-            const reference = item.gfm
-                ? "cmark-gfm"
-                : item.isomorph
-                  ? "cmark, isomorph"
-                  : item.dialect === "commonmark"
-                    ? "cmark"
-                    : "(bound)";
+            /* Same precedence as the group table: the reference that produced
+             * the ratio, not the flag on the case. */
+            const reference = item.isomorph
+                ? `${item.isomorph.reference}, isomorph`
+                : item.gfm
+                  ? "cmark-gfm"
+                  : item.carries.length
+                    ? `(bound; tree carries ${item.carries.join(", ")})`
+                    : item.dialect === "commonmark"
+                      ? "cmark"
+                      : "(bound)";
             lines.push(
                 `| ${item.case} | ${reference} | ${ratio === null ? "-" : `${ratio.toFixed(2)}x`} |` +
                     ` ${(item.coreIr / item.bytes).toFixed(1)} | ${hot || "(not recorded)"} |`
@@ -1751,8 +2113,13 @@ function markdownReport(report) {
             "### Growth against input size",
             "",
             "Each case is measured again at a larger size. A stage whose cost is linear in" +
-                " what was scaled reports a growth ratio equal to the byte ratio; a stage" +
-                " quadratic in it reports the square.",
+                " what was scaled reports a growth ratio equal to the BASELINE column; a" +
+                " stage quadratic in it reports the square. The baseline is the dimension" +
+                " the `scaled` column names, which is not always bytes: a generated or" +
+                " counted case is judged against its CONSTRUCT count, because `{n}` gains a" +
+                " digit as the document grows and doubling the byte target multiplies the" +
+                " count by 1.98 rather than 2 -- reading that against bytes would report" +
+                " perfectly linear per-construct work as a percent sublinear.",
             "",
             "The `scaled` column names the dimension that grew, taken from the corpus" +
                 " rather than from the case's shape: a chain case can grow a nesting depth," +
@@ -1763,12 +2130,26 @@ function markdownReport(report) {
                 " depth is the size, which is the dimension a copied document cannot" +
                 " reach.",
             "",
-            "| Case | Scaled | Byte ratio | Stage | Core growth | cmark growth |",
+            "| Case | Scaled | Baseline | Stage | Core growth | cmark growth |",
             "| --- | --- | ---: | --- | ---: | ---: |"
         );
         for (const entry of scaled) {
             const base = report.cases.find((item) => item.case === entry.case && item.scale === 1);
             if (!base) continue;
+            /* The baseline is the dimension the `scaled` column NAMES, which for a
+             * generated or counted case is the construct count and not the byte
+             * count. Those are not the same number: `{n}` gains a digit as the
+             * document grows, so doubling the byte target multiplies the count by
+             * 1.98 rather than 2, and judging per-construct linear work against a
+             * 2.00x byte ratio reports it as 0.8% to 1.6% sublinear -- an artefact
+             * of the index, in the one table that exists to find real
+             * sublinearity. `units` is the named dimension in every mode -- copies
+             * for a samples case, depth for a chain case, constructs for these --
+             * and for the first two it is exactly proportional to bytes, so
+             * reading it always is both uniform and correct. */
+            const byUnits = Boolean(entry.units && base.units);
+            const denominator = byUnits ? entry.units / base.units : entry.bytes / base.bytes;
+            const label = byUnits ? `${denominator.toFixed(3)}x units` : `${denominator.toFixed(2)}x bytes`;
             for (const stage of STAGES) {
                 const core = entry.engines["markdown-core"]?.stages[stage];
                 const coreBase = base.engines["markdown-core"]?.stages[stage];
@@ -1776,7 +2157,7 @@ function markdownReport(report) {
                 const cmarkBase = base.engines.cmark?.stages[stage];
                 if (!core || !coreBase || !cmark || !cmarkBase) continue;
                 lines.push(
-                    `| ${entry.case} | ${entry.growth} | ${(entry.bytes / base.bytes).toFixed(2)}x |` +
+                    `| ${entry.case} | ${entry.growth} | ${label} |` +
                         ` ${stage} | ${ratio(core.ir, coreBase.ir)} | ${ratio(cmark.ir, cmarkBase.ir)} |`
                 );
             }
@@ -1815,6 +2196,26 @@ function main() {
     if (options.corpusOnly) {
         fs.mkdirSync(options.out, { recursive: true });
         const only = buildCorpus(options, manifest);
+        /* What each document was generated to HOLD, written beside it. The
+         * corpus-reach audit counts constructs in the parser's dump and has no
+         * other way to learn how many the generator emitted, so it could check
+         * that two sides agree with each other and never that either agrees
+         * with what was asked for. Both sides recognising the same SUBSET of
+         * their units, or a unit template quietly emitting two of the construct
+         * instead of one, passed. This is the generator's own arithmetic,
+         * published rather than re-derived. */
+        fs.writeFileSync(
+            path.join(options.out, "units.json"),
+            `${JSON.stringify(
+                Object.fromEntries(
+                    only.documents
+                        .filter((document) => document.scale === 1)
+                        .map((document) => [document.case, document.units])
+                ),
+                null,
+                4
+            )}\n`
+        );
         if (!options.quiet) {
             process.stdout.write(
                 `wrote ${only.documents.length} documents to ${path.relative(root, path.join(options.out, "corpus"))} ` +
@@ -1980,6 +2381,12 @@ function main() {
          * it, and `scripts/audit-corpus-reach.mjs` is what holds the pairing to
          * being true. */
         isomorphs: manifest.isomorphs ?? [],
+        /* Recorded beside them for the same reason, and separately because the
+         * two kinds of pair are held to different invariants: a substitution
+         * isomorph is the same bytes under a change of marker, a logical
+         * isomorph is the same COUNT of declarations in two spellings that are
+         * not the same length and were never meant to be. */
+        logicalIsomorphs: manifest.logicalIsomorphs ?? [],
         artifacts: path.relative(root, options.out),
         cases
     };

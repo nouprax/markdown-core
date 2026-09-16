@@ -10,3 +10,5 @@ in the paragraph, and `n` closes immediately after one character.
 
 Several `a` runs `b` on `c` a `d` single `e` line keep the scanner
 opening and closing without any prose between them.
+
+A standalone ``y`` sits inline beside `z` in the same clause.

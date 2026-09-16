@@ -42,6 +42,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stateValidators } from "./lib/canonical-states.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const KIND_TABLE = path.join(root, "packages/markdown-core/elements/ast.c");
@@ -52,9 +53,17 @@ function fail(message) {
 }
 
 function parseArguments(argv) {
-    const options = { json: null };
+    const options = { json: null, states: false };
     for (let i = 0; i < argv.length; i++) {
         const flag = argv[i];
+        /* The state lists are fifty-odd lines and the summary counts them, so
+         * they are printed on request rather than at every run. The names are
+         * what turns a count into work: each one is a case to write or a pair
+         * to build. */
+        if (flag === "--states") {
+            options.states = true;
+            continue;
+        }
         if (flag !== "--json") fail(`unknown flag ${flag}`);
         /* A value is required and must be a path, not the next flag. Taking
          * `argv[++i]` unchecked let `--json` as the last argument run the whole
@@ -285,6 +294,63 @@ function samplesWithoutTheirOwnCase() {
         .sort();
 }
 
+/**
+ * EVERY SAMPLE IN THE AGGREGATE ITS DIALECT PUTS IT IN.
+ *
+ * The concatenated cases exist so a construct is measured beside the others
+ * rather than only in isolation, and the contract is that every sample enters
+ * one. Two exceptions, both principled: a PAIR's halves stay out, because they
+ * are written to mirror each other and a document written twice would enter the
+ * aggregate twice and tilt it toward whatever the pair isolates; and an EXTENDED
+ * sample stays out of the CommonMark aggregate, which would otherwise stop being
+ * CommonMark.
+ *
+ * Stated in the README and checked nowhere until a sample was added and left out
+ * of both. The audit knew only that a sample had its own case, which that sample
+ * did.
+ */
+function samplesOutsideTheirAggregate() {
+    const manifest = JSON.parse(
+        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
+    );
+    const cases = manifest.cases ?? [];
+    const aggregate = (name) => new Set(cases.find((entry) => entry.name === name)?.samples ?? []);
+    const commonmark = aggregate("mixed-commonmark");
+    const extended = aggregate("mixed-extended");
+    const paired = new Set();
+    for (const declaration of [...(manifest.isomorphs ?? []), ...(manifest.logicalIsomorphs ?? [])]) {
+        paired.add(declaration.case ?? declaration.name);
+        paired.add(declaration.isomorph);
+    }
+    const failures = [];
+    /* And no aggregate holds one twice. A sample listed twice enters the
+     * concatenation twice and tilts it toward whatever that sample isolates,
+     * which is the same objection that keeps a pair's halves out entirely. */
+    for (const name of ["mixed-commonmark", "mixed-extended"]) {
+        const samples = cases.find((entry) => entry.name === name)?.samples ?? [];
+        const seen = new Set();
+        for (const sample of samples) {
+            if (seen.has(sample)) failures.push(`${name} holds ${sample} twice, so it enters the aggregate twice`);
+            seen.add(sample);
+        }
+    }
+    for (const entry of cases) {
+        if (entry.name.startsWith("mixed-") || paired.has(entry.name)) continue;
+        for (const sample of entry.samples ?? []) {
+            if (!extended.has(sample)) {
+                failures.push(`${sample} belongs to ${entry.name} and is in neither aggregate`);
+            }
+            if (entry.dialect === "commonmark" && !commonmark.has(sample)) {
+                failures.push(`${sample} is a CommonMark sample and mixed-commonmark does not hold it`);
+            }
+            if (entry.dialect !== "commonmark" && commonmark.has(sample)) {
+                failures.push(`${sample} is an extended sample and mixed-commonmark holds it anyway`);
+            }
+        }
+    }
+    return failures;
+}
+
 function corpusDocuments(directory) {
     execFileSync(
         "node",
@@ -314,6 +380,14 @@ function corpusDocuments(directory) {
 async function kindsProduced(cli, documents) {
     const seen = new Set();
     const perCase = new Map();
+    const perCaseCounts = new Map();
+    const perCaseBound = new Map();
+    /* Which declared grammar STATES each case reaches. The predicates want the
+     * whole dump where the loop below wants a line at a time, so the lines are
+     * held for one document and dropped as soon as that document's states are
+     * read -- the corpus's documents are 64 KiB and their dumps a few megabytes,
+     * which one at a time is nothing and all at once is a hundred of them. */
+    const perCaseStates = new Map();
     for (const document of documents) {
         /* The complexity shapes are excluded, and only here. `chain-list-depth`
          * is 32,765 levels deep, and `markdown_core_document_dump` materialises
@@ -326,21 +400,501 @@ async function kindsProduced(cli, documents) {
          * document. */
         if (path.basename(document).startsWith("chain-")) continue;
         const mine = new Set();
+        const counts = new Map();
+        const bound = new Map();
         const child = spawn(cli, [document], { stdio: ["ignore", "pipe", "ignore"], timeout: 600_000 });
         const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
+        const held = [];
         for await (const line of lines) {
+            held.push(line);
             const match = /([A-Za-z]+) scope=/.exec(line);
             if (match) {
                 seen.add(match[1]);
                 mine.add(match[1]);
+                /* Counted, not just noted. A logical isomorph is built on the
+                 * two sides carrying an EQUAL NUMBER of the construct, and the
+                 * parser is the only thing that knows how many a document
+                 * really has -- a pattern over the source counts what looks
+                 * like a declaration, which is not the same question. */
+                counts.set(match[1], (counts.get(match[1]) ?? 0) + 1);
+                /* And which of them carry a BINDING, which is the other half of
+                 * what a logical pair claims. The two free-text fields are
+                 * removed first -- a literal or an attribute value containing
+                 * `name="` is text, not a field of the node -- and a null field
+                 * prints unquoted, so only a real binding matches. */
+                const fields = line.replace(/ literal="(?:[^"\\]|\\.)*"/gu, "").replace(/ attributes=\{[^}]*\}/gu, "");
+                for (const [, name] of fields.matchAll(/ ([a-z][a-z-]*)="/gu)) {
+                    const key = `${match[1]}.${name}`;
+                    bound.set(key, (bound.get(key) ?? 0) + 1);
+                }
             }
         }
-        perCase.set(path.basename(document).replace(/\.x1\.md$/u, ""), mine);
+        const name = path.basename(document).replace(/\.x1\.md$/u, "");
+        perCase.set(name, mine);
+        perCaseCounts.set(name, counts);
+        perCaseBound.set(name, bound);
+        const tree = held.join("\n");
+        held.length = 0;
+        const states = new Set();
+        for (const [state, demonstrates] of Object.entries(stateValidators)) {
+            if (demonstrates(tree)) states.add(state);
+        }
+        perCaseStates.set(name, states);
         const [code, signal] = await new Promise((resolve) => child.on("close", (c, s) => resolve([c, s])));
         if (signal) fail(`the dump CLI was killed by ${signal} on ${path.basename(document)}`);
         if (code !== 0) fail(`the dump CLI exited ${code} on ${path.basename(document)}`);
     }
-    return { seen, perCase };
+    return { seen, perCase, perCaseCounts, perCaseBound, perCaseStates };
+}
+
+/**
+ * A tree that is not the tree either reference built.
+ *
+ * `"dialect": "commonmark"` asserts that a case's SYNTAX is CommonMark. It was
+ * being read as a claim about the OUTPUT, and those are different claims: this
+ * dialect derives an identifier for every heading, so a document of plain ATX
+ * headings is CommonMark source and is not a CommonMark tree. Dividing by cmark
+ * on it published the price of a feature cmark does not have as though it were
+ * the price of parsing a heading, and that is what #321 reported.
+ *
+ * So each referenceless field is declared once, with its reason, and each case
+ * declares the ones its tree carries. The driver reports a case that carries one
+ * as a BOUND unless the corpus pairs it -- a pair is exactly the thing that puts
+ * the same declaration in front of the reference, which is why
+ * `pair-anchor-dialect` carries the field and still gets a ratio.
+ *
+ * Checked in BOTH directions. A missing declaration would publish a bound as a
+ * comparison, which is the original defect; a declaration for a field the tree
+ * does not carry would demote a real comparison to a bound, which hides a
+ * regression behind a number nobody ranks.
+ *
+ * The complexity shapes are checked at reduced depth: `chain-list-depth` at full
+ * size dumps gigabytes, so the same unit and tail are rebuilt at 64 repetitions
+ * and that document is dumped. It is a document the corpus could have generated,
+ * not a truncation of one -- a prefix cut mid-structure parses to something the
+ * real document never contains.
+ */
+function referencelessFields() {
+    const manifest = JSON.parse(
+        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
+    );
+    const declared = manifest.referenceless ?? {};
+    if (typeof declared !== "object" || Array.isArray(declared)) {
+        fail("corpus.json: referenceless must map each field name to why no reference builds it");
+    }
+    return Object.keys(declared);
+}
+
+function shallowChainDocument(directory, entry) {
+    const file = path.join(directory, `${entry.name}.shallow.md`);
+    fs.writeFileSync(file, entry.chain.unit.repeat(64) + (entry.chain.tail ?? ""));
+    return file;
+}
+
+function carriedFailures(cli, census, corpusDirectory, fields) {
+    const manifest = JSON.parse(
+        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
+    );
+    const failures = [];
+    for (const entry of manifest.cases ?? []) {
+        const declared = new Set(entry.carries ?? []);
+        for (const name of declared) {
+            if (!fields.includes(name)) {
+                failures.push(`${entry.name} declares it carries ${name}, which corpus.json never declared`);
+            }
+        }
+        let carried;
+        if (entry.chain) {
+            const file = shallowChainDocument(corpusDirectory, entry);
+            const result = spawnSync(cli, [file], { encoding: "utf8", timeout: 600_000 });
+            requireClean(result, "the dump CLI", file);
+            carried = new Set(fields.filter((name) => new RegExp(`\\s${name}="`, "u").test(result.stdout)));
+        } else {
+            const bound = census.perCaseBound.get(entry.name);
+            if (!bound) continue;
+            carried = new Set(fields.filter((name) => [...bound.keys()].some((key) => key.endsWith(`.${name}`))));
+        }
+        for (const name of carried) {
+            if (!declared.has(name)) {
+                failures.push(
+                    `${entry.name} builds a tree carrying ${name}, which no reference builds, and does not ` +
+                        `declare it -- so its number against a reference would be printed as a comparison`
+                );
+            }
+        }
+        for (const name of declared) {
+            if (fields.includes(name) && !carried.has(name)) {
+                failures.push(
+                    `${entry.name} declares ${name}, which its tree does not carry -- a comparison demoted ` +
+                        `to a bound is a regression nobody would rank`
+                );
+            }
+        }
+    }
+    return failures;
+}
+
+/**
+ * The invariants a LOGICAL isomorph rests on, checked against the parser.
+ *
+ * A substitution isomorph is the same document under a change of marker, so the
+ * pair is held by the two trees being identical. Where no substitution can pair
+ * a dialect construct with a CommonMark one, the corpus pairs the GRAMMAR
+ * instead: two productions of the same shape whose subsequent operation is the
+ * same. An explicit anchor binds a name to the block it sits on; a link
+ * reference definition binds a name to a target. One block and one
+ * name-to-target binding either way -- but written out, they are not the same
+ * bytes and not the same tree, so nothing about the pair can be read off a
+ * comparison of the two dumps.
+ *
+ * What is read off the parser instead is what the pair claims:
+ *
+ *   Both sides built the SAME NUMBER of the paired construct, each side counted
+ *   by the kind it builds. The corpus generates them to an equal count, which is
+ *   arithmetic; this is the parser agreeing that the bytes it was handed came
+ *   out that way. For the anchor pair it is also what proves the reference
+ *   side's definitions were CONSUMED: a definition the parser declined to read
+ *   as one stays a paragraph, and the count doubles.
+ *
+ *   And, where a pair names a `binding`, the declaring side BOUND that many
+ *   names while the reference side bound none in its tree -- its bindings are in
+ *   the reference map, which is the whole reason the two spellings pair and the
+ *   whole reason their trees differ.
+ */
+function logicalIsomorphs() {
+    return (
+        JSON.parse(fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8"))
+            .logicalIsomorphs ?? []
+    );
+}
+
+/* What the GENERATOR said it emitted, written beside the corpus it wrote. */
+function generatedUnits(directory) {
+    const file = path.join(directory, "units.json");
+    if (!fs.existsSync(file)) fail(`the corpus generator wrote no ${path.basename(file)} beside its documents`);
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function logicalPairFailures(census, pairs, units) {
+    /* The messages, AND the set of pairs they came from. One pair can break
+     * several invariants at once -- a binding pair fails once per side, and a
+     * pair naming three states can fail three times -- so subtracting the
+     * MESSAGE count from the pair count under-reported how many held, and with
+     * enough messages would have printed a negative numerator. The collector
+     * records which pair was being checked when each message was pushed, so
+     * every existing `failures.push` stays as it is. */
+    const messages = [];
+    const broken = new Set();
+    let current = null;
+    const failures = {
+        get length() {
+            return messages.length;
+        },
+        push(message) {
+            messages.push(message);
+            if (current !== null) broken.add(current);
+        }
+    };
+    for (const pair of pairs) {
+        current = pair.case;
+        const sides = {
+            case: { name: pair.case, kind: pair.counts.case },
+            isomorph: { name: pair.isomorph, kind: pair.counts.isomorph }
+        };
+        const counts = census.perCaseCounts.get(pair.case);
+        const twinCounts = census.perCaseCounts.get(pair.isomorph);
+        if (!counts || !twinCounts) {
+            failures.push(`${pair.case} is paired with ${pair.isomorph}, and the corpus did not build both documents`);
+            continue;
+        }
+        const built = counts.get(sides.case.kind) ?? 0;
+        const twinBuilt = twinCounts.get(sides.isomorph.kind) ?? 0;
+        if (built !== twinBuilt || built === 0) {
+            failures.push(
+                `${pair.case} builds ${built} ${sides.case.kind} nodes and ${pair.isomorph} builds ` +
+                    `${twinBuilt} ${sides.isomorph.kind}. A logical pair compares two spellings of one ` +
+                    `production only while both documents hold the same number of it, and a count of zero ` +
+                    `means one side stopped building the construct the pair is about`
+            );
+        }
+        /* Where the two spellings build DIFFERENT kinds, the count above is
+         * already proof that each side recognised its own: a span that stopped
+         * being a span is a link or a text run, and its count goes to zero.
+         * Where they build the SAME kind it proves nothing -- a task marker the
+         * parser stopped reading is still a list item -- so the pair must name
+         * the field that tells the two apart, and the audit refuses a pair that
+         * does not. */
+        /* The THIRD way a same-kind pair can be held, and the one that reaches
+         * what a field cannot: a declared grammar STATE only the dialect
+         * spelling can reach. Two ordered lists both build List and ListItem
+         * whatever their markers say, and the field that tells them apart --
+         * `variant=alpha(lowercased=true)` against `variant=decimal` -- prints
+         * unquoted, so it is not a binding in the sense above. Naming the state
+         * says the same thing with the vocabulary the manifest already
+         * declares, and the predicate that reads it is the one the conformance
+         * corpus is held to. */
+        for (const [side, wanted] of Object.entries(pair.demonstrates ?? {})) {
+            const reached = census.perCaseStates.get(sides[side].name);
+            if (!reached) {
+                failures.push(
+                    `${sides[side].name} declares states to demonstrate and the corpus dumped no tree for it`
+                );
+                continue;
+            }
+            for (const state of wanted) {
+                if (!(state in stateValidators)) {
+                    failures.push(`${sides[side].name} names ${state}, which is not a declared grammar state`);
+                } else if (!reached.has(state)) {
+                    failures.push(
+                        `${sides[side].name} does not demonstrate ${state}, which the pair names as what ` +
+                            `distinguishes this side. The count alone cannot see the difference, so the pair ` +
+                            `is no longer evidence of anything`
+                    );
+                }
+            }
+        }
+        if (
+            sides.case.kind === sides.isomorph.kind &&
+            !pair.binding &&
+            !pair.fallback &&
+            !pair.demonstrates?.case?.length
+        ) {
+            failures.push(
+                `${pair.case} and ${pair.isomorph} both build ${sides.case.kind}, so an equal count is ` +
+                    `not evidence that either side still parses as the pair claims. Such a pair must ` +
+                    `name the binding that distinguishes them, the kind they FALL BACK to when the ` +
+                    `construct stops being recognised, or the grammar state this side demonstrates and ` +
+                    `the other cannot`
+            );
+        }
+        /* The other way a same-kind pair can be held. Where a construct that
+         * stops being recognised DEGRADES into a different kind -- a simple
+         * table whose dash run is no longer read is a paragraph, not a table --
+         * the count is evidence after all, and what makes it evidence is that
+         * the fallback is absent. A task marker has no fallback in this sense:
+         * an item whose marker went unread is still a list item, which is why
+         * that pair names a binding instead. */
+        for (const [side, { name }] of Object.entries(sides)) {
+            if (!pair.fallback) break;
+            const counts_ = side === "case" ? counts : twinCounts;
+            const fell = counts_.get(pair.fallback) ?? 0;
+            if (fell !== 0) {
+                failures.push(
+                    `${name} builds ${fell} ${pair.fallback}, which is what this construct degrades to ` +
+                        `when it stops being recognised. The pair is held by that kind being absent, so ` +
+                        `its presence means some of the document is no longer the construct being paired`
+                );
+            }
+        }
+        /* A pair whose claim names more than one construct must have all of them
+         * checked. The specimen pair carries a CALL as well as a definition on
+         * each side, and counting definitions alone leaves the call unheld: an
+         * unreferenced specimen is retained on this side, so if `@spec-{n}`
+         * stopped being recognised the definition counts would still match while
+         * the reference side went on parsing footnote calls, and the ratio would
+         * no longer measure the workload the pair declares. */
+        for (const also of pair.alsoCounts ?? []) {
+            const here = counts.get(also.case) ?? 0;
+            const there = twinCounts.get(also.isomorph) ?? 0;
+            if (here !== there || here === 0) {
+                failures.push(
+                    `${pair.case} builds ${here} ${also.case} and ${pair.isomorph} builds ${there} ` +
+                        `${also.isomorph}. The pair's workload names this construct too, so an equal ` +
+                        `count of the primary one is not evidence that both sides still do the same job`
+                );
+            }
+        }
+        /* THE COUNT AGAINST THE GENERATOR'S ARITHMETIC, not just against the
+         * other side. Equal nonzero totals say the two documents agree with each
+         * other and nothing about whether either agrees with what was ASKED for:
+         * both sides recognising the same subset of their units, or a unit
+         * template quietly emitting two of the construct where the claim says
+         * one, passes that check untouched. So each side declares how many of
+         * the construct one unit is worth, plus whatever a head or tail
+         * contributes once. The metadata pairs are the case worth naming -- an
+         * envelope is recognised once per document, so their units are MEMBER
+         * LINES and one unit is worth NO metadata node at all, with the single
+         * node coming from the head. */
+        for (const [side, kinds] of Object.entries(pair.perUnit ?? {})) {
+            const { name } = sides[side];
+            const emitted = units[name];
+            if (emitted === undefined) {
+                failures.push(`${name} declares constructs per unit and the generator recorded no unit count for it`);
+                continue;
+            }
+            /* EVERY construct the pair counts, not only the primary one. Two
+             * templates that both lost the same secondary work would still
+             * agree with each other and still satisfy a per-unit expectation
+             * written for the container alone. */
+            const wanted = new Set([sides[side].kind, ...(pair.alsoCounts ?? []).map((also) => also[side])]);
+            for (const kind of wanted) {
+                const expected = kinds[kind];
+                if (!expected) {
+                    failures.push(
+                        `${name} counts ${kind} and declares no per-unit expectation for it, so the corpus ` +
+                            `never checks that construct against what the generator emitted`
+                    );
+                    continue;
+                }
+                const built = (side === "case" ? counts : twinCounts).get(kind) ?? 0;
+                const want = expected.each * emitted + (expected.plus ?? 0);
+                if (built !== want) {
+                    failures.push(
+                        `${name} was generated with ${emitted} units and declares ${expected.each} ${kind} each` +
+                            `${expected.plus ? ` plus ${expected.plus}` : ""}, which is ${want}, but the parser ` +
+                            `built ${built}. An equal count on the two sides is agreement between the documents; ` +
+                            `this is agreement with what the corpus asked for`
+                    );
+                }
+            }
+        }
+        /* A kind a NAMED SIDE must not build at all. `fallback` is the same
+         * check applied to both sides at once, and where a pair's two spellings
+         * degrade differently there is no kind to name for both: a trailing
+         * table caption that went unread is a Paragraph, while the list item it
+         * pairs with holds Paragraphs whether or not it absorbed anything. So
+         * the absence is declared per side, and the side that has one is held
+         * to it. */
+        for (const [side, kinds] of Object.entries(pair.absent ?? {})) {
+            const counts_ = side === "case" ? counts : twinCounts;
+            for (const kind of kinds) {
+                const built = counts_.get(kind) ?? 0;
+                if (built !== 0) {
+                    failures.push(
+                        `${sides[side].name} builds ${built} ${kind}, which the pair declares this side ` +
+                            `must not build at all. Its presence means part of the document stopped ` +
+                            `being the construct the pair is about`
+                    );
+                }
+            }
+        }
+        if (!pair.binding) continue;
+        const { declares } = pair.binding;
+        for (const [side, { name, kind }] of Object.entries(sides)) {
+            /* One field name where both sides spell the binding the same way, and
+             * one per side where they do not. A callout binds its variant and a
+             * task item binds its marker, and those are the same production --
+             * a bracketed token at the start of a container's first line, taken
+             * out of the content and kept as a field -- under two field names.
+             * Naming only one of them would leave the other side's recognition
+             * unproven, which is exactly what a binding exists to prove. */
+            const field = typeof declares === "string" ? declares : declares[side];
+            const nodes = (side === "case" ? counts : twinCounts).get(kind) ?? 0;
+            const bound = census.perCaseBound.get(name)?.get(`${kind}.${field}`) ?? 0;
+            /* Every node of the kind on a declaring side, and none at all on a
+             * side that declares OUT OF BAND -- an anchor binds on the block it
+             * sits on, a link reference definition binds into the reference map
+             * and leaves no node at all, and that asymmetry is the pair. */
+            const expected = pair.binding.sides.includes(side) ? nodes : 0;
+            if (bound !== expected) {
+                failures.push(
+                    `${name} builds ${nodes} ${kind} nodes and ${bound} of them bind ${field}, ` +
+                        `where the pair claims ${expected}. ${
+                            expected
+                                ? "Every node on this side must declare; one that declares nothing has no " +
+                                  "counterpart on the other side"
+                                : "This side declares out of band, and a binding that reached the tree means " +
+                                  "the corpus wrote the other side's spelling here"
+                        }`
+                );
+            }
+        }
+    }
+    return { messages, broken };
+}
+
+/**
+ * WHICH DECLARED GRAMMAR STATES HAVE A SAME-JOB NUMBER, AND WHICH ONLY A BOUND.
+ *
+ * Node kinds are the coarse question and this is the fine one. The corpus can
+ * build every one of the 43 kinds and still reach a state -- a table cell that
+ * spans rows, a roman-numeral list, a metadata scalar that is a number -- only
+ * inside a case with no reference to divide by. Such a state is measured as a
+ * BOUND, and a bound is not a comparison however many kinds surround it.
+ *
+ * A state counts as measured when SOME case that demonstrates it is one the
+ * driver will publish a same-job ratio for: either half of a pair, or a case
+ * whose syntax a reference reads the same way and whose tree carries no
+ * referenceless field. That is the same test the driver applies, written once
+ * here so the audit and the report cannot disagree about which cases are
+ * comparisons.
+ *
+ * The complexity shapes are absent from the census for the RSS reason given
+ * above, so a state only they reach reads as unreached. None does today; if one
+ * ever did, the answer is a case that builds it at ordinary size, not an
+ * exception here.
+ */
+/**
+ * A state that CANNOT have a same-job ratio, and the proof that says so.
+ *
+ * Two of the 131 are reachable only through a construct this corpus has proved
+ * unpairable -- an inline footnote's content, and a specimen definition with no
+ * label. No case can measure them against a reference, because no reference
+ * production of that shape exists to write one against. Counting them as
+ * outstanding work would leave a number that can never be closed and a reader
+ * with no way to tell "nobody has written this yet" from "there is nothing to
+ * write".
+ *
+ * So each is declared here against the `unpairable` entry that binds it, and
+ * the audit checks the declaration in BOTH directions: the proof must exist,
+ * and the state must really be a bound. A state that became measurable would
+ * otherwise keep its exemption and the coverage number would understate itself.
+ */
+function statesBoundByProof() {
+    const manifest = JSON.parse(
+        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
+    );
+    const declared = manifest.statesBoundByProof ?? {};
+    const proofs = new Set((manifest.unpairable ?? []).map((entry) => entry.production));
+    const failures = [];
+    for (const [state, production] of Object.entries(declared)) {
+        if (!(state in stateValidators))
+            failures.push(`statesBoundByProof names ${state}, which is not a declared grammar state`);
+        else if (!proofs.has(production)) {
+            failures.push(
+                `statesBoundByProof says ${state} is bound by "${production}", and corpus.json holds no ` +
+                    `unpairable entry of that name. A state is exempt only against a proof that exists`
+            );
+        }
+    }
+    return { declared, failures };
+}
+
+function corpusCases() {
+    return (
+        JSON.parse(fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")).cases ??
+        []
+    );
+}
+
+function stateReach(census, manifestCases, pairs, logical) {
+    const paired = new Set();
+    /* A substitution pair is parsed into `{ name, isomorph }` and a declaration
+     * pair keeps the manifest's `{ case, isomorph }`, so both spellings of the
+     * dialect side are read. Taking only one of them silently dropped the three
+     * substitution pairs and reported their states as bounds. */
+    for (const declaration of [...pairs, ...logical]) {
+        paired.add(declaration.case ?? declaration.name);
+        paired.add(declaration.isomorph);
+    }
+    const publishes = new Map();
+    for (const entry of manifestCases) {
+        publishes.set(
+            entry.name,
+            paired.has(entry.name) ||
+                ((entry.dialect === "commonmark" || entry.gfm === true) && !(entry.carries ?? []).length)
+        );
+    }
+    const measured = [];
+    const boundOnly = [];
+    const unreached = [];
+    for (const state of Object.keys(stateValidators)) {
+        const reaching = [...census.perCaseStates].filter(([, states]) => states.has(state)).map(([name]) => name);
+        if (!reaching.length) unreached.push(state);
+        else if (reaching.some((name) => publishes.get(name))) measured.push(state);
+        else boundOnly.push(`${state} -- reached only by ${reaching.sort().join(", ")}`);
+    }
+    return { measured, boundOnly, unreached };
 }
 
 /* A function only brushed by a guard clause is not a grammar the corpus drives,
@@ -482,8 +1036,14 @@ const driven = new Set();
 const undriven = [];
 const drifted = [];
 const pairs = isomorphPairs();
+const logical = logicalIsomorphs();
+const referenceless = referencelessFields();
 let notIsomorphic;
+let miscarried;
+let unequalPairs;
 let unbuilt;
+let states;
+let exempt;
 {
     const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), "corpus-coverage-"));
     try {
@@ -498,6 +1058,10 @@ let unbuilt;
          * a property of the two documents as written, and the corpus repeats
          * each of them to a byte target, which says nothing further about it. */
         notIsomorphic = isomorphFailures(binaries.dump, pairs);
+        unequalPairs = logicalPairFailures(census, logical, generatedUnits(corpusDir));
+        miscarried = carriedFailures(binaries.dump, census, path.dirname(documents[0]), referenceless);
+        states = stateReach(census, corpusCases(), pairs, logical);
+        exempt = statesBoundByProof();
         for (const [name, expected] of declaredBuilds()) {
             const built = census.perCase.get(name);
             if (!built) {
@@ -550,13 +1114,30 @@ let unbuilt;
 process.stdout.write("\n");
 
 const orphaned = samplesWithoutTheirOwnCase();
+const strayed = samplesOutsideTheirAggregate();
 process.stdout.write(
     `  node kinds built     ${kinds.length - unbuilt.length}/${kinds.length}\n` +
         `  grammars driven      ${required.length - undriven.length}/${required.length}\n` +
         `  samples with a case  ${sampleCount - orphaned.length}/${sampleCount}\n` +
+        `  samples in their aggregate ${strayed.length ? `${strayed.length} are NOT` : "all"}\n` +
         `  cases still building ${declaredBuilds().size - drifted.length}/${declaredBuilds().size}\n` +
-        `  isomorph pairs held  ${pairs.length - notIsomorphic.length}/${pairs.length}\n`
+        `  isomorph pairs held  ${pairs.length - notIsomorphic.length}/${pairs.length}\n` +
+        `  logical pairs held   ${logical.length - unequalPairs.broken.size}/${logical.length}\n` +
+        `  referenceless fields ${referenceless.length}, declared by every case that carries one` +
+        `${miscarried.length ? ` -- ${miscarried.length} do not` : ""}\n` +
+        `  grammar states measured ${states.measured.length}/${Object.keys(stateValidators).length}` +
+        ` (${states.boundOnly.length} reached only as a bound, ${states.unreached.length} not reached` +
+        `${Object.keys(exempt.declared).length ? `, of which ${Object.keys(exempt.declared).length} bound by proof` : ""})\n`
 );
+
+if (options.states) {
+    if (states.boundOnly.length) {
+        process.stdout.write(`\n  reached only as a bound:\n    ${states.boundOnly.join("\n    ")}\n`);
+    }
+    if (states.unreached.length) {
+        process.stdout.write(`\n  not reached by any case:\n    ${states.unreached.join("\n    ")}\n`);
+    }
+}
 
 if (options.json) {
     fs.writeFileSync(
@@ -573,10 +1154,68 @@ if (options.json) {
 }
 
 const failures = [];
+if (strayed.length) {
+    failures.push(
+        `the concatenated cases exist so a construct is measured beside the others, and these samples are ` +
+            `not in the aggregate their dialect puts them in:\n    ${strayed.join("\n    ")}`
+    );
+}
+failures.push(...exempt.failures);
+/* An exemption is a claim that the corpus REACHES the state and can only reach
+ * it as a bound, and it is held to both halves. A state the corpus has learned
+ * to measure must lose its exemption in the same change, or the claim
+ * understates the corpus. A state the corpus has stopped reaching at all must
+ * fail: the exemption would otherwise keep the gate quiet while the only case
+ * demonstrating it was edited away, and a coverage number nobody can lose is
+ * not a coverage number. */
+for (const state of Object.keys(exempt.declared)) {
+    if (states.measured.includes(state)) {
+        failures.push(
+            `${state} is declared bound by a proof and the corpus now measures it with a same-job ` +
+                `ratio. Remove the exemption rather than leaving a claim that understates the corpus`
+        );
+    } else if (states.unreached.includes(state)) {
+        failures.push(
+            `${state} is declared bound by a proof, and no case reaches it at all any more. The ` +
+                `exemption says the corpus reaches it and cannot measure it, not that the corpus ` +
+                `stopped building it`
+        );
+    }
+}
+/* THE RATCHET, and it is an identity rather than a count. A floor on how MANY
+ * states are measured passes a change that loses one and gains another, which
+ * is exactly the silent regression the floor was written to catch. Coverage is
+ * complete, so the invariant can be stated outright instead: every declared
+ * grammar state is either measured with a same-job ratio or exempt against a
+ * named proof, and anything else is named here. */
+{
+    const missing = Object.keys(stateValidators).filter(
+        (state) => !states.measured.includes(state) && !(state in exempt.declared)
+    );
+    if (missing.length) {
+        failures.push(
+            `these declared grammar states have neither a same-job ratio nor an entry in ` +
+                `statesBoundByProof, so the corpus measures them only as bounds and says nowhere why:` +
+                `\n    ${missing.join("\n    ")}`
+        );
+    }
+}
 if (notIsomorphic.length) {
     failures.push(
         `these pairs are not the same document under a change of marker, so the ratio between them ` +
             `would attribute a difference in the trees to a grammar:\n    ${notIsomorphic.join("\n    ")}`
+    );
+}
+if (miscarried.length) {
+    failures.push(
+        `a ratio is a comparison only where both engines built the same tree, and these cases do not ` +
+            `line up with what their trees carry:\n    ${miscarried.join("\n    ")}`
+    );
+}
+if (unequalPairs.messages.length) {
+    failures.push(
+        `a logical pair compares two spellings of one declaration, and these no longer hold ` +
+            `what that claims:\n    ${unequalPairs.messages.join("\n    ")}`
     );
 }
 if (drifted.length) {
