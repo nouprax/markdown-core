@@ -628,6 +628,25 @@
             "builds": ["CodeBlock"]
         },
         {
+            "name": "pair-deflist-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "Term {n}\n: A definition body for term {n}.\n\n",
+                "scales": "definitions"
+            },
+            "builds": ["DefinitionList", "Definition"]
+        },
+        {
+            "name": "pair-deflist-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "- Term {n}\n\n  A definition body for term {n}.\n\n",
+                "match": "pair-deflist-dialect",
+                "scales": "loose list items"
+            },
+            "builds": ["List", "ListItem"]
+        },
+        {
             "name": "pair-comment-common",
             "dialect": "commonmark",
             "samples": ["pair-comment-common.md"],
@@ -883,6 +902,15 @@
                 "isomorph": "CodeBlock"
             },
             "claim": "A properties envelope and a fenced code block are the same production: a leaf block opened and closed by a delimiter line, whose body is NOT parsed as Markdown. Same shape, different terminal -- `---` against a run of three or more backticks. What each does with the body afterwards, decode it into named fields or keep it literal, is the measurement and not part of the pairing. This pair is shaped unlike every other one in the corpus and deliberately so: properties.md says only one envelope is recognised, at the document's start, so the workload CANNOT scale by repeating the construct. It scales by the member lines inside a single envelope, which is why both sides carry a head and a tail and why `units` counts lines here rather than constructs. The earlier refusal -- once per document, no count to scale -- mistook the construct for the dimension."
+        },
+        {
+            "case": "pair-deflist-dialect",
+            "isomorph": "pair-deflist-common",
+            "counts": {
+                "case": "Definition",
+                "isomorph": "ListItem"
+            },
+            "claim": "A definition and a loose list item are the same production: a first line parsed as INLINE content, plus block content bound to it by indentation, under ONE node. The trees show it -- a Definition owns DefinitionTerm(inlines) and DefinitionBody(blocks) where a loose ListItem owns Paragraph(inlines) and the same blocks, and that the dialect materialises the two halves as owned groups where the list keeps flat children is node materialisation, which is never grounds to refuse a pair. This replaces a withdrawn proof that said CommonMark has no production grouping a preceding line's inlines with a following block under one node; a loose list item is exactly that. What differs is where the marker sits: a list item is recognised at its own first line, a definition promotes the PRECEDING line when `: ` arrives on the next, so it needs lookahead. That is the thing this pair measures, and it is not a reason to refuse -- GFM already promotes a paragraph by the delimiter row beneath it."
         }
     ],
     "unpairable": [
@@ -904,13 +932,6 @@
             "production": "multiline table, and the grid table with it",
             "whyTheEarlierProofWasWrong": "Both were refused because their cells hold BLOCK content and no reference table has block cells. That answers the wrong question. The criterion is not whether a reference has a TABLE of this shape, it is whether a reference has a PRODUCTION of this shape -- and a cell holding blocks is per-line positional slicing followed by block parsing, which both CommonMark containers do. A block quote strips `> ` from each line, a list item strips an indent width established by its marker, a multiline cell takes a column range established by the segmented boundary; all three join the remainders and parse them as blocks. The trees show it: a one-column multiline cell and a list item both produce Paragraph > Text, SoftBreak, Text with identical content.",
             "candidate": "A one-column multiline table of N rows against a bullet list of N items. What is genuinely unequal, and must be stated rather than hidden: the table carries three container levels (TableBody, TableRow, TableCell) where the list carries one (ListItem). That is node materialisation and is NOT grounds to refuse a pair -- it is the measurement. What still needs deciding before this is built is whether the 2D case pairs at all: an N-column table slices each line into N ranges established by one boundary line, and N parallel lists are not one production.",
-            "status": "OPEN -- to be built and tested, not asserted either way"
-        },
-        {
-            "production": "definition list",
-            "whyTheEarlierProofWasWrong": "It said CommonMark has no production that groups a preceding line's inlines with a following block under a single node. A LOOSE LIST ITEM does exactly that. Side by side: a Definition owns DefinitionTerm(Text \"Markdown\") plus DefinitionBody(Paragraph, Paragraph); a loose ListItem owns Paragraph(\"Markdown\") plus Paragraph, Paragraph. Both are a first line parsed as inline content with block content bound to it by indentation, under one node. That the definition materialises the term and body as owned groups where the list item keeps flat children is node materialisation, which this corpus's own rule says is never grounds to refuse a pair.",
-            "candidate": "`term\\n: body` against `- term\\n\\n  body`, sized by count of definitions against list items.",
-            "whatIsGenuinelyUnsettled": "Where the marker sits. A list item is recognised at its own first line; a definition promotes the PRECEDING line when the `: ` marker arrives on the next one, so it needs lookahead. That is a real difference in the recognition and it is the thing to decide. It is not decisive on its own, because GFM already has promotion-by-what-follows: a pipe table's header is a paragraph line promoted by the delimiter row beneath it.",
             "status": "OPEN -- to be built and tested, not asserted either way"
         },
         {
