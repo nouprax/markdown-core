@@ -450,6 +450,11 @@ For a **declaration** pair, where there is no identical tree to compare:
   evidence after all, and what makes it evidence is that the fallback never
   appears. A task marker has no fallback in this sense, which is why that pair
   names a binding instead.
+- where a pair names `absent`, the sides it lists must build **none** of the
+  kinds it names. It is `fallback` declared per side, for a pair whose two
+  spellings degrade differently and so have no kind to name for both: a trailing
+  table caption that went unread is a paragraph, while the list item it pairs
+  with holds paragraphs whether or not it absorbed anything.
 - where a pair names `alsoCounts`, those kinds must match too. A pair's claim
   can name more than one construct, and counting only the primary one leaves the
   rest unheld: the grid-cell pair counts `Paragraph` alongside the cell because

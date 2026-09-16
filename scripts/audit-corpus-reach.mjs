@@ -562,6 +562,26 @@ function logicalPairFailures(census, pairs) {
                 );
             }
         }
+        /* A kind a NAMED SIDE must not build at all. `fallback` is the same
+         * check applied to both sides at once, and where a pair's two spellings
+         * degrade differently there is no kind to name for both: a trailing
+         * table caption that went unread is a Paragraph, while the list item it
+         * pairs with holds Paragraphs whether or not it absorbed anything. So
+         * the absence is declared per side, and the side that has one is held
+         * to it. */
+        for (const [side, kinds] of Object.entries(pair.absent ?? {})) {
+            const counts_ = side === "case" ? counts : twinCounts;
+            for (const kind of kinds) {
+                const built = counts_.get(kind) ?? 0;
+                if (built !== 0) {
+                    failures.push(
+                        `${sides[side].name} builds ${built} ${kind}, which the pair declares this side ` +
+                            `must not build at all. Its presence means part of the document stopped ` +
+                            `being the construct the pair is about`
+                    );
+                }
+            }
+        }
         if (!pair.binding) continue;
         const { declares } = pair.binding;
         for (const [side, { name, kind }] of Object.entries(sides)) {

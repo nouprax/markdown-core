@@ -628,6 +628,26 @@
             "builds": ["CodeBlock"]
         },
         {
+            "name": "pair-tcaption-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "| h |\n| --- |\n| v |\n\n: Caption {n}\n\n---\n\n",
+                "scales": "trailing captions"
+            },
+            "gfm": true,
+            "builds": ["Table", "TableCaption"]
+        },
+        {
+            "name": "pair-tcaption-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "- Row {n}\n\n  Mid {n}\n\n  Caption {n}\n\n---\n\n",
+                "match": "pair-tcaption-dialect",
+                "scales": "loose list continuations"
+            },
+            "builds": ["List", "ListItem"]
+        },
+        {
             "name": "pair-formulapromo-dialect",
             "dialect": "extended",
             "generated": {
@@ -1065,6 +1085,28 @@
             "claim": "A properties envelope and a fenced code block are the same production: a leaf block opened and closed by a delimiter line, whose body is NOT parsed as Markdown. Same shape, different terminal -- `---` against a run of three or more backticks. What each does with the body afterwards, decode it into named fields or keep it literal, is the measurement and not part of the pairing. This pair is shaped unlike every other one in the corpus and deliberately so: properties.md says only one envelope is recognised, at the document's start, so the workload CANNOT scale by repeating the construct. It scales by the member lines inside a single envelope, which is why both sides carry a head and a tail and why `units` counts lines here rather than constructs. The earlier refusal -- once per document, no count to scale -- mistook the construct for the dimension."
         },
         {
+            "case": "pair-tcaption-dialect",
+            "isomorph": "pair-tcaption-common",
+            "counts": {
+                "case": "Table",
+                "isomorph": "List"
+            },
+            "alsoCounts": [
+                {
+                    "case": "TableCaption",
+                    "isomorph": "ListItem"
+                },
+                {
+                    "case": "ThematicBreak",
+                    "isomorph": "ThematicBreak"
+                }
+            ],
+            "absent": {
+                "case": ["Paragraph"]
+            },
+            "claim": "The TRAILING table caption and a loose list item's continuation are the same production: a construct that a BLANK LINE DOES NOT CLOSE, absorbing the next line that matches its own continuation rule as a child holding inline content. A blank line closes every other leaf and container in CommonMark; a list is the exception, and this table is the dialect's. The continuation rules differ -- the caption's is the `: ` marker, the list item's is the content indent -- and that is what the pair measures. The earlier proof is the same one withdrawn for the leading form, and it was wrong here for a different reason: it said neither grammar adopts a FINISHED neighbouring block, but neither construct is finished at the blank line. The table is not done until the optional caption is resolved, exactly as a list is not done until a line arrives that is not one of its items. Both sides carry a thematic break to end the construct, and the twin carries three blocks per item against the table's three inline-bearing lines so the inline work matches. What holds the dialect side is the `absent` declaration: a caption line that went unread is a Paragraph, and this document must build none. The twin cannot be held the same way -- a list item holds Paragraphs whether or not it absorbed anything -- so the absence is declared per side rather than for both."
+        },
+        {
             "case": "pair-formulapromo-dialect",
             "isomorph": "pair-formulapromo-common",
             "counts": {
@@ -1204,11 +1246,6 @@
             "whyTheEarlierProofWasWrong": "Both the multiline and the grid table were refused because their cells hold BLOCK content and no reference table has block cells. That answers the wrong question: the criterion asks for a reference PRODUCTION of this shape, not a reference table. The grid half of that refusal is now a built pair -- a one-column grid cell against a loose list item, both a per-line positional cut whose remainder is parsed as blocks -- so the block-cell argument is settled and this entry is only about what the grid pair does not reach.",
             "whatIsGenuinelyUnsettled": "The multiline table cannot be reduced to one column the way the grid table can. It establishes its columns from a SEGMENTED dash line, and a single unbroken dash run is a thematic break or a setext underline, so there is no one-column multiline table to pair. That leaves its row production at K>=2: one line cut into K ranges at positions established by one earlier line. A reference container cuts each line ONCE, at a prefix, and K side-by-side containers are K productions rather than one. Whether the K-way cut pairs with anything, or whether the honest move is to pair at the CELL level and let the row-level slicing show up as the dialect side's extra, is the thing to decide.",
             "status": "OPEN -- to be built and tested, not asserted either way"
-        },
-        {
-            "production": "table caption, TRAILING form only",
-            "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
-            "status": "OPEN -- demoted pending a re-derivation that survives attack"
         }
     ]
 }
