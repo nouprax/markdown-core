@@ -1839,12 +1839,14 @@ function markdownReport(report) {
                 "- **Citations** decompose one bracket group into a list of keyed items with" +
                     " parsed affixes. No CommonMark production decomposes a bracket group.",
                 "",
-                "Three more are pairable against cmark-gfm rather than cmark and are not paired" +
-                    " here yet: a **specimen** against a GFM footnote definition (both declare a" +
-                    " label, own block content, and leave ordinary content for a side list), a" +
-                    " **task-state marker** against a GFM task list item, and a bare **citation" +
-                    " key** against a GFM extended autolink. Until the pair table can name a" +
-                    " reference other than cmark, those stay bounds.",
+                "One candidate was considered against cmark-gfm and rejected: a bare **citation" +
+                    " key** and a GFM extended autolink are the same shape in the source -- a" +
+                    " recognised prefix at a word boundary followed by a raw run -- but not in" +
+                    " what they build. The autolink materialises a `Link` holding one `Text`" +
+                    " child; the citation materialises a `Cite`, a `Citation` and two affix" +
+                    " slots. Four nodes against two is not one production measured twice, and" +
+                    " the extra nodes are on the dialect side, so pairing them would have" +
+                    " flattered the reference rather than this parser. It stays a bound.",
                 "",
                 "Those are bounds, and a bound is reported as a bound.",
                 ""
