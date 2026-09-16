@@ -159,8 +159,10 @@ function main() {
      * reference element is a failure rather than something skipped. */
     const elements = manifest.substitutionReference ?? {};
     const substitutions = manifest.isomorphs ?? [];
+    const reached = new Set();
     for (const pair of substitutions) {
         const mine = census(pair.isomorph);
+        for (const kind of mine.keys()) reached.add(kind);
         let broke = false;
         const shown = [];
         for (const [kind, built] of mine) {
@@ -188,7 +190,9 @@ function main() {
         }
         /* A declared element nothing ever builds rots the same way a stale
          * `shared` entry does, so it is named once across the three pairs
-         * below rather than passed over here. */
+         * below rather than passed over here. The kinds are collected as the
+         * loop goes, since dumping these documents a second time to ask the
+         * same question costs a full parse each. */
         if (broke) {
             brokenSubstitutions.add(pair.case);
             continue;
@@ -196,7 +200,6 @@ function main() {
         process.stdout.write(`  ${pair.case.padEnd(28)} ${shown.join("  ")}\n`);
     }
     {
-        const reached = new Set(substitutions.flatMap((pair) => [...census(pair.isomorph).keys()]));
         const stale = Object.keys(elements).filter((kind) => !reached.has(kind));
         if (stale.length) {
             failures.push(
