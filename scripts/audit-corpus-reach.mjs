@@ -314,6 +314,7 @@ function corpusDocuments(directory) {
 async function kindsProduced(cli, documents) {
     const seen = new Set();
     const perCase = new Map();
+    const perCaseCounts = new Map();
     for (const document of documents) {
         /* The complexity shapes are excluded, and only here. `chain-list-depth`
          * is 32,765 levels deep, and `markdown_core_document_dump` materialises
@@ -326,6 +327,7 @@ async function kindsProduced(cli, documents) {
          * document. */
         if (path.basename(document).startsWith("chain-")) continue;
         const mine = new Set();
+        const counts = new Map();
         const child = spawn(cli, [document], { stdio: ["ignore", "pipe", "ignore"], timeout: 600_000 });
         const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
         for await (const line of lines) {
@@ -333,14 +335,66 @@ async function kindsProduced(cli, documents) {
             if (match) {
                 seen.add(match[1]);
                 mine.add(match[1]);
+                /* Counted, not just noted. A stress pair is built on the two
+                 * sides carrying an EQUAL NUMBER of the construct, and the
+                 * parser is the only thing that knows how many a document
+                 * really has -- a pattern over the source counts what looks
+                 * like a heading, which is not the same question. */
+                counts.set(match[1], (counts.get(match[1]) ?? 0) + 1);
             }
         }
-        perCase.set(path.basename(document).replace(/\.x1\.md$/u, ""), mine);
+        const name = path.basename(document).replace(/\.x1\.md$/u, "");
+        perCase.set(name, mine);
+        perCaseCounts.set(name, counts);
         const [code, signal] = await new Promise((resolve) => child.on("close", (c, s) => resolve([c, s])));
         if (signal) fail(`the dump CLI was killed by ${signal} on ${path.basename(document)}`);
         if (code !== 0) fail(`the dump CLI exited ${code} on ${path.basename(document)}`);
     }
-    return { seen, perCase };
+    return { seen, perCase, perCaseCounts };
+}
+
+/**
+ * The equal-count invariant a stress pair rests on, checked against the parser.
+ *
+ * Where no substitution can pair a dialect construct with a CommonMark one, the
+ * corpus generates a PARITY WORKLOAD instead: a document that drives the
+ * reference's equivalent machinery the same number of times. That number is the
+ * whole claim. The generator sizes the pair from a pattern over the sample,
+ * which is a guess about what the parser will do with those bytes -- a `#` in a
+ * fenced block looks like a heading and is not one, and a setext heading is one
+ * and does not look like it. So the count is verified here, where the parser has
+ * actually run: the case's side is counted off its own tree, and the reference's
+ * side off the generated document, whose shape the corpus declares.
+ */
+function stressPairs() {
+    return (
+        JSON.parse(fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8"))
+            .stressPairs ?? []
+    );
+}
+
+function stressPairCounts(perCaseCounts, corpusDirectory, pairs) {
+    const failures = [];
+    for (const pair of pairs) {
+        const counts = perCaseCounts.get(pair.case);
+        if (!counts) continue;
+        const built = counts.get(pair.caseKind) ?? 0;
+        const document = path.join(corpusDirectory, `${pair.reference}.x1.md`);
+        if (!fs.existsSync(document)) {
+            failures.push(`${pair.case} is paired with ${pair.reference}, which the corpus did not generate`);
+            continue;
+        }
+        const emitted = (fs.readFileSync(document, "utf8").match(new RegExp(pair.referencePattern, "gmu")) ?? [])
+            .length;
+        if (built !== emitted) {
+            failures.push(
+                `${pair.case} builds ${built} ${pair.caseKind} nodes but ${pair.reference} carries ${emitted} ` +
+                    `of its paired construct. A stress pair compares two workloads only because their counts ` +
+                    `are equal; unequal counts make the ratio a comparison of one document's size with another's`
+            );
+        }
+    }
+    return failures;
 }
 
 /* A function only brushed by a guard clause is not a grammar the corpus drives,
@@ -483,6 +537,7 @@ const undriven = [];
 const drifted = [];
 const pairs = isomorphPairs();
 let notIsomorphic;
+let unequalPairs = [];
 let unbuilt;
 {
     const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), "corpus-coverage-"));
@@ -498,6 +553,7 @@ let unbuilt;
          * a property of the two documents as written, and the corpus repeats
          * each of them to a byte target, which says nothing further about it. */
         notIsomorphic = isomorphFailures(binaries.dump, pairs);
+        unequalPairs = stressPairCounts(census.perCaseCounts, path.dirname(documents[0]), stressPairs());
         for (const [name, expected] of declaredBuilds()) {
             const built = census.perCase.get(name);
             if (!built) {
@@ -555,7 +611,8 @@ process.stdout.write(
         `  grammars driven      ${required.length - undriven.length}/${required.length}\n` +
         `  samples with a case  ${sampleCount - orphaned.length}/${sampleCount}\n` +
         `  cases still building ${declaredBuilds().size - drifted.length}/${declaredBuilds().size}\n` +
-        `  isomorph pairs held  ${pairs.length - notIsomorphic.length}/${pairs.length}\n`
+        `  isomorph pairs held  ${pairs.length - notIsomorphic.length}/${pairs.length}\n` +
+        `  stress pairs matched ${stressPairs().length - unequalPairs.length}/${stressPairs().length}\n`
 );
 
 if (options.json) {
@@ -577,6 +634,12 @@ if (notIsomorphic.length) {
     failures.push(
         `these pairs are not the same document under a change of marker, so the ratio between them ` +
             `would attribute a difference in the trees to a grammar:\n    ${notIsomorphic.join("\n    ")}`
+    );
+}
+if (unequalPairs.length) {
+    failures.push(
+        `a stress pair compares two workloads only because they carry an equal count of the ` +
+            `construct, and these no longer do:\n    ${unequalPairs.join("\n    ")}`
     );
 }
 if (drifted.length) {
