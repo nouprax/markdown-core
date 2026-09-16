@@ -1,6 +1,19 @@
 {
     "schemaVersion": 2,
     "targetBytes": 65536,
+    "unmatchedFields": {
+        "anchor": {
+            "reason": "cmark's node has no anchor field. This dialect derives a slug for EVERY heading and registers it as a reference label, so a document holding a heading is not the tree cmark builds -- a permanent property of the dialect, not of any sample. The ratio is still a comparison once that work is taken off this side, because every edge below has no counterpart on cmark's: the heading's own inline parse is NOT excluded, since cmark runs it too inside cmark_parse_inlines.",
+            "stage": "buffer_to_ast",
+            "excludes": [
+                "finish_document -> markdown_core_block_finalize_heading_anchors",
+                "markdown_core_prepare_heading -> markdown_core_reference_create",
+                "markdown_core_prepare_heading -> markdown_core_resource_new",
+                "markdown_core_prepare_heading -> markdown_core_inline_reference_label_length",
+                "markdown_core_block_prepare_headings -> markdown_core_order_source_entries"
+            ]
+        }
+    },
     "requiredGrammars": {
         "S_attach_block_identifier": "block-identifier",
         "autolink_delim": "inline-autolink-rich",
@@ -86,7 +99,8 @@
             "name": "block-heading",
             "dialect": "commonmark",
             "samples": ["block-heading.md"],
-            "builds": ["Heading"]
+            "builds": ["Heading"],
+            "unmatched": ["anchor"]
         },
         {
             "name": "block-hr",
@@ -116,7 +130,8 @@
             "name": "block-lheading",
             "dialect": "commonmark",
             "samples": ["block-lheading.md"],
-            "builds": ["Heading"]
+            "builds": ["Heading"],
+            "unmatched": ["anchor"]
         },
         {
             "name": "block-list-flat",
@@ -454,7 +469,8 @@
                 "inline-newlines.md",
                 "lorem1.md",
                 "rawtabs.md"
-            ]
+            ],
+            "unmatched": ["anchor"]
         },
         {
             "name": "mixed-extended",

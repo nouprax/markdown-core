@@ -1007,6 +1007,13 @@ function buildCorpus(options, manifest) {
                 case: entry.name,
                 dialect: entry.dialect,
                 gfm: entry.gfm === true,
+                /* The AST fields this case's tree carries that cmark's has no
+                 * counterpart for. A non-empty list means the two engines did
+                 * NOT build the same tree, so the number against cmark is a
+                 * bound and not a comparison, whatever the syntax was.
+                 * `scripts/audit-corpus-reach.mjs` is what holds this to the
+                 * trees rather than to anyone's memory. */
+                unmatched: entry.unmatched ?? [],
                 /* What the growth table is varying. `documents` cases add
                  * independent copies; a chain case grows one structure, and
                  * WHICH dimension is not the same question as the shape --
@@ -1164,7 +1171,7 @@ function dispatchIdentity(profile, root) {
     return crypto.createHash("sha256").update(features.join("\n")).digest("hex");
 }
 
-function measure(profile, engine, document, out) {
+function measure(profile, engine, document, out, unmatchedFields) {
     const definition = ENGINES[engine];
     const dump = path.join(out, "callgrind", `${engine}.${document.case}.x${document.scale}.out`);
     fs.mkdirSync(path.dirname(dump), { recursive: true });
@@ -1259,12 +1266,41 @@ function measure(profile, engine, document, out) {
     if (!whole.length) fail(`${engine}: no call edge main -> ${ENGINE_ENTRY} in ${path.basename(dump)}`);
     const parsePathIr = whole.reduce((total, edge) => total + (costRecord(profileByName, edge.cost).Ir ?? 0), 0);
 
+    /* The work the reference has no counterpart for, read off the call edges
+     * the corpus declares for each dialect-only field. Measured on EVERY case
+     * and every engine, not only the ones that declare the field: a case that
+     * reaches this work without declaring it is a case whose ratio is about to
+     * silently include it, and the only way to say so is to have looked. */
+    const unmatched = [];
+    for (const [field, declaration] of Object.entries(unmatchedFields ?? {})) {
+        for (const spec of declaration.excludes ?? []) {
+            const [caller, callee] = spec.split("->").map((half) => half.trim());
+            const edges = edgesBetween(profileByName, caller, callee);
+            const ir = edges.reduce((total, edge) => total + (costRecord(profileByName, edge.cost).Ir ?? 0), 0);
+            const calls = edges.reduce((total, edge) => total + edge.calls, 0);
+            if (ir) unmatched.push({ field, stage: declaration.stage, edge: spec, calls, ir });
+        }
+    }
+    for (const entry of unmatched) {
+        /* A part cannot exceed its whole, here for the same reason the
+         * breakdown is checked above: an exclusion larger than the stage it
+         * claims to sit in is an exclusion attributed to the wrong stage, and
+         * subtracting it would manufacture a ratio out of arithmetic. */
+        if (entry.ir > (stages[entry.stage]?.cost.Ir ?? 0)) {
+            fail(
+                `${engine}: ${document.case} excludes ${entry.edge} at ${entry.ir} Ir from a ${entry.stage} ` +
+                    `of ${stages[entry.stage]?.cost.Ir ?? 0} Ir, so the exclusion is in the wrong stage`
+            );
+        }
+    }
+
     return {
         rootChildren: Number(receipt[2]),
         receiptBytes: Number(receipt[1]),
         parsePathIr,
         outsideStagesIr: STAGES.reduce((total, stage) => total - stages[stage].cost.Ir, parsePathIr),
         stages,
+        unmatched,
         hotPaths: hotPaths(profileByName),
         dump
     };
@@ -1465,6 +1501,32 @@ function markdownReport(report) {
      * isomorph is a CommonMark document written to match a dialect document,
      * not a construct anyone writes, so it belongs in the pair table and not in
      * the CommonMark median it would otherwise move. */
+    /* What a case declared, and what its dump actually shows. A case that
+     * reaches this work without declaring it would have the work silently
+     * folded into its ratio; a case that declares it and does not reach it is
+     * claiming an exemption it does not use. Both are refused here rather than
+     * left for a reader to spot, and it is this check that stops the exclusion
+     * being a way to make any number smaller. */
+    const unmatchedOf = (item) => {
+        const declared = new Set(item.unmatched ?? []);
+        const seen = item.engines["markdown-core"]?.unmatched ?? [];
+        let total = 0;
+        for (const entry of seen) {
+            if (!declared.has(entry.field)) {
+                fail(
+                    `${item.case} reaches ${entry.edge} for ${entry.ir} Ir, which cmark has no counterpart ` +
+                        `for, and does not declare "${entry.field}" -- so its ratio would quietly include it`
+                );
+            }
+            total += entry.ir;
+        }
+        for (const field of declared) {
+            if (!seen.some((entry) => entry.field === field)) {
+                fail(`${item.case} declares unmatched "${field}" and reaches none of the edges that do that work`);
+            }
+        }
+        return total;
+    };
     const paired = new Map((report.isomorphs ?? []).map((declaration) => [declaration.case, declaration]));
     const isIsomorph = new Set((report.isomorphs ?? []).map((declaration) => declaration.isomorph));
     const atScaleOne = new Map(report.cases.filter((item) => item.scale === 1).map((item) => [item.case, item]));
@@ -1519,12 +1581,21 @@ function markdownReport(report) {
                 /* The comparison that means something: the closest reference
                  * that implements what the document contains, or the reference
                  * on the document that is the same tree. */
+                /* What this case builds that the reference does not, taken
+                 * off THIS side so the two numbers are over the same job again.
+                 * Heading anchors are the case: the dialect derives one for
+                 * every heading, so the trees differ -- but the difference is a
+                 * named set of call edges with no counterpart on cmark's side,
+                 * and once it is subtracted what remains is work both engines
+                 * did. The heading's own inline parse stays in, because cmark
+                 * runs it too. */
+                unmatchedIr: unmatchedOf(item),
                 sameJob: gfmIr
-                    ? core / gfmIr
+                    ? (core - unmatchedOf(item)) / gfmIr
                     : twinCmark
-                      ? core / twinCmark
+                      ? (core - unmatchedOf(item)) / twinCmark
                       : item.dialect === "commonmark" && cmarkIr
-                        ? core / cmarkIr
+                        ? (core - unmatchedOf(item)) / cmarkIr
                         : null
             };
         })
@@ -1545,6 +1616,12 @@ function markdownReport(report) {
             "A ratio compares only where both parsers did the same job, so the cases are" +
                 " grouped by which reference implements what they contain, and the groups are" +
                 " never averaged together.",
+            "",
+            "A case is in the CommonMark group because BOTH its syntax and its output" +
+                " are CommonMark. Syntax alone is not enough: this dialect derives an anchor" +
+                " for every heading, so a document holding one is not the tree cmark builds," +
+                " and its number is a bound however ordinary the source looked. Those cases" +
+                " are separated out below, with the field that separates them named.",
             "",
             "cmark implements the CommonMark cases. cmark-gfm implements tables, task lists," +
                 " bare autolinks and footnotes, and is measured only on the cases that hold" +
@@ -1597,6 +1674,48 @@ function markdownReport(report) {
             );
         }
         lines.push("");
+
+        const held = ranked.filter((item) => (item.unmatched ?? []).length);
+        if (held.length) {
+            lines.push("### What was taken off this side to keep it a comparison", "");
+            lines.push(
+                "These documents are CommonMark source, and this parser does not build" +
+                    " CommonMark's tree from them: the dump carries a field cmark's node does" +
+                    " not have. Dividing the two totals would price a feature cmark lacks as" +
+                    " though it were this parser being slow, so the work that produces the" +
+                    " field is subtracted from THIS side and the remainder is what both" +
+                    " engines did.",
+                "",
+                "The subtraction is by call edge, not by function, and the edges are named in" +
+                    " `corpus.json` with what each one does. Work the reference also performs" +
+                    " stays in -- a heading's own inline parse is not excluded, because" +
+                    " `cmark_parse_inlines` runs it too. Two checks keep the exclusion from" +
+                    " being a way to make any number smaller: this driver fails when a case" +
+                    " reaches one of these edges without declaring the field, or declares the" +
+                    " field and reaches none of them, and" +
+                    " `scripts/audit-corpus-reach.mjs` fails when a case's declaration and its" +
+                    " own dump disagree in either direction.",
+                ""
+            );
+            lines.push(
+                "| Case | Field | Excluded Ir | Against cmark, raw | Same job |",
+                "| --- | --- | ---: | ---: | ---: |"
+            );
+            for (const item of held) {
+                lines.push(
+                    `| ${item.case} | ${item.unmatched.map((field) => `\`${field}\``).join(", ")} |` +
+                        ` ${(item.unmatchedIr ?? 0).toLocaleString("en-US")} |` +
+                        ` ${item.cmarkRatio === null ? "-" : `${item.cmarkRatio.toFixed(2)}x`} |` +
+                        ` **${item.sameJob === null ? "-" : `${item.sameJob.toFixed(2)}x`}** |`
+                );
+            }
+            lines.push("");
+            for (const [field, spec] of Object.entries(report.unmatchedFields ?? {})) {
+                lines.push(`- **\`${field}\`** -- ${spec.reason}`);
+                for (const edge of spec.excludes ?? []) lines.push(`  - \`${edge}\``);
+            }
+            lines.push("");
+        }
 
         const pairs = ranked.filter((item) => item.isomorph);
         if (pairs.length) {
@@ -1942,7 +2061,7 @@ function main() {
          * read. */
         const applicable = Object.keys(ENGINES).filter((engine) => engine !== "cmark-gfm" || document.gfm === true);
         for (const engine of applicable) {
-            const measured = measure(profile, engine, document, options.out);
+            const measured = measure(profile, engine, document, options.out, manifest.unmatchedFields ?? {});
             if (measured.receiptBytes !== document.bytes) {
                 fail(`${engine}: ${document.case} saw ${measured.receiptBytes} bytes, expected ${document.bytes}`);
             }
@@ -1951,6 +2070,7 @@ function main() {
                 outsideStagesIr: measured.outsideStagesIr,
                 rootChildren: measured.rootChildren,
                 hotPaths: measured.hotPaths,
+                unmatched: measured.unmatched,
                 stages: Object.fromEntries(
                     STAGES.map((stage) => [
                         stage,
@@ -1980,6 +2100,10 @@ function main() {
          * it, and `scripts/audit-corpus-reach.mjs` is what holds the pairing to
          * being true. */
         isomorphs: manifest.isomorphs ?? [],
+        /* Why the cases below hold out of the CommonMark group. Recorded beside
+         * the counts for the same reason the pairs are: the group a case is in
+         * is the whole meaning of its number. */
+        unmatchedFields: manifest.unmatchedFields ?? {},
         artifacts: path.relative(root, options.out),
         cases
     };
