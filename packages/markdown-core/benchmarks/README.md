@@ -294,6 +294,58 @@ of. Those exceptions are declared per pair in `corpus.json`, and an exception
 matching nothing in the dialect document fails the audit, so an allowance
 cannot outlive the difference it was written for.
 
+## The attribute grammar, against lexbor
+
+Three of the isomorph pairs above work because the dialect construct is shaped
+like a CommonMark one. Attributes are not: `{#lane .stage k="v"}` builds a map,
+and no Markdown implementation builds a map, so there is nothing in cmark or
+cmark-gfm to pair it with. The stage benchmark can only bound it, and the bound
+it reports — 4.46x on `inline-span` — is mostly the inline parser around the
+attributes rather than the attributes.
+
+An HTML start tag's attribute list *is* the same job: a bracketed run split into
+an identifier, a class run and key/value records, with quoting and character
+references. [lexbor](https://github.com/lexbor/lexbor) implements that in C and
+is written for speed, so it is the reference this grammar has.
+
+```sh
+scripts/init-environment.sh --install oracle-lexbor   # once
+node scripts/benchmark-attributes.mjs
+```
+
+It is a separate driver, and separate for a reason the stage benchmark makes
+plain: there both engines must get byte-identical files, and here they cannot —
+neither implementation reads the other's spelling.
+
+```
+[text]{#lane .stage k="callgrind"}
+<x id="lane" class="stage" k="callgrind">
+```
+
+Both inputs are generated from one list of specifications, so they cannot drift
+into describing different attributes, and **both baselines must recover the same
+attributes**: each writes a canonical census and the two are compared line for
+line before any count is reported. A baseline that skipped a record, kept a
+value raw or stopped early fails the run instead of posting a cheaper number for
+doing less.
+
+The measurement is the tokenizer, not `lxb_html_parse`: a document, a DOM tree
+and interned elements have no counterpart on this side, and the ratio would be
+against those instead. It stops where the comparison does, at tokens carrying
+name/value pairs.
+
+One runner reaches past the public facade, and it is the only one in
+`benchmarks/` that does. It has to: a consumer reaches `elements/attributes.c`
+only through a span, a heading or a link, each of which brings a whole inline
+parse along — which is the measurement this exists to avoid. That is a property
+of the runner, not of the product: the parser still has no measurement mode and
+no benchmark-only path, and the entry points it calls are the ones `link.c` and
+`heading.c` call.
+
+lexbor is a performance baseline and nothing else. No behaviour is judged
+against it, it registers no deltas, and it is not one of the parser oracles in
+`specs/oracles/`.
+
 ## What the counts are a property of
 
 Instruction and data-reference counts do not depend on how fast the machine was

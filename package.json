@@ -24,6 +24,7 @@
         "audit:surface": "scripts/audit-public-surface.sh",
         "audit:tests": "scripts/audit-test-topology.sh",
         "audit:toolchains": "scripts/audit-toolchain-versions.sh",
+        "benchmark:attributes": "node scripts/benchmark-attributes.mjs",
         "benchmark:stages": "node scripts/benchmark-stages.mjs",
         "build:c": "cmake --preset default && cmake --build --preset default --parallel",
         "build:swift": "swift build",

@@ -54,6 +54,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { baseName, costRecord, edgesBetween, foldNames, nodesEnteredFrom, parseCallgrind } from "./lib/callgrind.mjs";
+import { CACHE, measurementEnvironment, measurementRoot } from "./lib/measurement.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const BENCHMARKS = path.join(root, "packages/markdown-core/benchmarks");
@@ -65,8 +66,6 @@ const PROFILE_PRESET = "benchmark";
 
 /* A cache geometry pinned in the report rather than taken from the host, so
  * that two machines produce the same file and a diff means a code change. */
-const CACHE = ["--I1=32768,8,64", "--D1=32768,8,64", "--LL=8388608,16,64"];
-
 /* GCC clones a function when it specializes it; the clone carries the work but
  * not the plain name the stage boundary is written as. */
 const CLONE_SUFFIX = /(\.(constprop|isra|part|cold|lto_priv|localalias)\.?\d*)+$/u;
@@ -1201,62 +1200,12 @@ function runnerIdentity(profile) {
     return identity;
 }
 
-/**
- * The measured child's environment is built, not inherited.
- *
- * The environment reaches inside the measurement. The loader reads `LD_PRELOAD`
- * at exec time, glibc reads `GLIBC_TUNABLES` and `MALLOC_PERTURB_` when it
- * allocates, and libc reads the locale when it classifies a byte -- and the
- * parse stages allocate and call libc constantly, so none of this is a rounding
- * difference. On this host, against one case's 35,066,966 Ir baseline:
- *
- *   MALLOC_PERTURB_=42                        51,807,936   (+47.7%)
- *   GLIBC_TUNABLES=glibc.malloc.tcache_count=0 35,101,488
- *   LC_ALL=en_US.UTF-8                        35,067,533
- *
- * An allowlist rather than a list of variables to remove. A denylist has to
- * name every mechanism that can reach into a measurement, and the list above
- * is three separate ones in three different layers -- the next is a variable
- * nobody here has thought of, and it would be silently admitted. This way an
- * unnamed variable is absent by construction, which is the direction that has
- * to be safe.
- *
- * What is kept is what the child needs to run and nothing that steers how it
- * runs: a path to find the binary, a home and a temporary directory for the
- * profiler's own files. The locale is not inherited but SET, because there is
- * no "no locale" -- libc falls back to C, so naming it makes the measurement
- * state its locale rather than depend on the caller not having one.
- *
- * Valgrind sets its own loader variables for the client, so it is undisturbed.
- */
-/**
- * The profiler's own configuration is isolated too, not just the environment.
- *
- * Valgrind takes options from `~/.valgrindrc`, then VALGRIND_OPTS, then
- * `./.valgrindrc`, before its command line -- so every option this driver does
- * not pass explicitly is the caller's to set, and the ones that matter most are
- * exactly the ones not passed here. A home directory rc file containing
- * `--collect-atstart=no` takes this measurement's summary to 0 with the
- * report's identity table unchanged.
- *
- * VALGRIND_OPTS is already gone with everything else unnamed. The two rc files
- * are reached by HOME and by the working directory instead, so both point at an
- * empty directory this driver owns and neither file exists.
- */
-function measurementRoot(out) {
-    const directory = path.join(out, "measurement-root");
-    fs.mkdirSync(directory, { recursive: true });
-    const rc = path.join(directory, ".valgrindrc");
-    if (fs.existsSync(rc)) fail(`${rc} would configure the profiler out from under the measurement`);
-    return directory;
-}
-
-function measurementEnvironment(root) {
-    /* PATH is the only thing carried across: it is how `valgrind` is found. */
-    const environment = { LC_ALL: "C", LANG: "C", HOME: root, TMPDIR: root };
-    if (process.env.PATH !== undefined) environment.PATH = process.env.PATH;
-    return environment;
-}
+/* The measured child's environment and the profiler's own configuration are
+ * both built rather than inherited, by `lib/measurement.mjs` -- which is where
+ * the reasoning lives, because the attribute benchmark measures under the same
+ * isolation and a second copy of it is a copy that drifts. The numbers that
+ * make it load-bearing are there too: `MALLOC_PERTURB_=42` alone moves one
+ * case's summary by 47.7%. */
 
 /**
  * What glibc will dispatch on, seen from inside the measurement.
@@ -1358,7 +1307,7 @@ function measure(profile, engine, document, out) {
     const definition = ENGINES[engine];
     const dump = path.join(out, "callgrind", `${engine}.${document.case}.x${document.scale}.out`);
     fs.mkdirSync(path.dirname(dump), { recursive: true });
-    const root = measurementRoot(out);
+    const root = measurementRoot(out, fail);
     const stdout = run(
         "valgrind",
         [
