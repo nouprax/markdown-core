@@ -95,7 +95,7 @@
                 "unit": "[heading-{n}]: /u\n",
                 "match": {
                     "case": "block-heading",
-                    "perUnit": 6
+                    "pattern": "^#{1,6} "
                 },
                 "tail": "\nx\n"
             },

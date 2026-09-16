@@ -890,7 +890,20 @@ function countedText(counted, scale, manifest, entries) {
     const unit = documentsUnit(matched);
     const target = (matched.targetBytes ?? manifest.targetBytes) * scale;
     const repeats = Math.max(1, Math.ceil(target / Buffer.byteLength(unit)));
-    const constructs = repeats * counted.match.perUnit;
+    /* Counted off the sample, never written down. A literal count is correct
+     * until someone adds a heading to the sample, and then the generator keeps
+     * emitting the old number, the equal-count invariant this pair is built on
+     * quietly fails, and the run still publishes a ratio. Deriving it means the
+     * sample and the pair cannot drift apart. */
+    const pattern = new RegExp(counted.match.pattern, "gmu");
+    const perUnit = (unit.match(pattern) ?? []).length;
+    if (!perUnit) {
+        fail(
+            `corpus case ${counted.match.case} matches ${counted.match.pattern} zero times, so the ` +
+                `paired document would be empty and the pair would compare nothing`
+        );
+    }
+    const constructs = repeats * perUnit;
     let text = "";
     for (let index = 0; index < constructs; index++) {
         text += counted.unit.replaceAll("{n}", String(index));
@@ -1025,9 +1038,17 @@ function refuseUnknownCases(options, manifest) {
 function buildCorpus(options, manifest) {
     const directory = path.join(options.out, "corpus");
     fs.mkdirSync(directory, { recursive: true });
-    const selected = options.cases.length
-        ? manifest.cases.filter((entry) => options.cases.includes(entry.name))
-        : manifest.cases;
+    /* A stress-paired case drags its pair in. Naming one alone would measure a
+     * case whose comparison lives on a document the run never built, and the
+     * report would show its bound with the pair silently absent -- which is the
+     * anchor-inclusive number wearing a label nobody asked to trust. The pair is
+     * not optional context; it IS the comparison. */
+    const wanted = new Set(options.cases);
+    for (const pair of manifest.stressPairs ?? []) {
+        if (wanted.has(pair.case)) wanted.add(pair.reference);
+        if (wanted.has(pair.reference)) wanted.add(pair.case);
+    }
+    const selected = options.cases.length ? manifest.cases.filter((entry) => wanted.has(entry.name)) : manifest.cases;
 
     const documents = [];
     for (const entry of selected) {
