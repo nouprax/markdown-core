@@ -374,7 +374,12 @@ generated name carries an index, so both sides bind the same number of
 one-entry table against thousands.
 
 `{n}` writes that index as it is. `{n:K}` writes it zero-padded to K digits, and
-a case whose construct is **column-aligned** must use it. A grid table
+a case whose construct is **column-aligned** must use it. The generator refuses
+an index wider than K rather than writing it: `padStart` never truncates, so the
+row would gain a character, stop closing at its border, and the construct would
+quietly become a paragraph — at a larger scale than the audit's x1 documents ever
+reach, with both halves still agreeing on their counts because both are built
+from the same index. A grid table
 establishes its columns from the positions of the `+` characters in its border
 line and requires every row line to close its cells at exactly those columns, so
 an index that gains a digit at ten and again at a hundred would silently stop the
@@ -500,11 +505,18 @@ prose dumps perfectly well through our CLI. That defect is not hypothetical:
 shape ratio that was a division by an engine throwing text away.
 
 So `scripts/audit-corpus-pairs.mjs` counts the twin through the reference's own
-output and requires it to agree. Each pair declares how — an XML element name,
-or an HTML marker where cmark-gfm's XML renderer prints `<unknown>` for an
-extension node, as it does for the footnote definition. A pair that declares
-nothing fails, because a pair nobody checks against the reference is exactly the
-one that needs checking. It runs in the `External parity` job, which already
+output and requires it to agree — for **every** construct the pair counts, the
+`alsoCounts` ones included. A pair that also counts items and paragraphs is
+claiming the reference built those too, and checking the container alone would
+pass a reference that emitted one list per unit and lost everything inside it.
+
+Each pair declares, per kind, how the reference counts it: an XML element name,
+a *list* of them where one of our kinds is two of theirs (cmark-gfm's header row
+is `table_header` and every other row is `table_row`, and both are a `TableRow`
+here), or an HTML marker where cmark-gfm's XML renderer prints `<unknown>` for an
+extension node, as it does for the footnote definition. A construct that declares
+nothing fails, because a construct nobody checks against the reference is exactly
+the one that needs checking. It runs in the `External parity` job, which already
 builds the pinned oracle binaries, so the reach audit stays runnable without
 them.
 

@@ -881,7 +881,26 @@ function documentsUnit(entry) {
  */
 function unitText(template, index) {
     return template
-        .replaceAll(/\{n:(\d+)\}/gu, (_, width) => String(index).padStart(Number(width), "0"))
+        .replaceAll(/\{n:(\d+)\}/gu, (_, width) => {
+            const written = String(index);
+            /* `padStart` never truncates, so an index past the declared width
+             * silently writes one character too many -- and a column-aligned
+             * construct stops closing at its border the moment that happens.
+             * The case still generates, the counts on the two sides still
+             * agree because both halves are built from the same index, and what
+             * gets measured is a paragraph. The reach audit cannot see it
+             * either: it reads the x1 documents, and the overflow arrives at a
+             * larger scale. So it is refused here, where the width is known. */
+            if (written.length > Number(width)) {
+                fail(
+                    `a generated unit writes index ${written} into {n:${width}}, which is ${width} digits wide. ` +
+                        `The placeholder exists to keep a column-aligned construct closing at its border, and an ` +
+                        `index that outgrows it breaks the construct silently. Widen the placeholder and the ` +
+                        `columns that depend on it`
+                );
+            }
+            return written.padStart(Number(width), "0");
+        })
         .replaceAll("{n}", String(index));
 }
 

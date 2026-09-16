@@ -79,7 +79,7 @@ function main() {
         const tree = execFileSync(DUMP, [document(name)], { encoding: "utf8", maxBuffer: 1 << 30 });
         return (tree.match(new RegExp(`(?:^|\\s)${kind} scope=`, "gmu")) ?? []).length;
     };
-    const theirs = (name, reference) => {
+    const theirs = (name, kind, reference) => {
         const entry = cases.get(name);
         const format = reference.html === undefined ? "xml" : "html";
         const rendered = entry?.gfm
@@ -89,37 +89,61 @@ function main() {
               })
             : execFileSync(cmark, ["-t", format, document(name)], { encoding: "utf8", maxBuffer: 1 << 30 });
         if (reference.html !== undefined) return rendered.split(reference.html).length - 1;
-        /* `<item>` and `<item sourcepos=...>` are the same element. */
-        return (rendered.match(new RegExp(`<${reference.xml}[ >/]`, "gu")) ?? []).length;
+        /* `<item>` and `<item sourcepos=...>` are the same element. A LIST of
+         * element names is summed, because one of our kinds can be two of
+         * theirs: cmark-gfm's header row is `table_header` and every other row
+         * is `table_row`, and both are a TableRow here. */
+        const elements = Array.isArray(reference.xml) ? reference.xml : [reference.xml];
+        return elements.reduce(
+            (total, element) => total + (rendered.match(new RegExp(`<${element}[ >/]`, "gu")) ?? []).length,
+            0
+        );
     };
+    const named = (reference) =>
+        reference.html === undefined
+            ? (Array.isArray(reference.xml) ? reference.xml : [reference.xml]).map((e) => `<${e}>`).join("+")
+            : reference.html;
 
     const failures = [];
     const declarations = manifest.logicalIsomorphs ?? [];
     for (const pair of declarations) {
-        const reference = pair.reference;
-        if (!reference || (reference.xml === undefined && reference.html === undefined)) {
-            failures.push(
-                `${pair.case} does not say how the reference counts ${pair.isomorph}. Every pair must, because a ` +
-                    `pair nobody checks against the reference is the one that needs checking`
-            );
-            continue;
+        /* EVERY construct the pair's claim counts, not only the primary one. A
+         * pair that also counts items and paragraphs is claiming the reference
+         * built those too, and checking the list alone would pass a reference
+         * that emitted one list per unit while losing everything inside it. */
+        const wanted = [
+            { kind: pair.counts.isomorph, mineKind: pair.counts.case },
+            ...(pair.alsoCounts ?? []).map((also) => ({ kind: also.isomorph, mineKind: also.case }))
+        ];
+        const reference = pair.reference ?? {};
+        let broke = false;
+        const shown = [];
+        for (const { kind } of wanted) {
+            const declared = reference[kind];
+            if (!declared || (declared.xml === undefined && declared.html === undefined)) {
+                failures.push(
+                    `${pair.case} counts ${kind} on ${pair.isomorph} and does not say how the reference counts ` +
+                        `it. Every construct a pair's claim rests on must be checked against the engine that ` +
+                        `is supposed to have built it`
+                );
+                broke = true;
+                continue;
+            }
+            const twin = ours(pair.isomorph, kind);
+            const built = theirs(pair.isomorph, kind, declared);
+            if (built !== twin) {
+                failures.push(
+                    `${pair.isomorph} builds ${twin} ${kind} through this parser and ${built} ` +
+                        `${named(declared)} through its own reference. The pair's whole claim is that the ` +
+                        `reference did the same job on this document, and it did not`
+                );
+                broke = true;
+                continue;
+            }
+            shown.push(`${kind}=${twin}`);
         }
-        const mine = ours(pair.case, pair.counts.case);
-        const twin = ours(pair.isomorph, pair.counts.isomorph);
-        const built = theirs(pair.isomorph, reference);
-        const named = reference.html === undefined ? `<${reference.xml}>` : `${reference.html}`;
-        if (built !== twin) {
-            failures.push(
-                `${pair.isomorph} builds ${twin} ${pair.counts.isomorph} through this parser and ` +
-                    `${built} ${named} through its own reference. The pair's whole claim is that the reference ` +
-                    `did the same job on this document, and it did not`
-            );
-            continue;
-        }
-        process.stdout.write(
-            `  ${pair.case.padEnd(28)} ${pair.counts.case}=${mine}  ${pair.counts.isomorph}=${twin}  ` +
-                `reference ${named}=${built}\n`
-        );
+        if (broke) continue;
+        process.stdout.write(`  ${pair.case.padEnd(28)} ${shown.join("  ")}\n`);
     }
 
     process.stdout.write(

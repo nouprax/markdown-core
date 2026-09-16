@@ -862,7 +862,7 @@
             "name": "pair-sparsegrid-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "+------+------+\n| h{n:3}        |\n+======+======+\n| a{n:3} | b{n:3} |\n+------+      +\n| c{n:3} | d{n:3} |\n+------+------+\n+      +      +\n+======+======+\n| f{n:3}        |\n+======+======+\n\nTable:\n\n",
+                "unit": "+---------+---------+\n| h{n:6}           |\n+=========+=========+\n| a{n:6} | b{n:6} |\n+---------+         +\n| c{n:6} | d{n:6} |\n+---------+---------+\n+         +         +\n+=========+=========+\n| f{n:6}           |\n+=========+=========+\n\nTable:\n\n",
                 "scales": "sparse grid tables"
             },
             "builds": ["Table", "TableCell", "TableCaption"]
@@ -871,7 +871,7 @@
             "name": "pair-sparsegrid-common",
             "dialect": "commonmark",
             "counted": {
-                "unit": "- a{n:3}\n\n- b{n:3}\n\n  d{n:3}\n\n- c{n:3}\n\n- h{n:3}\n\n- f{n:3}\n\n-\n\n-\n\n",
+                "unit": "- a{n:6}\n\n- b{n:6}\n\n  d{n:6}\n\n- c{n:6}\n\n- h{n:6}\n\n- f{n:6}\n\n-\n\n-\n\n",
                 "match": "pair-sparsegrid-dialect",
                 "scales": "loose list items"
             },
@@ -1093,7 +1093,9 @@
                 }
             },
             "reference": {
-                "xml": "paragraph"
+                "Paragraph": {
+                    "xml": "paragraph"
+                }
             }
         },
         {
@@ -1119,7 +1121,12 @@
                 }
             },
             "reference": {
-                "html": "id=\"fn-"
+                "Footnote": {
+                    "html": "id=\"fn-"
+                },
+                "Cite": {
+                    "html": "id=\"fnref-"
+                }
             }
         },
         {
@@ -1143,7 +1150,9 @@
                 }
             },
             "reference": {
-                "xml": "tasklist"
+                "ListItem": {
+                    "xml": "tasklist"
+                }
             }
         },
         {
@@ -1166,7 +1175,9 @@
                 }
             },
             "reference": {
-                "xml": "link"
+                "Link": {
+                    "xml": "link"
+                }
             }
         },
         {
@@ -1198,7 +1209,9 @@
                 }
             },
             "reference": {
-                "xml": "link"
+                "Link": {
+                    "xml": "link"
+                }
             }
         },
         {
@@ -1221,7 +1234,9 @@
                 }
             },
             "reference": {
-                "xml": "link"
+                "Link": {
+                    "xml": "link"
+                }
             }
         },
         {
@@ -1244,7 +1259,9 @@
                 }
             },
             "reference": {
-                "xml": "link"
+                "Link": {
+                    "xml": "link"
+                }
             }
         },
         {
@@ -1264,7 +1281,9 @@
                 }
             },
             "reference": {
-                "xml": "code_block"
+                "CodeBlock": {
+                    "xml": "code_block"
+                }
             }
         },
         {
@@ -1295,7 +1314,9 @@
                 }
             },
             "reference": {
-                "xml": "image"
+                "Embedded": {
+                    "xml": "image"
+                }
             }
         },
         {
@@ -1316,7 +1337,9 @@
                 }
             },
             "reference": {
-                "xml": "table"
+                "Table": {
+                    "xml": "table"
+                }
             }
         },
         {
@@ -1336,7 +1359,9 @@
                 }
             },
             "reference": {
-                "xml": "code_block"
+                "CodeBlock": {
+                    "xml": "code_block"
+                }
             }
         },
         {
@@ -1356,7 +1381,9 @@
                 }
             },
             "reference": {
-                "xml": "code_block"
+                "CodeBlock": {
+                    "xml": "code_block"
+                }
             }
         },
         {
@@ -1381,7 +1408,9 @@
                 }
             },
             "reference": {
-                "xml": "code_block"
+                "CodeBlock": {
+                    "xml": "code_block"
+                }
             }
         },
         {
@@ -1415,7 +1444,9 @@
                 }
             },
             "reference": {
-                "xml": "code_block"
+                "CodeBlock": {
+                    "xml": "code_block"
+                }
             }
         },
         {
@@ -1451,7 +1482,15 @@
                 }
             },
             "reference": {
-                "xml": "list"
+                "List": {
+                    "xml": "list"
+                },
+                "ListItem": {
+                    "xml": "item"
+                },
+                "ThematicBreak": {
+                    "xml": "thematic_break"
+                }
             }
         },
         {
@@ -1489,7 +1528,15 @@
                 }
             },
             "reference": {
-                "xml": "image"
+                "Embedded": {
+                    "xml": "image"
+                },
+                "Text": {
+                    "xml": "text"
+                },
+                "Paragraph": {
+                    "xml": "paragraph"
+                }
             }
         },
         {
@@ -1537,7 +1584,18 @@
                 }
             },
             "reference": {
-                "xml": "list"
+                "List": {
+                    "xml": "list"
+                },
+                "ListItem": {
+                    "xml": "item"
+                },
+                "ThematicBreak": {
+                    "xml": "thematic_break"
+                },
+                "Paragraph": {
+                    "xml": "paragraph"
+                }
             }
         },
         {
@@ -1558,7 +1616,9 @@
                 }
             },
             "reference": {
-                "xml": "thematic_break"
+                "ThematicBreak": {
+                    "xml": "thematic_break"
+                }
             }
         },
         {
@@ -1584,7 +1644,12 @@
                 }
             },
             "reference": {
-                "html": "id=\"fn-"
+                "Footnote": {
+                    "html": "id=\"fn-"
+                },
+                "Cite": {
+                    "html": "id=\"fnref-"
+                }
             }
         },
         {
@@ -1604,7 +1669,9 @@
                 }
             },
             "reference": {
-                "xml": "heading"
+                "Heading": {
+                    "xml": "heading"
+                }
             }
         },
         {
@@ -1633,7 +1700,12 @@
                 }
             },
             "reference": {
-                "xml": "block_quote"
+                "Callout": {
+                    "xml": "block_quote"
+                },
+                "Paragraph": {
+                    "xml": "paragraph"
+                }
             }
         },
         {
@@ -1669,7 +1741,9 @@
                 }
             },
             "reference": {
-                "xml": "tasklist"
+                "ListItem": {
+                    "xml": "tasklist"
+                }
             }
         },
         {
@@ -1698,7 +1772,12 @@
                 }
             },
             "reference": {
-                "xml": "table_cell"
+                "TableCell": {
+                    "xml": "table_cell"
+                },
+                "TableRow": {
+                    "xml": ["table_row", "table_header"]
+                }
             }
         },
         {
@@ -1731,7 +1810,7 @@
                     "table.column.relative.value"
                 ]
             },
-            "claim": "The SPARSE grid table, cell for cell against the same loose list item pair-gridcell-dialect uses and for the same reason: a per-line positional cut at a width established by an earlier line, whose joined remainders are parsed as BLOCKS. Where that pair carries one plain cell, this one carries every cell shape the grammar admits -- a cell spanning two rows, a cell spanning two columns, a cell with no content at all, a row with no cells, a populated foot and an empty caption -- against seven list items of which two are empty and one holds two blocks, so the cells, the blocks and the inline runs all match: 7 cells, 6 paragraphs and 6 text nodes per unit on each side. Reading the two ratios together is what separates the cost of the SPANS from the cost of the cut: everything else about the two pairs is the same production against the same reference.",
+            "claim": "The SPARSE grid table, cell for cell against the same loose list item pair-gridcell-dialect uses and for the same reason: a per-line positional cut at a width established by an earlier line, whose joined remainders are parsed as BLOCKS. Where that pair carries one plain cell, this one carries every cell shape the grammar admits -- a cell spanning two rows, a cell spanning two columns, a cell with no content at all, a row with no cells, a populated foot and an empty caption -- against seven list items of which two are empty and one holds two blocks, so the cells, the blocks and the inline runs all match: 7 cells, 6 paragraphs and 6 text nodes per unit on each side. Reading the two ratios together is what separates the cost of the SPANS from the cost of the cut: everything else about the two pairs is the same production against the same reference. The index is six digits wide and the columns are sized for it, because `padStart` never truncates: an index that outgrew its placeholder would write one character too many, the row would stop closing at the border, and the table would quietly become a paragraph at a scale the x1 audit never reads. The generator refuses that outright now.",
             "perUnit": {
                 "case": {
                     "each": 7
@@ -1741,7 +1820,15 @@
                 }
             },
             "reference": {
-                "xml": "item"
+                "ListItem": {
+                    "xml": "item"
+                },
+                "Paragraph": {
+                    "xml": "paragraph"
+                },
+                "Text": {
+                    "xml": "text"
+                }
             }
         },
         {
@@ -1767,7 +1854,12 @@
                 }
             },
             "reference": {
-                "xml": "item"
+                "ListItem": {
+                    "xml": "item"
+                },
+                "Paragraph": {
+                    "xml": "paragraph"
+                }
             }
         },
         {
@@ -1794,7 +1886,12 @@
                 }
             },
             "reference": {
-                "xml": "table"
+                "Table": {
+                    "xml": "table"
+                },
+                "Text": {
+                    "xml": "text"
+                }
             }
         },
         {
@@ -1828,7 +1925,12 @@
                 }
             },
             "reference": {
-                "xml": "item"
+                "ListItem": {
+                    "xml": "item"
+                },
+                "Text": {
+                    "xml": "text"
+                }
             }
         }
     ],
