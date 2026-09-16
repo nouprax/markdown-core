@@ -697,6 +697,42 @@ function logicalPairFailures(census, pairs) {
  * ever did, the answer is a case that builds it at ordinary size, not an
  * exception here.
  */
+/**
+ * A state that CANNOT have a same-job ratio, and the proof that says so.
+ *
+ * Two of the 131 are reachable only through a construct this corpus has proved
+ * unpairable -- an inline footnote's content, and a specimen definition with no
+ * label. No case can measure them against a reference, because no reference
+ * production of that shape exists to write one against. Counting them as
+ * outstanding work would leave a number that can never be closed and a reader
+ * with no way to tell "nobody has written this yet" from "there is nothing to
+ * write".
+ *
+ * So each is declared here against the `unpairable` entry that binds it, and
+ * the audit checks the declaration in BOTH directions: the proof must exist,
+ * and the state must really be a bound. A state that became measurable would
+ * otherwise keep its exemption and the coverage number would understate itself.
+ */
+function statesBoundByProof() {
+    const manifest = JSON.parse(
+        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
+    );
+    const declared = manifest.statesBoundByProof ?? {};
+    const proofs = new Set((manifest.unpairable ?? []).map((entry) => entry.production));
+    const failures = [];
+    for (const [state, production] of Object.entries(declared)) {
+        if (!(state in stateValidators))
+            failures.push(`statesBoundByProof names ${state}, which is not a declared grammar state`);
+        else if (!proofs.has(production)) {
+            failures.push(
+                `statesBoundByProof says ${state} is bound by "${production}", and corpus.json holds no ` +
+                    `unpairable entry of that name. A state is exempt only against a proof that exists`
+            );
+        }
+    }
+    return { declared, failures };
+}
+
 function declaredStateFloor() {
     const manifest = JSON.parse(
         fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
@@ -889,6 +925,7 @@ let miscarried;
 let unequalPairs;
 let unbuilt;
 let states;
+let exempt;
 {
     const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), "corpus-coverage-"));
     try {
@@ -906,6 +943,7 @@ let states;
         unequalPairs = logicalPairFailures(census, logical);
         miscarried = carriedFailures(binaries.dump, census, path.dirname(documents[0]), referenceless);
         states = stateReach(census, corpusCases(), pairs, logical);
+        exempt = statesBoundByProof();
         for (const [name, expected] of declaredBuilds()) {
             const built = census.perCase.get(name);
             if (!built) {
@@ -968,7 +1006,8 @@ process.stdout.write(
         `  referenceless fields ${referenceless.length}, declared by every case that carries one` +
         `${miscarried.length ? ` -- ${miscarried.length} do not` : ""}\n` +
         `  grammar states measured ${states.measured.length}/${Object.keys(stateValidators).length}` +
-        ` (${states.boundOnly.length} reached only as a bound, ${states.unreached.length} not reached)\n`
+        ` (${states.boundOnly.length} reached only as a bound, ${states.unreached.length} not reached` +
+        `${Object.keys(exempt.declared).length ? `, of which ${Object.keys(exempt.declared).length} bound by proof` : ""})\n`
 );
 
 if (options.states) {
@@ -1002,6 +1041,19 @@ const failures = [];
  * unit, a retired sample -- would otherwise show as a passing audit and a
  * smaller number nobody was watching. Raise it in the same commit that earns it.
  */
+failures.push(...exempt.failures);
+/* An exemption that is no longer needed is a stale claim, and stale claims are
+ * what this corpus keeps failing on. A state the corpus HAS learned to measure
+ * must lose its exemption in the same change, or the count below understates
+ * itself and nobody notices. */
+for (const state of Object.keys(exempt.declared)) {
+    if (states.measured.includes(state)) {
+        failures.push(
+            `${state} is declared bound by a proof and the corpus now measures it with a same-job ` +
+                `ratio. Remove the exemption rather than leaving a number that understates itself`
+        );
+    }
+}
 {
     const floor = declaredStateFloor();
     if (states.measured.length < floor) {

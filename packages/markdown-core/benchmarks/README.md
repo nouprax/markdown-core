@@ -496,6 +496,19 @@ ratchet rather than a target: a change that quietly stopped a case demonstrating
 a state — an edited unit, a retired sample — would otherwise pass the audit while
 the number shrank with nobody watching. Raise it in the commit that earns it.
 
+**It stands at 129 of 131, and the other two cannot be closed.** They are
+reachable only through a construct this corpus has *proved* unpairable — an
+inline footnote's content, and a specimen definition with no label — so no case
+can measure them against a reference, because no reference production of that
+shape exists to write one against. Each is declared in `statesBoundByProof`
+against the `unpairable` entry that binds it, and the audit checks that
+declaration in both directions: the proof must exist, and the state must really
+still be a bound. A state the corpus learns to measure loses its exemption in
+the same change, or the count would understate itself with nobody noticing.
+
+So the corpus is complete in the only sense that can be checked: every declared
+grammar state either has a same-job ratio or has a written proof that it cannot.
+
 ### Constructs with no isomorph
 
 A construct with no row in the pair table has no row for one of **two** reasons,

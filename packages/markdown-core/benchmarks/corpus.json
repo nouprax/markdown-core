@@ -1,7 +1,11 @@
 {
     "schemaVersion": 2,
     "targetBytes": 65536,
-    "stateFloor": 120,
+    "stateFloor": 129,
+    "statesBoundByProof": {
+        "footnote.content.inline": "inline footnote `^[body]`",
+        "specimen.id.null": "anonymous specimen definition `(@) body`"
+    },
     "requiredGrammars": {
         "S_attach_block_identifier": "block-identifier",
         "autolink_delim": "inline-autolink-rich",
@@ -365,6 +369,12 @@
             "dialect": "commonmark",
             "samples": ["inline-links-flat.md"],
             "builds": ["Embedded", "Link"]
+        },
+        {
+            "name": "inline-reference",
+            "dialect": "commonmark",
+            "samples": ["inline-reference.md"],
+            "builds": ["Link", "Embedded"]
         },
         {
             "name": "inline-links-nested",
@@ -848,6 +858,25 @@
             },
             "gfm": true,
             "builds": ["Table", "TableCell"]
+        },
+        {
+            "name": "pair-sparsegrid-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "+------+------+\n| h{n:3}        |\n+======+======+\n| a{n:3} | b{n:3} |\n+------+      +\n| c{n:3} | d{n:3} |\n+------+------+\n+      +      +\n+======+======+\n| f{n:3}        |\n+======+======+\n\nTable:\n\n",
+                "scales": "sparse grid tables"
+            },
+            "builds": ["Table", "TableCell", "TableCaption"]
+        },
+        {
+            "name": "pair-sparsegrid-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "- a{n:3}\n\n- b{n:3}\n\n  d{n:3}\n\n- c{n:3}\n\n- h{n:3}\n\n- f{n:3}\n\n-\n\n-\n\n",
+                "match": "pair-sparsegrid-dialect",
+                "scales": "loose list items"
+            },
+            "builds": ["List", "ListItem"]
         },
         {
             "name": "pair-gridcell-dialect",
@@ -1404,6 +1433,38 @@
             ],
             "fallback": "Paragraph",
             "claim": "A headerless simple table and a GFM pipe table are the same ROW production: a line cut into K ranges, each range's content parsed as INLINES, repeated for as many lines as the table holds. The cut is positional in one grammar and delimited in the other, which is the difference being measured; the subsequent operation is the same on both sides, and the pair counts TableRow alongside TableCell so that both halves of the criterion are checked rather than only the second. Where the two grammars genuinely differ is that GFM DESIGNATES its first row the head and the simple table's headerless form leaves every row in the body -- a destination for a row already parsed, not a different production, which is why both sides carry one extra row so that the same number of LINES becomes the same number of cells. The earlier refusal argued from GFM's table REQUIRING a header, which is a fact about the reference's table rather than about its row-and-cell production. Held by the absence of Paragraph: both spellings collapse into one the moment the table stops being recognised, and with an index that gains a digit the collapse would be silent, so both sides use the zero-padded form."
+        },
+        {
+            "case": "pair-sparsegrid-dialect",
+            "isomorph": "pair-sparsegrid-common",
+            "counts": {
+                "case": "TableCell",
+                "isomorph": "ListItem"
+            },
+            "alsoCounts": [
+                {
+                    "case": "Paragraph",
+                    "isomorph": "Paragraph"
+                },
+                {
+                    "case": "Text",
+                    "isomorph": "Text"
+                }
+            ],
+            "demonstrates": {
+                "case": [
+                    "tableCell.span.rows",
+                    "tableCell.span.columns",
+                    "tableCell.span.one",
+                    "tableCell.content.empty",
+                    "tableCell.content.block",
+                    "tableRow.cells.empty",
+                    "table.foot.populated",
+                    "table.caption.empty",
+                    "table.column.relative.value"
+                ]
+            },
+            "claim": "The SPARSE grid table, cell for cell against the same loose list item pair-gridcell-dialect uses and for the same reason: a per-line positional cut at a width established by an earlier line, whose joined remainders are parsed as BLOCKS. Where that pair carries one plain cell, this one carries every cell shape the grammar admits -- a cell spanning two rows, a cell spanning two columns, a cell with no content at all, a row with no cells, a populated foot and an empty caption -- against seven list items of which two are empty and one holds two blocks, so the cells, the blocks and the inline runs all match: 7 cells, 6 paragraphs and 6 text nodes per unit on each side. Reading the two ratios together is what separates the cost of the SPANS from the cost of the cut: everything else about the two pairs is the same production against the same reference."
         },
         {
             "case": "pair-gridcell-dialect",
