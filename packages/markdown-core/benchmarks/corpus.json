@@ -1089,6 +1089,9 @@
                 "isomorph": {
                     "each": 1
                 }
+            },
+            "reference": {
+                "xml": "paragraph"
             }
         },
         {
@@ -1112,6 +1115,9 @@
                 "isomorph": {
                     "each": 1
                 }
+            },
+            "reference": {
+                "html": "id=\"fn-"
             }
         },
         {
@@ -1133,6 +1139,9 @@
                 "isomorph": {
                     "each": 1
                 }
+            },
+            "reference": {
+                "xml": "tasklist"
             }
         },
         {
@@ -1153,6 +1162,9 @@
                 "isomorph": {
                     "each": 2
                 }
+            },
+            "reference": {
+                "xml": "link"
             }
         },
         {
@@ -1182,6 +1194,9 @@
                 "isomorph": {
                     "each": 5
                 }
+            },
+            "reference": {
+                "xml": "link"
             }
         },
         {
@@ -1202,6 +1217,9 @@
                 "isomorph": {
                     "each": 2
                 }
+            },
+            "reference": {
+                "xml": "link"
             }
         },
         {
@@ -1222,6 +1240,9 @@
                 "isomorph": {
                     "each": 2
                 }
+            },
+            "reference": {
+                "xml": "link"
             }
         },
         {
@@ -1239,6 +1260,9 @@
                 "isomorph": {
                     "each": 1
                 }
+            },
+            "reference": {
+                "xml": "code_block"
             }
         },
         {
@@ -1267,6 +1291,9 @@
                 "isomorph": {
                     "each": 5
                 }
+            },
+            "reference": {
+                "xml": "image"
             }
         },
         {
@@ -1285,6 +1312,9 @@
                 "isomorph": {
                     "each": 1
                 }
+            },
+            "reference": {
+                "xml": "table"
             }
         },
         {
@@ -1302,6 +1332,9 @@
                 "isomorph": {
                     "each": 1
                 }
+            },
+            "reference": {
+                "xml": "code_block"
             }
         },
         {
@@ -1319,6 +1352,9 @@
                 "isomorph": {
                     "each": 1
                 }
+            },
+            "reference": {
+                "xml": "code_block"
             }
         },
         {
@@ -1341,6 +1377,9 @@
                     "each": 0,
                     "plus": 1
                 }
+            },
+            "reference": {
+                "xml": "code_block"
             }
         },
         {
@@ -1372,6 +1411,9 @@
                     "each": 0,
                     "plus": 1
                 }
+            },
+            "reference": {
+                "xml": "code_block"
             }
         },
         {
@@ -1405,6 +1447,9 @@
                 "isomorph": {
                     "each": 1
                 }
+            },
+            "reference": {
+                "xml": "list"
             }
         },
         {
@@ -1440,6 +1485,9 @@
                 "isomorph": {
                     "each": 3
                 }
+            },
+            "reference": {
+                "xml": "image"
             }
         },
         {
@@ -1481,6 +1529,9 @@
                 "isomorph": {
                     "each": 7
                 }
+            },
+            "reference": {
+                "xml": "list"
             }
         },
         {
@@ -1499,6 +1550,9 @@
                 "isomorph": {
                     "each": 1
                 }
+            },
+            "reference": {
+                "xml": "thematic_break"
             }
         },
         {
@@ -1522,6 +1576,9 @@
                 "isomorph": {
                     "each": 1
                 }
+            },
+            "reference": {
+                "html": "id=\"fn-"
             }
         },
         {
@@ -1539,6 +1596,9 @@
                 "isomorph": {
                     "each": 1
                 }
+            },
+            "reference": {
+                "xml": "heading"
             }
         },
         {
@@ -1565,6 +1625,9 @@
                 "isomorph": {
                     "each": 2
                 }
+            },
+            "reference": {
+                "xml": "block_quote"
             }
         },
         {
@@ -1598,6 +1661,9 @@
                 "isomorph": {
                     "each": 3
                 }
+            },
+            "reference": {
+                "xml": "tasklist"
             }
         },
         {
@@ -1624,6 +1690,9 @@
                     "each": 2,
                     "plus": 2
                 }
+            },
+            "reference": {
+                "xml": "table_cell"
             }
         },
         {
@@ -1664,6 +1733,9 @@
                 "isomorph": {
                     "each": 7
                 }
+            },
+            "reference": {
+                "xml": "item"
             }
         },
         {
@@ -1687,6 +1759,9 @@
                 "isomorph": {
                     "each": 1
                 }
+            },
+            "reference": {
+                "xml": "item"
             }
         },
         {
@@ -1711,6 +1786,9 @@
                 "isomorph": {
                     "each": 1
                 }
+            },
+            "reference": {
+                "xml": "table"
             }
         },
         {
@@ -1742,6 +1820,9 @@
                 "isomorph": {
                     "each": 3
                 }
+            },
+            "reference": {
+                "xml": "item"
             }
         }
     ],

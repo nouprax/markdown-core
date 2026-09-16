@@ -491,6 +491,23 @@ For a **declaration** pair, where there is no identical tree to compare:
 Each of those fails when broken, which was verified by mutating the corpus
 rather than by reading the code.
 
+All of it is this parser's opinion of the two documents, which is necessary and
+is **not sufficient**. A logical pair's whole claim is that the *reference* did
+the same job on the paired document, and a twin that cmark reads as ordinary
+prose dumps perfectly well through our CLI. That defect is not hypothetical:
+`pair-specimen-common` once measured a document in which cmark-gfm discarded all
+1,961 footnote definitions because none was referenced, and the pair reported a
+shape ratio that was a division by an engine throwing text away.
+
+So `scripts/audit-corpus-pairs.mjs` counts the twin through the reference's own
+output and requires it to agree. Each pair declares how — an XML element name,
+or an HTML marker where cmark-gfm's XML renderer prints `<unknown>` for an
+extension node, as it does for the footnote definition. A pair that declares
+nothing fails, because a pair nobody checks against the reference is exactly the
+one that needs checking. It runs in the `External parity` job, which already
+builds the pinned oracle binaries, so the reach audit stays runnable without
+them.
+
 ### Which grammar STATES have a same-job number
 
 Node kinds are the coarse question, and all 43 are either paired or written in a

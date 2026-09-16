@@ -1117,6 +1117,13 @@ jobs:
               run: pnpm build:c
             - name: Build the pinned parser oracles
               run: scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm oracle-pandoc
+            # The benchmark corpus's pairs, against the reference engines' own
+            # output rather than against this parser's opinion of the paired
+            # document. It lives here because it needs the pinned oracle
+            # binaries this job already builds, and because the corpus-reach
+            # audit has to stay runnable without them.
+            - name: Audit benchmark pairs against the references
+              run: pnpm audit:corpus-pairs
             - name: Compare CommonMark against current cmark
               run: pnpm check:commonmark-parity
             - name: Compare GFM extensions against cmark-gfm
