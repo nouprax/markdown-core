@@ -296,6 +296,11 @@ children — so three numbers decompose the ratio:
 The split is the point. A pair reading 1.0x on Grammar and 3x on Shape is not an
 extension problem at all, however large the bound against cmark looked.
 
+Neither half of a pair joins `mixed-commonmark` or `mixed-extended`. A pair is a
+pair of isolation probes, written to mirror each other; a document written twice
+would enter the concatenated aggregate twice and tilt it toward whichever
+construct the pair isolates. Every other sample is in its aggregate.
+
 **The pairing is checked, not claimed.** `scripts/audit-corpus-reach.mjs`
 requires the substitution to reproduce the isomorph byte for byte, and requires
 the two dumps to be identical once the kind names are erased. A pair whose two
