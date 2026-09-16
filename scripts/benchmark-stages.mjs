@@ -1739,6 +1739,20 @@ function markdownReport(report) {
             return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
         };
         lines.push("### Ratio against the reference", "");
+        /* Read off this run, both halves of it. The paragraph used to describe
+         * every pair as the same document under a change of marker for which
+         * cmark builds the same tree. That is true of the SUBSTITUTION pairs
+         * and false of the count pairs, which are deliberately different
+         * lengths and usually different trees -- a specimen against a footnote
+         * -- so the report stated the wrong invariant for most of the rows it
+         * was introducing. The `:::note` example was the same failure one level
+         * down: it named a construct that has since been paired, as though it
+         * were still measured as a bound. */
+        const paired = ranked.filter((item) => item.isomorph);
+        const substituted = paired.filter((item) => item.isomorph.by === "substitution");
+        const bounded = ranked.filter(
+            (item) => (item.dialect !== "commonmark" || item.carries.length) && !item.gfm && !item.isomorph
+        );
         lines.push(
             "A ratio compares only where both parsers did the same job, so the cases are" +
                 " grouped by which reference implements what they contain, and the groups are" +
@@ -1746,16 +1760,49 @@ function markdownReport(report) {
             "",
             "cmark implements the CommonMark cases. cmark-gfm implements tables, task lists," +
                 " bare autolinks and footnotes, and is measured only on the cases that hold" +
-                " them. For a few dialect constructs neither one implements, an ISOMORPH" +
-                " stands in: the same document written twice, once with the dialect marker" +
-                " and once with a CommonMark marker of the same shape, so cmark builds the" +
-                " same tree and the ratio is a comparison again. Nothing implements what is" +
-                " left: cmark reads `:::note` as a paragraph, so its number there is the cost" +
-                " of NOT having the feature. That bounds what a construct costs and does not" +
-                " say it is slow.",
-            "",
-            ""
+                " them."
         );
+        if (paired.length) {
+            /* Named only where they occur. A `--case`-filtered run can measure
+             * pairs of one kind, and printing "0 of the 1 pairs" alongside "the
+             * other 0" describes a corpus that is not the one being reported. */
+            const byCount = paired.length - substituted.length;
+            const kinds = [];
+            if (substituted.length) {
+                kinds.push(
+                    `${substituted.length} by SUBSTITUTION -- the same bytes under a change of` +
+                        ` marker, parsing to the same tree`
+                );
+            }
+            if (byCount) {
+                kinds.push(
+                    `${byCount} by COUNT -- two spellings of different lengths, sized to an equal` +
+                        ` number of the construct rather than to equal bytes, so the trees they` +
+                        ` build are usually not the same one`
+                );
+            }
+            lines.push(
+                "",
+                `For dialect constructs neither one implements, a PAIR stands in: one` +
+                    ` production written twice, once in the dialect grammar and once in a` +
+                    ` CommonMark grammar of the same shape, so the reference does the same job` +
+                    ` and the ratio is a comparison again. A pair is held constant in one of two` +
+                    ` ways, and which one decides what a row claims: of the ${paired.length}` +
+                    ` pair${paired.length === 1 ? "" : "s"} here, ${kinds.join(", and ")}.` +
+                    ` "What the grammar costs" below says what each kind holds and what the` +
+                    ` audit checks.`
+            );
+        }
+        if (bounded.length) {
+            lines.push(
+                "",
+                `Nothing implements what is left. cmark reads the document in` +
+                    ` \`${bounded[0].case}\` as ordinary prose, so its number there is the cost of` +
+                    " NOT having the feature. That" +
+                    " bounds what a construct costs and does not say it is slow."
+            );
+        }
+        lines.push("", "");
         /* Read off this run. Written as prose it froze at the numbers of the
          * run that wrote it, so the sentence making the case for the
          * distinction went on asserting them while the tables below reported
