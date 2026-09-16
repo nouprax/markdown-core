@@ -55,7 +55,13 @@ import { fileURLToPath } from "node:url";
 
 import { baseName, costRecord, edgesBetween, foldNames, nodesEnteredFrom, parseCallgrind } from "./lib/callgrind.mjs";
 import { compiledFlags as readCompiledFlags, discardTree, effectiveFlags, markTree } from "./lib/compile-identity.mjs";
-import { CACHE, measurementEnvironment, measurementRoot } from "./lib/measurement.mjs";
+import {
+    BUILD_FLAG_VARIABLES,
+    buildEnvironment,
+    CACHE,
+    measurementEnvironment,
+    measurementRoot
+} from "./lib/measurement.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const BENCHMARKS = path.join(root, "packages/markdown-core/benchmarks");
@@ -204,34 +210,6 @@ function parseArguments(argv) {
  * which is the direction that has to be safe: calling two differing streams
  * comparable is the failure, and a spurious rebuild is not.
  */
-/**
- * The build's environment is built rather than inherited, for the reason the
- * measurement's is.
- *
- * A compiler reads more than its command line. `CPATH` and `C_INCLUDE_PATH` add
- * include directories that appear on no compile line at all, so a header can be
- * swapped underneath a build while `compile_commands.json` -- which is where the
- * identity reads the engines' real options -- shows character-for-character the
- * same command. Verified: a project compiled against an injected `injected.h`
- * through `CPATH`, and its compile command mentioned no such directory.
- *
- * Only what a build needs is carried across, plus the two variables the
- * identity deliberately honours and records. Everything else is absent by
- * construction, which is the half of this that was missing: the measurement got
- * an allowlist earlier and the build that produced it did not.
- */
-/* The two the identity deliberately honours and records, so the two whose
- * contents have to be visible in it. */
-const BUILD_FLAG_VARIABLES = ["CFLAGS", "LDFLAGS"];
-const BUILD_VARIABLES = ["PATH", "HOME", "TMPDIR", ...BUILD_FLAG_VARIABLES];
-
-function buildEnvironment() {
-    const environment = { LC_ALL: "C", LANG: "C" };
-    for (const name of BUILD_VARIABLES) {
-        if (process.env[name] !== undefined) environment[name] = process.env[name];
-    }
-    return environment;
-}
 
 /**
  * Asked twice and required to agree.

@@ -45,7 +45,7 @@ import { fileURLToPath } from "node:url";
 
 import { baseName, callEdge, costRecord, foldNames, parseCallgrind } from "./lib/callgrind.mjs";
 import { compiledFlags, discardTree, effectiveFlags, markTree } from "./lib/compile-identity.mjs";
-import { CACHE, measurementEnvironment, measurementRoot } from "./lib/measurement.mjs";
+import { buildEnvironment, CACHE, measurementEnvironment, measurementRoot } from "./lib/measurement.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PROFILE_PRESET = "benchmark";
@@ -218,6 +218,8 @@ function writeInputs(options) {
 
 function run(command, args, options = {}) {
     const result = spawnSync(command, args, { encoding: "utf8", cwd: root, ...options });
+    /* Callers that touch a compiler pass `env: buildEnvironment()`; see
+     * `lib/measurement.mjs` for why an inherited `CPATH` is not a detail. */
     if (result.error) fail(`${command} could not run: ${result.error.message}`);
     if (result.status !== 0) {
         fail(`${command} ${args.join(" ")} exited ${result.status}\n${result.stderr ?? ""}`);
@@ -271,23 +273,27 @@ function pinnedLexbor() {
 function buildLexbor(profile, lexbor, out, stamp) {
     const buildDir = path.join(out, "lexbor");
     discardTree(buildDir, stamp);
-    run("cmake", [
-        "-S",
-        lexbor.checkout,
-        "-B",
-        buildDir,
-        "-DCMAKE_BUILD_TYPE=Release",
-        "-DLEXBOR_BUILD_SHARED=OFF",
-        /* Static for the reason the cmark oracles are: the runner links the
-         * archive this just built rather than whatever a shared build left. */
-        "-DLEXBOR_BUILD_STATIC=ON",
-        "-DLEXBOR_BUILD_TESTS=OFF",
-        "-DLEXBOR_BUILD_EXAMPLES=OFF",
-        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-        `-DCMAKE_C_COMPILER=${profile.compiler}`,
-        `-DCMAKE_C_FLAGS_RELEASE=${profile.flags}`
-    ]);
-    run("cmake", ["--build", buildDir, "--parallel", String(os.cpus().length)]);
+    run(
+        "cmake",
+        [
+            "-S",
+            lexbor.checkout,
+            "-B",
+            buildDir,
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DLEXBOR_BUILD_SHARED=OFF",
+            /* Static for the reason the cmark oracles are: the runner links the
+             * archive this just built rather than whatever a shared build left. */
+            "-DLEXBOR_BUILD_STATIC=ON",
+            "-DLEXBOR_BUILD_TESTS=OFF",
+            "-DLEXBOR_BUILD_EXAMPLES=OFF",
+            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            `-DCMAKE_C_COMPILER=${profile.compiler}`,
+            `-DCMAKE_C_FLAGS_RELEASE=${profile.flags}`
+        ],
+        { env: buildEnvironment() }
+    );
+    run("cmake", ["--build", buildDir, "--parallel", String(os.cpus().length)], { env: buildEnvironment() });
     if (!fs.existsSync(path.join(buildDir, "liblexbor_static.a"))) {
         fail(`the profile build of lexbor produced no static archive in ${buildDir}`);
     }
@@ -341,12 +347,15 @@ function objectIdentity(buildDir, target, profile, label) {
  */
 function resolvedToolchain(profile) {
     const line = (command, args) => {
-        const probe = spawnSync(command, args, { encoding: "utf8" });
+        const probe = spawnSync(command, args, { encoding: "utf8", env: buildEnvironment() });
         if (probe.status !== 0) fail(`${command} ${args.join(" ")} would not report its version`);
         return `${probe.stdout ?? ""}${probe.stderr ?? ""}`.trim().split("\n")[0];
     };
     /* gcc and clang both write the configuration banner to stderr and exit 0. */
-    const probe = spawnSync("/bin/sh", ["-c", `${profile.compiler} ${profile.flags} -v`], { encoding: "utf8" });
+    const probe = spawnSync("/bin/sh", ["-c", `${profile.compiler} ${profile.flags} -v`], {
+        encoding: "utf8",
+        env: buildEnvironment()
+    });
     const banner = probe.status === 0 ? `${probe.stderr ?? ""}${probe.stdout ?? ""}` : "";
     if (!banner.trim()) fail(`the compiler would not report how it was configured: ${profile.compiler}`);
     return {
@@ -405,30 +414,38 @@ function build(profile, toolchain, lexbor, out) {
      * carries, so sharing it would have the two fight over every run. */
     const binaryDir = path.join(out, "runners");
     discardTree(binaryDir, stamp);
-    run("cmake", [
-        "-B",
-        binaryDir,
-        "--preset",
-        PROFILE_PRESET,
-        /* The preset does not set it and the stage benchmark passes it too:
-         * without it the tree compiles fine and exports no database, so the
-         * object identity below has nothing to read. It went unnoticed locally
-         * because the stage benchmark had already configured this same tree
-         * WITH it, and a clean runner has no such leftover. */
-        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-        `-DMARKDOWN_CORE_LEXBOR_SOURCE_DIR=${lexbor.checkout}`,
-        `-DMARKDOWN_CORE_LEXBOR_BUILD_DIR=${lexborBuild}`
-    ]);
-    run("cmake", [
-        "--build",
-        binaryDir,
-        "--target",
-        "markdown_core_attribute_runner",
-        "--target",
-        "lexbor_attribute_runner",
-        "--parallel",
-        String(os.cpus().length)
-    ]);
+    run(
+        "cmake",
+        [
+            "-B",
+            binaryDir,
+            "--preset",
+            PROFILE_PRESET,
+            /* The preset does not set it and the stage benchmark passes it too:
+             * without it the tree compiles fine and exports no database, so the
+             * object identity below has nothing to read. It went unnoticed locally
+             * because the stage benchmark had already configured this same tree
+             * WITH it, and a clean runner has no such leftover. */
+            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            `-DMARKDOWN_CORE_LEXBOR_SOURCE_DIR=${lexbor.checkout}`,
+            `-DMARKDOWN_CORE_LEXBOR_BUILD_DIR=${lexborBuild}`
+        ],
+        { env: buildEnvironment() }
+    );
+    run(
+        "cmake",
+        [
+            "--build",
+            binaryDir,
+            "--target",
+            "markdown_core_attribute_runner",
+            "--target",
+            "lexbor_attribute_runner",
+            "--parallel",
+            String(os.cpus().length)
+        ],
+        { env: buildEnvironment() }
+    );
     for (const [name, definition] of Object.entries(BASELINES)) {
         const binary = path.join(binaryDir, definition.runner);
         if (!fs.existsSync(binary)) fail(`the profile build produced no ${name} attribute runner at ${binary}`);
@@ -437,7 +454,26 @@ function build(profile, toolchain, lexbor, out) {
         /* The archive each runner links, named because one source can be
          * compiled several ways in one tree. */
         "markdown-core": objectIdentity(binaryDir, "libmarkdown-core-public-static", profile, "markdown-core"),
-        lexbor: objectIdentity(lexborBuild, "lexbor_static", profile, "lexbor")
+        lexbor: objectIdentity(lexborBuild, "lexbor_static", profile, "lexbor"),
+        /* And the runner targets, because THE MEASURED FUNCTION IS IN THEM.
+         * `bench_parse_attributes` is compiled from `markdown_core_attributes.c`
+         * and `lexbor_attributes.c` into the executables, not into either
+         * archive, and the edge this report reads is the edge into it -- so
+         * their target-specific options, `LEXBOR_STATIC` among them, are inside
+         * every count. Checking only the archives let the report say every
+         * measured object was verified while the benchmark's own code was the
+         * one thing left out.
+         *
+         * The stage benchmark is not in this position and is left alone: its
+         * measured edges are internal to the parse transaction, so its runner
+         * objects sit outside every stage it counts. */
+        "markdown-core runner": objectIdentity(
+            binaryDir,
+            "markdown_core_attribute_runner",
+            profile,
+            "the markdown-core runner"
+        ),
+        "lexbor runner": objectIdentity(binaryDir, "lexbor_attribute_runner", profile, "the lexbor runner")
     };
     /* Read out of each tree's own cache rather than taken from what this
      * driver passed: CMake initializes `CMAKE_C_FLAGS` from CFLAGS and

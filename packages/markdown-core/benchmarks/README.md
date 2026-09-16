@@ -347,7 +347,14 @@ node scripts/benchmark-attributes.mjs
 That install only *pins the source*, unlike the cmark oracles: the driver
 compiles lexbor itself, from the pinned checkout, with the `benchmark` preset's
 compiler and options, and checks every object of both baselines really received
-the pinned flags. An archive built by the environment setup would carry whatever
+the pinned flags — the two archives **and the two runner targets**, because
+`bench_parse_attributes` is compiled into the executables rather than into
+either archive and the measured edge is the edge into it. (The stage benchmark
+is not in that position: its edges are internal to the parse transaction, so its
+runner objects sit outside every stage it counts.) Every configure, build and
+compiler probe runs under the same environment allowlist the stage benchmark
+builds under, because `CPATH` and `C_INCLUDE_PATH` add include directories that
+appear on no compile line at all. An archive built by the environment setup would carry whatever
 the host defaults to, and the ratio would then depend on how the baseline
 happened to be installed while the report claimed one compiler produced both.
 Nothing is written into the checkout either — lexbor ships no `.gitignore`, so a
