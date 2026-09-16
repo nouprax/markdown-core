@@ -1524,7 +1524,7 @@ function markdownReport(report) {
      * documents are generated with an equal COUNT of those items rather than an
      * equal byte length. */
     const stressed = new Map((report.stressPairs ?? []).map((declaration) => [declaration.case, declaration]));
-    const isStressReference = new Set((report.stressPairs ?? []).map((declaration) => declaration.reference));
+
     const atScaleOne = new Map(report.cases.filter((item) => item.scale === 1).map((item) => [item.case, item]));
     const ranked = report.cases
         .filter((item) => item.scale === 1 && item.engines["markdown-core"])
@@ -1601,16 +1601,26 @@ function markdownReport(report) {
                  * case's own bytes when the two engines already agree. A stress
                  * pair outranks plain cmark precisely because plain cmark on
                  * those bytes is the number that is NOT a comparison. */
-                sameJob: gfmIr
-                    ? core / gfmIr
-                    : twinCmark
-                      ? core / twinCmark
-                      : stressed.has(item.case)
-                        ? (() => {
-                              const other = atScaleOne.get(stressed.get(item.case).reference);
-                              const referenceIr = other ? stageIr(other.engines, "cmark") : null;
-                              return referenceIr ? core / referenceIr : null;
-                          })()
+                /* The reference that did equivalent work: cmark-gfm where it
+                 * implements the construct, the isomorph where a substitution
+                 * builds the same tree, and cmark on the case's own bytes when
+                 * the two engines already agree on what to build.
+                 *
+                 * A case with a STRESS PAIR publishes none of those. Its own
+                 * bytes are exactly where the two engines disagree -- that is
+                 * why it needed a pair -- so dividing by cmark on them is the
+                 * number the pairing exists to stop being read as a comparison,
+                 * and dividing by cmark on the PAIRED document compares one
+                 * document's cost with another's. The comparison lives on the
+                 * paired workload document, where both engines are measured on
+                 * the same bytes doing equivalent work, and that document is a
+                 * case in its own right. This one is reported as a bound. */
+                sameJob: stressed.has(item.case)
+                    ? null
+                    : gfmIr
+                      ? core / gfmIr
+                      : twinCmark
+                        ? core / twinCmark
                         : item.dialect === "commonmark" && cmarkIr
                           ? core / cmarkIr
                           : null
@@ -1669,11 +1679,11 @@ function markdownReport(report) {
                         item.dialect === "commonmark" &&
                         !item.gfm &&
                         !isIsomorph.has(item.case) &&
-                        /* Written to be the other half of a stress pair, not
-                         * because anyone writes documents of bare link
-                         * reference definitions. It is the reference, so it is
-                         * not also a case in the group it references. */
-                        !isStressReference.has(item.case)
+                        /* Its bytes are where the two engines disagree, so its
+                         * number against cmark is a bound. The comparison for
+                         * this construct lives on its paired workload document,
+                         * which is in this group on its own account. */
+                        !stressed.has(item.case)
                 )
             ],
             ["GFM extensions", "cmark-gfm", ranked.filter((item) => item.gfm)],
@@ -1681,7 +1691,9 @@ function markdownReport(report) {
             [
                 "Dialect-only (no reference)",
                 "cmark, as a bound",
-                ranked.filter((item) => item.dialect !== "commonmark" && !item.gfm && !item.isomorph)
+                ranked.filter(
+                    (item) => (item.dialect !== "commonmark" || stressed.has(item.case)) && !item.gfm && !item.isomorph
+                )
             ]
         ];
         for (const [label, reference, group] of groups) {
@@ -1783,9 +1795,11 @@ function markdownReport(report) {
                 ? "cmark-gfm"
                 : item.isomorph
                   ? "cmark, isomorph"
-                  : item.dialect === "commonmark"
-                    ? "cmark"
-                    : "(bound)";
+                  : stressed.has(item.case)
+                    ? `(bound; paired as ${stressed.get(item.case).reference})`
+                    : item.dialect === "commonmark"
+                      ? "cmark"
+                      : "(bound)";
             lines.push(
                 `| ${item.case} | ${reference} | ${ratio === null ? "-" : `${ratio.toFixed(2)}x`} |` +
                     ` ${(item.coreIr / item.bytes).toFixed(1)} | ${hot || "(not recorded)"} |`
