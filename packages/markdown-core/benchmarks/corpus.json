@@ -1,32 +1,6 @@
 {
     "schemaVersion": 2,
     "targetBytes": 65536,
-    "unmatchedFields": {
-        "anchor": {
-            "reason": "cmark's node has no anchor field. This dialect derives a slug for EVERY heading and registers it as a reference label, so a document holding a heading is not the tree cmark builds -- a permanent property of the dialect, not of any sample. The ratio is a comparison again once that work is taken off this side. The edges are listed with the stage each sits in, because the heading registry is built while blocks are parsed and the anchors are derived when the document is finished.",
-            "witness": "markdown_core_block_prepare_headings -> markdown_core_prepare_heading",
-            "excludes": {
-                "markdown_core_block_finalize -> markdown_core_block_register_heading": "source_to_buffer",
-                "finish_document -> markdown_core_block_finalize_heading_anchors": "buffer_to_ast",
-                "observe_inline -> markdown_core_block_reserve_node_anchor": "buffer_to_ast",
-                "prepare_document -> markdown_core_key_index_init": "buffer_to_ast",
-                "markdown_core_prepare_heading -> markdown_core_reference_create": "buffer_to_ast",
-                "markdown_core_prepare_heading -> markdown_core_resource_new": "buffer_to_ast",
-                "markdown_core_prepare_heading -> markdown_core_inline_reference_label_length": "buffer_to_ast",
-                "markdown_core_block_prepare_headings -> markdown_core_order_source_entries": "buffer_to_ast",
-                "finish_document -> markdown_core_block_dispose_headings": "buffer_to_ast",
-                "finish_document -> markdown_core_key_index_free": "buffer_to_ast"
-            },
-            "shared": {
-                "continue_heading": "Heading block continuation. cmark decides the same thing for the same lines in S_process_line.",
-                "markdown_core_heading_begin_inlines": "Starts the heading's inline parse, which cmark also runs on heading content inside cmark_parse_inlines.",
-                "markdown_core_heading_claim_tail": "Consumes the optional closing run of an ATX heading. That is CommonMark syntax and cmark strips it too.",
-                "markdown_core_prepare_heading": "Runs each heading's inline parse early, which is work cmark also does; its anchor-only callees are excluded by edge above. Its own body is NOT purely that: heading.c:316-333 also builds the implicit reference label, validates it, and sets record->implicit and source_key, which cmark has no counterpart for. Exclusion is by call edge and cannot remove part of a function's self cost, so that band stays in. Measured rather than waved at: 136,482 Ir of block-heading's 467,631 attributed self Ir, 43.0 Ir per heading, worth 0.009x on a 2.388x ratio. Excluding the whole function instead would remove 312,105 Ir of inline-parse scheduling cmark also pays -- 2.3x more error, in the direction that flatters this parser. So the published number is at most ~0.01x HIGH, never low, and splitting the function in the parser is the only way to make it exact.",
-                "markdown_core_inline_clear_inlines": "Tears down the inline state that markdown_core_prepare_heading set up. Running the heading's inline parse EARLY is a dialect scheduling choice, but the parse itself is work cmark also does, so its setup and teardown stay on this side of the comparison. Classified shared rather than excluded on purpose: where it is arguable, leaving the work in makes this parser's ratio worse, not better.",
-                "markdown_core_block_prepare_headings": "The loop over the heading collection. It calls markdown_core_prepare_heading, which runs the heading's inline parse that cmark also runs, and markdown_core_order_source_entries, which is excluded by edge. Its own body is the scheduling around those, classified shared for the same reason prepare_heading is: where the call is arguable, leaving the work in makes this parser's ratio worse."
-            }
-        }
-    },
     "requiredGrammars": {
         "S_attach_block_identifier": "block-identifier",
         "autolink_delim": "inline-autolink-rich",
@@ -112,8 +86,7 @@
             "name": "block-heading",
             "dialect": "commonmark",
             "samples": ["block-heading.md"],
-            "builds": ["Heading"],
-            "unmatched": ["anchor"]
+            "builds": ["Heading"]
         },
         {
             "name": "block-hr",
@@ -143,8 +116,7 @@
             "name": "block-lheading",
             "dialect": "commonmark",
             "samples": ["block-lheading.md"],
-            "builds": ["Heading"],
-            "unmatched": ["anchor"]
+            "builds": ["Heading"]
         },
         {
             "name": "block-list-flat",
@@ -482,8 +454,7 @@
                 "inline-newlines.md",
                 "lorem1.md",
                 "rawtabs.md"
-            ],
-            "unmatched": ["anchor"]
+            ]
         },
         {
             "name": "mixed-extended",

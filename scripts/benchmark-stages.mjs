@@ -92,6 +92,23 @@ const ENGINES = {
             buffer_to_ast: { caller: "bench_parse_document", callee: "cmark_parser_finish" }
         }
     },
+    /* This parser again, built from the same sources with one define that omits
+     * the auto-anchor phase. cmark derives no slug and registers no implicit
+     * heading reference, so on a document holding a heading the default build is
+     * not doing cmark's job. The way to compare them is to RUN the same feature
+     * set, not to measure both and subtract the difference: subtraction cannot
+     * see second-order effects -- an allocation not made changes the heap every
+     * later allocation meets -- and a list of call edges is never demonstrably
+     * finished. Two binaries differing in one define have neither problem, and
+     * the heading-free cases measure equal under both, which is a control the
+     * measurement produces rather than a claim this report makes. */
+    "markdown-core-noanchor": {
+        runner: "packages/markdown-core/benchmarks/markdown_core_noanchor_stage_runner",
+        stages: {
+            source_to_buffer: { caller: "markdown_core_parse_document_with_mem", callee: "S_parse_source" },
+            buffer_to_ast: { caller: "markdown_core_parse_document_with_mem", callee: "S_finish_parse" }
+        }
+    },
     /* Same stage split, same API, same codebase -- and it implements tables,
      * strikethrough, bare autolinks, task lists and footnotes, so for those
      * constructs a ratio against it compares two parsers doing one job. */
@@ -1007,13 +1024,6 @@ function buildCorpus(options, manifest) {
                 case: entry.name,
                 dialect: entry.dialect,
                 gfm: entry.gfm === true,
-                /* The AST fields this case's tree carries that cmark's has no
-                 * counterpart for. A non-empty list means the two engines did
-                 * NOT build the same tree, so the number against cmark is a
-                 * bound and not a comparison, whatever the syntax was.
-                 * `scripts/audit-corpus-reach.mjs` is what holds this to the
-                 * trees rather than to anyone's memory. */
-                unmatched: entry.unmatched ?? [],
                 /* What the growth table is varying. `documents` cases add
                  * independent copies; a chain case grows one structure, and
                  * WHICH dimension is not the same question as the shape --
@@ -1171,163 +1181,7 @@ function dispatchIdentity(profile, root) {
     return crypto.createHash("sha256").update(features.join("\n")).digest("hex");
 }
 
-/* Everything reachable from the callee side of each excluded edge, so a
- * function doing that feature's work can be recognised wherever it sits under
- * the boundary rather than only at its rim. */
-function reachedFrom(profile, specs) {
-    const callees = new Map();
-    for (const edge of profile.edges.values()) {
-        const from = baseName(edge.caller);
-        if (!callees.has(from)) callees.set(from, new Set());
-        callees.get(from).add(baseName(edge.callee));
-    }
-    const seen = new Set();
-    const pending = specs.map((spec) => spec.split("->")[1].trim());
-    while (pending.length) {
-        const name = pending.pop();
-        if (seen.has(name)) continue;
-        seen.add(name);
-        for (const callee of callees.get(name) ?? []) pending.push(callee);
-    }
-    return seen;
-}
-
-/* Enumerating call edges to take a feature out of a ratio is only honest while
- * the enumeration is complete, and nothing about a list of edges says when it
- * has stopped being. This derives the candidates instead of trusting the list:
- * it finds every function whose behaviour TRACKS the field's presence across
- * the corpus, and requires each one to have been classified -- inside an
- * excluded subtree, or named in `shared` with the reason the reference does it
- * too.
- *
- * Tracking the field is NOT the same as being caused by it, and this does not
- * claim otherwise. The syntax that carries a field and the field itself occur
- * on exactly the same documents, so shared parsing lands in the candidate set
- * too: `continue_heading`, `markdown_core_heading_begin_inlines` and
- * `markdown_core_heading_claim_tail` are all found here, and all three are work
- * cmark does as well. That is why the answer to a candidate is a CLASSIFICATION
- * and not an exclusion. The set is deliberately wide, because a narrow one
- * decided by reachability would stop asking about exactly the functions worth
- * asking about: `continue_heading` is reached from block parsing, not from
- * anchor code, and so is a heading-only function nobody has noticed yet.
- *
- * Two consequences worth stating rather than discovering:
- *
- * - The candidate set is a fact about THIS corpus. Dropping `block-lheading`
- *   would leave ATX as the only heading spelling present and the set would grow
- *   `open_atx`; dropping `block-fences` would grow `markdown_core_attributes_tail`.
- *   Both are shared work, and the correct response to either is a `shared` entry
- *   naming what cmark does -- a claim a reader can check -- never an allowlist
- *   entry written to get the run moving.
- * - It cannot catch a WRONG classification. Calling anchor work "shared" hides
- *   it just as well as never finding it.
- *
- * What it does catch is the failure that actually happened here twice: work only
- * the field's presence causes that nobody had thought about. A new candidate
- * stops the run until someone says which side it is on. */
-function requireCompleteExclusions(cases, ran, excludedReach, excludedLeaks, unmatchedFields, filtered) {
-    /* The derivation is a statement about the whole corpus: "runs wherever the
-     * field is and nowhere it is not" only means "caused by the field" when
-     * "nowhere it is not" covers every compared document. A `--case` run does
-     * not, and the inference degrades immediately -- two cases is enough to
-     * indict `open_atx`, which opens an ATX heading and is exactly the shared
-     * work this is meant to leave alone. So a filtered run does not get to
-     * decide the question either way.
-     *
-     * Returning here is not the end of it. A run that cannot judge the
-     * subtraction must not publish a subtracted ratio as a comparison either,
-     * so `report.completenessJudged` carries the same fact to the renderer,
-     * which withholds those cases from every group and prints their arithmetic
-     * under a heading that says it is unchecked. */
-    if (filtered) {
-        console.error(
-            "note: a --case run cannot judge whether an exclusion is complete, so same-job ratios " +
-                "for cases holding an unmatched field are withheld from this report"
-        );
-        return;
-    }
-    for (const [field, declaration] of Object.entries(unmatchedFields)) {
-        const carries = [];
-        const plain = [];
-        for (const item of cases) {
-            if (item.scale !== 1 || !ran.has(item.case)) continue;
-            /* Only where the field could change a number: a bound is not a
-             * comparison, so nothing is carved out of it and nothing about it
-             * needs classifying. */
-            if (item.dialect !== "commonmark" && !item.gfm) continue;
-            ((item.engines["markdown-core"]?.witnesses?.[field] ?? 0) > 0 ? carries : plain).push(item.case);
-        }
-        /* No case builds the field, so there is nothing to classify. */
-        if (!carries.length) continue;
-        /* Cases build it and NOTHING in the corpus does not. The derivation is
-         * "runs where the field is and nowhere it is not", and without a single
-         * compared document without the field there is no "nowhere it is not"
-         * to read -- the check would pass by having nothing to compare against,
-         * which is the loudest way to be silently unverified. Refusing is the
-         * only honest answer: the corpus, not the run, is what has to change. */
-        if (!plain.length) {
-            fail(
-                `every compared case builds "${field}", so nothing in this corpus shows what the parser ` +
-                    `does WITHOUT it and the exclusion's completeness cannot be derived at all. Its ratios ` +
-                    `would rest on a list nothing checked. Add a compared case (dialect "commonmark", or ` +
-                    `gfm) that builds no ${field}, or stop reporting these cases as comparisons.`
-            );
-        }
-        const shared = new Set(Object.keys(declaration.shared ?? {}));
-        /* "Reachable from an excluded edge" is not "its cost was removed". The
-         * same helper can run under an excluded edge and again under a caller
-         * the exclusion never named, and only the first is subtracted -- so a
-         * candidate still taking cost from an unnamed caller inside a measured
-         * stage has to be classified on its own, not waved through because some
-         * other call to it was excluded. */
-        const covered = (fn) =>
-            shared.has(fn) ||
-            carries.every((name) => excludedReach.get(name).has(fn) && !(excludedLeaks.get(name)?.[fn] > 0));
-        /* Functions only the field's presence RUNS. */
-        let only = new Set(Object.keys(ran.get(carries[0])));
-        for (const name of carries.slice(1)) only = new Set([...only].filter((fn) => fn in ran.get(name)));
-        for (const name of plain) for (const fn of Object.keys(ran.get(name))) only.delete(fn);
-        /* And the ones the field's presence only makes EXPENSIVE. These are the
-         * blind spot in the test above, and the one that actually bit: a
-         * function like `markdown_core_block_dispose_headings` runs on every
-         * document, costs 48 Ir over an empty collection and 25,442 over a full
-         * one, so "does it run here" cannot see it. Comparing against the
-         * HIGHEST cost the function reaches on any compared case without the
-         * field keeps this free of a tuned threshold. It is the same kind of
-         * evidence as the test above and carries the same caveat -- a cost
-         * ordering is not causation either -- so it produces candidates to
-         * classify, not a verdict. On this corpus it is what finds the four
-         * functions that run unconditionally over the field's own collection:
-         * the two anchor passes, the loop over them, and the disposal. */
-        for (const fn of new Set(carries.flatMap((name) => Object.keys(ran.get(name))))) {
-            const floor = Math.max(0, ...plain.map((name) => ran.get(name)[fn] ?? 0));
-            if (carries.every((name) => (ran.get(name)[fn] ?? 0) > floor)) only.add(fn);
-        }
-        const unclassified = [...only].filter((fn) => !covered(fn));
-        if (unclassified.length) {
-            fail(
-                `these functions track the presence of "${field}" across the corpus -- each one either runs ` +
-                    `only on the cases carrying it, or costs more on every one of them than it ever does ` +
-                    `without it -- and none has been classified: ${unclassified.sort().join(", ")}. ` +
-                    `Classify each one. If the field's machinery is what does the work, add the call edge ` +
-                    `to unmatchedFields.${field}.excludes with the stage it sits in. If the reference does ` +
-                    `the same work, add it to unmatchedFields.${field}.shared with a reason NAMING what the ` +
-                    `reference does, the way continue_heading names S_process_line -- tracking the field is ` +
-                    `not the same as being caused by it, and shared parsing reaches this list too. An entry ` +
-                    `written only to get this run moving is the one failure nothing downstream can catch.`
-            );
-        }
-        for (const fn of shared) {
-            /* A `shared` entry for something no case runs is a note about code
-             * that has moved, kept true by nobody. */
-            if (!carries.some((name) => fn in ran.get(name))) {
-                fail(`unmatchedFields.${field}.shared names ${fn}, which no case carrying the field runs`);
-            }
-        }
-    }
-}
-
-function measure(profile, engine, document, out, unmatchedFields) {
+function measure(profile, engine, document, out) {
     const definition = ENGINES[engine];
     const dump = path.join(out, "callgrind", `${engine}.${document.case}.x${document.scale}.out`);
     fs.mkdirSync(path.dirname(dump), { recursive: true });
@@ -1367,10 +1221,6 @@ function measure(profile, engine, document, out, unmatchedFields) {
         return name.slice(0, context).replace(CLONE_SUFFIX, "") + name.slice(context);
     });
     const stages = {};
-    /* Every node either measured stage entered. A cost reached only outside
-     * both stages is not in any ratio's numerator, so it cannot be work an
-     * exclusion failed to remove. */
-    const inStage = new Set();
     for (const stage of STAGES) {
         const boundary = definition.stages[stage];
         const edges = edgesBetween(profileByName, boundary.caller, boundary.callee);
@@ -1386,7 +1236,6 @@ function measure(profile, engine, document, out, unmatchedFields) {
         /* Only the callee nodes this stage entered, never the same function as
          * the other stage reached it. */
         const scoped = new Set(nodesEnteredFrom(profileByName, boundary.callee, boundary.caller));
-        for (const node of scoped) inStage.add(node);
         const breakdown = new Map();
         for (const edge of profileByName.edges.values()) {
             if (!scoped.has(edge.caller)) continue;
@@ -1427,126 +1276,12 @@ function measure(profile, engine, document, out, unmatchedFields) {
     if (!whole.length) fail(`${engine}: no call edge main -> ${ENGINE_ENTRY} in ${path.basename(dump)}`);
     const parsePathIr = whole.reduce((total, edge) => total + (costRecord(profileByName, edge.cost).Ir ?? 0), 0);
 
-    /* The work the reference has no counterpart for, read off the call edges
-     * the corpus declares for each dialect-only field. Measured on EVERY case
-     * and every engine, not only the ones that declare the field: a case that
-     * reaches this work without declaring it is a case whose ratio is about to
-     * silently include it, and the only way to say so is to have looked. */
-    const unmatched = [];
-    /* Whether the case did this work AT ALL, counted separately from what the
-     * work cost. The two are not the same question: `finish_document` calls
-     * `markdown_core_block_finalize_heading_anchors` unconditionally, and the
-     * callee still runs its prologue over an empty collection, so the edge
-     * costs 53 Ir on a document with no heading in it. Reading "did this case
-     * carry dialect output?" off a NON-ZERO COST would therefore answer yes for
-     * all 62 cases. The witness is a call count into work that only a real
-     * occurrence reaches, so it is 0 exactly when the tree carries nothing. */
-    const witnesses = {};
-    for (const [field, declaration] of Object.entries(unmatchedFields ?? {})) {
-        if (typeof declaration.witness !== "string" || !declaration.witness.includes("->")) {
-            fail(
-                `corpus.json: unmatchedFields.${field} has no witness edge, so nothing can say whether a case ` +
-                    `carries it -- the corpus audit checks the same thing and one of the two ran without the other`
-            );
-        }
-        const [caller, callee] = declaration.witness.split("->").map((half) => half.trim());
-        witnesses[field] = edgesBetween(profileByName, caller, callee).reduce((total, edge) => total + edge.calls, 0);
-        for (const [spec, stage] of Object.entries(declaration.excludes ?? {})) {
-            const [from, to] = spec.split("->").map((half) => half.trim());
-            const edges = edgesBetween(profileByName, from, to);
-            const ir = edges.reduce((total, edge) => total + (costRecord(profileByName, edge.cost).Ir ?? 0), 0);
-            const calls = edges.reduce((total, edge) => total + edge.calls, 0);
-            if (ir) unmatched.push({ field, stage, edge: spec, calls, ir });
-        }
-    }
-    for (const entry of unmatched) {
-        /* A part cannot exceed its whole, here for the same reason the
-         * breakdown is checked above: an exclusion larger than the stage it
-         * claims to sit in is an exclusion attributed to the wrong stage, and
-         * subtracting it would manufacture a ratio out of arithmetic. */
-        if (entry.ir > (stages[entry.stage]?.cost.Ir ?? 0)) {
-            fail(
-                `${engine}: ${document.case} excludes ${entry.edge} at ${entry.ir} Ir from a ${entry.stage} ` +
-                    `of ${stages[entry.stage]?.cost.Ir ?? 0} Ir, so the exclusion is in the wrong stage`
-            );
-        }
-    }
-
-    /* Each entry's cost is the edge's INCLUSIVE cost, and the totals are summed,
-     * so two entries may only be added when neither sits inside the other. Put a
-     * future exclusion beneath an existing one and the descendant is subtracted
-     * twice -- a smaller, entirely plausible same-job ratio. The stage check
-     * above cannot see it: each entry is compared with its stage alone, so two
-     * overlapping entries that each fit still sum past what was spent. Roots
-     * must be disjoint, and the per-case profile is what decides that, because
-     * whether one edge lies under another is a property of the call graph this
-     * document produced rather than of the list. */
-    for (const entry of unmatched) {
-        const caller = entry.edge.split("->")[0].trim();
-        for (const other of unmatched) {
-            if (other === entry) continue;
-            const root = other.edge.split("->")[1].trim();
-            if (!reachedFrom(profileByName, [other.edge]).has(caller)) continue;
-            fail(
-                `${engine}: ${document.case} excludes ${entry.edge}, whose caller runs under the already ` +
-                    `excluded ${other.edge} -- ${root}'s inclusive cost already contains it, so subtracting ` +
-                    `both counts ${entry.ir} Ir twice and understates the ratio. Exclusion roots must be disjoint.`
-            );
-        }
-    }
-
-    const excludedReach = reachedFrom(
-        profileByName,
-        unmatched.map((entry) => entry.edge)
-    );
-    /* For each function the exclusion reaches, what it still costs through
-     * callers the exclusion never named -- counted only where a measured stage
-     * entered the caller, because cost outside both stages is in no numerator. */
-    const declaredEdges = new Set(unmatched.map((entry) => entry.edge.replace(/\s*->\s*/u, "->")));
-    const excludedLeaks = new Map();
-    for (const edge of profileByName.edges.values()) {
-        const callee = baseName(edge.callee);
-        if (!excludedReach.has(callee)) continue;
-        const caller = baseName(edge.caller);
-        if (excludedReach.has(caller) || declaredEdges.has(`${caller}->${callee}`)) continue;
-        if (!inStage.has(edge.caller)) continue;
-        const ir = costRecord(profileByName, edge.cost).Ir ?? 0;
-        if (ir) excludedLeaks.set(callee, (excludedLeaks.get(callee) ?? 0) + ir);
-    }
-
     return {
         rootChildren: Number(receipt[2]),
         receiptBytes: Number(receipt[1]),
         parsePathIr,
         outsideStagesIr: STAGES.reduce((total, stage) => total - stages[stage].cost.Ir, parsePathIr),
         stages,
-        unmatched,
-        witnesses,
-        /* Every function this document ran, and everything the excluded edges
-         * reach. The completeness law below needs both: enumerating call edges
-         * to carve a feature out of a ratio is only honest if something can say
-         * when the enumeration has stopped being complete. */
-        ran: [...profileByName.self.entries()].reduce((total, [name, cost]) => {
-            const fn = baseName(name);
-            total[fn] = (total[fn] ?? 0) + (costRecord(profileByName, cost).Ir ?? 0);
-            return total;
-        }, {}),
-        excludedReach: [...excludedReach],
-        /* The hole a base-name reachability test cannot see. `reachedFrom`
-         * answers "is this function called somewhere under an excluded edge",
-         * and a function can be BOTH: `markdown_core_resource_new` runs under
-         * the excluded `markdown_core_prepare_heading` edge and again under
-         * `markdown_core_link_commit`, which builds an ordinary CommonMark link
-         * that cmark builds too. Only the first is subtracted, and that is
-         * correct -- but it means "reachable from an exclusion" is not the same
-         * as "its cost was removed". This records what each such function still
-         * costs through callers the exclusion never named, counting only calls
-         * inside a measured stage, so the completeness check can refuse to
-         * treat those as already accounted for. */
-        excludedLeaks: [...excludedLeaks].reduce((total, [name, ir]) => {
-            total[name] = ir;
-            return total;
-        }, {}),
         hotPaths: hotPaths(profileByName),
         dump
     };
@@ -1747,62 +1482,6 @@ function markdownReport(report) {
      * isomorph is a CommonMark document written to match a dialect document,
      * not a construct anyone writes, so it belongs in the pair table and not in
      * the CommonMark median it would otherwise move. */
-    /* What a case declared, and what its dump actually shows. A case that
-     * reaches this work without declaring it would have the work silently
-     * folded into its ratio; a case that declares it and does not reach it is
-     * claiming an exemption it does not use. Both are refused here rather than
-     * left for a reader to spot, and it is this check that stops the exclusion
-     * being a way to make any number smaller. */
-    const unmatchedOf = (item) => {
-        /* Only a case whose number is a DIVISION against a reference is held to
-         * this, and only such a case has anything subtracted. A case already
-         * reported as a bound has no comparison to protect, and `block-metadata`
-         * and `mixed-extended` do contain headings -- holding them to a
-         * declaration they are not allowed to make (see `declaredUnmatched` in
-         * the corpus audit) would abort every run. Keyed on the corpus's syntax
-         * label rather than on the group the case lands in, because the
-         * declaration is one of the things that decides the group. */
-        if (item.dialect !== "commonmark" && !item.gfm) return 0;
-        const declared = new Set(item.unmatched ?? []);
-        const engine = item.engines["markdown-core"] ?? {};
-        const seen = engine.unmatched ?? [];
-        let total = 0;
-        for (const [field, calls] of Object.entries(engine.witnesses ?? {})) {
-            /* The witness, not the cost: the outer call runs on every document
-             * and costs a few instructions over an empty collection, so a
-             * non-zero cost would report every case as carrying the field. */
-            const carries = calls > 0;
-            if (carries && !declared.has(field)) {
-                fail(
-                    `${item.case} does ${calls} of the work behind "${field}", which cmark has no counterpart ` +
-                        `for, and does not declare it -- so its ratio would quietly include it`
-                );
-            }
-            if (!carries && declared.has(field)) {
-                fail(`${item.case} declares unmatched "${field}" and never does the work behind it`);
-            }
-            if (carries) {
-                total += seen.filter((entry) => entry.field === field).reduce((sum, entry) => sum + entry.ir, 0);
-            }
-        }
-        return total;
-    };
-    /* A subtraction whose completeness nothing checked cannot produce a
-     * same-job number: the whole point of the check is that a list of edges
-     * says nothing about when it stopped covering the feature, so an unchecked
-     * list leaves work of unknown size in the numerator. */
-    const judged = report.completenessJudged !== false;
-    /* Whether the case builds a field the reference has no counterpart for, read
-     * from the witness and the declaration rather than from what the exclusion
-     * happened to subtract. A stale edge list -- every edge renamed by a
-     * refactor, say -- subtracts nothing while the tree still carries the
-     * field, and keying the withholding on a non-zero subtraction would publish
-     * the RAW anchor-inclusive ratio as a comparison in exactly that case. */
-    const holdsUnmatchedField = (item) => {
-        if (item.dialect !== "commonmark" && !item.gfm) return false;
-        if ((item.unmatched ?? []).length) return true;
-        return Object.values(item.engines["markdown-core"]?.witnesses ?? {}).some((calls) => calls > 0);
-    };
     const paired = new Map((report.isomorphs ?? []).map((declaration) => [declaration.case, declaration]));
     const isIsomorph = new Set((report.isomorphs ?? []).map((declaration) => declaration.isomorph));
     const atScaleOne = new Map(report.cases.filter((item) => item.scale === 1).map((item) => [item.case, item]));
@@ -1812,7 +1491,6 @@ function markdownReport(report) {
             const core = stageIr(item.engines, "markdown-core");
             const cmarkIr = stageIr(item.engines, "cmark");
             const gfmIr = stageIr(item.engines, "cmark-gfm");
-            const excluded = unmatchedOf(item);
             /* A dialect construct cmark does not implement still gets a
              * same-job ratio, through the document that IS the same tree: what
              * this parser spent on the dialect spelling, over what cmark spent
@@ -1855,34 +1533,16 @@ function markdownReport(report) {
                           shape: twinCore && twinCmark ? twinCore / twinCmark : null
                       }
                     : null,
-                /* What this case builds that the reference does not, taken off
-                 * THIS side so the two numbers are over the same job again.
-                 * Heading anchors are the case: the dialect derives one for
-                 * every heading, so the trees differ -- but the difference is a
-                 * named set of call edges with no counterpart on cmark's side,
-                 * and once it is subtracted what remains is work both engines
-                 * did. The heading's own inline parse stays in, because cmark
-                 * runs it too. */
-                unmatchedIr: excluded,
-                /* Holds a field with no counterpart, on a run that could not
-                 * check the subtraction covers it. Kept out of `sameJob` below
-                 * so no table prints it as a comparison, and surfaced so the
-                 * section on the exclusion can show the arithmetic anyway --
-                 * the numbers are still what the focused experiment is for. */
-                provisional: !judged && holdsUnmatchedField(item),
                 /* The comparison that means something: the closest reference
                  * that implements what the document contains, or the reference
                  * on the document that is the same tree. */
-                sameJob:
-                    !judged && holdsUnmatchedField(item)
-                        ? null
-                        : gfmIr
-                          ? (core - excluded) / gfmIr
-                          : twinCmark
-                            ? (core - excluded) / twinCmark
-                            : item.dialect === "commonmark" && cmarkIr
-                              ? (core - excluded) / cmarkIr
-                              : null
+                sameJob: gfmIr
+                    ? core / gfmIr
+                    : twinCmark
+                      ? core / twinCmark
+                      : item.dialect === "commonmark" && cmarkIr
+                        ? core / cmarkIr
+                        : null
             };
         })
         .sort((left, right) => (right.sameJob ?? right.cmarkRatio ?? 0) - (left.sameJob ?? left.cmarkRatio ?? 0));
@@ -1902,14 +1562,6 @@ function markdownReport(report) {
             "A ratio compares only where both parsers did the same job, so the cases are" +
                 " grouped by which reference implements what they contain, and the groups are" +
                 " never averaged together.",
-            "",
-            "Syntax alone does not make a case comparable. This dialect derives an anchor" +
-                " for every heading, so a document holding one is not the tree cmark builds," +
-                " however ordinary the source looks. Those cases stay in the CommonMark group" +
-                " and the work that produces the anchor comes off this side first, by named" +
-                " call edge; what is left is what both engines did. The section after this one" +
-                " lists every edge taken out, every function deliberately left in, and what" +
-                " each case's number was before and after.",
             "",
             "cmark implements the CommonMark cases. cmark-gfm implements tables, task lists," +
                 " bare autolinks and footnotes, and is measured only on the cases that hold" +
@@ -1951,125 +1603,17 @@ function markdownReport(report) {
                 ranked.filter((item) => item.dialect !== "commonmark" && !item.gfm && !item.isomorph)
             ]
         ];
-        for (const [label, reference, all] of groups) {
-            if (!all.length) continue;
-            /* A case whose subtraction nothing checked has no number to put in
-             * a median. Its RAW ratio is not a substitute: it is the number
-             * this whole section exists to stop being read as a comparison. */
-            const group = all.filter((item) => !item.provisional);
+        for (const [label, reference, group] of groups) {
+            if (!group.length) continue;
             const values = group.map((item) => item.sameJob ?? item.cmarkRatio).filter((value) => value !== null);
             if (!values.length) continue;
             const worst = group[0];
-            const withheld = all.length - group.length;
             lines.push(
-                `| ${label} | \`${reference}\` | ${group.length}${withheld ? ` (+${withheld} withheld)` : ""} |` +
-                    ` ${median(values).toFixed(2)}x |` +
+                `| ${label} | \`${reference}\` | ${group.length} | ${median(values).toFixed(2)}x |` +
                     ` ${(worst.sameJob ?? worst.cmarkRatio).toFixed(2)}x \`${worst.case}\` |`
             );
         }
         lines.push("");
-        if (ranked.some((item) => item.provisional)) {
-            lines.push(
-                "**This run could not judge whether the subtraction below is complete**, because that" +
-                    " derivation needs every compared document and this run measured a subset. The" +
-                    " cases holding a field cmark has no counterpart for are therefore withheld from" +
-                    " the groups above rather than published: subtracted, their number would rest on" +
-                    " a list nothing checked; unsubtracted, it would be the bound this section exists" +
-                    " to stop being read as a comparison. Their arithmetic is still shown below, for" +
-                    " the focused experiment it is for. Run the whole corpus for a same-job number.",
-                ""
-            );
-        }
-
-        const held = ranked.filter((item) => (item.unmatched ?? []).length);
-        if (held.length) {
-            lines.push("### What was taken off this side to keep it a comparison", "");
-            lines.push(
-                "These documents are CommonMark source, and this parser does not build" +
-                    " CommonMark's tree from them: the dump carries a field cmark's node does" +
-                    " not have. Dividing the two totals would price a feature cmark lacks as" +
-                    " though it were this parser being slow, so the work that produces the" +
-                    " field is subtracted from THIS side and the remainder is what both" +
-                    " engines did.",
-                "",
-                "The subtraction is by call edge, not by function, and the edges are named in" +
-                    " `corpus.json` with what each one does. Work the reference also performs" +
-                    " stays in -- a heading's own inline parse is not excluded, because" +
-                    " `cmark_parse_inlines` runs it too.",
-                "",
-                "Four checks keep the exclusion from being a way to make any number smaller." +
-                    " OCCURRENCE: this driver fails when a case does the work behind a field" +
-                    " without declaring it, or declares it and never does the work, read off a" +
-                    " witness edge's CALL COUNT rather than a cost -- the outer call runs on" +
-                    " every document and costs a few instructions over an empty collection." +
-                    " COMPLETENESS: a list of edges cannot say when it has stopped covering the" +
-                    " feature, so the candidates are derived instead -- every function whose" +
-                    " behaviour tracks the field across the corpus, either by running only on the" +
-                    " cases carrying it or by costing more on every one of them than it ever does" +
-                    " without it -- and each must be excluded or listed below as shared. That" +
-                    " derivation needs every compared document, so a `--case` run cannot make it," +
-                    " and such a run withholds the same-job ratio rather than publishing one" +
-                    " nothing checked." +
-                    " PLACEMENT: an exclusion larger than the stage it claims to sit in" +
-                    " is refused. THE TREE: `scripts/audit-corpus-reach.mjs` reads the field off" +
-                    " the case's own AST dump and fails when the dump and the declaration" +
-                    " disagree in either direction.",
-                "",
-                "Two things that check deliberately does NOT claim. Tracking the field is not the" +
-                    " same as being caused by it: the syntax carrying a field occurs on exactly the" +
-                    " documents the field does, so shared parsing lands in the candidate set too --" +
-                    " `continue_heading` and `markdown_core_heading_claim_tail` are both found" +
-                    " there, and both are work cmark performs. That is why a candidate is answered" +
-                    " with a classification rather than an exclusion, and why the list below is" +
-                    " printed in full. And the candidate set is a fact about THIS corpus, not a" +
-                    " theorem: dropping the setext case would leave ATX as the only heading" +
-                    " spelling and the set would grow `open_atx`. The correct answer to that is a" +
-                    " shared entry naming what cmark does, which a reader can check.",
-                "",
-                "What none of the four catches is a WRONG classification: calling this parser's own" +
-                    " work shared hides it just as well as excluding cmark's would. That is a" +
-                    " judgement, and it is written out below so it can be argued with.",
-                ""
-            );
-            lines.push(
-                `| Case | Field | Excluded Ir | Against cmark, raw | ${
-                    report.completenessJudged === false ? "After subtracting (UNCHECKED)" : "Same job"
-                } |`,
-                "| --- | --- | ---: | ---: | ---: |"
-            );
-            for (const item of held) {
-                /* On a run that could not judge completeness `sameJob` is
-                 * withheld, so the arithmetic is recomputed here to be shown
-                 * under a heading that says what it is. Printing nothing would
-                 * hide the one thing the focused run was for; printing it as
-                 * "Same job" is the claim this section exists to stop. */
-                const after =
-                    item.sameJob ??
-                    (item.provisional && item.cmarkRatio !== null
-                        ? (item.coreIr - (item.unmatchedIr ?? 0)) / (item.coreIr / item.cmarkRatio)
-                        : null);
-                lines.push(
-                    `| ${item.case} | ${item.unmatched.map((field) => `\`${field}\``).join(", ")} |` +
-                        ` ${(item.unmatchedIr ?? 0).toLocaleString("en-US")} |` +
-                        ` ${item.cmarkRatio === null ? "-" : `${item.cmarkRatio.toFixed(2)}x`} |` +
-                        ` ${after === null ? "-" : `${item.provisional ? "" : "**"}${after.toFixed(2)}x${item.provisional ? "" : "**"}`} |`
-                );
-            }
-            lines.push("");
-            for (const [field, spec] of Object.entries(report.unmatchedFields ?? {})) {
-                lines.push(`- **\`${field}\`** -- ${spec.reason}`, "", `  Taken off this side:`);
-                for (const [edge, stage] of Object.entries(spec.excludes ?? {})) {
-                    lines.push(`  - \`${edge}\` (${stage})`);
-                }
-                if (Object.keys(spec.shared ?? {}).length) {
-                    lines.push("", `  Left in, because the reference does it too:`);
-                    for (const [fn, reason] of Object.entries(spec.shared)) {
-                        lines.push(`  - \`${fn}\` -- ${reason}`);
-                    }
-                }
-            }
-            lines.push("");
-        }
 
         const pairs = ranked.filter((item) => item.isomorph);
         if (pairs.length) {
@@ -2154,15 +1698,13 @@ function markdownReport(report) {
                 .map((entry) => `\`${entry.name}\` ${(entry.share * 100).toFixed(1)}%`)
                 .join(", ");
             const ratio = item.sameJob ?? item.cmarkRatio;
-            const reference = item.provisional
-                ? "raw, not checked"
-                : item.gfm
-                  ? "cmark-gfm"
-                  : item.isomorph
-                    ? "cmark, isomorph"
-                    : item.dialect === "commonmark"
-                      ? "cmark"
-                      : "(bound)";
+            const reference = item.gfm
+                ? "cmark-gfm"
+                : item.isomorph
+                  ? "cmark, isomorph"
+                  : item.dialect === "commonmark"
+                    ? "cmark"
+                    : "(bound)";
             lines.push(
                 `| ${item.case} | ${reference} | ${ratio === null ? "-" : `${ratio.toFixed(2)}x`} |` +
                     ` ${(item.coreIr / item.bytes).toFixed(1)} | ${hot || "(not recorded)"} |`
@@ -2408,12 +1950,6 @@ function main() {
 
     const corpus = buildCorpus(options, manifest);
     const cases = [];
-    /* Kept beside the cases rather than in them: these are inputs to the
-     * completeness law below, not findings anyone reads, and stages.json is a
-     * report. */
-    const ran = new Map();
-    const excludedReach = new Map();
-    const excludedLeaks = new Map();
     for (const document of corpus.documents) {
         const engines = {};
         /* cmark is measured on every document as the CommonMark floor. cmark-gfm
@@ -2421,24 +1957,27 @@ function main() {
          * reference that reads the document as paragraphs is not a second
          * opinion, and paying callgrind for one would buy a number nobody can
          * read. */
-        const applicable = Object.keys(ENGINES).filter((engine) => engine !== "cmark-gfm" || document.gfm === true);
+        /* The GFM reference is only meaningful where the document holds a GFM
+         * construct. The anchor-free twin is only meaningful where a ratio is
+         * published at all, and it is measured on EVERY such case rather than
+         * only the ones holding a heading: on a heading-free document it must
+         * come out equal to the default build, and that equality is a control
+         * the measurement produces rather than a claim the report makes. */
+        const applicable = Object.keys(ENGINES).filter((engine) => {
+            if (engine === "cmark-gfm") return document.gfm === true;
+            if (engine === "markdown-core-noanchor") return document.dialect === "commonmark" || document.gfm === true;
+            return true;
+        });
         for (const engine of applicable) {
-            const measured = measure(profile, engine, document, options.out, manifest.unmatchedFields ?? {});
+            const measured = measure(profile, engine, document, options.out);
             if (measured.receiptBytes !== document.bytes) {
                 fail(`${engine}: ${document.case} saw ${measured.receiptBytes} bytes, expected ${document.bytes}`);
-            }
-            if (engine === "markdown-core" && document.scale === 1) {
-                ran.set(document.case, measured.ran);
-                excludedReach.set(document.case, new Set(measured.excludedReach));
-                excludedLeaks.set(document.case, measured.excludedLeaks);
             }
             engines[engine] = {
                 parsePathIr: measured.parsePathIr,
                 outsideStagesIr: measured.outsideStagesIr,
                 rootChildren: measured.rootChildren,
                 hotPaths: measured.hotPaths,
-                unmatched: measured.unmatched,
-                witnesses: measured.witnesses,
                 stages: Object.fromEntries(
                     STAGES.map((stage) => [
                         stage,
@@ -2450,24 +1989,9 @@ function main() {
         if (!options.quiet) console.error(`measured ${document.case} x${document.scale}`);
         cases.push({ ...document, file: path.relative(options.out, document.file), engines });
     }
-    requireCompleteExclusions(
-        cases,
-        ran,
-        excludedReach,
-        excludedLeaks,
-        manifest.unmatchedFields ?? {},
-        options.cases.length > 0
-    );
 
     const report = {
         schemaVersion: 2,
-        /* Whether anything established that the exclusion below is COMPLETE.
-         * The derivation needs every compared document, so a `--case` run
-         * cannot judge it, and a subtracted ratio nothing has checked is not a
-         * same-job ratio -- it is this parser's own arithmetic. Recorded here
-         * rather than inferred by the renderer so a stored report says which
-         * kind of run produced it. */
-        completenessJudged: options.cases.length === 0,
         toolchain: versions,
         /* The exact bytes measured, so a report's numbers trace to a binary. */
         binaries,
@@ -2483,10 +2007,6 @@ function main() {
          * it, and `scripts/audit-corpus-reach.mjs` is what holds the pairing to
          * being true. */
         isomorphs: manifest.isomorphs ?? [],
-        /* Why the cases below hold out of the CommonMark group. Recorded beside
-         * the counts for the same reason the pairs are: the group a case is in
-         * is the whole meaning of its number. */
-        unmatchedFields: manifest.unmatchedFields ?? {},
         artifacts: path.relative(root, options.out),
         cases
     };

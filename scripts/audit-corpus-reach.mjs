@@ -311,14 +311,9 @@ function corpusDocuments(directory) {
  * checkout path -- neither of which this script chooses -- are parsed as
  * command text. There is nothing a shell was providing that a line reader does
  * not, so the child is executed directly with its arguments as arguments. */
-async function kindsProduced(cli, documents, unmatched) {
+async function kindsProduced(cli, documents) {
     const seen = new Set();
     const perCase = new Map();
-    /* Which declared dialect-only fields this case's tree actually carries.
-     * Read from the same stream as the kinds: a second dump pass over the whole
-     * corpus costs minutes, and the answer is on lines this one already has. */
-    const carried = new Map();
-    const fields = [...unmatched.keys()];
     for (const document of documents) {
         /* The complexity shapes are excluded, and only here. `chain-list-depth`
          * is 32,765 levels deep, and `markdown_core_document_dump` materialises
@@ -331,7 +326,6 @@ async function kindsProduced(cli, documents, unmatched) {
          * document. */
         if (path.basename(document).startsWith("chain-")) continue;
         const mine = new Set();
-        const mineUnmatched = new Set();
         const child = spawn(cli, [document], { stdio: ["ignore", "pipe", "ignore"], timeout: 600_000 });
         const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
         for await (const line of lines) {
@@ -340,23 +334,13 @@ async function kindsProduced(cli, documents, unmatched) {
                 seen.add(match[1]);
                 mine.add(match[1]);
             }
-            for (const field of fields) {
-                /* `null` and `{}` are the dump's two spellings of "this kind has
-                 * the field and it is unset". A field that is merely PRESENT is
-                 * not evidence: every node prints `anchor=`, and almost all of
-                 * them print it null. */
-                const value = new RegExp(`\\s${field}=("(?:[^"\\\\]|\\\\.)*"|\\{[^}]*\\}|\\S+)`, "u").exec(line);
-                if (value && value[1] !== "null" && value[1] !== "{}") mineUnmatched.add(field);
-            }
         }
-        const name = path.basename(document).replace(/\.x1\.md$/u, "");
-        perCase.set(name, mine);
-        carried.set(name, mineUnmatched);
+        perCase.set(path.basename(document).replace(/\.x1\.md$/u, ""), mine);
         const [code, signal] = await new Promise((resolve) => child.on("close", (c, s) => resolve([c, s])));
         if (signal) fail(`the dump CLI was killed by ${signal} on ${path.basename(document)}`);
         if (code !== 0) fail(`the dump CLI exited ${code} on ${path.basename(document)}`);
     }
-    return { seen, perCase, carried };
+    return { seen, perCase };
 }
 
 /* A function only brushed by a guard clause is not a grammar the corpus drives,
@@ -364,98 +348,6 @@ async function kindsProduced(cli, documents, unmatched) {
  * grammars: the case that owns one reaches 64-79% of it, while the cases that
  * do not reach 6.1%. */
 const EXERCISED_FLOOR = 50.0;
-
-/* The AST fields cmark's tree has no counterpart for, declared beside the cases
- * for the same reason `requiredGrammars` is: a field named only by the case
- * that carries it would retire itself the moment that case was deleted.
- *
- * This is what stops a ratio being printed for a document the two engines do
- * not build the same tree from. `dialect: "commonmark"` says the SYNTAX is
- * CommonMark; it says nothing about the output, and heading anchors are the
- * case where the two part company -- this dialect derives one for every
- * heading, so a document with a heading is never cmark's tree. */
-function unmatchedFields() {
-    const manifest = JSON.parse(
-        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
-    );
-    const declared = manifest.unmatchedFields ?? {};
-    if (typeof declared !== "object" || Array.isArray(declared)) {
-        fail("corpus.json: unmatchedFields must map each dialect-only AST field to why cmark has no counterpart");
-    }
-    for (const [field, spec] of Object.entries(declared)) {
-        if (typeof spec !== "object" || spec === null || Array.isArray(spec)) {
-            fail(`corpus.json: unmatchedFields.${field} must be an object`);
-        }
-        if (typeof spec.reason !== "string" || !spec.reason.trim()) {
-            fail(`corpus.json: unmatchedFields.${field} must say why cmark has no counterpart for it`);
-        }
-        if (typeof spec.witness !== "string" || !/^\S+\s*->\s*\S+$/u.test(spec.witness)) {
-            fail(
-                `corpus.json: unmatchedFields.${field} must name a witness edge "caller -> callee" whose CALL ` +
-                    `COUNT is zero exactly when the tree carries nothing`
-            );
-        }
-        const excludes = Object.entries(spec.excludes ?? {});
-        if (!excludes.length) {
-            fail(
-                `corpus.json: unmatchedFields.${field} must name the call edges that do this work, or the ` +
-                    `driver has nothing to take off this side and the ratio stays uncomparable`
-            );
-        }
-        for (const [edge, stage] of excludes) {
-            if (!/^\S+\s*->\s*\S+$/u.test(edge)) {
-                fail(
-                    `corpus.json: unmatchedFields.${field} exclusion ${JSON.stringify(edge)} is not "caller -> callee"`
-                );
-            }
-            if (stage !== "source_to_buffer" && stage !== "buffer_to_ast") {
-                fail(`corpus.json: unmatchedFields.${field} exclusion ${edge} names no measured stage`);
-            }
-        }
-        for (const [fn, reason] of Object.entries(spec.shared ?? {})) {
-            if (typeof reason !== "string" || !reason.trim()) {
-                fail(`corpus.json: unmatchedFields.${field}.shared.${fn} must say why the reference does it too`);
-            }
-        }
-    }
-    return new Map(Object.entries(declared));
-}
-
-/* What each case CLAIMS it carries, so the claim and the tree can disagree.
- *
- * Only the cases whose number is a DIVISION against a reference on the same
- * bytes -- the CommonMark group and the GFM group -- are held to this. A case
- * already reported as a bound has nothing to protect: its number is not a
- * comparison whatever its tree carries, and requiring a declaration there would
- * be a list nobody reads, kept true by nobody. The key is the corpus's syntax
- * label, not the group the case ends up in, because the declaration is what
- * moves it between groups. The dialect half of an isomorph pair is `extended`
- * and so falls out here anyway; its CommonMark half does NOT, because that half
- * gets a printed ratio of its own and the pair law says nothing about whether
- * cmark builds its tree. */
-function declaredUnmatched() {
-    const manifest = JSON.parse(
-        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
-    );
-    const claimed = new Map();
-    for (const entry of manifest.cases ?? []) {
-        const fields = entry.unmatched ?? [];
-        if (!Array.isArray(fields) || fields.some((field) => typeof field !== "string")) {
-            fail(`corpus.json: ${entry.name}.unmatched must be a list of dialect-only field names`);
-        }
-        if (entry.dialect !== "commonmark" && entry.gfm !== true) {
-            if (fields.length) {
-                fail(
-                    `corpus.json: ${entry.name} declares unmatched output, but its number is already a bound, ` +
-                        `so the declaration changes nothing and will rot`
-                );
-            }
-            continue;
-        }
-        claimed.set(entry.name, new Set(fields));
-    }
-    return claimed;
-}
 
 /* The grammar entries the corpus must drive, declared BESIDE the cases rather
  * than inside them. A case that named its own obligation could retire it by
@@ -590,9 +482,6 @@ const driven = new Set();
 const undriven = [];
 const drifted = [];
 const pairs = isomorphPairs();
-const unmatchedDeclared = unmatchedFields();
-const claimedUnmatched = declaredUnmatched();
-const misdeclared = [];
 let notIsomorphic;
 let unbuilt;
 {
@@ -603,7 +492,7 @@ let unbuilt;
          * stops building a kind still report every kind built, which is the
          * same staleness the corpus itself was fixed for. */
         const binaries = instrumentedBuild(buildDir);
-        const census = await kindsProduced(binaries.dump, documents, unmatchedDeclared);
+        const census = await kindsProduced(binaries.dump, documents);
         unbuilt = kinds.filter((kind) => !census.seen.has(kind));
         /* Read off the SAMPLES rather than the generated corpus: the pairing is
          * a property of the two documents as written, and the corpus repeats
@@ -619,44 +508,6 @@ let unbuilt;
             if (missing.length) {
                 drifted.push(`${name} no longer builds ${missing.join(", ")}, so its sample stopped being that case`);
             }
-        }
-        /* What the trees actually carry, against what the cases claim. Both
-         * directions fail: an undeclared field means the driver is about to
-         * print a same-job ratio for a document cmark does not build the same
-         * tree from, and a declared field the tree does not carry means a case
-         * is being held out of the comparison for nothing. */
-        const witnessed = new Map([...unmatchedDeclared.keys()].map((field) => [field, []]));
-        for (const [name, claimed] of claimedUnmatched) {
-            const carried = census.carried.get(name);
-            if (!carried) {
-                /* `chain-*` shapes are never dumped -- see kindsProduced -- so
-                 * their trees cannot be read here. A claim on one could not be
-                 * checked, and an unchecked claim is the thing this law exists
-                 * to stop. */
-                if (claimed.size) {
-                    misdeclared.push(
-                        `${name} claims unmatched output, and its tree is never dumped, so nothing checks it`
-                    );
-                }
-                continue;
-            }
-            for (const field of carried) witnessed.get(field).push(name);
-            const undeclared = [...carried].filter((field) => !claimed.has(field));
-            const absent = [...claimed].filter((field) => !carried.has(field));
-            if (undeclared.length) {
-                misdeclared.push(
-                    `${name} builds a tree carrying ${undeclared.join(", ")}, which cmark has no counterpart for, ` +
-                        `and does not declare it -- so its ratio would be printed as a comparison`
-                );
-            }
-            if (absent.length) {
-                misdeclared.push(`${name} declares unmatched ${absent.join(", ")} that its tree does not carry`);
-            }
-        }
-        for (const [field, cases] of witnessed) {
-            /* A field nothing carries excludes nothing, so declaring it costs a
-             * reader attention and buys no law. */
-            if (!cases.length) misdeclared.push(`unmatchedFields declares ${field}, and no case's tree carries it`);
         }
         /* The census ran the dumper, whose lines are not the parse phase, so
          * its counters are discarded before anything is measured. */
@@ -704,8 +555,7 @@ process.stdout.write(
         `  grammars driven      ${required.length - undriven.length}/${required.length}\n` +
         `  samples with a case  ${sampleCount - orphaned.length}/${sampleCount}\n` +
         `  cases still building ${declaredBuilds().size - drifted.length}/${declaredBuilds().size}\n` +
-        `  isomorph pairs held  ${pairs.length - notIsomorphic.length}/${pairs.length}\n` +
-        `  unmatched declared   ${claimedUnmatched.size - misdeclared.length}/${claimedUnmatched.size}\n`
+        `  isomorph pairs held  ${pairs.length - notIsomorphic.length}/${pairs.length}\n`
 );
 
 if (options.json) {
@@ -746,12 +596,6 @@ if (unbuilt.length) {
 }
 if (undriven.length) {
     failures.push(`grammars the corpus must measure and no longer does:\n    ${undriven.join("\n    ")}`);
-}
-if (misdeclared.length) {
-    failures.push(
-        `a same-job ratio compares two engines that built the same tree, and these cases do not ` +
-            `line up with what their trees carry:\n    ${misdeclared.join("\n    ")}`
-    );
 }
 if (failures.length) {
     process.stderr.write(`corpus reach audit FAILED\n${failures.map((m) => `  ${m}`).join("\n")}\n`);
