@@ -1,14 +1,14 @@
 {
     "schemaVersion": 2,
     "targetBytes": 65536,
-    "requiredGrammars": [
-        "table_parse_grid",
-        "table_parse_pipe_header",
-        "table_parse_simple",
-        "table_parse_multiline",
-        "markdown_core_parse_task_prefix",
-        "autolink_delim"
-    ],
+    "requiredGrammars": {
+        "table_parse_grid": "block-table-grid",
+        "table_parse_pipe_header": "block-table-pipe",
+        "table_parse_simple": "block-table-simple",
+        "table_parse_multiline": "block-table-multiline",
+        "markdown_core_parse_task_prefix": "block-tasklist",
+        "autolink_delim": "inline-autolink-rich"
+    },
     "cases": [
         {
             "name": "block-bq-flat",

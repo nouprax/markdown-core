@@ -24,10 +24,14 @@
  *   every callout still leaves `callout.c` at 40.4% from being asked and
  *   declining. Only a claimed construct puts a node in a tree.
  *
- *   Every grammar entry the corpus must measure must have RUN, because one kind
- *   is not one grammar: the grid, pipe, simple and multiline table parsers all
- *   build `Table`, so deleting the grid case leaves every kind built while the
- *   benchmark silently stops measuring that parser.
+ *   Every grammar entry the corpus must measure must have RUN, IN THE CASE THAT
+ *   EXISTS TO DRIVE IT, because one kind is not one grammar: the grid, pipe,
+ *   simple and multiline table parsers all build `Table`, so deleting the grid
+ *   case leaves every kind built while the benchmark stops measuring that
+ *   parser. Naming the case matters as much as naming the grammar -- accepting
+ *   any document lets `mixed-extended`, which concatenates every sample, answer
+ *   for all of them, and a grammar reached only inside the concatenation has no
+ *   isolated profile to read.
  *
  *   node scripts/audit-corpus-reach.mjs [--json FILE]
  */
@@ -144,9 +148,11 @@ function requiredGrammars() {
     const manifest = JSON.parse(
         fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
     );
-    const required = manifest.requiredGrammars ?? [];
-    if (!Array.isArray(required)) fail("corpus.json: requiredGrammars must be a list of function names");
-    return required;
+    const required = manifest.requiredGrammars ?? {};
+    if (typeof required !== "object" || Array.isArray(required)) {
+        fail("corpus.json: requiredGrammars must map each grammar entry to the case that drives it");
+    }
+    return Object.entries(required);
 }
 
 function resetCounters(buildDir) {
@@ -172,7 +178,12 @@ function functionsFor(cli, buildDir, document) {
             .readdirSync(dir)
             .filter((n) => n.endsWith(".gcda"))
             .map((n) => path.join(dir, n));
-        const out = spawnSync("gcov", ["-f", "-n", "-o", dir, ...gcda], { cwd: dir, encoding: "utf8" }).stdout ?? "";
+        const gcov = spawnSync("gcov", ["-f", "-n", "-o", dir, ...gcda], { cwd: dir, encoding: "utf8" });
+        /* A gcov that fails reads as a function that never ran, which is the
+         * wrong answer given confidently: the grammar law would report the case
+         * as not driving its parser when the truth is that nothing was read. */
+        requireClean(gcov, "gcov", dir);
+        const out = gcov.stdout ?? "";
         for (const match of out.matchAll(/Function '([^']+)'\nLines executed:([\d.]+)%/g)) {
             percent.set(match[1], Math.max(percent.get(match[1]) ?? 0, Number(match[2])));
         }
@@ -268,18 +279,25 @@ let unbuilt;
         /* The census ran the dumper, whose lines are not the parse phase, so
          * its counters are discarded before anything is measured. */
         resetCounters(buildDir);
-        /* Every case alone, with the counters reset, so what each document
-         * drives is separated from what the corpus drives together. A grammar
-         * is driven when some ONE case reaches it; spreading a function's lines
-         * across several cases that each brush it is not the same thing. */
-        for (const document of documents) {
-            for (const [name, percent] of functionsFor(binaries.parse, buildDir, document)) {
-                if (percent >= EXERCISED_FLOOR) driven.add(name);
+        /* Only the named cases are run here, each alone with the counters
+         * reset, so what that document drives is separated from what the
+         * corpus drives together. */
+        for (const [grammar, name] of required) {
+            const document = documents.find((file) => path.basename(file) === `${name}.x1.md`);
+            if (!document) {
+                undriven.push(`${grammar} names case ${name}, and the corpus holds no document for it`);
+                continue;
             }
-        }
-        for (const name of required) {
-            if (!driven.has(name)) {
-                undriven.push(`${name} is driven by no case, so the benchmark no longer measures that grammar`);
+            const percent = functionsFor(binaries.parse, buildDir, document).get(grammar);
+            if (percent === undefined) {
+                undriven.push(`${grammar} was never compiled into the parser`);
+            } else if (percent < EXERCISED_FLOOR) {
+                undriven.push(
+                    `${name} drives only ${percent.toFixed(1)}% of ${grammar}, under the ` +
+                        `${EXERCISED_FLOOR.toFixed(1)}% a case that owns a grammar reaches`
+                );
+            } else {
+                driven.add(grammar);
             }
         }
     } finally {
