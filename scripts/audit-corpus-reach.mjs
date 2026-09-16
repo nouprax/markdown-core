@@ -1146,14 +1146,24 @@ if (strayed.length) {
     );
 }
 failures.push(...exempt.failures);
-/* An exemption that is no longer needed is a stale claim, and stale claims are
- * what this corpus keeps failing on. A state the corpus HAS learned to measure
- * must lose its exemption in the same change. */
+/* An exemption is a claim that the corpus REACHES the state and can only reach
+ * it as a bound, and it is held to both halves. A state the corpus has learned
+ * to measure must lose its exemption in the same change, or the claim
+ * understates the corpus. A state the corpus has stopped reaching at all must
+ * fail: the exemption would otherwise keep the gate quiet while the only case
+ * demonstrating it was edited away, and a coverage number nobody can lose is
+ * not a coverage number. */
 for (const state of Object.keys(exempt.declared)) {
     if (states.measured.includes(state)) {
         failures.push(
             `${state} is declared bound by a proof and the corpus now measures it with a same-job ` +
                 `ratio. Remove the exemption rather than leaving a claim that understates the corpus`
+        );
+    } else if (states.unreached.includes(state)) {
+        failures.push(
+            `${state} is declared bound by a proof, and no case reaches it at all any more. The ` +
+                `exemption says the corpus reaches it and cannot measure it, not that the corpus ` +
+                `stopped building it`
         );
     }
 }

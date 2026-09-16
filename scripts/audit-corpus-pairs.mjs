@@ -40,25 +40,36 @@ function fail(message) {
     process.exit(1);
 }
 
-/* The pinned oracles, located exactly as the upstream-parity check locates
- * them: the version is read from the checkout that init-environment installed,
- * so there is no second copy of the pin here to fall out of step with it. */
-function oracle(name, binary) {
-    const versions = fs.existsSync(path.join(root, ".tools", name))
-        ? fs.readdirSync(path.join(root, ".tools", name)).sort()
-        : [];
-    for (const version of versions) {
-        const file = path.join(root, ".tools", name, version, "build/src", binary);
-        if (fs.existsSync(file)) return file;
+/* The PINNED oracle, resolved from the pin rather than from whatever is
+ * installed. `init-environment.sh` installs into a directory named for the
+ * version and does not remove its siblings, so an older checkout sits beside
+ * the current one and picking the first that happens to sort would validate
+ * these pairs against a different engine than the benchmark measures them
+ * against. The pin lives in one place and both read it -- there is no second
+ * copy of the version here to fall out of step with it.
+ */
+function oracle(name, binary, versionKey, commitKey) {
+    const script = fs.readFileSync(path.join(root, "scripts/init-environment.sh"), "utf8");
+    const version = new RegExp(`^${versionKey}=(.+)$`, "mu").exec(script)?.[1];
+    const commit = new RegExp(`^${commitKey}=([0-9a-f]{40})$`, "mu").exec(script)?.[1];
+    if (!version || !commit) fail(`scripts/init-environment.sh does not pin ${name}`);
+    const checkout = path.join(root, ".tools", name, version);
+    const install = `scripts/init-environment.sh --install oracle-${name}`;
+    const file = path.join(checkout, "build/src", binary);
+    if (!fs.existsSync(file)) fail(`the pinned ${name} ${version} oracle is not built; run: ${install}`);
+    const head = execFileSync("git", ["-C", checkout, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    if (head !== commit) {
+        fail(
+            `the ${name} oracle checkout is at ${head}, but ${name} ${version} is pinned to ${commit}; run: ${install}`
+        );
     }
-    fail(`the pinned ${name} oracle is not built; run: scripts/init-environment.sh --install oracle-${name}`);
-    return "";
+    return file;
 }
 
 function main() {
     if (!fs.existsSync(DUMP)) fail(`this parser is not built; run: pnpm build:c`);
-    const cmark = oracle("cmark", "cmark");
-    const gfm = oracle("cmark-gfm", "cmark-gfm");
+    const cmark = oracle("cmark", "cmark", "CMARK_VERSION", "CMARK_COMMIT");
+    const gfm = oracle("cmark-gfm", "cmark-gfm", "CMARK_GFM_VERSION", "CMARK_GFM_COMMIT");
     const GFM_EXTENSIONS = ["table", "strikethrough", "autolink", "tasklist", "footnotes"];
     const manifest = JSON.parse(fs.readFileSync(path.join(BENCHMARKS, "corpus.json"), "utf8"));
     const cases = new Map((manifest.cases ?? []).map((entry) => [entry.name, entry]));
