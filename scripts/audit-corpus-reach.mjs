@@ -42,6 +42,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stateValidators } from "./lib/canonical-states.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const KIND_TABLE = path.join(root, "packages/markdown-core/elements/ast.c");
@@ -52,9 +53,17 @@ function fail(message) {
 }
 
 function parseArguments(argv) {
-    const options = { json: null };
+    const options = { json: null, states: false };
     for (let i = 0; i < argv.length; i++) {
         const flag = argv[i];
+        /* The state lists are fifty-odd lines and the summary counts them, so
+         * they are printed on request rather than at every run. The names are
+         * what turns a count into work: each one is a case to write or a pair
+         * to build. */
+        if (flag === "--states") {
+            options.states = true;
+            continue;
+        }
         if (flag !== "--json") fail(`unknown flag ${flag}`);
         /* A value is required and must be a path, not the next flag. Taking
          * `argv[++i]` unchecked let `--json` as the last argument run the whole
@@ -316,6 +325,12 @@ async function kindsProduced(cli, documents) {
     const perCase = new Map();
     const perCaseCounts = new Map();
     const perCaseBound = new Map();
+    /* Which declared grammar STATES each case reaches. The predicates want the
+     * whole dump where the loop below wants a line at a time, so the lines are
+     * held for one document and dropped as soon as that document's states are
+     * read -- the corpus's documents are 64 KiB and their dumps a few megabytes,
+     * which one at a time is nothing and all at once is a hundred of them. */
+    const perCaseStates = new Map();
     for (const document of documents) {
         /* The complexity shapes are excluded, and only here. `chain-list-depth`
          * is 32,765 levels deep, and `markdown_core_document_dump` materialises
@@ -332,7 +347,9 @@ async function kindsProduced(cli, documents) {
         const bound = new Map();
         const child = spawn(cli, [document], { stdio: ["ignore", "pipe", "ignore"], timeout: 600_000 });
         const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
+        const held = [];
         for await (const line of lines) {
+            held.push(line);
             const match = /([A-Za-z]+) scope=/.exec(line);
             if (match) {
                 seen.add(match[1]);
@@ -359,11 +376,18 @@ async function kindsProduced(cli, documents) {
         perCase.set(name, mine);
         perCaseCounts.set(name, counts);
         perCaseBound.set(name, bound);
+        const tree = held.join("\n");
+        held.length = 0;
+        const states = new Set();
+        for (const [state, demonstrates] of Object.entries(stateValidators)) {
+            if (demonstrates(tree)) states.add(state);
+        }
+        perCaseStates.set(name, states);
         const [code, signal] = await new Promise((resolve) => child.on("close", (c, s) => resolve([c, s])));
         if (signal) fail(`the dump CLI was killed by ${signal} on ${path.basename(document)}`);
         if (code !== 0) fail(`the dump CLI exited ${code} on ${path.basename(document)}`);
     }
-    return { seen, perCase, perCaseCounts, perCaseBound };
+    return { seen, perCase, perCaseCounts, perCaseBound, perCaseStates };
 }
 
 /**
@@ -617,6 +641,73 @@ function logicalPairFailures(census, pairs) {
     return failures;
 }
 
+/**
+ * WHICH DECLARED GRAMMAR STATES HAVE A SAME-JOB NUMBER, AND WHICH ONLY A BOUND.
+ *
+ * Node kinds are the coarse question and this is the fine one. The corpus can
+ * build every one of the 43 kinds and still reach a state -- a table cell that
+ * spans rows, a roman-numeral list, a metadata scalar that is a number -- only
+ * inside a case with no reference to divide by. Such a state is measured as a
+ * BOUND, and a bound is not a comparison however many kinds surround it.
+ *
+ * A state counts as measured when SOME case that demonstrates it is one the
+ * driver will publish a same-job ratio for: either half of a pair, or a case
+ * whose syntax a reference reads the same way and whose tree carries no
+ * referenceless field. That is the same test the driver applies, written once
+ * here so the audit and the report cannot disagree about which cases are
+ * comparisons.
+ *
+ * The complexity shapes are absent from the census for the RSS reason given
+ * above, so a state only they reach reads as unreached. None does today; if one
+ * ever did, the answer is a case that builds it at ordinary size, not an
+ * exception here.
+ */
+function declaredStateFloor() {
+    const manifest = JSON.parse(
+        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
+    );
+    const floor = manifest.stateFloor;
+    if (!Number.isInteger(floor) || floor < 0) fail("corpus.json: stateFloor must be a whole number of states");
+    return floor;
+}
+
+function corpusCases() {
+    return (
+        JSON.parse(fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")).cases ??
+        []
+    );
+}
+
+function stateReach(census, manifestCases, pairs, logical) {
+    const paired = new Set();
+    /* A substitution pair is parsed into `{ name, isomorph }` and a declaration
+     * pair keeps the manifest's `{ case, isomorph }`, so both spellings of the
+     * dialect side are read. Taking only one of them silently dropped the three
+     * substitution pairs and reported their states as bounds. */
+    for (const declaration of [...pairs, ...logical]) {
+        paired.add(declaration.case ?? declaration.name);
+        paired.add(declaration.isomorph);
+    }
+    const publishes = new Map();
+    for (const entry of manifestCases) {
+        publishes.set(
+            entry.name,
+            paired.has(entry.name) ||
+                ((entry.dialect === "commonmark" || entry.gfm === true) && !(entry.carries ?? []).length)
+        );
+    }
+    const measured = [];
+    const boundOnly = [];
+    const unreached = [];
+    for (const state of Object.keys(stateValidators)) {
+        const reaching = [...census.perCaseStates].filter(([, states]) => states.has(state)).map(([name]) => name);
+        if (!reaching.length) unreached.push(state);
+        else if (reaching.some((name) => publishes.get(name))) measured.push(state);
+        else boundOnly.push(`${state} -- reached only by ${reaching.sort().join(", ")}`);
+    }
+    return { measured, boundOnly, unreached };
+}
+
 /* A function only brushed by a guard clause is not a grammar the corpus drives,
  * so a declared entry has to be mostly executed. Measured on the four table
  * grammars: the case that owns one reaches 64-79% of it, while the cases that
@@ -762,6 +853,7 @@ let notIsomorphic;
 let miscarried;
 let unequalPairs;
 let unbuilt;
+let states;
 {
     const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), "corpus-coverage-"));
     try {
@@ -778,6 +870,7 @@ let unbuilt;
         notIsomorphic = isomorphFailures(binaries.dump, pairs);
         unequalPairs = logicalPairFailures(census, logical);
         miscarried = carriedFailures(binaries.dump, census, path.dirname(documents[0]), referenceless);
+        states = stateReach(census, corpusCases(), pairs, logical);
         for (const [name, expected] of declaredBuilds()) {
             const built = census.perCase.get(name);
             if (!built) {
@@ -838,8 +931,19 @@ process.stdout.write(
         `  isomorph pairs held  ${pairs.length - notIsomorphic.length}/${pairs.length}\n` +
         `  logical pairs held   ${logical.length - unequalPairs.length}/${logical.length}\n` +
         `  referenceless fields ${referenceless.length}, declared by every case that carries one` +
-        `${miscarried.length ? ` -- ${miscarried.length} do not` : ""}\n`
+        `${miscarried.length ? ` -- ${miscarried.length} do not` : ""}\n` +
+        `  grammar states measured ${states.measured.length}/${Object.keys(stateValidators).length}` +
+        ` (${states.boundOnly.length} reached only as a bound, ${states.unreached.length} not reached)\n`
 );
+
+if (options.states) {
+    if (states.boundOnly.length) {
+        process.stdout.write(`\n  reached only as a bound:\n    ${states.boundOnly.join("\n    ")}\n`);
+    }
+    if (states.unreached.length) {
+        process.stdout.write(`\n  not reached by any case:\n    ${states.unreached.join("\n    ")}\n`);
+    }
+}
 
 if (options.json) {
     fs.writeFileSync(
@@ -856,6 +960,23 @@ if (options.json) {
 }
 
 const failures = [];
+/* A RATCHET, not a target. The corpus reaches 131 declared states and publishes
+ * a same-job ratio for some of them; the rest are bounds, and closing one means
+ * writing a case or building a pair. The floor exists so that number can only
+ * go up: a change that quietly stopped a case demonstrating a state -- an edited
+ * unit, a retired sample -- would otherwise show as a passing audit and a
+ * smaller number nobody was watching. Raise it in the same commit that earns it.
+ */
+{
+    const floor = declaredStateFloor();
+    if (states.measured.length < floor) {
+        failures.push(
+            `the corpus measures ${states.measured.length} of ${Object.keys(stateValidators).length} declared ` +
+                `grammar states with a same-job ratio, under the ${floor} recorded in corpus.json. Run with ` +
+                `--states to see which ones are bounds and which are unreached`
+        );
+    }
+}
 if (notIsomorphic.length) {
     failures.push(
         `these pairs are not the same document under a change of marker, so the ratio between them ` +

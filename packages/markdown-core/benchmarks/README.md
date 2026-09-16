@@ -468,6 +468,25 @@ For a **declaration** pair, where there is no identical tree to compare:
 Each of those fails when broken, which was verified by mutating the corpus
 rather than by reading the code.
 
+### Which grammar STATES have a same-job number
+
+Node kinds are the coarse question, and all 43 are either paired or written in a
+syntax a reference reads the same way. The fine question is the 131 **states**
+`specs/canonical-ast/manifest.json` declares — a table cell that spans rows, a
+roman-numeral list, a metadata scalar that is a number. A corpus can build every
+kind and still reach a state only inside a case with no reference to divide by,
+and such a state is measured as a *bound*.
+
+`node scripts/audit-corpus-reach.mjs --states` prints where each one stands, and
+the summary line counts them. The predicates are the repository's own, in
+`scripts/lib/canonical-states.mjs`, shared with the conformance-fixture checker
+so the two cannot disagree about what a state is.
+
+`corpus.json` carries a `stateFloor`, and the audit fails below it. It is a
+ratchet rather than a target: a change that quietly stopped a case demonstrating
+a state — an edited unit, a retired sample — would otherwise pass the audit while
+the number shrank with nobody watching. Raise it in the commit that earns it.
+
 ### Constructs with no isomorph
 
 A construct with no row in the pair table has no row for one of **two** reasons,

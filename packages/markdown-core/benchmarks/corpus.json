@@ -1,6 +1,7 @@
 {
     "schemaVersion": 2,
     "targetBytes": 65536,
+    "stateFloor": 81,
     "requiredGrammars": {
         "S_attach_block_identifier": "block-identifier",
         "autolink_delim": "inline-autolink-rich",
