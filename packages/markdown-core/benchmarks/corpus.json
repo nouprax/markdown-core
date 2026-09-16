@@ -2,14 +2,18 @@
     "schemaVersion": 2,
     "targetBytes": 65536,
     "requiredGrammars": {
-        "table_parse_grid": "block-table-grid",
-        "table_parse_pipe_header": "block-table-pipe",
-        "table_parse_simple": "block-table-simple",
-        "table_parse_multiline": "block-table-multiline",
-        "markdown_core_parse_task_prefix": "block-tasklist",
+        "S_attach_block_identifier": "block-identifier",
         "autolink_delim": "inline-autolink-rich",
         "handle_entity": "inline-entity",
-        "scan_delimiter": "inline-em-worst"
+        "markdown_core_block_parse_callout_metadata": "block-callout",
+        "markdown_core_parse_task_prefix": "block-tasklist",
+        "probe_comment_block": "inline-comment",
+        "scan_delimiter": "inline-em-worst",
+        "table_parse_grid": "block-table-grid",
+        "table_parse_multiline": "block-table-multiline",
+        "table_parse_pipe_header": "block-table-caption",
+        "table_parse_simple": "block-table-simple",
+        "try_opening_table_header": "block-table-pipe"
     },
     "isomorphs": [
         {
@@ -151,6 +155,12 @@
             "builds": ["Specimen", "Citation"]
         },
         {
+            "name": "block-table-caption",
+            "dialect": "extended",
+            "samples": ["block-table-caption.md"],
+            "builds": ["TableCaption", "Table"]
+        },
+        {
             "name": "block-table-grid",
             "dialect": "extended",
             "samples": ["block-table-grid.md"],
@@ -167,13 +177,19 @@
             "dialect": "extended",
             "samples": ["block-table-pipe.md"],
             "gfm": true,
-            "builds": ["TableCaption", "Table"]
+            "builds": ["Table", "TableCell"]
         },
         {
             "name": "block-table-simple",
             "dialect": "extended",
             "samples": ["block-table-simple.md"],
             "builds": ["TableCaption", "Table"]
+        },
+        {
+            "name": "block-task-states",
+            "dialect": "extended",
+            "samples": ["block-task-states.md"],
+            "builds": ["List", "ListItem"]
         },
         {
             "name": "block-tasklist",
@@ -318,6 +334,12 @@
             "builds": ["Footnote", "Citation"]
         },
         {
+            "name": "inline-footnote-inline",
+            "dialect": "extended",
+            "samples": ["inline-footnote-inline.md"],
+            "builds": ["Footnote", "Cite"]
+        },
+        {
             "name": "inline-formula",
             "dialect": "extended",
             "samples": ["inline-formula.md"],
@@ -456,10 +478,12 @@
                 "block-ref-flat.md",
                 "block-ref-nested.md",
                 "block-specimen.md",
+                "block-table-caption.md",
                 "block-table-grid.md",
                 "block-table-multiline.md",
                 "block-table-pipe.md",
                 "block-table-simple.md",
+                "block-task-states.md",
                 "block-tasklist.md",
                 "directive.md",
                 "inline-autolink-rich.md",
@@ -475,6 +499,7 @@
                 "inline-embedded.md",
                 "inline-entity.md",
                 "inline-escape.md",
+                "inline-footnote-inline.md",
                 "inline-footnote.md",
                 "inline-formula.md",
                 "inline-html.md",

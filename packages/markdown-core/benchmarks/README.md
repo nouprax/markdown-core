@@ -188,6 +188,24 @@ The rest are repository syntax written for this corpus, and their cases are
 marked `extended`: Markdown Core is doing strictly more recognition work there,
 so the number against cmark is a bound rather than a comparison.
 
+A case marked `gfm` is measured against cmark-gfm as a same-job comparison, so
+its sample must hold **only** syntax cmark-gfm implements. That is a judgement
+about content rather than something the audit can check — inline notes and
+custom task states build the same node kinds as the GFM constructs they are
+spelled like, so a kind-level rule would catch the table caption and miss the
+other two. Three samples got it wrong and were split: the `Table:` caption left
+`block-table-pipe` for `block-table-caption`, the `^[...]` inline notes left
+`inline-footnote` for `inline-footnote-inline`, and the `[?]` task state left
+`block-tasklist` for `block-task-states`. Each was making this parser look
+better than it is, because cmark-gfm read the dialect syntax as a paragraph
+while Markdown Core built a construct from it.
+
+Splitting the caption out also showed that the pipe table has **two** grammars,
+not one. `try_opening_table_header` is the GFM path — a paragraph followed by a
+delimiter row — and `table_parse_pipe_header` is the mapped-source path a
+caption routes the table through. The caption was what drove the second one, so
+the case bound to it never ran a line of it.
+
 Which constructs the corpus reaches is a separate question from how it is
 measured, and `scripts/audit-corpus-reach.mjs` is what answers it. A construct
 no document builds is not reported as fast or as slow, it is not reported at
@@ -195,7 +213,15 @@ all — and the profile still reads like the whole parser. That audit is not a
 coverage gate and must not become one: it states specific facts (every node kind
 the dialect names is built by some document; each grammar the corpus must
 measure runs in the case that exists to drive it; every sample has a case of its
-own to be profiled in) rather than a percentage to climb.
+own to be profiled in; every case still builds what it exists for; every
+declared isomorph pair holds) rather than a percentage to climb.
+
+A case whose declared kinds a CommonMark construct could also build is bound to
+a grammar as well, because the kinds alone prove nothing there: a plain
+blockquote builds `Callout`, a plain heading is a `Heading`, and an HTML comment
+builds `Comment`. Replacing `block-callout.md` with `> an ordinary quote` used
+to pass; it now fails at 12.7% of the callout metadata grammar, which is the
+guard-clause figure.
 
 A `samples` case is built by repeating its samples to at least `targetBytes`,
 with a blank line between repeats so that repeating cannot merge the last block

@@ -647,6 +647,14 @@ function pinnedCmarkGfm() {
                 `run: ${install}`
         );
     }
+    /* Untracked files count, for the reason set out in `pinnedCmark` above:
+     * this is the same source tree with the same include ordering, so an
+     * edited or stray file is built as the reference while HEAD still reads
+     * as the pin. */
+    const dirty = run("git", ["-C", checkout, "status", "--porcelain", "--untracked-files=all"]).trim();
+    if (dirty) {
+        fail(`the cmark-gfm oracle checkout has local modifications, so it is not cmark-gfm ${version}:\n${dirty}`);
+    }
     return { version, commit, checkout };
 }
 
@@ -1501,9 +1509,10 @@ function markdownReport(report) {
     lines.push("## Parse stage comparison", "");
     lines.push(
         `Markdown Core against cmark \`${report.cmark.version}\` (\`${report.cmark.commit.slice(0, 12)}\`)` +
+            ` and cmark-gfm \`${report.cmarkGfm.version}\` (\`${report.cmarkGfm.commit.slice(0, 12)}\`)` +
             " on the same corpus, by the same compiler, in one run, with the profile flags" +
-            " this driver pins present on both -- checked against each engine's real compile" +
-            " line rather than assumed from what was passed to CMake.",
+            " this driver pins present on all of them -- checked against every measured" +
+            " object's real compile line rather than assumed from what was passed to CMake.",
         "",
         "Their compile lines are NOT identical. Each project sets its own language level," +
             " warning set and target properties, and CMake derives options from those that" +
@@ -1534,9 +1543,12 @@ function markdownReport(report) {
                     }, \`${record.digest.slice(0, 12)}\`)`
             )
             .join(", ")} |`,
+        `| Reference pins | cmark \`${report.cmark.commit.slice(0, 12)}\`,` +
+            ` cmark-gfm \`${report.cmarkGfm.commit.slice(0, 12)}\` |`,
         `| Compile options both engines got | \`${report.toolchain.compiled.shared}\` |`,
         `| Markdown Core only | \`${report.toolchain.compiled["markdown-core only"] || "(nothing)"}\` |`,
         `| cmark only | \`${report.toolchain.compiled["cmark only"] || "(nothing)"}\` |`,
+        `| cmark-gfm only | \`${report.toolchain.compiled["cmark-gfm only"] || "(nothing)"}\` |`,
         `| C library dispatch | \`${report.toolchain.dispatch.slice(0, 16)}\` |`,
         `| Corpus | \`${report.corpus.digest.slice(0, 16)}\` (${report.corpus.cases} documents) |`,
         "",
@@ -1691,11 +1703,21 @@ function markdownReport(report) {
                 " of NOT having the feature. That bounds what a construct costs and does not" +
                 " say it is slow.",
             "",
-            "The pipe-table case is what the distinction is worth: **8.53x against cmark," +
-                " 1.37x against cmark-gfm**. The first number is almost entirely this parser" +
-                " building a table while the reference reads paragraphs.",
             ""
         );
+        /* Read off this run. Written as prose it froze at the numbers of the
+         * run that wrote it, so the sentence making the case for the
+         * distinction went on asserting them while the tables below reported
+         * something else. */
+        const pipe = ranked.find((item) => item.case === "block-table-pipe");
+        if (pipe && pipe.cmarkRatio !== null && pipe.gfmRatio !== null) {
+            lines.push(
+                `The pipe-table case is what the distinction is worth: **${pipe.cmarkRatio.toFixed(2)}x against` +
+                    ` cmark, ${pipe.gfmRatio.toFixed(2)}x against cmark-gfm**. The first number is almost` +
+                    " entirely this parser building a table while the reference reads paragraphs.",
+                ""
+            );
+        }
         lines.push("| Group | Reference | Cases | Median | Worst |", "| --- | --- | ---: | ---: | --- |");
         const groups = [
             [
@@ -1991,7 +2013,13 @@ function main() {
     const compiled = {
         /* The archive the runner links, per benchmarks/CMakeLists.txt. */
         "markdown-core": compiledFlags(profile.binaryDir, "libmarkdown-core-public-static"),
-        cmark: compiledFlags(path.join(options.out, "cmark"), "cmark")
+        cmark: compiledFlags(path.join(options.out, "cmark"), "cmark"),
+        /* Both cmark-gfm archives, because the runner links both and a GFM
+         * ratio is against whatever they were compiled as. Omitting them left
+         * every GFM number resting on objects no pinned-flag check looked at
+         * and no identity table named. */
+        "cmark-gfm": compiledFlags(path.join(options.out, "cmark-gfm"), "libcmark-gfm_static"),
+        "cmark-gfm-extensions": compiledFlags(path.join(options.out, "cmark-gfm"), "libcmark-gfm-extensions_static")
     };
     /* Checked against EVERY measured object rather than their union: a pinned
      * flag missing from one translation unit is a hole a union would paper. */
@@ -2021,6 +2049,8 @@ function main() {
     versions.compiled = {
         "markdown-core": compiled["markdown-core"].flags,
         cmark: compiled.cmark.flags,
+        "cmark-gfm": compiled["cmark-gfm"].flags,
+        "cmark-gfm-extensions": compiled["cmark-gfm-extensions"].flags,
         objects: Object.fromEntries(
             Object.entries(compiled).map(([engine, record]) => [
                 engine,
@@ -2031,7 +2061,14 @@ function main() {
             .filter((flag) => tokens("cmark").includes(flag))
             .join(" "),
         "markdown-core only": only("markdown-core", "cmark").join(" "),
-        "cmark only": only("cmark", "markdown-core").join(" ")
+        "cmark only": only("cmark", "markdown-core").join(" "),
+        /* The GFM reference gets the same split against this parser, because a
+         * GFM ratio rests on its objects exactly as a CommonMark one rests on
+         * cmark's. Its two archives are unioned first: they are one reference,
+         * and the runner links both. */
+        "cmark-gfm only": [...new Set([...tokens("cmark-gfm"), ...tokens("cmark-gfm-extensions")])]
+            .filter((flag) => !tokens("markdown-core").includes(flag))
+            .join(" ")
     };
     versions.architecture = process.arch;
     const binaries = runnerIdentity(profile);
@@ -2075,6 +2112,10 @@ function main() {
         binaries,
         profile: { compiler: profile.compiler, flags: profile.flags },
         cmark: { version: cmark.version, commit: cmark.commit },
+        /* The GFM pin is recorded beside cmark's because the GFM ratios rest on
+         * it: a pin that moved changes those numbers with nothing else in the
+         * report saying so. */
+        cmarkGfm: { version: gfm.version, commit: gfm.commit },
         corpus: { targetBytes: corpus.targetBytes, cases: corpus.documents.length, digest: corpus.digest },
         /* Which pairs were in force, recorded beside the counts: a ratio for a
          * dialect construct is only readable against the pairing that produced

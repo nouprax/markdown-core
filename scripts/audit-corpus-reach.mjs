@@ -55,8 +55,15 @@ function parseArguments(argv) {
     const options = { json: null };
     for (let i = 0; i < argv.length; i++) {
         const flag = argv[i];
-        if (flag === "--json") options.json = argv[++i];
-        else fail(`unknown flag ${flag}`);
+        if (flag !== "--json") fail(`unknown flag ${flag}`);
+        /* A value is required and must be a path, not the next flag. Taking
+         * `argv[++i]` unchecked let `--json` as the last argument run the whole
+         * audit, exit zero, and write nothing -- so automation that asked for
+         * the artifact got a pass and no artifact -- and `--json --bogus` wrote
+         * a file named after a flag instead of rejecting it. */
+        const value = argv[++i];
+        if (value === undefined || value.startsWith("-")) fail("--json needs a file path");
+        options.json = value;
     }
     return options;
 }

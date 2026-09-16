@@ -201,6 +201,14 @@ function pinnedLexbor() {
     if (head !== commit) {
         fail(`the lexbor checkout is at ${head}, but lexbor ${version} is pinned to ${commit}; run: ${install}`);
     }
+    /* Untracked files count as well as edited ones: a stray header in the
+     * source tree is neither tracked nor ignored, and the source directory is
+     * on the include path -- so the reference built is no longer the pin while
+     * HEAD still reads as it. */
+    const dirty = run("git", ["-C", checkout, "status", "--porcelain", "--untracked-files=all"]).trim();
+    if (dirty) {
+        fail(`the lexbor checkout has local modifications, so it is not lexbor ${version}:\n${dirty}`);
+    }
     return { version, commit, checkout, build: path.join(checkout, "build") };
 }
 

@@ -6,7 +6,7 @@
 
 1. [x] Measure the source stage
 2. [ ] Measure the AST stage
-3. [?] Attribute the remaining tree walks
+3. [ ] Attribute the remaining tree walks
 
 - [ ] A task with *emphasis* and a [link](/u)
   - [x] A nested task under it
