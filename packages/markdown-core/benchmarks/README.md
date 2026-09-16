@@ -510,6 +510,14 @@ output and requires it to agree — for **every** construct the pair counts, the
 claiming the reference built those too, and checking the container alone would
 pass a reference that emitted one list per unit and lost everything inside it.
 
+A pair held by a `fallback` is checked there too, and for the same reason. Its
+invariant is an **absence**, and the reach audit can only establish an absence
+through *this* parser: if the reference stopped consuming the twin's construct —
+cmark declining `[ref]: /t` as a link reference definition, say — the counted
+kind would be untouched while the reference additionally parsed thousands of
+paragraphs, and the benchmark would divide by an engine doing more work than the
+pair claims. An absence this parser alone confirms is half an invariant.
+
 Each pair declares, per kind, how the reference counts it: an XML element name,
 a *list* of them where one of our kinds is two of theirs (cmark-gfm's header row
 is `table_header` and every other row is `table_row`, and both are a `TableRow`

@@ -153,6 +153,40 @@ function main() {
             }
             shown.push(`${kind}=${twin}`);
         }
+        /* AND THE ABSENCE, through the reference too. A pair held by a
+         * `fallback` rests on a kind being absent from both documents, and the
+         * reach audit can only establish that through THIS parser. If the
+         * reference stopped consuming the twin's construct -- cmark declining
+         * `[ref]: /t` as a link reference definition, say -- the counted kind
+         * would be untouched while the reference additionally parsed thousands
+         * of paragraphs, and the benchmark would divide by an engine doing more
+         * work than the pair claims. The invariant is an absence, so it is
+         * checked where the absence is supposed to hold.
+         *
+         * `absent.case` is not checked here: it names the DIALECT document, and
+         * no reference parses that document as the pair's claim. */
+        for (const kind of [pair.fallback, ...(pair.absent?.isomorph ?? [])].filter(Boolean)) {
+            const declared = reference[kind];
+            if (!declared || (declared.xml === undefined && declared.html === undefined)) {
+                failures.push(
+                    `${pair.case} is held by ${kind} being absent and does not say how the reference counts ` +
+                        `it. An absence this parser alone confirms is half an invariant`
+                );
+                broke = true;
+                continue;
+            }
+            const built = theirs(pair.isomorph, kind, declared);
+            if (built !== 0) {
+                failures.push(
+                    `${pair.isomorph} builds ${built} ${named(declared)} through its own reference, and the ` +
+                        `pair is held by ${kind} being absent. The reference is no longer doing the job the ` +
+                        `pair claims it does`
+                );
+                broke = true;
+                continue;
+            }
+            shown.push(`${kind}=0`);
+        }
         if (broke) continue;
         process.stdout.write(`  ${pair.case.padEnd(28)} ${shown.join("  ")}\n`);
     }

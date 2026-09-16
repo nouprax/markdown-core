@@ -1339,6 +1339,9 @@
             "reference": {
                 "Table": {
                     "xml": "table"
+                },
+                "Paragraph": {
+                    "xml": "paragraph"
                 }
             }
         },
@@ -1618,6 +1621,9 @@
             "reference": {
                 "ThematicBreak": {
                     "xml": "thematic_break"
+                },
+                "Paragraph": {
+                    "xml": "paragraph"
                 }
             }
         },
@@ -1777,6 +1783,9 @@
                 },
                 "TableRow": {
                     "xml": ["table_row", "table_header"]
+                },
+                "Paragraph": {
+                    "xml": "paragraph"
                 }
             }
         },
@@ -1891,6 +1900,9 @@
                 },
                 "Text": {
                     "xml": "text"
+                },
+                "Paragraph": {
+                    "xml": "paragraph"
                 }
             }
         },
