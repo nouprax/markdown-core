@@ -1,7 +1,7 @@
 {
     "schemaVersion": 2,
     "targetBytes": 65536,
-    "stateFloor": 107,
+    "stateFloor": 120,
     "requiredGrammars": {
         "S_attach_block_identifier": "block-identifier",
         "autolink_delim": "inline-autolink-rich",
@@ -455,7 +455,7 @@
             "name": "pair-span-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "A [body {n}]{.c} in prose.\n\n",
+                "unit": "A [body {n}]{.c} and []{.c} in prose.\n\n",
                 "scales": "bracketed spans"
             },
             "builds": ["Span"]
@@ -464,7 +464,7 @@
             "name": "pair-span-common",
             "dialect": "commonmark",
             "counted": {
-                "unit": "A [body {n}](/c) in prose.\n\n",
+                "unit": "A [body {n}](/c) and [](/c) in prose.\n\n",
                 "match": "pair-span-dialect",
                 "scales": "inline links"
             },
@@ -490,10 +490,29 @@
             "builds": ["Link"]
         },
         {
+            "name": "pair-citegroup-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "See [see @key-{n}, p. 3] and [@key-{n}] here.\n\n",
+                "scales": "bracketed citation groups"
+            },
+            "builds": ["Cite", "Citation"]
+        },
+        {
+            "name": "pair-citegroup-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "See [see , p. 3](/key-{n}) and [](/key-{n}) here.\n\n",
+                "match": "pair-citegroup-dialect",
+                "scales": "inline links"
+            },
+            "builds": ["Link"]
+        },
+        {
             "name": "pair-cite-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "See @key-{n} here.\n\n",
+                "unit": "See @key-{n} and -@key-{n} here.\n\n",
                 "scales": "bare citation keys"
             },
             "builds": ["Cite", "Citation"]
@@ -502,7 +521,7 @@
             "name": "pair-cite-common",
             "dialect": "extended",
             "counted": {
-                "unit": "See www.key-{n} here.\n\n",
+                "unit": "See www.key-{n} and www.key-{n} here.\n\n",
                 "match": "pair-cite-dialect",
                 "scales": "www autolinks"
             },
@@ -675,7 +694,7 @@
             "name": "pair-idirective-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "A :note[body {n}] here.\n\n",
+                "unit": "A :note[body {n}] and :note[body {n}]{key=value .cls} and :note[] here.\n\n",
                 "scales": "inline directives"
             },
             "builds": ["Directive", "DirectiveLabel"]
@@ -684,7 +703,7 @@
             "name": "pair-idirective-common",
             "dialect": "commonmark",
             "counted": {
-                "unit": "A ![body {n}](/note-{n}) here.\n\n",
+                "unit": "A ![body {n}](/note-{n}) and ![body {n}](/note-{n} \"t\") and ![](/note-{n}) here.\n\n",
                 "match": "pair-idirective-dialect",
                 "scales": "images"
             },
@@ -772,7 +791,7 @@
             "name": "pair-cdirective-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": ":::note\nBody paragraph {n}.\n:::\n\n",
+                "unit": ":::note\nBody paragraph {n}.\n:::\n\n::: {.cls}\nBody paragraph {n}.\n:::\n\n",
                 "scales": "container directives"
             },
             "builds": ["DirectiveBlock"]
@@ -781,7 +800,7 @@
             "name": "pair-cdirective-common",
             "dialect": "commonmark",
             "counted": {
-                "unit": "> Body paragraph {n}.\n\n",
+                "unit": "> Body paragraph {n}.\n\n> Body paragraph {n}.\n\n",
                 "match": "pair-cdirective-dialect",
                 "scales": "block quotes"
             },
@@ -791,7 +810,7 @@
             "name": "pair-callout-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "> [!note] Callout title {n}\n\n",
+                "unit": "> [!note] Callout title {n}\n\n> [!note]- Collapsed title {n}\n\n> [!note]+ Expanded title {n}\n\n",
                 "scales": "callout declarations"
             },
             "builds": ["Callout"]
@@ -800,7 +819,7 @@
             "name": "pair-callout-common",
             "dialect": "extended",
             "counted": {
-                "unit": "- [x] Callout title {n}\n\n",
+                "unit": "- [x] Callout title {n}\n\n- [x] Collapsed title {n}\n\n- [x] Expanded title {n}\n\n",
                 "match": "pair-callout-dialect",
                 "scales": "task markers"
             },
@@ -874,7 +893,7 @@
             "name": "pair-deflist-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "Term {n}\n: A definition body for term {n}.\n\n",
+                "unit": "Term A{n}\n: body one {n}\n: body two {n}\n\nTerm B{n}\n\n: loose body {n}\n\nTerm C{n}\n:\n\n",
                 "scales": "definitions"
             },
             "builds": ["DefinitionList", "Definition"]
@@ -883,7 +902,7 @@
             "name": "pair-deflist-common",
             "dialect": "commonmark",
             "counted": {
-                "unit": "- Term {n}\n\n  A definition body for term {n}.\n\n",
+                "unit": "- Term A{n}\n\n  body one {n}\n\n  body two {n}\n\n- Term B{n}\n\n  loose body {n}\n\n- Term C{n}\n\n",
                 "match": "pair-deflist-dialect",
                 "scales": "loose list items"
             },
@@ -1071,7 +1090,10 @@
                 "case": "Span",
                 "isomorph": "Link"
             },
-            "claim": "A bracketed span and an inline link are the same production: an opening bracket, a body parsed as inline content, a closing bracket, and an immediately following paired-delimiter suffix taken raw and decoded into fields of the one node the production builds. The dialect spec says so directly -- a span is decided in the same bracket alternation as a link, and a valid link wins the position -- so the two are alternatives at one point in the grammar and not merely alike. The suffix is where they differ and nothing else is: `{.c}` decodes into attributes, `(/c)` decodes into a destination. Neither looks anything up. The two spellings are the same length here, so the pair is byte for byte as well as count for count."
+            "claim": "A bracketed span and an inline link are the same production: an opening bracket, a body parsed as inline content, a closing bracket, and an immediately following paired-delimiter suffix taken raw and decoded into fields of the one node the production builds. The dialect spec says so directly -- a span is decided in the same bracket alternation as a link, and a valid link wins the position -- so the two are alternatives at one point in the grammar and not merely alike. The suffix is where they differ and nothing else is: `{.c}` decodes into attributes, `(/c)` decodes into a destination. Neither looks anything up. The two spellings are the same length here, so the pair is byte for byte as well as count for count.",
+            "demonstrates": {
+                "case": ["span.content.populated", "span.content.empty"]
+            }
         },
         {
             "case": "pair-xlink-dialect",
@@ -1095,13 +1117,28 @@
             }
         },
         {
+            "case": "pair-citegroup-dialect",
+            "isomorph": "pair-citegroup-common",
+            "counts": {
+                "case": "Cite",
+                "isomorph": "Link"
+            },
+            "demonstrates": {
+                "case": ["citation.bib.mode.normal", "citation.prefix.populated", "citation.suffix.populated"]
+            },
+            "claim": "A BRACKETED citation group and an inline link are the same production: one bracketed construct, part of it parsed as INLINES and part of it stored RAW and unresolved. `[see @key, p. 3]` parses the prefix and the suffix as inlines and keeps `key` raw; `[see , p. 3](/key)` parses the same inlines and keeps the same raw run. Same parts, same count of them. What differs is WHERE the raw run is found -- this dialect scans for a keyed trigger INSIDE the bracket, the reference takes what the parens delimit after it -- and that is the thing being measured, the same difference the inline-directive pair measures from the other side. Neither side resolves anything, which is why the twin is an inline link and not a shortcut reference: a reference would add a map insert and a lookup that this grammar does not perform, and the pair would stop being the same job. The BARE form `@key` is a different production, an unbracketed word-boundary trigger, and pairs separately as pair-cite-dialect."
+        },
+        {
             "case": "pair-cite-dialect",
             "isomorph": "pair-cite-common",
             "counts": {
                 "case": "Cite",
                 "isomorph": "Link"
             },
-            "claim": "A bare citation key and a GFM `www.` autolink are the same production: an UNBRACKETED recognition triggered by a literal prefix at a word boundary, consuming a raw run bounded by a character class, producing one inline that stores the run without parsing it as inline and without resolving it. Both specs state the boundary condition in the same terms -- a citation opener must follow a scalar that is not a letter, number or underscore, so `foo@bar` is not one, and the `www.` form needs an eligible boundary -- and both state that nothing is looked up: the parser does not resolve bibliography keys, and an autolink's destination is stored. That shared shape is what makes the pair; scanning ordinary text for a trigger is the grammatical feature being measured, which is why this pairs with an unbracketed autolink rather than with a delimited `<...>` one. How many NODES each side materialises for that production -- one Link over a Text here, a Cite over a Citation with two affix slots there -- is emphatically not part of the pairing. It is the measurement, and refusing the pair over it would be designing the corpus by reading the implementations, which drives every ratio to 1.00x."
+            "claim": "A bare citation key and a GFM `www.` autolink are the same production: an UNBRACKETED recognition triggered by a literal prefix at a word boundary, consuming a raw run bounded by a character class, producing one inline that stores the run without parsing it as inline and without resolving it. Both specs state the boundary condition in the same terms -- a citation opener must follow a scalar that is not a letter, number or underscore, so `foo@bar` is not one, and the `www.` form needs an eligible boundary -- and both state that nothing is looked up: the parser does not resolve bibliography keys, and an autolink's destination is stored. That shared shape is what makes the pair; scanning ordinary text for a trigger is the grammatical feature being measured, which is why this pairs with an unbracketed autolink rather than with a delimited `<...>` one. How many NODES each side materialises for that production -- one Link over a Text here, a Cite over a Citation with two affix slots there -- is emphatically not part of the pairing. It is the measurement, and refusing the pair over it would be designing the corpus by reading the implementations, which drives every ratio to 1.00x.",
+            "demonstrates": {
+                "case": ["citation.bib.mode.authorInText", "citation.bib.mode.suppressAuthor"]
+            }
         },
         {
             "case": "pair-formulablock-dialect",
@@ -1232,7 +1269,15 @@
                     "isomorph": "Paragraph"
                 }
             ],
-            "claim": "An inline directive and an image are the same production: a SIGIL-introduced inline leaf carrying one RAW run and one BRACKETED run that is parsed as inlines, recognised mid-line and left where it was found. `:note[body]` is the sigil `:`, the raw name `note` and the bracketed body; `![body](/note)` is the sigil `!`, the bracketed body and the raw destination. Same parts, same count of them, and the pair counts Text as well so the inline parsing of the bracketed run is checked on both sides rather than assumed -- 150 against 150 per 50 units. What differs is the ORDER: this dialect must read a name before it knows it has a directive at all, where the reference reads the bracket first and the destination after. That is the thing being measured. That the directive hangs its body under a DirectiveLabel group where the image holds the same inlines directly and carries a destination instead is node materialisation, which is never grounds to refuse. Directive was the last kind in the manifest's coverage list with neither a pair nor a document a reference reads the same way."
+            "claim": "An inline directive and an image are the same production: a SIGIL-introduced inline leaf carrying one RAW run and one BRACKETED run that is parsed as inlines, recognised mid-line and left where it was found. `:note[body]` is the sigil `:`, the raw name `note` and the bracketed body; `![body](/note)` is the sigil `!`, the bracketed body and the raw destination. Same parts, same count of them, and the pair counts Text as well so the inline parsing of the bracketed run is checked on both sides rather than assumed -- 150 against 150 per 50 units. What differs is the ORDER: this dialect must read a name before it knows it has a directive at all, where the reference reads the bracket first and the destination after. That is the thing being measured. That the directive hangs its body under a DirectiveLabel group where the image holds the same inlines directly and carries a destination instead is node materialisation, which is never grounds to refuse. Directive was the last kind in the manifest's coverage list with neither a pair nor a document a reference reads the same way.",
+            "demonstrates": {
+                "case": [
+                    "directive.label.populated",
+                    "directive.label.empty",
+                    "markup.attributes.records",
+                    "markup.attributes.classes"
+                ]
+            }
         },
         {
             "case": "pair-fancylist-dialect",
@@ -1314,7 +1359,10 @@
                     "isomorph": "Paragraph"
                 }
             ],
-            "claim": "A container directive and a block quote are the same production: a CONTAINER BLOCK -- a start condition, a per-line continuation condition, and contents parsed as BLOCKS. CommonMark defines that category itself and puts the block quote and the list item in it; the container directive is a third member of it. What differs is which continuation condition: a block quote continues while its lines carry the marker, a directive continues until its closing fence. That is the thing being measured. The pair counts Paragraph alongside the container because block parsing of the contents is the second half of the criterion and 50 against 50 per 50 units is what shows it matches. The earlier refusal said CommonMark's only FENCE opens a leaf, which compares the fence construct rather than the container production -- the reference here is not the fenced code block, it is the block quote. What the reader should discount for: a fenced container spends two delimiter lines per unit where a prefix container spends none, so at equal COUNT the dialect document is about three times the lines. That is the cost of the grammar rather than a hidden inequality, and it is why the pair is sized by count and says so."
+            "claim": "A container directive and a block quote are the same production: a CONTAINER BLOCK -- a start condition, a per-line continuation condition, and contents parsed as BLOCKS. CommonMark defines that category itself and puts the block quote and the list item in it; the container directive is a third member of it. What differs is which continuation condition: a block quote continues while its lines carry the marker, a directive continues until its closing fence. That is the thing being measured. The pair counts Paragraph alongside the container because block parsing of the contents is the second half of the criterion and 50 against 50 per 50 units is what shows it matches. The earlier refusal said CommonMark's only FENCE opens a leaf, which compares the fence construct rather than the container production -- the reference here is not the fenced code block, it is the block quote. What the reader should discount for: a fenced container spends two delimiter lines per unit where a prefix container spends none, so at equal COUNT the dialect document is about three times the lines. That is the cost of the grammar rather than a hidden inequality, and it is why the pair is sized by count and says so.",
+            "demonstrates": {
+                "case": ["directiveBlock.name.null", "markup.attributes.classes"]
+            }
         },
         {
             "case": "pair-callout-dialect",
@@ -1330,7 +1378,16 @@
                 },
                 "sides": ["case", "isomorph"]
             },
-            "claim": "A callout marker and a GFM task marker are the same production: a bracketed token at the START of a container's first line, taken out of the content and kept as a FIELD, with the rest of that line parsed as inlines owned by the container. `[!note]` on a block quote's first line becomes the callout's variant; `[x]` on a list item's first line becomes the item's marker. Counting alone would prove nothing here, because a callout whose `[!note]` went unread is still a block quote and a list item whose `[x]` went unread is still a list item -- so the pair names the binding on BOTH sides, each under the field name its own kind uses, and the audit checks that every node of the counted kind carries it. That the dialect puts the remaining inlines in a Title group where the list item wraps them in a Paragraph is node materialisation, which is never grounds to refuse. Without this pair the dialect callout form was a bound: its syntax is a CommonMark block quote and its tree is not, so a reference on the same bytes built a different tree."
+            "claim": "A callout marker and a GFM task marker are the same production: a bracketed token at the START of a container's first line, taken out of the content and kept as a FIELD, with the rest of that line parsed as inlines owned by the container. `[!note]` on a block quote's first line becomes the callout's variant; `[x]` on a list item's first line becomes the item's marker. Counting alone would prove nothing here, because a callout whose `[!note]` went unread is still a block quote and a list item whose `[x]` went unread is still a list item -- so the pair names the binding on BOTH sides, each under the field name its own kind uses, and the audit checks that every node of the counted kind carries it. That the dialect puts the remaining inlines in a Title group where the list item wraps them in a Paragraph is node materialisation, which is never grounds to refuse. Without this pair the dialect callout form was a bound: its syntax is a CommonMark block quote and its tree is not, so a reference on the same bytes built a different tree.",
+            "demonstrates": {
+                "case": [
+                    "callout.variant.value",
+                    "callout.collapsed.null",
+                    "callout.collapsed.true",
+                    "callout.collapsed.false",
+                    "callout.title.populated"
+                ]
+            }
         },
         {
             "case": "pair-headless-dialect",
@@ -1380,7 +1437,15 @@
                 "case": "Definition",
                 "isomorph": "ListItem"
             },
-            "claim": "A definition and a loose list item are the same production: a first line parsed as INLINE content, plus block content bound to it by indentation, under ONE node. The trees show it -- a Definition owns DefinitionTerm(inlines) and DefinitionBody(blocks) where a loose ListItem owns Paragraph(inlines) and the same blocks, and that the dialect materialises the two halves as owned groups where the list keeps flat children is node materialisation, which is never grounds to refuse a pair. This replaces a withdrawn proof that said CommonMark has no production grouping a preceding line's inlines with a following block under one node; a loose list item is exactly that. What differs is where the marker sits: a list item is recognised at its own first line, a definition promotes the PRECEDING line when `: ` arrives on the next, so it needs lookahead. That is the thing this pair measures, and it is not a reason to refuse -- GFM already promotes a paragraph by the delimiter row beneath it."
+            "claim": "A definition and a loose list item are the same production: a first line parsed as INLINE content, plus block content bound to it by indentation, under ONE node. The trees show it -- a Definition owns DefinitionTerm(inlines) and DefinitionBody(blocks) where a loose ListItem owns Paragraph(inlines) and the same blocks, and that the dialect materialises the two halves as owned groups where the list keeps flat children is node materialisation, which is never grounds to refuse a pair. This replaces a withdrawn proof that said CommonMark has no production grouping a preceding line's inlines with a following block under one node; a loose list item is exactly that. What differs is where the marker sits: a list item is recognised at its own first line, a definition promotes the PRECEDING line when `: ` arrives on the next, so it needs lookahead. That is the thing this pair measures, and it is not a reason to refuse -- GFM already promotes a paragraph by the delimiter row beneath it.",
+            "demonstrates": {
+                "case": [
+                    "definition.compact.true",
+                    "definition.compact.false",
+                    "definition.bodies.multiple",
+                    "definition.body.empty"
+                ]
+            }
         }
     ],
     "unpairable": [
