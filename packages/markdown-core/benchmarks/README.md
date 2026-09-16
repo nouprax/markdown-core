@@ -344,6 +344,16 @@ scripts/init-environment.sh --install oracle-lexbor   # once
 node scripts/benchmark-attributes.mjs
 ```
 
+That install only *pins the source*, unlike the cmark oracles: the driver
+compiles lexbor itself, from the pinned checkout, with the `benchmark` preset's
+compiler and options, and checks every object of both baselines really received
+the pinned flags. An archive built by the environment setup would carry whatever
+the host defaults to, and the ratio would then depend on how the baseline
+happened to be installed while the report claimed one compiler produced both.
+Nothing is written into the checkout either — lexbor ships no `.gitignore`, so a
+build tree inside it is several hundred untracked files, and the driver refuses
+a checkout with local changes for the reason it refuses a dirty cmark one.
+
 It is a separate driver, and separate for a reason the stage benchmark makes
 plain: there both engines must get byte-identical files, and here they cannot —
 neither implementation reads the other's spelling.
@@ -352,6 +362,14 @@ neither implementation reads the other's spelling.
 [text]{#lane .stage k="callgrind"}
 <x id="lane" class="stage" k="callgrind">
 ```
+
+Quoting is part of each specification rather than of how one side renders it.
+Both grammars scan a quoted value and a bare one down different branches — this
+parser tracks `quoted` and `unquoted` runs separately, lexbor has distinct
+`attribute_value_double_quoted` and `attribute_value_unquoted` tokenizer states
+— so a workload that quoted everything would leave both bare paths unmeasured,
+and a spelling that quoted on one side only would compare two different scans
+while still producing a matching census.
 
 Both inputs are generated from one list of specifications, so they cannot drift
 into describing different attributes, and **both baselines must recover the same

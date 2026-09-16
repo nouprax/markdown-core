@@ -353,10 +353,20 @@ cmark_gfm_path() {
     printf '%s\n' "$root/.tools/cmark-gfm/$CMARK_GFM_VERSION/build/src/cmark-gfm"
 }
 
-# lexbor ships no binary this repository runs -- the attribute benchmark links
-# the static archive -- so the archive is what "installed" means here.
+# NOT BUILT HERE, unlike the cmark oracles. Nothing in this repository runs a
+# lexbor binary: the attribute benchmark compiles the pinned source itself, with
+# the benchmark preset's compiler and flags, because a ratio between two
+# grammars is only about the grammars if one compiler with one set of options
+# produced both. An archive built here would carry whatever this host defaults
+# to. So "installed" means the pinned source is present and at its commit.
+#
+# Nothing is written into the checkout either. lexbor ships no .gitignore at
+# all, so a build tree inside the source directory is several hundred untracked
+# files, and the benchmark refuses a checkout with local changes for the reason
+# the cmark oracles do -- the source directory is on the include path, so a
+# stray file there is built as the reference while HEAD still reads as the pin.
 lexbor_path() {
-    printf '%s\n' "$root/.tools/lexbor/$LEXBOR_VERSION/build/liblexbor_static.a"
+    printf '%s\n' "$root/.tools/lexbor/$LEXBOR_VERSION/source/lexbor/html/tokenizer.h"
 }
 
 check_oracle_cmark() {
@@ -384,9 +394,9 @@ check_oracle_cmark_gfm() {
 }
 
 check_oracle_lexbor() {
-    archive=$(lexbor_path)
-    if [ ! -f "$archive" ]; then
-        fail "lexbor baseline $LEXBOR_VERSION is not built"
+    header=$(lexbor_path)
+    if [ ! -f "$header" ]; then
+        fail "lexbor baseline $LEXBOR_VERSION is not present"
         return
     fi
     actual=$(git -C "$root/.tools/lexbor/$LEXBOR_VERSION" rev-parse HEAD 2>/dev/null || true)
@@ -624,16 +634,7 @@ install_oracle_lexbor() {
         fail "lexbor checkout is $actual_commit, expected $LEXBOR_COMMIT"
         return
     }
-    # Static only, for the reason the cmark oracles are: the benchmark links
-    # the archive it just built rather than whatever a shared build left behind.
-    cmake -S "$directory" -B "$directory/build" \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DLEXBOR_BUILD_SHARED=OFF \
-        -DLEXBOR_BUILD_STATIC=ON \
-        -DLEXBOR_BUILD_TESTS=OFF \
-        -DLEXBOR_BUILD_EXAMPLES=OFF >/dev/null
-    cmake --build "$directory/build" --parallel >/dev/null
-    [ -f "$(lexbor_path)" ] || fail "lexbor build produced no static archive"
+    [ -f "$(lexbor_path)" ] || fail "the lexbor checkout holds no HTML tokenizer source"
 }
 
 install_tools() {

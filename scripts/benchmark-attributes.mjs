@@ -43,6 +43,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { baseName, callEdge, costRecord, foldNames, parseCallgrind } from "./lib/callgrind.mjs";
+import { compiledFlags } from "./lib/compile-identity.mjs";
 import { CACHE, measurementEnvironment, measurementRoot } from "./lib/measurement.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -67,41 +68,61 @@ const BASELINES = {
  * alone, a class alone, several classes, records with quoted and bare values,
  * and the combinations -- plus values holding the characters the scanner has
  * to look at rather than skip.
+ *
+ * QUOTING IS PART OF THE SPECIFICATION, not of how one side renders. Both
+ * grammars scan a quoted value and a bare one down different branches -- this
+ * parser tracks `quoted` and `unquoted` runs separately, and lexbor has
+ * distinct `attribute_value_double_quoted` and `attribute_value_unquoted`
+ * tokenizer states -- so a workload that quoted everything would leave both
+ * bare paths unmeasured while the comment above claimed otherwise. A value
+ * that must be quoted to survive (one holding a space) says so.
  */
 const SPECIFICATIONS = [
-    { anchor: "lane", classes: ["stage"], records: [["k", "callgrind"]] },
+    { anchor: "lane", classes: ["stage"], records: [["k", "callgrind", "quoted"]] },
     { anchor: "nested", classes: ["one", "two"], records: [] },
     { anchor: null, classes: ["only"], records: [] },
     { anchor: "bare", classes: [], records: [] },
-    { anchor: null, classes: [], records: [["k", "v"]] },
+    { anchor: null, classes: [], records: [["k", "v", "bare"]] },
     {
         anchor: "four",
         classes: ["a", "b"],
         records: [
-            ["k", "v"],
-            ["data-kind", "note"]
+            ["k", "v", "bare"],
+            ["data-kind", "note", "quoted"]
         ]
     },
-    { anchor: null, classes: ["r"], records: [["k", "a value with spaces"]] },
+    { anchor: null, classes: ["r"], records: [["k", "a value with spaces", "quoted"]] },
     {
         anchor: "wide",
         classes: ["x", "y", "z", "w"],
         records: [
-            ["one", "1"],
-            ["two", "2"],
-            ["three", "3"]
+            ["one", "1", "bare"],
+            ["two", "2", "quoted"],
+            ["three", "3", "bare"]
         ]
     },
     {
         anchor: null,
         classes: [],
         records: [
-            ["k", "callgrind"],
-            ["j", "valgrind"]
+            ["k", "callgrind", "quoted"],
+            ["j", "valgrind", "bare"]
         ]
     },
-    { anchor: "tail", classes: ["last"], records: [["k", "v"]] }
+    { anchor: "tail", classes: ["last"], records: [["k", "v", "bare"]] }
 ];
+
+/* A record's value as each spelling writes it. The quoting is the
+ * specification's, so both grammars take the same branch on the same record --
+ * a bare value on one side and a quoted one on the other would make the pair
+ * measure two different scans and still produce a matching census, because the
+ * census compares what was recovered rather than how it was written. */
+function renderValue([, value, quoting]) {
+    if (quoting !== "quoted" && quoting !== "bare") {
+        fail(`a record must say whether its value is "quoted" or "bare", not ${quoting}`);
+    }
+    return quoting === "bare" ? value : `"${value}"`;
+}
 
 function fail(message) {
     process.stderr.write(`benchmark-attributes: ${message}\n`);
@@ -138,7 +159,7 @@ function pandocSpelling(specification) {
     const parts = [];
     if (specification.anchor) parts.push(`#${specification.anchor}`);
     for (const name of specification.classes) parts.push(`.${name}`);
-    for (const [name, value] of specification.records) parts.push(`${name}="${value}"`);
+    for (const record of specification.records) parts.push(`${record[0]}=${renderValue(record)}`);
     return `[text]{${parts.join(" ")}}`;
 }
 
@@ -146,7 +167,7 @@ function htmlSpelling(specification) {
     const parts = [];
     if (specification.anchor) parts.push(`id="${specification.anchor}"`);
     if (specification.classes.length) parts.push(`class="${specification.classes.join(" ")}"`);
-    for (const [name, value] of specification.records) parts.push(`${name}="${value}"`);
+    for (const record of specification.records) parts.push(`${record[0]}=${renderValue(record)}`);
     return `<x ${parts.join(" ")}>`;
 }
 
@@ -209,25 +230,96 @@ function pinnedLexbor() {
     if (dirty) {
         fail(`the lexbor checkout has local modifications, so it is not lexbor ${version}:\n${dirty}`);
     }
-    return { version, commit, checkout, build: path.join(checkout, "build") };
+    return { version, commit, checkout };
 }
 
-function build(lexbor) {
+/**
+ * lexbor is COMPILED HERE, from the pinned source, with the benchmark preset's
+ * compiler and options.
+ *
+ * Linking an archive built by `scripts/init-environment.sh` would have been
+ * enough to produce a number, and the number would have been wrong in a way
+ * nothing here could see: that build takes the host's default compiler and
+ * `-DCMAKE_BUILD_TYPE=Release` and none of the profile's options, so the ratio
+ * would have depended on how the baseline happened to be installed while the
+ * report claimed both grammars met the same compiler. Only the thin runner
+ * would have been rebuilt.
+ *
+ * The same reasoning the stage benchmark applies to cmark, for the same reason.
+ * `compile_commands.json` is exported so what the compiler was really handed
+ * can be read back and checked, rather than assumed from what CMake was told.
+ */
+function buildLexbor(profile, lexbor, out) {
+    const buildDir = path.join(out, "lexbor");
+    run("cmake", [
+        "-S",
+        lexbor.checkout,
+        "-B",
+        buildDir,
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DLEXBOR_BUILD_SHARED=OFF",
+        /* Static for the reason the cmark oracles are: the runner links the
+         * archive this just built rather than whatever a shared build left. */
+        "-DLEXBOR_BUILD_STATIC=ON",
+        "-DLEXBOR_BUILD_TESTS=OFF",
+        "-DLEXBOR_BUILD_EXAMPLES=OFF",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+        `-DCMAKE_C_COMPILER=${profile.compiler}`,
+        `-DCMAKE_C_FLAGS_RELEASE=${profile.flags}`
+    ]);
+    run("cmake", ["--build", buildDir, "--parallel", String(os.cpus().length)]);
+    if (!fs.existsSync(path.join(buildDir, "liblexbor_static.a"))) {
+        fail(`the profile build of lexbor produced no static archive in ${buildDir}`);
+    }
+    return buildDir;
+}
+
+/**
+ * Every pinned option, on every object of both baselines.
+ *
+ * Checked per translation unit rather than against their union: a pinned flag
+ * missing from one unit is a hole a union papers over, and the unit that
+ * matters here is the tokenizer's, not the one a summary is dominated by.
+ * `compiledFlags` is the stage benchmark's reader, shared rather than
+ * reimplemented -- it filters by target and drops the per-project include and
+ * path noise, which a naive read of `compile_commands.json` does not.
+ */
+function objectIdentity(buildDir, target, profile, label) {
+    const record = compiledFlags(root, buildDir, target, fail);
+    const pinned = profile.flags.split(/\s+/u).filter(Boolean);
+    for (const line of record.distinct) {
+        const missing = pinned.filter((flag) => !line.split(" ").includes(flag));
+        if (missing.length) {
+            fail(`${label} has an object compiled without the pinned flags ${missing.join(" ")}:\n  ${line}`);
+        }
+    }
+    return { units: record.units, distinct: record.distinct.length, digest: record.digest };
+}
+
+/* The compiler and options both grammars are measured under, read from the
+ * same preset the stage benchmark uses so the two reports describe one build. */
+function profileBuild() {
     const presets = JSON.parse(fs.readFileSync(path.join(root, "CMakePresets.json"), "utf8"));
     const preset = presets.configurePresets.find((entry) => entry.name === PROFILE_PRESET);
     if (!preset) fail(`CMakePresets.json has no ${PROFILE_PRESET} configure preset`);
     const compiler = preset.cacheVariables.CMAKE_C_COMPILER;
     const flags = preset.cacheVariables.CMAKE_C_FLAGS_RELEASE;
     if (!compiler || !flags) fail(`the ${PROFILE_PRESET} preset must pin CMAKE_C_COMPILER and CMAKE_C_FLAGS_RELEASE`);
-    /* One configure, both runners: the ratio is only about the two grammars if
-     * the same compiler and the same options produced both binaries. */
+    return { compiler, flags, binaryDir: presetBinaryDir(preset) };
+}
+
+function build(profile, lexbor, out) {
+    /* One configure for the runners, and the lexbor archive they link is built
+     * from source by this driver: the ratio is only about the two grammars if
+     * one compiler with one set of options produced everything measured. */
+    const lexborBuild = buildLexbor(profile, lexbor, out);
     run("cmake", [
         "--preset",
         PROFILE_PRESET,
         `-DMARKDOWN_CORE_LEXBOR_SOURCE_DIR=${lexbor.checkout}`,
-        `-DMARKDOWN_CORE_LEXBOR_BUILD_DIR=${lexbor.build}`
+        `-DMARKDOWN_CORE_LEXBOR_BUILD_DIR=${lexborBuild}`
     ]);
-    const binaryDir = presetBinaryDir(preset);
+    const binaryDir = profile.binaryDir;
     run("cmake", [
         "--build",
         binaryDir,
@@ -242,7 +334,13 @@ function build(lexbor) {
         const binary = path.join(binaryDir, definition.runner);
         if (!fs.existsSync(binary)) fail(`the profile build produced no ${name} attribute runner at ${binary}`);
     }
-    return { compiler, flags, binaryDir };
+    const objects = {
+        /* The archive each runner links, named because one source can be
+         * compiled several ways in one tree. */
+        "markdown-core": objectIdentity(binaryDir, "libmarkdown-core-public-static", profile, "markdown-core"),
+        lexbor: objectIdentity(lexborBuild, "lexbor_static", profile, "lexbor")
+    };
+    return { binaryDir, objects };
 }
 
 /**
@@ -432,13 +530,23 @@ function markdownReport(report) {
         "| --- | --- |",
         `| Compiler | \`${report.toolchain.compiler}\` |`,
         `| Profile flags | \`${report.toolchain.flags}\` |`,
+        `| Measured objects | ${Object.entries(report.toolchain.objects)
+            .map(
+                ([name, record]) =>
+                    `${name} ${record.units} (${record.distinct} compile ` +
+                    `${record.distinct === 1 ? "line" : "lines"}, \`${record.digest.slice(0, 12)}\`)`
+            )
+            .join(", ")} |`,
         `| lexbor | ${report.lexbor.version} (\`${report.lexbor.commit.slice(0, 12)}\`) |`,
         `| Measured edge | \`${MEASURED.caller} -> ${MEASURED.callee}\` |`,
         "",
         "Absolute counts depend on the toolchain, so two reports are comparable only when" +
             " those rows match; `packages/markdown-core/benchmarks/README.md` sets out why" +
-            " that is stricter than it sounds. Both binaries here come from one configure," +
-            " so the ratio is about the two grammars rather than about two builds.",
+            " that is stricter than it sounds. **lexbor is compiled here, from the pinned" +
+            " source, by that compiler with those options** -- not linked from an archive" +
+            " someone's environment setup produced -- and every object of both baselines is" +
+            " checked to have received the pinned flags, so the ratio is about the two" +
+            " grammars rather than about two builds.",
         "",
         `Raw callgrind dumps are in \`${path.relative(root, report.artifacts)}\`.`
     );
@@ -453,7 +561,8 @@ function main() {
     const lexbor = pinnedLexbor();
     fs.mkdirSync(options.out, { recursive: true });
     const inputs = writeInputs(options);
-    const profile = build(lexbor);
+    const profile = profileBuild();
+    const built = build(profile, lexbor, options.out);
     const recovered = requireSameAttributes(profile, inputs);
     const baselines = {};
     for (const name of Object.keys(BASELINES)) {
@@ -464,7 +573,7 @@ function main() {
     }
     const report = {
         schemaVersion: 1,
-        toolchain: { compiler: profile.compiler, flags: profile.flags },
+        toolchain: { compiler: profile.compiler, flags: profile.flags, objects: built.objects },
         lexbor: { version: lexbor.version, commit: lexbor.commit },
         artifacts: options.out,
         specifications: SPECIFICATIONS.length,
