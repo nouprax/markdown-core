@@ -1204,7 +1204,15 @@ function reachedFrom(profile, specs) {
  * it just as well -- but it does catch the failure that actually happened here,
  * which is a heading-only function nobody had thought about. A new one stops
  * the run until someone says which side it is on. */
-function requireCompleteExclusions(cases, ran, excludedReach, unmatchedFields) {
+function requireCompleteExclusions(cases, ran, excludedReach, unmatchedFields, filtered) {
+    /* The derivation is a statement about the whole corpus: "runs wherever the
+     * field is and nowhere it is not" only means "caused by the field" when
+     * "nowhere it is not" covers every compared document. A `--case` run does
+     * not, and the inference degrades immediately -- two cases is enough to
+     * indict `open_atx`, which opens an ATX heading and is exactly the shared
+     * work this is meant to leave alone. So a filtered run does not get to
+     * decide the question either way. */
+    if (filtered) return;
     for (const [field, declaration] of Object.entries(unmatchedFields)) {
         const carries = [];
         const plain = [];
@@ -1804,12 +1812,25 @@ function markdownReport(report) {
                 "The subtraction is by call edge, not by function, and the edges are named in" +
                     " `corpus.json` with what each one does. Work the reference also performs" +
                     " stays in -- a heading's own inline parse is not excluded, because" +
-                    " `cmark_parse_inlines` runs it too. Two checks keep the exclusion from" +
-                    " being a way to make any number smaller: this driver fails when a case" +
-                    " reaches one of these edges without declaring the field, or declares the" +
-                    " field and reaches none of them, and" +
-                    " `scripts/audit-corpus-reach.mjs` fails when a case's declaration and its" +
-                    " own dump disagree in either direction.",
+                    " `cmark_parse_inlines` runs it too.",
+                "",
+                "Four checks keep the exclusion from being a way to make any number smaller." +
+                    " OCCURRENCE: this driver fails when a case does the work behind a field" +
+                    " without declaring it, or declares it and never does the work, read off a" +
+                    " witness edge's CALL COUNT rather than a cost -- the outer call runs on" +
+                    " every document and costs a few instructions over an empty collection." +
+                    " COMPLETENESS: a list of edges cannot say when it has stopped covering the" +
+                    " feature, so the candidates are derived instead -- a function running on" +
+                    " every compared case carrying the field and on none of those without it is" +
+                    " work only the field causes, and each must be excluded or listed below as" +
+                    " shared. PLACEMENT: an exclusion larger than the stage it claims to sit in" +
+                    " is refused. THE TREE: `scripts/audit-corpus-reach.mjs` reads the field off" +
+                    " the case's own AST dump and fails when the dump and the declaration" +
+                    " disagree in either direction.",
+                "",
+                "What none of them catches is a WRONG classification: calling this parser's own" +
+                    " work shared hides it just as well as excluding cmark's would. That is a" +
+                    " judgement, and it is written out below so it can be argued with.",
                 ""
             );
             lines.push(
@@ -1826,8 +1847,16 @@ function markdownReport(report) {
             }
             lines.push("");
             for (const [field, spec] of Object.entries(report.unmatchedFields ?? {})) {
-                lines.push(`- **\`${field}\`** -- ${spec.reason}`);
-                for (const edge of spec.excludes ?? []) lines.push(`  - \`${edge}\``);
+                lines.push(`- **\`${field}\`** -- ${spec.reason}`, "", `  Taken off this side:`);
+                for (const [edge, stage] of Object.entries(spec.excludes ?? {})) {
+                    lines.push(`  - \`${edge}\` (${stage})`);
+                }
+                if (Object.keys(spec.shared ?? {}).length) {
+                    lines.push("", `  Left in, because the reference does it too:`);
+                    for (const [fn, reason] of Object.entries(spec.shared)) {
+                        lines.push(`  - \`${fn}\` -- ${reason}`);
+                    }
+                }
             }
             lines.push("");
         }
@@ -2207,7 +2236,7 @@ function main() {
         if (!options.quiet) console.error(`measured ${document.case} x${document.scale}`);
         cases.push({ ...document, file: path.relative(options.out, document.file), engines });
     }
-    requireCompleteExclusions(cases, ran, excludedReach, manifest.unmatchedFields ?? {});
+    requireCompleteExclusions(cases, ran, excludedReach, manifest.unmatchedFields ?? {}, options.cases.length > 0);
 
     const report = {
         schemaVersion: 2,
