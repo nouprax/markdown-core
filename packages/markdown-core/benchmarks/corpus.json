@@ -628,6 +628,26 @@
             "builds": ["CodeBlock"]
         },
         {
+            "name": "pair-specimenstart-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "As (@spec-{n}) shows.\n\n(5@spec-{n}) A numbered example.\n\n",
+                "scales": "numbered specimen declarations"
+            },
+            "builds": ["Specimen"]
+        },
+        {
+            "name": "pair-specimenstart-common",
+            "dialect": "extended",
+            "counted": {
+                "unit": "As [^spec-{n}] shows.\n\n[^spec-{n}]: A numbered example.\n\n",
+                "match": "pair-specimenstart-dialect",
+                "scales": "footnote definitions"
+            },
+            "gfm": true,
+            "builds": ["Footnote"]
+        },
+        {
             "name": "pair-ldirective-dialect",
             "dialect": "extended",
             "generated": {
@@ -1026,6 +1046,21 @@
             "claim": "A properties envelope and a fenced code block are the same production: a leaf block opened and closed by a delimiter line, whose body is NOT parsed as Markdown. Same shape, different terminal -- `---` against a run of three or more backticks. What each does with the body afterwards, decode it into named fields or keep it literal, is the measurement and not part of the pairing. This pair is shaped unlike every other one in the corpus and deliberately so: properties.md says only one envelope is recognised, at the document's start, so the workload CANNOT scale by repeating the construct. It scales by the member lines inside a single envelope, which is why both sides carry a head and a tail and why `units` counts lines here rather than constructs. The earlier refusal -- once per document, no count to scale -- mistook the construct for the dimension."
         },
         {
+            "case": "pair-specimenstart-dialect",
+            "isomorph": "pair-specimenstart-common",
+            "counts": {
+                "case": "Specimen",
+                "isomorph": "Footnote"
+            },
+            "alsoCounts": [
+                {
+                    "case": "Cite",
+                    "isomorph": "Cite"
+                }
+            ],
+            "claim": "The RESET form of a specimen definition, paired against the same GFM footnote definition as the plain form and for the same reasons -- one opener carrying a label, block content the opener owns, a node hoisted into a side list the document holds, and a call on each side because GFM discards a footnote nobody calls. What this pair adds is the digit run: `(5@label)` carries an explicit number where `(@label)` carries none, which is the `specimen.start.value` state and had no same-job number before. Run it against pair-specimen-dialect and the difference between the two ratios is what the number costs, with everything else held identical down to the twin's bytes. The numbering rule is an ordered list's: consecutive definitions are ONE sequence whose start comes from its first member and whose later members' digits are read and discarded, and a definition separated from the previous one begins a new sequence with its own start. Each unit here is separated by its own call paragraph, so every definition starts a sequence and every one records start=5 -- checked on the parser rather than assumed, because an earlier reading of two ADJACENT resets said the second recorded nothing, and the rule that explains both readings is the sequence boundary."
+        },
+        {
             "case": "pair-ldirective-dialect",
             "isomorph": "pair-ldirective-common",
             "counts": {
@@ -1128,6 +1163,10 @@
         {
             "production": "inline footnote `^[body]`",
             "proof": "The only proof here with the right SHAPE -- an exhaustive enumeration over both grammars rather than a claim about one construct -- and it is restated as one. An inline footnote is recognised mid-line, its body is parsed as INLINE content, and its node is hoisted out of the content tree into a document-owned side list. Enumerate every inline production of both grammars: code span, emphasis, strong, link, image, autolink, raw HTML, hard break, soft break, entity, text; plus GFM's strikethrough, autolink literal and footnote reference. Every one of them leaves its node where it was recognised. Hoisting exists in GFM only for the footnote DEFINITION, which is a block. So the enumeration is complete and the shape is absent from both grammars. NOTE the honest caveat: nine of the ten claims withdrawn today were single-construct assertions, and this one has not been attacked by anyone but its author."
+        },
+        {
+            "production": "anonymous specimen definition `(@) body`",
+            "proof": "An exhaustive enumeration over the HOISTING productions of both reference grammars, which is the shape a proof here has to have. An anonymous specimen is an opener owning block content whose node is moved OUT of the content tree into a document-owned side list, with NO name registered. Enumerate every production in CommonMark and GFM that moves something out of the content tree: the link reference definition, which annihilates its source and registers a name; and the GFM footnote definition, which hoists its node and registers a name. That is the complete list -- two -- and BOTH require a non-empty label. Checked rather than asserted: cmark-gfm leaves `[^]: body` as an ordinary paragraph, and CommonMark's label rule requires at least one non-whitespace character, so neither will accept the empty label the anonymous form needs. Dropping the hoist to reach something nameless -- a bullet list item opens a sequence member with no identity and owns block content by indentation -- drops a subsequent operation that the criterion requires to match, and the second clause is not optional. The REST of the specimen production pairs twice: pair-specimen-dialect for the labelled form and pair-specimenstart-dialect for the numbered one. It is the empty label alone that has no counterpart. NOTE the honest caveat, the same one the inline footnote carries: this proof has not been attacked by anyone but its author."
         }
     ],
     "openCandidates": [
@@ -1144,11 +1183,6 @@
         },
         {
             "production": "formula paragraph promotion",
-            "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
-            "status": "OPEN -- demoted pending a re-derivation that survives attack"
-        },
-        {
-            "production": "anonymous and reset specimen definitions -- `(@) body`, `(5@) body`",
             "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
             "status": "OPEN -- demoted pending a re-derivation that survives attack"
         }
