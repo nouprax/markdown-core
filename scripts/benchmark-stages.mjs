@@ -886,8 +886,17 @@ function generatedText(generated, target) {
         bytes += Buffer.byteLength(unit);
         units += 1;
     }
-    return { text: text + (generated.tail ?? ""), length: units };
+    return { text: (generated.head ?? "") + text + (generated.tail ?? ""), length: units };
 }
+
+/**
+ * A `head` exists for the one production that is recognised ONCE per document.
+ * A properties envelope may only open a document, so its workload cannot scale
+ * by repeating the construct -- it scales by the MEMBER LINES inside a single
+ * envelope, which means the opening delimiter has to be emitted before the
+ * repeated unit and the closing one after. Every other mode repeats a whole
+ * construct and needs no head.
+ */
 
 /**
  * The other half of a logical isomorph, generated to the SAME COUNT.
@@ -905,7 +914,7 @@ function countedText(counted, units) {
     for (let index = 0; index < units; index++) {
         text += counted.unit.replaceAll("{n}", String(index));
     }
-    return { text: text + (counted.tail ?? ""), length: units };
+    return { text: (counted.head ?? "") + text + (counted.tail ?? ""), length: units };
 }
 
 function chainText(chain, target) {

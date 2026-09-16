@@ -605,6 +605,29 @@
             "builds": ["CodeBlock"]
         },
         {
+            "name": "pair-metadata-dialect",
+            "dialect": "extended",
+            "generated": {
+                "head": "---\n",
+                "unit": "keywords: value {n}\n",
+                "tail": "---\n\nBody.\n",
+                "scales": "envelope member lines"
+            },
+            "builds": ["Metadata"]
+        },
+        {
+            "name": "pair-metadata-common",
+            "dialect": "commonmark",
+            "counted": {
+                "head": "```\n",
+                "unit": "keywords: value {n}\n",
+                "match": "pair-metadata-dialect",
+                "tail": "```\n\nBody.\n",
+                "scales": "fenced body lines"
+            },
+            "builds": ["CodeBlock"]
+        },
+        {
             "name": "pair-comment-common",
             "dialect": "commonmark",
             "samples": ["pair-comment-common.md"],
@@ -851,6 +874,15 @@
                 "isomorph": "CodeBlock"
             },
             "claim": "A fence whose info string is exactly `formula` is a formula block, and formulas.md and code.md both say so; every other info string keeps ordinary code-block behaviour. So this is not a production of the same SHAPE as a code fence, it IS the code fence production with one token changed, which makes it the narrowest pair in the corpus and a deliberate one: the fence scanner is held byte for byte identical and the only thing that varies is the info-string comparison and the routing of the finished leaf to a different kind. It measures none of the `$$` delimiter-line grammar, which is a separate production paired separately as pair-formulablock."
+        },
+        {
+            "case": "pair-metadata-dialect",
+            "isomorph": "pair-metadata-common",
+            "counts": {
+                "case": "Metadata",
+                "isomorph": "CodeBlock"
+            },
+            "claim": "A properties envelope and a fenced code block are the same production: a leaf block opened and closed by a delimiter line, whose body is NOT parsed as Markdown. Same shape, different terminal -- `---` against a run of three or more backticks. What each does with the body afterwards, decode it into named fields or keep it literal, is the measurement and not part of the pairing. This pair is shaped unlike every other one in the corpus and deliberately so: properties.md says only one envelope is recognised, at the document's start, so the workload CANNOT scale by repeating the construct. It scales by the member lines inside a single envelope, which is why both sides carry a head and a tail and why `units` counts lines here rather than constructs. The earlier refusal -- once per document, no count to scale -- mistook the construct for the dimension."
         }
     ],
     "unpairable": [
@@ -881,10 +913,6 @@
         {
             "production": "inline footnote `^[body]`",
             "proof": "An inline recognised mid-line whose body is parsed as INLINE content and whose node is hoisted out of the content tree into a document-owned side list. Neither grammar hoists an inline: every CommonMark and GFM inline production -- code span, emphasis, strong, link, image, autolink, raw HTML, break, entity, text, and GFM's strikethrough and autolink literal -- leaves its node where it was recognised. GFM's footnote hoists a BLOCK definition, not an inline."
-        },
-        {
-            "production": "properties envelope",
-            "proof": "STILL OPEN, and the earlier reason was wrong. It was refused as recognised once per document with no count to scale; the scaling dimension is FIELDS, not envelopes, and one large envelope against one large fenced code block is a legitimate count. Both are fence-delimited leaves whose body is not parsed as Markdown. Building it needs a generation mode with a head as well as a tail, which the corpus does not have yet. Not a proof -- an open item."
         }
     ]
 }
