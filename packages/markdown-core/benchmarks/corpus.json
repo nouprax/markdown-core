@@ -628,6 +628,25 @@
             "builds": ["CodeBlock"]
         },
         {
+            "name": "pair-formulapromo-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "$$y-{n}$$\n\n---\n\n",
+                "scales": "promoted formula paragraphs"
+            },
+            "builds": ["FormulaBlock", "ThematicBreak"]
+        },
+        {
+            "name": "pair-formulapromo-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "[ref-{n}]: /t-{n}\n\n---\n\n",
+                "match": "pair-formulapromo-dialect",
+                "scales": "annihilated definition paragraphs"
+            },
+            "builds": ["ThematicBreak"]
+        },
+        {
             "name": "pair-specimenstart-dialect",
             "dialect": "extended",
             "generated": {
@@ -1046,6 +1065,16 @@
             "claim": "A properties envelope and a fenced code block are the same production: a leaf block opened and closed by a delimiter line, whose body is NOT parsed as Markdown. Same shape, different terminal -- `---` against a run of three or more backticks. What each does with the body afterwards, decode it into named fields or keep it literal, is the measurement and not part of the pairing. This pair is shaped unlike every other one in the corpus and deliberately so: properties.md says only one envelope is recognised, at the document's start, so the workload CANNOT scale by repeating the construct. It scales by the member lines inside a single envelope, which is why both sides carry a head and a tail and why `units` counts lines here rather than constructs. The earlier refusal -- once per document, no count to scale -- mistook the construct for the dimension."
         },
         {
+            "case": "pair-formulapromo-dialect",
+            "isomorph": "pair-formulapromo-common",
+            "counts": {
+                "case": "ThematicBreak",
+                "isomorph": "ThematicBreak"
+            },
+            "fallback": "Paragraph",
+            "claim": "Formula promotion and link-reference-definition annihilation are the same production: a paragraph whose ENTIRE ACCUMULATED CONTENT is one construct does not survive its own close. Both are decided by the content rather than by the opening line or the following one -- `$$y$$` with anything after it on the next line stays a paragraph holding a Formula inline, checked on the parser, so the condition can only be evaluated once the paragraph's content is known. CommonMark's link reference definition is the reference production with that property: a paragraph whose whole content is one definition is removed rather than built. What each puts in the paragraph's place differs -- a leaf block holding a literal against a name-to-target binding and no node at all -- and that is the measurement, not the pairing. The COUNT is carried by a thematic break in each unit, because the reference side builds nothing to count: the pair is held instead by the fallback, Paragraph, being absent from BOTH documents. That absence is the whole invariant. A formula that stopped being promoted is a paragraph holding a Formula; a definition the parser declined to read is a paragraph holding text; both were checked by breaking each side and watching the paragraph appear."
+        },
+        {
             "case": "pair-specimenstart-dialect",
             "isomorph": "pair-specimenstart-common",
             "counts": {
@@ -1178,11 +1207,6 @@
         },
         {
             "production": "table caption, TRAILING form only",
-            "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
-            "status": "OPEN -- demoted pending a re-derivation that survives attack"
-        },
-        {
-            "production": "formula paragraph promotion",
             "whyTheEarlierProofWasWrong": "Demoted without a specific counter-example, on the record rather than on the merits. Ten impossibility claims were re-examined today and ten fell or narrowed, every one of them a single-construct assertion written to close an item rather than to survive attack. This proof is of that kind and has not been re-derived, so it is not entitled to stand as a proof. Two of these are known to use the exact error: the container directive argues 'CommonMark's only fence opens a leaf', which compares constructs and not productions, and the headerless simple table argues from GFM's table requiring a header rather than from the row-and-cell production.",
             "status": "OPEN -- demoted pending a re-derivation that survives attack"
         }
