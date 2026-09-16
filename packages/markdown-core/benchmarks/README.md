@@ -326,7 +326,9 @@ halves are the same bytes and parse to the same tree:
 
 A **declaration** isomorph is two spellings of one production that are *not* the
 same bytes, so there is no substitution and no identical tree to compare. These
-are declared as `logicalIsomorphs`:
+are declared as `logicalIsomorphs`, and **`corpus.json` is the list** — the
+table below is a reading aid for the shapes, not a second copy to keep in step.
+Each entry there carries its own claim, which is what the report quotes:
 
 | Dialect | Isomorph | Reference | What is the same |
 | --- | --- | --- | --- |
@@ -350,6 +352,9 @@ are declared as `logicalIsomorphs`:
 | one-column grid cell | loose list item | `cmark` | a per-line positional cut at a width established by an earlier line, remainder parsed as **blocks** |
 | `Table: X` before a table | GFM header line | `cmark-gfm` | a paragraph-shaped line already scanned, retroactively claimed by a table a later line announces |
 | `a)` `(A)` `iv.` `IV)` `#.` `(#)` | `1.` | `cmark` | an item opened by a sequence token and a delimiter, the token read once and fixing the list's start |
+| `[see @key, p. 3]` | `[see , p. 3](/key)` | `cmark` | one bracketed construct, part parsed as inlines and part stored raw and unresolved |
+| sparse grid table | loose list items | `cmark` | the same cut as the plain grid cell, carrying every cell shape the grammar admits |
+| empty `---` envelope | empty ` ``` ` block | `cmark` | the same leaf, with every member line carrying a key the envelope does not recognise |
 | `: X` after a table | a loose list item's continuation | `cmark` | a construct a blank line does not close, absorbing the next line that matches its continuation rule |
 | `:note[body]` | `![body](/note)` | `cmark` | a sigil-introduced inline leaf carrying one raw run and one bracketed run parsed as inlines |
 | `$$y$$` alone in a paragraph | `[a]: /b` alone in a paragraph | `cmark` | a paragraph whose entire accumulated content is one construct does not survive its own close |
