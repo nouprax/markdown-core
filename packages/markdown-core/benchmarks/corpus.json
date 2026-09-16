@@ -1,7 +1,7 @@
 {
     "schemaVersion": 2,
     "targetBytes": 65536,
-    "stateFloor": 95,
+    "stateFloor": 107,
     "requiredGrammars": {
         "S_attach_block_identifier": "block-identifier",
         "autolink_delim": "inline-autolink-rich",
@@ -474,7 +474,7 @@
             "name": "pair-xlink-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "See [[target-{n}]] here.\n\n",
+                "unit": "See [[target-{n}]] and [[target-{n}|Label {n}]] and [[target-{n}|]] and [[target-{n}#sec-{n}]] and [[#local-{n}]] here.\n\n",
                 "scales": "cross links"
             },
             "builds": ["CrossLink"]
@@ -483,7 +483,7 @@
             "name": "pair-xlink-common",
             "dialect": "commonmark",
             "counted": {
-                "unit": "See [](/target-{n}) here.\n\n",
+                "unit": "See [](/target-{n}) and [Label {n}](/target-{n}) and [](/target-{n} \"\") and [](/target-{n}#sec-{n}) and [](#local-{n}) here.\n\n",
                 "match": "pair-xlink-dialect",
                 "scales": "inline links"
             },
@@ -532,7 +532,7 @@
             "name": "pair-embed-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "See ![[diagram-{n}.png]] here.\n\n",
+                "unit": "See ![[diagram-{n}.png]] and ![[diagram-{n}.png|Alt {n}]] and ![[diagram-{n}.png|]] and ![[diagram-{n}.png|100]] and ![[diagram-{n}.png|100x200]] here.\n\n",
                 "scales": "cross embeds"
             },
             "builds": ["CrossEmbedded"]
@@ -541,7 +541,7 @@
             "name": "pair-embed-common",
             "dialect": "commonmark",
             "counted": {
-                "unit": "See ![](/diagram-{n}.png) here.\n\n",
+                "unit": "See ![](/diagram-{n}.png) and ![Alt {n}](/diagram-{n}.png) and ![](/diagram-{n}.png) and ![](/diagram-{n}.png) and ![](/diagram-{n}.png) here.\n\n",
                 "match": "pair-embed-dialect",
                 "scales": "images"
             },
@@ -1080,7 +1080,19 @@
                 "case": "CrossLink",
                 "isomorph": "Link"
             },
-            "claim": "A cross link and an empty-text inline link are the same production: fixed bracket delimiters around a body that is NOT parsed as inline, producing one leaf node that stores the body as a destination and has no children. Neither resolves it -- the cross-link spec is explicit that the parser stores the strings and the application finds the resource, and an inline link's destination is likewise stored, not looked up -- so the subsequent operation matches too. The empty text is deliberate: a cross link has no inline body, and pairing it against a link that did have one would hand the reference an inline parse this side never performs. Not the same length, so the pair is generated to an equal COUNT."
+            "claim": "A cross link and an empty-text inline link are the same production: fixed bracket delimiters around a body that is NOT parsed as inline, producing one leaf node that stores the body as a destination and has no children. Neither resolves it -- the cross-link spec is explicit that the parser stores the strings and the application finds the resource, and an inline link's destination is likewise stored, not looked up -- so the subsequent operation matches too. The empty text is deliberate: a cross link has no inline body, and pairing it against a link that did have one would hand the reference an inline parse this side never performs. Not the same length, so the pair is generated to an equal COUNT. Each unit carries all five spellings the grammar admits -- bare, labelled, labelled-empty, anchored and current-document -- against five links, so every state of the cross-link's label and destination has a same-job number rather than one of them standing for the rest. The twin carries an empty TITLE where the dialect carries an empty LABEL, which is the same question asked of each grammar's own optional raw run. Where the work is genuinely unequal and stated rather than hidden: the dialect reads the label as a FIELD where the reference parses it as inline CONTENT, so the twin builds text nodes the dialect does not, and the dialect reads an anchor the reference leaves inside the destination string.",
+            "demonstrates": {
+                "case": [
+                    "crossLink.label.null",
+                    "crossLink.label.empty",
+                    "crossLink.label.value",
+                    "destination.cross.path",
+                    "destination.cross.current-document",
+                    "destination.cross.anchor.null",
+                    "destination.cross.anchor.value"
+                ],
+                "isomorph": ["link.title.null", "link.title.empty", "escaping.empty-string"]
+            }
         },
         {
             "case": "pair-cite-dialect",
@@ -1107,7 +1119,18 @@
                 "case": "CrossEmbedded",
                 "isomorph": "Embedded"
             },
-            "claim": "A cross embed and an image are the same production: a `!` sigil immediately before a bracket-delimited destination that is NOT parsed as inline content, producing one leaf inline that stores the destination and has no children. The alt text is deliberately empty on the reference side -- a cross embed has no inline body, so an image that carried one would hand the reference an inline parse this side never performs, and with it empty both sides build a childless leaf. Neither resolves the destination: the cross-link spec says the parser stores the strings and the application finds the resource, and an image's destination is likewise stored. Not the same length, so the pair is generated to an equal COUNT."
+            "claim": "A cross embed and an image are the same production: a `!` sigil immediately before a bracket-delimited destination that is NOT parsed as inline content, producing one leaf inline that stores the destination and has no children. The alt text is deliberately empty on the reference side -- a cross embed has no inline body, so an image that carried one would hand the reference an inline parse this side never performs, and with it empty both sides build a childless leaf. Neither resolves the destination: the cross-link spec says the parser stores the strings and the application finds the resource, and an image's destination is likewise stored. Not the same length, so the pair is generated to an equal COUNT. Each unit carries all five spellings -- bare, labelled, labelled-empty, one dimension and two -- against five images. The reference has no dimension suffix at all, so those two units are the dialect reading a raw run the reference never looks for; that is the measurement and it is why `crossEmbedded.dimensions.width` and `.width-height` have a ratio here instead of a bound. The label is the mirror of it: a FIELD on this side and inline CONTENT on the reference's, so the twin builds text nodes the dialect does not.",
+            "demonstrates": {
+                "case": [
+                    "crossEmbedded.label.null",
+                    "crossEmbedded.label.empty",
+                    "crossEmbedded.label.value",
+                    "crossEmbedded.dimensions.null",
+                    "crossEmbedded.dimensions.width",
+                    "crossEmbedded.dimensions.width-height"
+                ],
+                "isomorph": ["embedded.dimensions.null", "embedded.title.null"]
+            }
         },
         {
             "case": "pair-simpletable-dialect",
