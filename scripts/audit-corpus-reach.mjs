@@ -541,12 +541,47 @@ function logicalPairFailures(census, pairs) {
          * parser stopped reading is still a list item -- so the pair must name
          * the field that tells the two apart, and the audit refuses a pair that
          * does not. */
-        if (sides.case.kind === sides.isomorph.kind && !pair.binding && !pair.fallback) {
+        /* The THIRD way a same-kind pair can be held, and the one that reaches
+         * what a field cannot: a declared grammar STATE only the dialect
+         * spelling can reach. Two ordered lists both build List and ListItem
+         * whatever their markers say, and the field that tells them apart --
+         * `variant=alpha(lowercased=true)` against `variant=decimal` -- prints
+         * unquoted, so it is not a binding in the sense above. Naming the state
+         * says the same thing with the vocabulary the manifest already
+         * declares, and the predicate that reads it is the one the conformance
+         * corpus is held to. */
+        for (const [side, wanted] of Object.entries(pair.demonstrates ?? {})) {
+            const reached = census.perCaseStates.get(sides[side].name);
+            if (!reached) {
+                failures.push(
+                    `${sides[side].name} declares states to demonstrate and the corpus dumped no tree for it`
+                );
+                continue;
+            }
+            for (const state of wanted) {
+                if (!(state in stateValidators)) {
+                    failures.push(`${sides[side].name} names ${state}, which is not a declared grammar state`);
+                } else if (!reached.has(state)) {
+                    failures.push(
+                        `${sides[side].name} does not demonstrate ${state}, which the pair names as what ` +
+                            `distinguishes this side. The count alone cannot see the difference, so the pair ` +
+                            `is no longer evidence of anything`
+                    );
+                }
+            }
+        }
+        if (
+            sides.case.kind === sides.isomorph.kind &&
+            !pair.binding &&
+            !pair.fallback &&
+            !pair.demonstrates?.case?.length
+        ) {
             failures.push(
                 `${pair.case} and ${pair.isomorph} both build ${sides.case.kind}, so an equal count is ` +
                     `not evidence that either side still parses as the pair claims. Such a pair must ` +
-                    `name either the binding that distinguishes them or the kind they FALL BACK to when ` +
-                    `the construct stops being recognised`
+                    `name the binding that distinguishes them, the kind they FALL BACK to when the ` +
+                    `construct stops being recognised, or the grammar state this side demonstrates and ` +
+                    `the other cannot`
             );
         }
         /* The other way a same-kind pair can be held. Where a construct that

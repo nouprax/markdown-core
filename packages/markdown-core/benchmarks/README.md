@@ -349,6 +349,7 @@ are declared as `logicalIsomorphs`:
 | headerless simple table | pipe table | `cmark-gfm` | the same row production, with the head left empty rather than designated |
 | one-column grid cell | loose list item | `cmark` | a per-line positional cut at a width established by an earlier line, remainder parsed as **blocks** |
 | `Table: X` before a table | GFM header line | `cmark-gfm` | a paragraph-shaped line already scanned, retroactively claimed by a table a later line announces |
+| `a)` `(A)` `iv.` `IV)` `#.` `(#)` | `1.` | `cmark` | an item opened by a sequence token and a delimiter, the token read once and fixing the list's start |
 | `: X` after a table | a loose list item's continuation | `cmark` | a construct a blank line does not close, absorbing the next line that matches its continuation rule |
 | `:note[body]` | `![body](/note)` | `cmark` | a sigil-introduced inline leaf carrying one raw run and one bracketed run parsed as inlines |
 | `$$y$$` alone in a paragraph | `[a]: /b` alone in a paragraph | `cmark` | a paragraph whose entire accumulated content is one construct does not survive its own close |
@@ -454,6 +455,14 @@ For a **declaration** pair, where there is no identical tree to compare:
   evidence after all, and what makes it evidence is that the fallback never
   appears. A task marker has no fallback in this sense, which is why that pair
   names a binding instead.
+- where a pair names `demonstrates`, each side it lists must reach every
+  declared grammar **state** named for it. This is the third way a same-kind
+  pair can be held, and it reaches what a field cannot: two ordered lists build
+  `List` and `ListItem` whatever their markers say, and the field that tells
+  them apart — `variant=alpha(lowercased=true)` against `variant=decimal` —
+  prints unquoted, so it is not a binding. Naming the state says the same thing
+  in the vocabulary the manifest already declares, checked by the predicates the
+  conformance corpus is held to.
 - where a pair names `absent`, the sides it lists must build **none** of the
   kinds it names. It is `fallback` declared per side, for a pair whose two
   spellings degrade differently and so have no kind to name for both: a trailing
