@@ -178,9 +178,8 @@ if(MARKDOWN_CORE_STATIC OR MARKDOWN_CORE_SHARED)
             libmarkdown-core-noanchor-static
             PUBLIC MARKDOWN_CORE_STATIC_DEFINE MARKDOWN_CORE_ELEMENTS_STATIC_DEFINE
             PRIVATE MARKDOWN_CORE_BENCH_OMIT_ANCHORS)
-        set_target_properties(
-            libmarkdown-core-noanchor-static
-            PROPERTIES OUTPUT_NAME "markdown-core-noanchor" POSITION_INDEPENDENT_CODE ON)
+        set_target_properties(libmarkdown-core-noanchor-static PROPERTIES OUTPUT_NAME "markdown-core-noanchor"
+                                                                          POSITION_INDEPENDENT_CODE ON)
         target_include_directories(
             libmarkdown-core-noanchor-static
             PRIVATE ${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
