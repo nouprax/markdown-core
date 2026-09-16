@@ -45,6 +45,9 @@
             "claim": "An inline formula is a leaf opened and closed by a one-byte run whose body is taken literally; a one-backtick code span is the same shape. Formula additionally records which spelling opened it in `mode`, which is that kind's own business rather than a difference in what was built, and is named here so the exception is visible rather than assumed."
         }
     ],
+    "referenceless": {
+        "anchor": "Neither reference derives or stores a per-block identifier. A tree carrying one is not the tree either reference built, however CommonMark the syntax that produced it was -- so a case that carries this field has no same-job ratio against a reference and is reported as a bound, unless the corpus pairs it with a document that puts the same declaration in front of the reference. Declared per case and checked against the parser's dump in both directions, because the failure this closes was exactly a case whose syntax was CommonMark and whose tree was not."
+    },
     "cases": [
         {
             "name": "block-bq-flat",
@@ -86,6 +89,7 @@
             "name": "block-heading",
             "dialect": "commonmark",
             "samples": ["block-heading.md"],
+            "carries": ["anchor"],
             "builds": ["Heading"]
         },
         {
@@ -110,12 +114,14 @@
             "name": "block-identifier",
             "dialect": "extended",
             "samples": ["block-identifier.md"],
+            "carries": ["anchor"],
             "builds": ["Callout", "Heading"]
         },
         {
             "name": "block-lheading",
             "dialect": "commonmark",
             "samples": ["block-lheading.md"],
+            "carries": ["anchor"],
             "builds": ["Heading"]
         },
         {
@@ -134,6 +140,7 @@
             "name": "block-metadata",
             "dialect": "extended",
             "samples": ["block-metadata.md"],
+            "carries": ["anchor"],
             "builds": ["Metadata", "ThematicBreak"]
         },
         {
@@ -247,6 +254,7 @@
             "name": "directive",
             "dialect": "extended",
             "samples": ["directive.md"],
+            "carries": ["anchor"],
             "builds": ["Directive", "DirectiveBlock"]
         },
         {
@@ -373,6 +381,7 @@
             "name": "inline-span",
             "dialect": "extended",
             "samples": ["inline-span.md"],
+            "carries": ["anchor"],
             "builds": ["Span", "Code"]
         },
         {
@@ -387,6 +396,7 @@
             "generated": {
                 "unit": "A paragraph carrying its own identifier #anchor-{n}#\n\n"
             },
+            "carries": ["anchor"],
             "builds": ["Paragraph"]
         },
         {
@@ -543,7 +553,8 @@
                 "inline-newlines.md",
                 "lorem1.md",
                 "rawtabs.md"
-            ]
+            ],
+            "carries": ["anchor"]
         },
         {
             "name": "mixed-extended",
@@ -598,7 +609,8 @@
                 "inline-span.md",
                 "lorem1.md",
                 "rawtabs.md"
-            ]
+            ],
+            "carries": ["anchor"]
         }
     ],
     "logicalIsomorphs": [

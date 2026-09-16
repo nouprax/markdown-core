@@ -1068,6 +1068,11 @@ function buildCorpus(options, manifest) {
                 case: entry.name,
                 dialect: entry.dialect,
                 gfm: entry.gfm === true,
+                /* The fields this case's tree carries that no reference builds.
+                 * `dialect` asserts what the SYNTAX is; this says what the
+                 * OUTPUT is, and reading the first as though it were the second
+                 * is what published a feature's price as a parsing ratio. */
+                carries: entry.carries ?? [],
                 /* What the growth table is varying. `documents` cases add
                  * independent copies; a chain case grows one structure, and
                  * WHICH dimension is not the same question as the shape --
@@ -1624,15 +1629,30 @@ function markdownReport(report) {
                  *
                  * A dialect case with no isomorph publishes none of those. Its
                  * own bytes are exactly where the two engines disagree, so
-                 * dividing by cmark on them is not a comparison at all; it is
-                 * reported as a bound and ranked as one. */
-                sameJob: gfmIr
-                    ? core / gfmIr
-                    : twinCmark
-                      ? core / twinCmark
-                      : item.dialect === "commonmark" && cmarkIr
-                        ? core / cmarkIr
-                        : null
+                 * dividing by a reference on them is not a comparison at all; it
+                 * is reported as a bound and ranked as one.
+                 *
+                 * So is a case whose SYNTAX is CommonMark and whose TREE is not.
+                 * A document of plain ATX headings is CommonMark source, and
+                 * every heading in it carries an identifier this dialect derived
+                 * and no reference has a counterpart for -- so the reference on
+                 * those bytes built a different tree, and the quotient is the
+                 * price of a feature wearing the name of a parsing ratio. A pair
+                 * is the only thing that lifts it back to a comparison, because
+                 * a pair is what puts the same declaration in front of the
+                 * reference; that is why the paired case is tested first here
+                 * and why `pair-anchor-dialect` carries the field and still gets
+                 * a ratio. `scripts/audit-corpus-reach.mjs` holds each case's
+                 * declaration against the parser's dump, in both directions. */
+                sameJob: twinCmark
+                    ? core / twinCmark
+                    : item.carries.length
+                      ? null
+                      : gfmIr
+                        ? core / gfmIr
+                        : item.dialect === "commonmark" && cmarkIr
+                          ? core / cmarkIr
+                          : null
             };
         })
         .sort((left, right) => (right.sameJob ?? right.cmarkRatio ?? 0) - (left.sameJob ?? left.cmarkRatio ?? 0));
@@ -1683,14 +1703,23 @@ function markdownReport(report) {
             [
                 "CommonMark",
                 "cmark",
-                ranked.filter((item) => item.dialect === "commonmark" && !item.gfm && !isIsomorph.has(item.case))
+                ranked.filter(
+                    (item) =>
+                        item.dialect === "commonmark" && !item.gfm && !item.carries.length && !isIsomorph.has(item.case)
+                )
             ],
-            ["GFM extensions", "cmark-gfm", ranked.filter((item) => item.gfm && !isIsomorph.has(item.case))],
+            [
+                "GFM extensions",
+                "cmark-gfm",
+                ranked.filter((item) => item.gfm && !item.carries.length && !isIsomorph.has(item.case))
+            ],
             ["Dialect, via an isomorph", "the isomorph's own reference", ranked.filter((item) => item.isomorph)],
             [
                 "Dialect-only (no reference)",
                 "cmark, as a bound",
-                ranked.filter((item) => item.dialect !== "commonmark" && !item.gfm && !item.isomorph)
+                ranked.filter(
+                    (item) => (item.dialect !== "commonmark" || item.carries.length) && !item.gfm && !item.isomorph
+                )
             ]
         ];
         for (const [label, reference, group] of groups) {
@@ -1840,9 +1869,11 @@ function markdownReport(report) {
                 ? "cmark-gfm"
                 : item.isomorph
                   ? `${item.isomorph.reference}, isomorph`
-                  : item.dialect === "commonmark"
-                    ? "cmark"
-                    : "(bound)";
+                  : item.carries.length
+                    ? `(bound; tree carries ${item.carries.join(", ")})`
+                    : item.dialect === "commonmark"
+                      ? "cmark"
+                      : "(bound)";
             lines.push(
                 `| ${item.case} | ${reference} | ${ratio === null ? "-" : `${ratio.toFixed(2)}x`} |` +
                     ` ${(item.coreIr / item.bytes).toFixed(1)} | ${hot || "(not recorded)"} |`

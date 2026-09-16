@@ -367,6 +367,93 @@ async function kindsProduced(cli, documents) {
 }
 
 /**
+ * A tree that is not the tree either reference built.
+ *
+ * `"dialect": "commonmark"` asserts that a case's SYNTAX is CommonMark. It was
+ * being read as a claim about the OUTPUT, and those are different claims: this
+ * dialect derives an identifier for every heading, so a document of plain ATX
+ * headings is CommonMark source and is not a CommonMark tree. Dividing by cmark
+ * on it published the price of a feature cmark does not have as though it were
+ * the price of parsing a heading, and that is what #321 reported.
+ *
+ * So each referenceless field is declared once, with its reason, and each case
+ * declares the ones its tree carries. The driver reports a case that carries one
+ * as a BOUND unless the corpus pairs it -- a pair is exactly the thing that puts
+ * the same declaration in front of the reference, which is why
+ * `pair-anchor-dialect` carries the field and still gets a ratio.
+ *
+ * Checked in BOTH directions. A missing declaration would publish a bound as a
+ * comparison, which is the original defect; a declaration for a field the tree
+ * does not carry would demote a real comparison to a bound, which hides a
+ * regression behind a number nobody ranks.
+ *
+ * The complexity shapes are checked at reduced depth: `chain-list-depth` at full
+ * size dumps gigabytes, so the same unit and tail are rebuilt at 64 repetitions
+ * and that document is dumped. It is a document the corpus could have generated,
+ * not a truncation of one -- a prefix cut mid-structure parses to something the
+ * real document never contains.
+ */
+function referencelessFields() {
+    const manifest = JSON.parse(
+        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
+    );
+    const declared = manifest.referenceless ?? {};
+    if (typeof declared !== "object" || Array.isArray(declared)) {
+        fail("corpus.json: referenceless must map each field name to why no reference builds it");
+    }
+    return Object.keys(declared);
+}
+
+function shallowChainDocument(directory, entry) {
+    const file = path.join(directory, `${entry.name}.shallow.md`);
+    fs.writeFileSync(file, entry.chain.unit.repeat(64) + (entry.chain.tail ?? ""));
+    return file;
+}
+
+function carriedFailures(cli, census, corpusDirectory, fields) {
+    const manifest = JSON.parse(
+        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
+    );
+    const failures = [];
+    for (const entry of manifest.cases ?? []) {
+        const declared = new Set(entry.carries ?? []);
+        for (const name of declared) {
+            if (!fields.includes(name)) {
+                failures.push(`${entry.name} declares it carries ${name}, which corpus.json never declared`);
+            }
+        }
+        let carried;
+        if (entry.chain) {
+            const file = shallowChainDocument(corpusDirectory, entry);
+            const result = spawnSync(cli, [file], { encoding: "utf8", timeout: 600_000 });
+            requireClean(result, "the dump CLI", file);
+            carried = new Set(fields.filter((name) => new RegExp(`\\s${name}="`, "u").test(result.stdout)));
+        } else {
+            const bound = census.perCaseBound.get(entry.name);
+            if (!bound) continue;
+            carried = new Set(fields.filter((name) => [...bound.keys()].some((key) => key.endsWith(`.${name}`))));
+        }
+        for (const name of carried) {
+            if (!declared.has(name)) {
+                failures.push(
+                    `${entry.name} builds a tree carrying ${name}, which no reference builds, and does not ` +
+                        `declare it -- so its number against a reference would be printed as a comparison`
+                );
+            }
+        }
+        for (const name of declared) {
+            if (fields.includes(name) && !carried.has(name)) {
+                failures.push(
+                    `${entry.name} declares ${name}, which its tree does not carry -- a comparison demoted ` +
+                        `to a bound is a regression nobody would rank`
+                );
+            }
+        }
+    }
+    return failures;
+}
+
+/**
  * The invariants a LOGICAL isomorph rests on, checked against the parser.
  *
  * A substitution isomorph is the same document under a change of marker, so the
@@ -604,7 +691,9 @@ const undriven = [];
 const drifted = [];
 const pairs = isomorphPairs();
 const logical = logicalIsomorphs();
+const referenceless = referencelessFields();
 let notIsomorphic;
+let miscarried;
 let unequalPairs;
 let unbuilt;
 {
@@ -622,6 +711,7 @@ let unbuilt;
          * each of them to a byte target, which says nothing further about it. */
         notIsomorphic = isomorphFailures(binaries.dump, pairs);
         unequalPairs = logicalPairFailures(census, logical);
+        miscarried = carriedFailures(binaries.dump, census, path.dirname(documents[0]), referenceless);
         for (const [name, expected] of declaredBuilds()) {
             const built = census.perCase.get(name);
             if (!built) {
@@ -680,7 +770,9 @@ process.stdout.write(
         `  samples with a case  ${sampleCount - orphaned.length}/${sampleCount}\n` +
         `  cases still building ${declaredBuilds().size - drifted.length}/${declaredBuilds().size}\n` +
         `  isomorph pairs held  ${pairs.length - notIsomorphic.length}/${pairs.length}\n` +
-        `  logical pairs held   ${logical.length - unequalPairs.length}/${logical.length}\n`
+        `  logical pairs held   ${logical.length - unequalPairs.length}/${logical.length}\n` +
+        `  referenceless fields ${referenceless.length}, declared by every case that carries one` +
+        `${miscarried.length ? ` -- ${miscarried.length} do not` : ""}\n`
 );
 
 if (options.json) {
@@ -702,6 +794,12 @@ if (notIsomorphic.length) {
     failures.push(
         `these pairs are not the same document under a change of marker, so the ratio between them ` +
             `would attribute a difference in the trees to a grammar:\n    ${notIsomorphic.join("\n    ")}`
+    );
+}
+if (miscarried.length) {
+    failures.push(
+        `a ratio is a comparison only where both engines built the same tree, and these cases do not ` +
+            `line up with what their trees carry:\n    ${miscarried.join("\n    ")}`
     );
 }
 if (unequalPairs.length) {

@@ -7,9 +7,11 @@ made the parser faster should name a stage and a number.
 
 A ratio is only a comparison where both parsers did the same job, so which
 reference a case is read against is part of the measurement. cmark answers for
-CommonMark, cmark-gfm for the GFM constructs, and for a few dialect constructs
-neither implements, an [isomorph pair](#isomorph-pairs) puts cmark back in the
-comparison by giving it a document that builds the same tree.
+CommonMark, cmark-gfm for the GFM constructs, and for dialect constructs neither
+implements, an [isomorph pair](#isomorph-pairs) puts a reference back in the
+comparison by giving it the same workload in a grammar it has. A case with no
+pair is reported as a **bound**, and a bound is never ranked against a
+comparison.
 
 ```sh
 scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm   # once
@@ -250,6 +252,17 @@ dimension are not the same thing:
 | `chain-bracket-open` | `[a ` | live bracket-stack depth |
 | `chain-link-candidates` | `[a](b` | count of bounded failed link candidates |
 
+A `generated` case is built from a numbered unit instead of from a sample file,
+repeated until the document reaches its size. A `counted` case is built from a
+unit too, but sized to the number of units a named `generated` partner actually
+emitted rather than to a byte target. Those two modes exist for the halves of a
+[declaration pair](#two-ways-a-pair-is-held), where the two spellings are
+different lengths and an equal byte target would not be an equal workload. The
+count is taken from what the partner emitted, so nothing has to be recovered
+from the generated text by pattern — an earlier version counted headings with a
+regular expression, which counts what *looks* like a heading, and a `#` inside a
+fenced block is not one.
+
 `chain-link-candidates` is the one to read carefully. It looks like a bracket
 chain and is not: every `[` is closed by the `]` two bytes later, so no opener
 survives and the live bracket depth is one at any size. What grows is the
@@ -271,9 +284,39 @@ one of those documents is the cost of *not* having the feature: it bounds what
 the construct costs and cannot say whether the construct is slow, which is the
 only question the profile exists to answer.
 
-An isomorph pair answers it. The same document is written twice — once with the
-dialect marker, once with a CommonMark marker of the same shape — and the two
-are the same bytes under a single-character substitution:
+An isomorph pair answers it, by putting the **same workload** in front of the
+reference in a grammar the reference has.
+
+### The pairing criterion, and the one way to get it wrong
+
+Two productions pair when they have the **same grammar shape**, and — where the
+production has a subsequent operation — when that operation matches too. `$x$`
+against `` `x` `` is the shape rule: a leaf inline opened and closed by a
+one-byte run whose body is taken literally, differing only in the terminal. An
+explicit anchor against a link reference definition is the logic rule: both
+declare a name, bind it to a target, and the binding enters the document's table
+of names.
+
+**The pairing is read off the GRAMMARS. It is never read off either
+implementation.** That is not a stylistic preference; it is what makes the
+number mean anything. A pair designed by looking at what machinery each engine
+happens to run, and choosing documents that make those machineries match, drives
+the ratio to 1.00x by construction — it measures the equalisation, not the
+parsers. The whole point is to hold the *grammar* constant and let the
+*implementation* difference show. Holding the implementation constant and
+letting the grammar vary is the same mistake inverted, and it is the one this
+benchmark has actually made: a heading was once paired against a link reference
+definition because both engines were observed to grow a reference map, and the
+pair read 1.27x — a number that said nothing about either grammar.
+
+So the argument for a pair is always a citation of the two grammars, and it is
+written down in `corpus.json` as the pair's `claim`, printed verbatim in the
+report. A pair whose claim cannot point at two productions is not a pair.
+
+### Two ways a pair is held
+
+A **substitution** isomorph is the same document under a change of marker. Both
+halves are the same bytes and parse to the same tree:
 
 | Dialect | Isomorph | Substitution |
 | --- | --- | --- |
@@ -281,49 +324,175 @@ are the same bytes under a single-character substitution:
 | `%%hidden%%` | ` ``hidden`` ` | `%` → `` ` `` |
 | `$x$` | `` `x` `` | `$` → `` ` `` |
 
-Both spellings then parse to the same tree — same spans, same literals, same
-children — so three numbers decompose the ratio:
+A **declaration** isomorph is two spellings of one production that are *not* the
+same bytes, so there is no substitution and no identical tree to compare. These
+are declared as `logicalIsomorphs`:
+
+| Dialect | Isomorph | Reference | What is the same |
+| --- | --- | --- | --- |
+| `A block #name#` | `[name]: #name` | `cmark` | one block, one name-to-target binding, entering a table of names |
+| `[body]{.c}` | `[body](/c)` | `cmark` | bracket, inline body, bracket, raw paired-delimiter suffix decoded into the node |
+| `[[target]]` | `[](/target)` | `cmark` | fixed delimiters, raw body not parsed as inline, one leaf holding a destination, no lookup |
+| `(@label) body` | `[^label]: body` | `cmark-gfm` | a labelled opener owning block content, leaving ordinary content for a side list |
+| `- [~] item` | `- [x] item` | `cmark-gfm` | one scalar in brackets at the start of item content, removed from it and stored on the item |
+
+The reference is whichever engine implements the isomorph's production, which is
+not always cmark: pairing a GFM production against cmark would divide by an
+engine that read the paired document as prose.
+
+Because the two halves of a declaration pair are different lengths, they cannot
+be sized to a byte target — that would hand one side more of the construct than
+the other and produce a comparison of one document's size with another's. The
+dialect half is `generated` to the byte target and the CommonMark half is
+`counted` to whatever number of units its partner actually emitted. Every
+generated name carries an index, so both sides bind the same number of
+**distinct** identifiers; a repeated literal would leave one side with a
+one-entry table against thousands.
+
+### The three numbers
+
+Either kind of pair decomposes the ratio the same way:
 
 - **Grammar**, this parser on the dialect spelling over this parser on the
-  isomorph. One parser, one tree, two grammars, so a number above 1 is this
+  isomorph. One parser, one workload, two grammars — so a number above 1 is this
   grammar and nothing else, and it names the file to open.
-- **Shape**, this parser over cmark on the isomorph, where both did the same
-  job. It is what the parser costs on that shape before any dialect construct
-  is involved, and no change to a dialect grammar will move it.
-- Their product, which is a same-job ratio for a construct cmark does not
-  implement, because cmark built the same tree from the isomorphic document.
+- **Shape**, this parser over the isomorph's own reference on the isomorph,
+  where both did the same job. It is what the parser costs on that shape before
+  any dialect construct is involved, and no change to a dialect grammar will
+  move it.
+- Their product, which is a same-job ratio for a construct the reference does
+  not implement, because the reference did the equivalent work on the isomorph.
 
 The split is the point. A pair reading 1.0x on Grammar and 3x on Shape is not an
 extension problem at all, however large the bound against cmark looked.
+
+On a declaration pair the two Ir/B columns are each over their own document's
+bytes, and those differ by construction — so Grammar is not their quotient. It
+is the total over the total at an equal count of the construct, which is the
+only denominator the pair holds fixed.
 
 Neither half of a pair joins `mixed-commonmark` or `mixed-extended`. A pair is a
 pair of isolation probes, written to mirror each other; a document written twice
 would enter the concatenated aggregate twice and tilt it toward whichever
 construct the pair isolates. Every other sample is in its aggregate.
 
-**The pairing is checked, not claimed.** `scripts/audit-corpus-reach.mjs`
-requires the substitution to reproduce the isomorph byte for byte, and requires
-the two dumps to be identical once the kind names are erased. A pair whose two
-documents parse to different trees is two measurements presented as one, and the
-report would attribute the difference in the trees to a grammar.
+### The pairing is checked, not claimed
 
-That check is not a formality — the pairs it rejected are the reason it exists:
+`scripts/audit-corpus-reach.mjs` holds each kind of pair to what it asserts,
+against the parser rather than against the manifest.
 
-| Rejected pair | Why it is not isomorphic |
+For a **substitution** pair: applying the declared substitution to the dialect
+document must reproduce the isomorph byte for byte, and the two dumps must be
+identical once the kind names are erased. A pair whose two documents parse to
+different trees is two measurements presented as one, and the report would
+attribute the difference in the trees to a grammar.
+
+For a **declaration** pair, where there is no identical tree to compare:
+
+- both sides must build the **same number** of the paired construct, each side
+  counted by the kind it builds. The corpus generates them to an equal count,
+  which is arithmetic; this is the parser agreeing that the bytes it was handed
+  came out that way. For the anchor pair it is also what proves the reference
+  side's definitions were *consumed* — a definition the parser declined to read
+  as one stays a paragraph, and the count doubles.
+- where the two sides build the **same kind**, an equal count proves nothing on
+  its own (an item whose marker went unread is still a list item), so the pair
+  must name the field that distinguishes them and the audit refuses a pair that
+  does not.
+- where a pair names a `binding`, every node of the kind on a declaring side
+  must carry it, and a side that declares *out of band* must carry none at all.
+  That asymmetry is the anchor pair: an explicit anchor binds on the block it
+  sits on, a link reference definition binds into the reference map and leaves
+  no node.
+
+Each of those fails when broken, which was verified by mutating the corpus
+rather than by reading the code.
+
+### Constructs with no isomorph
+
+A construct with no row in the pair table has no CommonMark or GFM production of
+the same shape, and the reason is recorded per construct rather than waved at.
+Read off the grammars:
+
+| Construct | Why nothing pairs with it |
 | --- | --- |
-| grid table ↔ pipe table | a grid cell holds a paragraph, a pipe cell holds inlines |
-| definition list ↔ bullet list | the definition groups term and body under one node |
-| comment ↔ strong emphasis | strong parses its body, a comment keeps it literal |
+| grid table | a grid cell holds a paragraph, a pipe cell holds inlines |
+| definition list | the definition groups a term's inlines with a following block under one node |
+| callout | it consumes a token off its container's first line into the container's own fields and parses the rest as a separate inline list |
+| directive | it is a fenced *container*; CommonMark's only fence opens a leaf whose body is literal |
+| properties envelope | recognised once, at the document's start, so there is no count to scale |
+| citation group | it decomposes one bracket group into a list of keyed items with parsed affixes |
+| derived anchor | a heading whose identifier comes from its own text declares nothing — there is no name in the source to bind, and no production derives one |
 | `==a====b==` ↔ `**a****b**` | our run splitter divides adjacent closers, CommonMark's does not |
+| comment ↔ strong emphasis | strong parses its body, a comment keeps it literal |
 
-Each looked isomorphic and was not. Constructs with no surviving isomorph stay
-bounds, and a bound is reported as a bound.
+The last four are the ones worth keeping in view. Each of the first three looked
+isomorphic and was not. The derived anchor is the sharpest: the *explicit* anchor
+does declare a name and therefore pairs, while the derived one has no isomorph at
+all — which is why `pair-anchor-dialect` is in the pair table and `block-heading`
+is a bound.
 
 A kind's own bookkeeping may differ where the manifest names it: `Formula`
 records which spelling opened it in `mode`, which a code span has no equivalent
 of. Those exceptions are declared per pair in `corpus.json`, and an exception
-matching nothing in the dialect document fails the audit, so an allowance
-cannot outlive the difference it was written for.
+matching nothing in the dialect document fails the audit, so an allowance cannot
+outlive the difference it was written for.
+
+## CommonMark syntax is not a CommonMark tree
+
+`"dialect": "commonmark"` on a case asserts that its **syntax** is CommonMark. It
+does not assert anything about the **output**, and those are different claims.
+
+This dialect derives an identifier for every heading. A document of plain ATX
+headings is therefore CommonMark source that does not parse to a CommonMark
+tree, and dividing this parser's cost on it by cmark's published the price of a
+feature cmark does not have as though it were the price of parsing a heading.
+`block-heading` read 3.64x that way and it was not a comparison.
+
+So `corpus.json` declares each **referenceless** field once, with why no
+reference builds it, and every case declares the ones its tree carries:
+
+```json
+"referenceless": { "anchor": "Neither reference derives or stores a per-block identifier. …" }
+```
+
+A case carrying one is reported as a **bound** — it is not ranked, and it is not
+in any group's median — unless the corpus pairs it, because a pair is exactly
+the thing that puts the same declaration in front of the reference. That is why
+`pair-anchor-dialect` carries `anchor` and still gets a ratio.
+
+The audit checks the declarations against the parser's dump **in both
+directions**. A missing declaration publishes a bound as a comparison, which is
+the original defect; a declaration for a field the tree does not carry demotes a
+real comparison to a bound, which hides a regression behind a number nobody
+ranks. The complexity shapes are checked at reduced depth, on a document rebuilt
+from the same unit and tail at 64 repetitions rather than on a prefix cut mid-
+structure.
+
+## What subtraction cannot do, and why this is not that
+
+The obvious alternative to a pair is to measure both engines on the same bytes
+and subtract the dialect-only work from this side. It was tried, in 719 lines,
+and abandoned. The record is worth keeping because it is the first thing anyone
+proposes:
+
+- **The boundary does not land on call edges.** Six successive review findings
+  each found another mis-drawn one — an empty call costing 53 Ir, a cleanup
+  path, a registration band inside a function that also does shared work, a
+  base-name collapse, an observer's dispatch. Every one was correct, and the
+  list never closed, because "this part is the feature and that part is shared"
+  is not a property the call graph carries.
+- **Subtraction cannot see second-order effects.** An allocation not made
+  changes the heap that every later allocation meets.
+- **Misclassification is invisible.** Calling this parser's own work "the
+  reference does this too" hides exactly as well as the reverse, and no check
+  catches it.
+
+Compiling the feature out of a measurement build is worse still. `markdown_core.h`
+states the contract: one dialect, every feature always on, nothing enables,
+disables or configures a construct. A profile that switches a feature off is not
+profiling this parser. **The feature set is immutable, so equivalence is the
+corpus's job** — which is what an isomorph pair is.
 
 ## The attribute grammar, against lexbor
 
