@@ -628,6 +628,26 @@
             "builds": ["CodeBlock"]
         },
         {
+            "name": "pair-caption-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "Table: Caption {n}\n| h |\n| --- |\n| v |\n\n",
+                "scales": "captioned tables"
+            },
+            "builds": ["Table", "TableCaption"]
+        },
+        {
+            "name": "pair-caption-common",
+            "dialect": "extended",
+            "counted": {
+                "unit": "| Caption {n} |\n| --- |\n| h |\n| v |\n\n",
+                "match": "pair-caption-dialect",
+                "scales": "header-line tables"
+            },
+            "gfm": true,
+            "builds": ["Table", "TableCell"]
+        },
+        {
             "name": "pair-deflist-dialect",
             "dialect": "extended",
             "generated": {
@@ -904,6 +924,16 @@
             "claim": "A properties envelope and a fenced code block are the same production: a leaf block opened and closed by a delimiter line, whose body is NOT parsed as Markdown. Same shape, different terminal -- `---` against a run of three or more backticks. What each does with the body afterwards, decode it into named fields or keep it literal, is the measurement and not part of the pairing. This pair is shaped unlike every other one in the corpus and deliberately so: properties.md says only one envelope is recognised, at the document's start, so the workload CANNOT scale by repeating the construct. It scales by the member lines inside a single envelope, which is why both sides carry a head and a tail and why `units` counts lines here rather than constructs. The earlier refusal -- once per document, no count to scale -- mistook the construct for the dimension."
         },
         {
+            "case": "pair-caption-dialect",
+            "isomorph": "pair-caption-common",
+            "counts": {
+                "case": "Table",
+                "isomorph": "Table"
+            },
+            "fallback": "Paragraph",
+            "claim": "A LEADING table caption and a GFM table header line are the same production: a paragraph-shaped line already scanned, retroactively claimed by a table that a LATER line announces. GFM's delimiter row promotes the line above it into the table; the dialect's table promotes the `Table: ` line above it into the same table. The two units are line for line the same shape -- four lines, one of them a delimiter row, three carrying inlines, the first of those adopted by lookbehind -- and both sides build one table with three Text nodes per unit, which is the equality the pair rests on. That the dialect materialises the adopted line as a TableCaption owning its inlines where GFM materialises it as a header row owning a cell owning its inlines is node materialisation, which is never grounds to refuse. The pair is held by the ABSENCE of Paragraph on either side: both spellings degrade to a paragraph the moment the adoption stops being recognised, so a paragraph appearing anywhere in either document means some of it is no longer the construct being paired. This replaces a withdrawn proof that said neither grammar adopts a finished neighbouring block; the proof was written for the TRAILING form and wrongly applied to both."
+        },
+        {
             "case": "pair-deflist-dialect",
             "isomorph": "pair-deflist-common",
             "counts": {
@@ -932,13 +962,6 @@
             "production": "multiline table, and the grid table with it",
             "whyTheEarlierProofWasWrong": "Both were refused because their cells hold BLOCK content and no reference table has block cells. That answers the wrong question. The criterion is not whether a reference has a TABLE of this shape, it is whether a reference has a PRODUCTION of this shape -- and a cell holding blocks is per-line positional slicing followed by block parsing, which both CommonMark containers do. A block quote strips `> ` from each line, a list item strips an indent width established by its marker, a multiline cell takes a column range established by the segmented boundary; all three join the remainders and parse them as blocks. The trees show it: a one-column multiline cell and a list item both produce Paragraph > Text, SoftBreak, Text with identical content.",
             "candidate": "A one-column multiline table of N rows against a bullet list of N items. What is genuinely unequal, and must be stated rather than hidden: the table carries three container levels (TableBody, TableRow, TableCell) where the list carries one (ListItem). That is node materialisation and is NOT grounds to refuse a pair -- it is the measurement. What still needs deciding before this is built is whether the 2D case pairs at all: an N-column table slices each line into N ranges established by one boundary line, and N parallel lists are not one production.",
-            "status": "OPEN -- to be built and tested, not asserted either way"
-        },
-        {
-            "production": "table caption, LEADING form",
-            "whyTheEarlierProofWasWrong": "It said neither grammar has a production that takes a finished neighbouring block and adopts it. GFM's pipe-table header is exactly that: a paragraph line absorbed by the table announced beneath it. The trees are parallel -- a leading `Table: X` puts its inlines in an owned TableCaption child of the Table, and a GFM header line puts its inlines in owned table_cell children of table_header. Both are a paragraph-shaped line immediately preceding a table whose inlines end up owned by that table rather than left as a sibling paragraph. I wrote the proof for the trailing form and applied it to both.",
-            "candidate": "`Table: X` before a table, against a GFM header line before its delimiter row.",
-            "whatIsGenuinelyUnsettled": "What each absorbed line becomes: a caption node holding one inline run, against a header row holding N cells each holding an inline run. Whether that is one production with a different result shape or two productions is the thing to decide -- and node materialisation is not the deciding argument.",
             "status": "OPEN -- to be built and tested, not asserted either way"
         },
         {
