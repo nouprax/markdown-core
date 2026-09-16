@@ -125,3 +125,32 @@ export function effectiveFlags(buildDir) {
         link: join("CMAKE_EXE_LINKER_FLAGS", "CMAKE_EXE_LINKER_FLAGS_RELEASE")
     };
 }
+
+/**
+ * A BUILD TREE IS REUSED ONLY WHILE IT WAS BUILT BY WHAT THE REPORT NAMES.
+ *
+ * CMake reuses unchanged objects, and "unchanged" is about sources rather than
+ * about the compiler: upgrade the compiler at the same path and a configure
+ * reuses everything, so the report records the new banner and digest while some
+ * or all of the measured binaries came out of the old one. Where a comparison
+ * has two trees and only one of them is cleaned, the ratio is then between two
+ * compilers.
+ *
+ * So each tree carries a stamp of what produced it, and a tree whose stamp does
+ * not match is discarded rather than reused. The stamp's CONTENT belongs to the
+ * driver -- each one knows what its own report claims -- and only the mechanism
+ * is here, shared so the second benchmark does not grow a second version of it.
+ */
+const STAMP = "markdown-core-profile-stamp.txt";
+
+export function discardTree(buildDir, stamp) {
+    if (!fs.existsSync(buildDir)) return;
+    const file = path.join(buildDir, STAMP);
+    const current = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+    if (current === stamp) return;
+    fs.rmSync(buildDir, { recursive: true, force: true });
+}
+
+export function markTree(buildDir, stamp) {
+    fs.writeFileSync(path.join(buildDir, STAMP), stamp);
+}

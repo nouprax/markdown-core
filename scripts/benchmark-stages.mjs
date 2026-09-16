@@ -54,7 +54,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { baseName, costRecord, edgesBetween, foldNames, nodesEnteredFrom, parseCallgrind } from "./lib/callgrind.mjs";
-import { compiledFlags as readCompiledFlags, effectiveFlags } from "./lib/compile-identity.mjs";
+import { compiledFlags as readCompiledFlags, discardTree, effectiveFlags, markTree } from "./lib/compile-identity.mjs";
 import { CACHE, measurementEnvironment, measurementRoot } from "./lib/measurement.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -728,8 +728,6 @@ function buildCmark(profile, cmark, out, versions) {
  * the toolchain and flags that produced it, and a tree stamped differently is
  * discarded rather than built on top of.
  */
-const STAMP = "markdown-core-profile-stamp.txt";
-
 function stampOf(profile, versions) {
     /* CFLAGS and LDFLAGS are in here because CMake initializes cache variables
      * from both -- CMAKE_C_FLAGS ahead of CMAKE_C_FLAGS_RELEASE on every
@@ -755,17 +753,9 @@ function stampOf(profile, versions) {
     ].join("\n");
 }
 
-function discardForeignTree(buildDir, profile, versions) {
-    if (!fs.existsSync(buildDir)) return;
-    const stamp = path.join(buildDir, STAMP);
-    const current = fs.existsSync(stamp) ? fs.readFileSync(stamp, "utf8") : "";
-    if (current === stampOf(profile, versions)) return;
-    fs.rmSync(buildDir, { recursive: true, force: true });
-}
+const discardForeignTree = (buildDir, profile, versions) => discardTree(buildDir, stampOf(profile, versions));
 
-function stampTree(buildDir, profile, versions) {
-    fs.writeFileSync(path.join(buildDir, STAMP), stampOf(profile, versions));
-}
+const stampTree = (buildDir, profile, versions) => markTree(buildDir, stampOf(profile, versions));
 
 function buildRunners(profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions) {
     discardForeignTree(profile.binaryDir, profile, versions);

@@ -44,7 +44,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { baseName, callEdge, costRecord, foldNames, parseCallgrind } from "./lib/callgrind.mjs";
-import { compiledFlags, effectiveFlags } from "./lib/compile-identity.mjs";
+import { compiledFlags, discardTree, effectiveFlags, markTree } from "./lib/compile-identity.mjs";
 import { CACHE, measurementEnvironment, measurementRoot } from "./lib/measurement.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -93,6 +93,20 @@ const SPECIFICATIONS = [
         ]
     },
     { anchor: null, classes: ["r"], records: [["k", "a value with spaces", "quoted"]] },
+    /* Character references. Both grammars decode them in a value and both are
+     * charged for it -- this parser through `houdini_unescape_ent`, lexbor
+     * through its own character-reference states -- and the census compares the
+     * DECODED text, so it also proves they decoded the same thing. Without a
+     * value holding one, that shared branch was described in the comment above
+     * and run by neither. */
+    {
+        anchor: null,
+        classes: ["entities"],
+        records: [
+            ["named", "ampersand &amp; entity", "quoted"],
+            ["numeric", "reference &#81; decoded", "quoted"]
+        ]
+    },
     {
         anchor: "wide",
         classes: ["x", "y", "z", "w"],
@@ -211,13 +225,6 @@ function run(command, args, options = {}) {
     return result.stdout ?? "";
 }
 
-function presetBinaryDir(preset) {
-    if (!preset.binaryDir) fail(`the ${preset.name} preset must set binaryDir`);
-    const expanded = preset.binaryDir.replace(/\$\{(\w+)\}/gu, (macro, name) => (name === "sourceDir" ? root : macro));
-    if (expanded.includes("${")) fail(`the ${preset.name} preset's binaryDir uses an unexpandable macro`);
-    return expanded;
-}
-
 /* The pinned lexbor checkout, read from the same script that installs it so
  * this cannot measure a different one than the environment check passed on. */
 function pinnedLexbor() {
@@ -261,8 +268,9 @@ function pinnedLexbor() {
  * `compile_commands.json` is exported so what the compiler was really handed
  * can be read back and checked, rather than assumed from what CMake was told.
  */
-function buildLexbor(profile, lexbor, out) {
+function buildLexbor(profile, lexbor, out, stamp) {
     const buildDir = path.join(out, "lexbor");
+    discardTree(buildDir, stamp);
     run("cmake", [
         "-S",
         lexbor.checkout,
@@ -283,6 +291,7 @@ function buildLexbor(profile, lexbor, out) {
     if (!fs.existsSync(path.join(buildDir, "liblexbor_static.a"))) {
         fail(`the profile build of lexbor produced no static archive in ${buildDir}`);
     }
+    markTree(buildDir, stamp);
     return buildDir;
 }
 
@@ -357,15 +366,48 @@ function profileBuild() {
     const compiler = preset.cacheVariables.CMAKE_C_COMPILER;
     const flags = preset.cacheVariables.CMAKE_C_FLAGS_RELEASE;
     if (!compiler || !flags) fail(`the ${PROFILE_PRESET} preset must pin CMAKE_C_COMPILER and CMAKE_C_FLAGS_RELEASE`);
-    return { compiler, flags, binaryDir: presetBinaryDir(preset) };
+    return { compiler, flags };
 }
 
-function build(profile, lexbor, out) {
+/**
+ * What the two trees were built by, in the form a stamp compares.
+ *
+ * Everything the report names as having produced the counts, plus the
+ * environment CMake initializes cache variables from ONCE at first configure:
+ * a tree first configured under an exported `-march=native` or `-static` keeps
+ * those flags for every later build, and a run without the variable set would
+ * otherwise match and reuse binaries the preset never described.
+ */
+function toolchainStamp(profile, toolchain) {
+    return [
+        profile.compiler,
+        profile.flags,
+        process.env.CFLAGS ?? "",
+        process.env.LDFLAGS ?? "",
+        process.arch,
+        toolchain.compiler,
+        toolchain.compilerDigest,
+        toolchain.libc,
+        toolchain.valgrind
+    ].join("\n");
+}
+
+function build(profile, toolchain, lexbor, out) {
+    const stamp = toolchainStamp(profile, toolchain);
     /* One configure for the runners, and the lexbor archive they link is built
      * from source by this driver: the ratio is only about the two grammars if
      * one compiler with one set of options produced everything measured. */
-    const lexborBuild = buildLexbor(profile, lexbor, out);
+    const lexborBuild = buildLexbor(profile, lexbor, out, stamp);
+    /* The runners go in a tree this driver owns rather than the preset's shared
+     * one. Both trees are then stamped and discarded by the same rule, and
+     * neither driver can wipe the other's out from under it -- the stage
+     * benchmark stamps the preset tree with a wider identity than this report
+     * carries, so sharing it would have the two fight over every run. */
+    const binaryDir = path.join(out, "runners");
+    discardTree(binaryDir, stamp);
     run("cmake", [
+        "-B",
+        binaryDir,
         "--preset",
         PROFILE_PRESET,
         /* The preset does not set it and the stage benchmark passes it too:
@@ -377,7 +419,6 @@ function build(profile, lexbor, out) {
         `-DMARKDOWN_CORE_LEXBOR_SOURCE_DIR=${lexbor.checkout}`,
         `-DMARKDOWN_CORE_LEXBOR_BUILD_DIR=${lexborBuild}`
     ]);
-    const binaryDir = profile.binaryDir;
     run("cmake", [
         "--build",
         binaryDir,
@@ -413,6 +454,7 @@ function build(profile, lexbor, out) {
                 `  markdown-core: ${effective["markdown-core"].compile}\n  lexbor: ${effective.lexbor.compile}`
         );
     }
+    markTree(binaryDir, stamp);
     return { binaryDir, objects, effective };
 }
 
@@ -425,10 +467,10 @@ function build(profile, lexbor, out) {
  * otherwise post a cheaper number for doing less, and nothing in a count would
  * say so.
  */
-function requireSameAttributes(profile, inputs) {
+function requireSameAttributes(built, inputs) {
     const census = {};
     for (const [name, definition] of Object.entries(BASELINES)) {
-        census[name] = run(path.join(profile.binaryDir, definition.runner), [
+        census[name] = run(path.join(built.binaryDir, definition.runner), [
             "--input",
             inputs[definition.spelling],
             "--census"
@@ -490,7 +532,7 @@ function hotPaths(parsed) {
         .map(([name, ir]) => ({ name, ir, share: whole ? ir / whole : 0 }));
 }
 
-function measure(profile, name, inputs, out) {
+function measure(built, name, inputs, out) {
     const definition = BASELINES[name];
     const dump = path.join(out, "callgrind", `${name}.out`);
     fs.mkdirSync(path.dirname(dump), { recursive: true });
@@ -504,7 +546,7 @@ function measure(profile, name, inputs, out) {
             ...CACHE,
             `--callgrind-out-file=${dump}`,
             "--quiet",
-            path.join(profile.binaryDir, definition.runner),
+            path.join(built.binaryDir, definition.runner),
             "--input",
             inputs[definition.spelling]
         ],
@@ -642,11 +684,12 @@ function main() {
     fs.mkdirSync(options.out, { recursive: true });
     const inputs = writeInputs(options);
     const profile = profileBuild();
-    const built = build(profile, lexbor, options.out);
-    const recovered = requireSameAttributes(profile, inputs);
+    const toolchain = resolvedToolchain(profile);
+    const built = build(profile, toolchain, lexbor, options.out);
+    const recovered = requireSameAttributes(built, inputs);
     const baselines = {};
     for (const name of Object.keys(BASELINES)) {
-        baselines[name] = measure(profile, name, inputs, options.out);
+        baselines[name] = measure(built, name, inputs, options.out);
         if (baselines[name].lists !== recovered) {
             fail(`${name} measured ${baselines[name].lists} lists but its census held ${recovered}`);
         }
@@ -654,7 +697,7 @@ function main() {
     const report = {
         schemaVersion: 1,
         toolchain: {
-            ...resolvedToolchain(profile),
+            ...toolchain,
             preset: profile.compiler,
             flags: built.effective["markdown-core"].compile,
             linkFlags: built.effective["markdown-core"].link,

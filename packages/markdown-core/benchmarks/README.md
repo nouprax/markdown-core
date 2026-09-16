@@ -363,13 +363,26 @@ neither implementation reads the other's spelling.
 <x id="lane" class="stage" k="callgrind">
 ```
 
+A build tree is reused only while what produced it is what the report names.
+CMake reuses unchanged objects, and "unchanged" is about sources rather than
+about the compiler — upgrade it at the same path and both trees are reused while
+the report records the new banner, or one is cleaned and the ratio compares two
+compilers. So each tree carries a stamp of its toolchain and is discarded when
+that stamp does not match. Both trees belong to this driver rather than the
+preset's shared one, because the stage benchmark stamps that tree with a wider
+identity than this report carries and the two would otherwise wipe each other's
+out on every run.
+
 Quoting is part of each specification rather than of how one side renders it.
 Both grammars scan a quoted value and a bare one down different branches — this
 parser tracks `quoted` and `unquoted` runs separately, lexbor has distinct
 `attribute_value_double_quoted` and `attribute_value_unquoted` tokenizer states
 — so a workload that quoted everything would leave both bare paths unmeasured,
 and a spelling that quoted on one side only would compare two different scans
-while still producing a matching census.
+while still producing a matching census. One specification carries character
+references for the same reason: both grammars decode them in a value and both
+are charged for it, and the census compares the decoded text, so it also proves
+they decoded the same thing.
 
 Both inputs are generated from one list of specifications, so they cannot drift
 into describing different attributes, and **both baselines must recover the same
