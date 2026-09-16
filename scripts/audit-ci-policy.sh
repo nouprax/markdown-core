@@ -166,12 +166,20 @@ grep -Fq 'verifyStageSymbols' scripts/benchmark-stages.mjs
 # every later build. All four reach a command line, so all four are what a tree
 # is identified and compared by; recording a subset makes two differently built
 # comparisons look like one report.
+#
+# Asked of the driver AND the module it reads them through. The attribute
+# benchmark describes a build too and reads the cache the same way, so the
+# implementation is shared rather than written twice -- and a check that named
+# one file would have this policy turn red the day that sharing happened, which
+# is what it did. What the policy is about is that the description is complete,
+# not where the lines that build it live.
+benchmark_build_description=(scripts/benchmark-stages.mjs scripts/lib/compile-identity.mjs)
 for cached in \
     'CMAKE_C_FLAGS' \
     'CMAKE_C_FLAGS_RELEASE' \
     'CMAKE_EXE_LINKER_FLAGS' \
     'CMAKE_EXE_LINKER_FLAGS_RELEASE'; do
-    grep -Fq "\"$cached\"" scripts/benchmark-stages.mjs || {
+    grep -Fq "\"$cached\"" "${benchmark_build_description[@]}" || {
         echo "the stage benchmark does not read $cached, so it cannot describe the build it measured" >&2
         exit 1
     }
