@@ -1195,15 +1195,36 @@ function reachedFrom(profile, specs) {
 /* Enumerating call edges to take a feature out of a ratio is only honest while
  * the enumeration is complete, and nothing about a list of edges says when it
  * has stopped being. This derives the candidates instead of trusting the list:
- * a function that runs on EVERY case carrying the field and on NONE of the
- * cases that do not is, by construction, work that only the field's presence
- * causes. Each one must then be either inside an excluded subtree, or named in
- * `shared` with the reason the reference does it too.
+ * it finds every function whose behaviour TRACKS the field's presence across
+ * the corpus, and requires each one to have been classified -- inside an
+ * excluded subtree, or named in `shared` with the reason the reference does it
+ * too.
  *
- * It cannot catch a wrong classification -- calling anchor work "shared" hides
- * it just as well -- but it does catch the failure that actually happened here,
- * which is a heading-only function nobody had thought about. A new one stops
- * the run until someone says which side it is on. */
+ * Tracking the field is NOT the same as being caused by it, and this does not
+ * claim otherwise. The syntax that carries a field and the field itself occur
+ * on exactly the same documents, so shared parsing lands in the candidate set
+ * too: `continue_heading`, `markdown_core_heading_begin_inlines` and
+ * `markdown_core_heading_claim_tail` are all found here, and all three are work
+ * cmark does as well. That is why the answer to a candidate is a CLASSIFICATION
+ * and not an exclusion. The set is deliberately wide, because a narrow one
+ * decided by reachability would stop asking about exactly the functions worth
+ * asking about: `continue_heading` is reached from block parsing, not from
+ * anchor code, and so is a heading-only function nobody has noticed yet.
+ *
+ * Two consequences worth stating rather than discovering:
+ *
+ * - The candidate set is a fact about THIS corpus. Dropping `block-lheading`
+ *   would leave ATX as the only heading spelling present and the set would grow
+ *   `open_atx`; dropping `block-fences` would grow `markdown_core_attributes_tail`.
+ *   Both are shared work, and the correct response to either is a `shared` entry
+ *   naming what cmark does -- a claim a reader can check -- never an allowlist
+ *   entry written to get the run moving.
+ * - It cannot catch a WRONG classification. Calling anchor work "shared" hides
+ *   it just as well as never finding it.
+ *
+ * What it does catch is the failure that actually happened here twice: work only
+ * the field's presence causes that nobody had thought about. A new candidate
+ * stops the run until someone says which side it is on. */
 function requireCompleteExclusions(cases, ran, excludedReach, unmatchedFields, filtered) {
     /* The derivation is a statement about the whole corpus: "runs wherever the
      * field is and nowhere it is not" only means "caused by the field" when
@@ -1237,9 +1258,12 @@ function requireCompleteExclusions(cases, ran, excludedReach, unmatchedFields, f
          * document, costs 48 Ir over an empty collection and 25,442 over a full
          * one, so "does it run here" cannot see it. Comparing against the
          * HIGHEST cost the function reaches on any compared case without the
-         * field keeps this free of a tuned threshold: a function that is dearer
-         * on every carrying case than it ever gets without the field is doing
-         * work the field caused. */
+         * field keeps this free of a tuned threshold. It is the same kind of
+         * evidence as the test above and carries the same caveat -- a cost
+         * ordering is not causation either -- so it produces candidates to
+         * classify, not a verdict. On this corpus it is what finds the four
+         * functions that run unconditionally over the field's own collection:
+         * the two anchor passes, the loop over them, and the disposal. */
         for (const fn of new Set(carries.flatMap((name) => Object.keys(ran.get(name))))) {
             const floor = Math.max(0, ...plain.map((name) => ran.get(name)[fn] ?? 0));
             if (carries.every((name) => (ran.get(name)[fn] ?? 0) > floor)) only.add(fn);
@@ -1247,10 +1271,15 @@ function requireCompleteExclusions(cases, ran, excludedReach, unmatchedFields, f
         const unclassified = [...only].filter((fn) => !covered(fn));
         if (unclassified.length) {
             fail(
-                `these functions run on every case carrying "${field}" and on none of the cases without it, ` +
-                    `and are neither inside an excluded subtree nor declared shared, so the exclusion is ` +
-                    `incomplete and the ratio still carries work the reference may never do: ` +
-                    `${unclassified.sort().join(", ")}`
+                `these functions track the presence of "${field}" across the corpus -- each one either runs ` +
+                    `only on the cases carrying it, or costs more on every one of them than it ever does ` +
+                    `without it -- and none has been classified: ${unclassified.sort().join(", ")}. ` +
+                    `Classify each one. If the field's machinery is what does the work, add the call edge ` +
+                    `to unmatchedFields.${field}.excludes with the stage it sits in. If the reference does ` +
+                    `the same work, add it to unmatchedFields.${field}.shared with a reason NAMING what the ` +
+                    `reference does, the way continue_heading names S_process_line -- tracking the field is ` +
+                    `not the same as being caused by it, and shared parsing reaches this list too. An entry ` +
+                    `written only to get this run moving is the one failure nothing downstream can catch.`
             );
         }
         for (const fn of shared) {
@@ -1839,15 +1868,27 @@ function markdownReport(report) {
                     " witness edge's CALL COUNT rather than a cost -- the outer call runs on" +
                     " every document and costs a few instructions over an empty collection." +
                     " COMPLETENESS: a list of edges cannot say when it has stopped covering the" +
-                    " feature, so the candidates are derived instead -- a function running on" +
-                    " every compared case carrying the field and on none of those without it is" +
-                    " work only the field causes, and each must be excluded or listed below as" +
-                    " shared. PLACEMENT: an exclusion larger than the stage it claims to sit in" +
+                    " feature, so the candidates are derived instead -- every function whose" +
+                    " behaviour tracks the field across the corpus, either by running only on the" +
+                    " cases carrying it or by costing more on every one of them than it ever does" +
+                    " without it -- and each must be excluded or listed below as shared." +
+                    " PLACEMENT: an exclusion larger than the stage it claims to sit in" +
                     " is refused. THE TREE: `scripts/audit-corpus-reach.mjs` reads the field off" +
                     " the case's own AST dump and fails when the dump and the declaration" +
                     " disagree in either direction.",
                 "",
-                "What none of them catches is a WRONG classification: calling this parser's own" +
+                "Two things that check deliberately does NOT claim. Tracking the field is not the" +
+                    " same as being caused by it: the syntax carrying a field occurs on exactly the" +
+                    " documents the field does, so shared parsing lands in the candidate set too --" +
+                    " `continue_heading` and `markdown_core_heading_claim_tail` are both found" +
+                    " there, and both are work cmark performs. That is why a candidate is answered" +
+                    " with a classification rather than an exclusion, and why the list below is" +
+                    " printed in full. And the candidate set is a fact about THIS corpus, not a" +
+                    " theorem: dropping the setext case would leave ATX as the only heading" +
+                    " spelling and the set would grow `open_atx`. The correct answer to that is a" +
+                    " shared entry naming what cmark does, which a reader can check.",
+                "",
+                "What none of the four catches is a WRONG classification: calling this parser's own" +
                     " work shared hides it just as well as excluding cmark's would. That is a" +
                     " judgement, and it is written out below so it can be argued with.",
                 ""
