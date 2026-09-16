@@ -54,6 +54,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { baseName, costRecord, edgesBetween, foldNames, nodesEnteredFrom, parseCallgrind } from "./lib/callgrind.mjs";
+import { compiledFlags as readCompiledFlags, discardTree, effectiveFlags, markTree } from "./lib/compile-identity.mjs";
+import {
+    BUILD_FLAG_VARIABLES,
+    buildEnvironment,
+    CACHE,
+    measurementEnvironment,
+    measurementRoot
+} from "./lib/measurement.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const BENCHMARKS = path.join(root, "packages/markdown-core/benchmarks");
@@ -65,8 +73,6 @@ const PROFILE_PRESET = "benchmark";
 
 /* A cache geometry pinned in the report rather than taken from the host, so
  * that two machines produce the same file and a diff means a code change. */
-const CACHE = ["--I1=32768,8,64", "--D1=32768,8,64", "--LL=8388608,16,64"];
-
 /* GCC clones a function when it specializes it; the clone carries the work but
  * not the plain name the stage boundary is written as. */
 const CLONE_SUFFIX = /(\.(constprop|isra|part|cold|lto_priv|localalias)\.?\d*)+$/u;
@@ -81,6 +87,16 @@ const ENGINES = {
     },
     cmark: {
         runner: "packages/markdown-core/benchmarks/cmark_stage_runner",
+        stages: {
+            source_to_buffer: { caller: "bench_parse_document", callee: "cmark_parser_feed" },
+            buffer_to_ast: { caller: "bench_parse_document", callee: "cmark_parser_finish" }
+        }
+    },
+    /* Same stage split, same API, same codebase -- and it implements tables,
+     * strikethrough, bare autolinks, task lists and footnotes, so for those
+     * constructs a ratio against it compares two parsers doing one job. */
+    "cmark-gfm": {
+        runner: "packages/markdown-core/benchmarks/cmark_gfm_stage_runner",
         stages: {
             source_to_buffer: { caller: "bench_parse_document", callee: "cmark_parser_feed" },
             buffer_to_ast: { caller: "bench_parse_document", callee: "cmark_parser_finish" }
@@ -109,12 +125,20 @@ function run(command, args, options = {}) {
 }
 
 function parseArguments(argv) {
-    const options = { out: path.join(root, "build/benchmark-stages"), cases: [], scale: 2, quiet: false };
+    const options = {
+        out: path.join(root, "build/benchmark-stages"),
+        cases: [],
+        scale: 2,
+        quiet: false,
+        corpusOnly: false
+    };
     for (let index = 0; index < argv.length; index++) {
         const flag = argv[index];
         const value = argv[index + 1];
         if (flag === "--quiet") {
             options.quiet = true;
+        } else if (flag === "--corpus-only") {
+            options.corpusOnly = true;
         } else if (!value) {
             fail(`${flag} needs a value`);
         } else if (flag === "--out") {
@@ -186,34 +210,6 @@ function parseArguments(argv) {
  * which is the direction that has to be safe: calling two differing streams
  * comparable is the failure, and a spurious rebuild is not.
  */
-/**
- * The build's environment is built rather than inherited, for the reason the
- * measurement's is.
- *
- * A compiler reads more than its command line. `CPATH` and `C_INCLUDE_PATH` add
- * include directories that appear on no compile line at all, so a header can be
- * swapped underneath a build while `compile_commands.json` -- which is where the
- * identity reads the engines' real options -- shows character-for-character the
- * same command. Verified: a project compiled against an injected `injected.h`
- * through `CPATH`, and its compile command mentioned no such directory.
- *
- * Only what a build needs is carried across, plus the two variables the
- * identity deliberately honours and records. Everything else is absent by
- * construction, which is the half of this that was missing: the measurement got
- * an allowlist earlier and the build that produced it did not.
- */
-/* The two the identity deliberately honours and records, so the two whose
- * contents have to be visible in it. */
-const BUILD_FLAG_VARIABLES = ["CFLAGS", "LDFLAGS"];
-const BUILD_VARIABLES = ["PATH", "HOME", "TMPDIR", ...BUILD_FLAG_VARIABLES];
-
-function buildEnvironment() {
-    const environment = { LC_ALL: "C", LANG: "C" };
-    for (const name of BUILD_VARIABLES) {
-        if (process.env[name] !== undefined) environment[name] = process.env[name];
-    }
-    return environment;
-}
 
 /**
  * Asked twice and required to agree.
@@ -611,6 +607,66 @@ function pinnedCmark() {
     return { version, commit, checkout };
 }
 
+/* The pinned GFM oracle, located exactly as cmark is: the pin lives in
+ * init-environment.sh and this reads it rather than keeping a second copy. */
+function pinnedCmarkGfm() {
+    const script = fs.readFileSync(path.join(root, "scripts/init-environment.sh"), "utf8");
+    const version = /^CMARK_GFM_VERSION=(.+)$/mu.exec(script)?.[1];
+    const commit = /^CMARK_GFM_COMMIT=([0-9a-f]{40})$/mu.exec(script)?.[1];
+    if (!version || !commit) fail("scripts/init-environment.sh does not pin cmark-gfm");
+    const checkout = path.join(root, ".tools/cmark-gfm", version);
+    const install = "scripts/init-environment.sh --install oracle-cmark-gfm";
+    if (!fs.existsSync(path.join(checkout, "src/cmark-gfm.h"))) {
+        fail(`the pinned cmark-gfm oracle is not installed; run: ${install}`);
+    }
+    const head = run("git", ["-C", checkout, "rev-parse", "HEAD"]).trim();
+    if (head !== commit) {
+        fail(
+            `the cmark-gfm oracle checkout is at ${head}, but cmark-gfm ${version} is pinned to ${commit}; ` +
+                `run: ${install}`
+        );
+    }
+    /* Untracked files count, for the reason set out in `pinnedCmark` above:
+     * this is the same source tree with the same include ordering, so an
+     * edited or stray file is built as the reference while HEAD still reads
+     * as the pin. */
+    const dirty = run("git", ["-C", checkout, "status", "--porcelain", "--untracked-files=all"]).trim();
+    if (dirty) {
+        fail(`the cmark-gfm oracle checkout has local modifications, so it is not cmark-gfm ${version}:\n${dirty}`);
+    }
+    return { version, commit, checkout };
+}
+
+/* Rebuilt with the profile's compiler and flags rather than read from whatever
+ * init-environment produced, for the same reason cmark is: the report's central
+ * claim is that every engine met the same compiler. */
+function buildCmarkGfm(profile, gfm, out, versions) {
+    const buildDir = path.join(out, "cmark-gfm");
+    discardForeignTree(buildDir, profile, versions);
+    run(
+        "cmake",
+        [
+            "-S",
+            gfm.checkout,
+            "-B",
+            buildDir,
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMARK_TESTS=OFF",
+            "-DCMARK_SHARED=OFF",
+            "-DBUILD_TESTING=OFF",
+            "-DBUILD_SHARED_LIBS=OFF",
+            "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+            `-DCMAKE_C_COMPILER=${profile.compiler}`,
+            `-DCMAKE_C_FLAGS_RELEASE=${profile.flags}`
+        ],
+        { env: buildEnvironment() }
+    );
+    run("cmake", ["--build", buildDir, "--parallel"], { env: buildEnvironment() });
+    stampTree(buildDir, profile, versions);
+    return buildDir;
+}
+
 function buildCmark(profile, cmark, out, versions) {
     const buildDir = path.join(out, "cmark");
     discardForeignTree(buildDir, profile, versions);
@@ -650,8 +706,6 @@ function buildCmark(profile, cmark, out, versions) {
  * the toolchain and flags that produced it, and a tree stamped differently is
  * discarded rather than built on top of.
  */
-const STAMP = "markdown-core-profile-stamp.txt";
-
 function stampOf(profile, versions) {
     /* CFLAGS and LDFLAGS are in here because CMake initializes cache variables
      * from both -- CMAKE_C_FLAGS ahead of CMAKE_C_FLAGS_RELEASE on every
@@ -677,135 +731,11 @@ function stampOf(profile, versions) {
     ].join("\n");
 }
 
-function discardForeignTree(buildDir, profile, versions) {
-    if (!fs.existsSync(buildDir)) return;
-    const stamp = path.join(buildDir, STAMP);
-    const current = fs.existsSync(stamp) ? fs.readFileSync(stamp, "utf8") : "";
-    if (current === stampOf(profile, versions)) return;
-    fs.rmSync(buildDir, { recursive: true, force: true });
-}
+const discardForeignTree = (buildDir, profile, versions) => discardTree(buildDir, stampOf(profile, versions));
 
-/**
- * The flags a tree's compile and link lines actually carry.
- *
- * The preset's `CMAKE_C_FLAGS_RELEASE` is one of four cache variables that
- * reach a command line, and the other three come from the environment: CMake
- * initializes `CMAKE_C_FLAGS` from CFLAGS and puts it FIRST on every compile
- * line, and `CMAKE_EXE_LINKER_FLAGS` from LDFLAGS on every link line. The
- * link line is not a detail the instruction counts are indifferent to -- an
- * inherited `-static` moves the C library's code into the measured binary and
- * changes the stream every stage is counted from.
- *
- * So the description of a build is read out of its own cache rather than
- * taken from what the driver passed, and the whole set is read: a comparison
- * whose two trees agree on the compile flags and disagree on the link flags is
- * still a comparison between two binaries built differently.
- */
-function effectiveFlags(buildDir) {
-    const cache = fs.readFileSync(path.join(buildDir, "CMakeCache.txt"), "utf8");
-    const entry = (name) => new RegExp(`^${name}:[A-Z]+=(.*)$`, "mu").exec(cache)?.[1] ?? "";
-    const join = (...names) => names.map(entry).join(" ").replace(/\s+/gu, " ").trim();
-    return {
-        compile: join("CMAKE_C_FLAGS", "CMAKE_C_FLAGS_RELEASE"),
-        link: join("CMAKE_EXE_LINKER_FLAGS", "CMAKE_EXE_LINKER_FLAGS_RELEASE")
-    };
-}
+const stampTree = (buildDir, profile, versions) => markTree(buildDir, stampOf(profile, versions));
 
-/**
- * What a translation unit was ACTUALLY compiled with.
- *
- * The cache variables above are global, and a compile line is not built from
- * them alone: CMake adds directory-, target- and property-derived options that
- * live nowhere in the cache. `POSITION_INDEPENDENT_CODE` contributes `-fPIC`,
- * a target's own `target_compile_options` contribute whatever it asked for, and
- * each project sets its own language level and warning set. So two trees can
- * agree on every cache variable while their compile lines differ -- including
- * in options that change code generation.
- *
- * EVERY unit of the linked target, not the one holding the stage boundaries. A
- * stage's cost is inclusive, so it contains whatever the scanners and the
- * inline code did too, and CMake lets a single source carry its own options:
- * `elements/CMakeLists.txt` gives ten scanner sources `-Wno-unused-variable`
- * through `set_source_files_properties`, which is how 59 objects here come to
- * have two distinct compile lines. Reading one file would see one of them.
- *
- * The target has to be named because one source can be compiled several ways in
- * one tree. Markdown Core compiles `core/blocks.c` twice -- into the shared
- * library and into the static library the runner links -- so a lookup by file
- * alone would be a coin flip between two different compile lines.
- */
-function compiledFlags(buildDir, target) {
-    const database = path.join(buildDir, "compile_commands.json");
-    if (!fs.existsSync(database)) {
-        fail(`${path.relative(root, database)} was not generated, so the real compile line cannot be read`);
-    }
-    const object = `CMakeFiles/${target}.dir/`;
-    const entries = JSON.parse(fs.readFileSync(database, "utf8")).filter((entry) =>
-        (entry.output ?? "").includes(object)
-    );
-    if (!entries.length) fail(`${path.relative(root, database)} has no entries for target ${target}`);
-
-    /* Include directories and the output and input paths are per-project by
-     * construction and say nothing about code generation; everything else the
-     * compiler was handed is kept, warnings included, because this is a record
-     * of the build rather than a filter of it.
-     *
-     * The two paths are dropped by identity, using the database's own `file`
-     * and `output`, rather than by how they are spelled. Dropping every token
-     * that ends in .c or .o also swallowed the ARGUMENT of any option taking
-     * one: `-imacros a.c` and `-imacros b.c` both normalised to `-imacros`,
-     * and macros reach code generation. An option's argument is part of the
-     * option; only the unit being compiled and the file it is written to are
-     * per-project noise. */
-    const normalize = (entry) => {
-        const command = entry.command ?? (entry.arguments ?? []).join(" ");
-        const tokens = command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/gu) ?? [];
-        const bare = (token) => token.replace(/^["']|["']$/gu, "");
-        const input = path.resolve(entry.directory, entry.file);
-        const output = entry.output ? path.resolve(entry.directory, bare(entry.output)) : null;
-        const kept = [];
-        for (let index = 1; index < tokens.length; index++) {
-            const token = tokens[index];
-            if (token === "-o" || token === "-I" || token === "-isystem") {
-                index++;
-                continue;
-            }
-            if (token.startsWith("-I") || token.startsWith("-isystem")) continue;
-            const resolved = path.resolve(entry.directory, bare(token));
-            if (resolved === input || (output !== null && resolved === output)) continue;
-            kept.push(token);
-        }
-        return kept.join(" ");
-    };
-
-    /* Kept per unit and digested, so a per-source option anywhere in the engine
-     * moves the identity. The distinct lines are what a reader is shown: one is
-     * the ordinary case, and more than one says the engine is not compiled
-     * uniformly, which is a fact about the measurement rather than an error. */
-    const units = entries
-        .map((entry) => ({
-            file: path.relative(root, path.resolve(entry.directory, entry.file)),
-            flags: normalize(entry)
-        }))
-        .sort((left, right) => left.file.localeCompare(right.file));
-    const distinct = [...new Set(units.map((unit) => unit.flags))].sort();
-    return {
-        units: units.length,
-        distinct,
-        /* Union across the units: every option any measured object received. */
-        flags: [...new Set(distinct.flatMap((line) => line.split(" ")))].join(" "),
-        digest: crypto
-            .createHash("sha256")
-            .update(units.map((unit) => `${unit.file}\u0000${unit.flags}`).join("\n"))
-            .digest("hex")
-    };
-}
-
-function stampTree(buildDir, profile, versions) {
-    fs.writeFileSync(path.join(buildDir, STAMP), stampOf(profile, versions));
-}
-
-function buildRunners(profile, cmark, cmarkBuildDir, versions) {
+function buildRunners(profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions) {
     discardForeignTree(profile.binaryDir, profile, versions);
     run(
         "cmake",
@@ -814,7 +744,9 @@ function buildRunners(profile, cmark, cmarkBuildDir, versions) {
             PROFILE_PRESET,
             "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
             `-DMARKDOWN_CORE_CMARK_SOURCE_DIR=${path.join(cmark.checkout, "src")}`,
-            `-DMARKDOWN_CORE_CMARK_BUILD_DIR=${cmarkBuildDir}`
+            `-DMARKDOWN_CORE_CMARK_BUILD_DIR=${cmarkBuildDir}`,
+            `-DMARKDOWN_CORE_CMARK_GFM_SOURCE_DIR=${gfm.checkout}`,
+            `-DMARKDOWN_CORE_CMARK_GFM_BUILD_DIR=${gfmBuildDir}`
         ],
         { env: buildEnvironment() }
     );
@@ -1074,6 +1006,7 @@ function buildCorpus(options, manifest) {
             documents.push({
                 case: entry.name,
                 dialect: entry.dialect,
+                gfm: entry.gfm === true,
                 /* What the growth table is varying. `documents` cases add
                  * independent copies; a chain case grows one structure, and
                  * WHICH dimension is not the same question as the shape --
@@ -1128,62 +1061,12 @@ function runnerIdentity(profile) {
     return identity;
 }
 
-/**
- * The measured child's environment is built, not inherited.
- *
- * The environment reaches inside the measurement. The loader reads `LD_PRELOAD`
- * at exec time, glibc reads `GLIBC_TUNABLES` and `MALLOC_PERTURB_` when it
- * allocates, and libc reads the locale when it classifies a byte -- and the
- * parse stages allocate and call libc constantly, so none of this is a rounding
- * difference. On this host, against one case's 35,066,966 Ir baseline:
- *
- *   MALLOC_PERTURB_=42                        51,807,936   (+47.7%)
- *   GLIBC_TUNABLES=glibc.malloc.tcache_count=0 35,101,488
- *   LC_ALL=en_US.UTF-8                        35,067,533
- *
- * An allowlist rather than a list of variables to remove. A denylist has to
- * name every mechanism that can reach into a measurement, and the list above
- * is three separate ones in three different layers -- the next is a variable
- * nobody here has thought of, and it would be silently admitted. This way an
- * unnamed variable is absent by construction, which is the direction that has
- * to be safe.
- *
- * What is kept is what the child needs to run and nothing that steers how it
- * runs: a path to find the binary, a home and a temporary directory for the
- * profiler's own files. The locale is not inherited but SET, because there is
- * no "no locale" -- libc falls back to C, so naming it makes the measurement
- * state its locale rather than depend on the caller not having one.
- *
- * Valgrind sets its own loader variables for the client, so it is undisturbed.
- */
-/**
- * The profiler's own configuration is isolated too, not just the environment.
- *
- * Valgrind takes options from `~/.valgrindrc`, then VALGRIND_OPTS, then
- * `./.valgrindrc`, before its command line -- so every option this driver does
- * not pass explicitly is the caller's to set, and the ones that matter most are
- * exactly the ones not passed here. A home directory rc file containing
- * `--collect-atstart=no` takes this measurement's summary to 0 with the
- * report's identity table unchanged.
- *
- * VALGRIND_OPTS is already gone with everything else unnamed. The two rc files
- * are reached by HOME and by the working directory instead, so both point at an
- * empty directory this driver owns and neither file exists.
- */
-function measurementRoot(out) {
-    const directory = path.join(out, "measurement-root");
-    fs.mkdirSync(directory, { recursive: true });
-    const rc = path.join(directory, ".valgrindrc");
-    if (fs.existsSync(rc)) fail(`${rc} would configure the profiler out from under the measurement`);
-    return directory;
-}
-
-function measurementEnvironment(root) {
-    /* PATH is the only thing carried across: it is how `valgrind` is found. */
-    const environment = { LC_ALL: "C", LANG: "C", HOME: root, TMPDIR: root };
-    if (process.env.PATH !== undefined) environment.PATH = process.env.PATH;
-    return environment;
-}
+/* The measured child's environment and the profiler's own configuration are
+ * both built rather than inherited, by `lib/measurement.mjs` -- which is where
+ * the reasoning lives, because the attribute benchmark measures under the same
+ * isolation and a second copy of it is a copy that drifts. The numbers that
+ * make it load-bearing are there too: `MALLOC_PERTURB_=42` alone moves one
+ * case's summary by 47.7%. */
 
 /**
  * What glibc will dispatch on, seen from inside the measurement.
@@ -1285,7 +1168,7 @@ function measure(profile, engine, document, out) {
     const definition = ENGINES[engine];
     const dump = path.join(out, "callgrind", `${engine}.${document.case}.x${document.scale}.out`);
     fs.mkdirSync(path.dirname(dump), { recursive: true });
-    const root = measurementRoot(out);
+    const root = measurementRoot(out, fail);
     const stdout = run(
         "valgrind",
         [
@@ -1382,8 +1265,61 @@ function measure(profile, engine, document, out) {
         parsePathIr,
         outsideStagesIr: STAGES.reduce((total, stage) => total - stages[stage].cost.Ir, parsePathIr),
         stages,
+        hotPaths: hotPaths(profileByName),
         dump
     };
+}
+
+/* The functions this document spent the most instructions IN, as opposed to
+ * through.
+ *
+ * The per-stage breakdown beside this one is the stage entry's immediate
+ * callees, which is one level deep: on a grid table it reads `S_process_line
+ * 99.7%` and names no grammar at all. A ratio can say a case is expensive; only
+ * this can say what is expensive about it, which is the step between noticing a
+ * number and knowing what to change.
+ *
+ * Self cost, not inclusive: an inclusive ranking puts the drivers on top --
+ * every line goes through `S_process_line` -- and buries the work. */
+function hotPaths(profile) {
+    /* Callgrind collects from process start, so `profile.self` holds the whole
+     * executable: the loader, reading the file, freeing the source buffer,
+     * printing the receipt. Ranking that and printing it beside a parse cost is
+     * a claim about the parse made from a measurement of the program -- the
+     * same mistake as counting the serializer. Measured it is under 1% here,
+     * which is exactly why it would have gone unnoticed.
+     *
+     * So the ranking is restricted to what the parse entry can reach. A leaf
+     * shared with the rest of the program, `free` being the obvious one, is
+     * still counted whole; this narrows the claim rather than making it exact. */
+    const callees = new Map();
+    for (const edge of profile.edges.values()) {
+        const from = baseName(edge.caller);
+        if (!callees.has(from)) callees.set(from, new Set());
+        callees.get(from).add(baseName(edge.callee));
+    }
+    const reachable = new Set();
+    const pending = [baseName(ENGINE_ENTRY)];
+    while (pending.length) {
+        const name = pending.pop();
+        if (reachable.has(name)) continue;
+        reachable.add(name);
+        for (const callee of callees.get(name) ?? []) pending.push(callee);
+    }
+    const totals = new Map();
+    let whole = 0;
+    for (const [name, cost] of profile.self) {
+        const ir = costRecord(profile, cost).Ir ?? 0;
+        if (!ir) continue;
+        const fn = baseName(name);
+        if (!reachable.has(fn)) continue;
+        totals.set(fn, (totals.get(fn) ?? 0) + ir);
+        whole += ir;
+    }
+    return [...totals.entries()]
+        .sort((left, right) => right[1] - left[1])
+        .slice(0, 8)
+        .map(([name, ir]) => ({ name, ir, share: whole ? ir / whole : 0 }));
 }
 
 function derive(document, stage) {
@@ -1426,9 +1362,10 @@ function markdownReport(report) {
     lines.push("## Parse stage comparison", "");
     lines.push(
         `Markdown Core against cmark \`${report.cmark.version}\` (\`${report.cmark.commit.slice(0, 12)}\`)` +
+            ` and cmark-gfm \`${report.cmarkGfm.version}\` (\`${report.cmarkGfm.commit.slice(0, 12)}\`)` +
             " on the same corpus, by the same compiler, in one run, with the profile flags" +
-            " this driver pins present on both -- checked against each engine's real compile" +
-            " line rather than assumed from what was passed to CMake.",
+            " this driver pins present on all of them -- checked against every measured" +
+            " object's real compile line rather than assumed from what was passed to CMake.",
         "",
         "Their compile lines are NOT identical. Each project sets its own language level," +
             " warning set and target properties, and CMake derives options from those that" +
@@ -1459,9 +1396,12 @@ function markdownReport(report) {
                     }, \`${record.digest.slice(0, 12)}\`)`
             )
             .join(", ")} |`,
+        `| Reference pins | cmark \`${report.cmark.commit.slice(0, 12)}\`,` +
+            ` cmark-gfm \`${report.cmarkGfm.commit.slice(0, 12)}\` |`,
         `| Compile options both engines got | \`${report.toolchain.compiled.shared}\` |`,
         `| Markdown Core only | \`${report.toolchain.compiled["markdown-core only"] || "(nothing)"}\` |`,
         `| cmark only | \`${report.toolchain.compiled["cmark only"] || "(nothing)"}\` |`,
+        `| cmark-gfm only | \`${report.toolchain.compiled["cmark-gfm only"] || "(nothing)"}\` |`,
         `| C library dispatch | \`${report.toolchain.dispatch.slice(0, 16)}\` |`,
         `| Corpus | \`${report.corpus.digest.slice(0, 16)}\` (${report.corpus.cases} documents) |`,
         "",
@@ -1517,6 +1457,244 @@ function markdownReport(report) {
             " moved.",
         ""
     );
+
+    /* A ratio is only a comparison where both engines did the same job. */
+    const stageIr = (engines, engine) =>
+        engines[engine] ? STAGES.reduce((sum, stage) => sum + engines[engine].stages[stage].ir, 0) : null;
+    /* The pairing, and which cases exist only to be the other half of one. An
+     * isomorph is a CommonMark document written to match a dialect document,
+     * not a construct anyone writes, so it belongs in the pair table and not in
+     * the CommonMark median it would otherwise move. */
+    const paired = new Map((report.isomorphs ?? []).map((declaration) => [declaration.case, declaration]));
+    const isIsomorph = new Set((report.isomorphs ?? []).map((declaration) => declaration.isomorph));
+    const atScaleOne = new Map(report.cases.filter((item) => item.scale === 1).map((item) => [item.case, item]));
+    const ranked = report.cases
+        .filter((item) => item.scale === 1 && item.engines["markdown-core"])
+        .map((item) => {
+            const core = stageIr(item.engines, "markdown-core");
+            const cmarkIr = stageIr(item.engines, "cmark");
+            const gfmIr = stageIr(item.engines, "cmark-gfm");
+            /* A dialect construct cmark does not implement still gets a
+             * same-job ratio, through the document that IS the same tree: what
+             * this parser spent on the dialect spelling, over what cmark spent
+             * building the same tree from the CommonMark spelling. */
+            const declaration = paired.get(item.case);
+            const twin = declaration ? atScaleOne.get(declaration.isomorph) : null;
+            const twinCore = twin ? stageIr(twin.engines, "markdown-core") : null;
+            const twinCmark = twin ? stageIr(twin.engines, "cmark") : null;
+            if (twin && (twin.bytes !== item.bytes || twin.units !== item.units)) {
+                /* The substitution is character for character, so the two
+                 * documents are the same length and the corpus repeats each of
+                 * them the same number of times. Different totals mean the pair
+                 * is no longer measuring one workload twice, and comparing the
+                 * sums would divide one document's cost by another's. */
+                fail(
+                    `${item.case} and ${declaration.isomorph} are paired but were measured at ` +
+                        `${item.bytes}/${twin.bytes} bytes over ${item.units}/${twin.units} copies`
+                );
+            }
+            return {
+                ...item,
+                coreIr: core,
+                cmarkRatio: cmarkIr ? core / cmarkIr : null,
+                gfmRatio: gfmIr ? core / gfmIr : null,
+                /* Only where the other half was actually measured: a
+                 * `--case`-filtered run that named one side of a pair has no
+                 * comparison to report, and falls back to the bound rather than
+                 * printing a pair row of dashes. */
+                isomorph: twin
+                    ? {
+                          case: declaration.isomorph,
+                          claim: declaration.claim,
+                          coreIr: twinCore,
+                          cmarkIr: twinCmark,
+                          /* What this grammar costs over a CommonMark grammar
+                           * building the same tree, inside one parser. */
+                          grammar: twinCore ? core / twinCore : null,
+                          /* What this parser costs on the shape itself, where
+                           * the reference did the same job. */
+                          shape: twinCore && twinCmark ? twinCore / twinCmark : null
+                      }
+                    : null,
+                /* The comparison that means something: the closest reference
+                 * that implements what the document contains, or the reference
+                 * on the document that is the same tree. */
+                sameJob: gfmIr
+                    ? core / gfmIr
+                    : twinCmark
+                      ? core / twinCmark
+                      : item.dialect === "commonmark" && cmarkIr
+                        ? core / cmarkIr
+                        : null
+            };
+        })
+        .sort((left, right) => (right.sameJob ?? right.cmarkRatio ?? 0) - (left.sameJob ?? left.cmarkRatio ?? 0));
+
+    if (ranked.length) {
+        const median = (values) => {
+            const sorted = values.slice().sort((left, right) => left - right);
+            if (!sorted.length) return 0;
+            const middle = Math.floor(sorted.length / 2);
+            /* An even group has two middle values and neither one of them is the
+             * median; the CommonMark group has an even count, so taking the
+             * upper published a number that was not the median of anything. */
+            return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+        };
+        lines.push("### Ratio against the reference", "");
+        lines.push(
+            "A ratio compares only where both parsers did the same job, so the cases are" +
+                " grouped by which reference implements what they contain, and the groups are" +
+                " never averaged together.",
+            "",
+            "cmark implements the CommonMark cases. cmark-gfm implements tables, task lists," +
+                " bare autolinks and footnotes, and is measured only on the cases that hold" +
+                " them. For a few dialect constructs neither one implements, an ISOMORPH" +
+                " stands in: the same document written twice, once with the dialect marker" +
+                " and once with a CommonMark marker of the same shape, so cmark builds the" +
+                " same tree and the ratio is a comparison again. Nothing implements what is" +
+                " left: cmark reads `:::note` as a paragraph, so its number there is the cost" +
+                " of NOT having the feature. That bounds what a construct costs and does not" +
+                " say it is slow.",
+            "",
+            ""
+        );
+        /* Read off this run. Written as prose it froze at the numbers of the
+         * run that wrote it, so the sentence making the case for the
+         * distinction went on asserting them while the tables below reported
+         * something else. */
+        const pipe = ranked.find((item) => item.case === "block-table-pipe");
+        if (pipe && pipe.cmarkRatio !== null && pipe.gfmRatio !== null) {
+            lines.push(
+                `The pipe-table case is what the distinction is worth: **${pipe.cmarkRatio.toFixed(2)}x against` +
+                    ` cmark, ${pipe.gfmRatio.toFixed(2)}x against cmark-gfm**. The first number is almost` +
+                    " entirely this parser building a table while the reference reads paragraphs.",
+                ""
+            );
+        }
+        lines.push("| Group | Reference | Cases | Median | Worst |", "| --- | --- | ---: | ---: | --- |");
+        const groups = [
+            [
+                "CommonMark",
+                "cmark",
+                ranked.filter((item) => item.dialect === "commonmark" && !item.gfm && !isIsomorph.has(item.case))
+            ],
+            ["GFM extensions", "cmark-gfm", ranked.filter((item) => item.gfm)],
+            ["Dialect, via an isomorph", "cmark, on the isomorph", ranked.filter((item) => item.isomorph)],
+            [
+                "Dialect-only (no reference)",
+                "cmark, as a bound",
+                ranked.filter((item) => item.dialect !== "commonmark" && !item.gfm && !item.isomorph)
+            ]
+        ];
+        for (const [label, reference, group] of groups) {
+            if (!group.length) continue;
+            const values = group.map((item) => item.sameJob ?? item.cmarkRatio).filter((value) => value !== null);
+            if (!values.length) continue;
+            const worst = group[0];
+            lines.push(
+                `| ${label} | \`${reference}\` | ${group.length} | ${median(values).toFixed(2)}x |` +
+                    ` ${(worst.sameJob ?? worst.cmarkRatio).toFixed(2)}x \`${worst.case}\` |`
+            );
+        }
+        lines.push("");
+
+        const pairs = ranked.filter((item) => item.isomorph);
+        if (pairs.length) {
+            lines.push("### What the marker costs", "");
+            lines.push(
+                "Each row is one document written twice -- once with the dialect marker and" +
+                    " once with a CommonMark marker of the same shape, the same bytes under a" +
+                    " single-character substitution. Both spellings parse to the SAME TREE:" +
+                    " same spans, same literals, same children, differing only in which" +
+                    " grammar built each node, which" +
+                    " `scripts/audit-corpus-reach.mjs` checks against the parser rather than" +
+                    " taking on faith.",
+                "",
+                "That splits the ratio into two questions that have different answers:",
+                "",
+                "- **Grammar** is this parser on the dialect spelling over this parser on the" +
+                    " CommonMark spelling. One parser, one tree, two grammars -- so a number" +
+                    " above 1 is this grammar, and nothing else, and it names the file to open.",
+                "- **Shape** is this parser over cmark on the CommonMark spelling, where both" +
+                    " did the same job. It is what the parser costs on that shape before any" +
+                    " dialect construct is involved, and no change to a dialect grammar will" +
+                    " move it.",
+                "",
+                "Their product is the same-job ratio in the group table above. A pair that" +
+                    " reads 1.0x on Grammar and 3x on Shape is not an extension problem at" +
+                    " all, however large the bound against cmark on the dialect document" +
+                    " looked.",
+                ""
+            );
+            lines.push(
+                "| Dialect case | Isomorph | Dialect Ir/B | Isomorph Ir/B | cmark Ir/B | Grammar | Shape | Same-job |",
+                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
+            );
+            for (const item of pairs) {
+                const pair = item.isomorph;
+                lines.push(
+                    `| ${item.case} | ${pair.case} | ${(item.coreIr / item.bytes).toFixed(1)} |` +
+                        ` ${pair.coreIr === null ? "-" : (pair.coreIr / item.bytes).toFixed(1)} |` +
+                        ` ${pair.cmarkIr === null ? "-" : (pair.cmarkIr / item.bytes).toFixed(1)} |` +
+                        ` ${pair.grammar === null ? "-" : `${pair.grammar.toFixed(2)}x`} |` +
+                        ` ${pair.shape === null ? "-" : `${pair.shape.toFixed(2)}x`} |` +
+                        ` ${item.sameJob === null ? "-" : `${item.sameJob.toFixed(2)}x`} |`
+                );
+            }
+            lines.push("");
+            lines.push(
+                "What each pair claims to hold constant, from `corpus.json`:",
+                "",
+                ...pairs.map((item) => `- **${item.case}** -- ${item.isomorph.claim}`),
+                ""
+            );
+            lines.push(
+                "A construct with no row here has no isomorph, and the honest reason is that" +
+                    " none of the candidates survived the check. A grid table is not a pipe" +
+                    " table (a grid cell holds a paragraph, a pipe cell holds inlines), a" +
+                    " definition list is not a bullet list (the definition groups term and" +
+                    " body under one node), and a comment is not strong emphasis (strong" +
+                    " parses its body, a comment keeps it literal). Those stay bounds, and a" +
+                    " bound is reported as a bound.",
+                ""
+            );
+        }
+
+        lines.push("### Where the cost is", "");
+        lines.push(
+            "The ratio says which case to look at. This says what to look at inside it:" +
+                " the functions the parse spent the most instructions IN, not through." +
+                " The per-stage breakdown below is one level deep and names the drivers" +
+                " -- on a grid table it reads `S_process_line`, which every line goes" +
+                " through -- so it cannot answer that question.",
+            "",
+            "Ranked by the same-job ratio where there is one, and by the bound otherwise.",
+            ""
+        );
+        lines.push(
+            "| Case | Reference | Ratio | Core Ir/B | Dominant self cost |",
+            "| --- | --- | ---: | ---: | --- |"
+        );
+        for (const item of ranked.slice(0, 16)) {
+            const hot = (item.engines["markdown-core"].hotPaths ?? [])
+                .slice(0, 3)
+                .map((entry) => `\`${entry.name}\` ${(entry.share * 100).toFixed(1)}%`)
+                .join(", ");
+            const ratio = item.sameJob ?? item.cmarkRatio;
+            const reference = item.gfm
+                ? "cmark-gfm"
+                : item.isomorph
+                  ? "cmark, isomorph"
+                  : item.dialect === "commonmark"
+                    ? "cmark"
+                    : "(bound)";
+            lines.push(
+                `| ${item.case} | ${reference} | ${ratio === null ? "-" : `${ratio.toFixed(2)}x`} |` +
+                    ` ${(item.coreIr / item.bytes).toFixed(1)} | ${hot || "(not recorded)"} |`
+            );
+        }
+        lines.push("");
+    }
 
     lines.push("### Cost per input byte", "");
     lines.push(
@@ -1630,10 +1808,26 @@ function main() {
      * way, and it costs them nothing to hear it now. */
     const manifest = corpusManifest();
     refuseUnknownCases(options, manifest);
+    /* The corpus is a function of the manifest and the tracked samples alone.
+     * Writing it needs no compiler, no valgrind and no reference engine, so
+     * whoever only wants the documents -- the corpus-reach audit does -- can
+     * have them without paying for a measurement they will not read. */
+    if (options.corpusOnly) {
+        fs.mkdirSync(options.out, { recursive: true });
+        const only = buildCorpus(options, manifest);
+        if (!options.quiet) {
+            process.stdout.write(
+                `wrote ${only.documents.length} documents to ${path.relative(root, path.join(options.out, "corpus"))} ` +
+                    `(digest ${only.digest.slice(0, 16)})\n`
+            );
+        }
+        return;
+    }
     refuseResponseFiles();
     const profile = profileBuild();
     refuseOverlappingTrees(options, profile);
     const cmark = pinnedCmark();
+    const gfm = pinnedCmarkGfm();
 
     if (spawnSync("valgrind", ["--version"], { encoding: "utf8" }).status !== 0) {
         fail("valgrind is required; install it and re-run");
@@ -1647,7 +1841,8 @@ function main() {
      * up-to-date rebuild of both engines costs about two seconds against a
      * measurement that takes minutes. There is no flag to get it wrong with. */
     const cmarkBuildDir = buildCmark(profile, cmark, options.out, versions);
-    buildRunners(profile, cmark, cmarkBuildDir, versions);
+    const gfmBuildDir = buildCmarkGfm(profile, gfm, options.out, versions);
+    buildRunners(profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions);
     verifyStageSymbols(profile);
     verifyBuildProvenance(profile, versions);
     /* The report's central claim is that both engines met the same compiler
@@ -1670,8 +1865,19 @@ function main() {
      * build that dropped one of them is measuring something else. */
     const compiled = {
         /* The archive the runner links, per benchmarks/CMakeLists.txt. */
-        "markdown-core": compiledFlags(profile.binaryDir, "libmarkdown-core-public-static"),
-        cmark: compiledFlags(path.join(options.out, "cmark"), "cmark")
+        "markdown-core": readCompiledFlags(root, profile.binaryDir, "libmarkdown-core-public-static", fail),
+        cmark: readCompiledFlags(root, path.join(options.out, "cmark"), "cmark", fail),
+        /* Both cmark-gfm archives, because the runner links both and a GFM
+         * ratio is against whatever they were compiled as. Omitting them left
+         * every GFM number resting on objects no pinned-flag check looked at
+         * and no identity table named. */
+        "cmark-gfm": readCompiledFlags(root, path.join(options.out, "cmark-gfm"), "libcmark-gfm_static", fail),
+        "cmark-gfm-extensions": readCompiledFlags(
+            root,
+            path.join(options.out, "cmark-gfm"),
+            "libcmark-gfm-extensions_static",
+            fail
+        )
     };
     /* Checked against EVERY measured object rather than their union: a pinned
      * flag missing from one translation unit is a hole a union would paper. */
@@ -1701,6 +1907,8 @@ function main() {
     versions.compiled = {
         "markdown-core": compiled["markdown-core"].flags,
         cmark: compiled.cmark.flags,
+        "cmark-gfm": compiled["cmark-gfm"].flags,
+        "cmark-gfm-extensions": compiled["cmark-gfm-extensions"].flags,
         objects: Object.fromEntries(
             Object.entries(compiled).map(([engine, record]) => [
                 engine,
@@ -1711,7 +1919,14 @@ function main() {
             .filter((flag) => tokens("cmark").includes(flag))
             .join(" "),
         "markdown-core only": only("markdown-core", "cmark").join(" "),
-        "cmark only": only("cmark", "markdown-core").join(" ")
+        "cmark only": only("cmark", "markdown-core").join(" "),
+        /* The GFM reference gets the same split against this parser, because a
+         * GFM ratio rests on its objects exactly as a CommonMark one rests on
+         * cmark's. Its two archives are unioned first: they are one reference,
+         * and the runner links both. */
+        "cmark-gfm only": [...new Set([...tokens("cmark-gfm"), ...tokens("cmark-gfm-extensions")])]
+            .filter((flag) => !tokens("markdown-core").includes(flag))
+            .join(" ")
     };
     versions.architecture = process.arch;
     const binaries = runnerIdentity(profile);
@@ -1720,7 +1935,13 @@ function main() {
     const cases = [];
     for (const document of corpus.documents) {
         const engines = {};
-        for (const engine of Object.keys(ENGINES)) {
+        /* cmark is measured on every document as the CommonMark floor. cmark-gfm
+         * is measured only where it implements the case's constructs, because a
+         * reference that reads the document as paragraphs is not a second
+         * opinion, and paying callgrind for one would buy a number nobody can
+         * read. */
+        const applicable = Object.keys(ENGINES).filter((engine) => engine !== "cmark-gfm" || document.gfm === true);
+        for (const engine of applicable) {
             const measured = measure(profile, engine, document, options.out);
             if (measured.receiptBytes !== document.bytes) {
                 fail(`${engine}: ${document.case} saw ${measured.receiptBytes} bytes, expected ${document.bytes}`);
@@ -1729,6 +1950,7 @@ function main() {
                 parsePathIr: measured.parsePathIr,
                 outsideStagesIr: measured.outsideStagesIr,
                 rootChildren: measured.rootChildren,
+                hotPaths: measured.hotPaths,
                 stages: Object.fromEntries(
                     STAGES.map((stage) => [
                         stage,
@@ -1748,7 +1970,16 @@ function main() {
         binaries,
         profile: { compiler: profile.compiler, flags: profile.flags },
         cmark: { version: cmark.version, commit: cmark.commit },
+        /* The GFM pin is recorded beside cmark's because the GFM ratios rest on
+         * it: a pin that moved changes those numbers with nothing else in the
+         * report saying so. */
+        cmarkGfm: { version: gfm.version, commit: gfm.commit },
         corpus: { targetBytes: corpus.targetBytes, cases: corpus.documents.length, digest: corpus.digest },
+        /* Which pairs were in force, recorded beside the counts: a ratio for a
+         * dialect construct is only readable against the pairing that produced
+         * it, and `scripts/audit-corpus-reach.mjs` is what holds the pairing to
+         * being true. */
+        isomorphs: manifest.isomorphs ?? [],
         artifacts: path.relative(root, options.out),
         cases
     };

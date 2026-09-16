@@ -18,6 +18,12 @@ policy that defines each comparison:
   and per-platform artifact digests for the explicitly selected Pandoc
   extension layer, including the shared attribute grammar and consumer model.
 
+lexbor is pinned in `scripts/init-environment.sh` beside these and is NOT one
+of them. It is a performance baseline for the attribute grammar — the reference
+half of `scripts/benchmark-attributes.mjs` — so it registers no deltas, gates
+nothing, and no behaviour is judged against it. See
+`packages/markdown-core/benchmarks/README.md`.
+
 Each active gate's `deltas.json` records the oracle version, compared
 corpus, deliberate differences, and fail-closed exceptions. The Pandoc policy
 pins its immutable `source.json`, input-only corpus and exact projection digests.

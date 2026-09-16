@@ -1,16 +1,22 @@
 # Parse stage benchmark
 
 What it costs Markdown Core to parse a document, stage by stage, next to what
-it costs cmark to parse the same bytes. The comparison exists to give an
-optimization somewhere to argue from: a claim that a change made the parser
-faster should name a stage and a number.
+it costs a reference implementation to parse the same bytes. The comparison
+exists to give an optimization somewhere to argue from: a claim that a change
+made the parser faster should name a stage and a number.
+
+A ratio is only a comparison where both parsers did the same job, so which
+reference a case is read against is part of the measurement. cmark answers for
+CommonMark, cmark-gfm for the GFM constructs, and for a few dialect constructs
+neither implements, an [isomorph pair](#isomorph-pairs) puts cmark back in the
+comparison by giving it a document that builds the same tree.
 
 ```sh
-scripts/init-environment.sh --install oracle-cmark   # once
+scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm   # once
 node scripts/benchmark-stages.mjs
 ```
 
-The driver builds both engines, runs them under callgrind, and writes
+The driver builds all three engines, runs them under callgrind, and writes
 `build/benchmark-stages/stages.md`, `stages.json`, and the raw dumps.
 
 ## The two stages
@@ -176,11 +182,46 @@ the build directory on the include path.
 
 ## The corpus
 
-`corpus.json` names the documents. All but one sample come from cmark's own
-benchmark corpus, so the CommonMark cases are input both engines were written
-against. `directive.md` is repository syntax that cmark does not recognize, and
-its case is marked `extended`: Markdown Core is doing strictly more recognition
-work there, and the ratio is not an apples-to-apples one.
+`corpus.json` names the documents. The CommonMark samples come from cmark's own
+benchmark corpus, so those cases are input both engines were written against.
+The rest are repository syntax written for this corpus, and their cases are
+marked `extended`: Markdown Core is doing strictly more recognition work there,
+so the number against cmark is a bound rather than a comparison.
+
+A case marked `gfm` is measured against cmark-gfm as a same-job comparison, so
+its sample must hold **only** syntax cmark-gfm implements. That is a judgement
+about content rather than something the audit can check — inline notes and
+custom task states build the same node kinds as the GFM constructs they are
+spelled like, so a kind-level rule would catch the table caption and miss the
+other two. Three samples got it wrong and were split: the `Table:` caption left
+`block-table-pipe` for `block-table-caption`, the `^[...]` inline notes left
+`inline-footnote` for `inline-footnote-inline`, and the `[?]` task state left
+`block-tasklist` for `block-task-states`. Each was making this parser look
+better than it is, because cmark-gfm read the dialect syntax as a paragraph
+while Markdown Core built a construct from it.
+
+Splitting the caption out also showed that the pipe table has **two** grammars,
+not one. `try_opening_table_header` is the GFM path — a paragraph followed by a
+delimiter row — and `table_parse_pipe_header` is the mapped-source path a
+caption routes the table through. The caption was what drove the second one, so
+the case bound to it never ran a line of it.
+
+Which constructs the corpus reaches is a separate question from how it is
+measured, and `scripts/audit-corpus-reach.mjs` is what answers it. A construct
+no document builds is not reported as fast or as slow, it is not reported at
+all — and the profile still reads like the whole parser. That audit is not a
+coverage gate and must not become one: it states specific facts (every node kind
+the dialect names is built by some document; each grammar the corpus must
+measure runs in the case that exists to drive it; every sample has a case of its
+own to be profiled in; every case still builds what it exists for; every
+declared isomorph pair holds) rather than a percentage to climb.
+
+A case whose declared kinds a CommonMark construct could also build is bound to
+a grammar as well, because the kinds alone prove nothing there: a plain
+blockquote builds `Callout`, a plain heading is a `Heading`, and an HTML comment
+builds `Comment`. Replacing `block-callout.md` with `> an ordinary quote` used
+to pass; it now fails at 12.7% of the callout metadata grammar, which is the
+guard-clause figure.
 
 A `samples` case is built by repeating its samples to at least `targetBytes`,
 with a blank line between repeats so that repeating cannot merge the last block
@@ -222,6 +263,167 @@ Every case is also measured at twice the size, and the growth table names which
 dimension grew. A stage whose cost is linear in what was scaled reports a
 growth ratio equal to the byte ratio; anything else is a complexity finding,
 which is a correctness question rather than a tuning one.
+
+## Isomorph pairs
+
+cmark reads `++adds++` as a paragraph and `$x$` as text. The ratio against it on
+one of those documents is the cost of *not* having the feature: it bounds what
+the construct costs and cannot say whether the construct is slow, which is the
+only question the profile exists to answer.
+
+An isomorph pair answers it. The same document is written twice — once with the
+dialect marker, once with a CommonMark marker of the same shape — and the two
+are the same bytes under a single-character substitution:
+
+| Dialect | Isomorph | Substitution |
+| --- | --- | --- |
+| `++adds++` `==mark==` `^sup^` `~sub~` | `**adds**` `**mark**` `*sup*` `*sub*` | `+` `=` `^` `~` → `*` |
+| `%%hidden%%` | ` ``hidden`` ` | `%` → `` ` `` |
+| `$x$` | `` `x` `` | `$` → `` ` `` |
+
+Both spellings then parse to the same tree — same spans, same literals, same
+children — so three numbers decompose the ratio:
+
+- **Grammar**, this parser on the dialect spelling over this parser on the
+  isomorph. One parser, one tree, two grammars, so a number above 1 is this
+  grammar and nothing else, and it names the file to open.
+- **Shape**, this parser over cmark on the isomorph, where both did the same
+  job. It is what the parser costs on that shape before any dialect construct
+  is involved, and no change to a dialect grammar will move it.
+- Their product, which is a same-job ratio for a construct cmark does not
+  implement, because cmark built the same tree from the isomorphic document.
+
+The split is the point. A pair reading 1.0x on Grammar and 3x on Shape is not an
+extension problem at all, however large the bound against cmark looked.
+
+Neither half of a pair joins `mixed-commonmark` or `mixed-extended`. A pair is a
+pair of isolation probes, written to mirror each other; a document written twice
+would enter the concatenated aggregate twice and tilt it toward whichever
+construct the pair isolates. Every other sample is in its aggregate.
+
+**The pairing is checked, not claimed.** `scripts/audit-corpus-reach.mjs`
+requires the substitution to reproduce the isomorph byte for byte, and requires
+the two dumps to be identical once the kind names are erased. A pair whose two
+documents parse to different trees is two measurements presented as one, and the
+report would attribute the difference in the trees to a grammar.
+
+That check is not a formality — the pairs it rejected are the reason it exists:
+
+| Rejected pair | Why it is not isomorphic |
+| --- | --- |
+| grid table ↔ pipe table | a grid cell holds a paragraph, a pipe cell holds inlines |
+| definition list ↔ bullet list | the definition groups term and body under one node |
+| comment ↔ strong emphasis | strong parses its body, a comment keeps it literal |
+| `==a====b==` ↔ `**a****b**` | our run splitter divides adjacent closers, CommonMark's does not |
+
+Each looked isomorphic and was not. Constructs with no surviving isomorph stay
+bounds, and a bound is reported as a bound.
+
+A kind's own bookkeeping may differ where the manifest names it: `Formula`
+records which spelling opened it in `mode`, which a code span has no equivalent
+of. Those exceptions are declared per pair in `corpus.json`, and an exception
+matching nothing in the dialect document fails the audit, so an allowance
+cannot outlive the difference it was written for.
+
+## The attribute grammar, against lexbor
+
+Three of the isomorph pairs above work because the dialect construct is shaped
+like a CommonMark one. Attributes are not: `{#lane .stage k="v"}` builds a map,
+and no Markdown implementation builds a map, so there is nothing in cmark or
+cmark-gfm to pair it with. The stage benchmark can only bound it, and the bound
+it reports — 4.46x on `inline-span` — is mostly the inline parser around the
+attributes rather than the attributes.
+
+An HTML start tag's attribute list *is* the same job: a bracketed run split into
+an identifier, a class run and key/value records, with quoting and character
+references. [lexbor](https://github.com/lexbor/lexbor) implements that in C and
+is written for speed, so it is the reference this grammar has.
+
+```sh
+scripts/init-environment.sh --install oracle-lexbor   # once
+node scripts/benchmark-attributes.mjs
+```
+
+That install only *pins the source*, unlike the cmark oracles: the driver
+compiles lexbor itself, from the pinned checkout, with the `benchmark` preset's
+compiler and options, and checks every object of both baselines really received
+the pinned flags — the two archives **and the two runner targets**, because
+`bench_parse_attributes` is compiled into the executables rather than into
+either archive and the measured edge is the edge into it. (The stage benchmark
+is not in that position: its edges are internal to the parse transaction, so its
+runner objects sit outside every stage it counts.) Every configure, build and
+compiler probe runs under the same environment allowlist the stage benchmark
+builds under, because `CPATH` and `C_INCLUDE_PATH` add include directories that
+appear on no compile line at all. An archive built by the environment setup would carry whatever
+the host defaults to, and the ratio would then depend on how the baseline
+happened to be installed while the report claimed one compiler produced both.
+Nothing is written into the checkout either — lexbor ships no `.gitignore`, so a
+build tree inside it is several hundred untracked files, and the driver refuses
+a checkout with local changes for the reason it refuses a dirty cmark one.
+
+It is a separate driver, and separate for a reason the stage benchmark makes
+plain: there both engines must get byte-identical files, and here they cannot —
+neither implementation reads the other's spelling.
+
+```
+[text]{#lane .stage k="callgrind"}
+<x id="lane" class="stage" k="callgrind">
+```
+
+A build tree is reused only while what produced it is what the report names.
+CMake reuses unchanged objects, and "unchanged" is about sources rather than
+about the compiler — upgrade it at the same path and both trees are reused while
+the report records the new banner, or one is cleaned and the ratio compares two
+compilers. So each tree carries a stamp of its toolchain and is discarded when
+that stamp does not match. Both trees belong to this driver rather than the
+preset's shared one, because the stage benchmark stamps that tree with a wider
+identity than this report carries and the two would otherwise wipe each other's
+out on every run.
+
+Quoting is part of each specification rather than of how one side renders it.
+Both grammars scan a quoted value and a bare one down different branches — this
+parser tracks `quoted` and `unquoted` runs separately, lexbor has distinct
+`attribute_value_double_quoted` and `attribute_value_unquoted` tokenizer states
+— so a workload that quoted everything would leave both bare paths unmeasured,
+and a spelling that quoted on one side only would compare two different scans
+while still producing a matching census. One specification carries character
+references for the same reason: both grammars decode them in a value and both
+are charged for it, and the census compares the decoded text, so it also proves
+they decoded the same thing.
+
+Both inputs are generated from one list of specifications, so they cannot drift
+into describing different attributes, and **both baselines must recover the same
+attributes**: each writes a canonical census and the two are compared line for
+line before any count is reported. A baseline that skipped a record, kept a
+value raw or stopped early fails the run instead of posting a cheaper number for
+doing less.
+
+The measurement is the tokenizer, not `lxb_html_parse`: a document, a DOM tree
+and interned elements have no counterpart on this side, and the ratio would be
+against those instead. It stops where the comparison does, at tokens carrying
+name/value pairs.
+
+One runner reaches past the public facade, and it is the only one in
+`benchmarks/` that does. It has to: a consumer reaches `elements/attributes.c`
+only through a span, a heading or a link, each of which brings a whole inline
+parse along — which is the measurement this exists to avoid. That is a property
+of the runner, not of the product: the parser still has no measurement mode and
+no benchmark-only path, and the entry points it calls are the ones `link.c` and
+`heading.c` call.
+
+The report records the resolved compiler, C library and profiler, a digest of
+how the compiler says it was configured, and the compile and link flags read
+back out of each tree's own cache — because `gcc` is a name PATH resolves to
+whatever the image ships this month, and a table that cannot move when the
+environment does cannot carry a comparability rule. That table is **narrower**
+than the stage benchmark's: it does not digest the resolved code-generation
+target or what glibc dispatches on from inside valgrind. Two attribute reports
+agreeing on its rows is a weaker statement than two stage reports agreeing on
+theirs, and the report says so rather than leaving a reader to assume parity.
+
+lexbor is a performance baseline and nothing else. No behaviour is judged
+against it, it registers no deltas, and it is not one of the parser oracles in
+`specs/oracles/`.
 
 ## What the counts are a property of
 

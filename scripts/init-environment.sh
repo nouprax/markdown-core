@@ -22,6 +22,13 @@ CMARK_GFM_COMMIT=587a12bb54d95ac37241377e6ddc93ea0e45439b
 # intentionally judged by cmark itself, not by GitHub's dormant fork.
 CMARK_VERSION=0.31.2
 CMARK_COMMIT=eec0eeba6d31189fd828314576494566d539b1e3
+# The attribute baseline. `{#id .class k=v}` and an HTML start tag's attribute
+# list are the same job -- scan a bracketed run into name/value pairs -- and
+# lexbor is a C implementation of the second that is built for speed. It is a
+# performance reference only: nothing about this parser's behaviour is judged
+# against it, so moving the pin is a routine bump rather than a reviewed one.
+LEXBOR_VERSION=3.0.1
+LEXBOR_COMMIT=7e278c0188489bfce6b71ced0cc900cbb31e6244
 CLANG_FORMAT_VERSION=23.1.0
 CMAKE_FORMAT_VERSION=0.6.13
 SWIFTLINT_VERSION=0.65.1
@@ -40,7 +47,7 @@ Usage: scripts/init-environment.sh --check [component ...]
        scripts/init-environment.sh --install [component ...]
 
 Components: core node java wrappers android android-emulator swift emscripten
-            oracle-cmark oracle-cmark-gfm oracle-pandoc callgrind dependencies
+            oracle-cmark oracle-cmark-gfm oracle-lexbor oracle-pandoc callgrind dependencies
             tools
 
 With no components, the command checks or installs the complete environment
@@ -73,7 +80,7 @@ fi
 
 for component do
     case "$component" in
-        core | node | java | wrappers | android | android-emulator | swift | emscripten | oracle-cmark | oracle-cmark-gfm | oracle-pandoc | callgrind | dependencies | tools) ;;
+        core | node | java | wrappers | android | android-emulator | swift | emscripten | oracle-cmark | oracle-cmark-gfm | oracle-lexbor | oracle-pandoc | callgrind | dependencies | tools) ;;
         *)
             echo "Unknown environment component: $component" >&2
             usage >&2
@@ -346,6 +353,22 @@ cmark_gfm_path() {
     printf '%s\n' "$root/.tools/cmark-gfm/$CMARK_GFM_VERSION/build/src/cmark-gfm"
 }
 
+# NOT BUILT HERE, unlike the cmark oracles. Nothing in this repository runs a
+# lexbor binary: the attribute benchmark compiles the pinned source itself, with
+# the benchmark preset's compiler and flags, because a ratio between two
+# grammars is only about the grammars if one compiler with one set of options
+# produced both. An archive built here would carry whatever this host defaults
+# to. So "installed" means the pinned source is present and at its commit.
+#
+# Nothing is written into the checkout either. lexbor ships no .gitignore at
+# all, so a build tree inside the source directory is several hundred untracked
+# files, and the benchmark refuses a checkout with local changes for the reason
+# the cmark oracles do -- the source directory is on the include path, so a
+# stray file there is built as the reference while HEAD still reads as the pin.
+lexbor_path() {
+    printf '%s\n' "$root/.tools/lexbor/$LEXBOR_VERSION/source/lexbor/html/tokenizer.h"
+}
+
 check_oracle_cmark() {
     binary=$(cmark_path)
     if [ ! -x "$binary" ]; then
@@ -367,6 +390,18 @@ check_oracle_cmark_gfm() {
     actual=$(git -C "$root/.tools/cmark-gfm/$CMARK_GFM_VERSION" rev-parse HEAD 2>/dev/null || true)
     [ "$actual" = "$CMARK_GFM_COMMIT" ] || fail "cmark-gfm oracle is ${actual:-missing}, expected $CMARK_GFM_COMMIT"
     [ "$actual" != "$CMARK_GFM_COMMIT" ] || ok "cmark-gfm oracle $CMARK_GFM_VERSION"
+    return 0
+}
+
+check_oracle_lexbor() {
+    header=$(lexbor_path)
+    if [ ! -f "$header" ]; then
+        fail "lexbor baseline $LEXBOR_VERSION is not present"
+        return
+    fi
+    actual=$(git -C "$root/.tools/lexbor/$LEXBOR_VERSION" rev-parse HEAD 2>/dev/null || true)
+    [ "$actual" = "$LEXBOR_COMMIT" ] || fail "lexbor baseline is ${actual:-missing}, expected $LEXBOR_COMMIT"
+    [ "$actual" != "$LEXBOR_COMMIT" ] || ok "lexbor baseline $LEXBOR_VERSION"
     return 0
 }
 
@@ -585,6 +620,23 @@ install_oracle_cmark_gfm() {
     [ -x "$(cmark_gfm_path)" ] || fail "cmark-gfm build produced no binary"
 }
 
+install_oracle_lexbor() {
+    directory="$root/.tools/lexbor/$LEXBOR_VERSION"
+    if [ ! -d "$directory/.git" ]; then
+        mkdir -p "$(dirname "$directory")"
+        git clone --filter=blob:none https://github.com/lexbor/lexbor.git "$directory"
+    fi
+    git -C "$directory" rev-parse --quiet --verify "$LEXBOR_COMMIT^{commit}" >/dev/null \
+        || git -C "$directory" fetch --filter=blob:none origin "$LEXBOR_COMMIT"
+    git -C "$directory" checkout --quiet "$LEXBOR_COMMIT"
+    actual_commit=$(git -C "$directory" rev-parse HEAD)
+    [ "$actual_commit" = "$LEXBOR_COMMIT" ] || {
+        fail "lexbor checkout is $actual_commit, expected $LEXBOR_COMMIT"
+        return
+    }
+    [ -f "$(lexbor_path)" ] || fail "the lexbor checkout holds no HTML tokenizer source"
+}
+
 install_tools() {
     require_command python3 || return
     CLANG_FORMAT_INSTALL_DIR="$root/.tools/clang-format/$CLANG_FORMAT_VERSION" \
@@ -607,6 +659,7 @@ if [ "$mode" = --install ]; then
     has_component oracle-pandoc "$@" && node scripts/install-pandoc-oracle.mjs --install
     has_component oracle-cmark "$@" && install_oracle_cmark
     has_component oracle-cmark-gfm "$@" && install_oracle_cmark_gfm
+    has_component oracle-lexbor "$@" && install_oracle_lexbor
     has_component dependencies "$@" \
         && npx --yes "pnpm@$PNPM_VERSION" install --frozen-lockfile
     has_component tools "$@" && install_tools
@@ -625,6 +678,7 @@ has_component emscripten "$@" && check_emscripten
 has_component oracle-pandoc "$@" && { node scripts/install-pandoc-oracle.mjs --check || fail "Pandoc oracle check failed"; }
 has_component oracle-cmark "$@" && check_oracle_cmark
 has_component oracle-cmark-gfm "$@" && check_oracle_cmark_gfm
+has_component oracle-lexbor "$@" && check_oracle_lexbor
 has_component callgrind "$@" && check_callgrind
 has_component dependencies "$@" && check_dependencies
 has_component tools "$@" && check_tools

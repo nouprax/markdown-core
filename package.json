@@ -9,6 +9,7 @@
     },
     "scripts": {
         "audit:ast-projections": "node scripts/audit-ast-projections.mjs",
+        "audit:corpus-reach": "node scripts/audit-corpus-reach.mjs",
         "audit:ci": "scripts/audit-ci-policy.sh",
         "audit:element-attach-order": "node scripts/audit-element-attach-order.mjs",
         "audit:element-special-chars": "node scripts/audit-element-special-chars.mjs",
@@ -23,6 +24,7 @@
         "audit:surface": "scripts/audit-public-surface.sh",
         "audit:tests": "scripts/audit-test-topology.sh",
         "audit:toolchains": "scripts/audit-toolchain-versions.sh",
+        "benchmark:attributes": "node scripts/benchmark-attributes.mjs",
         "benchmark:stages": "node scripts/benchmark-stages.mjs",
         "build:c": "cmake --preset default && cmake --build --preset default --parallel",
         "build:swift": "swift build",

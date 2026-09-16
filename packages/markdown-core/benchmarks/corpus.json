@@ -1,217 +1,211 @@
 {
     "schemaVersion": 2,
     "targetBytes": 65536,
+    "requiredGrammars": {
+        "S_attach_block_identifier": "block-identifier",
+        "autolink_delim": "inline-autolink-rich",
+        "handle_entity": "inline-entity",
+        "markdown_core_block_parse_callout_metadata": "block-callout",
+        "markdown_core_parse_task_prefix": "block-tasklist",
+        "probe_comment_block": "inline-comment",
+        "scan_delimiter": "inline-em-worst",
+        "table_parse_grid": "block-table-grid",
+        "table_parse_multiline": "block-table-multiline",
+        "table_parse_pipe_header": "block-table-caption",
+        "table_parse_simple": "block-table-simple",
+        "try_opening_table_header": "block-table-pipe"
+    },
+    "isomorphs": [
+        {
+            "case": "pair-runs-dialect",
+            "isomorph": "pair-runs-common",
+            "substitution": {
+                "+": "*",
+                "=": "*",
+                "^": "*",
+                "~": "*"
+            },
+            "claim": "Insertion, Mark, Superscript, Subscript and Strikethrough are delimiter runs opened and closed by a repeated byte, and the same scanner disambiguates the one-byte and two-byte spellings. CommonMark emphasis and strong are that scan with a different byte, so the isomorph builds the same tree over the same spans."
+        },
+        {
+            "case": "pair-comment-dialect",
+            "isomorph": "pair-comment-common",
+            "substitution": {
+                "%": "`"
+            },
+            "claim": "An inline comment is a leaf opened and closed by a two-byte run whose body is taken literally rather than parsed as inline. A two-backtick code span is exactly that shape, which is why the pair holds and why pairing a comment with strong emphasis does not: strong parses its body."
+        },
+        {
+            "case": "pair-formula-dialect",
+            "isomorph": "pair-formula-common",
+            "substitution": {
+                "$": "`"
+            },
+            "ignore": ["mode"],
+            "claim": "An inline formula is a leaf opened and closed by a one-byte run whose body is taken literally; a one-backtick code span is the same shape. Formula additionally records which spelling opened it in `mode`, which is that kind's own business rather than a difference in what was built, and is named here so the exception is visible rather than assumed."
+        }
+    ],
     "cases": [
         {
             "name": "block-bq-flat",
             "dialect": "commonmark",
-            "samples": ["block-bq-flat.md"]
+            "samples": ["block-bq-flat.md"],
+            "builds": ["Callout"]
         },
         {
             "name": "block-bq-nested",
             "dialect": "commonmark",
-            "samples": ["block-bq-nested.md"]
+            "samples": ["block-bq-nested.md"],
+            "builds": ["Callout"]
+        },
+        {
+            "name": "block-callout",
+            "dialect": "extended",
+            "samples": ["block-callout.md"],
+            "builds": ["Callout", "Code"]
         },
         {
             "name": "block-code",
             "dialect": "commonmark",
-            "samples": ["block-code.md"]
+            "samples": ["block-code.md"],
+            "builds": ["CodeBlock"]
+        },
+        {
+            "name": "block-definition-list",
+            "dialect": "extended",
+            "samples": ["block-definition-list.md"],
+            "builds": ["Definition", "DefinitionList"]
         },
         {
             "name": "block-fences",
             "dialect": "commonmark",
-            "samples": ["block-fences.md"]
+            "samples": ["block-fences.md"],
+            "builds": ["CodeBlock"]
         },
         {
             "name": "block-heading",
             "dialect": "commonmark",
-            "samples": ["block-heading.md"]
+            "samples": ["block-heading.md"],
+            "builds": ["Heading"]
         },
         {
             "name": "block-hr",
             "dialect": "commonmark",
-            "samples": ["block-hr.md"]
+            "samples": ["block-hr.md"],
+            "builds": ["ThematicBreak"]
         },
         {
             "name": "block-html",
             "dialect": "commonmark",
-            "samples": ["block-html.md"]
+            "samples": ["block-html.md"],
+            "builds": ["HTMLBlock", "CodeBlock"]
+        },
+        {
+            "name": "block-html-rich",
+            "dialect": "commonmark",
+            "samples": ["block-html-rich.md"],
+            "builds": ["HTML", "HTMLBlock"]
+        },
+        {
+            "name": "block-identifier",
+            "dialect": "extended",
+            "samples": ["block-identifier.md"],
+            "builds": ["Callout", "Heading"]
         },
         {
             "name": "block-lheading",
             "dialect": "commonmark",
-            "samples": ["block-lheading.md"]
+            "samples": ["block-lheading.md"],
+            "builds": ["Heading"]
         },
         {
             "name": "block-list-flat",
             "dialect": "commonmark",
-            "samples": ["block-list-flat.md"]
+            "samples": ["block-list-flat.md"],
+            "builds": ["ThematicBreak", "List"]
         },
         {
             "name": "block-list-nested",
             "dialect": "commonmark",
-            "samples": ["block-list-nested.md"]
+            "samples": ["block-list-nested.md"],
+            "builds": ["List", "ListItem"]
+        },
+        {
+            "name": "block-metadata",
+            "dialect": "extended",
+            "samples": ["block-metadata.md"],
+            "builds": ["Metadata", "ThematicBreak"]
         },
         {
             "name": "block-ref-flat",
             "dialect": "commonmark",
-            "samples": ["block-ref-flat.md"]
+            "samples": ["block-ref-flat.md"],
+            "builds": ["CrossLink", "Link"]
         },
         {
             "name": "block-ref-nested",
             "dialect": "commonmark",
-            "samples": ["block-ref-nested.md"]
+            "samples": ["block-ref-nested.md"],
+            "builds": ["CrossLink", "Emphasis"]
         },
         {
-            "name": "inline-autolink",
-            "dialect": "commonmark",
-            "samples": ["inline-autolink.md"]
-        },
-        {
-            "name": "inline-backticks",
-            "dialect": "commonmark",
-            "samples": ["inline-backticks.md"]
-        },
-        {
-            "name": "inline-em-flat",
-            "dialect": "commonmark",
-            "samples": ["inline-em-flat.md"]
-        },
-        {
-            "name": "inline-em-nested",
-            "dialect": "commonmark",
-            "samples": ["inline-em-nested.md"]
-        },
-        {
-            "name": "inline-em-worst",
-            "dialect": "commonmark",
-            "samples": ["inline-em-worst.md"]
-        },
-        {
-            "name": "inline-entity",
-            "dialect": "commonmark",
-            "samples": ["inline-entity.md"]
-        },
-        {
-            "name": "inline-escape",
-            "dialect": "commonmark",
-            "samples": ["inline-escape.md"]
-        },
-        {
-            "name": "inline-html",
-            "dialect": "commonmark",
-            "samples": ["inline-html.md"]
-        },
-        {
-            "name": "inline-links-flat",
-            "dialect": "commonmark",
-            "samples": ["inline-links-flat.md"]
-        },
-        {
-            "name": "inline-links-nested",
-            "dialect": "commonmark",
-            "samples": ["inline-links-nested.md"]
-        },
-        {
-            "name": "inline-newlines",
-            "dialect": "commonmark",
-            "samples": ["inline-newlines.md"]
-        },
-        {
-            "name": "lorem1",
-            "dialect": "commonmark",
-            "samples": ["lorem1.md"]
-        },
-        {
-            "name": "rawtabs",
-            "dialect": "commonmark",
-            "samples": ["rawtabs.md"]
-        },
-        {
-            "name": "directive",
+            "name": "block-specimen",
             "dialect": "extended",
-            "samples": ["directive.md"]
+            "samples": ["block-specimen.md"],
+            "builds": ["Specimen", "Citation"]
         },
         {
-            "name": "mixed-commonmark",
-            "dialect": "commonmark",
-            "samples": [
-                "block-bq-flat.md",
-                "block-bq-nested.md",
-                "block-code.md",
-                "block-fences.md",
-                "block-heading.md",
-                "block-hr.md",
-                "block-html.md",
-                "block-lheading.md",
-                "block-list-flat.md",
-                "block-list-nested.md",
-                "block-ref-flat.md",
-                "block-ref-nested.md",
-                "inline-autolink.md",
-                "inline-backticks.md",
-                "inline-em-flat.md",
-                "inline-em-nested.md",
-                "inline-em-worst.md",
-                "inline-entity.md",
-                "inline-escape.md",
-                "inline-html.md",
-                "inline-links-flat.md",
-                "inline-links-nested.md",
-                "inline-newlines.md",
-                "lorem1.md",
-                "rawtabs.md"
-            ]
-        },
-        {
-            "name": "mixed-extended",
+            "name": "block-table-caption",
             "dialect": "extended",
-            "samples": [
-                "block-bq-flat.md",
-                "block-bq-nested.md",
-                "block-code.md",
-                "block-fences.md",
-                "block-heading.md",
-                "block-hr.md",
-                "block-html.md",
-                "block-lheading.md",
-                "block-list-flat.md",
-                "block-list-nested.md",
-                "block-ref-flat.md",
-                "block-ref-nested.md",
-                "directive.md",
-                "inline-autolink.md",
-                "inline-backticks.md",
-                "inline-em-flat.md",
-                "inline-em-nested.md",
-                "inline-em-worst.md",
-                "inline-entity.md",
-                "inline-escape.md",
-                "inline-html.md",
-                "inline-links-flat.md",
-                "inline-links-nested.md",
-                "inline-newlines.md",
-                "lorem1.md",
-                "rawtabs.md"
-            ]
+            "samples": ["block-table-caption.md"],
+            "builds": ["TableCaption", "Table"]
         },
         {
-            "name": "chain-quote-depth",
-            "dialect": "commonmark",
-            "chain": {
-                "unit": "> ",
-                "tail": "deep\n"
-            },
-            "scales": "block-container nesting depth"
+            "name": "block-table-grid",
+            "dialect": "extended",
+            "samples": ["block-table-grid.md"],
+            "builds": ["Table", "TableCell"]
         },
         {
-            "name": "chain-list-depth",
+            "name": "block-table-multiline",
+            "dialect": "extended",
+            "samples": ["block-table-multiline.md"],
+            "builds": ["TableCaption", "Table"]
+        },
+        {
+            "name": "block-table-pipe",
+            "dialect": "extended",
+            "samples": ["block-table-pipe.md"],
+            "gfm": true,
+            "builds": ["Table", "TableCell"]
+        },
+        {
+            "name": "block-table-simple",
+            "dialect": "extended",
+            "samples": ["block-table-simple.md"],
+            "builds": ["TableCaption", "Table"]
+        },
+        {
+            "name": "block-task-states",
+            "dialect": "extended",
+            "samples": ["block-task-states.md"],
+            "builds": ["List", "ListItem"]
+        },
+        {
+            "name": "block-tasklist",
+            "dialect": "extended",
+            "samples": ["block-tasklist.md"],
+            "gfm": true,
+            "builds": ["List", "ListItem"]
+        },
+        {
+            "name": "chain-bracket-open",
             "dialect": "commonmark",
+            "scales": "live bracket-stack depth",
             "chain": {
-                "unit": "- ",
-                "tail": "leaf\n"
-            },
-            "scales": "list nesting depth"
+                "unit": "[a ",
+                "tail": "\n"
+            }
         },
         {
             "name": "chain-emphasis-run",
@@ -232,13 +226,290 @@
             "scales": "count of bounded failed link candidates"
         },
         {
-            "name": "chain-bracket-open",
+            "name": "chain-list-depth",
             "dialect": "commonmark",
-            "scales": "live bracket-stack depth",
             "chain": {
-                "unit": "[a ",
-                "tail": "\n"
-            }
+                "unit": "- ",
+                "tail": "leaf\n"
+            },
+            "scales": "list nesting depth"
+        },
+        {
+            "name": "chain-quote-depth",
+            "dialect": "commonmark",
+            "chain": {
+                "unit": "> ",
+                "tail": "deep\n"
+            },
+            "scales": "block-container nesting depth"
+        },
+        {
+            "name": "directive",
+            "dialect": "extended",
+            "samples": ["directive.md"],
+            "builds": ["Directive", "DirectiveBlock"]
+        },
+        {
+            "name": "inline-autolink",
+            "dialect": "commonmark",
+            "samples": ["inline-autolink.md"],
+            "builds": ["Link"]
+        },
+        {
+            "name": "inline-autolink-rich",
+            "dialect": "extended",
+            "samples": ["inline-autolink-rich.md"],
+            "gfm": true,
+            "builds": ["Link"]
+        },
+        {
+            "name": "inline-backticks",
+            "dialect": "commonmark",
+            "samples": ["inline-backticks.md"],
+            "builds": ["Code"]
+        },
+        {
+            "name": "inline-citation",
+            "dialect": "extended",
+            "samples": ["inline-citation.md"],
+            "builds": ["Citation", "Cite"]
+        },
+        {
+            "name": "inline-comment",
+            "dialect": "extended",
+            "samples": ["inline-comment.md"],
+            "builds": ["Comment", "Emphasis"]
+        },
+        {
+            "name": "inline-cross-link",
+            "dialect": "extended",
+            "samples": ["inline-cross-link.md"],
+            "builds": ["CrossEmbedded", "CrossLink"]
+        },
+        {
+            "name": "inline-delimiter-runs",
+            "dialect": "extended",
+            "samples": ["inline-delimiter-runs.md"],
+            "builds": ["Insertion", "Mark"]
+        },
+        {
+            "name": "inline-em-flat",
+            "dialect": "commonmark",
+            "samples": ["inline-em-flat.md"],
+            "builds": ["Strong", "Emphasis"]
+        },
+        {
+            "name": "inline-em-nested",
+            "dialect": "commonmark",
+            "samples": ["inline-em-nested.md"],
+            "builds": ["Strong", "Emphasis"]
+        },
+        {
+            "name": "inline-em-worst",
+            "dialect": "commonmark",
+            "samples": ["inline-em-worst.md"]
+        },
+        {
+            "name": "inline-embedded",
+            "dialect": "commonmark",
+            "samples": ["inline-embedded.md"],
+            "builds": ["Embedded", "Link"]
+        },
+        {
+            "name": "inline-entity",
+            "dialect": "commonmark",
+            "samples": ["inline-entity.md"]
+        },
+        {
+            "name": "inline-escape",
+            "dialect": "commonmark",
+            "samples": ["inline-escape.md"],
+            "builds": ["LineBreak"]
+        },
+        {
+            "name": "inline-footnote",
+            "dialect": "extended",
+            "samples": ["inline-footnote.md"],
+            "gfm": true,
+            "builds": ["Footnote", "Citation"]
+        },
+        {
+            "name": "inline-footnote-inline",
+            "dialect": "extended",
+            "samples": ["inline-footnote-inline.md"],
+            "builds": ["Footnote", "Cite"]
+        },
+        {
+            "name": "inline-formula",
+            "dialect": "extended",
+            "samples": ["inline-formula.md"],
+            "builds": ["Formula", "FormulaBlock"]
+        },
+        {
+            "name": "inline-html",
+            "dialect": "commonmark",
+            "samples": ["inline-html.md"],
+            "builds": ["Comment", "HTML"]
+        },
+        {
+            "name": "inline-links-flat",
+            "dialect": "commonmark",
+            "samples": ["inline-links-flat.md"],
+            "builds": ["Embedded", "Link"]
+        },
+        {
+            "name": "inline-links-nested",
+            "dialect": "commonmark",
+            "samples": ["inline-links-nested.md"],
+            "builds": ["Link"]
+        },
+        {
+            "name": "inline-newlines",
+            "dialect": "commonmark",
+            "samples": ["inline-newlines.md"],
+            "builds": ["LineBreak"]
+        },
+        {
+            "name": "inline-span",
+            "dialect": "extended",
+            "samples": ["inline-span.md"],
+            "builds": ["Span", "Code"]
+        },
+        {
+            "name": "lorem1",
+            "dialect": "commonmark",
+            "samples": ["lorem1.md"],
+            "builds": ["Strong", "Link"]
+        },
+        {
+            "name": "pair-comment-common",
+            "dialect": "commonmark",
+            "samples": ["pair-comment-common.md"],
+            "builds": ["Code"]
+        },
+        {
+            "name": "pair-comment-dialect",
+            "dialect": "extended",
+            "samples": ["pair-comment-dialect.md"],
+            "builds": ["Comment"]
+        },
+        {
+            "name": "pair-formula-common",
+            "dialect": "commonmark",
+            "samples": ["pair-formula-common.md"],
+            "builds": ["Code"]
+        },
+        {
+            "name": "pair-formula-dialect",
+            "dialect": "extended",
+            "samples": ["pair-formula-dialect.md"],
+            "builds": ["Formula"]
+        },
+        {
+            "name": "pair-runs-common",
+            "dialect": "commonmark",
+            "samples": ["pair-runs-common.md"],
+            "builds": ["Strong", "Emphasis"]
+        },
+        {
+            "name": "pair-runs-dialect",
+            "dialect": "extended",
+            "samples": ["pair-runs-dialect.md"],
+            "builds": ["Insertion", "Mark", "Superscript", "Subscript"]
+        },
+        {
+            "name": "rawtabs",
+            "dialect": "commonmark",
+            "samples": ["rawtabs.md"],
+            "builds": ["CodeBlock"]
+        },
+        {
+            "name": "mixed-commonmark",
+            "dialect": "commonmark",
+            "samples": [
+                "block-bq-flat.md",
+                "block-bq-nested.md",
+                "block-code.md",
+                "block-fences.md",
+                "block-heading.md",
+                "block-hr.md",
+                "block-html-rich.md",
+                "block-html.md",
+                "block-lheading.md",
+                "block-list-flat.md",
+                "block-list-nested.md",
+                "block-ref-flat.md",
+                "block-ref-nested.md",
+                "inline-autolink.md",
+                "inline-backticks.md",
+                "inline-em-flat.md",
+                "inline-em-nested.md",
+                "inline-em-worst.md",
+                "inline-embedded.md",
+                "inline-entity.md",
+                "inline-escape.md",
+                "inline-html.md",
+                "inline-links-flat.md",
+                "inline-links-nested.md",
+                "inline-newlines.md",
+                "lorem1.md",
+                "rawtabs.md"
+            ]
+        },
+        {
+            "name": "mixed-extended",
+            "dialect": "extended",
+            "samples": [
+                "block-bq-flat.md",
+                "block-bq-nested.md",
+                "block-callout.md",
+                "block-code.md",
+                "block-definition-list.md",
+                "block-fences.md",
+                "block-heading.md",
+                "block-hr.md",
+                "block-html-rich.md",
+                "block-html.md",
+                "block-identifier.md",
+                "block-lheading.md",
+                "block-list-flat.md",
+                "block-list-nested.md",
+                "block-metadata.md",
+                "block-ref-flat.md",
+                "block-ref-nested.md",
+                "block-specimen.md",
+                "block-table-caption.md",
+                "block-table-grid.md",
+                "block-table-multiline.md",
+                "block-table-pipe.md",
+                "block-table-simple.md",
+                "block-task-states.md",
+                "block-tasklist.md",
+                "directive.md",
+                "inline-autolink-rich.md",
+                "inline-autolink.md",
+                "inline-backticks.md",
+                "inline-citation.md",
+                "inline-comment.md",
+                "inline-cross-link.md",
+                "inline-delimiter-runs.md",
+                "inline-em-flat.md",
+                "inline-em-nested.md",
+                "inline-em-worst.md",
+                "inline-embedded.md",
+                "inline-entity.md",
+                "inline-escape.md",
+                "inline-footnote-inline.md",
+                "inline-footnote.md",
+                "inline-formula.md",
+                "inline-html.md",
+                "inline-links-flat.md",
+                "inline-links-nested.md",
+                "inline-newlines.md",
+                "inline-span.md",
+                "lorem1.md",
+                "rawtabs.md"
+            ]
         }
     ]
 }
