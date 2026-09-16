@@ -1225,7 +1225,7 @@ function reachedFrom(profile, specs) {
  * What it does catch is the failure that actually happened here twice: work only
  * the field's presence causes that nobody had thought about. A new candidate
  * stops the run until someone says which side it is on. */
-function requireCompleteExclusions(cases, ran, excludedReach, unmatchedFields, filtered) {
+function requireCompleteExclusions(cases, ran, excludedReach, excludedLeaks, unmatchedFields, filtered) {
     /* The derivation is a statement about the whole corpus: "runs wherever the
      * field is and nowhere it is not" only means "caused by the field" when
      * "nowhere it is not" covers every compared document. A `--case` run does
@@ -1259,7 +1259,15 @@ function requireCompleteExclusions(cases, ran, excludedReach, unmatchedFields, f
         }
         if (!carries.length || !plain.length) continue;
         const shared = new Set(Object.keys(declaration.shared ?? {}));
-        const covered = (fn) => shared.has(fn) || carries.every((name) => excludedReach.get(name).has(fn));
+        /* "Reachable from an excluded edge" is not "its cost was removed". The
+         * same helper can run under an excluded edge and again under a caller
+         * the exclusion never named, and only the first is subtracted -- so a
+         * candidate still taking cost from an unnamed caller inside a measured
+         * stage has to be classified on its own, not waved through because some
+         * other call to it was excluded. */
+        const covered = (fn) =>
+            shared.has(fn) ||
+            carries.every((name) => excludedReach.get(name).has(fn) && !(excludedLeaks.get(name)?.[fn] > 0));
         /* Functions only the field's presence RUNS. */
         let only = new Set(Object.keys(ran.get(carries[0])));
         for (const name of carries.slice(1)) only = new Set([...only].filter((fn) => fn in ran.get(name)));
@@ -1344,6 +1352,10 @@ function measure(profile, engine, document, out, unmatchedFields) {
         return name.slice(0, context).replace(CLONE_SUFFIX, "") + name.slice(context);
     });
     const stages = {};
+    /* Every node either measured stage entered. A cost reached only outside
+     * both stages is not in any ratio's numerator, so it cannot be work an
+     * exclusion failed to remove. */
+    const inStage = new Set();
     for (const stage of STAGES) {
         const boundary = definition.stages[stage];
         const edges = edgesBetween(profileByName, boundary.caller, boundary.callee);
@@ -1359,6 +1371,7 @@ function measure(profile, engine, document, out, unmatchedFields) {
         /* Only the callee nodes this stage entered, never the same function as
          * the other stage reached it. */
         const scoped = new Set(nodesEnteredFrom(profileByName, boundary.callee, boundary.caller));
+        for (const node of scoped) inStage.add(node);
         const breakdown = new Map();
         for (const edge of profileByName.edges.values()) {
             if (!scoped.has(edge.caller)) continue;
@@ -1444,6 +1457,25 @@ function measure(profile, engine, document, out, unmatchedFields) {
         }
     }
 
+    const excludedReach = reachedFrom(
+        profileByName,
+        unmatched.map((entry) => entry.edge)
+    );
+    /* For each function the exclusion reaches, what it still costs through
+     * callers the exclusion never named -- counted only where a measured stage
+     * entered the caller, because cost outside both stages is in no numerator. */
+    const declaredEdges = new Set(unmatched.map((entry) => entry.edge.replace(/\s*->\s*/u, "->")));
+    const excludedLeaks = new Map();
+    for (const edge of profileByName.edges.values()) {
+        const callee = baseName(edge.callee);
+        if (!excludedReach.has(callee)) continue;
+        const caller = baseName(edge.caller);
+        if (excludedReach.has(caller) || declaredEdges.has(`${caller}->${callee}`)) continue;
+        if (!inStage.has(edge.caller)) continue;
+        const ir = costRecord(profileByName, edge.cost).Ir ?? 0;
+        if (ir) excludedLeaks.set(callee, (excludedLeaks.get(callee) ?? 0) + ir);
+    }
+
     return {
         rootChildren: Number(receipt[2]),
         receiptBytes: Number(receipt[1]),
@@ -1461,12 +1493,22 @@ function measure(profile, engine, document, out, unmatchedFields) {
             total[fn] = (total[fn] ?? 0) + (costRecord(profileByName, cost).Ir ?? 0);
             return total;
         }, {}),
-        excludedReach: [
-            ...reachedFrom(
-                profileByName,
-                unmatched.map((entry) => entry.edge)
-            )
-        ],
+        excludedReach: [...excludedReach],
+        /* The hole a base-name reachability test cannot see. `reachedFrom`
+         * answers "is this function called somewhere under an excluded edge",
+         * and a function can be BOTH: `markdown_core_resource_new` runs under
+         * the excluded `markdown_core_prepare_heading` edge and again under
+         * `markdown_core_link_commit`, which builds an ordinary CommonMark link
+         * that cmark builds too. Only the first is subtracted, and that is
+         * correct -- but it means "reachable from an exclusion" is not the same
+         * as "its cost was removed". This records what each such function still
+         * costs through callers the exclusion never named, counting only calls
+         * inside a measured stage, so the completeness check can refuse to
+         * treat those as already accounted for. */
+        excludedLeaks: [...excludedLeaks].reduce((total, [name, ir]) => {
+            total[name] = ir;
+            return total;
+        }, {}),
         hotPaths: hotPaths(profileByName),
         dump
     };
@@ -2322,6 +2364,7 @@ function main() {
      * report. */
     const ran = new Map();
     const excludedReach = new Map();
+    const excludedLeaks = new Map();
     for (const document of corpus.documents) {
         const engines = {};
         /* cmark is measured on every document as the CommonMark floor. cmark-gfm
@@ -2338,6 +2381,7 @@ function main() {
             if (engine === "markdown-core" && document.scale === 1) {
                 ran.set(document.case, measured.ran);
                 excludedReach.set(document.case, new Set(measured.excludedReach));
+                excludedLeaks.set(document.case, measured.excludedLeaks);
             }
             engines[engine] = {
                 parsePathIr: measured.parsePathIr,
@@ -2357,7 +2401,14 @@ function main() {
         if (!options.quiet) console.error(`measured ${document.case} x${document.scale}`);
         cases.push({ ...document, file: path.relative(options.out, document.file), engines });
     }
-    requireCompleteExclusions(cases, ran, excludedReach, manifest.unmatchedFields ?? {}, options.cases.length > 0);
+    requireCompleteExclusions(
+        cases,
+        ran,
+        excludedReach,
+        excludedLeaks,
+        manifest.unmatchedFields ?? {},
+        options.cases.length > 0
+    );
 
     const report = {
         schemaVersion: 2,
