@@ -715,22 +715,37 @@ function logicalPairFailures(census, pairs, units) {
          * envelope is recognised once per document, so their units are MEMBER
          * LINES and one unit is worth NO metadata node at all, with the single
          * node coming from the head. */
-        for (const [side, expected] of Object.entries(pair.perUnit ?? {})) {
-            const { name, kind } = sides[side];
+        for (const [side, kinds] of Object.entries(pair.perUnit ?? {})) {
+            const { name } = sides[side];
             const emitted = units[name];
             if (emitted === undefined) {
                 failures.push(`${name} declares constructs per unit and the generator recorded no unit count for it`);
                 continue;
             }
-            const built = (side === "case" ? counts : twinCounts).get(kind) ?? 0;
-            const want = expected.each * emitted + (expected.plus ?? 0);
-            if (built !== want) {
-                failures.push(
-                    `${name} was generated with ${emitted} units and declares ${expected.each} ${kind} each` +
-                        `${expected.plus ? ` plus ${expected.plus}` : ""}, which is ${want}, but the parser built ` +
-                        `${built}. An equal count on the two sides is agreement between the documents; this is ` +
-                        `agreement with what the corpus asked for`
-                );
+            /* EVERY construct the pair counts, not only the primary one. Two
+             * templates that both lost the same secondary work would still
+             * agree with each other and still satisfy a per-unit expectation
+             * written for the container alone. */
+            const wanted = new Set([sides[side].kind, ...(pair.alsoCounts ?? []).map((also) => also[side])]);
+            for (const kind of wanted) {
+                const expected = kinds[kind];
+                if (!expected) {
+                    failures.push(
+                        `${name} counts ${kind} and declares no per-unit expectation for it, so the corpus ` +
+                            `never checks that construct against what the generator emitted`
+                    );
+                    continue;
+                }
+                const built = (side === "case" ? counts : twinCounts).get(kind) ?? 0;
+                const want = expected.each * emitted + (expected.plus ?? 0);
+                if (built !== want) {
+                    failures.push(
+                        `${name} was generated with ${emitted} units and declares ${expected.each} ${kind} each` +
+                            `${expected.plus ? ` plus ${expected.plus}` : ""}, which is ${want}, but the parser ` +
+                            `built ${built}. An equal count on the two sides is agreement between the documents; ` +
+                            `this is agreement with what the corpus asked for`
+                    );
+                }
             }
         }
         /* A kind a NAMED SIDE must not build at all. `fallback` is the same

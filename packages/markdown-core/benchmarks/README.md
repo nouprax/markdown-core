@@ -474,6 +474,16 @@ For a **declaration** pair, where there is no identical tree to compare:
   metadata pairs are the case worth naming: an envelope is recognised once per
   document, so their units are member *lines*, one unit is worth no `Metadata`
   node at all, and the single node comes from the head.
+
+  It is declared per side **per kind**, and it must name **every construct the
+  pair counts** — the `alsoCounts` ones as well as the one the pair is named
+  for. Writing it for the container alone leaves the rest of the claim resting
+  on equality again, which is exactly the hole the mechanism exists to close:
+  two halves of a pair that both lost the same secondary work — the fancy-list
+  templates each emitting one paragraph per item instead of two — agree with
+  each other perfectly, and a `perUnit` written only for `List` would not
+  notice. The audit fails a pair that counts a kind it declares no expectation
+  for, so the two lists cannot drift apart.
 - where a pair names `demonstrates`, each side it lists must reach every
   declared grammar **state** named for it. This is the third way a same-kind
   pair can be held, and it reaches what a field cannot: two ordered lists build
