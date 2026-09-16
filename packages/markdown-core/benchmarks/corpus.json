@@ -399,6 +399,40 @@
             "builds": ["Paragraph"]
         },
         {
+            "name": "pair-span-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "A [body {n}]{.c} in prose.\n\n"
+            },
+            "builds": ["Span"]
+        },
+        {
+            "name": "pair-span-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "A [body {n}](/c) in prose.\n\n",
+                "match": "pair-span-dialect"
+            },
+            "builds": ["Link"]
+        },
+        {
+            "name": "pair-xlink-dialect",
+            "dialect": "extended",
+            "generated": {
+                "unit": "See [[target-{n}]] here.\n\n"
+            },
+            "builds": ["CrossLink"]
+        },
+        {
+            "name": "pair-xlink-common",
+            "dialect": "commonmark",
+            "counted": {
+                "unit": "See [](/target-{n}) here.\n\n",
+                "match": "pair-xlink-dialect"
+            },
+            "builds": ["Link"]
+        },
+        {
             "name": "pair-comment-common",
             "dialect": "commonmark",
             "samples": ["pair-comment-common.md"],
@@ -533,11 +567,33 @@
         {
             "case": "pair-anchor-dialect",
             "isomorph": "pair-anchor-common",
+            "counts": {
+                "case": "Paragraph",
+                "isomorph": "Paragraph"
+            },
             "binding": {
                 "block": "Paragraph",
                 "declares": "anchor"
             },
             "claim": "An explicit anchor DECLARES a name and binds it to the block it sits on. A link reference definition declares a name and binds it to a target. Same grammar shape -- one block, one name-to-target binding -- and the same subsequent operation, which is the binding entering the document's table of names. The two spellings differ in length, so the pair is generated to an equal COUNT of declarations rather than to equal bytes, and each name is indexed so both sides bind the same number of distinct identifiers. DERIVED anchors are deliberately not paired here: a heading whose anchor comes from its own text declares nothing, and CommonMark has no production that derives a binding, so there is no isomorph to write and block-heading stays a bound."
+        },
+        {
+            "case": "pair-span-dialect",
+            "isomorph": "pair-span-common",
+            "counts": {
+                "case": "Span",
+                "isomorph": "Link"
+            },
+            "claim": "A bracketed span and an inline link are the same production: an opening bracket, a body parsed as inline content, a closing bracket, and an immediately following paired-delimiter suffix taken raw and decoded into fields of the one node the production builds. The dialect spec says so directly -- a span is decided in the same bracket alternation as a link, and a valid link wins the position -- so the two are alternatives at one point in the grammar and not merely alike. The suffix is where they differ and nothing else is: `{.c}` decodes into attributes, `(/c)` decodes into a destination. Neither looks anything up. The two spellings are the same length here, so the pair is byte for byte as well as count for count."
+        },
+        {
+            "case": "pair-xlink-dialect",
+            "isomorph": "pair-xlink-common",
+            "counts": {
+                "case": "CrossLink",
+                "isomorph": "Link"
+            },
+            "claim": "A cross link and an empty-text inline link are the same production: fixed bracket delimiters around a body that is NOT parsed as inline, producing one leaf node that stores the body as a destination and has no children. Neither resolves it -- the cross-link spec is explicit that the parser stores the strings and the application finds the resource, and an inline link's destination is likewise stored, not looked up -- so the subsequent operation matches too. The empty text is deliberate: a cross link has no inline body, and pairing it against a link that did have one would hand the reference an inline parse this side never performs. Not the same length, so the pair is generated to an equal COUNT."
         }
     ]
 }

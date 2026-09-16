@@ -1770,17 +1770,36 @@ function markdownReport(report) {
                 ""
             );
             lines.push(
-                "A construct with no row here has no isomorph, and the honest reason is that" +
-                    " CommonMark has no production of the same shape. A grid table is not a" +
-                    " pipe table (a grid cell holds a paragraph, a pipe cell holds inlines), a" +
-                    " definition list is not a bullet list (the definition groups term and" +
-                    " body under one node), and a comment is not strong emphasis (strong" +
-                    " parses its body, a comment keeps it literal). A DERIVED anchor is the" +
-                    " sharpest case: a heading whose identifier comes from its own text" +
-                    " declares nothing, and CommonMark has no production that derives a" +
-                    " binding, so `block-heading` stays a bound while the explicit anchor --" +
-                    " which does declare -- pairs. Those stay bounds, and a bound is reported" +
-                    " as a bound.",
+                "A construct with no row here has no isomorph, and the reason is always the" +
+                    " same kind of reason: CommonMark has no production of that shape. Read off" +
+                    " the grammars rather than the sources --",
+                "",
+                "- A **grid table** cell holds blocks; a pipe table cell holds inlines.",
+                "- A **definition list** groups a term's inlines with a following block under" +
+                    " one node, and nothing in CommonMark groups two lines that way.",
+                "- A **callout** consumes a token off its container's first line into the" +
+                    " container's own fields and parses the rest as a separate inline list;" +
+                    " CommonMark's block quote consumes nothing and owns only blocks.",
+                "- A **directive** is a FENCED CONTAINER. CommonMark's only fence opens a leaf" +
+                    " whose body is literal, so the fence rules match and the body does not.",
+                "- A **derived anchor** declares nothing: a heading whose identifier comes from" +
+                    " its own text has no name in the source to bind. The EXPLICIT anchor does" +
+                    " declare, which is why `pair-anchor-dialect` exists and `block-heading`" +
+                    " and `block-identifier` stay bounds.",
+                "- A **properties envelope** is recognised once, at the document's start. Even" +
+                    " where its fence rules match a fenced code block's, there is no count to" +
+                    " scale, so there is no workload to pair.",
+                "- **Citations** decompose one bracket group into a list of keyed items with" +
+                    " parsed affixes. No CommonMark production decomposes a bracket group.",
+                "",
+                "Three more are pairable against cmark-gfm rather than cmark and are not paired" +
+                    " here yet: a **specimen** against a GFM footnote definition (both declare a" +
+                    " label, own block content, and leave ordinary content for a side list), a" +
+                    " **task-state marker** against a GFM task list item, and a bare **citation" +
+                    " key** against a GFM extended autolink. Until the pair table can name a" +
+                    " reference other than cmark, those stay bounds.",
+                "",
+                "Those are bounds, and a bound is reported as a bound.",
                 ""
             );
         }

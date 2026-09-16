@@ -379,17 +379,19 @@ async function kindsProduced(cli, documents) {
  * bytes and not the same tree, so nothing about the pair can be read off a
  * comparison of the two dumps.
  *
- * Two things are read off the parser instead, and they are what the pair claims:
+ * What is read off the parser instead is what the pair claims:
  *
- *   Both sides built the SAME NUMBER OF BLOCKS. The corpus generates them to an
- *   equal count of declarations, which is arithmetic; this is the parser
- *   agreeing that the bytes it was handed came out that way. It is also what
- *   proves the reference side's declarations were CONSUMED: a definition the
- *   parser declined to read as one stays a paragraph, and the count doubles.
+ *   Both sides built the SAME NUMBER of the paired construct, each side counted
+ *   by the kind it builds. The corpus generates them to an equal count, which is
+ *   arithmetic; this is the parser agreeing that the bytes it was handed came
+ *   out that way. For the anchor pair it is also what proves the reference
+ *   side's definitions were CONSUMED: a definition the parser declined to read
+ *   as one stays a paragraph, and the count doubles.
  *
- *   The declaring side BOUND that many names, and the reference side bound none
- *   in its tree -- its bindings are in the reference map, which is the whole
- *   reason the two spellings pair and the whole reason their trees differ.
+ *   And, where a pair names a `binding`, the declaring side BOUND that many
+ *   names while the reference side bound none in its tree -- its bindings are in
+ *   the reference map, which is the whole reason the two spellings pair and the
+ *   whole reason their trees differ.
  */
 function logicalIsomorphs() {
     return (
@@ -401,27 +403,29 @@ function logicalIsomorphs() {
 function logicalPairFailures(census, pairs) {
     const failures = [];
     for (const pair of pairs) {
-        const { block, declares } = pair.binding;
         const counts = census.perCaseCounts.get(pair.case);
         const twinCounts = census.perCaseCounts.get(pair.isomorph);
         if (!counts || !twinCounts) {
             failures.push(`${pair.case} is paired with ${pair.isomorph}, and the corpus did not build both documents`);
             continue;
         }
-        const built = counts.get(block) ?? 0;
-        const twinBuilt = twinCounts.get(block) ?? 0;
-        if (built !== twinBuilt) {
+        const built = counts.get(pair.counts.case) ?? 0;
+        const twinBuilt = twinCounts.get(pair.counts.isomorph) ?? 0;
+        if (built !== twinBuilt || built === 0) {
             failures.push(
-                `${pair.case} builds ${built} ${block} nodes and ${pair.isomorph} builds ${twinBuilt}. ` +
-                    `A logical pair compares two spellings of one declaration only while both documents ` +
-                    `hold the same number of it; unequal counts make the ratio a comparison of one ` +
-                    `document's size with another's`
+                `${pair.case} builds ${built} ${pair.counts.case} nodes and ${pair.isomorph} builds ` +
+                    `${twinBuilt} ${pair.counts.isomorph}. A logical pair compares two spellings of one ` +
+                    `production only while both documents hold the same number of it, and a count of zero ` +
+                    `means one side stopped building the construct the pair is about`
             );
         }
+        if (!pair.binding) continue;
+        const { block, declares } = pair.binding;
+        const blocks = counts.get(block) ?? 0;
         const bound = census.perCaseBound.get(pair.case)?.get(`${block}.${declares}`) ?? 0;
-        if (bound !== built) {
+        if (bound !== blocks) {
             failures.push(
-                `${pair.case} builds ${built} ${block} nodes but only ${bound} of them bind ${declares}. ` +
+                `${pair.case} builds ${blocks} ${block} nodes but only ${bound} of them bind ${declares}. ` +
                     `The pair claims every block on this side DECLARES; a block that declares nothing has ` +
                     `no counterpart in the reference document's definitions`
             );
