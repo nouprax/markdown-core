@@ -1507,6 +1507,10 @@
                 {
                     "case": "ThematicBreak",
                     "isomorph": "ThematicBreak"
+                },
+                {
+                    "case": "Paragraph",
+                    "isomorph": "Paragraph"
                 }
             ],
             "demonstrates": {
@@ -1523,7 +1527,7 @@
                 ],
                 "isomorph": ["list.variant.decimal", "list.delimiter.period"]
             },
-            "claim": "A fancy ordered list and a CommonMark ordered list are the same production: an item opened by a SEQUENCE TOKEN followed by a DELIMITER, where the token fixes the list's start and the delimiter is part of what makes two adjacent lists one list or two. What differs is the alphabet the token is drawn from -- a letter, a roman numeral or `#` against a decimal run -- and the delimiter set, `)` and `(...)` alongside `.`. Both are read once, on the first item, and every later item's token is read and discarded, which is CommonMark's own rule for the start number. Each unit carries all seven spellings against seven decimal lists, separated by thematic breaks on both sides so the same number of LISTS is built from the same number of lines: 350 lists, 700 items, 700 paragraphs and 350 breaks per 50 units on each side. The pair counts List on both sides, so an equal count proves nothing by itself -- a marker the parser stopped reading leaves a list either way -- and the field that tells them apart prints UNQUOTED, so it is not a binding. It is named as a STATE instead: the dialect side must demonstrate every variant and delimiter the manifest declares for this grammar and the reference side its decimal-and-period pair, checked by the same predicates the conformance corpus is held to.",
+            "claim": "A fancy ordered list and a CommonMark ordered list are the same production: an item opened by a SEQUENCE TOKEN followed by a DELIMITER, where the token fixes the list's start and the delimiter is part of what makes two adjacent lists one list or two. What differs is the alphabet the token is drawn from -- a letter, a roman numeral or `#` against a decimal run -- and the delimiter set, `)` and `(...)` alongside `.`. Both are read once, on the first item, and every later item's token is read and discarded, which is CommonMark's own rule for the start number. Each unit carries all seven spellings against seven decimal lists, separated by thematic breaks on both sides so the same number of LISTS is built from the same number of lines: 350 lists, 700 items, 700 paragraphs and 350 breaks per 50 units on each side, and all four are counted rather than only the first -- an item whose content stopped being parsed would leave the list and item counts exactly as declared. The pair counts List on both sides, so an equal count proves nothing by itself -- a marker the parser stopped reading leaves a list either way -- and the field that tells them apart prints UNQUOTED, so it is not a binding. It is named as a STATE instead: the dialect side must demonstrate every variant and delimiter the manifest declares for this grammar and the reference side its decimal-and-period pair, checked by the same predicates the conformance corpus is held to.",
             "perUnit": {
                 "case": {
                     "each": 7
