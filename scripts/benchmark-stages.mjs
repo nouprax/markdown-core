@@ -1257,7 +1257,22 @@ function requireCompleteExclusions(cases, ran, excludedReach, excludedLeaks, unm
             if (item.dialect !== "commonmark" && !item.gfm) continue;
             ((item.engines["markdown-core"]?.witnesses?.[field] ?? 0) > 0 ? carries : plain).push(item.case);
         }
-        if (!carries.length || !plain.length) continue;
+        /* No case builds the field, so there is nothing to classify. */
+        if (!carries.length) continue;
+        /* Cases build it and NOTHING in the corpus does not. The derivation is
+         * "runs where the field is and nowhere it is not", and without a single
+         * compared document without the field there is no "nowhere it is not"
+         * to read -- the check would pass by having nothing to compare against,
+         * which is the loudest way to be silently unverified. Refusing is the
+         * only honest answer: the corpus, not the run, is what has to change. */
+        if (!plain.length) {
+            fail(
+                `every compared case builds "${field}", so nothing in this corpus shows what the parser ` +
+                    `does WITHOUT it and the exclusion's completeness cannot be derived at all. Its ratios ` +
+                    `would rest on a list nothing checked. Add a compared case (dialect "commonmark", or ` +
+                    `gfm) that builds no ${field}, or stop reporting these cases as comparisons.`
+            );
+        }
         const shared = new Set(Object.keys(declaration.shared ?? {}));
         /* "Reachable from an excluded edge" is not "its cost was removed". The
          * same helper can run under an excluded edge and again under a caller
@@ -1453,6 +1468,29 @@ function measure(profile, engine, document, out, unmatchedFields) {
             fail(
                 `${engine}: ${document.case} excludes ${entry.edge} at ${entry.ir} Ir from a ${entry.stage} ` +
                     `of ${stages[entry.stage]?.cost.Ir ?? 0} Ir, so the exclusion is in the wrong stage`
+            );
+        }
+    }
+
+    /* Each entry's cost is the edge's INCLUSIVE cost, and the totals are summed,
+     * so two entries may only be added when neither sits inside the other. Put a
+     * future exclusion beneath an existing one and the descendant is subtracted
+     * twice -- a smaller, entirely plausible same-job ratio. The stage check
+     * above cannot see it: each entry is compared with its stage alone, so two
+     * overlapping entries that each fit still sum past what was spent. Roots
+     * must be disjoint, and the per-case profile is what decides that, because
+     * whether one edge lies under another is a property of the call graph this
+     * document produced rather than of the list. */
+    for (const entry of unmatched) {
+        const caller = entry.edge.split("->")[0].trim();
+        for (const other of unmatched) {
+            if (other === entry) continue;
+            const root = other.edge.split("->")[1].trim();
+            if (!reachedFrom(profileByName, [other.edge]).has(caller)) continue;
+            fail(
+                `${engine}: ${document.case} excludes ${entry.edge}, whose caller runs under the already ` +
+                    `excluded ${other.edge} -- ${root}'s inclusive cost already contains it, so subtracting ` +
+                    `both counts ${entry.ir} Ir twice and understates the ratio. Exclusion roots must be disjoint.`
             );
         }
     }
