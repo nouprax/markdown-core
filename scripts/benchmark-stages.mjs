@@ -1754,6 +1754,17 @@ function markdownReport(report) {
      * says nothing about when it stopped covering the feature, so an unchecked
      * list leaves work of unknown size in the numerator. */
     const judged = report.completenessJudged !== false;
+    /* Whether the case builds a field the reference has no counterpart for, read
+     * from the witness and the declaration rather than from what the exclusion
+     * happened to subtract. A stale edge list -- every edge renamed by a
+     * refactor, say -- subtracts nothing while the tree still carries the
+     * field, and keying the withholding on a non-zero subtraction would publish
+     * the RAW anchor-inclusive ratio as a comparison in exactly that case. */
+    const holdsUnmatchedField = (item) => {
+        if (item.dialect !== "commonmark" && !item.gfm) return false;
+        if ((item.unmatched ?? []).length) return true;
+        return Object.values(item.engines["markdown-core"]?.witnesses ?? {}).some((calls) => calls > 0);
+    };
     const paired = new Map((report.isomorphs ?? []).map((declaration) => [declaration.case, declaration]));
     const isIsomorph = new Set((report.isomorphs ?? []).map((declaration) => declaration.isomorph));
     const atScaleOne = new Map(report.cases.filter((item) => item.scale === 1).map((item) => [item.case, item]));
@@ -1815,17 +1826,17 @@ function markdownReport(report) {
                  * did. The heading's own inline parse stays in, because cmark
                  * runs it too. */
                 unmatchedIr: excluded,
-                /* Subtracted, but on a run that could not check the subtraction
-                 * covers the whole feature. Kept out of `sameJob` below so no
-                 * table prints it as a comparison, and surfaced so the section
-                 * on the exclusion can show the arithmetic anyway -- the
-                 * numbers are still what the focused experiment is for. */
-                provisional: excluded > 0 && !judged,
+                /* Holds a field with no counterpart, on a run that could not
+                 * check the subtraction covers it. Kept out of `sameJob` below
+                 * so no table prints it as a comparison, and surfaced so the
+                 * section on the exclusion can show the arithmetic anyway --
+                 * the numbers are still what the focused experiment is for. */
+                provisional: !judged && holdsUnmatchedField(item),
                 /* The comparison that means something: the closest reference
                  * that implements what the document contains, or the reference
                  * on the document that is the same tree. */
                 sameJob:
-                    excluded > 0 && !judged
+                    !judged && holdsUnmatchedField(item)
                         ? null
                         : gfmIr
                           ? (core - excluded) / gfmIr
