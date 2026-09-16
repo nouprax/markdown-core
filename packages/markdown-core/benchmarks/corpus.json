@@ -851,5 +851,39 @@
             },
             "claim": "A fence whose info string is exactly `formula` is a formula block, and formulas.md and code.md both say so; every other info string keeps ordinary code-block behaviour. So this is not a production of the same SHAPE as a code fence, it IS the code fence production with one token changed, which makes it the narrowest pair in the corpus and a deliberate one: the fence scanner is held byte for byte identical and the only thing that varies is the info-string comparison and the routing of the finished leaf to a different kind. It measures none of the `$$` delimiter-line grammar, which is a separate production paired separately as pair-formulablock."
         }
+    ],
+    "unpairable": [
+        {
+            "production": "derived heading anchor",
+            "proof": "A heading's identifier is derived from its own text, so there is no name in the source to bind. CommonMark has no production that derives a binding from a node's own content, so there is nothing of this shape to write on a reference side. block-heading, block-lheading and mixed-commonmark are bounds for this reason and carry the field declaration that keeps them out of the ranking."
+        },
+        {
+            "production": "ANY pair whose reference half would be an ATX or setext heading",
+            "proof": "This is a corollary of the above and it constrains the whole corpus. This dialect derives an anchor on EVERY heading, including in a document of plain CommonMark: `# Introduction` parses to `Heading anchor=\"introduction\"`. So a heading used as the CommonMark half of a pair would itself be a case whose tree carries a field no reference builds -- a bound by the corpus's own rule -- and Shape, which divides this parser by the reference ON THAT HALF, would divide by cmark on a tree cmark did not build. The heading is therefore unavailable as a reference construct anywhere in this corpus."
+        },
+        {
+            "production": "leaf directive `::name[label]{attrs}`",
+            "proof": "A one-line block carrying a raw name, a label parsed as INLINE content, raw attributes, and no block content. The only CommonMark one-line block whose body is parsed as inline content is the ATX/setext heading, and the corollary above removes the heading from the corpus's vocabulary. A thematic break owns nothing, a link reference definition parses no inlines and builds no node, and an HTML block takes its body literally. No candidate remains."
+        },
+        {
+            "production": "container directive `:::name ... :::`",
+            "proof": "A container block whose body is parsed as BLOCKS, delimited by an opening fence line and a closer of at least the same length. CommonMark's only fenced construct is the code block, which is a LEAF whose body is literal; its two container blocks, the block quote and the list item, determine their body line by line from a per-line prefix rather than from a terminator line. Fence-delimited against prefix-determined is a difference in the continuation rule, not in a terminal."
+        },
+        {
+            "production": "definition list",
+            "proof": "A `Definition` owns a term as an inline run and a body as a block sequence, under one node. CommonMark has no production that groups a preceding line's inlines with a following block under a single node: a list item and a block quote own blocks only, a setext heading owns inlines only, and a link reference definition owns raw strings and builds no node at all."
+        },
+        {
+            "production": "grid table, and its merged cells, boundary-only rows, foot row groups and authored relative widths",
+            "proof": "A grid cell's content is parsed as BLOCKS, where a pipe cell's and a simple cell's are parsed as inlines -- this is the ONE table flavour the distinction was ever true of. Neither CommonMark nor GFM has a table production with block cells, and GFM's pipe table has no spans, no boundary-only row, no foot group and no authored widths, so there is nothing of those shapes to put in front of a reference."
+        },
+        {
+            "production": "inline footnote `^[body]`",
+            "proof": "An inline recognised mid-line whose body is parsed as INLINE content and whose node is hoisted out of the content tree into a document-owned side list. Neither grammar hoists an inline: every CommonMark and GFM inline production -- code span, emphasis, strong, link, image, autolink, raw HTML, break, entity, text, and GFM's strikethrough and autolink literal -- leaves its node where it was recognised. GFM's footnote hoists a BLOCK definition, not an inline."
+        },
+        {
+            "production": "properties envelope",
+            "proof": "STILL OPEN, and the earlier reason was wrong. It was refused as recognised once per document with no count to scale; the scaling dimension is FIELDS, not envelopes, and one large envelope against one large fenced code block is a legitimate count. Both are fence-delimited leaves whose body is not parsed as Markdown. Building it needs a generation mode with a head as well as a tail, which the corpus does not have yet. Not a proof -- an open item."
+        }
     ]
 }
