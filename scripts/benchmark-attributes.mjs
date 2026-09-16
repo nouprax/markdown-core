@@ -368,6 +368,12 @@ function build(profile, lexbor, out) {
     run("cmake", [
         "--preset",
         PROFILE_PRESET,
+        /* The preset does not set it and the stage benchmark passes it too:
+         * without it the tree compiles fine and exports no database, so the
+         * object identity below has nothing to read. It went unnoticed locally
+         * because the stage benchmark had already configured this same tree
+         * WITH it, and a clean runner has no such leftover. */
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
         `-DMARKDOWN_CORE_LEXBOR_SOURCE_DIR=${lexbor.checkout}`,
         `-DMARKDOWN_CORE_LEXBOR_BUILD_DIR=${lexborBuild}`
     ]);
