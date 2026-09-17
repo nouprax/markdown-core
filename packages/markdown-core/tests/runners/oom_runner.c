@@ -13,29 +13,31 @@
 
 #include "ast_internal.h"
 
+/* THE REFUSING ALLOCATOR, SUBSTITUTED AT THE LINK.
+ *
+ * `core/alloc.c` defines these three and nothing else, so defining them here
+ * keeps that archive member from being pulled and every allocation the library
+ * makes comes through this file. The counters were already file-scope statics
+ * when the sweep installed itself as a `markdown_core_mem` per parse, so the
+ * per-parse allocator was never what made the sweep work; see `core/alloc.h`
+ * for why the seam is the linker. */
 static unsigned long allocation_count;
 static unsigned long fail_at;
 static int failure_fired;
 
-static void *sweep_calloc(size_t count, size_t size) {
+static int sweep_refuses(void) {
     if (++allocation_count == fail_at) {
         failure_fired = 1;
-        return NULL;
+        return 1;
     }
-    return calloc(count, size);
+    return 0;
 }
 
-static void *sweep_realloc(void *pointer, size_t size) {
-    if (++allocation_count == fail_at) {
-        failure_fired = 1;
-        return NULL;
-    }
-    return realloc(pointer, size);
-}
+void *markdown_core_alloc(size_t count, size_t size) { return sweep_refuses() ? NULL : calloc(count, size); }
 
-static void sweep_free(void *pointer) { free(pointer); }
+void *markdown_core_realloc(void *pointer, size_t size) { return sweep_refuses() ? NULL : realloc(pointer, size); }
 
-static markdown_core_mem sweep_mem = {sweep_calloc, sweep_realloc, sweep_free};
+void markdown_core_free(void *pointer) { free(pointer); }
 
 static const char OOM_PROPERTIES_CORPUS[] =
     "---\n# ignored\nname: \"large\\u0020text\"\nunknown: *a\nauthors: [1, \"two\", three]\n"
@@ -273,7 +275,7 @@ static const oom_case OOM_CASES[] = {
 };
 
 static markdown_core_document *parse_with_sweep(const oom_case *test, markdown_core_error **error) {
-    return markdown_core_document_parse_with_mem((const uint8_t *)test->source, test->length, &sweep_mem, error);
+    return markdown_core_document_parse((const uint8_t *)test->source, test->length, error);
 }
 
 static int sweep_case(const oom_case *test) {

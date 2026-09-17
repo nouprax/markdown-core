@@ -32,6 +32,88 @@
 
 #define UTF8_REPL "\xEF\xBF\xBD"
 
+/* THE TEST BINARY'S ALLOCATOR, SUBSTITUTED AT THE LINK.
+ *
+ * `core/alloc.c` defines these three and nothing else, so defining them here
+ * keeps that archive member from ever being pulled and every allocation the
+ * library makes lands in this file. See `core/alloc.h` for why the seam is the
+ * linker rather than a swappable global.
+ *
+ * There is ONE allocator per binary, so the three separate probes this file
+ * used to install per object -- a refusing one for strbuf, a counting one for
+ * node payloads, a watching one for a single marker -- are one allocator with
+ * three independent behaviours. Each stays inert until a test arms it.
+ *
+ * `payload_live` is ARMED rather than always counting, and that is the whole
+ * difference from the per-object allocators. It used to count allocations made
+ * through one `markdown_core_mem` and nothing else, so `payload_live == 0` read
+ * as "the objects this test made are all gone". Counting every allocation in
+ * the process instead would fold in whatever else happens to be alive, so the
+ * counter runs only between `payload_probe_arm` and `payload_probe_disarm`,
+ * where the test allocates and frees everything it asserts about. */
+static size_t payload_allocations, payload_fail_at, payload_live;
+static int payload_counting;
+static int strbuf_refuse_next;
+static void *marker_to_free;
+static int marker_free_count;
+
+static void payload_probe_arm(void) {
+    payload_allocations = payload_fail_at = payload_live = 0;
+    payload_counting = 1;
+}
+
+static void payload_probe_disarm(void) { payload_counting = 0; }
+
+/* Refusals are counted the same way whichever entry point asks, because a
+ * constructor that grows a buffer and one that allocates a record are the same
+ * ordinal to a sweep that refuses the Nth. */
+static int allocation_refused(void) {
+    if (strbuf_refuse_next) {
+        strbuf_refuse_next = 0;
+        return 1;
+    }
+    if (payload_counting && ++payload_allocations == payload_fail_at) {
+        return 1;
+    }
+    return 0;
+}
+
+void *markdown_core_alloc(size_t count, size_t size) {
+    void *pointer;
+    if (allocation_refused()) {
+        return NULL;
+    }
+    pointer = calloc(count, size);
+    if (payload_counting) {
+        payload_live += pointer != NULL;
+    }
+    return pointer;
+}
+
+void *markdown_core_realloc(void *pointer, size_t size) {
+    int fresh = pointer == NULL;
+    void *result;
+    if (allocation_refused()) {
+        return NULL;
+    }
+    result = realloc(pointer, size);
+    if (payload_counting) {
+        payload_live += result != NULL && fresh;
+    }
+    return result;
+}
+
+void markdown_core_free(void *pointer) {
+    if (pointer != NULL && pointer == marker_to_free) {
+        marker_free_count++;
+        marker_to_free = NULL;
+    }
+    if (payload_counting) {
+        payload_live -= pointer != NULL;
+    }
+    free(pointer);
+}
+
 typedef struct probe_setup {
     const markdown_core_element *const *elements;
     size_t count;
@@ -1725,28 +1807,11 @@ static void inline_dispatch_ownership(test_batch_runner *runner) {
  * cleared and reused -- `parser->curline` and `parser->line_scratch` -- now both
  * report at the transaction and abandon the parse before the reuse. The lift
  * removes the class by construction, and nothing else can see it. */
-static int strbuf_refuse_next;
-static void *strbuf_test_calloc(size_t n, size_t size) {
-    if (strbuf_refuse_next) {
-        strbuf_refuse_next = 0;
-        return NULL;
-    }
-    return calloc(n, size);
-}
-static void *strbuf_test_realloc(void *pointer, size_t size) {
-    if (strbuf_refuse_next) {
-        strbuf_refuse_next = 0;
-        return NULL;
-    }
-    return realloc(pointer, size);
-}
-static void strbuf_test_free(void *pointer) { free(pointer); }
-static markdown_core_mem strbuf_test_mem = {strbuf_test_calloc, strbuf_test_realloc, strbuf_test_free};
 
 static void strbuf_failure_is_a_transaction(test_batch_runner *runner) {
     markdown_core_strbuf buf;
 
-    markdown_core_strbuf_init(&strbuf_test_mem, &buf, 0);
+    markdown_core_strbuf_init(markdown_core_get_default_mem_allocator(), &buf, 0);
     strbuf_refuse_next = 1;
     markdown_core_strbuf_put(&buf, (const unsigned char *)"hello", 5);
     INT_EQ(runner, buf.oom, 1, "a refused growth poisons the buffer");
@@ -2076,30 +2141,6 @@ static void reference_attribute_lifecycle(test_batch_runner *runner) {
     markdown_core_node_free(second);
 }
 
-static size_t payload_allocations, payload_fail_at, payload_live;
-static void *payload_test_calloc(size_t count, size_t size) {
-    if (++payload_allocations == payload_fail_at) {
-        return NULL;
-    }
-    void *pointer = calloc(count, size);
-    payload_live += pointer != NULL;
-    return pointer;
-}
-static void *payload_test_realloc(void *pointer, size_t size) {
-    if (++payload_allocations == payload_fail_at) {
-        return NULL;
-    }
-    bool new_allocation = pointer == NULL;
-    void *result = realloc(pointer, size);
-    payload_live += result != NULL && new_allocation;
-    return result;
-}
-static void payload_test_free(void *pointer) {
-    payload_live -= pointer != NULL;
-    free(pointer);
-}
-static markdown_core_mem payload_test_mem = {payload_test_calloc, payload_test_realloc, payload_test_free};
-
 typedef struct {
     char prefix;
     long double value;
@@ -2110,6 +2151,7 @@ typedef struct {
 } payload_integer_alignment;
 
 static void node_payload_lifecycle(test_batch_runner *runner) {
+    payload_probe_arm();
     INT_EQ(runner, sizeof(markdown_core_node_data), sizeof(void *),
            "all payload arms share one pointer-sized node slot");
     static const markdown_core_node_type extra_types[] = {
@@ -2124,7 +2166,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     for (size_t i = 0; i < (size_t)num_node_types + extra_count; i++) {
         markdown_core_node_type type = i < (size_t)num_node_types ? node_types[i] : extra_types[i - num_node_types];
         payload_allocations = payload_fail_at = 0;
-        markdown_core_node *node = markdown_core_node_new_with_mem(type, &payload_test_mem);
+        markdown_core_node *node = markdown_core_node_new_with_mem(type, markdown_core_get_default_mem_allocator());
         OK(runner, node != NULL, "type %u constructs with its default fields", (unsigned)type);
         size_t total = payload_allocations;
         INT_EQ(runner, total, 1, "node and initial typed record have one allocation for every kind");
@@ -2139,7 +2181,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
         for (size_t fail = 1; fail <= total; fail++) {
             payload_allocations = 0;
             payload_fail_at = fail;
-            node = markdown_core_node_new_with_mem(type, &payload_test_mem);
+            node = markdown_core_node_new_with_mem(type, markdown_core_get_default_mem_allocator());
             OK(runner, node == NULL, "type %u never publishes a partial payload", (unsigned)type);
             if (node) {
                 markdown_core_node_free(node);
@@ -2148,8 +2190,10 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
         }
     }
     payload_fail_at = 0;
-    markdown_core_node *parent = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &payload_test_mem);
-    markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem);
+    markdown_core_node *parent =
+        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, markdown_core_get_default_mem_allocator());
+    markdown_core_node *text =
+        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, markdown_core_get_default_mem_allocator());
     OK(runner, markdown_core_node_append_child(parent, text), "text joins its parent");
     OK(runner, markdown_core_node_set_literal(text, "retained"), "text owns a literal");
     markdown_core_chunk *original_payload = text->as.literal;
@@ -2185,7 +2229,8 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
        markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_STRONG) == MARKDOWN_CORE_NODE_SET_KIND_OK && !text->as.data,
        "a fieldless kind releases the old payload without creating an empty record");
 
-    markdown_core_node *empty = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_EMPHASIS, &payload_test_mem);
+    markdown_core_node *empty =
+        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_EMPHASIS, markdown_core_get_default_mem_allocator());
     OK(runner, markdown_core_node_append_child(parent, empty), "a fieldless node joins the parent");
     INT_EQ(runner, markdown_core_node_set_kind(empty, MARKDOWN_CORE_NODE_CROSS_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
            "a node constructed without fields acquires an owned replacement record");
@@ -2197,12 +2242,16 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
            !destination.anchor.has_value && !label.has_value && markdown_core_node_dimensions(empty) == NULL,
        "converted cross link establishes ordinary empty and absent defaults");
 
-    markdown_core_node *cite = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITE, &payload_test_mem);
-    markdown_core_node *item = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITATION, &payload_test_mem);
-    markdown_core_node *prefix = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem);
+    markdown_core_node *cite =
+        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITE, markdown_core_get_default_mem_allocator());
+    markdown_core_node *item =
+        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITATION, markdown_core_get_default_mem_allocator());
+    markdown_core_node *prefix =
+        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, markdown_core_get_default_mem_allocator());
     OK(runner, markdown_core_node_append_child(parent, cite), "cite joins its parent");
     cite->as.cite->citations = item;
-    item->as.citation->prefix = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &payload_test_mem);
+    item->as.citation->prefix =
+        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, markdown_core_get_default_mem_allocator());
     markdown_core_node_append_child(item->as.citation->prefix, prefix);
     OK(runner, markdown_core_node_set_literal(prefix, "prefix"), "citation owns an affix subtree");
     payload_fail_at = payload_allocations + 1;
@@ -2217,6 +2266,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
            "kind conversion releases the old owned subtrees");
     markdown_core_node_free(parent);
     INT_EQ(runner, payload_live, 0, "conversion and destruction release payloads, fields, and affixes exactly once");
+    payload_probe_disarm();
 }
 
 /* Element fields use the same nonrecursive ownership walk as typed fields.
@@ -2263,21 +2313,24 @@ static const markdown_core_element OWNED_FIELD_PROBE = {
 };
 
 static void element_owned_field_lifecycle(test_batch_runner *runner) {
+    payload_probe_arm();
     payload_allocations = payload_fail_at = payload_live = 0;
     owned_field_releases = owned_field_uncleared = 0;
     markdown_core_node *root = NULL;
     const size_t depth = 4096;
     for (size_t i = 0; i < depth; i++) {
-        markdown_core_node *owner = markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_PARAGRAPH,
-                                                                            &payload_test_mem, &OWNED_FIELD_PROBE);
+        markdown_core_node *owner = markdown_core_node_new_with_mem_and_ext(
+            MARKDOWN_CORE_NODE_PARAGRAPH, markdown_core_get_default_mem_allocator(), &OWNED_FIELD_PROBE);
         owned_field_probe *fields = owner->opaque;
         fields->first = root;
-        fields->second = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem);
-        markdown_core_node_append_child(owner,
-                                        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem));
+        fields->second =
+            markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, markdown_core_get_default_mem_allocator());
+        markdown_core_node_append_child(
+            owner, markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, markdown_core_get_default_mem_allocator()));
         root = owner;
     }
-    markdown_core_node *document = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, &payload_test_mem);
+    markdown_core_node *document =
+        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, markdown_core_get_default_mem_allocator());
     markdown_core_node_append_child(document, root);
     owned_field_probe *retained = root->opaque;
     markdown_core_node *retained_first = retained->first;
@@ -2294,7 +2347,8 @@ static void element_owned_field_lifecycle(test_batch_runner *runner) {
     INT_EQ(runner, payload_live, 0, "deep owned fields and ordinary children release every allocation");
     payload_fail_at = 0;
     const char *source = ":a[label]\n";
-    document = markdown_core_parse_document_with_mem(source, strlen(source), &payload_test_mem, NULL, NULL);
+    document = markdown_core_parse_document_with_mem(source, strlen(source), markdown_core_get_default_mem_allocator(),
+                                                     NULL, NULL);
     OK(runner, document != NULL, "directive with an owned label parses using the tracked allocator");
     if (document) {
         markdown_core_node *directive = document->first_child->first_child;
@@ -2310,6 +2364,7 @@ static void element_owned_field_lifecycle(test_batch_runner *runner) {
         INT_EQ(runner, payload_live, 0, "a converted directive releases fields hidden by its new kind");
         payload_fail_at = 0;
     }
+    payload_probe_disarm();
 }
 
 typedef struct {
@@ -2356,6 +2411,7 @@ static bool configure_conversion_policy(markdown_core_parser *parser, void *cont
 }
 
 static void kind_conversion_containment(test_batch_runner *runner) {
+    payload_probe_arm();
     static const struct {
         markdown_core_node_type rejected_kind, retained_kind;
         const char *source, *retained_literal;
@@ -2377,7 +2433,7 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         {MARKDOWN_CORE_NODE_SUBSCRIPT, MARKDOWN_CORE_NODE_PARAGRAPH, "!~text~\n", "!~text~"},
 
     };
-    markdown_core_mem *mem = &payload_test_mem;
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     payload_fail_at = 0;
     for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
         size_t live_before = payload_live;
@@ -2411,18 +2467,8 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         markdown_core_node_free(root);
         INT_EQ(runner, payload_live, live_before, "rejected containers release every allocation");
     }
+    payload_probe_disarm();
 }
-
-static void *marker_to_free;
-static int marker_free_count;
-static void marker_test_free(void *pointer) {
-    if (pointer == marker_to_free && pointer != NULL) {
-        marker_free_count++;
-        marker_to_free = NULL;
-    }
-    free(pointer);
-}
-static markdown_core_mem marker_test_mem = {calloc, realloc, marker_test_free};
 
 /* A byte offset and an indentation column are different coordinates. Splitting
  * byte advances anywhere, including inside a scalar, must compose identically;
@@ -2539,9 +2585,10 @@ static void task_marker_ownership(test_batch_runner *runner) {
     markdown_core_dump_free(dump);
     markdown_core_document_free(document);
 
-    item = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LIST_ITEM, &marker_test_mem);
+    item = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LIST_ITEM, markdown_core_get_default_mem_allocator());
     markdown_core_chunk bytes = markdown_core_chunk_literal("🚀");
-    OK(runner, markdown_core_chunk_to_cstr(&marker_test_mem, &bytes) != NULL, "custom marker allocates");
+    OK(runner, markdown_core_chunk_to_cstr(markdown_core_get_default_mem_allocator(), &bytes) != NULL,
+       "custom marker allocates");
     item->as.list->task_marker = markdown_core_optional_chunk_present(bytes);
     marker_to_free = bytes.data;
     marker_free_count = 0;
@@ -2552,15 +2599,21 @@ static void task_marker_ownership(test_batch_runner *runner) {
 /* Specimen syntax lands with P9b. Build its reserved native values directly
  * to test the shared document ownership and failure boundary independently. */
 static void specimen_values(test_batch_runner *runner) {
-    markdown_core_node *root = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, &marker_test_mem);
-    markdown_core_node *first = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_SPECIMEN, &marker_test_mem);
-    markdown_core_node *anonymous = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_SPECIMEN, &marker_test_mem);
-    markdown_core_node *body = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &marker_test_mem);
-    markdown_core_node *footnote = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_FOOTNOTE, &marker_test_mem);
+    markdown_core_node *root =
+        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, markdown_core_get_default_mem_allocator());
+    markdown_core_node *first =
+        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_SPECIMEN, markdown_core_get_default_mem_allocator());
+    markdown_core_node *anonymous =
+        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_SPECIMEN, markdown_core_get_default_mem_allocator());
+    markdown_core_node *body =
+        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, markdown_core_get_default_mem_allocator());
+    markdown_core_node *footnote =
+        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_FOOTNOTE, markdown_core_get_default_mem_allocator());
     markdown_core_chunk bytes = markdown_core_chunk_literal("étude");
     markdown_core_optional_string id;
     markdown_core_optional_i64 start;
-    OK(runner, markdown_core_chunk_to_cstr(&marker_test_mem, &bytes) != NULL, "specimen id allocates");
+    OK(runner, markdown_core_chunk_to_cstr(markdown_core_get_default_mem_allocator(), &bytes) != NULL,
+       "specimen id allocates");
     first->as.specimen->id = markdown_core_optional_chunk_present(bytes);
     first->as.specimen->start = 5;
     first->as.specimen->has_start = true;
@@ -2584,9 +2637,11 @@ static void specimen_values(test_batch_runner *runner) {
            !markdown_core_specimen_properties(value, NULL, &start) &&
            !markdown_core_specimen_properties(value, &id, NULL) && markdown_core_node_document_specimens(body) == NULL,
        "typed accessors reject missing values and incorrect owners");
-    markdown_core_node *citation = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITATION, &marker_test_mem);
+    markdown_core_node *citation =
+        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITATION, markdown_core_get_default_mem_allocator());
     citation->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_SPECIMEN;
-    OK(runner, markdown_core_chunk_set_cstr(&marker_test_mem, &citation->as.citation->value, "étude"),
+    OK(runner,
+       markdown_core_chunk_set_cstr(markdown_core_get_default_mem_allocator(), &citation->as.citation->value, "étude"),
        "specimen reference owns its label");
     markdown_core_referent referent;
     OK(runner,
