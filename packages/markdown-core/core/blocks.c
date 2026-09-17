@@ -1519,46 +1519,32 @@ static bool S_lookahead_reserve_chain(markdown_core_parser *parser, int depth) {
     return true;
 }
 
-/* The cache entry of a source line, growing the cache to reach it. Lines are
- * numbered from the first line any lookahead visited: candidates come in
- * source order and each begins at the line after its own, so no lookahead
- * asks about an earlier line. NULL when the cache could not grow, with the
- * parse marked lost. */
-markdown_core_lookahead_entry *markdown_core_parser_lookahead_entry(markdown_core_parser *parser, int line) {
-    int index;
+/* THE GROWTH HALF of `markdown_core_parser_lookahead_entry`, which is the rare
+ * one: the cache doubles, so this runs a handful of times per document. The
+ * index-into-the-array half is a `static inline` in parser.h, where the note
+ * on why the two are split lives. NULL when the cache could not grow, with
+ * the parse marked lost. */
+markdown_core_lookahead_entry *markdown_core_parser_lookahead_entry_grow(markdown_core_parser *parser, int index) {
+    int capacity = parser->lookahead_entries_alloc ? parser->lookahead_entries_alloc : 64;
+    markdown_core_lookahead_entry *entries;
 
-    if (parser->lookahead_base_line == 0) {
-        parser->lookahead_base_line = line;
+    while (capacity <= index) {
+        capacity = capacity > INT_MAX / 2 ? INT_MAX : capacity * 2;
     }
-    index = line - parser->lookahead_base_line;
-    if (index < 0) {
-        /* Unreachable by the ordering argument above; a line before the base
-         * is matched without the cache rather than through it. */
+    if ((size_t)capacity > SIZE_MAX / sizeof(*entries)) {
+        parser->oom = true;
         return NULL;
     }
-    if (index >= parser->lookahead_entries_alloc) {
-        int capacity = parser->lookahead_entries_alloc ? parser->lookahead_entries_alloc : 64;
-        markdown_core_lookahead_entry *entries;
-        while (capacity <= index) {
-            capacity = capacity > INT_MAX / 2 ? INT_MAX : capacity * 2;
-        }
-        if ((size_t)capacity > SIZE_MAX / sizeof(*entries)) {
-            parser->oom = true;
-            return NULL;
-        }
-        entries = markdown_core_realloc(parser->lookahead_entries, (size_t)capacity * sizeof(*entries));
-        if (!entries) {
-            parser->oom = true;
-            return NULL;
-        }
-        memset(entries + parser->lookahead_entries_alloc, 0,
-               (size_t)(capacity - parser->lookahead_entries_alloc) * sizeof(*entries));
-        parser->lookahead_entries = entries;
-        parser->lookahead_entries_alloc = capacity;
+    entries = markdown_core_realloc(parser->lookahead_entries, (size_t)capacity * sizeof(*entries));
+    if (!entries) {
+        parser->oom = true;
+        return NULL;
     }
-    if (parser->lookahead_entries_used <= index) {
-        parser->lookahead_entries_used = index + 1;
-    }
+    memset(entries + parser->lookahead_entries_alloc, 0,
+           (size_t)(capacity - parser->lookahead_entries_alloc) * sizeof(*entries));
+    parser->lookahead_entries = entries;
+    parser->lookahead_entries_alloc = capacity;
+    parser->lookahead_entries_used = index + 1;
     return &parser->lookahead_entries[index];
 }
 

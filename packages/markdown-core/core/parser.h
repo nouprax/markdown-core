@@ -356,7 +356,44 @@ typedef struct markdown_core_lookahead_entry {
     int run_end;
     const unsigned char *run_end_cursor;
 } markdown_core_lookahead_entry;
-markdown_core_lookahead_entry *markdown_core_parser_lookahead_entry(markdown_core_parser *parser, int line);
+/* ONE LINE'S ENTRY: an index into an array, where the compiler can see it.
+ *
+ * Lines are numbered from the first line any lookahead visited: candidates
+ * come in source order and each begins at the line after its own, so no
+ * lookahead asks about an earlier line.
+ *
+ * The body is a subtraction, a bounds test and an address. It was an ordinary
+ * out-of-line function, asked once per line visit from two translation units
+ * -- about 10,600 times on `block-hr` alone, at 147 Ir a call inclusive, of
+ * which 27 Ir was the prologue and epilogue of a call that computes an array
+ * subscript.
+ *
+ * The growth path is what kept it out of line, and it is the rare one: a
+ * realloc that doubles, so it runs a handful of times per document. It stays
+ * out of line, and the index path does not pay for it. */
+markdown_core_lookahead_entry *markdown_core_parser_lookahead_entry_grow(markdown_core_parser *parser, int index);
+
+static inline markdown_core_lookahead_entry *markdown_core_parser_lookahead_entry(markdown_core_parser *parser,
+                                                                                  int line) {
+    int index;
+
+    if (parser->lookahead_base_line == 0) {
+        parser->lookahead_base_line = line;
+    }
+    index = line - parser->lookahead_base_line;
+    if (index < 0) {
+        /* Unreachable by the ordering argument above; a line before the base
+         * is matched without the cache rather than through it. */
+        return NULL;
+    }
+    if (index >= parser->lookahead_entries_alloc) {
+        return markdown_core_parser_lookahead_entry_grow(parser, index);
+    }
+    if (parser->lookahead_entries_used <= index) {
+        parser->lookahead_entries_used = index + 1;
+    }
+    return &parser->lookahead_entries[index];
+}
 
 /* A NON-CONSUMING LOOKAHEAD over the lines after the one being processed.
  *
