@@ -117,9 +117,10 @@ Citation's prefix/suffix collections. Source trimming only changes raw edge
 whitespace; nested markup keeps its authored scope. Completion, consolidation,
 validation and element postprocessing traverse all owned inline roots using
 one explicit stack. Field order and inherited script depth are retained, and a
-phase may replace its root only after its nested fields finish. Definition
-families start independent contexts. Disposal splices the same owned roots into
-the existing iterative node release path.
+phase rewrites each root in place: a field root is the node its owner put there
+and no phase substitutes another for it. Definition families start independent
+contexts. Disposal splices the same owned roots into the existing iterative
+node release path.
 
 Bare keys and balanced braced keys use a single lexical operation. Braced
 candidates share a lazy source index with the ordinary code and HTML token
