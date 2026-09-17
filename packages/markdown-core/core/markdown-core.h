@@ -24,6 +24,12 @@ extern "C" {
 #define MARKDOWN_CORE_NODE_TYPE_MASK (0xc000)
 #define MARKDOWN_CORE_NODE_VALUE_MASK (0x3fff)
 
+/* One past the largest ordinal either class uses, so `kind & VALUE_MASK` is a
+ * dense index into a per-class table. Raising a class's last ordinal without
+ * raising this silently drops that kind out of every such table -- and out of
+ * nothing else, which is why the tables bounds-check rather than assume. */
+#define MARKDOWN_CORE_NODE_KIND_COUNT (0x0018)
+
 typedef enum {
     /* Error status */
     MARKDOWN_CORE_NODE_NONE = 0x0000,

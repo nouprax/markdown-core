@@ -41,6 +41,22 @@ extern const unsigned char markdown_core_strbuf__initbuf[];
 MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_init(markdown_core_strbuf *buf, bufsize_t initial_size);
 
+/* THE EMPTY BUFFER, over storage that is ALREADY ZERO.
+ *
+ * `markdown_core_strbuf_init` writes four fields. Over storage that came from
+ * `markdown_core_alloc` -- which is `calloc` -- three of them already hold the
+ * value it writes, so the call spends its cost re-establishing zero. The one
+ * field a zeroed buffer does not already satisfy is `ptr`: this type's
+ * invariant is that `ptr` always addresses readable bytes, the shared
+ * one-byte sentinel while `asize == 0`, and a zeroed `ptr` is NULL.
+ *
+ * Only for storage the caller knows is zeroed. Anything else -- a stack
+ * buffer, a reused one, one that has held bytes -- wants
+ * `markdown_core_strbuf_init`, which does not assume. */
+static inline void markdown_core_strbuf_init_zeroed(markdown_core_strbuf *buf) {
+    buf->ptr = (unsigned char *)markdown_core_strbuf__initbuf;
+}
+
 /**
  * Grow the buffer to hold at least `target_size` bytes.
  */
