@@ -148,14 +148,62 @@ markdown_core_node *markdown_core_text_parse(markdown_core_parser *parser, markd
     bufsize_t startpos;
     /* Disjoint ordinary text slices alone contribute whitespace barriers.
      * Escapes, entities, and opaque tokens have their own token owners. */
-    for (bufsize_t at = inline_state->pos; at < endpos;) {
-        int32_t scalar = 0;
-        int width = markdown_core_utf8proc_iterate(inline_state->input.data + at, endpos - at, &scalar);
+    /* THE SLICE'S WHITESPACE BOUNDARY, which is ONE position.
+     *
+     * `markdown_core_inline_push_boundary` OVERWRITES when the last delimiter
+     * is already a boundary (core/inlines.c), and nothing else is pushed while
+     * this runs -- so a pass that pushes on every space leaves exactly one
+     * entry behind, at the position just past the LAST whitespace character in
+     * [pos, endpos). Decoding every byte to find it walks the whole slice for
+     * an answer that depends only on the slice's tail.
+     *
+     * Valid UTF-8 is a caller precondition (markdown_core.h), so the encoding
+     * is self-synchronising here: stepping back over continuation bytes
+     * (0x80-0xBF) lands on the lead byte of the preceding character, and that
+     * is the same segmentation the forward pass builds from `pos`. Walking
+     * back therefore visits the slice's characters in reverse and stops at the
+     * last whitespace, which is the answer.
+     *
+     * The DECODER is entered only where the character could be whitespace at
+     * all. Every non-ASCII member of the set `markdown_core_utf8proc_is_space`
+     * matches -- U+00A0, U+1680, U+2000-200A, U+202F, U+205F, U+3000 -- leads
+     * with 0xC2, 0xE1, 0xE2 or 0xE3. CJK starts at 0xE4 and the astral planes
+     * at 0xF0, so those are walked back on byte tests alone.
+     *
+     * The `lead > pos` bound keeps a malformed run of continuation bytes in
+     * range. What such input PARSES to is not defined -- the header says Markdown
+     * Core neither validates nor repairs -- but it must still not read out of
+     * the slice. */
+    bufsize_t boundary = -1;
+    for (bufsize_t i = endpos; i > inline_state->pos;) {
+        unsigned char byte = inline_state->input.data[i - 1];
         parser->whitespace_work++;
-        if (markdown_core_utf8proc_is_space(scalar)) {
-            markdown_core_inline_push_boundary(inline_state, at + width);
+        if (byte < 0x80) {
+            /* The ASCII members of that same set; the rest are above 128. */
+            if (byte == 9 || byte == 10 || byte == 12 || byte == 13 || byte == 32) {
+                boundary = i;
+                break;
+            }
+            i--;
+            continue;
         }
-        at += width > 0 ? width : 1;
+        bufsize_t lead = i - 1;
+        while (lead > inline_state->pos && (inline_state->input.data[lead] & 0xC0) == 0x80) {
+            lead--;
+        }
+        unsigned char first = inline_state->input.data[lead];
+        if (first == 0xC2 || (first >= 0xE1 && first <= 0xE3)) {
+            int32_t scalar = 0;
+            int width = markdown_core_utf8proc_iterate(inline_state->input.data + lead, endpos - lead, &scalar);
+            if (width > 0 && markdown_core_utf8proc_is_space(scalar)) {
+                boundary = lead + width;
+                break;
+            }
+        }
+        i = lead;
+    }
+    if (boundary >= 0) {
+        markdown_core_inline_push_boundary(inline_state, boundary);
     }
     /* Text runs are disjoint, so recording separators costs at most one
      * extra visit per byte, regardless of bracket nesting or digit-run
