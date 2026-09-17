@@ -529,6 +529,7 @@ static markdown_core_node *make_formula_node(const markdown_core_element *elemen
                                              bufsize_t literal_len) {
     markdown_core_node *node =
         markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_FORMULA, parser->mem, element);
+    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_FORMULA);
     if (!node) {
         parser->oom = true;
         return NULL;

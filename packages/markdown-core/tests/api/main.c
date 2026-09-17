@@ -5871,13 +5871,16 @@ static void definition_open_gate_admits_only_possible_terms(test_batch_runner *r
 
 /* A postprocess pass may free any node it reaches, and a Cite OWNS its
  * citations' prefix and suffix roots -- freeing it frees them. So the set of
- * owned roots is not stable across passes, and a pass that enumerates them
- * must enumerate them ITSELF rather than reuse what an earlier pass found.
+ * owned roots is not stable across passes, and no list of them survives a pass
+ * that is allowed to run.
  *
- * This ran clean while the finish stage walked per pass, crashed under ASan
- * the moment the walk recorded the roots for later passes to replay, and is
- * here so that the next attempt at that optimization trips on a test. The
- * second pass only reads `root->kind`; that read is the use-after-free. */
+ * This crashed under ASan the moment the finish stage recorded the roots for
+ * later passes to replay, and is here so that the next attempt trips on a test
+ * rather than on a user. The finish stage still enumerates the roots once, but
+ * it never holds them: every phase a root needs runs at the single point where
+ * that root's iteration completes, which is after every owned root nested
+ * inside it is finished and popped. The second pass only reads `root->kind`;
+ * under a replay that read is the use-after-free. */
 static int postprocess_deletes_cites(const markdown_core_element *element, markdown_core_parser *parser,
                                      markdown_core_node *root) {
     (void)element;
@@ -5919,7 +5922,7 @@ static bool attach_delete_then_read(markdown_core_parser *parser, void *context)
            markdown_core_parser_attach_element(parser, &reader);
 }
 
-static void owned_roots_are_reenumerated_per_pass(test_batch_runner *runner) {
+static void a_pass_may_free_the_roots_a_later_pass_reads(test_batch_runner *runner) {
     static const char source[] = "See [pre text @doe99 post text] and [more @smith2020 tail].\n";
     roots_read_after_delete = 0;
     markdown_core_node *doc = markdown_core_parse_document_with_mem(
@@ -5928,6 +5931,67 @@ static void owned_roots_are_reenumerated_per_pass(test_batch_runner *runner) {
     INT_EQ(runner, count_kind(doc, MARKDOWN_CORE_NODE_CITE), 0, "the cites are gone");
     OK(runner, roots_read_after_delete > 0, "the following pass still received roots to read: %d",
        roots_read_after_delete);
+    markdown_core_node_free(doc);
+}
+
+/* ONE ENUMERATION, NOT ONE PER PHASE.
+ *
+ * Finding the owned roots is a full traversal of the document, and it used to
+ * be paid again for every postprocess pass. Nothing in the public surface
+ * counts traversals, but the ORDER the passes observe says which shape ran:
+ * a traversal per pass shows every root to pass A before pass B sees any,
+ * while one traversal shows each root to A and then to B before moving on.
+ *
+ * The document has three roots -- the content tree, a definition term and a
+ * callout title -- so `AAABBB` is the old shape and `ABABAB` the fused one.
+ * Restoring the per-phase enumeration turns this test red with `AAABBB`. */
+static char phase_order[64];
+static size_t phase_order_len;
+
+static int postprocess_records_a(const markdown_core_element *element, markdown_core_parser *parser,
+                                 markdown_core_node *root) {
+    (void)element;
+    (void)parser;
+    (void)root;
+    if (phase_order_len + 1 < sizeof(phase_order)) {
+        phase_order[phase_order_len++] = 'A';
+    }
+    return 1;
+}
+
+static int postprocess_records_b(const markdown_core_element *element, markdown_core_parser *parser,
+                                 markdown_core_node *root) {
+    (void)element;
+    (void)parser;
+    (void)root;
+    if (phase_order_len + 1 < sizeof(phase_order)) {
+        phase_order[phase_order_len++] = 'B';
+    }
+    return 1;
+}
+
+static bool attach_two_recorders(markdown_core_parser *parser, void *context) {
+    static const markdown_core_element first = {.name = "phase-a", .postprocess_func = postprocess_records_a};
+    static const markdown_core_element second = {.name = "phase-b", .postprocess_func = postprocess_records_b};
+    (void)context;
+    return markdown_core_parser_attach_element(parser, &first) && markdown_core_parser_attach_element(parser, &second);
+}
+
+static void finish_stage_runs_every_phase_at_each_root(test_batch_runner *runner) {
+    static const char source[] = "term\n: body\n\n> [!note] title\n> body\n";
+    phase_order_len = 0;
+    memset(phase_order, 0, sizeof(phase_order));
+    markdown_core_node *doc = markdown_core_parse_document_with_mem(
+        source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(), attach_two_recorders, NULL);
+    OK(runner, doc != NULL, "the document with two owned roots parses");
+    OK(runner, phase_order_len >= 6, "both passes ran over every root: %zu visits", phase_order_len);
+    /* Every root sees A immediately followed by B: no pass ran ahead of the
+     * other over the whole document, so there was one enumeration. */
+    int interleaved = phase_order_len % 2 == 0;
+    for (size_t i = 0; interleaved && i < phase_order_len; i += 2) {
+        interleaved = phase_order[i] == 'A' && phase_order[i + 1] == 'B';
+    }
+    OK(runner, interleaved, "every root ran both phases before the next root: %s", phase_order);
     markdown_core_node_free(doc);
 }
 
@@ -6236,7 +6300,8 @@ int main(void) {
     multiline_boundary_search_builds_no_geometry(runner);
     table_open_gate_admits_only_possible_tables(runner);
     definition_open_gate_admits_only_possible_terms(runner);
-    owned_roots_are_reenumerated_per_pass(runner);
+    a_pass_may_free_the_roots_a_later_pass_reads(runner);
+    finish_stage_runs_every_phase_at_each_root(runner);
     postprocess_rewrites_every_owned_tree(runner);
     standalone_formula_as_owned_root(runner);
     simple_table_body_boundaries(runner);

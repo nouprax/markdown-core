@@ -65,10 +65,11 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser);
 
 static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, bufsize_t bytes);
 
-static markdown_core_node *make_block(markdown_core_mem *mem, markdown_core_node_type tag, int start_line,
-                                      int start_column) {
+static markdown_core_node *make_block(markdown_core_parser *parser, markdown_core_mem *mem, markdown_core_node_type tag,
+                                      int start_line, int start_column) {
     markdown_core_node *e;
 
+    markdown_core_parser_note_kind(parser, tag);
     e = markdown_core_node_new_with_mem(tag, mem);
     if (!e) {
         return NULL;
@@ -83,8 +84,8 @@ static markdown_core_node *make_block(markdown_core_mem *mem, markdown_core_node
 }
 
 // Create a root document node.
-static markdown_core_node *make_document(markdown_core_mem *mem) {
-    markdown_core_node *e = make_block(mem, MARKDOWN_CORE_NODE_DOCUMENT, 1, 1);
+static markdown_core_node *make_document(markdown_core_parser *parser, markdown_core_mem *mem) {
+    markdown_core_node *e = make_block(parser, mem, MARKDOWN_CORE_NODE_DOCUMENT, 1, 1);
     return e;
 }
 
@@ -179,7 +180,7 @@ static markdown_core_parser *S_parser_new(markdown_core_mem *mem) {
     markdown_core_strbuf_init(parser->mem, &parser->line_scratch, 0);
     markdown_core_strbuf_init(parser->mem, &parser->lookahead_last_line, 0);
 
-    document = make_document(parser->mem);
+    document = make_document(parser, parser->mem);
     parser->document_structure = markdown_core_structure_for_kind(MARKDOWN_CORE_NODE_DOCUMENT);
     parser->document_structure->init_document(parser);
     parser->root = document;
@@ -686,7 +687,7 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
     parent = markdown_core_block_parent_for(parser, parent, block_type);
 
     markdown_core_node *child =
-        make_block(parser->mem, block_type, parser->line_number,
+        make_block(parser, parser->mem, block_type, parser->line_number,
                    markdown_core_parser_source_column(parser, parser->line_number, start_column));
     if (!child || child->content.oom) {
         parser->oom = true;
@@ -2423,22 +2424,46 @@ void markdown_core_block_own_definitions(markdown_core_definition_collection *co
     }
 }
 
-static int S_consolidate_tree(markdown_core_parser *parser, markdown_core_node *root, void *context) {
-    (void)context;
-    return markdown_core_consolidate_text_nodes_with_parser(parser, root);
-}
+/* THE FINISH STAGE IS ONE ENUMERATION, NOT ONE PER PHASE.
+ *
+ * Finding the owned roots is a full traversal of every node in the document,
+ * and it used to be paid once for consolidation and again for each postprocess
+ * pass. It is paid once here: every phase a root needs runs at the single
+ * point where that root's iteration completes.
+ *
+ * That point is what makes this safe, and it is why caching the root list and
+ * replaying it per pass was not: `walk_owned_trees` finishes a root only after
+ * every owned root nested inside it is already finished and popped, so nothing
+ * still on the stack lives inside the tree a phase is rewriting. A pass may
+ * free an owned root -- a Cite owns its citations' prefix and suffix -- and
+ * there is no later replay to hand that freed root to.
+ *
+ * The pass list is chosen before the enumeration starts, which it can be only
+ * because the record it reads is written where kinds are produced rather than
+ * gathered by the consolidation walk. */
+typedef struct {
+    const markdown_core_element **passes;
+    size_t pass_count;
+} finish_phases;
 
+static int S_finish_tree(markdown_core_parser *parser, markdown_core_node *root, void *context) {
+    const finish_phases *phases = (const finish_phases *)context;
+
+    if (!markdown_core_consolidate_text_nodes_with_parser(parser, root)) {
+        return 0;
+    }
 #if MARKDOWN_CORE_DEBUG_NODES
-static int S_check_tree(markdown_core_parser *parser, markdown_core_node *root, void *context) {
-    (void)parser;
-    (void)context;
-    return markdown_core_node_check(root, stderr) == 0;
-}
+    if (markdown_core_node_check(root, stderr) != 0) {
+        abort();
+    }
 #endif
-
-static int S_postprocess_tree(markdown_core_parser *parser, markdown_core_node *root, void *context) {
-    const markdown_core_element *element = (const markdown_core_element *)context;
-    return element->postprocess_func(element, parser, root) && !parser->oom;
+    for (size_t i = 0; i < phases->pass_count; i++) {
+        const markdown_core_element *element = phases->passes[i];
+        if (!element->postprocess_func(element, parser, root) || parser->oom) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
@@ -2467,46 +2492,55 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         goto failed;
     }
 
-    if (!S_apply_tree_phase(parser, parser->root, S_consolidate_tree, NULL)) {
-        parser->oom = true;
+    /* Choose the passes first, then walk once.
+     *
+     * An empty declaration means the pass always runs, so an element that says
+     * nothing keeps the behaviour it had. One that declares its kinds is
+     * skipped for a document that produced none of them, and skipping costs
+     * the whole pass: its walk over every root the enumeration finds.
+     *
+     * The declared kinds are projected here rather than stored as a bit set on
+     * the descriptor, so each kind keeps the namespace that tells a block from
+     * an inline; the list is a handful of entries per element, read once per
+     * parse.
+     *
+     * `kinds_created` OVER-APPROXIMATES: a node the parse creates and then
+     * discards -- the text a formula consumes -- leaves its bit set although
+     * the finished tree holds no such node. It can only make the gate skip
+     * FEWER passes, never miss one, because a kind in the finished tree was
+     * necessarily created; and a pass that runs over a tree holding none of
+     * its declared kinds finds nothing to do. Exactness is not available here:
+     * it would need the parse to observe removal too, and `node_free` takes a
+     * node and no parser precisely because a node outlives the parse. */
+    finish_phases phases = {NULL, 0};
+    if (parser->element_count) {
+        phases.passes = parser->mem->calloc(parser->element_count, sizeof(*phases.passes));
+        if (!phases.passes) {
+            parser->oom = true;
+            goto failed;
+        }
     }
-    if (parser->oom) {
-        goto failed;
-    }
-
-#if MARKDOWN_CORE_DEBUG_NODES
-    if (!S_apply_tree_phase(parser, parser->root, S_check_tree, NULL)) {
-        abort();
-    }
-#endif
-
-    for (size_t i = 0; i < parser->element_count && !parser->oom; i++) {
+    for (size_t i = 0; i < parser->element_count; i++) {
         const markdown_core_element *element = parser->elements[i];
         if (!element->postprocess_func) {
             continue;
         }
-        /* An empty declaration means the pass always runs, so an element that
-         * says nothing keeps the behaviour it had. One that declares its kinds
-         * is skipped for a document that produced none of them, and skipping
-         * costs the whole pass: the root enumeration AND the walk inside it.
-         *
-         * The declared kinds are projected here rather than stored as a bit set
-         * on the descriptor, so each kind keeps the namespace that tells a
-         * block from an inline; the list is a handful of entries per element,
-         * read once per parse. */
         if (element->postprocess_kinds) {
             markdown_core_node_kind_set declared = {0, 0};
             for (const markdown_core_node_type *kind = element->postprocess_kinds; *kind; kind++) {
                 markdown_core_node_kind_set_add(&declared, *kind);
             }
-            if (!markdown_core_node_kind_set_intersects(&declared, &parser->kinds_seen)) {
+            if (!markdown_core_node_kind_set_intersects(&declared, &parser->kinds_created)) {
                 continue;
             }
         }
-        if (!S_apply_tree_phase(parser, parser->root, S_postprocess_tree, (void *)element)) {
-            parser->oom = true;
-        }
+        phases.passes[phases.pass_count++] = element;
     }
+
+    if (!S_apply_tree_phase(parser, parser->root, S_finish_tree, &phases)) {
+        parser->oom = true;
+    }
+    parser->mem->free((void *)phases.passes);
     if (parser->oom) {
         goto failed;
     }

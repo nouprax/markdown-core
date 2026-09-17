@@ -248,7 +248,18 @@ struct markdown_core_parser {
     /* Every node kind this parse produced, accumulated by the consolidation
      * walk that already visits every node just before the postprocess passes
      * run, so the record costs no traversal of its own. */
-    markdown_core_node_kind_set kinds_seen;
+    /* WHICH KINDS THIS PARSE PRODUCED, recorded where they are produced.
+     *
+     * Every node creation and every `set_kind` that a parse performs writes
+     * here, so the postprocess gate can be evaluated before the finish stage
+     * walks anything. Gathering it by a walk instead is what forced the finish
+     * stage to traverse the document twice: the gate could not be read until
+     * the walk that produced it had finished. See the gate in `S_finish_parse`
+     * for what the set over-approximates and why that is sound.
+     *
+     * Every production creation site goes through `markdown_core_parser_note_kind`;
+     * `scripts/audit-parser-kind-record.mjs` holds that. */
+    markdown_core_node_kind_set kinds_created;
     markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
      * the special/emphasis-skip characters of the attached inline elements.
@@ -267,6 +278,14 @@ struct markdown_core_parser {
     bufsize_t line_marks_size;
     bufsize_t line_marks_alloc;
 };
+
+/* Record a kind at the moment the parse produces it. The one way production
+ * code writes `kinds_created`; see that field. */
+static inline void markdown_core_parser_note_kind(markdown_core_parser *parser, markdown_core_node_type kind) {
+    if (parser) {
+        markdown_core_node_kind_set_add(&parser->kinds_created, kind);
+    }
+}
 
 /* ONE LINE OF THE BLOCK-START LOOKAHEAD'S RESUME CACHE.
  *

@@ -84,6 +84,8 @@ markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state
                                                       markdown_core_node_type t, int start_column, int end_column,
                                                       markdown_core_chunk s);
 markdown_core_node *markdown_core_inline_make_simple(markdown_core_mem *mem, markdown_core_node_type t);
+markdown_core_node *markdown_core_inline_make_simple_noted(markdown_core_inline_state *inline_state,
+                                                           markdown_core_node_type t);
 markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_inline_state *inline_state,
                                                                 markdown_core_node_type t);
 void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number,

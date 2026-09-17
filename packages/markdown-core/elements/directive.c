@@ -350,6 +350,7 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
         int label_start_column = start_column + (int)parsed->label_start;
         int label_end_column = label_start_column + (int)parsed->label_len + 1;
 
+        markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL);
         if (!attach_label_node(element, node, data + parsed->label_start, parsed->label_len, start_line,
                                label_start_column, label_end_column)) {
             return 0;
@@ -364,6 +365,7 @@ static markdown_core_node *make_directive_node(const markdown_core_element *elem
                                                int start_column, int end_line, int end_column) {
     markdown_core_node *node =
         markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_DIRECTIVE, parser->mem, element);
+    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_DIRECTIVE);
     node_directive *directive;
 
     if (!node) {
@@ -481,6 +483,7 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
         int label_line = start_line;
         int label_column = start_column + (int)(label_open - offset);
         markdown_core_inline_state_set_offset(inline_state, (int)(label_start + label_len + 1));
+        markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL);
         label_node = make_label_node(element, parser->mem, chunk->data + label_start, label_len, label_line,
                                      label_column, markdown_core_inline_state_get_column(inline_state) - 1);
         if (!label_node) {

@@ -212,6 +212,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     // WITHOUT setting parser->oom, so the document comes back short and the
     // failure bit says everything was fine.
     paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!paragraph) {
         parser->oom = true;
         return;
@@ -303,6 +304,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
         return NULL;
     }
 
+    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_TABLE);
     markdown_core_node_set_kind_result result = markdown_core_node_set_kind(parent_container, MARKDOWN_CORE_NODE_TABLE);
     if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
         if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
@@ -1897,6 +1899,7 @@ static markdown_core_node *table_child(markdown_core_parser *parser, markdown_co
                                        markdown_core_node_type kind, int first_line, int first_column, int last_line,
                                        int last_column) {
     markdown_core_node *node = markdown_core_node_new_with_mem(kind, parser->mem);
+    markdown_core_parser_note_kind(parser, kind);
     if (!node) {
         parser->oom = true;
         return NULL;

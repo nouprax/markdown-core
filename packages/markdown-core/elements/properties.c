@@ -741,6 +741,7 @@ size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsign
     }
     properties p = {.parser = parser, .source = source};
     markdown_core_node *node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_METADATA, parser->mem);
+    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_METADATA);
     if (!node) {
         parser->oom = true;
         return 0;
