@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "formula_scanners.h"
 #include "formula.h"
 #include "element.h"
@@ -110,7 +111,7 @@ static void formula_opaque_alloc(const markdown_core_element *element, markdown_
     /* A NULL payload is tolerated: every accessor goes through get_formula
      * and treats the node as formula-less. */
     if (is_formula_node(node)) {
-        node->opaque = mem->calloc(1, sizeof(node_formula));
+        node->opaque = markdown_core_alloc(1, sizeof(node_formula));
     }
 }
 
@@ -122,7 +123,7 @@ static void formula_opaque_free(const markdown_core_element *element, markdown_c
     }
 
     markdown_core_chunk_free(mem, &formula->literal);
-    mem->free(formula);
+    markdown_core_free(formula);
 }
 
 static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
@@ -236,7 +237,7 @@ static markdown_core_node *try_opening_formula_block(const markdown_core_element
     }
 
     markdown_core_node_set_element(node, element);
-    node->opaque = parser->mem->calloc(1, sizeof(node_formula));
+    node->opaque = markdown_core_alloc(1, sizeof(node_formula));
 
     formula = get_formula(node);
     if (!formula) {

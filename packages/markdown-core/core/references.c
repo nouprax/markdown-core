@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "markdown-core.h"
 #include "parser.h"
 #include "references.h"
@@ -29,7 +30,7 @@ static markdown_core_map_record *definition_create(markdown_core_mem *mem, markd
         return NULL;
     }
 
-    record = map->mem->calloc(1, sizeof(*record) + (size_t)reflabel->size + 1);
+    record = markdown_core_alloc(1, sizeof(*record) + (size_t)reflabel->size + 1);
     if (!record) {
         map->oom = 1;
         markdown_core_resource_release(mem, resource);

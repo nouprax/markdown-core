@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "properties.h"
 #include "metadata.h"
 #include "parser.h"
@@ -65,7 +66,7 @@ static bool grow(properties *p, void **array, size_t *capacity, size_t count, si
         p->parser->oom = true;
         return false;
     }
-    void *value = p->parser->mem->realloc(*array, n * width);
+    void *value = markdown_core_realloc(*array, n * width);
     if (!value) {
         p->parser->oom = true;
         return false;
@@ -75,7 +76,7 @@ static bool grow(properties *p, void **array, size_t *capacity, size_t count, si
     return true;
 }
 static markdown_core_string copy(properties *p, const unsigned char *s, size_t size) {
-    unsigned char *data = p->parser->mem->calloc(size + 1, 1);
+    unsigned char *data = markdown_core_alloc(size + 1, 1);
     if (!data) {
         p->parser->oom = true;
         return (markdown_core_string){0};
@@ -88,12 +89,12 @@ static markdown_core_string copy(properties *p, const unsigned char *s, size_t s
 static void free_value(markdown_core_mem *mem, markdown_core_metadata_value *v) {
     if (v->kind == MARKDOWN_CORE_METADATA_SCALAR &&
         (v->as.scalar.kind == MARKDOWN_CORE_METADATA_NUMBER || v->as.scalar.kind == MARKDOWN_CORE_METADATA_TEXT)) {
-        mem->free((void *)v->as.scalar.value.string.data);
+        markdown_core_free((void *)v->as.scalar.value.string.data);
     } else if (v->kind == MARKDOWN_CORE_METADATA_LIST) {
         for (size_t i = 0; i < v->as.list.count; i++) {
-            mem->free((void *)v->as.list.items[i].value.data);
+            markdown_core_free((void *)v->as.list.items[i].value.data);
         }
-        mem->free(v->as.list.items);
+        markdown_core_free(v->as.list.items);
     }
     memset(v, 0, sizeof(*v));
 }
@@ -400,7 +401,7 @@ static bool scalar(decoder *d, scalar_context structure, markdown_core_metadata_
     bool quoted_style = d->pos < d->end && (s[d->pos] == '"' || s[d->pos] == '\'');
     bool valid = quoted_style ? quoted(d, &text) : plain(d, structure != PROPERTY_SCALAR, false, &text);
     if (!valid || (!quoted_style && !text.length) || !single_line(text)) {
-        d->owner->parser->mem->free((void *)text.data);
+        markdown_core_free((void *)text.data);
         return false;
     }
     markdown_core_metadata_scalar *result = &value->as.scalar;
@@ -416,7 +417,7 @@ static bool scalar(decoder *d, scalar_context structure, markdown_core_metadata_
         if (result->kind == MARKDOWN_CORE_METADATA_BOOL) {
             result->value.boolean = equals(text, "true");
         }
-        d->owner->parser->mem->free((void *)text.data);
+        markdown_core_free((void *)text.data);
     }
     return valid && !d->owner->parser->oom;
 }
@@ -559,10 +560,10 @@ static bool field(decoder *d) {
         goto failed;
     }
     *slot = value;
-    p->parser->mem->free((void *)name.data);
+    markdown_core_free((void *)name.data);
     return true;
 failed:
-    p->parser->mem->free((void *)name.data);
+    markdown_core_free((void *)name.data);
     free_value(p->parser->mem, &value);
     return false;
 }

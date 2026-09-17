@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "embedded.h"
 #include "text.h"
 #include "inline_internal.h"
@@ -58,7 +59,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, markdo
             }
             if (end - start >= 4) {
                 bufsize_t output_len = (end - start) / 2;
-                unsigned char *output = (unsigned char *)inline_state->mem->calloc((size_t)output_len + 1, 1);
+                unsigned char *output = (unsigned char *)markdown_core_alloc((size_t)output_len + 1, 1);
                 if (output) {
                     markdown_core_chunk contents = {output, output_len, 1};
                     markdown_core_node *run;

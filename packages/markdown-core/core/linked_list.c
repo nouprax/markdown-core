@@ -1,5 +1,6 @@
 #include <stdlib.h>
 
+#include "alloc.h"
 #include "markdown-core.h"
 
 void markdown_core_llist_free_full(markdown_core_mem *mem, markdown_core_llist *head,
@@ -13,7 +14,7 @@ void markdown_core_llist_free_full(markdown_core_mem *mem, markdown_core_llist *
 
         prev = tmp;
         tmp = tmp->next;
-        mem->free(prev);
+        markdown_core_free(prev);
     }
 }
 

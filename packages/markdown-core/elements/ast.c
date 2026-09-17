@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "alloc.h"
 #include "../include/markdown_core.h"
 
 #include "ast_internal.h"
@@ -139,7 +140,7 @@ markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *sou
         set_error(error, &ERROR_INVALID_ALLOCATOR);
         return NULL;
     }
-    document = (markdown_core_document *)mem->calloc(1, sizeof(*document));
+    document = (markdown_core_document *)markdown_core_alloc(1, sizeof(*document));
     if (!document) {
         set_error(error, &ERROR_DOCUMENT_ALLOCATION);
         return NULL;
@@ -148,7 +149,7 @@ markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *sou
 
     document->root = markdown_core_parse_document_with_mem((const char *)source, length, mem, NULL, NULL);
     if (!document->root) {
-        mem->free(document);
+        markdown_core_free(document);
         set_error(error, &ERROR_PARSE_ALLOCATION);
         return NULL;
     }
@@ -165,7 +166,7 @@ void markdown_core_document_free(markdown_core_document *document) {
         return;
     }
     markdown_core_node_free(document->root);
-    document->mem->free(document);
+    markdown_core_free(document);
 }
 
 const markdown_core_node *markdown_core_document_root(const markdown_core_document *document) {

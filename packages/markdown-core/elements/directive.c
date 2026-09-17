@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "attributes.h"
 #include "directive.h"
 #include "element.h"
@@ -197,7 +198,7 @@ int markdown_core_elements_set_directive_name(markdown_core_node *node, const ch
 static void directive_opaque_alloc(const markdown_core_element *element, markdown_core_mem *mem,
                                    markdown_core_node *node) {
     if (is_directive_node(node)) {
-        node->opaque = mem->calloc(1, sizeof(node_directive));
+        node->opaque = markdown_core_alloc(1, sizeof(node_directive));
     }
 }
 
@@ -210,7 +211,7 @@ static void directive_opaque_free(const markdown_core_element *element, markdown
 
     /* Owned roots are released by the shared iterative node destructor. */
     markdown_core_chunk_free(mem, &directive->name);
-    mem->free(directive);
+    markdown_core_free(directive);
     node->opaque = NULL;
 }
 
@@ -330,7 +331,7 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
                 return 0;
             }
         } else {
-            node->attributes.classes = mem->calloc(1, sizeof(markdown_core_chunk));
+            node->attributes.classes = markdown_core_alloc(1, sizeof(markdown_core_chunk));
             if (!node->attributes.classes) {
                 return 0;
             }
@@ -622,7 +623,7 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
     }
 
     markdown_core_node_set_element(node, element);
-    node->opaque = parser->mem->calloc(1, sizeof(node_directive));
+    node->opaque = markdown_core_alloc(1, sizeof(node_directive));
     if (!node->opaque) {
         parser->oom = true;
         markdown_core_node_free(node);

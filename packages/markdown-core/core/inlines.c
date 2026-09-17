@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "inline_internal.h"
 #include <stdlib.h>
 #include <string.h>
@@ -350,12 +351,12 @@ void markdown_core_inline_remove_delimiter(markdown_core_inline_state *inline_st
     if (delim->can_close) {
         inline_state->delim_closers[delim->rule]--;
     }
-    inline_state->mem->free(delim);
+    markdown_core_free(delim);
 }
 
 delimiter *markdown_core_inline_push_delimiter_entry(markdown_core_inline_state *inline_state, delimiter_kind kind,
                                                      bufsize_t position) {
-    delimiter *entry = (delimiter *)inline_state->mem->calloc(1, sizeof(delimiter));
+    delimiter *entry = (delimiter *)markdown_core_alloc(1, sizeof(delimiter));
     if (!entry) {
         inline_state->oom = 1;
         return NULL;

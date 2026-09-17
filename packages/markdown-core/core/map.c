@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "map.h"
 #include "utf8.h"
 #include "parser.h"
@@ -45,7 +46,7 @@ static int grow_key_index(markdown_core_key_index *index) {
     if (capacity > SIZE_MAX / sizeof(*slots)) {
         return 0;
     }
-    slots = (markdown_core_key_index_slot *)index->mem->calloc(capacity, sizeof(*slots));
+    slots = (markdown_core_key_index_slot *)markdown_core_alloc(capacity, sizeof(*slots));
     if (!slots) {
         return 0;
     }
@@ -57,12 +58,12 @@ static int grow_key_index(markdown_core_key_index *index) {
         }
         destination = find_key_slot(slots, capacity, source->hash, source->key, source->key_len);
         if (!destination) {
-            index->mem->free(slots);
+            markdown_core_free(slots);
             return 0;
         }
         *destination = *source;
     }
-    index->mem->free(index->slots);
+    markdown_core_free(index->slots);
     index->slots = slots;
     index->capacity = capacity;
     return 1;
@@ -87,7 +88,7 @@ int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_m
     if (capacity > SIZE_MAX / sizeof(*index->slots)) {
         return 0;
     }
-    index->slots = (markdown_core_key_index_slot *)mem->calloc(capacity, sizeof(*index->slots));
+    index->slots = (markdown_core_key_index_slot *)markdown_core_alloc(capacity, sizeof(*index->slots));
     if (!index->slots) {
         return 0;
     }
@@ -97,7 +98,7 @@ int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_m
 
 void markdown_core_key_index_free(markdown_core_key_index *index) {
     if (index->slots) {
-        index->mem->free(index->slots);
+        markdown_core_free(index->slots);
     }
     memset(index, 0, sizeof(*index));
 }
@@ -258,17 +259,17 @@ void markdown_core_map_free(markdown_core_map *map) {
         /* The map's holder goes; a resource some node still reads through
          * stays with that node, which is how the tree outlives the parser. */
         markdown_core_resource_release(map->mem, record->resource);
-        map->mem->free(record);
+        markdown_core_free(record);
         record = next;
     }
 
     markdown_core_key_index_free(&map->index);
     markdown_core_strbuf_free(&map->label_buffer);
-    map->mem->free(map);
+    markdown_core_free(map);
 }
 
 markdown_core_map *markdown_core_map_new(markdown_core_mem *mem) {
-    markdown_core_map *map = (markdown_core_map *)mem->calloc(1, sizeof(markdown_core_map));
+    markdown_core_map *map = (markdown_core_map *)markdown_core_alloc(1, sizeof(markdown_core_map));
     if (!map) {
         return NULL;
     }

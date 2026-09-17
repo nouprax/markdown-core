@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "block_internal.h"
 /**
  * Block parsing implementation.
@@ -106,7 +107,7 @@ static void S_register_element(markdown_core_parser *parser, const markdown_core
  * replacing it. Allocation failure leaves the previous registry intact. */
 int markdown_core_parser_attach_element(markdown_core_parser *parser, const markdown_core_element *element) {
     size_t count = parser->element_count;
-    const markdown_core_element **entries = parser->mem->calloc(count + 1, sizeof(*entries));
+    const markdown_core_element **entries = markdown_core_alloc(count + 1, sizeof(*entries));
     if (!entries) {
         return 0;
     }
@@ -114,7 +115,7 @@ int markdown_core_parser_attach_element(markdown_core_parser *parser, const mark
         memcpy(entries, parser->elements, count * sizeof(*entries));
     }
     entries[count] = element;
-    parser->mem->free(parser->element_allocation);
+    markdown_core_free(parser->element_allocation);
     parser->element_allocation = entries;
     parser->elements = entries;
     parser->element_count = count + 1;
@@ -132,13 +133,13 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     if (parser->document_structure) {
         parser->document_structure->dispose_document(parser);
     }
-    parser->mem->free(parser->block_inputs);
-    parser->mem->free(parser->input_line_offsets);
-    parser->mem->free(parser->inline_dispatch);
+    markdown_core_free(parser->block_inputs);
+    markdown_core_free(parser->input_line_offsets);
+    markdown_core_free(parser->inline_dispatch);
     parser->inline_dispatch = NULL;
-    parser->mem->free(parser->block_hook_allocation);
+    markdown_core_free(parser->block_hook_allocation);
     parser->block_hook_allocation = NULL;
-    parser->mem->free(parser->block_gate_allocation);
+    markdown_core_free(parser->block_gate_allocation);
     parser->block_gate_allocation = NULL;
     if (parser->root) {
         markdown_core_node_free(parser->root);
@@ -146,7 +147,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
 
     /* The content-to-source map outlives every block that indexes it and
      * nothing else does, so it is released here rather than with the node. */
-    parser->mem->free(parser->line_marks);
+    markdown_core_free(parser->line_marks);
     parser->line_marks = NULL;
     parser->line_marks_size = 0;
     parser->line_marks_alloc = 0;
@@ -154,9 +155,9 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     /* The block-start lookahead's chain and resume cache are parser state of
      * the same kind: indexed by open containers and source lines, owned by no
      * node, and dead with the parse. */
-    parser->mem->free(parser->lookahead_chain);
-    parser->mem->free(parser->lookahead_chain_flags);
-    parser->mem->free(parser->lookahead_entries);
+    markdown_core_free(parser->lookahead_chain);
+    markdown_core_free(parser->lookahead_chain_flags);
+    markdown_core_free(parser->lookahead_entries);
     parser->lookahead_chain = NULL;
     parser->lookahead_chain_flags = NULL;
     parser->lookahead_chain_alloc = 0;
@@ -171,7 +172,7 @@ static markdown_core_parser *S_parser_new(markdown_core_mem *mem) {
     if (!mem) {
         return NULL;
     }
-    parser = (markdown_core_parser *)mem->calloc(1, sizeof(*parser));
+    parser = (markdown_core_parser *)markdown_core_alloc(1, sizeof(*parser));
     if (!parser) {
         return NULL;
     }
@@ -205,11 +206,11 @@ static void S_parser_free(markdown_core_parser *parser) {
     }
     mem = parser->mem;
     S_parser_dispose(parser);
-    parser->mem->free(parser->element_allocation);
+    markdown_core_free(parser->element_allocation);
     markdown_core_strbuf_free(&parser->curline);
     markdown_core_strbuf_free(&parser->line_scratch);
     markdown_core_strbuf_free(&parser->lookahead_last_line);
-    mem->free(parser);
+    markdown_core_free(parser);
 }
 
 /* "This block ends on the line being processed", lifted out of `markdown_core_block_finalize` so
@@ -294,7 +295,7 @@ static bool S_reserve_content_marks(markdown_core_parser *parser, bufsize_t coun
         parser->oom = true;
         return false;
     }
-    markdown_core_line_mark *grown = parser->mem->realloc(parser->line_marks, (size_t)capacity * sizeof(*grown));
+    markdown_core_line_mark *grown = markdown_core_realloc(parser->line_marks, (size_t)capacity * sizeof(*grown));
     if (!grown) {
         parser->oom = true;
         return false;
@@ -479,7 +480,7 @@ bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdo
             parser->oom = true;
             return false;
         }
-        void *inputs = parser->mem->realloc(parser->block_inputs, capacity * sizeof(*parser->block_inputs));
+        void *inputs = markdown_core_realloc(parser->block_inputs, capacity * sizeof(*parser->block_inputs));
         if (!inputs) {
             parser->oom = true;
             return false;
@@ -713,7 +714,7 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
 void markdown_core_manage_elements_special_characters(markdown_core_parser *parser, int add) {
     size_t next[256];
 
-    parser->mem->free(parser->inline_dispatch);
+    markdown_core_free(parser->inline_dispatch);
     parser->inline_dispatch = NULL;
     memset(parser->inline_dispatch_offsets, 0, sizeof(parser->inline_dispatch_offsets));
 
@@ -767,7 +768,7 @@ void markdown_core_manage_elements_special_characters(markdown_core_parser *pars
     if (!count) {
         return;
     }
-    parser->inline_dispatch = parser->mem->calloc(count, sizeof(*parser->inline_dispatch));
+    parser->inline_dispatch = markdown_core_alloc(count, sizeof(*parser->inline_dispatch));
     if (!parser->inline_dispatch) {
         parser->oom = true;
         return;
@@ -884,7 +885,7 @@ static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
             walk->parser->oom = true;
             return 0;
         }
-        void *frames = walk->parser->mem->realloc(walk->frames, capacity * sizeof(*walk->frames));
+        void *frames = markdown_core_realloc(walk->frames, capacity * sizeof(*walk->frames));
         if (!frames) {
             walk->parser->oom = true;
             return 0;
@@ -957,7 +958,7 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
             markdown_core_iter_free(walk.frames[i].iter);
         }
     }
-    parser->mem->free(walk.frames);
+    markdown_core_free(walk.frames);
     return !parser->oom;
 }
 
@@ -1053,7 +1054,7 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
                     break;
                 }
                 void *offsets =
-                    parser->mem->realloc(parser->input_line_offsets, capacity * sizeof(*parser->input_line_offsets));
+                    markdown_core_realloc(parser->input_line_offsets, capacity * sizeof(*parser->input_line_offsets));
                 if (!offsets) {
                     parser->oom = true;
                     break;
@@ -1497,13 +1498,13 @@ static bool S_lookahead_reserve_chain(markdown_core_parser *parser, int depth) {
     while (capacity < depth) {
         capacity = capacity > INT_MAX / 2 ? INT_MAX : capacity * 2;
     }
-    chain = parser->mem->realloc(parser->lookahead_chain, (size_t)capacity * sizeof(*chain));
+    chain = markdown_core_realloc(parser->lookahead_chain, (size_t)capacity * sizeof(*chain));
     if (!chain) {
         parser->oom = true;
         return false;
     }
     parser->lookahead_chain = chain;
-    flags = parser->mem->realloc(parser->lookahead_chain_flags, (size_t)capacity * sizeof(*flags));
+    flags = markdown_core_realloc(parser->lookahead_chain_flags, (size_t)capacity * sizeof(*flags));
     if (!flags) {
         parser->oom = true;
         return false;
@@ -1540,7 +1541,7 @@ markdown_core_lookahead_entry *markdown_core_parser_lookahead_entry(markdown_cor
             parser->oom = true;
             return NULL;
         }
-        entries = parser->mem->realloc(parser->lookahead_entries, (size_t)capacity * sizeof(*entries));
+        entries = markdown_core_realloc(parser->lookahead_entries, (size_t)capacity * sizeof(*entries));
         if (!entries) {
             parser->oom = true;
             return NULL;
@@ -1870,9 +1871,9 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
     size_t totals[MARKDOWN_CORE_BLOCK_HOOK_COUNT] = {0};
     size_t total = 0;
 
-    parser->mem->free(parser->block_hook_allocation);
+    markdown_core_free(parser->block_hook_allocation);
     parser->block_hook_allocation = NULL;
-    parser->mem->free(parser->block_gate_allocation);
+    markdown_core_free(parser->block_gate_allocation);
     parser->block_gate_allocation = NULL;
     memset(parser->block_hooks, 0, sizeof(parser->block_hooks));
     memset(parser->block_hook_counts, 0, sizeof(parser->block_hook_counts));
@@ -1890,7 +1891,7 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
         return;
     }
 
-    const markdown_core_element **entries = parser->mem->calloc(total, sizeof(*entries));
+    const markdown_core_element **entries = markdown_core_alloc(total, sizeof(*entries));
     if (!entries) {
         parser->oom = true;
         return;
@@ -1927,7 +1928,7 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
         return;
     }
 
-    uint8_t *maps = parser->mem->calloc(gate_bytes, 1);
+    uint8_t *maps = markdown_core_alloc(gate_bytes, 1);
     if (!maps) {
         parser->oom = true;
         return;
@@ -2334,7 +2335,7 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
             parser->oom = true;
             return false;
         }
-        values = parser->mem->realloc(collection->values, capacity * sizeof(*values));
+        values = markdown_core_realloc(collection->values, capacity * sizeof(*values));
         if (!values) {
             parser->oom = true;
             return false;
@@ -2373,7 +2374,7 @@ int markdown_core_order_source_entries(markdown_core_mem *mem, void *entries, si
     if (count > SIZE_MAX / stride) {
         return 0;
     }
-    unsigned char *scratch = mem->calloc(count, stride);
+    unsigned char *scratch = markdown_core_alloc(count, stride);
     unsigned char *source = entries;
     unsigned char *target = scratch;
     if (!scratch) {
@@ -2399,7 +2400,7 @@ int markdown_core_order_source_entries(markdown_core_mem *mem, void *entries, si
         target = swap;
     }
     assert(source == entries);
-    mem->free(scratch);
+    markdown_core_free(scratch);
     return 1;
 }
 
@@ -2514,7 +2515,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
      * node and no parser precisely because a node outlives the parse. */
     finish_phases phases = {NULL, 0};
     if (parser->element_count) {
-        phases.passes = parser->mem->calloc(parser->element_count, sizeof(*phases.passes));
+        phases.passes = markdown_core_alloc(parser->element_count, sizeof(*phases.passes));
         if (!phases.passes) {
             parser->oom = true;
             goto failed;
@@ -2540,7 +2541,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     if (!S_apply_tree_phase(parser, parser->root, S_finish_tree, &phases)) {
         parser->oom = true;
     }
-    parser->mem->free((void *)phases.passes);
+    markdown_core_free((void *)phases.passes);
     if (parser->oom) {
         goto failed;
     }

@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "link_scanners.h"
 #include "text_scanners.h"
 #include "citation.h"
@@ -573,12 +574,12 @@ void markdown_core_inline_pop_bracket(markdown_core_inline_state *inline_state) 
         markdown_core_inline_remove_delimiter(inline_state, b->delim_end);
     }
     markdown_core_inline_free_citation_tokens(inline_state, &b->citations);
-    inline_state->mem->free(b);
+    markdown_core_free(b);
 }
 
 void markdown_core_inline_push_bracket(markdown_core_inline_state *inline_state, bracket_kind kind,
                                        markdown_core_node *inl_text) {
-    bracket *b = (bracket *)inline_state->mem->calloc(1, sizeof(bracket));
+    bracket *b = (bracket *)markdown_core_alloc(1, sizeof(bracket));
     if (!b) {
         inline_state->oom = 1;
         return;
@@ -701,7 +702,7 @@ static void dispose_inline(markdown_core_inline_state *inline_state) {
     while (inline_state->pending_brackets) {
         bracket *next = inline_state->pending_brackets->pending_next;
         markdown_core_inline_free_citation_tokens(inline_state, &inline_state->pending_brackets->citations);
-        inline_state->mem->free(inline_state->pending_brackets);
+        markdown_core_free(inline_state->pending_brackets);
         inline_state->pending_brackets = next;
     }
 }

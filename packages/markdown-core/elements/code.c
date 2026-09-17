@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "code.h"
 #include "inline_internal.h"
 #include "attributes.h"
@@ -37,7 +38,7 @@ bufsize_t markdown_core_inline_scan_to_closing_backticks(markdown_core_inline_st
         inline_state->backtick_capacity =
             inline_state->input.len < MAXBACKTICKS ? inline_state->input.len : MAXBACKTICKS;
         inline_state->backticks =
-            inline_state->mem->calloc((size_t)inline_state->backtick_capacity + 1, sizeof(*inline_state->backticks));
+            markdown_core_alloc((size_t)inline_state->backtick_capacity + 1, sizeof(*inline_state->backticks));
         if (!inline_state->backticks) {
             inline_state->oom = 1;
             return 0;
@@ -162,7 +163,7 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
     return character == '`' ? handle_backticks(inline_state) : NULL;
 }
 static void dispose_inline(markdown_core_inline_state *inline_state) {
-    inline_state->mem->free(inline_state->backticks);
+    markdown_core_free(inline_state->backticks);
     inline_state->backticks = NULL;
 }
 

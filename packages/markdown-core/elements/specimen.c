@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "specimen.h"
 #define BLOCK_PEEK(input, at) ((input)->data[(at)])
 #include "block_internal.h"
@@ -128,7 +129,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN = {
 
 void markdown_core_specimen_finish(markdown_core_parser *parser) {
     markdown_core_block_own_definitions(&parser->specimens, &parser->root->as.document->specimens);
-    parser->mem->free(parser->specimens.values);
+    markdown_core_free(parser->specimens.values);
     parser->specimens = (markdown_core_definition_collection){0};
     markdown_core_key_index_free(&parser->specimen_ids);
 }

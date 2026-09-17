@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "attributes.h"
 #include "../core/attributes.h"
 #include "houdini.h"
@@ -39,7 +40,7 @@ static int index_input(markdown_core_attribute_parser *p) {
     if ((size_t)n + 1 > SIZE_MAX / sizeof(*p->ends)) {
         return 0;
     }
-    p->ends = p->mem->calloc((size_t)n + 1, sizeof(*p->ends));
+    p->ends = markdown_core_alloc((size_t)n + 1, sizeof(*p->ends));
     if (!p->ends) {
         return 0;
     }
@@ -130,18 +131,18 @@ void markdown_core_attributes_free(markdown_core_mem *mem, markdown_core_attribu
         markdown_core_chunk_free(mem, &v->records[i].name);
         markdown_core_chunk_free(mem, &v->records[i].value);
     }
-    mem->free(v->classes);
-    mem->free(v->records);
+    markdown_core_free(v->classes);
+    markdown_core_free(v->records);
     memset(v, 0, sizeof(*v));
 }
 
 void markdown_core_attribute_parser_free(markdown_core_attribute_parser *p) {
-    p->mem->free(p->ends);
+    markdown_core_free(p->ends);
     p->ends = NULL;
 }
 
 static int copy(markdown_core_mem *mem, markdown_core_chunk *into, const unsigned char *s, bufsize_t n) {
-    unsigned char *data = mem->calloc((size_t)n + 1, 1);
+    unsigned char *data = markdown_core_alloc((size_t)n + 1, 1);
     if (!data) {
         return 0;
     }
@@ -162,7 +163,7 @@ static int reserve(markdown_core_mem *mem, void **items, size_t count, size_t *c
     if (grown > SIZE_MAX / size) {
         return 0;
     }
-    void *data = mem->realloc(*items, grown * size);
+    void *data = markdown_core_realloc(*items, grown * size);
     if (!data) {
         return 0;
     }

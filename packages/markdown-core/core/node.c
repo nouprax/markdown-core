@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "alloc.h"
 #include "config.h"
 #include "node.h"
 #include "references.h"
@@ -186,7 +187,7 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_t
     /* Construction gives the node and its record one aligned allocation. */
     size_t payload_size = S_node_payload_size(type);
     markdown_core_node *node =
-        (markdown_core_node *)mem->calloc(1, sizeof(markdown_core_node_allocation) + payload_size);
+        (markdown_core_node *)markdown_core_alloc(1, sizeof(markdown_core_node_allocation) + payload_size);
     if (!node) {
         return NULL;
     }
@@ -273,7 +274,7 @@ static void free_node_as(markdown_core_node *node) {
     /* Free only the allocation this node owns separately. Pointer equality
      * cannot establish ownership: an allocator may place a replacement right
      * after a fieldless node's allocation. */
-    NODE_MEM(node)->free(node->node_data_allocation);
+    markdown_core_free(node->node_data_allocation);
     node->node_data_allocation = NULL;
     node->as.data = NULL;
 }
@@ -353,7 +354,7 @@ static void S_free_nodes(markdown_core_node *e) {
             e->next = e->first_child;
         }
         next = e->next;
-        NODE_MEM(e)->free(e);
+        markdown_core_free(e);
         e = next;
     }
 }
@@ -385,7 +386,7 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     /* Allocate before releasing anything. A failed conversion preserves the
      * old kind, data, and owned subtrees, with stable node identity. */
     size_t size = S_node_payload_size(kind);
-    markdown_core_node_data replacement = {.data = size ? NODE_MEM(node)->calloc(1, size) : NULL};
+    markdown_core_node_data replacement = {.data = size ? markdown_core_alloc(1, size) : NULL};
     if (size && !replacement.data) {
         return MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED;
     }
@@ -863,7 +864,7 @@ int markdown_core_node_set_fenced(markdown_core_node *node, int fenced, int leng
 
 markdown_core_resource *markdown_core_resource_new(markdown_core_mem *mem, markdown_core_chunk url,
                                                    markdown_core_optional_chunk title) {
-    markdown_core_resource *resource = (markdown_core_resource *)mem->calloc(1, sizeof(*resource));
+    markdown_core_resource *resource = (markdown_core_resource *)markdown_core_alloc(1, sizeof(*resource));
     if (!resource) {
         return NULL;
     }
@@ -890,7 +891,7 @@ void markdown_core_resource_release(markdown_core_mem *mem, markdown_core_resour
     markdown_core_chunk_free(mem, &resource->url);
     markdown_core_optional_chunk_free(mem, &resource->title);
     markdown_core_attributes_free(mem, &resource->attributes);
-    mem->free(resource);
+    markdown_core_free(resource);
 }
 
 int markdown_core_node_set_element(markdown_core_node *node, const markdown_core_element *element) {

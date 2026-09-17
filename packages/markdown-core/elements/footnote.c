@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "link.h"
 #include "footnote_scanners.h"
 #define MAX_FOOTNOTE_DEPTH 100
@@ -59,7 +60,7 @@ failed:
     parser->oom = true;
 done:
     markdown_core_key_index_free(&ids);
-    parser->mem->free(collection->values);
+    markdown_core_free(collection->values);
     memset(collection, 0, sizeof(*collection));
 }
 

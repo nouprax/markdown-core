@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <limits.h>
 
+#include "alloc.h"
 #include "config.h"
 #include "markdown_core_ctype.h"
 #include "buffer.h"
@@ -75,7 +76,7 @@ void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size)
     new_size += 1;
     new_size = (new_size + 7) & ~7;
 
-    unsigned char *new_ptr = (unsigned char *)buf->mem->realloc(buf->asize ? buf->ptr : NULL, new_size);
+    unsigned char *new_ptr = (unsigned char *)markdown_core_realloc(buf->asize ? buf->ptr : NULL, new_size);
     if (!new_ptr) {
         buf->oom = 1;
         return;
@@ -92,7 +93,7 @@ void markdown_core_strbuf_free(markdown_core_strbuf *buf) {
     }
 
     if (buf->ptr != markdown_core_strbuf__initbuf) {
-        buf->mem->free(buf->ptr);
+        markdown_core_free(buf->ptr);
     }
 
     markdown_core_strbuf_init(buf->mem, buf, 0);
@@ -203,7 +204,7 @@ unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf) {
 
     if (buf->asize == 0) {
         /* return an empty string; NULL reports allocation failure */
-        return (unsigned char *)buf->mem->calloc(1, 1);
+        return (unsigned char *)markdown_core_alloc(1, 1);
     }
 
     markdown_core_strbuf_init(buf->mem, buf, 0);

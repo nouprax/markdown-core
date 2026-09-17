@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "document.h"
 #include "block_internal.h"
 #include "properties.h"
@@ -18,9 +19,9 @@ static void dispose_document(markdown_core_parser *parser) {
     markdown_core_block_dispose_headings(parser, &parser->headings);
     markdown_core_key_index_free(&parser->anchors.index);
     markdown_core_key_index_free(&parser->anchors.resources);
-    parser->mem->free(parser->footnotes.values);
+    markdown_core_free(parser->footnotes.values);
     parser->footnotes.values = NULL;
-    parser->mem->free(parser->specimens.values);
+    markdown_core_free(parser->specimens.values);
     parser->specimens.values = NULL;
     markdown_core_key_index_free(&parser->specimen_ids);
     if (parser->refmap) {

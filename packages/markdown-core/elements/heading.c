@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "heading_scanners.h"
 #include "citation.h"
 #include "heading.h"
@@ -23,7 +24,7 @@ void markdown_core_block_register_heading(markdown_core_parser *parser, markdown
             parser->oom = true;
             return;
         }
-        void *values = parser->mem->realloc(headings->values, capacity * sizeof(*headings->values));
+        void *values = markdown_core_realloc(headings->values, capacity * sizeof(*headings->values));
         if (!values) {
             parser->oom = true;
             return;
@@ -93,7 +94,7 @@ void markdown_core_block_dispose_headings(markdown_core_parser *parser, markdown
     for (size_t i = 0; i < headings->count; i++) {
         markdown_core_dispose_heading(&headings->values[i]);
     }
-    parser->mem->free(headings->values);
+    markdown_core_free(headings->values);
     *headings = (markdown_core_heading_collection){0};
 }
 
@@ -114,7 +115,7 @@ static bool push_anchor_projection(markdown_core_parser *parser, anchor_projecti
             parser->oom = true;
             return false;
         }
-        void *values = parser->mem->realloc(stack->values, capacity * sizeof(*stack->values));
+        void *values = markdown_core_realloc(stack->values, capacity * sizeof(*stack->values));
         if (!values) {
             parser->oom = true;
             return false;
@@ -203,7 +204,7 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node
             break;
         }
     }
-    parser->mem->free(stack.values);
+    markdown_core_free(stack.values);
     if (!base->size) {
         markdown_core_strbuf_puts(base, "section");
     }
@@ -298,7 +299,7 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
             (inline_state.pos != inline_state.text_end && inline_state.pos >= inline_state.opaque_end &&
              (c == '[' || c == ']' ||
               ((c == '!' || c == '^') && markdown_core_inline_peek_char_n(&inline_state, 1) == '[')))) {
-            heading->pending = parser->mem->calloc(1, sizeof(inline_state));
+            heading->pending = markdown_core_alloc(1, sizeof(inline_state));
             if (heading->pending) {
                 *heading->pending = inline_state;
                 return;
@@ -338,7 +339,7 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
 void markdown_core_finish_heading(markdown_core_parser *parser, markdown_core_heading_parse *heading) {
     if (heading->pending) {
         markdown_core_inline_finish_inlines(parser, heading->pending);
-        parser->mem->free(heading->pending);
+        markdown_core_free(heading->pending);
         heading->pending = NULL;
     }
 }
@@ -347,7 +348,7 @@ void markdown_core_dispose_heading(markdown_core_heading_parse *heading) {
     if (heading->pending) {
         markdown_core_mem *mem = heading->pending->mem;
         markdown_core_inline_clear_inlines(heading->pending);
-        mem->free(heading->pending);
+        markdown_core_free(heading->pending);
         heading->pending = NULL;
     }
 }
