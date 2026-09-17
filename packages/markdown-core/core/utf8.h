@@ -39,7 +39,15 @@ int markdown_core_utf8proc_iterate(const uint8_t *str, bufsize_t str_len, int32_
  * repair anything: it decodes exactly as `iterate` does whenever `iterate`
  * succeeds, which on conforming input is always. It only makes the ADVANCE
  * total, so a buffer walk cannot be turned inside out by bytes the contract
- * already excludes. Progress is at least one byte and never past `len`. */
+ * already excludes. Progress is at least one byte and never past `len`.
+ *
+ * For ADVANCING walks only, which is to say callers whose loop condition
+ * already guarantees a byte remains. A read-only probe that may sit AT the end
+ * of its range wants `iterate`: its -1 means "no character here", and an empty
+ * range is one of the ways that happens. `markdown_core_inline_scan_delimiter`
+ * relies on exactly that -- the flanking skip can walk `after_char_pos` to
+ * `input.len`, and the resulting -1 is what makes end-of-input read as a
+ * newline. */
 static inline int markdown_core_utf8proc_step(const uint8_t *str, bufsize_t len, int32_t *dst) {
     int width;
     if (len <= 0) {

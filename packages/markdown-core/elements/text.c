@@ -194,8 +194,8 @@ markdown_core_node *markdown_core_text_parse(markdown_core_parser *parser, markd
         unsigned char first = inline_state->input.data[lead];
         if (first == 0xC2 || (first >= 0xE1 && first <= 0xE3)) {
             int32_t scalar = 0;
-            int width = markdown_core_utf8proc_iterate(inline_state->input.data + lead, endpos - lead, &scalar);
-            if (width > 0 && markdown_core_utf8proc_is_space(scalar)) {
+            int width = markdown_core_utf8proc_step(inline_state->input.data + lead, endpos - lead, &scalar);
+            if (markdown_core_utf8proc_is_space(scalar)) {
                 boundary = lead + width;
                 break;
             }

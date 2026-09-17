@@ -100,7 +100,7 @@ static void prepare_citation_braces(markdown_core_inline_state *inline_state) {
         if (opaque_end > at) {
             while (at < opaque_end) {
                 int32_t scalar;
-                int width = markdown_core_utf8proc_iterate(inline_state->input.data + at, opaque_end - at, &scalar);
+                int width = markdown_core_utf8proc_step(inline_state->input.data + at, opaque_end - at, &scalar);
                 inline_state->owner_parser->citation_work++;
                 if (top >= 0) {
                     index->entries[top].content = true;
@@ -108,7 +108,7 @@ static void prepare_citation_braces(markdown_core_inline_state *inline_state) {
                         index->entries[top].valid = false;
                     }
                 }
-                at += width > 0 ? width : 1;
+                at += width;
             }
             continue;
         }
@@ -144,14 +144,14 @@ static void prepare_citation_braces(markdown_core_inline_state *inline_state) {
         } else {
             int32_t scalar;
             int width =
-                markdown_core_utf8proc_iterate(inline_state->input.data + at, inline_state->input.len - at, &scalar);
+                markdown_core_utf8proc_step(inline_state->input.data + at, inline_state->input.len - at, &scalar);
             if (top >= 0) {
                 index->entries[top].content = true;
                 if (markdown_core_utf8proc_is_space(scalar)) {
                     index->entries[top].valid = false;
                 }
             }
-            at += width > 0 ? width : 1;
+            at += width;
         }
     }
 }
@@ -326,7 +326,7 @@ static void citation_boundary(markdown_core_inline_state *inline_state, citation
 static void trim_citation_source(markdown_core_inline_state *inline_state, bufsize_t *start, bufsize_t *end) {
     while (*start < *end) {
         int32_t scalar;
-        int width = markdown_core_utf8proc_iterate(inline_state->input.data + *start, *end - *start, &scalar);
+        int width = markdown_core_utf8proc_step(inline_state->input.data + *start, *end - *start, &scalar);
         inline_state->owner_parser->citation_work++;
         if (!markdown_core_utf8proc_is_space(scalar)) {
             break;

@@ -69,13 +69,13 @@ static int scan_name(const unsigned char *data, bufsize_t len, bufsize_t pos, bu
     if (pos >= len) {
         return 0;
     }
-    int width = markdown_core_utf8proc_iterate(data + pos, len - pos, &cp);
+    int width = markdown_core_utf8proc_step(data + pos, len - pos, &cp);
     if (!markdown_core_utf8proc_is_letter(cp)) {
         return 0;
     }
     pos += width;
     while (pos < len) {
-        width = markdown_core_utf8proc_iterate(data + pos, len - pos, &cp);
+        width = markdown_core_utf8proc_step(data + pos, len - pos, &cp);
         if (!(markdown_core_utf8proc_is_letter(cp) || markdown_core_utf8proc_is_number(cp) ||
               markdown_core_utf8proc_is_mark(cp) || cp == '-' || cp == '_')) {
             break;
@@ -549,8 +549,8 @@ static int parse_nameless_suffix(markdown_core_parser *parser, unsigned char *da
         bufsize_t start = pos;
         while (pos < len) {
             int32_t cp;
-            int width = markdown_core_utf8proc_iterate(data + pos, len - pos, &cp);
-            if (width <= 0 || markdown_core_utf8proc_is_space(cp) || cp == ':' || cp == '{' || cp == '}') {
+            int width = markdown_core_utf8proc_step(data + pos, len - pos, &cp);
+            if (markdown_core_utf8proc_is_space(cp) || cp == ':' || cp == '{' || cp == '}') {
                 break;
             }
             pos += width;

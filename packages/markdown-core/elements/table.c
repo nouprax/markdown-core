@@ -742,9 +742,9 @@ static bool table_source_columns(table_source *source, size_t index) {
             byte++;
         } else {
             int32_t scalar;
-            int width = markdown_core_utf8proc_iterate(line->data + byte, line->length - byte, &scalar);
+            int width = markdown_core_utf8proc_step(line->data + byte, line->length - byte, &scalar);
             line->bytes[column++] = byte;
-            byte += width > 0 ? width : 1;
+            byte += width;
         }
     }
 }

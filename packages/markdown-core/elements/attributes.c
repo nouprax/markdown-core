@@ -13,8 +13,9 @@ static int escaped(const unsigned char *s, bufsize_t n, bufsize_t p) {
 }
 static int32_t scalar(const unsigned char *s, bufsize_t n, bufsize_t p, bufsize_t *width) {
     int32_t cp;
-    /* Valid UTF-8 is the parser's input precondition. */
-    *width = markdown_core_utf8proc_iterate(s + p, n - p, &cp);
+    /* Valid UTF-8 is the parser's input precondition, and the advance is total
+     * so every caller's `at += width` moves forward whatever the bytes are. */
+    *width = markdown_core_utf8proc_step(s + p, n - p, &cp);
     return cp;
 }
 static int name_rest(int32_t cp) {

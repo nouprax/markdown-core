@@ -132,7 +132,11 @@ void markdown_core_utf8proc_case_fold(markdown_core_strbuf *dest, const uint8_t 
     int32_t c;
 
     while (len > 0) {
-        bufsize_t char_len = markdown_core_utf8proc_iterate(str, len, &c);
+        /* Total, so the walk always moves forward. The U+FFFD substitution
+         * this used to make for a byte that starts no character was the one
+         * place the library REPAIRED malformed input, which markdown_core.h
+         * says it does not do. */
+        bufsize_t char_len = markdown_core_utf8proc_step(str, len, &c);
 
         if (char_len == 1) {
             if (c >= 'A' && c <= 'Z') {
@@ -141,7 +145,7 @@ void markdown_core_utf8proc_case_fold(markdown_core_strbuf *dest, const uint8_t 
             markdown_core_strbuf_putc(dest, c);
         } else if (c >= CF_MAX) {
             markdown_core_strbuf_put(dest, str, char_len);
-        } else if (char_len >= 0) {
+        } else {
             uint32_t key = (uint32_t)c;
             uint32_t *entry = bsearch(&key, cf_table, CF_TABLE_SIZE, sizeof(uint32_t), S_case_fold_compare);
             if (entry == NULL) {
@@ -149,9 +153,6 @@ void markdown_core_utf8proc_case_fold(markdown_core_strbuf *dest, const uint8_t 
             } else {
                 markdown_core_strbuf_put(dest, cf_repl + CF_REPL_IDX(*entry), CF_REPL_SIZE(*entry));
             }
-        } else {
-            encode_unknown(dest);
-            char_len = -char_len;
         }
 
         str += char_len;
