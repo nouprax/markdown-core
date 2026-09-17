@@ -169,6 +169,12 @@ struct markdown_core_parser {
      * the linearity gates of both. */
     size_t comment_scan_work;
     size_t block_lookahead_work;
+    /* Owned roots a tree-phase walk finished. The walk exists to FIND these,
+     * and the first phase records them so the rest replay the recording, so
+     * this must not grow when another postprocess pass is attached. Counted
+     * per completed tree rather than per node visited: equally diagnostic, and
+     * an increment in that per-node loop cost 0.7% of a parse.*/
+    size_t tree_phase_work;
     size_t table_scan_work, table_frontier_peak;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
     /* Properties work: source ranges decoded once at their owning boundary. */

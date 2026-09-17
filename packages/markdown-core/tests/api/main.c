@@ -3370,6 +3370,7 @@ typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
     size_t registered_definitions, definition_lists, citation_brace_bytes, tables, table_frontier;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
+    size_t tree_phase_work;
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
@@ -3397,6 +3398,7 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
     work->table_frontier = parser->table_frontier_peak;
     work->table_workspace_growth = parser->table_workspace_growth;
     work->table_geometry_lines = parser->table_geometry_lines;
+    work->tree_phase_work = parser->tree_phase_work;
     work->table_separator_scans = parser->table_separator_scans;
     work->block_identifier = parser->block_identifier_work;
     work->callout = parser->callout_scan_work;
@@ -5868,6 +5870,66 @@ static void definition_open_gate_admits_only_possible_terms(test_batch_runner *r
     }
 }
 
+/* The finish stage's tree-phase walk exists to FIND the owned roots -- a
+ * definition term, a callout title, a cite affix, a table caption, a directive
+ * label, and the content tree. Every phase used to get a walk of its own, and
+ * every walk rediscovered the same list. The first phase records them now and
+ * the rest replay the recording.
+ *
+ * What that buys is invisible in the output, which is why it is asserted by
+ * counting the trees the walk finishes rather than by comparing a dump: attach
+ * three more postprocess passes and no additional tree may be finished. With a
+ * walk per phase this count was proportional to the number of passes. */
+static int count_only_postprocess(const markdown_core_element *element, markdown_core_parser *parser,
+                                  markdown_core_node *root) {
+    (void)element;
+    (void)parser;
+    (void)root;
+    return 1;
+}
+
+static const markdown_core_node_type COUNT_ONLY_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
+
+static bool attach_three_more_passes(markdown_core_parser *parser, void *context) {
+    static const markdown_core_element one = {
+        .name = "walk-count-one", .postprocess_func = count_only_postprocess, .postprocess_kinds = COUNT_ONLY_KINDS};
+    static const markdown_core_element two = {
+        .name = "walk-count-two", .postprocess_func = count_only_postprocess, .postprocess_kinds = COUNT_ONLY_KINDS};
+    static const markdown_core_element three = {
+        .name = "walk-count-three", .postprocess_func = count_only_postprocess, .postprocess_kinds = COUNT_ONLY_KINDS};
+    /* Attached BEFORE the work recorder: a postprocess pass reads the counter
+     * when its own turn comes, so a pass that runs after the recorder is one
+     * the recorder cannot see. */
+    return markdown_core_parser_attach_element(parser, &one) && markdown_core_parser_attach_element(parser, &two) &&
+           markdown_core_parser_attach_element(parser, &three) && measure_inline_work(parser, context);
+}
+
+static void finish_walks_the_tree_once_per_parse(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+    /* Owned subtrees of every shape the walk can reach, so the roots it
+     * records are not just the content tree. */
+    for (size_t i = 0; i < 64; i++) {
+        markdown_core_strbuf_puts(&source, "Term www.term.example\n: Body www.body.example\n\n");
+        markdown_core_strbuf_puts(&source, "> [!NOTE] Title www.title.example\n> Body\n\n");
+        markdown_core_strbuf_puts(&source, "See [pre www.pre.example @doe99 post].\n\n");
+        markdown_core_strbuf_puts(&source, "| a |\n| - |\n| b |\n\nTable: Cap www.cap.example\n\n");
+    }
+    inline_work plain = {0};
+    markdown_core_node *a =
+        markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &plain);
+    inline_work loaded = {0};
+    markdown_core_node *b =
+        markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, attach_three_more_passes, &loaded);
+    OK(runner, a != NULL && b != NULL, "the owned-subtree document parses with and without extra passes");
+    OK(runner, plain.tree_phase_work > 0, "the finish stage finishes trees at all: %zu", plain.tree_phase_work);
+    INT_EQ(runner, loaded.tree_phase_work, plain.tree_phase_work,
+           "three more postprocess passes finish no additional tree");
+    markdown_core_node_free(a);
+    markdown_core_node_free(b);
+    markdown_core_strbuf_free(&source);
+}
+
 static void simple_table_body_boundaries(test_batch_runner *runner) {
     const char *tails[] = {"# heading\nbody\n", "> quote\n> next\n", "```\ncode\n```\n"};
     const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_CALLOUT,
@@ -6173,6 +6235,7 @@ int main(void) {
     multiline_boundary_search_builds_no_geometry(runner);
     table_open_gate_admits_only_possible_tables(runner);
     definition_open_gate_admits_only_possible_terms(runner);
+    finish_walks_the_tree_once_per_parse(runner);
     postprocess_rewrites_every_owned_tree(runner);
     standalone_formula_as_owned_root(runner);
     simple_table_body_boundaries(runner);

@@ -921,6 +921,7 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
         markdown_core_event_type event = markdown_core_iter_next(frame->iter);
         if (event == MARKDOWN_CORE_EVENT_DONE) {
             markdown_core_node *completed = frame->root;
+            parser->tree_phase_work++;
             markdown_core_iter_free(frame->iter);
             walk.count--;
             if (finish && !finish(parser, completed, context)) {
@@ -2436,6 +2437,58 @@ static int S_check_tree(markdown_core_parser *parser, markdown_core_node *root, 
 }
 #endif
 
+/* The roots one tree-phase walk finished, in the order it finished them.
+ *
+ * A tree-phase walk exists only to FIND these -- a definition term, a callout
+ * title, a cite affix, a table caption, a directive label, and the content
+ * tree itself. Every phase got a walk of its own and every walk rediscovered
+ * the same list: over the 65 same-job documents, two whole-tree walks per
+ * document, 75,000 to 136,000 node visits, for roughly 57 roots the first
+ * walk already had.
+ *
+ * So the first phase records them and the rest replay the recording. What
+ * makes the recording safe to replay is the tightened postprocess contract --
+ * no phase substitutes a root, so every entry still names the tree its owner
+ * put there -- together with the walk's own order: it finishes a nested tree
+ * before the tree containing it, so when a phase reaches root R every root
+ * inside R is already behind it in the list. A phase that frees a node owning
+ * a subtree can therefore only invalidate entries that have already been
+ * replayed. */
+typedef struct {
+    markdown_core_node **roots;
+    size_t count, capacity;
+} owned_root_log;
+
+static int S_log_root(markdown_core_parser *parser, owned_root_log *log, markdown_core_node *root) {
+    if (log->count == log->capacity) {
+        size_t capacity = log->capacity ? 2 * log->capacity : 16;
+        if (capacity > SIZE_MAX / sizeof(*log->roots)) {
+            parser->oom = true;
+            return 0;
+        }
+        markdown_core_node **grown = parser->mem->realloc(log->roots, capacity * sizeof(*log->roots));
+        if (!grown) {
+            parser->oom = true;
+            return 0;
+        }
+        log->roots = grown;
+        log->capacity = capacity;
+    }
+    log->roots[log->count++] = root;
+    return 1;
+}
+
+typedef struct {
+    tree_phase_func phase;
+    void *context;
+    owned_root_log *log;
+} recording_phase;
+
+static int S_record_and_run(markdown_core_parser *parser, markdown_core_node *root, void *context) {
+    recording_phase *recording = (recording_phase *)context;
+    return S_log_root(parser, recording->log, root) && recording->phase(parser, root, recording->context);
+}
+
 static int S_postprocess_tree(markdown_core_parser *parser, markdown_core_node *root, void *context) {
     const markdown_core_element *element = (const markdown_core_element *)context;
     return element->postprocess_func(element, parser, root) && !parser->oom;
@@ -2467,10 +2520,16 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         goto failed;
     }
 
-    if (!S_apply_tree_phase(parser, parser->root, S_consolidate_tree, NULL)) {
+    /* Consolidation is the walk that also records which kinds the parse
+     * produced, which is what the postprocess gate below reads -- so it stays
+     * first, and it is the walk that records the roots. */
+    owned_root_log roots = {NULL, 0, 0};
+    recording_phase consolidating = {S_consolidate_tree, NULL, &roots};
+    if (!S_apply_tree_phase(parser, parser->root, S_record_and_run, &consolidating)) {
         parser->oom = true;
     }
     if (parser->oom) {
+        parser->mem->free(roots.roots);
         goto failed;
     }
 
@@ -2503,10 +2562,13 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
                 continue;
             }
         }
-        if (!S_apply_tree_phase(parser, parser->root, S_postprocess_tree, (void *)element)) {
-            parser->oom = true;
+        for (size_t root = 0; root < roots.count && !parser->oom; root++) {
+            if (!S_postprocess_tree(parser, roots.roots[root], (void *)element)) {
+                parser->oom = true;
+            }
         }
     }
+    parser->mem->free(roots.roots);
     if (parser->oom) {
         goto failed;
     }
