@@ -30,15 +30,14 @@ const RECORDED_ELSEWHERE = {
     "core/node.c": { "*": "defines the node operations this audit is about" },
     "core/inlines.c": {
         markdown_core_inline_make_simple:
-            "the mem-only form, for callers with no parse; parse-time callers use the _noted form",
+            "the mem-only form, for callers with no parse; parse-time callers use the _noted form"
     },
     "elements/directive.c": {
-        make_label_node: "takes a mem, not a parser; both callers record DIRECTIVE_LABEL",
+        make_label_node: "takes a mem, not a parser; both callers record DIRECTIVE_LABEL"
     },
     "elements/formula.c": {
-        new_formula_block_from_literal:
-            "runs inside a postprocess pass, after the gate has read the record",
-    },
+        new_formula_block_from_literal: "runs inside a postprocess pass, after the gate has read the record"
+    }
 };
 
 /** Every `*.c` under `core/` and `elements/` -- the shipped library, no tests. */
