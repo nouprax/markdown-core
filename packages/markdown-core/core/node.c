@@ -1109,7 +1109,6 @@ const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_n
     return &node->attributes.anchor;
 }
 
-
 /* Document-owned definition values are independent roots, not child edges. */
 int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
                                        void *context) {
