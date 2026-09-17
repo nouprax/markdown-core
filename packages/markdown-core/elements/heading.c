@@ -306,8 +306,7 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
             inline_state.oom = 1;
             break;
         }
-        if (markdown_core_inline_is_eof(&inline_state) ||
-            !markdown_core_inline_parse_inline(parser, &inline_state, heading->node)) {
+        if (markdown_core_inline_is_eof(&inline_state) || !markdown_core_inline_parse_inline(parser, &inline_state)) {
             break;
         }
     }

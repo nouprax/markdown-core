@@ -43,6 +43,12 @@ struct markdown_core_inline_state {
      * parser -- and the map is then simply not consulted. */
     markdown_core_parser *owner_parser;
     markdown_core_node *owner;
+    /* `owner`'s structural element, resolved once. The projection is a pure
+     * function of `owner->kind`, `owner` does not change across a run, and a
+     * run's owner does not change kind during it -- so asking per token was
+     * asking the same question once per inline node. Written only beside
+     * `owner`, in the one place that assigns it, so the pair cannot drift. */
+    const markdown_core_element *owner_structure;
     markdown_core_map *refmap;
     delimiter *last_delim;
     delimiter_run cached_run;
@@ -94,8 +100,7 @@ delimiter *markdown_core_inline_push_delimiter_entry(markdown_core_inline_state 
                                                      bufsize_t position);
 void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
                                              bufsize_t stack_bottom, delimiter *after);
-int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                      markdown_core_node *parent);
+int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
 void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent,
                                         markdown_core_map *refmap, markdown_core_inline_state *inline_state);
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state);

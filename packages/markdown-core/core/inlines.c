@@ -754,10 +754,14 @@ static int has_inline_field(markdown_core_node **root_slot, void *context) {
     return 1;
 }
 
-// Parse an inline, advancing inline state, and add it as a child of parent.
+/* Parse an inline, advancing inline state, and add it as a child of the
+ * state's OWNER. The owner used to be passed in alongside the state, and both
+ * callers passed the same node on every iteration of their loop -- so the
+ * owner's structural element, a pure function of its kind, was re-derived once
+ * per inline token. It is resolved once now, where the owner is set. */
 // Return 0 if no inline can be parsed, 1 otherwise.
-int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                      markdown_core_node *parent) {
+int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
+    markdown_core_node *parent = inline_state->owner;
     markdown_core_node *new_inl = NULL;
     unsigned char c;
     bufsize_t startpos, endpos;
@@ -773,7 +777,7 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
                            markdown_core_chunk_dup(&inline_state->input, startpos, inline_state->pos - startpos));
         goto append;
     }
-    const markdown_core_element *structure = markdown_core_node_structure(parent);
+    const markdown_core_element *structure = inline_state->owner_structure;
     if (structure && structure->claim_inline_tail && structure->claim_inline_tail(inline_state, parent)) {
         return 0;
     }
@@ -826,13 +830,14 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
     }
     markdown_core_inline_state_from_buf(parser, parser->mem, parent->start_line, inline_state, &content, refmap);
     inline_state->owner = parent;
+    inline_state->owner_structure = markdown_core_node_structure(parent);
     /* Block buffers include their terminating line ending. An inline field
      * ends at its owner's delimiter: its trailing spaces are body content. */
     if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P(parent->kind)) {
         markdown_core_chunk_rtrim(&inline_state->input);
     }
 
-    const markdown_core_element *structure = markdown_core_node_structure(parent);
+    const markdown_core_element *structure = inline_state->owner_structure;
     if (structure && structure->begin_inline) {
         structure->begin_inline(parser, inline_state, parent);
     }
@@ -858,7 +863,7 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
     while (!parser->oom && !inline_state->oom) {
         complete_inline_token(parser, inline_state);
         if (parser->oom || inline_state->oom || markdown_core_inline_is_eof(inline_state) ||
-            !markdown_core_inline_parse_inline(parser, inline_state, inline_state->owner)) {
+            !markdown_core_inline_parse_inline(parser, inline_state)) {
             break;
         }
     }
