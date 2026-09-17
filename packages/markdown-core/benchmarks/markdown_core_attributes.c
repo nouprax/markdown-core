@@ -68,7 +68,7 @@ int bench_parse_attributes(const char *source, size_t length, attribute_receipt 
          * present, so the count is a property of the input rather than of what
          * one baseline chose to represent. */
         receipt->values += 2 + value.record_count;
-        markdown_core_attributes_free(mem, &value);
+        markdown_core_attributes_free(&value);
         at = end;
     }
     /* Read before the free, because allocation failure is sticky and a
