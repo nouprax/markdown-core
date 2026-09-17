@@ -29,8 +29,8 @@ buffers that scan produced.
 
 | Stage | Markdown Core | cmark |
 | --- | --- | --- |
-| `source_to_buffer` | `markdown_core_parse_document_with_mem` → `S_parse_source` | `cmark_parser_feed` |
-| `buffer_to_ast` | `markdown_core_parse_document_with_mem` → `S_finish_parse` | `cmark_parser_finish` |
+| `source_to_buffer` | `markdown_core_parse_document_with_setup` → `S_parse_source` | `cmark_parser_feed` |
+| `buffer_to_ast` | `markdown_core_parse_document_with_setup` → `S_finish_parse` | `cmark_parser_finish` |
 
 cmark splits exactly these two paths across two public calls, so feeding the
 whole document and then finishing gives a boundary that *is* the boundary

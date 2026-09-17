@@ -22,7 +22,6 @@ typedef struct markdown_core_attribute_value {
  * once, so overlapping failed candidates cannot repeatedly scan that extent.
  * Values are allocated and decoded only after recognition succeeds. */
 typedef struct {
-    markdown_core_mem *mem;
     const unsigned char *data;
     bufsize_t length;
     struct markdown_core_attribute_suffix {
@@ -33,7 +32,7 @@ typedef struct {
     int oom;
 } markdown_core_attribute_parser;
 
-void markdown_core_attributes_free(markdown_core_mem *mem, markdown_core_attributes *value);
+void markdown_core_attributes_free(markdown_core_attributes *value);
 void markdown_core_attribute_parser_free(markdown_core_attribute_parser *parser);
 /* Recognition only: no values are decoded until the owner commits. Zero
  * denotes a malformed candidate. The index is shared for the whole extent. */

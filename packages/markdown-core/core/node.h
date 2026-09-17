@@ -322,18 +322,13 @@ static inline markdown_core_cross_reference *markdown_core_node_cross_reference(
     return NULL;
 }
 
-static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_core_node *node) {
-    return node->content.mem;
-}
-
 /* Takes ownership of `url` and `title` and answers a resource with one holder,
  * or NULL having taken nothing -- the caller still owns both chunks and frees
  * them. */
-markdown_core_resource *markdown_core_resource_new(markdown_core_mem *mem, markdown_core_chunk url,
-                                                   markdown_core_optional_chunk title);
+markdown_core_resource *markdown_core_resource_new(markdown_core_chunk url, markdown_core_optional_chunk title);
 void markdown_core_resource_retain(markdown_core_resource *resource);
 /* Drops one holder and frees the resource with the last. NULL is a no-op. */
-void markdown_core_resource_release(markdown_core_mem *mem, markdown_core_resource *resource);
+void markdown_core_resource_release(markdown_core_resource *resource);
 MARKDOWN_CORE_EXPORT int markdown_core_node_check(markdown_core_node *node, FILE *out);
 
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_TYPE_BLOCK_P(markdown_core_node_type node_type) {

@@ -16,7 +16,7 @@
  * Four lists are present. The optional release-only SwiftPM manifest is
  * registered as absent and printed on every run.
  *
- *   node scripts/audit-source-lists.mjs [--fix]
+ *   node scripts/audit-source-lists.mjs
  */
 
 import fs from "node:fs";

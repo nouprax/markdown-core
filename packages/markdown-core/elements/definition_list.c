@@ -109,8 +109,8 @@ static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, 
     markdown_core_chunk term = {input->data + parser->first_nonspace, input->len - parser->first_nonspace, 0};
     if (term.data[0] == '[') {
         parser->definition_list_work += term.len;
-        markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = term.data, .length = term.len};
-        bool reference = markdown_core_parse_reference_inline(parser->mem, &term, NULL, &attributes, 0) != 0;
+        markdown_core_attribute_parser attributes = {.data = term.data, .length = term.len};
+        bool reference = markdown_core_parse_reference_inline(&term, NULL, &attributes, 0) != 0;
         parser->attribute_work += attributes.work;
         parser->oom |= attributes.oom;
         markdown_core_attribute_parser_free(&attributes);
@@ -159,8 +159,7 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_par
         return NULL;
     }
     definition->as.definition->compact = compact;
-    markdown_core_node *term = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
-    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
+    markdown_core_node *term = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!term) {
         parser->oom = true;
         return definition;

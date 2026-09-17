@@ -7,6 +7,7 @@ const packageDirectory = path.resolve(fileURLToPath(new URL("..", import.meta.ur
 const root = path.resolve(packageDirectory, "../..");
 const dist = path.join(packageDirectory, "dist");
 const core = [
+    "alloc.c",
     "markdown_core.c",
     "node.c",
     "iterator.c",

@@ -28,15 +28,14 @@ extern "C" {
  * Two definitions of one label are two records, and indexing keeps the first
  * in source order, which is the inherited rule; the loser's resource is freed
  * with the map, unshared. The footnote map holds labels and nothing else. */
-markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem);
+markdown_core_map *markdown_core_reference_map_new(void);
 /* Takes ownership of `resource` -- one holder -- and keeps it on the record
  * for `label`, or releases it when the label defines nothing or the record
  * could not be made. `mem` frees it on those paths, since `map` may be NULL
  * once parser construction has poisoned the parse. */
-markdown_core_map_record *markdown_core_reference_create(markdown_core_mem *mem, markdown_core_map *map,
-                                                         markdown_core_chunk *label,
+markdown_core_map_record *markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label,
                                                          struct markdown_core_resource *resource);
-markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *mem);
+markdown_core_map *markdown_core_footnote_definition_map_new(void);
 void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label);
 
 #ifdef __cplusplus

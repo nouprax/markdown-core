@@ -46,8 +46,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             }
 
             /* The engine always attaches the complete dialect. */
-            markdown_core_node *doc = markdown_core_parse_document_with_mem(
-                markdown, markdown_size, markdown_core_get_default_mem_allocator(), NULL, NULL);
+            markdown_core_node *doc = markdown_core_parse_document_with_setup(markdown, markdown_size, NULL, NULL);
             if (!doc) {
                 return 0;
             }

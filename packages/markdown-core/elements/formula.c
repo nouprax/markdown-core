@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "formula_scanners.h"
 #include "formula.h"
 #include "element.h"
@@ -65,7 +66,7 @@ const char *markdown_core_elements_get_formula_literal(markdown_core_node *node)
         return NULL;
     }
 
-    return markdown_core_chunk_to_cstr(markdown_core_node_mem(node), &formula->literal);
+    return markdown_core_chunk_to_cstr(&formula->literal);
 }
 
 int markdown_core_elements_set_formula_literal(markdown_core_node *node, const char *literal) {
@@ -74,7 +75,7 @@ int markdown_core_elements_set_formula_literal(markdown_core_node *node, const c
         return 0;
     }
 
-    markdown_core_chunk_set_cstr(markdown_core_node_mem(node), &formula->literal, literal);
+    markdown_core_chunk_set_cstr(&formula->literal, literal);
     return 1;
 }
 
@@ -105,24 +106,22 @@ int markdown_core_elements_set_formula_mode(markdown_core_node *node, markdown_c
     return 1;
 }
 
-static void formula_opaque_alloc(const markdown_core_element *element, markdown_core_mem *mem,
-                                 markdown_core_node *node) {
+static void formula_opaque_alloc(const markdown_core_element *element, markdown_core_node *node) {
     /* A NULL payload is tolerated: every accessor goes through get_formula
      * and treats the node as formula-less. */
     if (is_formula_node(node)) {
-        node->opaque = mem->calloc(1, sizeof(node_formula));
+        node->opaque = markdown_core_alloc(1, sizeof(node_formula));
     }
 }
 
-static void formula_opaque_free(const markdown_core_element *element, markdown_core_mem *mem,
-                                markdown_core_node *node) {
+static void formula_opaque_free(const markdown_core_element *element, markdown_core_node *node) {
     node_formula *formula = (node_formula *)node->opaque;
     if (!formula) {
         return;
     }
 
-    markdown_core_chunk_free(mem, &formula->literal);
-    mem->free(formula);
+    markdown_core_chunk_free(&formula->literal);
+    markdown_core_free(formula);
 }
 
 static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
@@ -131,11 +130,11 @@ static int set_formula_literal_bytes(markdown_core_node *node, const unsigned ch
         return 0;
     }
 
-    markdown_core_chunk_free(markdown_core_node_mem(node), &formula->literal);
+    markdown_core_chunk_free(&formula->literal);
     formula->literal.data = (unsigned char *)data;
     formula->literal.len = len;
     formula->literal.alloc = 0;
-    if (!markdown_core_chunk_to_cstr(markdown_core_node_mem(node), &formula->literal)) {
+    if (!markdown_core_chunk_to_cstr(&formula->literal)) {
         /* THE BORROW MUST NOT SURVIVE THE COPY FAILING. `data` belongs to the
          * caller and dies immediately: `make_backslash_delimited_formula` frees
          * its strbuf on the next statement, `replace_with_formula_block` frees
@@ -236,7 +235,7 @@ static markdown_core_node *try_opening_formula_block(const markdown_core_element
     }
 
     markdown_core_node_set_element(node, element);
-    node->opaque = parser->mem->calloc(1, sizeof(node_formula));
+    node->opaque = markdown_core_alloc(1, sizeof(node_formula));
 
     formula = get_formula(node);
     if (!formula) {
@@ -527,9 +526,7 @@ static void strip_formula_padding(const unsigned char **literal, bufsize_t *len)
 static markdown_core_node *make_formula_node(const markdown_core_element *element, markdown_core_parser *parser,
                                              markdown_core_formula_mode mode, const unsigned char *literal,
                                              bufsize_t literal_len) {
-    markdown_core_node *node =
-        markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_FORMULA, parser->mem, element);
-    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_FORMULA);
+    markdown_core_node *node = markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_FORMULA, element);
     if (!node) {
         parser->oom = true;
         return NULL;
@@ -585,7 +582,7 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
         body_len -= 2;
     }
 
-    markdown_core_strbuf_init(parser->mem, &unescaped, 0);
+    markdown_core_strbuf_init(&unescaped, 0);
     if (is_backslash_delim(rule)) {
         unsigned char close_char = mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE ? ']' : ')';
         bufsize_t i = 0;
@@ -662,11 +659,11 @@ static int info_is_formula(const markdown_core_optional_chunk *info) {
     return info->has_value && info->value.len == 7 && memcmp(info->value.data, "formula", 7) == 0;
 }
 
-static markdown_core_node *new_formula_block_from_literal(const markdown_core_element *element, markdown_core_mem *mem,
-                                                          markdown_core_node *oldnode, const unsigned char *literal,
-                                                          bufsize_t literal_len) {
+static markdown_core_node *new_formula_block_from_literal(const markdown_core_element *element,
+                                                          markdown_core_parser *parser, markdown_core_node *oldnode,
+                                                          const unsigned char *literal, bufsize_t literal_len) {
     markdown_core_node *formula =
-        markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_FORMULA_BLOCK, mem, element);
+        markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_FORMULA_BLOCK, element);
     if (!formula) {
         return NULL;
     }
@@ -690,7 +687,7 @@ static markdown_core_node *new_formula_block_from_literal(const markdown_core_el
 static markdown_core_node *replace_with_formula_block(const markdown_core_element *element,
                                                       markdown_core_parser *parser, markdown_core_node *oldnode,
                                                       const unsigned char *literal, bufsize_t literal_len) {
-    markdown_core_node *formula = new_formula_block_from_literal(element, parser->mem, oldnode, literal, literal_len);
+    markdown_core_node *formula = new_formula_block_from_literal(element, parser, oldnode, literal, literal_len);
     if (!formula) {
         return NULL;
     }

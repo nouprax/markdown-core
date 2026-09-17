@@ -23,7 +23,6 @@ extern "C" {
  * allocation failure degrades into a reported parse failure instead of
  * undefined behavior. */
 typedef struct {
-    markdown_core_mem *mem;
     unsigned char *ptr;
     bufsize_t asize, size;
     int oom;
@@ -31,7 +30,7 @@ typedef struct {
 
 extern const unsigned char markdown_core_strbuf__initbuf[];
 
-#define MARKDOWN_CORE_BUF_INIT(mem) {mem, (unsigned char *)markdown_core_strbuf__initbuf, 0, 0, 0}
+#define MARKDOWN_CORE_BUF_INIT() {(unsigned char *)markdown_core_strbuf__initbuf, 0, 0, 0}
 
 /**
  * Initialize a markdown_core_strbuf structure.
@@ -40,7 +39,7 @@ extern const unsigned char markdown_core_strbuf__initbuf[];
  * initialization.
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_strbuf_init(markdown_core_mem *mem, markdown_core_strbuf *buf, bufsize_t initial_size);
+void markdown_core_strbuf_init(markdown_core_strbuf *buf, bufsize_t initial_size);
 
 /**
  * Grow the buffer to hold at least `target_size` bytes.

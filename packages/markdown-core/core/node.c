@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "alloc.h"
 #include "config.h"
 #include "node.h"
 #include "references.h"
@@ -8,8 +9,6 @@
 #include "../elements/markdown-core-elements.h"
 
 static void S_node_unlink(markdown_core_node *node);
-
-#define NODE_MEM(node) markdown_core_node_mem(node)
 
 bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
     if (child_type == MARKDOWN_CORE_NODE_DOCUMENT || child_type == MARKDOWN_CORE_NODE_TABLE_CAPTION ||
@@ -66,9 +65,6 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
 static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
     if (node == NULL || child == NULL) {
         return false;
-    }
-    if (NODE_MEM(node) != NODE_MEM(child)) {
-        return 0;
     }
     /* Arbitrary reparenting must reject cycles. Parser construction instead
      * transfers an independently owned subtree through attach_owned. */
@@ -181,35 +177,26 @@ static void S_init_node_as(markdown_core_node_type type, markdown_core_node_data
     }
 }
 
-markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
-                                                            const markdown_core_element *element) {
+markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
+                                                    const markdown_core_element *element) {
     /* Construction gives the node and its record one aligned allocation. */
     size_t payload_size = S_node_payload_size(type);
     markdown_core_node *node =
-        (markdown_core_node *)mem->calloc(1, sizeof(markdown_core_node_allocation) + payload_size);
+        (markdown_core_node *)markdown_core_alloc(1, sizeof(markdown_core_node_allocation) + payload_size);
     if (!node) {
         return NULL;
     }
-    markdown_core_strbuf_init(mem, &node->content, 0);
+    markdown_core_strbuf_init(&node->content, 0);
     node->kind = (uint16_t)type;
     node->element = element;
     node->as.data = payload_size ? S_initial_payload(node) : NULL;
     S_init_node_as(type, &node->as);
 
     if (node->element && node->element->opaque_alloc_func) {
-        node->element->opaque_alloc_func(node->element, mem, node);
+        node->element->opaque_alloc_func(node->element, node);
     }
 
     return node;
-}
-
-markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
-                                                    const markdown_core_element *element) {
-    return markdown_core_node_new_with_mem_and_ext(type, markdown_core_get_default_mem_allocator(), element);
-}
-
-markdown_core_node *markdown_core_node_new_with_mem(markdown_core_node_type type, markdown_core_mem *mem) {
-    return markdown_core_node_new_with_mem_and_ext(type, mem, NULL);
 }
 
 markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
@@ -219,52 +206,52 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
 static void free_node_as(markdown_core_node *node) {
     switch (node->kind) {
     case MARKDOWN_CORE_NODE_CALLOUT:
-        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.callout->variant);
+        markdown_core_optional_chunk_free(&node->as.callout->variant);
         break;
     case MARKDOWN_CORE_NODE_METADATA:
-        markdown_core_metadata_fields_free(NODE_MEM(node), node->as.metadata);
+        markdown_core_metadata_fields_free(node->as.metadata);
         break;
     case MARKDOWN_CORE_NODE_LIST_ITEM:
-        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.list->task_marker);
+        markdown_core_optional_chunk_free(&node->as.list->task_marker);
         break;
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.code->info);
-        markdown_core_chunk_free(NODE_MEM(node), &node->as.code->literal);
+        markdown_core_optional_chunk_free(&node->as.code->info);
+        markdown_core_chunk_free(&node->as.code->literal);
         break;
     case MARKDOWN_CORE_NODE_TEXT:
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
     case MARKDOWN_CORE_NODE_COMMENT:
     case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
-        markdown_core_chunk_free(NODE_MEM(node), node->as.literal);
+        markdown_core_chunk_free(node->as.literal);
         break;
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
-        markdown_core_chunk_free(NODE_MEM(node), &node->as.html_block->literal);
+        markdown_core_chunk_free(&node->as.html_block->literal);
         break;
     case MARKDOWN_CORE_NODE_CROSS_LINK:
     case MARKDOWN_CORE_NODE_CROSS_EMBEDDED: {
         markdown_core_cross_reference *cross = markdown_core_node_cross_reference(node);
-        markdown_core_chunk_free(NODE_MEM(node), &cross->path);
-        markdown_core_optional_chunk_free(NODE_MEM(node), &cross->anchor);
-        markdown_core_optional_chunk_free(NODE_MEM(node), &cross->label);
+        markdown_core_chunk_free(&cross->path);
+        markdown_core_optional_chunk_free(&cross->anchor);
+        markdown_core_optional_chunk_free(&cross->label);
         break;
     }
     case MARKDOWN_CORE_NODE_CITATION:
         /* The affix chains are freed by the walk in `S_free_nodes`, spliced
          * in beside the children; only the referent's bytes are the arm's. */
-        markdown_core_chunk_free(NODE_MEM(node), &node->as.citation->value);
+        markdown_core_chunk_free(&node->as.citation->value);
         break;
     case MARKDOWN_CORE_NODE_SPECIMEN:
-        markdown_core_optional_chunk_free(NODE_MEM(node), &node->as.specimen->id);
+        markdown_core_optional_chunk_free(&node->as.specimen->id);
         break;
     case MARKDOWN_CORE_NODE_FOOTNOTE:
-        markdown_core_chunk_free(NODE_MEM(node), &node->as.footnote->id);
+        markdown_core_chunk_free(&node->as.footnote->id);
         break;
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_EMBEDDED:
         /* One holder fewer; a resource shared with other occurrences, or
          * still held by the reference map, stays. */
-        markdown_core_resource_release(NODE_MEM(node), node->as.link->resource);
+        markdown_core_resource_release(node->as.link->resource);
         node->as.link->resource = NULL;
         break;
     default:
@@ -273,7 +260,7 @@ static void free_node_as(markdown_core_node *node) {
     /* Free only the allocation this node owns separately. Pointer equality
      * cannot establish ownership: an allocator may place a replacement right
      * after a fieldless node's allocation. */
-    NODE_MEM(node)->free(node->node_data_allocation);
+    markdown_core_free(node->node_data_allocation);
     node->node_data_allocation = NULL;
     node->as.data = NULL;
 }
@@ -330,18 +317,18 @@ static void S_splice_owned_fields(markdown_core_node *owner, markdown_core_node 
 static void S_free_nodes(markdown_core_node *e) {
     markdown_core_node *next;
     while (e != NULL) {
-        markdown_core_attributes_free(NODE_MEM(e), &e->attributes);
+        markdown_core_attributes_free(&e->attributes);
         markdown_core_strbuf_free(&e->content);
 
         if (e->user_data && e->user_data_free_func) {
-            e->user_data_free_func(NODE_MEM(e), e->user_data);
+            e->user_data_free_func(e->user_data);
         }
 
         if (e->element && e->element->visit_owned_subtrees_func) {
             e->element->visit_owned_subtrees_func(e->element, e, S_release_owned_subtree, e);
         }
         if (e->opaque && e->element && e->element->opaque_free_func) {
-            e->element->opaque_free_func(e->element, NODE_MEM(e), e);
+            e->element->opaque_free_func(e->element, e);
         }
 
         S_splice_owned_fields(e, e);
@@ -353,7 +340,7 @@ static void S_free_nodes(markdown_core_node *e) {
             e->next = e->first_child;
         }
         next = e->next;
-        NODE_MEM(e)->free(e);
+        markdown_core_free(e);
         e = next;
     }
 }
@@ -385,7 +372,7 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     /* Allocate before releasing anything. A failed conversion preserves the
      * old kind, data, and owned subtrees, with stable node identity. */
     size_t size = S_node_payload_size(kind);
-    markdown_core_node_data replacement = {.data = size ? NODE_MEM(node)->calloc(1, size) : NULL};
+    markdown_core_node_data replacement = {.data = size ? markdown_core_alloc(1, size) : NULL};
     if (size && !replacement.data) {
         return MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED;
     }
@@ -556,16 +543,16 @@ const char *markdown_core_node_get_literal(markdown_core_node *node) {
 
     switch (node->kind) {
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
-        return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.html_block->literal);
+        return markdown_core_chunk_to_cstr(&node->as.html_block->literal);
     case MARKDOWN_CORE_NODE_TEXT:
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
     case MARKDOWN_CORE_NODE_COMMENT:
     case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
-        return markdown_core_chunk_to_cstr(NODE_MEM(node), node->as.literal);
+        return markdown_core_chunk_to_cstr(node->as.literal);
 
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.code->literal);
+        return markdown_core_chunk_to_cstr(&node->as.code->literal);
 
     default:
         break;
@@ -581,16 +568,16 @@ int markdown_core_node_set_literal(markdown_core_node *node, const char *content
 
     switch (node->kind) {
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
-        return markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.html_block->literal, content);
+        return markdown_core_chunk_set_cstr(&node->as.html_block->literal, content);
     case MARKDOWN_CORE_NODE_TEXT:
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
     case MARKDOWN_CORE_NODE_COMMENT:
     case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
-        return markdown_core_chunk_set_cstr(NODE_MEM(node), node->as.literal, content);
+        return markdown_core_chunk_set_cstr(node->as.literal, content);
 
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        return markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.code->literal, content);
+        return markdown_core_chunk_set_cstr(&node->as.code->literal, content);
 
     default:
         break;
@@ -794,7 +781,7 @@ const char *markdown_core_node_get_fence_info(markdown_core_node *node) {
         if (!node->as.code->info.has_value) {
             return NULL;
         }
-        return markdown_core_chunk_to_cstr(NODE_MEM(node), &node->as.code->info.value);
+        return markdown_core_chunk_to_cstr(&node->as.code->info.value);
     } else {
         return NULL;
     }
@@ -808,7 +795,7 @@ int markdown_core_node_set_fence_info(markdown_core_node *node, const char *info
     if (node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK) {
         /* A NULL argument is ABSENCE and anything else is presence, including
          * `""`; the caller states which, and this is the write site. */
-        if (!markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.code->info.value, info)) {
+        if (!markdown_core_chunk_set_cstr(&node->as.code->info.value, info)) {
             return 0;
         }
         node->as.code->info.has_value = info != NULL;
@@ -861,9 +848,8 @@ int markdown_core_node_set_fenced(markdown_core_node *node, int fenced, int leng
     }
 }
 
-markdown_core_resource *markdown_core_resource_new(markdown_core_mem *mem, markdown_core_chunk url,
-                                                   markdown_core_optional_chunk title) {
-    markdown_core_resource *resource = (markdown_core_resource *)mem->calloc(1, sizeof(*resource));
+markdown_core_resource *markdown_core_resource_new(markdown_core_chunk url, markdown_core_optional_chunk title) {
+    markdown_core_resource *resource = (markdown_core_resource *)markdown_core_alloc(1, sizeof(*resource));
     if (!resource) {
         return NULL;
     }
@@ -879,7 +865,7 @@ void markdown_core_resource_retain(markdown_core_resource *resource) {
     }
 }
 
-void markdown_core_resource_release(markdown_core_mem *mem, markdown_core_resource *resource) {
+void markdown_core_resource_release(markdown_core_resource *resource) {
     if (!resource) {
         return;
     }
@@ -887,10 +873,10 @@ void markdown_core_resource_release(markdown_core_mem *mem, markdown_core_resour
     if (--resource->holders > 0) {
         return;
     }
-    markdown_core_chunk_free(mem, &resource->url);
-    markdown_core_optional_chunk_free(mem, &resource->title);
-    markdown_core_attributes_free(mem, &resource->attributes);
-    mem->free(resource);
+    markdown_core_chunk_free(&resource->url);
+    markdown_core_optional_chunk_free(&resource->title);
+    markdown_core_attributes_free(&resource->attributes);
+    markdown_core_free(resource);
 }
 
 int markdown_core_node_set_element(markdown_core_node *node, const markdown_core_element *element) {
@@ -984,7 +970,7 @@ static void S_node_attach(markdown_core_node *parent, markdown_core_node *child,
 /* The caller owns a detached subtree, disjoint from the destination tree. */
 int markdown_core_node_attach_owned(markdown_core_node *parent, markdown_core_node *child, markdown_core_node *before) {
     if (!parent || !child || parent == child || child->parent || child->prev || child->next ||
-        (before && before->parent != parent) || NODE_MEM(parent) != NODE_MEM(child) ||
+        (before && before->parent != parent) ||
         !markdown_core_node_can_contain_type(parent, (markdown_core_node_type)child->kind)) {
         return 0;
     }

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "alloc.h"
 #include "../include/markdown_core.h"
 
 #include "ast_internal.h"
@@ -104,8 +105,6 @@ static void clear_error(markdown_core_error **error) {
 
 static const markdown_core_error ERROR_INVALID_SOURCE = {MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
                                                          "source must not be null when length is nonzero"};
-static const markdown_core_error ERROR_INVALID_ALLOCATOR = {MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-                                                            "memory allocator must not be null"};
 static const markdown_core_error ERROR_DOCUMENT_ALLOCATION = {MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
                                                               "could not allocate document"};
 static const markdown_core_error ERROR_PARSE_ALLOCATION = {MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
@@ -126,8 +125,8 @@ static void set_error(markdown_core_error **error, const markdown_core_error *va
  * the public entry supplies the default allocator, and the allocation-failure
  * tests supply an injected one. Nothing else builds a parser, so there is
  * exactly one language and no way to parse a part of it. */
-markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *source, size_t length,
-                                                              markdown_core_mem *mem, markdown_core_error **error) {
+markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
+                                                     markdown_core_error **error) {
     markdown_core_document *document;
 
     clear_error(error);
@@ -135,29 +134,19 @@ markdown_core_document *markdown_core_document_parse_with_mem(const uint8_t *sou
         set_error(error, &ERROR_INVALID_SOURCE);
         return NULL;
     }
-    if (!mem) {
-        set_error(error, &ERROR_INVALID_ALLOCATOR);
-        return NULL;
-    }
-    document = (markdown_core_document *)mem->calloc(1, sizeof(*document));
+    document = (markdown_core_document *)markdown_core_alloc(1, sizeof(*document));
     if (!document) {
         set_error(error, &ERROR_DOCUMENT_ALLOCATION);
         return NULL;
     }
-    document->mem = mem;
 
-    document->root = markdown_core_parse_document_with_mem((const char *)source, length, mem, NULL, NULL);
+    document->root = markdown_core_parse_document_with_setup((const char *)source, length, NULL, NULL);
     if (!document->root) {
-        mem->free(document);
+        markdown_core_free(document);
         set_error(error, &ERROR_PARSE_ALLOCATION);
         return NULL;
     }
     return document;
-}
-
-markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
-                                                     markdown_core_error **error) {
-    return markdown_core_document_parse_with_mem(source, length, markdown_core_get_default_mem_allocator(), error);
 }
 
 void markdown_core_document_free(markdown_core_document *document) {
@@ -165,7 +154,7 @@ void markdown_core_document_free(markdown_core_document *document) {
         return;
     }
     markdown_core_node_free(document->root);
-    document->mem->free(document);
+    markdown_core_free(document);
 }
 
 const markdown_core_node *markdown_core_document_root(const markdown_core_document *document) {

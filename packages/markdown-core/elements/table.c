@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "table_scanners.h"
 #include <markdown-core-element-api.h>
 #include "element.h"
@@ -36,12 +37,12 @@ typedef struct {
     uint16_t n_columns;
 } pipe_row;
 
-static void free_node_table(markdown_core_mem *mem, markdown_core_table *table) {
+static void free_node_table(markdown_core_table *table) {
     if (!table) {
         return;
     }
-    mem->free(table->columns);
-    mem->free(table);
+    markdown_core_free(table->columns);
+    markdown_core_free(table);
 }
 
 static void init_cell(markdown_core_node *node) {
@@ -211,8 +212,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     // with the allocation refused. The other three lose the lead paragraph
     // WITHOUT setting parser->oom, so the document comes back short and the
     // failure bit says everything was fine.
-    paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
-    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
+    paragraph = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!paragraph) {
         parser->oom = true;
         return;
@@ -259,7 +259,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     markdown_core_parser_adopt_content_marks(parser, parent_container, paragraph, first, content_end - first);
 
     if (!markdown_core_node_attach_owned(parent_container->parent, paragraph, parent_container)) {
-        // markdown_core_node_free, not mem->free: the node owns a content
+        // markdown_core_node_free, not markdown_core_free: the node owns a content
         // buffer by now, and freeing the struct alone leaks it.
         parser->oom = true;
         markdown_core_node_free(paragraph);
@@ -304,8 +304,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
         return NULL;
     }
 
-    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_TABLE);
-    markdown_core_node_set_kind_result result = markdown_core_node_set_kind(parent_container, MARKDOWN_CORE_NODE_TABLE);
+    markdown_core_node_set_kind_result result =
+        markdown_core_parser_set_node_kind(parser, parent_container, MARKDOWN_CORE_NODE_TABLE);
     if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
         if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
             parser->oom = true;
@@ -330,7 +330,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
     /* Table data belongs to the element. Its cleanup accepts partial
      * initialization when an allocation fails after the kind change. */
     markdown_core_node_set_element(parent_container, self);
-    parent_container->opaque = parser->mem->calloc(1, sizeof(markdown_core_table));
+    parent_container->opaque = markdown_core_alloc(1, sizeof(markdown_core_table));
     if (!parent_container->opaque) {
         parser->oom = true;
 
@@ -338,7 +338,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
     }
     markdown_core_table *table = parent_container->opaque;
     table->column_count = header_row.n_columns;
-    table->columns = parser->mem->calloc(table->column_count, sizeof(*table->columns));
+    table->columns = markdown_core_alloc(table->column_count, sizeof(*table->columns));
     if (!table->columns) {
         parser->oom = true;
 
@@ -562,19 +562,17 @@ static int contains_inlines(const markdown_core_element *element, markdown_core_
            (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL && node->content.size > 0);
 }
 
-static void opaque_alloc(const markdown_core_element *self, markdown_core_mem *mem, markdown_core_node *node) {
+static void opaque_alloc(const markdown_core_element *self, markdown_core_node *node) {
     /* A NULL payload makes the table facade accessors fail; no incomplete
      * table is returned by a successful parse. */
     if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
-        node->opaque = mem->calloc(1, sizeof(markdown_core_table));
+        node->opaque = markdown_core_alloc(1, sizeof(markdown_core_table));
     } else if (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
         init_cell(node);
     }
 }
 
-static void opaque_free(const markdown_core_element *self, markdown_core_mem *mem, markdown_core_node *node) {
-    free_node_table(mem, node->opaque);
-}
+static void opaque_free(const markdown_core_element *self, markdown_core_node *node) { free_node_table(node->opaque); }
 
 static int visit_owned_subtrees(const markdown_core_element *self, markdown_core_node *node,
                                 markdown_core_owned_subtree_visitor visitor, void *context) {
@@ -645,7 +643,7 @@ static bool table_reserve(markdown_core_parser *parser, void **values, size_t *c
         parser->oom = true;
         return false;
     }
-    void *grown = parser->mem->realloc(*values, next * size);
+    void *grown = markdown_core_realloc(*values, next * size);
     if (!grown) {
         parser->oom = true;
         return false;
@@ -701,15 +699,15 @@ static bool table_source_get(table_source *source, size_t index) {
 static void table_source_free(table_source *source) {
     markdown_core_parser_lookahead_end(&source->lookahead);
     for (size_t i = 0; i < source->count; i++) {
-        source->parser->mem->free(source->lines[i].bytes);
-        source->parser->mem->free(source->lines[i].dashes);
+        markdown_core_free(source->lines[i].bytes);
+        markdown_core_free(source->lines[i].dashes);
     }
 }
 
 static void table_candidate_free(markdown_core_parser *parser, table_candidate *candidate) {
-    parser->mem->free(candidate->columns);
-    parser->mem->free(candidate->rows);
-    parser->mem->free(candidate->cells);
+    markdown_core_free(candidate->columns);
+    markdown_core_free(candidate->rows);
+    markdown_core_free(candidate->cells);
     *candidate = (table_candidate){0};
 }
 
@@ -816,7 +814,7 @@ static const table_interval *table_dashes(table_source *source, size_t index) {
     }
     table_source_line *line = &source->lines[index];
     if (!line->dashes) {
-        line->dashes = source->parser->mem->calloc(count, sizeof(*line->dashes));
+        line->dashes = markdown_core_alloc(count, sizeof(*line->dashes));
         if (!line->dashes) {
             source->parser->oom = true;
             return NULL;
@@ -918,7 +916,7 @@ static bool table_set_columns(table_source *source, table_candidate *candidate, 
         return false;
     }
     candidate->column_count = count;
-    candidate->columns = source->parser->mem->calloc(count, sizeof(*candidate->columns));
+    candidate->columns = markdown_core_alloc(count, sizeof(*candidate->columns));
     if (!candidate->columns) {
         source->parser->oom = true;
         return false;
@@ -1065,9 +1063,9 @@ static unsigned table_separator_digit(table_source *source, table_separator_key 
  * tables. Facts retain the shared container/offset ownership. */
 static void table_simple_search_finish(table_source *source, size_t first, size_t last) {
     size_t capacity = last - first + 1, count = 0;
-    table_separator_key *keys = source->parser->mem->calloc(capacity, sizeof(*keys));
-    table_separator_key *scratch = source->parser->mem->calloc(capacity, sizeof(*scratch));
-    table_separator_group *groups = source->parser->mem->calloc(capacity, sizeof(*groups));
+    table_separator_key *keys = markdown_core_alloc(capacity, sizeof(*keys));
+    table_separator_key *scratch = markdown_core_alloc(capacity, sizeof(*scratch));
+    table_separator_group *groups = markdown_core_alloc(capacity, sizeof(*groups));
     if (!keys || !scratch || !groups) {
         source->parser->oom = true;
         goto done;
@@ -1126,9 +1124,9 @@ static void table_simple_search_finish(table_source *source, size_t first, size_
         }
     }
 done:
-    source->parser->mem->free(keys);
-    source->parser->mem->free(scratch);
-    source->parser->mem->free(groups);
+    markdown_core_free(keys);
+    markdown_core_free(scratch);
+    markdown_core_free(groups);
 }
 
 static bool table_parse_simple(table_source *source, size_t start, table_candidate *candidate) {
@@ -1373,7 +1371,7 @@ static uint64_t table_region_source_key(const void *entry) {
  * Disjoint regions bound the total perimeter work by the source grid area. */
 static bool table_grid_rows(table_source *source, table_candidate *candidate, const int *columns, size_t *boundaries,
                             size_t row_count, table_grid_region *regions, size_t count) {
-    size_t *indices = source->parser->mem->calloc(row_count + 1, sizeof(*indices));
+    size_t *indices = markdown_core_alloc(row_count + 1, sizeof(*indices));
     if (!indices) {
         source->parser->oom = true;
         return false;
@@ -1404,7 +1402,7 @@ static bool table_grid_rows(table_source *source, table_candidate *candidate, co
         regions[i].top = indices[regions[i].top];
         regions[i].bottom = indices[regions[i].bottom + 1] - 1;
     }
-    source->parser->mem->free(indices);
+    markdown_core_free(indices);
     size_t cell_index = 0, width = candidate->column_count;
     for (size_t r = 0; r + 1 < boundary_count; r++) {
         size_t first = boundaries[r] + 1, next_line = boundaries[r + 1];
@@ -1443,12 +1441,12 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         return false;
     }
     size_t capacity = 2 * width, active_count = 0, closed_count = 0, closed_capacity = 0;
-    int *parents = source->parser->mem->calloc(capacity, sizeof(*parents));
-    int *sizes = source->parser->mem->calloc(capacity, sizeof(*sizes));
-    int *next = source->parser->mem->calloc(capacity, sizeof(*next));
-    int *previous = source->parser->mem->calloc(width, sizeof(*previous));
-    table_grid_region *regions = source->parser->mem->calloc(capacity, sizeof(*regions));
-    table_grid_region *scratch = source->parser->mem->calloc(width, sizeof(*scratch)), *closed = NULL;
+    int *parents = markdown_core_alloc(capacity, sizeof(*parents));
+    int *sizes = markdown_core_alloc(capacity, sizeof(*sizes));
+    int *next = markdown_core_alloc(capacity, sizeof(*next));
+    int *previous = markdown_core_alloc(width, sizeof(*previous));
+    table_grid_region *regions = markdown_core_alloc(capacity, sizeof(*regions));
+    table_grid_region *scratch = markdown_core_alloc(width, sizeof(*scratch)), *closed = NULL;
     bool valid = false;
     if (!parents || !sizes || !next || !previous || !regions || !scratch) {
         source->parser->oom = true;
@@ -1518,21 +1516,20 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
             goto done;
         }
     }
-    if (!markdown_core_order_source_entries(source->parser->mem, closed, closed_count, sizeof(*closed),
-                                            table_region_source_key)) {
+    if (!markdown_core_order_source_entries(closed, closed_count, sizeof(*closed), table_region_source_key)) {
         source->parser->oom = true;
         goto done;
     }
     source->parser->table_scan_work += 16 * closed_count;
     valid = table_grid_rows(source, candidate, columns, boundaries, row_count, closed, closed_count);
 done:
-    source->parser->mem->free(parents);
-    source->parser->mem->free(sizes);
-    source->parser->mem->free(next);
-    source->parser->mem->free(previous);
-    source->parser->mem->free(regions);
-    source->parser->mem->free(scratch);
-    source->parser->mem->free(closed);
+    markdown_core_free(parents);
+    markdown_core_free(sizes);
+    markdown_core_free(next);
+    markdown_core_free(previous);
+    markdown_core_free(regions);
+    markdown_core_free(scratch);
+    markdown_core_free(closed);
     return valid;
 }
 
@@ -1596,9 +1593,9 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         !table_grid_opening(source, start, &left, &right)) {
         return false;
     }
-    parents = source->parser->mem->calloc((size_t)right + 1, sizeof(*parents));
-    positions = source->parser->mem->calloc((size_t)right + 1, sizeof(*positions));
-    sizes = source->parser->mem->calloc((size_t)right + 1, sizeof(*sizes));
+    parents = markdown_core_alloc((size_t)right + 1, sizeof(*parents));
+    positions = markdown_core_alloc((size_t)right + 1, sizeof(*positions));
+    sizes = markdown_core_alloc((size_t)right + 1, sizeof(*sizes));
     if (!parents || !positions || !sizes) {
         source->parser->oom = true;
         goto failed;
@@ -1664,7 +1661,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         }
     }
     candidate->column_count = count - 1;
-    candidate->columns = source->parser->mem->calloc(count - 1, sizeof(*candidate->columns));
+    candidate->columns = markdown_core_alloc(count - 1, sizeof(*candidate->columns));
     if (!candidate->columns) {
         source->parser->oom = true;
         goto failed;
@@ -1724,16 +1721,16 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         candidate->columns[c].relative =
             (markdown_core_optional_double){true, (positions[c + 1] - positions[c] - 1) / total};
     }
-    source->parser->mem->free(sizes);
-    source->parser->mem->free(parents);
-    source->parser->mem->free(positions);
-    source->parser->mem->free(boundaries);
+    markdown_core_free(sizes);
+    markdown_core_free(parents);
+    markdown_core_free(positions);
+    markdown_core_free(boundaries);
     return true;
 failed:
-    source->parser->mem->free(sizes);
-    source->parser->mem->free(parents);
-    source->parser->mem->free(positions);
-    source->parser->mem->free(boundaries);
+    markdown_core_free(sizes);
+    markdown_core_free(parents);
+    markdown_core_free(positions);
+    markdown_core_free(boundaries);
     table_candidate_free(source->parser, candidate);
     return false;
 }
@@ -1759,7 +1756,7 @@ static bool table_parse_pipe_header(table_source *source, size_t start, table_ca
         goto done;
     }
     candidate->column_count = header.n_columns;
-    candidate->columns = source->parser->mem->calloc(candidate->column_count, sizeof(*candidate->columns));
+    candidate->columns = markdown_core_alloc(candidate->column_count, sizeof(*candidate->columns));
     if (!candidate->columns) {
         source->parser->oom = true;
         matches = false;
@@ -1898,8 +1895,7 @@ static void table_fill_cell(table_source *source, markdown_core_node *node, cons
 static markdown_core_node *table_child(markdown_core_parser *parser, markdown_core_node *parent,
                                        markdown_core_node_type kind, int first_line, int first_column, int last_line,
                                        int last_column) {
-    markdown_core_node *node = markdown_core_node_new_with_mem(kind, parser->mem);
-    markdown_core_parser_note_kind(parser, kind);
+    markdown_core_node *node = markdown_core_parser_make_node(parser, kind);
     if (!node) {
         parser->oom = true;
         return NULL;
@@ -1928,7 +1924,7 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
         return NULL;
     }
     markdown_core_node_set_element(node, &MARKDOWN_CORE_ELEMENT_TABLE);
-    node->opaque = parser->mem->calloc(1, sizeof(markdown_core_table));
+    node->opaque = markdown_core_alloc(1, sizeof(markdown_core_table));
     if (!node->opaque) {
         parser->oom = true;
         return node;
@@ -2209,7 +2205,7 @@ static markdown_core_node *try_interrupting_block(markdown_core_parser *parser, 
 }
 
 static void dispose_parser(markdown_core_parser *parser) {
-    parser->mem->free(parser->table_lines);
+    markdown_core_free(parser->table_lines);
     parser->table_lines = NULL;
 }
 

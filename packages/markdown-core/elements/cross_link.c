@@ -86,10 +86,8 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     }
     /* A lone ^ is an ordinary nonempty heading part, not a block identifier. */
     block_id = block_id && target_end > hash + 2;
-    node = markdown_core_node_new_with_mem_and_ext(
-        embedded ? MARKDOWN_CORE_NODE_CROSS_EMBEDDED : MARKDOWN_CORE_NODE_CROSS_LINK, parser->mem, element);
-    markdown_core_parser_note_kind(parser,
-                                   embedded ? MARKDOWN_CORE_NODE_CROSS_EMBEDDED : MARKDOWN_CORE_NODE_CROSS_LINK);
+    node = markdown_core_parser_make_node_with_ext(
+        parser, embedded ? MARKDOWN_CORE_NODE_CROSS_EMBEDDED : MARKDOWN_CORE_NODE_CROSS_LINK, element);
     if (!node) {
         parser->oom = true;
         return NULL;
@@ -111,9 +109,9 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
             cross->label.value.len = suffix;
         }
     }
-    if (!markdown_core_chunk_to_cstr(parser->mem, &cross->path) ||
-        (cross->anchor.has_value && !markdown_core_chunk_to_cstr(parser->mem, &cross->anchor.value)) ||
-        (cross->label.has_value && !markdown_core_chunk_to_cstr(parser->mem, &cross->label.value))) {
+    if (!markdown_core_chunk_to_cstr(&cross->path) ||
+        (cross->anchor.has_value && !markdown_core_chunk_to_cstr(&cross->anchor.value)) ||
+        (cross->label.has_value && !markdown_core_chunk_to_cstr(&cross->label.value))) {
         parser->oom = true;
         markdown_core_node_free(node);
         return NULL;

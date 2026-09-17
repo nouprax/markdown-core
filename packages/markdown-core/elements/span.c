@@ -12,12 +12,12 @@ markdown_core_bracket_match markdown_core_span_close(markdown_core_parser *parse
         bufsize_t end;
         if (markdown_core_inline_state_attributes(inline_state, initial_pos, &attributes, &end)) {
             if (!markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_SPAN)) {
-                markdown_core_attributes_free(inline_state->mem, &attributes);
+                markdown_core_attributes_free(&attributes);
                 return BRACKET_REJECTED;
             }
             inl = markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_SPAN);
             if (!inl) {
-                markdown_core_attributes_free(inline_state->mem, &attributes);
+                markdown_core_attributes_free(&attributes);
                 markdown_core_inline_pop_bracket(inline_state);
                 return BRACKET_MATCHED;
             }

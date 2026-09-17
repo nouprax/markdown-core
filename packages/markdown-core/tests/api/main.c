@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "alloc.h"
 #include "markdown-core.h"
 #include "node.h"
 #include "buffer.h"
@@ -31,6 +32,191 @@
 #include "cplusplus.h"
 
 #define UTF8_REPL "\xEF\xBF\xBD"
+
+/* THE TEST BINARY'S ALLOCATOR, SUBSTITUTED AT THE LINK.
+ *
+ * `core/alloc.c` defines these three and nothing else, so defining them here
+ * keeps that archive member from ever being pulled and every allocation the
+ * library makes lands in this file. See `core/alloc.h` for why the seam is the
+ * linker rather than a swappable global.
+ *
+ * There is ONE allocator per binary, so the three separate probes this file
+ * used to install per object -- a refusing one for strbuf, a counting one for
+ * node payloads, a watching one for a single marker -- are one allocator with
+ * three independent behaviours. Each stays inert until a test arms it.
+ *
+ * `payload_live` is ARMED rather than always counting, and that is the whole
+ * difference from the per-object allocators. It used to count allocations made
+ * through one `markdown_core_mem` and nothing else, so `payload_live == 0` read
+ * as "the objects this test made are all gone". Counting every allocation in
+ * the process instead would fold in whatever else happens to be alive, so the
+ * counter runs only between `payload_probe_arm` and `payload_probe_disarm`,
+ * where the test allocates and frees everything it asserts about. */
+static size_t payload_allocations, payload_fail_at, payload_live;
+static int payload_counting;
+static int strbuf_refuse_next;
+static void *marker_to_free;
+static int marker_free_count;
+
+/* Counts calls, for the tests that assert a speculative probe allocated
+ * nothing it would throw away. */
+static size_t text_allocation_calls;
+static int text_counting;
+
+/* Accounts BYTES, for the test that asserts long scalar text needs no index
+ * storage. It prefixes every allocation with its size, which is why it must be
+ * armed only around a CLOSED region: a pointer allocated before arming and
+ * freed while armed would be read through a header that is not there. The one
+ * test that uses it arms immediately before its parse and disarms after the
+ * document is freed; the source buffer it builds is allocated and freed
+ * outside that window. */
+typedef union {
+    size_t size;
+    long double alignment;
+    void *pointer;
+} properties_allocation;
+static size_t properties_live_bytes, properties_peak_bytes;
+static int properties_counting;
+
+static void properties_account(size_t old_size, size_t new_size) {
+    properties_live_bytes = properties_live_bytes - old_size + new_size;
+    if (properties_live_bytes > properties_peak_bytes) {
+        properties_peak_bytes = properties_live_bytes;
+    }
+}
+
+static void properties_probe_arm(void) {
+    properties_live_bytes = properties_peak_bytes = 0;
+    properties_counting = 1;
+}
+
+static void properties_probe_disarm(void) {
+    if (!properties_peak_bytes) {
+        fprintf(stderr, "byte probe disarmed having accounted no bytes: the region measures nothing\n");
+        abort();
+    }
+    properties_counting = 0;
+}
+
+/* ARMING IS CHECKED AT RUNTIME, NOT BY READING THE SOURCE.
+ *
+ * An armed region exists to measure a parse, and a parse always allocates. So
+ * a region that ends having observed NOTHING was not armed around the thing it
+ * meant to measure -- armed too late, disarmed too early, or wrapped around
+ * the wrong statement -- and every assertion that follows it compares zero
+ * against zero. That is the failure `grid_opening_memory` shipped with, and no
+ * audit over the source text catches it in general: a check that the arming
+ * call appears in the same function is satisfied by arming AFTER the parse.
+ *
+ * So the probes check themselves. Disarming a region that counted nothing
+ * aborts, which cannot be arranged around by moving a line. */
+static void payload_probe_arm(void) {
+    payload_allocations = payload_fail_at = payload_live = 0;
+    payload_counting = 1;
+}
+
+static void payload_probe_disarm(void) {
+    if (!payload_allocations) {
+        fprintf(stderr, "payload probe disarmed having counted no allocation: the region measures nothing\n");
+        abort();
+    }
+    payload_counting = 0;
+}
+
+/* Refusals are counted the same way whichever entry point asks, because a
+ * constructor that grows a buffer and one that allocates a record are the same
+ * ordinal to a sweep that refuses the Nth. */
+static int allocation_refused(void) {
+    if (strbuf_refuse_next) {
+        strbuf_refuse_next = 0;
+        return 1;
+    }
+    if (payload_counting && ++payload_allocations == payload_fail_at) {
+        return 1;
+    }
+    return 0;
+}
+
+void *markdown_core_alloc(size_t count, size_t size) {
+    void *pointer;
+    if (allocation_refused()) {
+        return NULL;
+    }
+    text_allocation_calls += text_counting;
+    if (properties_counting) {
+        properties_allocation *allocation;
+        size_t bytes;
+        if (count && size > (SIZE_MAX - sizeof(*allocation)) / count) {
+            return NULL;
+        }
+        bytes = count * size;
+        allocation = calloc(1, sizeof(*allocation) + bytes);
+        if (!allocation) {
+            return NULL;
+        }
+        allocation->size = bytes;
+        properties_account(0, bytes);
+        return allocation + 1;
+    }
+    pointer = calloc(count, size);
+    if (payload_counting) {
+        payload_live += pointer != NULL;
+    }
+    return pointer;
+}
+
+void *markdown_core_realloc(void *pointer, size_t size) {
+    int fresh = pointer == NULL;
+    void *result;
+    if (allocation_refused()) {
+        return NULL;
+    }
+    text_allocation_calls += text_counting;
+    if (properties_counting) {
+        properties_allocation *allocation;
+        size_t old_size;
+        if (!size) {
+            markdown_core_free(pointer);
+            return NULL;
+        }
+        if (size > SIZE_MAX - sizeof(*allocation)) {
+            return NULL;
+        }
+        allocation = pointer ? (properties_allocation *)pointer - 1 : NULL;
+        old_size = allocation ? allocation->size : 0;
+        allocation = realloc(allocation, sizeof(*allocation) + size);
+        if (!allocation) {
+            return NULL;
+        }
+        allocation->size = size;
+        properties_account(old_size, size);
+        return allocation + 1;
+    }
+    result = realloc(pointer, size);
+    if (payload_counting) {
+        payload_live += result != NULL && fresh;
+    }
+    return result;
+}
+
+void markdown_core_free(void *pointer) {
+    if (pointer != NULL && pointer == marker_to_free) {
+        marker_free_count++;
+        marker_to_free = NULL;
+    }
+    if (properties_counting) {
+        if (pointer) {
+            properties_allocation *allocation = (properties_allocation *)pointer - 1;
+            properties_account(allocation->size, 0);
+            free(allocation);
+        }
+        return;
+    }
+    if (payload_counting) {
+        payload_live -= pointer != NULL;
+    }
+    free(pointer);
+}
 
 typedef struct probe_setup {
     const markdown_core_element *const *elements;
@@ -52,8 +238,7 @@ static bool attach_probes(markdown_core_parser *parser, void *context) {
 static markdown_core_node *parse_with_probes(const char *source, size_t length,
                                              const markdown_core_element *const *elements, size_t element_count) {
     probe_setup setup = {elements, element_count};
-    return markdown_core_parse_document_with_mem(source, length, markdown_core_get_default_mem_allocator(),
-                                                 attach_probes, &setup);
+    return markdown_core_parse_document_with_setup(source, length, attach_probes, &setup);
 }
 
 static const markdown_core_node_type node_types[] = {
@@ -1222,7 +1407,6 @@ static void element_decline_yields_turn(test_batch_runner *runner) {
     /* Test the decline contract directly, so the fixed attach order cannot
      * hide a table matcher that wrongly returns its unchanged parent. */
     markdown_core_parser parser = {0};
-    parser.mem = markdown_core_get_default_mem_allocator();
     markdown_core_node *candidate = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_strbuf_puts(&candidate->content, "text\n");
     unsigned char line[] = ":::note\n";
@@ -1532,8 +1716,7 @@ static void postprocess_skips_absent_kinds(test_batch_runner *runner) {
 
     postprocess_runs[0] = 0;
     postprocess_runs[1] = 0;
-    doc = markdown_core_parse_document_with_mem(source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(),
-                                                attach_postprocess_observers, NULL);
+    doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_postprocess_observers, NULL);
     OK(runner, doc != NULL, "a document with observing postprocess passes parses");
     INT_EQ(runner, postprocess_runs[0], 0, "a pass whose declared kinds never occurred does not walk the tree");
     INT_EQ(runner, postprocess_runs[1], 1, "a pass whose declared kind occurred runs exactly once");
@@ -1575,7 +1758,6 @@ static bool sweep_block_gates(markdown_core_parser *parser, void *context) {
             if (byte == '\n' || byte == '\r' || strchr(element->open_block_gate.bytes, byte)) {
                 continue;
             }
-            probe.mem = markdown_core_get_default_mem_allocator();
             parent = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
             if (!parent) {
                 continue;
@@ -1649,9 +1831,8 @@ static bool sweep_postprocess_kind_sets(markdown_core_parser *parser, void *cont
 static void postprocess_kind_sets_are_well_formed(test_batch_runner *runner) {
     kind_set_sweep sweep = {0, 0, 0};
     static const char probe_source[] = "probe\n";
-    markdown_core_node *probe_doc = markdown_core_parse_document_with_mem(probe_source, sizeof(probe_source) - 1,
-                                                                          markdown_core_get_default_mem_allocator(),
-                                                                          sweep_postprocess_kind_sets, &sweep);
+    markdown_core_node *probe_doc = markdown_core_parse_document_with_setup(probe_source, sizeof(probe_source) - 1,
+                                                                            sweep_postprocess_kind_sets, &sweep);
 
     OK(runner, sweep.declared > 0, "at least one pass declares its kinds for this law to bind");
     INT_EQ(runner, (int)sweep.without_pass, 0, "only a pass declares the kinds it acts on");
@@ -1662,8 +1843,8 @@ static void postprocess_kind_sets_are_well_formed(test_batch_runner *runner) {
 static void block_gate_admits_every_opener(test_batch_runner *runner) {
     gate_sweep sweep = {0, 0, -1, NULL};
     static const char probe_source[] = "probe\n";
-    markdown_core_node *probe_doc = markdown_core_parse_document_with_mem(
-        probe_source, sizeof(probe_source) - 1, markdown_core_get_default_mem_allocator(), sweep_block_gates, &sweep);
+    markdown_core_node *probe_doc =
+        markdown_core_parse_document_with_setup(probe_source, sizeof(probe_source) - 1, sweep_block_gates, &sweep);
     size_t gated = sweep.gated, violations = sweep.violations;
     int first_bad_byte = sweep.first_bad_byte;
     const char *first_bad_element = sweep.first_bad_element;
@@ -1698,8 +1879,8 @@ static void block_gate_admits_every_opener(test_batch_runner *runner) {
 static void inline_dispatch_ownership(test_batch_runner *runner) {
     const char source[] = "`!` ! tail";
     dispatch_observation observation = {0};
-    markdown_core_node *root = markdown_core_parse_document_with_mem(
-        source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(), attach_dispatch_observers, &observation);
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_dispatch_observers, &observation);
     OK(runner, root != NULL, "overlapping inline owners complete the parse");
     STR_EQ(runner, observation.calls, "dc",
            "each matching owner runs once in precedence order; consuming NULL commits the token");
@@ -1725,28 +1906,11 @@ static void inline_dispatch_ownership(test_batch_runner *runner) {
  * cleared and reused -- `parser->curline` and `parser->line_scratch` -- now both
  * report at the transaction and abandon the parse before the reuse. The lift
  * removes the class by construction, and nothing else can see it. */
-static int strbuf_refuse_next;
-static void *strbuf_test_calloc(size_t n, size_t size) {
-    if (strbuf_refuse_next) {
-        strbuf_refuse_next = 0;
-        return NULL;
-    }
-    return calloc(n, size);
-}
-static void *strbuf_test_realloc(void *pointer, size_t size) {
-    if (strbuf_refuse_next) {
-        strbuf_refuse_next = 0;
-        return NULL;
-    }
-    return realloc(pointer, size);
-}
-static void strbuf_test_free(void *pointer) { free(pointer); }
-static markdown_core_mem strbuf_test_mem = {strbuf_test_calloc, strbuf_test_realloc, strbuf_test_free};
 
 static void strbuf_failure_is_a_transaction(test_batch_runner *runner) {
     markdown_core_strbuf buf;
 
-    markdown_core_strbuf_init(&strbuf_test_mem, &buf, 0);
+    markdown_core_strbuf_init(&buf, 0);
     strbuf_refuse_next = 1;
     markdown_core_strbuf_put(&buf, (const unsigned char *)"hello", 5);
     INT_EQ(runner, buf.oom, 1, "a refused growth poisons the buffer");
@@ -1780,23 +1944,22 @@ static void strbuf_failure_is_a_transaction(test_batch_runner *runner) {
  * reach after an embedded NUL in a 1.07 GiB line, and the put is the remaining
  * segment. It is forged because constructing that source costs 2 GiB. */
 static void strbuf_overflow(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     markdown_core_strbuf buf;
     unsigned char data[16] = {0};
 
-    markdown_core_strbuf_init(mem, &buf, 0);
+    markdown_core_strbuf_init(&buf, 0);
     markdown_core_strbuf_grow(&buf, -1);
     INT_EQ(runner, buf.oom, 1, "a negative grow target poisons the buffer");
     INT_EQ(runner, buf.asize, 0, "a negative grow target allocates nothing");
     markdown_core_strbuf_free(&buf);
 
-    markdown_core_strbuf_init(mem, &buf, 0);
+    markdown_core_strbuf_init(&buf, 0);
     markdown_core_strbuf_grow(&buf, 0);
     INT_EQ(runner, buf.oom, 1, "a zero grow target poisons the buffer");
     markdown_core_strbuf_free(&buf);
 
     /* The overflow itself. Without the fix this line does not return. */
-    markdown_core_strbuf_init(mem, &buf, 8);
+    markdown_core_strbuf_init(&buf, 8);
     buf.size = (bufsize_t)(INT32_MAX / 2);
     markdown_core_strbuf_put(&buf, data, (bufsize_t)(INT32_MAX / 2) + 10);
     INT_EQ(runner, buf.oom, 1, "an append whose length overflows the size sum poisons instead of writing");
@@ -1805,7 +1968,7 @@ static void strbuf_overflow(test_batch_runner *runner) {
     markdown_core_strbuf_free(&buf);
 
     /* And the guard is not over-tight: an ordinary large append still works. */
-    markdown_core_strbuf_init(mem, &buf, 0);
+    markdown_core_strbuf_init(&buf, 0);
     for (int i = 0; i < 4096; i++) {
         markdown_core_strbuf_put(&buf, data, (bufsize_t)sizeof(data));
     }
@@ -2076,30 +2239,6 @@ static void reference_attribute_lifecycle(test_batch_runner *runner) {
     markdown_core_node_free(second);
 }
 
-static size_t payload_allocations, payload_fail_at, payload_live;
-static void *payload_test_calloc(size_t count, size_t size) {
-    if (++payload_allocations == payload_fail_at) {
-        return NULL;
-    }
-    void *pointer = calloc(count, size);
-    payload_live += pointer != NULL;
-    return pointer;
-}
-static void *payload_test_realloc(void *pointer, size_t size) {
-    if (++payload_allocations == payload_fail_at) {
-        return NULL;
-    }
-    bool new_allocation = pointer == NULL;
-    void *result = realloc(pointer, size);
-    payload_live += result != NULL && new_allocation;
-    return result;
-}
-static void payload_test_free(void *pointer) {
-    payload_live -= pointer != NULL;
-    free(pointer);
-}
-static markdown_core_mem payload_test_mem = {payload_test_calloc, payload_test_realloc, payload_test_free};
-
 typedef struct {
     char prefix;
     long double value;
@@ -2110,6 +2249,7 @@ typedef struct {
 } payload_integer_alignment;
 
 static void node_payload_lifecycle(test_batch_runner *runner) {
+    payload_probe_arm();
     INT_EQ(runner, sizeof(markdown_core_node_data), sizeof(void *),
            "all payload arms share one pointer-sized node slot");
     static const markdown_core_node_type extra_types[] = {
@@ -2124,7 +2264,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     for (size_t i = 0; i < (size_t)num_node_types + extra_count; i++) {
         markdown_core_node_type type = i < (size_t)num_node_types ? node_types[i] : extra_types[i - num_node_types];
         payload_allocations = payload_fail_at = 0;
-        markdown_core_node *node = markdown_core_node_new_with_mem(type, &payload_test_mem);
+        markdown_core_node *node = markdown_core_node_new(type);
         OK(runner, node != NULL, "type %u constructs with its default fields", (unsigned)type);
         size_t total = payload_allocations;
         INT_EQ(runner, total, 1, "node and initial typed record have one allocation for every kind");
@@ -2139,7 +2279,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
         for (size_t fail = 1; fail <= total; fail++) {
             payload_allocations = 0;
             payload_fail_at = fail;
-            node = markdown_core_node_new_with_mem(type, &payload_test_mem);
+            node = markdown_core_node_new(type);
             OK(runner, node == NULL, "type %u never publishes a partial payload", (unsigned)type);
             if (node) {
                 markdown_core_node_free(node);
@@ -2148,8 +2288,8 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
         }
     }
     payload_fail_at = 0;
-    markdown_core_node *parent = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &payload_test_mem);
-    markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem);
+    markdown_core_node *parent = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+    markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
     OK(runner, markdown_core_node_append_child(parent, text), "text joins its parent");
     OK(runner, markdown_core_node_set_literal(text, "retained"), "text owns a literal");
     markdown_core_chunk *original_payload = text->as.literal;
@@ -2185,7 +2325,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
        markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_STRONG) == MARKDOWN_CORE_NODE_SET_KIND_OK && !text->as.data,
        "a fieldless kind releases the old payload without creating an empty record");
 
-    markdown_core_node *empty = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_EMPHASIS, &payload_test_mem);
+    markdown_core_node *empty = markdown_core_node_new(MARKDOWN_CORE_NODE_EMPHASIS);
     OK(runner, markdown_core_node_append_child(parent, empty), "a fieldless node joins the parent");
     INT_EQ(runner, markdown_core_node_set_kind(empty, MARKDOWN_CORE_NODE_CROSS_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
            "a node constructed without fields acquires an owned replacement record");
@@ -2197,12 +2337,12 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
            !destination.anchor.has_value && !label.has_value && markdown_core_node_dimensions(empty) == NULL,
        "converted cross link establishes ordinary empty and absent defaults");
 
-    markdown_core_node *cite = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITE, &payload_test_mem);
-    markdown_core_node *item = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITATION, &payload_test_mem);
-    markdown_core_node *prefix = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem);
+    markdown_core_node *cite = markdown_core_node_new(MARKDOWN_CORE_NODE_CITE);
+    markdown_core_node *item = markdown_core_node_new(MARKDOWN_CORE_NODE_CITATION);
+    markdown_core_node *prefix = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
     OK(runner, markdown_core_node_append_child(parent, cite), "cite joins its parent");
     cite->as.cite->citations = item;
-    item->as.citation->prefix = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &payload_test_mem);
+    item->as.citation->prefix = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_node_append_child(item->as.citation->prefix, prefix);
     OK(runner, markdown_core_node_set_literal(prefix, "prefix"), "citation owns an affix subtree");
     payload_fail_at = payload_allocations + 1;
@@ -2217,6 +2357,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
            "kind conversion releases the old owned subtrees");
     markdown_core_node_free(parent);
     INT_EQ(runner, payload_live, 0, "conversion and destruction release payloads, fields, and affixes exactly once");
+    payload_probe_disarm();
 }
 
 /* Element fields use the same nonrecursive ownership walk as typed fields.
@@ -2227,9 +2368,9 @@ typedef struct {
 } owned_field_probe;
 static size_t owned_field_releases, owned_field_uncleared;
 
-static void owned_field_alloc(const markdown_core_element *element, markdown_core_mem *mem, markdown_core_node *node) {
+static void owned_field_alloc(const markdown_core_element *element, markdown_core_node *node) {
     (void)element;
-    node->opaque = mem->calloc(1, sizeof(owned_field_probe));
+    node->opaque = markdown_core_alloc(1, sizeof(owned_field_probe));
 }
 
 static int owned_field_visit(const markdown_core_element *element, markdown_core_node *node,
@@ -2239,7 +2380,7 @@ static int owned_field_visit(const markdown_core_element *element, markdown_core
     return !fields || (visitor(&fields->first, context) && visitor(&fields->second, context));
 }
 
-static void owned_field_free(const markdown_core_element *element, markdown_core_mem *mem, markdown_core_node *node) {
+static void owned_field_free(const markdown_core_element *element, markdown_core_node *node) {
     (void)element;
     owned_field_probe *fields = node->opaque;
     owned_field_releases++;
@@ -2251,7 +2392,7 @@ static void owned_field_free(const markdown_core_element *element, markdown_core
     if (fields->second) {
         markdown_core_node_free(fields->second);
     }
-    mem->free(fields);
+    markdown_core_free(fields);
     node->opaque = NULL;
 }
 
@@ -2263,21 +2404,20 @@ static const markdown_core_element OWNED_FIELD_PROBE = {
 };
 
 static void element_owned_field_lifecycle(test_batch_runner *runner) {
+    payload_probe_arm();
     payload_allocations = payload_fail_at = payload_live = 0;
     owned_field_releases = owned_field_uncleared = 0;
     markdown_core_node *root = NULL;
     const size_t depth = 4096;
     for (size_t i = 0; i < depth; i++) {
-        markdown_core_node *owner = markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_PARAGRAPH,
-                                                                            &payload_test_mem, &OWNED_FIELD_PROBE);
+        markdown_core_node *owner = markdown_core_node_new_with_ext(MARKDOWN_CORE_NODE_PARAGRAPH, &OWNED_FIELD_PROBE);
         owned_field_probe *fields = owner->opaque;
         fields->first = root;
-        fields->second = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem);
-        markdown_core_node_append_child(owner,
-                                        markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &payload_test_mem));
+        fields->second = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+        markdown_core_node_append_child(owner, markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT));
         root = owner;
     }
-    markdown_core_node *document = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, &payload_test_mem);
+    markdown_core_node *document = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
     markdown_core_node_append_child(document, root);
     owned_field_probe *retained = root->opaque;
     markdown_core_node *retained_first = retained->first;
@@ -2294,7 +2434,7 @@ static void element_owned_field_lifecycle(test_batch_runner *runner) {
     INT_EQ(runner, payload_live, 0, "deep owned fields and ordinary children release every allocation");
     payload_fail_at = 0;
     const char *source = ":a[label]\n";
-    document = markdown_core_parse_document_with_mem(source, strlen(source), &payload_test_mem, NULL, NULL);
+    document = markdown_core_parse_document_with_setup(source, strlen(source), NULL, NULL);
     OK(runner, document != NULL, "directive with an owned label parses using the tracked allocator");
     if (document) {
         markdown_core_node *directive = document->first_child->first_child;
@@ -2310,6 +2450,7 @@ static void element_owned_field_lifecycle(test_batch_runner *runner) {
         INT_EQ(runner, payload_live, 0, "a converted directive releases fields hidden by its new kind");
         payload_fail_at = 0;
     }
+    payload_probe_disarm();
 }
 
 typedef struct {
@@ -2356,6 +2497,7 @@ static bool configure_conversion_policy(markdown_core_parser *parser, void *cont
 }
 
 static void kind_conversion_containment(test_batch_runner *runner) {
+    payload_probe_arm();
     static const struct {
         markdown_core_node_type rejected_kind, retained_kind;
         const char *source, *retained_literal;
@@ -2377,13 +2519,12 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         {MARKDOWN_CORE_NODE_SUBSCRIPT, MARKDOWN_CORE_NODE_PARAGRAPH, "!~text~\n", "!~text~"},
 
     };
-    markdown_core_mem *mem = &payload_test_mem;
     payload_fail_at = 0;
     for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
         size_t live_before = payload_live;
         conversion_policy policy = {cases[i].rejected_kind, 0};
-        markdown_core_node *root = markdown_core_parse_document_with_mem(cases[i].source, strlen(cases[i].source), mem,
-                                                                         configure_conversion_policy, &policy);
+        markdown_core_node *root = markdown_core_parse_document_with_setup(cases[i].source, strlen(cases[i].source),
+                                                                           configure_conversion_policy, &policy);
         OK(runner, policy.rejections > 0, "case %zu exercises parent containment rejection", i);
         OK(runner, root != NULL, "case %zu declines conversion without failing the parse", i);
         if (!root) {
@@ -2392,7 +2533,7 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         markdown_core_node *block = root->first_child;
         OK(runner, block && block->kind == cases[i].retained_kind && !block->next,
            "case %zu retains the original block", i);
-        markdown_core_strbuf literal = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf literal = MARKDOWN_CORE_BUF_INIT();
         if (block && block->kind == MARKDOWN_CORE_NODE_HTML_BLOCK) {
             markdown_core_strbuf_puts(&literal, markdown_core_node_get_literal(block));
         } else if (block) {
@@ -2411,18 +2552,8 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         markdown_core_node_free(root);
         INT_EQ(runner, payload_live, live_before, "rejected containers release every allocation");
     }
+    payload_probe_disarm();
 }
-
-static void *marker_to_free;
-static int marker_free_count;
-static void marker_test_free(void *pointer) {
-    if (pointer == marker_to_free && pointer != NULL) {
-        marker_free_count++;
-        marker_to_free = NULL;
-    }
-    free(pointer);
-}
-static markdown_core_mem marker_test_mem = {calloc, realloc, marker_test_free};
 
 /* A byte offset and an indentation column are different coordinates. Splitting
  * byte advances anywhere, including inside a scalar, must compose identically;
@@ -2539,9 +2670,9 @@ static void task_marker_ownership(test_batch_runner *runner) {
     markdown_core_dump_free(dump);
     markdown_core_document_free(document);
 
-    item = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LIST_ITEM, &marker_test_mem);
+    item = markdown_core_node_new(MARKDOWN_CORE_NODE_LIST_ITEM);
     markdown_core_chunk bytes = markdown_core_chunk_literal("🚀");
-    OK(runner, markdown_core_chunk_to_cstr(&marker_test_mem, &bytes) != NULL, "custom marker allocates");
+    OK(runner, markdown_core_chunk_to_cstr(&bytes) != NULL, "custom marker allocates");
     item->as.list->task_marker = markdown_core_optional_chunk_present(bytes);
     marker_to_free = bytes.data;
     marker_free_count = 0;
@@ -2552,15 +2683,15 @@ static void task_marker_ownership(test_batch_runner *runner) {
 /* Specimen syntax lands with P9b. Build its reserved native values directly
  * to test the shared document ownership and failure boundary independently. */
 static void specimen_values(test_batch_runner *runner) {
-    markdown_core_node *root = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, &marker_test_mem);
-    markdown_core_node *first = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_SPECIMEN, &marker_test_mem);
-    markdown_core_node *anonymous = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_SPECIMEN, &marker_test_mem);
-    markdown_core_node *body = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &marker_test_mem);
-    markdown_core_node *footnote = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_FOOTNOTE, &marker_test_mem);
+    markdown_core_node *root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
+    markdown_core_node *first = markdown_core_node_new(MARKDOWN_CORE_NODE_SPECIMEN);
+    markdown_core_node *anonymous = markdown_core_node_new(MARKDOWN_CORE_NODE_SPECIMEN);
+    markdown_core_node *body = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+    markdown_core_node *footnote = markdown_core_node_new(MARKDOWN_CORE_NODE_FOOTNOTE);
     markdown_core_chunk bytes = markdown_core_chunk_literal("étude");
     markdown_core_optional_string id;
     markdown_core_optional_i64 start;
-    OK(runner, markdown_core_chunk_to_cstr(&marker_test_mem, &bytes) != NULL, "specimen id allocates");
+    OK(runner, markdown_core_chunk_to_cstr(&bytes) != NULL, "specimen id allocates");
     first->as.specimen->id = markdown_core_optional_chunk_present(bytes);
     first->as.specimen->start = 5;
     first->as.specimen->has_start = true;
@@ -2584,9 +2715,9 @@ static void specimen_values(test_batch_runner *runner) {
            !markdown_core_specimen_properties(value, NULL, &start) &&
            !markdown_core_specimen_properties(value, &id, NULL) && markdown_core_node_document_specimens(body) == NULL,
        "typed accessors reject missing values and incorrect owners");
-    markdown_core_node *citation = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_CITATION, &marker_test_mem);
+    markdown_core_node *citation = markdown_core_node_new(MARKDOWN_CORE_NODE_CITATION);
     citation->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_SPECIMEN;
-    OK(runner, markdown_core_chunk_set_cstr(&marker_test_mem, &citation->as.citation->value, "étude"),
+    OK(runner, markdown_core_chunk_set_cstr(&citation->as.citation->value, "étude"),
        "specimen reference owns its label");
     markdown_core_referent referent;
     OK(runner,
@@ -2844,7 +2975,7 @@ static void table_source_map_growth(test_batch_runner *runner) {
     const char *unit = "\\| &amp; user@example.com ";
     size_t unit_length = strlen(unit);
     for (size_t count = 256; count <= 4096; count *= 4) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
         markdown_core_strbuf_puts(&source, "| h |\n| - |\n| ");
         for (size_t i = 0; i < count; i++) {
             markdown_core_strbuf_puts(&source, unit);
@@ -2931,7 +3062,7 @@ static void properties_source_boundaries(test_batch_runner *runner) {
                          "abstract: | # header\n  # prose\n\n    name: inside\n\ncomment: |\n  done\nstate: "
                          "ready\n---\nbody\n",
                          (int)indent, "", prefixes[prefix], (int)indent, "");
-                markdown_core_strbuf input = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+                markdown_core_strbuf input = MARKDOWN_CORE_BUF_INIT();
                 for (const char *c = original; *c; c++) {
                     if (*c == '\n') {
                         markdown_core_strbuf_puts(&input, endings[ending]);
@@ -3089,7 +3220,7 @@ static void properties_member_work(test_batch_runner *runner) {
                  {"{\nstate: true\n}\n", true}};
     for (size_t shape = 0; shape < sizeof(units) / sizeof(*units); shape++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             markdown_core_strbuf_puts(&source, "---\n");
             for (size_t i = 0; i < count; i++) {
                 markdown_core_strbuf_puts(&source, units[shape].source);
@@ -3116,7 +3247,7 @@ static void properties_member_work(test_batch_runner *runner) {
         }
     }
     for (size_t count = 128; count <= 65536; count *= 2) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
         markdown_core_strbuf_puts(&source, "---\nauthors: [");
         for (size_t i = 0; i < count; i++) {
             markdown_core_strbuf_puts(&source, i ? ",x" : "x");
@@ -3137,58 +3268,7 @@ static void properties_member_work(test_batch_runner *runner) {
 
 /* Track live bytes, not RSS or allocation timing. The header preserves C99
  * fundamental alignment and lets realloc account for released capacity. */
-typedef union {
-    size_t size;
-    long double alignment;
-    void *pointer;
-} properties_allocation;
-static size_t properties_live_bytes, properties_peak_bytes;
-static void properties_account(size_t old_size, size_t new_size) {
-    properties_live_bytes = properties_live_bytes - old_size + new_size;
-    if (properties_live_bytes > properties_peak_bytes) {
-        properties_peak_bytes = properties_live_bytes;
-    }
-}
-static void *properties_calloc(size_t count, size_t size) {
-    if (count && size > (SIZE_MAX - sizeof(properties_allocation)) / count) {
-        return NULL;
-    }
-    size_t bytes = count * size;
-    properties_allocation *allocation = calloc(1, sizeof(*allocation) + bytes);
-    if (!allocation) {
-        return NULL;
-    }
-    allocation->size = bytes;
-    properties_account(0, bytes);
-    return allocation + 1;
-}
-static void properties_free(void *pointer) {
-    if (pointer) {
-        properties_allocation *allocation = (properties_allocation *)pointer - 1;
-        properties_account(allocation->size, 0);
-        free(allocation);
-    }
-}
-static void *properties_realloc(void *pointer, size_t size) {
-    if (!size) {
-        properties_free(pointer);
-        return NULL;
-    }
-    if (size > SIZE_MAX - sizeof(properties_allocation)) {
-        return NULL;
-    }
-    properties_allocation *allocation = pointer ? (properties_allocation *)pointer - 1 : NULL;
-    size_t old_size = allocation ? allocation->size : 0;
-    allocation = realloc(allocation, sizeof(*allocation) + size);
-    if (!allocation) {
-        return NULL;
-    }
-    allocation->size = size;
-    properties_account(old_size, size);
-    return allocation + 1;
-}
 static void properties_text_memory(test_batch_runner *runner) {
-    markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
     const char *prefixes[] = {"---\nname: x", "---\nname: \"x", "---\nabstract: |\n  ", "---\nauthors:\n- x"};
     const char *suffixes[] = {"\n", "\"\n", "\n", "\n- second\n"};
     for (size_t shape = 0; shape < sizeof(prefixes) / sizeof(*prefixes); shape++) {
@@ -3196,16 +3276,16 @@ static void properties_text_memory(test_batch_runner *runner) {
             size_t baseline = 0;
             const char *characters = "x{}[]";
             for (size_t character = 0; characters[character]; character++) {
-                markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+                markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
                 markdown_core_strbuf_puts(&source, prefixes[shape]);
                 for (size_t i = 0; i < count; i++) {
                     markdown_core_strbuf_putc(&source, characters[character]);
                 }
                 markdown_core_strbuf_puts(&source, suffixes[shape]);
                 markdown_core_strbuf_puts(&source, "state: ready\n---\n");
-                properties_live_bytes = properties_peak_bytes = 0;
+                properties_probe_arm();
                 markdown_core_node *root =
-                    markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
+                    markdown_core_parse_document_with_setup((const char *)source.ptr, source.size, NULL, NULL);
                 OK(runner, root != NULL, "long scalar shape %zu with %c parses", shape, characters[character]);
                 if (root) {
                     markdown_core_node *metadata = root->as.document->metadata;
@@ -3234,6 +3314,7 @@ static void properties_text_memory(test_batch_runner *runner) {
                     OK(runner, intact, "brackets remain complete scalar text");
                     markdown_core_node_free(root);
                 }
+                properties_probe_disarm();
                 if (!character) {
                     baseline = properties_peak_bytes;
                 }
@@ -3432,12 +3513,11 @@ static bool measure_inline_work(markdown_core_parser *parser, void *context) {
  * subtrees, while the separate mutation tests retain all cycle checks. The
  * parser-boundary audit excludes arbitrary reparenting from these paths. */
 static void deep_inline_construction(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     const size_t sizes[] = {1, 64, 1024, 8192};
     for (size_t shape = 0; shape < 2; shape++) {
         for (size_t d = 0; d < 4; d++) {
             for (size_t w = 0; w < 4; w++) {
-                markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+                markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
                 for (size_t i = 0; i < sizes[d]; i++) {
                     markdown_core_strbuf_puts(&source, shape ? "[" : "![");
                 }
@@ -3472,13 +3552,12 @@ static void deep_inline_construction(test_batch_runner *runner) {
 }
 
 static void autolink_domain_linear_work(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     const size_t segments[] = {8, 9, 10, 11, 64};
     const char *suffixes[] = {"_b\n", "_a.b\n", "_a.b.c\n"};
     for (size_t prefix = 0; prefix < 2; prefix++) {
         for (size_t n = 0; n < sizeof(segments) / sizeof(*segments); n++) {
             for (size_t suffix = 0; suffix < 3; suffix++) {
-                markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+                markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
                 markdown_core_strbuf_puts(&source, prefix ? "https://" : "www.");
                 for (size_t i = 0; i < segments[n]; i++) {
                     markdown_core_strbuf_puts(&source, "a.");
@@ -3496,20 +3575,20 @@ static void autolink_domain_linear_work(test_batch_runner *runner) {
     }
     for (size_t n = 16; n <= 8192; n *= 2) {
         for (size_t valid_tail = 0; valid_tail < 2; valid_tail++) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             for (size_t i = 0; i < n; i++) {
                 markdown_core_strbuf_puts(&source, "www._");
             }
             markdown_core_strbuf_puts(&source, valid_tail ? "www.com\n" : "b\n");
             inline_work work = {0};
-            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
-                                                                             measure_inline_work, &work);
+            markdown_core_node *root = markdown_core_parse_document_with_setup((const char *)source.ptr, source.size,
+                                                                               measure_inline_work, &work);
             OK(runner, root != NULL, "overlapping domain candidates parse");
             size_t links = 0;
             for (markdown_core_node *node = root->first_child->first_child; node; node = node->next) {
                 if (node->kind == MARKDOWN_CORE_NODE_LINK) {
                     links++;
-                    STR_EQ(runner, markdown_core_chunk_to_cstr(mem, &node->as.link->resource->url), "http://www.com",
+                    STR_EQ(runner, markdown_core_chunk_to_cstr(&node->as.link->resource->url), "http://www.com",
                            "a candidate after the invalid underscore remains eligible");
                 }
             }
@@ -3523,15 +3602,14 @@ static void autolink_domain_linear_work(test_batch_runner *runner) {
 }
 
 static void ordered_numeral_ceiling(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
     for (size_t i = 0; i < 999999; i++) {
         markdown_core_strbuf_putc(&source, 'M');
     }
     markdown_core_strbuf_puts(&source, "CMXCIX.  boundary\n");
     inline_work work = {0};
     markdown_core_node *root =
-        markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+        markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
     OK(runner,
        root && root->first_child->kind == MARKDOWN_CORE_NODE_LIST && root->first_child->as.list->start == 999999999,
        "Roman numeral accepts the exact nine-digit ceiling");
@@ -3555,19 +3633,18 @@ static void ordered_numeral_ceiling(test_batch_runner *runner) {
 }
 
 static void definition_list_linear_work(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const char *const units[] = {"Term\n: body\n\n", ": body\n", "literal\n\n", "Term\n\n\n: body\n\n",
                                         "[x]: /u\n: body\n\n"};
     for (size_t shape = 0; shape < sizeof(units) / sizeof(*units); shape++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             markdown_core_strbuf_puts(&source, "First\n: body\n");
             for (size_t i = 0; i < count; i++) {
                 markdown_core_strbuf_puts(&source, units[shape]);
             }
             inline_work work = {0};
             markdown_core_node *root =
-                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "definition body/term input parses: shape=%zu count=%zu", shape, count);
             OK(runner, work.definition_lists + work.lookahead <= 32 * (size_t)source.size,
                "definition lookahead is bounded: shape=%zu count=%zu work=%zu", shape, count,
@@ -3579,7 +3656,7 @@ static void definition_list_linear_work(test_batch_runner *runner) {
         }
     }
     for (size_t depth = 32; depth <= 1024; depth *= 2) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
         markdown_core_strbuf_puts(&source, "T\n");
         for (size_t i = 0; i < depth; i++) {
             for (size_t j = 0; j < i; j++) {
@@ -3596,7 +3673,7 @@ static void definition_list_linear_work(test_batch_runner *runner) {
         markdown_core_strbuf_puts(&source, "last\n");
         inline_work work = {0};
         markdown_core_node *root =
-            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
         OK(runner, root != NULL, "nested definition ownership parses and releases: depth=%zu", depth);
         OK(runner, work.definition_lists + work.lookahead <= 32 * (size_t)source.size,
            "nested definition blank runs keep bounded work: depth=%zu", depth);
@@ -3620,7 +3697,6 @@ static void definition_list_linear_work(test_batch_runner *runner) {
 }
 
 static void citation_linear_work(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
         const char *prefix, *unit, *close, *suffix;
     } cases[] = {
@@ -3633,7 +3709,7 @@ static void citation_linear_work(test_batch_runner *runner) {
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             markdown_core_strbuf_puts(&source, cases[c].prefix);
             for (size_t i = 0; i < count; i++) {
                 markdown_core_strbuf_puts(&source, cases[c].unit);
@@ -3644,7 +3720,7 @@ static void citation_linear_work(test_batch_runner *runner) {
             markdown_core_strbuf_puts(&source, cases[c].suffix);
             inline_work work = {0};
             markdown_core_node *root =
-                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "citation dependency chains parse: case=%zu count=%zu", c, count);
             OK(runner, work.citations <= 20 * (size_t)source.size,
                "citation scans and resolutions are linear: case=%zu size=%d work=%zu", c, source.size, work.citations);
@@ -3659,7 +3735,6 @@ static void citation_linear_work(test_batch_runner *runner) {
 }
 
 static void citation_sparse_brace_storage(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
         const char *prefix, *suffix;
         char fill;
@@ -3670,15 +3745,15 @@ static void citation_sparse_brace_storage(test_batch_runner *runner) {
                  {"@{key} <i title=\"", "\">", '{'}};
     for (size_t shape = 0; shape < sizeof(cases) / sizeof(*cases); shape++) {
         for (size_t length = 256; length <= 1048576; length *= 16) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             markdown_core_strbuf_puts(&source, cases[shape].prefix);
             for (size_t i = 0; i < length; i++) {
                 markdown_core_strbuf_putc(&source, cases[shape].fill);
             }
             markdown_core_strbuf_puts(&source, cases[shape].suffix);
             inline_work work = {0};
-            markdown_core_node *root = markdown_core_parse_document_with_mem((char *)source.ptr, (size_t)source.size,
-                                                                             mem, measure_inline_work, &work);
+            markdown_core_node *root = markdown_core_parse_document_with_setup((char *)source.ptr, (size_t)source.size,
+                                                                               measure_inline_work, &work);
             OK(runner, root != NULL, "sparse braced citations parse: shape=%zu length=%zu", shape, length);
             OK(runner, work.citation_brace_bytes <= 256,
                "brace index storage is independent of ordinary/opaque bytes: shape=%zu length=%zu bytes=%zu", shape,
@@ -3698,7 +3773,6 @@ static void citation_sparse_brace_storage(test_batch_runner *runner) {
 }
 
 static void cross_link_linear_work(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
         const char *prefix, *unit, *suffix;
     } cases[] = {
@@ -3726,7 +3800,7 @@ static void cross_link_linear_work(test_batch_runner *runner) {
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             markdown_core_strbuf_puts(&source, cases[c].prefix);
             for (size_t i = 0; i < count; i++) {
                 markdown_core_strbuf_puts(&source, cases[c].unit);
@@ -3734,7 +3808,7 @@ static void cross_link_linear_work(test_batch_runner *runner) {
             markdown_core_strbuf_puts(&source, cases[c].suffix);
             inline_work work = {0};
             markdown_core_node *root =
-                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial cross links parse successfully");
             OK(runner, work.cross_link <= 3 * (size_t)source.size,
                "cross-link scanner inspects disjoint bodies: case=%zu size=%d work=%zu", c, source.size,
@@ -3752,7 +3826,6 @@ static void cross_link_linear_work(test_batch_runner *runner) {
 /* Nested bodies are never rescanned for emptiness and close in one bracket
  * operation. The document order follows opening positions, not close order. */
 static void inline_footnote_linear_work(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
         const char *left, *middle, *right;
         int notes_per_unit;
@@ -3763,7 +3836,7 @@ static void inline_footnote_linear_work(test_batch_runner *runner) {
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             for (size_t i = 0; i < count; i++) {
                 markdown_core_strbuf_puts(&source, cases[c].left);
             }
@@ -3772,8 +3845,8 @@ static void inline_footnote_linear_work(test_batch_runner *runner) {
                 markdown_core_strbuf_puts(&source, cases[c].right);
             }
             inline_work work = {0};
-            markdown_core_node *root = markdown_core_parse_document_with_mem(
-                (const char *)source.ptr, (size_t)source.size, mem, measure_inline_work, &work);
+            markdown_core_node *root = markdown_core_parse_document_with_setup(
+                (const char *)source.ptr, (size_t)source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial inline footnotes parse");
             OK(runner, work.footnote_body <= (size_t)source.size,
                "nonblank evidence inspects disjoint source ranges: case=%zu size=%d work=%zu", c, source.size,
@@ -3801,7 +3874,7 @@ static void inline_footnote_linear_work(test_batch_runner *runner) {
         }
     }
     for (size_t count = 128; count <= 4096; count *= 2) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
         markdown_core_strbuf_puts(&source, "^[x]\n\n[^inline-1]: reserved\n");
         for (size_t i = 1; i <= count; i++) {
             char definition[64];
@@ -3809,7 +3882,7 @@ static void inline_footnote_linear_work(test_batch_runner *runner) {
             markdown_core_strbuf_puts(&source, definition);
         }
         markdown_core_node *root =
-            markdown_core_parse_document_with_mem((const char *)source.ptr, (size_t)source.size, mem, NULL, NULL);
+            markdown_core_parse_document_with_setup((const char *)source.ptr, (size_t)source.size, NULL, NULL);
         OK(runner, root != NULL, "long authored suffix sets parse");
         if (root) {
             char expected[40];
@@ -3826,7 +3899,6 @@ static void inline_footnote_linear_work(test_batch_runner *runner) {
  * orders. All must already be registered before finalization, including
  * notes whose enclosing candidate fails or becomes a link or image. */
 static void footnote_registration(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
         const char *source;
         size_t count;
@@ -3845,8 +3917,8 @@ static void footnote_registration(test_batch_runner *runner) {
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
         inline_work work = {0};
-        markdown_core_node *root = markdown_core_parse_document_with_mem(cases[c].source, strlen(cases[c].source), mem,
-                                                                         measure_inline_work, &work);
+        markdown_core_node *root = markdown_core_parse_document_with_setup(cases[c].source, strlen(cases[c].source),
+                                                                           measure_inline_work, &work);
         OK(runner, root != NULL, "footnote registration boundaries parse: case=%zu", c);
         INT_EQ(runner, work.registered_definitions, cases[c].count, "only committed notes enter the parser collection");
         OK(runner, work.footnotes_owned, "postprocessors receive resolved document-owned footnotes");
@@ -4073,8 +4145,8 @@ static bool observe_footnote_removal(markdown_core_parser *parser, void *context
 static void footnote_postprocessing(test_batch_runner *runner) {
     static const char source[] = "^[outer ^[inner]] :d[^[label]]\n\n[^n]: ^[body]\n";
     footnote_postprocess_probe probe = {0};
-    markdown_core_node *root = markdown_core_parse_document_with_mem(
-        source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(), observe_footnote_removal, &probe);
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, observe_footnote_removal, &probe);
     OK(runner, root != NULL, "postprocessing may remove document footnotes without stale parser pointers");
     INT_EQ(runner, probe.removed, 5, "postprocessor receives all authored and inline values");
     OK(runner, probe.resolved && probe.index_released, "ids and ownership are final before mutable callbacks run");
@@ -4091,24 +4163,14 @@ static void footnote_postprocessing(test_batch_runner *runner) {
     }
 }
 
-static size_t text_allocation_calls;
-static void *count_text_calloc(size_t count, size_t size) {
-    text_allocation_calls++;
-    return calloc(count, size);
-}
-static void *count_text_realloc(void *pointer, size_t size) {
-    text_allocation_calls++;
-    return realloc(pointer, size);
-}
-
 /* Recognition may allocate its shared suffix index, but never semantic
  * attribute strings or row cells that would be thrown away by a probe. */
 static void speculative_probe_allocations(test_batch_runner *runner) {
-    markdown_core_mem mem = {count_text_calloc, count_text_realloc, free};
+    text_counting = 1;
     const char *directives[] = {"::: {.a k=1} junk\n", "::: {.a k=1}\n", "::: classname junk\n", "::: classname\n",
                                 "::: {.a k=1\n"};
     for (size_t i = 0; i < sizeof(directives) / sizeof(*directives); i++) {
-        markdown_core_parser parser = {.mem = &mem};
+        markdown_core_parser parser = {0};
         markdown_core_chunk input = {(unsigned char *)directives[i], (bufsize_t)strlen(directives[i]), 0};
         text_allocation_calls = 0;
         int matched = MARKDOWN_CORE_ELEMENT_DIRECTIVE.probe_block(&parser, &input, 0, 0, NULL);
@@ -4121,7 +4183,7 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
     }
     const char *rows[] = {"| a | b |\n", "| a \\| b | c |\n", "\n"};
     for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); i++) {
-        markdown_core_parser parser = {.mem = &mem};
+        markdown_core_parser parser = {0};
         markdown_core_node table = {.kind = MARKDOWN_CORE_NODE_TABLE};
         text_allocation_calls = 0;
         int matched = MARKDOWN_CORE_ELEMENT_TABLE.last_block_matches(
@@ -4130,8 +4192,8 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         INT_EQ(runner, text_allocation_calls, 0, "table continuation allocates no temporary geometry");
     }
     {
-        markdown_core_parser parser = {.mem = &mem};
-        markdown_core_node *paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &mem);
+        markdown_core_parser parser = {0};
+        markdown_core_node *paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
         markdown_core_node_set_string_content(paragraph, "| a | b |\n");
         unsigned char delimiter[] = "| --- |\n";
         text_allocation_calls = 0;
@@ -4143,10 +4205,10 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         markdown_core_node_free(paragraph);
     }
     for (size_t length = 64; length <= 65536; length *= 4) {
-        markdown_core_parser parser = {.mem = &mem};
-        markdown_core_node *root = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, &mem);
-        markdown_core_node *paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &mem);
-        markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &mem);
+        markdown_core_parser parser = {0};
+        markdown_core_node *root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
+        markdown_core_node *paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
         char *source = malloc(length + 1);
         memset(source, 'a', length);
         source[length - 1] = '@'; /* A failed candidate, as well as ordinary text. */
@@ -4163,12 +4225,14 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         markdown_core_node_free(root);
         free(source);
     }
+    text_counting = 0;
 }
 
 /* Known-literal runs occupy the same text slice as surrounding prose.
  * Their allocation count equals ordinary text with the same whitespace and byte length;
  * scanning each run once also bounds work independently of node allocation. */
 static void literal_text_allocations(test_batch_runner *runner) {
+    text_counting = 1;
     static const struct {
         const char *prefix, *unit;
     } cases[] = {
@@ -4213,7 +4277,6 @@ static void literal_text_allocations(test_batch_runner *runner) {
         {"[_open](/u) a", "x_ "},
         {"[_x_](/u) a", "x_ "},
     };
-    markdown_core_mem mem = {count_text_calloc, count_text_realloc, free};
     for (size_t size = 1024; size <= 1048576; size *= 2) {
         for (size_t shape = 0; shape < sizeof(cases) / sizeof(*cases); shape++) {
             size_t prefix_length = strlen(cases[shape].prefix);
@@ -4242,7 +4305,7 @@ static void literal_text_allocations(test_batch_runner *runner) {
                 text_allocation_calls = 0;
                 inline_work work = {0};
                 markdown_core_node *root =
-                    markdown_core_parse_document_with_mem(source, length, &mem, measure_inline_work, &work);
+                    markdown_core_parse_document_with_setup(source, length, measure_inline_work, &work);
                 OK(runner, root != NULL, "literal text parses: shape=%zu size=%zu", shape, length);
                 if (!pass) {
                     ordinary_allocations = text_allocation_calls;
@@ -4280,6 +4343,7 @@ static void literal_text_allocations(test_batch_runner *runner) {
             free(source);
         }
     }
+    text_counting = 0;
 }
 
 typedef struct {
@@ -4289,10 +4353,9 @@ typedef struct {
 
 static void paired_delimiter_linear_work(test_batch_runner *runner, markdown_core_node_type kind,
                                          const paired_delimiter_case *cases, size_t case_count) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t c = 0; c < case_count; c++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             for (size_t i = 0; i < count; i++) {
                 markdown_core_strbuf_puts(&source, cases[c].left);
             }
@@ -4302,7 +4365,7 @@ static void paired_delimiter_linear_work(test_batch_runner *runner, markdown_cor
             }
             inline_work work = {0};
             markdown_core_node *root =
-                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial paired-delimiter runs parse successfully");
             OK(runner,
                work.delimiters <= 8 * (size_t)source.size && work.attributes <= 16 * (size_t)source.size &&
@@ -4421,9 +4484,8 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
 
     /* A suspended heading resumes with the same bracket/delimiter state.
      * Projection visits nested formatting once and reserves a later Span id. */
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t count = 128; count <= 8192; count *= 2) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
         markdown_core_strbuf_puts(&source, "# ");
         for (size_t i = 0; i < count; i++) {
             markdown_core_strbuf_putc(&source, '[');
@@ -4435,7 +4497,7 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
         markdown_core_strbuf_puts(&source, "\n\n[owner]{#a-b-x}\n");
         inline_work work = {0};
         markdown_core_node *root =
-            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
         OK(runner, root != NULL, "deep Span/script headings parse successfully");
         if (root) {
             STR_EQ(runner, (const char *)root->first_child->attributes.anchor.data, "a-b-x-1",
@@ -4506,7 +4568,6 @@ static void core_delimiter_stack_eligibility(test_batch_runner *runner) {
  * another construct's bytes, and a comment beside every earlier opaque
  * construct all cost work proportional to the input. */
 static void comment_inline_linear_work(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
         const char *prefix, *unit, *suffix;
         size_t comments_per_unit; /* comments per unit, or 0 when the count is asserted separately */
@@ -4527,7 +4588,7 @@ static void comment_inline_linear_work(test_batch_runner *runner) {
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             markdown_core_strbuf_puts(&source, cases[c].prefix);
             for (size_t i = 0; i < count; i++) {
                 markdown_core_strbuf_puts(&source, cases[c].unit);
@@ -4535,7 +4596,7 @@ static void comment_inline_linear_work(test_batch_runner *runner) {
             markdown_core_strbuf_puts(&source, cases[c].suffix);
             inline_work work = {0};
             markdown_core_node *root =
-                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial percent runs parse successfully");
             OK(runner, work.comment + work.opaque <= 4 * (size_t)source.size,
                "comment scanner work is linear: case=%zu size=%d comment=%zu opaque=%zu", c, source.size, work.comment,
@@ -4557,10 +4618,9 @@ static void comment_inline_linear_work(test_batch_runner *runner) {
  * blank line once per candidate. The recorded work counts lines visited and
  * prefix bytes matched, and stays within a constant of the input size. */
 static void comment_block_linear_work(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (int shape = 0; shape < 6; shape++) {
         for (size_t depth = 16; depth <= 128; depth *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             size_t expected_comments = 0;
             size_t expected_paragraphs = 0;
             size_t i;
@@ -4631,7 +4691,7 @@ static void comment_block_linear_work(test_batch_runner *runner) {
             }
             inline_work work = {0};
             markdown_core_node *root =
-                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "nested block comment candidates parse successfully");
             OK(runner, work.lookahead <= 4 * (size_t)source.size,
                "block lookahead work is linear: shape=%d size=%d work=%zu", shape, source.size, work.lookahead);
@@ -4663,8 +4723,7 @@ static void percent_comment_nodes(test_batch_runner *runner) {
                                    "open\r\n";
     /* The engine entry with the dialect attached: `%%` is an element's
      * syntax, unlike the HTML comment of `comment_nodes` above. */
-    markdown_core_node *doc = markdown_core_parse_document_with_mem(
-        markdown, sizeof(markdown) - 1, markdown_core_get_default_mem_allocator(), NULL, NULL);
+    markdown_core_node *doc = markdown_core_parse_document_with_setup(markdown, sizeof(markdown) - 1, NULL, NULL);
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *text = markdown_core_node_first_child(paragraph);
     markdown_core_node *comment = markdown_core_node_next(text);
@@ -4754,7 +4813,6 @@ static void cross_link_fields(test_batch_runner *runner) {
 }
 
 static void attribute_linear_work(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
         const char *prefix, *unit, *suffix;
         bool valid;
@@ -4765,13 +4823,13 @@ static void attribute_linear_work(test_batch_runner *runner) {
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             markdown_core_strbuf_puts(&source, cases[c].prefix);
             for (size_t i = 0; i < count; i++) {
                 markdown_core_strbuf_puts(&source, cases[c].unit);
             }
             markdown_core_strbuf_puts(&source, cases[c].suffix);
-            markdown_core_attribute_parser parser = {.mem = mem, .data = source.ptr, .length = source.size};
+            markdown_core_attribute_parser parser = {.data = source.ptr, .length = source.size};
             size_t attempts = 0;
             for (bufsize_t at = 0; at < source.size; at++) {
                 if (source.ptr[at] != '{') {
@@ -4794,7 +4852,7 @@ static void attribute_linear_work(test_batch_runner *runner) {
                     OK(runner, !value.classes && !value.records && !value.anchor.data,
                        "no partial attribute value escapes");
                 }
-                markdown_core_attributes_free(mem, &value);
+                markdown_core_attributes_free(&value);
             }
             OK(runner, parser.work <= 12 * (size_t)source.size + attempts,
                "attribute work is linear: case=%zu size=%d work=%zu", c, source.size, parser.work);
@@ -4805,7 +4863,6 @@ static void attribute_linear_work(test_batch_runner *runner) {
 }
 
 static void attribute_attachment_linear_work(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
         const char *prefix, *unit, *suffix;
     } cases[] = {
@@ -4820,15 +4877,15 @@ static void attribute_attachment_linear_work(test_batch_runner *runner) {
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
         for (size_t count = 128; count <= 4096; count *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             markdown_core_strbuf_puts(&source, cases[c].prefix);
             for (size_t i = 0; i < count; i++) {
                 markdown_core_strbuf_puts(&source, cases[c].unit);
             }
             markdown_core_strbuf_puts(&source, cases[c].suffix);
             inline_work work = {0};
-            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
-                                                                             measure_inline_work, &work);
+            markdown_core_node *root = markdown_core_parse_document_with_setup((const char *)source.ptr, source.size,
+                                                                               measure_inline_work, &work);
             OK(runner, root != NULL, "every attribute site parses adversarial inputs");
             OK(runner, work.attributes > 0 && work.attributes <= 20 * (size_t)source.size,
                "attribute attachment is linear: case=%zu bytes=%d work=%zu", c, source.size, work.attributes);
@@ -4860,11 +4917,10 @@ static void heading_completion_invariants(test_batch_runner *runner) {
         }
         markdown_core_node_free(root);
     }
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     size_t anchor_work = 0;
     for (size_t count = 128; count <= 4096; count *= 2) {
         for (int referenced = 0; referenced < 2; referenced++) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             for (size_t i = 0; i < count; i++) {
                 markdown_core_strbuf_puts(&source, "# Same\n\n");
             }
@@ -4873,7 +4929,7 @@ static void heading_completion_invariants(test_batch_runner *runner) {
             }
             inline_work work = {0};
             markdown_core_node *root =
-                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "repeated heading declarations parse");
             INT_EQ(runner, work.definitions, count, "each heading creates its own implicit reference definition");
             INT_EQ(runner, work.definition_resources, count,
@@ -4881,14 +4937,14 @@ static void heading_completion_invariants(test_batch_runner *runner) {
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
         }
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
         markdown_core_strbuf_puts(&source, "# Only\n\n");
         for (size_t i = 0; i < count; i++) {
             markdown_core_strbuf_puts(&source, "Plain **paragraph**.\n\n");
         }
         inline_work work = {0};
         markdown_core_node *root =
-            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
         OK(runner, root != NULL, "unrelated content does not add anchor work");
         if (!anchor_work) {
             anchor_work = work.anchors;
@@ -4900,10 +4956,9 @@ static void heading_completion_invariants(test_batch_runner *runner) {
 }
 
 static void heading_registry_invariants(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t count = 128; count <= 8192; count *= 2) {
         for (int reserve = 0; reserve < 2; reserve++) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             for (size_t i = 0; i < count; i++) {
                 markdown_core_strbuf_puts(&source, "# Same\n\n");
             }
@@ -4918,7 +4973,7 @@ static void heading_registry_invariants(test_batch_runner *runner) {
             markdown_core_strbuf_puts(&source, "[Same] [Same][] [go][Same]\n");
             inline_work work = {0};
             markdown_core_node *root =
-                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "heading registry handles dense future reservations");
             if (root) {
                 markdown_core_node *node = root->first_child;
@@ -4949,14 +5004,14 @@ static void heading_registry_invariants(test_batch_runner *runner) {
     /* The cursor may have live delimiters, backtick lookahead, and attribute
      * recognition state at the declaration boundary. It resumes exactly once. */
     for (size_t count = 128; count <= 4096; count *= 2) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
         for (size_t i = 0; i < count; i++) {
             markdown_core_strbuf_puts(&source, "# *`prefix` [Later]* {#same}\n\n");
         }
         markdown_core_strbuf_puts(&source, "# Later\n");
         inline_work work = {0};
         markdown_core_node *root =
-            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
         OK(runner, root != NULL, "pending heading cursors retain their delimiter ownership");
         if (root) {
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), count, "every forward call resolves once");
@@ -4971,8 +5026,7 @@ static void heading_registry_invariants(test_batch_runner *runner) {
 }
 
 static void heading_reference_resource_lifetime(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
     const size_t count = 4096, length = 65536;
     markdown_core_strbuf_puts(&source, "# Target {id=");
     for (size_t i = 0; i < length; i++) {
@@ -5020,7 +5074,7 @@ static void heading_reference_resource_lifetime(test_batch_runner *runner) {
         markdown_core_strbuf_puts(&source, "[r] ");
     }
     inline_work work = {0};
-    root = markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+    root = markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
     OK(runner, root != NULL, "inherited anchor reservation preserves the reference expansion bound");
     OK(runner, work.anchors < 25 * (size_t)source.size,
        "a shared inherited anchor is inspected once, not once per occurrence: %zu/%d", work.anchors, source.size);
@@ -5029,9 +5083,8 @@ static void heading_reference_resource_lifetime(test_batch_runner *runner) {
 }
 
 static void heading_label_length_boundary(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t length = MAX_LINK_LABEL_LENGTH; length <= MAX_LINK_LABEL_LENGTH + 1; length++) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
         markdown_core_strbuf_puts(&source, "# ");
         for (size_t i = 0; i < length; i++) {
             markdown_core_strbuf_putc(&source, 'a');
@@ -5070,10 +5123,9 @@ static size_t count_anchors(markdown_core_node *root) {
 /* Long digit/pipe runs and nested successful images exercise the same bound:
  * no image closer rescans a nested label, including labels without pipes. */
 static void image_dimension_linear_work(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t count = 128; count <= 8192; count *= 2) {
         for (int shape = 0; shape < 6; shape++) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             if (shape < 2) {
                 markdown_core_strbuf_puts(&source, "![alt|");
                 for (size_t i = 0; i < count; i++) {
@@ -5091,8 +5143,8 @@ static void image_dimension_linear_work(test_batch_runner *runner) {
                 markdown_core_strbuf_putc(&source, '\n');
             }
             inline_work work = {0};
-            markdown_core_node *root = markdown_core_parse_document_with_mem(
-                (const char *)source.ptr, (size_t)source.size, mem, measure_inline_work, &work);
+            markdown_core_node *root = markdown_core_parse_document_with_setup(
+                (const char *)source.ptr, (size_t)source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial image labels parse");
             OK(runner, work.dimensions > 0 && work.dimensions <= 3 * (size_t)source.size,
                "image dimension work is linear: shape=%d bytes=%d work=%zu", shape, source.size, work.dimensions);
@@ -5123,10 +5175,9 @@ static void image_dimension_linear_work(test_batch_runner *runner) {
  * separators. Deep quote chains and long failed type candidates must never
  * rescan the remainder of the document. */
 static void callout_linear_work(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t count = 128; count <= 8192; count *= 2) {
         for (int shape = 0; shape < 4; shape++) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             if (shape == 0) {
                 for (size_t i = 0; i < count; i++) {
                     markdown_core_strbuf_putc(&source, '>');
@@ -5150,8 +5201,8 @@ static void callout_linear_work(test_batch_runner *runner) {
                 markdown_core_strbuf_puts(&source, "\n");
             }
             inline_work work = {0};
-            markdown_core_node *root = markdown_core_parse_document_with_mem(
-                (const char *)source.ptr, (size_t)source.size, mem, measure_inline_work, &work);
+            markdown_core_node *root = markdown_core_parse_document_with_setup(
+                (const char *)source.ptr, (size_t)source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial callouts parse");
             OK(runner, work.callout > 0 && work.callout <= 2 * (size_t)source.size,
                "callout recognition is linear: shape=%d bytes=%d work=%zu", shape, source.size, work.callout);
@@ -5175,7 +5226,6 @@ static void callout_linear_work(test_batch_runner *runner) {
 }
 
 static void block_identifier_linear_work(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     static const struct {
         const char *prefix, *unit, *suffix;
         size_t anchors_per_unit, anchors_at_end;
@@ -5200,15 +5250,15 @@ static void block_identifier_linear_work(test_batch_runner *runner) {
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
         for (size_t count = 128; count <= 8192; count *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             markdown_core_strbuf_puts(&source, cases[c].prefix);
             for (size_t i = 0; i < count; i++) {
                 markdown_core_strbuf_puts(&source, cases[c].unit);
             }
             markdown_core_strbuf_puts(&source, cases[c].suffix);
             inline_work work = {0};
-            markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, mem,
-                                                                             measure_inline_work, &work);
+            markdown_core_node *root = markdown_core_parse_document_with_setup((const char *)source.ptr, source.size,
+                                                                               measure_inline_work, &work);
             OK(runner, root != NULL, "block identifier adversary parses: case=%zu count=%zu", c, count);
             INT_EQ(runner, count_anchors(root), count * cases[c].anchors_per_unit + cases[c].anchors_at_end,
                    "every placement and fallback retains its semantics: case=%zu count=%zu", c, count);
@@ -5233,7 +5283,7 @@ static markdown_core_node *seed_anchor(const markdown_core_element *element, int
         if (owner->parent->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
             owner = owner->parent;
         }
-        if (!markdown_core_chunk_set_cstr(parser->mem, &owner->attributes.anchor, "existing")) {
+        if (!markdown_core_chunk_set_cstr(&owner->attributes.anchor, "existing")) {
             parser->oom = true;
         }
     }
@@ -5263,9 +5313,8 @@ static bool observe_reference_definition_lifetime(markdown_core_parser *parser, 
 static void reference_definition_lifetime(test_batch_runner *runner) {
     const char source[] = "- a\n\n[ref]: /x\n\n#list#\n\n[ref]\n";
     bool retained_at_anchor = false;
-    markdown_core_node *root =
-        markdown_core_parse_document_with_mem(source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(),
-                                              observe_reference_definition_lifetime, &retained_at_anchor);
+    markdown_core_node *root = markdown_core_parse_document_with_setup(
+        source, sizeof(source) - 1, observe_reference_definition_lifetime, &retained_at_anchor);
     OK(runner, root != NULL, "deferred reference definition parses");
     OK(runner, retained_at_anchor, "the finalized definition remains a sibling when anchor syntax is reached");
     if (root) {
@@ -5327,11 +5376,10 @@ static void block_identifier_ownership(test_batch_runner *runner) {
  * columns or grid topology. Track live allocations as well as geometry work,
  * including long valid prefixes whose rejection occurs near the line end. */
 static void grid_opening_memory(test_batch_runner *runner) {
-    markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
     const char *runs[] = {"\t", " ", "表", "-", "="};
     for (size_t shape = 0; shape < sizeof(runs) / sizeof(*runs); shape++) {
         for (size_t count = 4096; count <= 1048576; count *= 16) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(markdown_core_get_default_mem_allocator());
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             markdown_core_strbuf_puts(&source, "x---");
             for (size_t i = 0; i < count; i++) {
                 markdown_core_strbuf_puts(&source, runs[shape]);
@@ -5340,10 +5388,10 @@ static void grid_opening_memory(test_batch_runner *runner) {
             size_t baseline = 0;
             for (int grid = 0; grid <= 1; grid++) {
                 source.ptr[0] = grid ? '+' : 'x';
-                properties_live_bytes = properties_peak_bytes = 0;
+                properties_probe_arm();
                 inline_work work = {0};
-                markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size,
-                                                                                 &mem, measure_inline_work, &work);
+                markdown_core_node *root = markdown_core_parse_document_with_setup(
+                    (const char *)source.ptr, source.size, measure_inline_work, &work);
                 OK(runner, root != NULL, "invalid grid opener parses: shape=%zu count=%zu grid=%d", shape, count, grid);
                 if (root) {
                     INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "invalid border stays text");
@@ -5360,6 +5408,7 @@ static void grid_opening_memory(test_batch_runner *runner) {
                        "invalid opening rejection has bounded source work");
                 }
                 markdown_core_node_free(root);
+                properties_probe_disarm();
                 if (!grid) {
                     baseline = properties_peak_bytes;
                 }
@@ -5377,10 +5426,9 @@ static void grid_opening_memory(test_batch_runner *runner) {
 /* Failed grammar searches, row growth and column growth all use the same
  * candidate algorithm. Work counts source inspections, independent of time. */
 static void table_candidate_work(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t shape = 0; shape < 13; shape++) {
         for (size_t n = 32; n <= 512; n *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             size_t tables = 0;
             if (shape == 0) {
                 for (size_t i = 0; i < n; i++) {
@@ -5474,7 +5522,7 @@ static void table_candidate_work(test_batch_runner *runner) {
             }
             inline_work work = {0};
             markdown_core_node *root =
-                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "table candidate succeeds transactionally: shape=%zu n=%zu", shape, n);
             if (root) {
                 INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), tables,
@@ -5507,10 +5555,9 @@ static void table_candidate_work(test_batch_runner *runner) {
 /* Failed geometries must not hide a later matching opener/footer, and both
  * byte work and line visits stay bounded across distinct exact interval keys. */
 static void simple_table_footer_work(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t shape = 0; shape < 5; shape++) {
         for (size_t n = 32; n <= 512; n *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             for (size_t i = 0; i < n; i++) {
                 if (shape == 3) {
                     markdown_core_strbuf_puts(&source, "> ");
@@ -5533,7 +5580,7 @@ static void simple_table_footer_work(test_batch_runner *runner) {
             }
             inline_work work = {0};
             markdown_core_node *root =
-                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "distinct simple candidates parse: shape=%zu n=%zu", shape, n);
             if (root) {
                 INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), shape == 4 ? 1 : 0,
@@ -5556,10 +5603,9 @@ static void simple_table_footer_work(test_batch_runner *runner) {
 /* Caption queries and ordinary opening queries share negative grid facts.
  * A failed extent or row-group search must leave valid suffixes eligible. */
 static void grid_caption_search_work(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t shape = 0; shape < 6; shape++) {
         for (size_t n = 32; n <= 512; n *= 2) {
-            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             const char *prefix = shape == 1 ? "> " : "";
             const char *border = shape == 2 ? "+-------+-------+-------+-------+\n" : "+---+\n";
             const char *equal = shape == 2 ? "+=======+=======+=======+=======+\n" : "+===+\n";
@@ -5586,7 +5632,7 @@ static void grid_caption_search_work(test_batch_runner *runner) {
             }
             inline_work work = {0};
             markdown_core_node *root =
-                markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "grid caption query completes: shape=%zu n=%zu", shape, n);
             if (root) {
                 INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), shape == 3 ? 0 : 1,
@@ -5720,18 +5766,17 @@ static void malformed_scalar_terminates(test_batch_runner *runner) {
  * that the failing candidate then discarded. Geometry must stay flat in the
  * number of lines the search crosses. */
 static void multiline_boundary_search_builds_no_geometry(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     size_t geometry[2] = {0, 0};
     for (size_t step = 0; step < 2; step++) {
         size_t lines = step ? 512 : 32;
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
         markdown_core_strbuf_puts(&source, " -  -  -  -  -\n");
         for (size_t i = 0; i < lines; i++) {
             markdown_core_strbuf_puts(&source, "prose line with several words and no table in it\n");
         }
         inline_work work = {0};
         markdown_core_node *root =
-            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
         OK(runner, root != NULL, "dash-run document parses: lines=%zu", lines);
         INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "no table is produced: lines=%zu", lines);
         geometry[step] = work.table_geometry_lines;
@@ -5756,14 +5801,13 @@ static void multiline_boundary_search_builds_no_geometry(test_batch_runner *runn
  * stops recognizing real simple tables in CR-only input. The endings loop
  * below is what makes that a test failure rather than a corpus blind spot. */
 static void table_open_gate_admits_only_possible_tables(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
     for (size_t i = 0; i < 256; i++) {
         markdown_core_strbuf_puts(&source, "an ordinary prose line with no separator on it\n\n");
     }
     inline_work work = {0};
     markdown_core_node *root =
-        markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+        markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
     OK(runner, root != NULL, "prose-only document parses");
     INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "prose-only document produces no table");
     INT_EQ(runner, work.table_separator_scans, 0, "the opener captures no line where no table can open");
@@ -5775,14 +5819,14 @@ static void table_open_gate_admits_only_possible_tables(test_batch_runner *runne
      * gate only over-admits -- it silently runs the scan to end of input, so
      * one separator anywhere makes every line look possible again. In CR-only
      * input that is the difference between no captures and one per line. */
-    markdown_core_strbuf cr = MARKDOWN_CORE_BUF_INIT(mem);
+    markdown_core_strbuf cr = MARKDOWN_CORE_BUF_INIT();
     for (size_t i = 0; i < 256; i++) {
         markdown_core_strbuf_puts(&cr, "an ordinary prose line with no separator on it\r\r");
     }
     markdown_core_strbuf_puts(&cr, "-- --\r");
     inline_work cr_work = {0};
     markdown_core_node *cr_root =
-        markdown_core_parse_document_with_mem((char *)cr.ptr, cr.size, mem, measure_inline_work, &cr_work);
+        markdown_core_parse_document_with_setup((char *)cr.ptr, cr.size, measure_inline_work, &cr_work);
     OK(runner, cr_root != NULL, "CR-only prose document parses");
     OK(runner, cr_work.table_separator_scans <= 4, "a CR line ends the line the gate reads: %zu captures",
        cr_work.table_separator_scans);
@@ -5793,14 +5837,13 @@ static void table_open_gate_admits_only_possible_tables(test_batch_runner *runne
     static const char *const endings[] = {"\n", "\r", "\r\n"};
     static const char *const rows[] = {"Right Left", "----- ----", "12    12"};
     for (size_t e = 0; e < sizeof(endings) / sizeof(*endings); e++) {
-        markdown_core_strbuf table = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf table = MARKDOWN_CORE_BUF_INIT();
         for (size_t r = 0; r < sizeof(rows) / sizeof(*rows); r++) {
             markdown_core_strbuf_puts(&table, rows[r]);
             markdown_core_strbuf_puts(&table, endings[e]);
         }
         markdown_core_strbuf_puts(&table, endings[e]);
-        markdown_core_node *built =
-            markdown_core_parse_document_with_mem((char *)table.ptr, table.size, mem, NULL, NULL);
+        markdown_core_node *built = markdown_core_parse_document_with_setup((char *)table.ptr, table.size, NULL, NULL);
         OK(runner, built != NULL, "simple table parses with ending %zu", e);
         INT_EQ(runner, count_kind(built, MARKDOWN_CORE_NODE_TABLE), 1,
                "the gate admits a simple table whatever ends its header line: ending=%zu", e);
@@ -5825,14 +5868,13 @@ static void table_open_gate_admits_only_possible_tables(test_batch_runner *runne
  * every line look possible again. The CR case below is what makes that a
  * failure rather than a corpus blind spot. */
 static void definition_open_gate_admits_only_possible_terms(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
     for (size_t i = 0; i < 256; i++) {
         markdown_core_strbuf_puts(&source, "an ordinary prose line with no marker on it\n\n");
     }
     inline_work work = {0};
     markdown_core_node *root =
-        markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+        markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
     OK(runner, root != NULL, "marker-free prose document parses");
     INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 0, "and produces no definition list");
     INT_EQ(runner, work.lookahead, 0, "neither two-line opener pulls a line where its grammar cannot open");
@@ -5841,14 +5883,14 @@ static void definition_open_gate_admits_only_possible_terms(test_batch_runner *r
 
     /* CR-only prose with one marker at the very end. Reading the line with
      * `memchr` for '\n' makes every line find that marker. */
-    markdown_core_strbuf cr = MARKDOWN_CORE_BUF_INIT(mem);
+    markdown_core_strbuf cr = MARKDOWN_CORE_BUF_INIT();
     for (size_t i = 0; i < 256; i++) {
         markdown_core_strbuf_puts(&cr, "an ordinary prose line with no marker on it\r\r");
     }
     markdown_core_strbuf_puts(&cr, "term\r: body\r");
     inline_work cr_work = {0};
     markdown_core_node *cr_root =
-        markdown_core_parse_document_with_mem((char *)cr.ptr, cr.size, mem, measure_inline_work, &cr_work);
+        markdown_core_parse_document_with_setup((char *)cr.ptr, cr.size, measure_inline_work, &cr_work);
     OK(runner, cr_root != NULL, "CR-only prose document parses");
     INT_EQ(runner, count_kind(cr_root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 1,
            "the CR-terminated definition list at the end is still found");
@@ -5860,8 +5902,7 @@ static void definition_open_gate_admits_only_possible_terms(test_batch_runner *r
      * not miss: the transaction skips at most one blank line. */
     static const char *const shapes[] = {"term\n: body\n", "term\n\n: body\n"};
     for (size_t i = 0; i < sizeof(shapes) / sizeof(*shapes); i++) {
-        markdown_core_node *built =
-            markdown_core_parse_document_with_mem(shapes[i], strlen(shapes[i]), mem, NULL, NULL);
+        markdown_core_node *built = markdown_core_parse_document_with_setup(shapes[i], strlen(shapes[i]), NULL, NULL);
         OK(runner, built != NULL, "definition shape %zu parses", i);
         INT_EQ(runner, count_kind(built, MARKDOWN_CORE_NODE_DEFINITION_LIST), 1,
                "the gate admits a definition list with %zu blank lines before its marker", i);
@@ -5925,8 +5966,8 @@ static bool attach_delete_then_read(markdown_core_parser *parser, void *context)
 static void a_pass_may_free_the_roots_a_later_pass_reads(test_batch_runner *runner) {
     static const char source[] = "See [pre text @doe99 post text] and [more @smith2020 tail].\n";
     roots_read_after_delete = 0;
-    markdown_core_node *doc = markdown_core_parse_document_with_mem(
-        source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(), attach_delete_then_read, NULL);
+    markdown_core_node *doc =
+        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_delete_then_read, NULL);
     OK(runner, doc != NULL, "a pass that deletes a subtree owner, followed by one that reads its roots, parses");
     INT_EQ(runner, count_kind(doc, MARKDOWN_CORE_NODE_CITE), 0, "the cites are gone");
     OK(runner, roots_read_after_delete > 0, "the following pass still received roots to read: %d",
@@ -5981,8 +6022,8 @@ static void finish_stage_runs_every_phase_at_each_root(test_batch_runner *runner
     static const char source[] = "term\n: body\n\n> [!note] title\n> body\n";
     phase_order_len = 0;
     memset(phase_order, 0, sizeof(phase_order));
-    markdown_core_node *doc = markdown_core_parse_document_with_mem(
-        source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(), attach_two_recorders, NULL);
+    markdown_core_node *doc =
+        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_two_recorders, NULL);
     OK(runner, doc != NULL, "the document with two owned roots parses");
     OK(runner, phase_order_len >= 6, "both passes ran over every root: %zu visits", phase_order_len);
     /* Every root sees A immediately followed by B: no pass ran ahead of the
@@ -6000,12 +6041,11 @@ static void simple_table_body_boundaries(test_batch_runner *runner) {
     const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_CALLOUT,
                                              MARKDOWN_CORE_NODE_CODE_BLOCK};
     const char *endings[] = {"\n", "\r", "\r\n"};
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t tail = 0; tail < 3; tail++) {
         for (size_t ending = 0; ending < 3; ending++) {
             for (int gap = 0; gap < 2; gap++) {
                 for (int terminated = 0; terminated < 2; terminated++) {
-                    markdown_core_strbuf normalized = MARKDOWN_CORE_BUF_INIT(mem), source = MARKDOWN_CORE_BUF_INIT(mem);
+                    markdown_core_strbuf normalized = MARKDOWN_CORE_BUF_INIT(), source = MARKDOWN_CORE_BUF_INIT();
                     markdown_core_strbuf_puts(&normalized, "h    i\n---- ----\na    b\n");
                     if (gap) {
                         markdown_core_strbuf_putc(&normalized, '\n');
@@ -6065,7 +6105,6 @@ static void table_caption_boundaries(test_batch_runner *runner) {
                   {"::: {.note}\nbody\n:::\n", MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK},
                   {"::note[label]\n", MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK},
                   {"%%\ncomment\n%%\n", MARKDOWN_CORE_NODE_COMMENT_BLOCK}};
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (size_t t = 0; t < sizeof(tables) / sizeof(*tables); t++) {
         int caption_line = 1;
         for (const char *at = tables[t]; *at; at++) {
@@ -6073,7 +6112,7 @@ static void table_caption_boundaries(test_batch_runner *runner) {
         }
         for (size_t b = 0; b < sizeof(blocks) / sizeof(*blocks); b++) {
             for (int quoted = 0; quoted < 2; quoted++) {
-                markdown_core_strbuf input = MARKDOWN_CORE_BUF_INIT(mem), source = MARKDOWN_CORE_BUF_INIT(mem);
+                markdown_core_strbuf input = MARKDOWN_CORE_BUF_INIT(), source = MARKDOWN_CORE_BUF_INIT();
                 markdown_core_strbuf_puts(&input, tables[t]);
                 markdown_core_strbuf_puts(&input, ": cap\n");
                 markdown_core_strbuf_puts(&input, blocks[b].source);
@@ -6112,7 +6151,7 @@ static void table_caption_boundaries(test_batch_runner *runner) {
     const char *continuations[] = {"2. stays\n",         "<x>\n",          "    text\n", "+ \n",
                                    ":::note[unclosed\n", "%%\nno closer\n"};
     for (size_t i = 0; i < sizeof(continuations) / sizeof(*continuations); i++) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
         markdown_core_strbuf_puts(&source, tables[0]);
         markdown_core_strbuf_puts(&source, ": cap\n");
         markdown_core_strbuf_puts(&source, continuations[i]);
@@ -6167,13 +6206,12 @@ static void table_mapped_ownership(test_batch_runner *runner) {
 /* Nested mapped inputs use the parser queue; source depth does not recurse
  * into another document parser, and the innermost scope stays physical. */
 static void table_nested_inputs(test_batch_runner *runner) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     for (int depth = 16; depth <= 128; depth *= 2) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
         int width = 1;
         markdown_core_strbuf_puts(&source, "x\n");
         for (int level = 0; level < depth; level++) {
-            markdown_core_strbuf outer = MARKDOWN_CORE_BUF_INIT(mem);
+            markdown_core_strbuf outer = MARKDOWN_CORE_BUF_INIT();
             markdown_core_strbuf_putc(&outer, '+');
             for (int c = 0; c < width + 2; c++) {
                 markdown_core_strbuf_putc(&outer, '-');

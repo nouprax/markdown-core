@@ -30,6 +30,7 @@ let package = Package(
             name: "MarkdownCoreC",
             path: "packages/markdown-core",
             sources: [
+                "core/alloc.c",
                 "core/markdown_core.c",
                 "core/node.c",
                 "core/iterator.c",

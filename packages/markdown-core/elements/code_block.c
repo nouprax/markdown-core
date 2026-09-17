@@ -91,7 +91,7 @@ static void finalize_code(markdown_core_parser *parser, markdown_core_node *b) {
         }
         assert(pos < node_content->size);
 
-        markdown_core_strbuf tmp = MARKDOWN_CORE_BUF_INIT(parser->mem);
+        markdown_core_strbuf tmp = MARKDOWN_CORE_BUF_INIT();
         bufsize_t info_end = markdown_core_attributes_attach_tail(parser, b, node_content->ptr, pos);
         houdini_unescape_html_f(&tmp, node_content->ptr, info_end);
         markdown_core_strbuf_trim(&tmp);

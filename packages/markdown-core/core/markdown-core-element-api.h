@@ -209,11 +209,9 @@ typedef int (*markdown_core_postprocess_func)(const markdown_core_element *eleme
 
 typedef int (*markdown_core_ispunct_func)(char c);
 
-typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_element *element, markdown_core_mem *mem,
-                                                markdown_core_node *node);
+typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_element *element, markdown_core_node *node);
 
-typedef void (*markdown_core_opaque_free_func)(const markdown_core_element *element, markdown_core_mem *mem,
-                                               markdown_core_node *node);
+typedef void (*markdown_core_opaque_free_func)(const markdown_core_element *element, markdown_core_node *node);
 
 /** A parser element is a `static const` descriptor in a fixed compile-time
  * table (`elements/core-elements.c`), not an object built at run time.

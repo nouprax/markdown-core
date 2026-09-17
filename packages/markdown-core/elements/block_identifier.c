@@ -60,11 +60,11 @@ static bool S_attach_block_identifier(markdown_core_parser *parser, markdown_cor
         return false;
     }
     markdown_core_chunk identifier = candidate->identifier;
-    if (!markdown_core_chunk_to_cstr(parser->mem, &identifier)) {
+    if (!markdown_core_chunk_to_cstr(&identifier)) {
         parser->oom = true;
         return false;
     }
-    markdown_core_chunk_free(parser->mem, &owner->attributes.anchor);
+    markdown_core_chunk_free(&owner->attributes.anchor);
     owner->attributes.anchor = identifier;
     return true;
 }

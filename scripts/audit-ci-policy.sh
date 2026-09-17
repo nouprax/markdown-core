@@ -139,7 +139,7 @@ grep -Fq 'stage_runner.c markdown_core_stages.c' packages/markdown-core/benchmar
 grep -Fq 'stage_runner.c cmark_stages.c' packages/markdown-core/benchmarks/CMakeLists.txt
 grep -Fq 'receiptBytes !== document.bytes' scripts/benchmark-stages.mjs
 for boundary in \
-    'markdown_core_parse_document_with_mem' \
+    'markdown_core_parse_document_with_setup' \
     'S_parse_source' \
     'S_finish_parse' \
     'cmark_parser_feed' \

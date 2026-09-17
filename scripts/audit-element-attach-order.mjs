@@ -113,7 +113,7 @@ for (const file of cSources(pkg)) {
 if (
     dialectAttachSites.length !== 1 ||
     dialectAttachSites[0].file !== "core/blocks.c" ||
-    dialectAttachSites[0].function !== "markdown_core_parse_document_with_mem"
+    dialectAttachSites[0].function !== "markdown_core_parse_document_with_setup"
 ) {
     failures.push("the sole engine parse transaction must select the complete immutable dialect registry");
 }
