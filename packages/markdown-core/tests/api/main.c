@@ -5741,6 +5741,74 @@ static void multiline_boundary_search_builds_no_geometry(test_batch_runner *runn
        "a 16x longer boundary search builds no more column geometry: %zu then %zu", geometry[0], geometry[1]);
 }
 
+/* Table is the one element whose opening grammar spans two lines: a Pandoc
+ * simple table WITH a header has an arbitrary-prose first line, so no
+ * first-byte gate can exclude it, and the opener used to open a full lookahead
+ * transaction on every line just to fetch the next one and find out.
+ *
+ * With the two-line gate a document that holds no separator anywhere must
+ * make the opener capture no line at all -- `table_separator_scans` counts
+ * lines the opener captured and lexed, so zero is the whole claim.
+ *
+ * The gate reads that second line from raw source, and a bare CR ends a line
+ * here: an implementation reaching for `memchr` for '\n' runs past one and
+ * stops recognizing real simple tables in CR-only input. The endings loop
+ * below is what makes that a test failure rather than a corpus blind spot. */
+static void table_open_gate_admits_only_possible_tables(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+    for (size_t i = 0; i < 256; i++) {
+        markdown_core_strbuf_puts(&source, "an ordinary prose line with no separator on it\n\n");
+    }
+    inline_work work = {0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+    OK(runner, root != NULL, "prose-only document parses");
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "prose-only document produces no table");
+    INT_EQ(runner, work.table_separator_scans, 0, "the opener captures no line where no table can open");
+    markdown_core_node_free(root);
+    markdown_core_strbuf_free(&source);
+
+    /* The line end matters in a way the table below cannot show. Reading the
+     * second line with `memchr` for '\n' does not LOSE a table here -- the
+     * gate only over-admits -- it silently runs the scan to end of input, so
+     * one separator anywhere makes every line look possible again. In CR-only
+     * input that is the difference between no captures and one per line. */
+    markdown_core_strbuf cr = MARKDOWN_CORE_BUF_INIT(mem);
+    for (size_t i = 0; i < 256; i++) {
+        markdown_core_strbuf_puts(&cr, "an ordinary prose line with no separator on it\r\r");
+    }
+    markdown_core_strbuf_puts(&cr, "-- --\r");
+    inline_work cr_work = {0};
+    markdown_core_node *cr_root =
+        markdown_core_parse_document_with_mem((char *)cr.ptr, cr.size, mem, measure_inline_work, &cr_work);
+    OK(runner, cr_root != NULL, "CR-only prose document parses");
+    OK(runner, cr_work.table_separator_scans <= 4, "a CR line ends the line the gate reads: %zu captures",
+       cr_work.table_separator_scans);
+    markdown_core_node_free(cr_root);
+    markdown_core_strbuf_free(&cr);
+
+    /* A separator one line down is exactly what the gate must not miss. */
+    static const char *const endings[] = {"\n", "\r", "\r\n"};
+    static const char *const rows[] = {"Right Left", "----- ----", "12    12"};
+    for (size_t e = 0; e < sizeof(endings) / sizeof(*endings); e++) {
+        markdown_core_strbuf table = MARKDOWN_CORE_BUF_INIT(mem);
+        for (size_t r = 0; r < sizeof(rows) / sizeof(*rows); r++) {
+            markdown_core_strbuf_puts(&table, rows[r]);
+            markdown_core_strbuf_puts(&table, endings[e]);
+        }
+        markdown_core_strbuf_puts(&table, endings[e]);
+        markdown_core_node *built =
+            markdown_core_parse_document_with_mem((char *)table.ptr, table.size, mem, NULL, NULL);
+        OK(runner, built != NULL, "simple table parses with ending %zu", e);
+        INT_EQ(runner, count_kind(built, MARKDOWN_CORE_NODE_TABLE), 1,
+               "the gate admits a simple table whatever ends its header line: ending=%zu", e);
+        INT_EQ(runner, count_kind(built, MARKDOWN_CORE_NODE_TABLE_CELL), 4, "and it keeps its cells: ending=%zu", e);
+        markdown_core_node_free(built);
+        markdown_core_strbuf_free(&table);
+    }
+}
+
 static void simple_table_body_boundaries(test_batch_runner *runner) {
     const char *tails[] = {"# heading\nbody\n", "> quote\n> next\n", "```\ncode\n```\n"};
     const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_CALLOUT,
@@ -6044,6 +6112,7 @@ int main(void) {
     bounded_scanners(runner);
     malformed_scalar_terminates(runner);
     multiline_boundary_search_builds_no_geometry(runner);
+    table_open_gate_admits_only_possible_tables(runner);
     postprocess_rewrites_every_owned_tree(runner);
     standalone_formula_as_owned_root(runner);
     simple_table_body_boundaries(runner);

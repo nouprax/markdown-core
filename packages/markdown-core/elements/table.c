@@ -2031,6 +2031,87 @@ bool markdown_core_table_caption_probe(markdown_core_block_lookahead *lookahead,
     return matched;
 }
 
+/* `table_dash_count` for a line the source has not captured, with the same
+ * all-or-nothing rule: any byte outside [ \t-] makes the line no separator at
+ * all, so the count is zero. */
+static size_t table_dash_count_raw(const unsigned char *data, bufsize_t from, bufsize_t length) {
+    const unsigned char *p = data + from, *end = data + length, *run;
+    size_t count = 0;
+    int result;
+    do {
+        result = scan_table_dash(&p, end, &run);
+        if (result > 0) {
+            count++;
+        }
+    } while (result > 0);
+    return result < 0 ? 0 : count;
+}
+
+/* Maximal runs of '-' anywhere in [data, end), counted no further than `stop`. */
+static size_t table_dash_runs_anywhere(const unsigned char *data, const unsigned char *end, size_t stop) {
+    size_t runs = 0;
+    while (data < end && runs < stop) {
+        if (*data == '-') {
+            runs++;
+            while (data < end && *data == '-') {
+                data++;
+            }
+            continue;
+        }
+        data++;
+    }
+    return runs;
+}
+
+/* Every element that opens a block declares which bytes can start it, so the
+ * core can skip the hook for a line that cannot match. Table declared none,
+ * because ONE of its grammars -- a Pandoc simple table WITH a header -- has an
+ * arbitrary-prose first line; the answer lives on the NEXT line. So the hook
+ * ran on every line, and opened a full lookahead transaction to fetch that
+ * line at 548 Ir before it knew any grammar was possible.
+ *
+ * This is that gate, written across the two lines the grammar spans. Each
+ * arm is a NECESSARY condition; a true answer means only that the
+ * transaction is worth opening.
+ *
+ * The second line is read from RAW SOURCE, using the parser's own line-end
+ * rule -- a bare CR terminates a line here, so `memchr` for '\n' would run
+ * past one. Container continuation strips a PREFIX from that line, and
+ * stripping a prefix can neither add a dash run nor split one, so counting
+ * runs anywhere in the raw line bounds the count in the stripped line from
+ * above. That keeps the arm sound inside a block quote without having to
+ * replay the container chain to find out. */
+static bool table_open_admits(markdown_core_parser *parser, const unsigned char *input, int length) {
+    bufsize_t trimmed = length;
+    while (trimmed > 0 && (input[trimmed - 1] == '\n' || input[trimmed - 1] == '\r')) {
+        trimmed--;
+    }
+    int first = parser->first_nonspace;
+    /* Grid opens on '+'. */
+    if (first < trimmed && input[first] == '+') {
+        return true;
+    }
+    /* A caption opens on "Table:", "table:" or ':'. */
+    if (table_caption_start(input, trimmed, first, parser->indent) >= 0) {
+        return true;
+    }
+    /* Both multiline forms and a headerless simple table need this line to be
+     * a separator: one run for a full boundary, two or more otherwise. */
+    if (table_dash_count_raw(input, parser->offset, trimmed) > 0) {
+        return true;
+    }
+    /* Only a simple table with a header remains, and only its delimiter row,
+     * the next physical line, can still admit one. */
+    const unsigned char *cursor = parser->lookahead_cursor, *end = parser->lookahead_end, *eol = cursor;
+    if (!cursor || cursor >= end) {
+        return false;
+    }
+    while (eol < end && !markdown_core_is_line_end((char)*eol)) {
+        eol++;
+    }
+    return table_dash_runs_anywhere(cursor, eol, 2) >= 2;
+}
+
 markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, markdown_core_node *parent,
                                                  unsigned char *input, int length) {
     if (parser->indent > 3 || parser->blank || parent->kind == MARKDOWN_CORE_NODE_TABLE ||
@@ -2041,6 +2122,9 @@ markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, m
      * existing eligible table can claim a trailing caption. */
     if (parser->lookahead_cursor == parser->lookahead_end &&
         (!parent->last_child || parent->last_child->kind != MARKDOWN_CORE_NODE_TABLE)) {
+        return NULL;
+    }
+    if (!table_open_admits(parser, input, length)) {
         return NULL;
     }
     table_source source = {.parser = parser, .lines = parser->table_lines};
