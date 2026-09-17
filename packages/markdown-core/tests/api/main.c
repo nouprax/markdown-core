@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "alloc.h"
 #include "markdown-core.h"
 #include "node.h"
 #include "buffer.h"
@@ -57,6 +58,40 @@ static int strbuf_refuse_next;
 static void *marker_to_free;
 static int marker_free_count;
 
+/* Counts calls, for the tests that assert a speculative probe allocated
+ * nothing it would throw away. */
+static size_t text_allocation_calls;
+static int text_counting;
+
+/* Accounts BYTES, for the test that asserts long scalar text needs no index
+ * storage. It prefixes every allocation with its size, which is why it must be
+ * armed only around a CLOSED region: a pointer allocated before arming and
+ * freed while armed would be read through a header that is not there. The one
+ * test that uses it arms immediately before its parse and disarms after the
+ * document is freed; the source buffer it builds is allocated and freed
+ * outside that window. */
+typedef union {
+    size_t size;
+    long double alignment;
+    void *pointer;
+} properties_allocation;
+static size_t properties_live_bytes, properties_peak_bytes;
+static int properties_counting;
+
+static void properties_account(size_t old_size, size_t new_size) {
+    properties_live_bytes = properties_live_bytes - old_size + new_size;
+    if (properties_live_bytes > properties_peak_bytes) {
+        properties_peak_bytes = properties_live_bytes;
+    }
+}
+
+static void properties_probe_arm(void) {
+    properties_live_bytes = properties_peak_bytes = 0;
+    properties_counting = 1;
+}
+
+static void properties_probe_disarm(void) { properties_counting = 0; }
+
 static void payload_probe_arm(void) {
     payload_allocations = payload_fail_at = payload_live = 0;
     payload_counting = 1;
@@ -83,6 +118,22 @@ void *markdown_core_alloc(size_t count, size_t size) {
     if (allocation_refused()) {
         return NULL;
     }
+    text_allocation_calls += text_counting;
+    if (properties_counting) {
+        properties_allocation *allocation;
+        size_t bytes;
+        if (count && size > (SIZE_MAX - sizeof(*allocation)) / count) {
+            return NULL;
+        }
+        bytes = count * size;
+        allocation = calloc(1, sizeof(*allocation) + bytes);
+        if (!allocation) {
+            return NULL;
+        }
+        allocation->size = bytes;
+        properties_account(0, bytes);
+        return allocation + 1;
+    }
     pointer = calloc(count, size);
     if (payload_counting) {
         payload_live += pointer != NULL;
@@ -96,6 +147,27 @@ void *markdown_core_realloc(void *pointer, size_t size) {
     if (allocation_refused()) {
         return NULL;
     }
+    text_allocation_calls += text_counting;
+    if (properties_counting) {
+        properties_allocation *allocation;
+        size_t old_size;
+        if (!size) {
+            markdown_core_free(pointer);
+            return NULL;
+        }
+        if (size > SIZE_MAX - sizeof(*allocation)) {
+            return NULL;
+        }
+        allocation = pointer ? (properties_allocation *)pointer - 1 : NULL;
+        old_size = allocation ? allocation->size : 0;
+        allocation = realloc(allocation, sizeof(*allocation) + size);
+        if (!allocation) {
+            return NULL;
+        }
+        allocation->size = size;
+        properties_account(old_size, size);
+        return allocation + 1;
+    }
     result = realloc(pointer, size);
     if (payload_counting) {
         payload_live += result != NULL && fresh;
@@ -107,6 +179,14 @@ void markdown_core_free(void *pointer) {
     if (pointer != NULL && pointer == marker_to_free) {
         marker_free_count++;
         marker_to_free = NULL;
+    }
+    if (properties_counting) {
+        if (pointer) {
+            properties_allocation *allocation = (properties_allocation *)pointer - 1;
+            properties_account(allocation->size, 0);
+            free(allocation);
+        }
+        return;
     }
     if (payload_counting) {
         payload_live -= pointer != NULL;
@@ -3192,58 +3272,7 @@ static void properties_member_work(test_batch_runner *runner) {
 
 /* Track live bytes, not RSS or allocation timing. The header preserves C99
  * fundamental alignment and lets realloc account for released capacity. */
-typedef union {
-    size_t size;
-    long double alignment;
-    void *pointer;
-} properties_allocation;
-static size_t properties_live_bytes, properties_peak_bytes;
-static void properties_account(size_t old_size, size_t new_size) {
-    properties_live_bytes = properties_live_bytes - old_size + new_size;
-    if (properties_live_bytes > properties_peak_bytes) {
-        properties_peak_bytes = properties_live_bytes;
-    }
-}
-static void *properties_calloc(size_t count, size_t size) {
-    if (count && size > (SIZE_MAX - sizeof(properties_allocation)) / count) {
-        return NULL;
-    }
-    size_t bytes = count * size;
-    properties_allocation *allocation = calloc(1, sizeof(*allocation) + bytes);
-    if (!allocation) {
-        return NULL;
-    }
-    allocation->size = bytes;
-    properties_account(0, bytes);
-    return allocation + 1;
-}
-static void properties_free(void *pointer) {
-    if (pointer) {
-        properties_allocation *allocation = (properties_allocation *)pointer - 1;
-        properties_account(allocation->size, 0);
-        free(allocation);
-    }
-}
-static void *properties_realloc(void *pointer, size_t size) {
-    if (!size) {
-        properties_free(pointer);
-        return NULL;
-    }
-    if (size > SIZE_MAX - sizeof(properties_allocation)) {
-        return NULL;
-    }
-    properties_allocation *allocation = pointer ? (properties_allocation *)pointer - 1 : NULL;
-    size_t old_size = allocation ? allocation->size : 0;
-    allocation = realloc(allocation, sizeof(*allocation) + size);
-    if (!allocation) {
-        return NULL;
-    }
-    allocation->size = size;
-    properties_account(old_size, size);
-    return allocation + 1;
-}
 static void properties_text_memory(test_batch_runner *runner) {
-    markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
     const char *prefixes[] = {"---\nname: x", "---\nname: \"x", "---\nabstract: |\n  ", "---\nauthors:\n- x"};
     const char *suffixes[] = {"\n", "\"\n", "\n", "\n- second\n"};
     for (size_t shape = 0; shape < sizeof(prefixes) / sizeof(*prefixes); shape++) {
@@ -3258,9 +3287,9 @@ static void properties_text_memory(test_batch_runner *runner) {
                 }
                 markdown_core_strbuf_puts(&source, suffixes[shape]);
                 markdown_core_strbuf_puts(&source, "state: ready\n---\n");
-                properties_live_bytes = properties_peak_bytes = 0;
-                markdown_core_node *root =
-                    markdown_core_parse_document_with_mem((const char *)source.ptr, source.size, &mem, NULL, NULL);
+                properties_probe_arm();
+                markdown_core_node *root = markdown_core_parse_document_with_mem(
+                    (const char *)source.ptr, source.size, markdown_core_get_default_mem_allocator(), NULL, NULL);
                 OK(runner, root != NULL, "long scalar shape %zu with %c parses", shape, characters[character]);
                 if (root) {
                     markdown_core_node *metadata = root->as.document->metadata;
@@ -3289,6 +3318,7 @@ static void properties_text_memory(test_batch_runner *runner) {
                     OK(runner, intact, "brackets remain complete scalar text");
                     markdown_core_node_free(root);
                 }
+                properties_probe_disarm();
                 if (!character) {
                     baseline = properties_peak_bytes;
                 }
@@ -4146,24 +4176,14 @@ static void footnote_postprocessing(test_batch_runner *runner) {
     }
 }
 
-static size_t text_allocation_calls;
-static void *count_text_calloc(size_t count, size_t size) {
-    text_allocation_calls++;
-    return calloc(count, size);
-}
-static void *count_text_realloc(void *pointer, size_t size) {
-    text_allocation_calls++;
-    return realloc(pointer, size);
-}
-
 /* Recognition may allocate its shared suffix index, but never semantic
  * attribute strings or row cells that would be thrown away by a probe. */
 static void speculative_probe_allocations(test_batch_runner *runner) {
-    markdown_core_mem mem = {count_text_calloc, count_text_realloc, free};
+    text_counting = 1;
     const char *directives[] = {"::: {.a k=1} junk\n", "::: {.a k=1}\n", "::: classname junk\n", "::: classname\n",
                                 "::: {.a k=1\n"};
     for (size_t i = 0; i < sizeof(directives) / sizeof(*directives); i++) {
-        markdown_core_parser parser = {.mem = &mem};
+        markdown_core_parser parser = {.mem = markdown_core_get_default_mem_allocator()};
         markdown_core_chunk input = {(unsigned char *)directives[i], (bufsize_t)strlen(directives[i]), 0};
         text_allocation_calls = 0;
         int matched = MARKDOWN_CORE_ELEMENT_DIRECTIVE.probe_block(&parser, &input, 0, 0, NULL);
@@ -4176,7 +4196,7 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
     }
     const char *rows[] = {"| a | b |\n", "| a \\| b | c |\n", "\n"};
     for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); i++) {
-        markdown_core_parser parser = {.mem = &mem};
+        markdown_core_parser parser = {.mem = markdown_core_get_default_mem_allocator()};
         markdown_core_node table = {.kind = MARKDOWN_CORE_NODE_TABLE};
         text_allocation_calls = 0;
         int matched = MARKDOWN_CORE_ELEMENT_TABLE.last_block_matches(
@@ -4185,8 +4205,9 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         INT_EQ(runner, text_allocation_calls, 0, "table continuation allocates no temporary geometry");
     }
     {
-        markdown_core_parser parser = {.mem = &mem};
-        markdown_core_node *paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &mem);
+        markdown_core_parser parser = {.mem = markdown_core_get_default_mem_allocator()};
+        markdown_core_node *paragraph =
+            markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, markdown_core_get_default_mem_allocator());
         markdown_core_node_set_string_content(paragraph, "| a | b |\n");
         unsigned char delimiter[] = "| --- |\n";
         text_allocation_calls = 0;
@@ -4198,10 +4219,13 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         markdown_core_node_free(paragraph);
     }
     for (size_t length = 64; length <= 65536; length *= 4) {
-        markdown_core_parser parser = {.mem = &mem};
-        markdown_core_node *root = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, &mem);
-        markdown_core_node *paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, &mem);
-        markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, &mem);
+        markdown_core_parser parser = {.mem = markdown_core_get_default_mem_allocator()};
+        markdown_core_node *root =
+            markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, markdown_core_get_default_mem_allocator());
+        markdown_core_node *paragraph =
+            markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, markdown_core_get_default_mem_allocator());
+        markdown_core_node *text =
+            markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, markdown_core_get_default_mem_allocator());
         char *source = malloc(length + 1);
         memset(source, 'a', length);
         source[length - 1] = '@'; /* A failed candidate, as well as ordinary text. */
@@ -4218,12 +4242,14 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         markdown_core_node_free(root);
         free(source);
     }
+    text_counting = 0;
 }
 
 /* Known-literal runs occupy the same text slice as surrounding prose.
  * Their allocation count equals ordinary text with the same whitespace and byte length;
  * scanning each run once also bounds work independently of node allocation. */
 static void literal_text_allocations(test_batch_runner *runner) {
+    text_counting = 1;
     static const struct {
         const char *prefix, *unit;
     } cases[] = {
@@ -4268,7 +4294,6 @@ static void literal_text_allocations(test_batch_runner *runner) {
         {"[_open](/u) a", "x_ "},
         {"[_x_](/u) a", "x_ "},
     };
-    markdown_core_mem mem = {count_text_calloc, count_text_realloc, free};
     for (size_t size = 1024; size <= 1048576; size *= 2) {
         for (size_t shape = 0; shape < sizeof(cases) / sizeof(*cases); shape++) {
             size_t prefix_length = strlen(cases[shape].prefix);
@@ -4296,8 +4321,8 @@ static void literal_text_allocations(test_batch_runner *runner) {
                 }
                 text_allocation_calls = 0;
                 inline_work work = {0};
-                markdown_core_node *root =
-                    markdown_core_parse_document_with_mem(source, length, &mem, measure_inline_work, &work);
+                markdown_core_node *root = markdown_core_parse_document_with_mem(
+                    source, length, markdown_core_get_default_mem_allocator(), measure_inline_work, &work);
                 OK(runner, root != NULL, "literal text parses: shape=%zu size=%zu", shape, length);
                 if (!pass) {
                     ordinary_allocations = text_allocation_calls;
@@ -4335,6 +4360,7 @@ static void literal_text_allocations(test_batch_runner *runner) {
             free(source);
         }
     }
+    text_counting = 0;
 }
 
 typedef struct {
@@ -5382,7 +5408,6 @@ static void block_identifier_ownership(test_batch_runner *runner) {
  * columns or grid topology. Track live allocations as well as geometry work,
  * including long valid prefixes whose rejection occurs near the line end. */
 static void grid_opening_memory(test_batch_runner *runner) {
-    markdown_core_mem mem = {properties_calloc, properties_realloc, properties_free};
     const char *runs[] = {"\t", " ", "表", "-", "="};
     for (size_t shape = 0; shape < sizeof(runs) / sizeof(*runs); shape++) {
         for (size_t count = 4096; count <= 1048576; count *= 16) {
@@ -5397,8 +5422,9 @@ static void grid_opening_memory(test_batch_runner *runner) {
                 source.ptr[0] = grid ? '+' : 'x';
                 properties_live_bytes = properties_peak_bytes = 0;
                 inline_work work = {0};
-                markdown_core_node *root = markdown_core_parse_document_with_mem((const char *)source.ptr, source.size,
-                                                                                 &mem, measure_inline_work, &work);
+                markdown_core_node *root = markdown_core_parse_document_with_mem(
+                    (const char *)source.ptr, source.size, markdown_core_get_default_mem_allocator(),
+                    measure_inline_work, &work);
                 OK(runner, root != NULL, "invalid grid opener parses: shape=%zu count=%zu grid=%d", shape, count, grid);
                 if (root) {
                     INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "invalid border stays text");
