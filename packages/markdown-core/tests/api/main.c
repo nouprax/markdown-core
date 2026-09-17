@@ -90,14 +90,38 @@ static void properties_probe_arm(void) {
     properties_counting = 1;
 }
 
-static void properties_probe_disarm(void) { properties_counting = 0; }
+static void properties_probe_disarm(void) {
+    if (!properties_peak_bytes) {
+        fprintf(stderr, "byte probe disarmed having accounted no bytes: the region measures nothing\n");
+        abort();
+    }
+    properties_counting = 0;
+}
 
+/* ARMING IS CHECKED AT RUNTIME, NOT BY READING THE SOURCE.
+ *
+ * An armed region exists to measure a parse, and a parse always allocates. So
+ * a region that ends having observed NOTHING was not armed around the thing it
+ * meant to measure -- armed too late, disarmed too early, or wrapped around
+ * the wrong statement -- and every assertion that follows it compares zero
+ * against zero. That is the failure `grid_opening_memory` shipped with, and no
+ * audit over the source text catches it in general: a check that the arming
+ * call appears in the same function is satisfied by arming AFTER the parse.
+ *
+ * So the probes check themselves. Disarming a region that counted nothing
+ * aborts, which cannot be arranged around by moving a line. */
 static void payload_probe_arm(void) {
     payload_allocations = payload_fail_at = payload_live = 0;
     payload_counting = 1;
 }
 
-static void payload_probe_disarm(void) { payload_counting = 0; }
+static void payload_probe_disarm(void) {
+    if (!payload_allocations) {
+        fprintf(stderr, "payload probe disarmed having counted no allocation: the region measures nothing\n");
+        abort();
+    }
+    payload_counting = 0;
+}
 
 /* Refusals are counted the same way whichever entry point asks, because a
  * constructor that grows a buffer and one that allocates a record are the same

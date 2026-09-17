@@ -140,11 +140,28 @@ const PROBE_INFRASTRUCTURE = new Set([
             readers.get(owner).add(counter);
         }
     });
+    /* A probe measures a PARSE, so arming has to happen before the parse, not
+     * merely somewhere in the same function. Textual co-occurrence is not
+     * enough: arming after the parse zeroes the counters, leaves the
+     * assertions comparing zero against zero, and reads exactly the same to a
+     * check that only asks whether the call appears. */
+    const PARSE = /\bmarkdown_core_(?:parse_document(?:_with_setup)?|document_parse)\s*\(/;
     for (const [owner, counters] of readers) {
-        const body = bodyOf(owner);
+        const body = bodyOf(owner).split("\n");
+        const firstIndex = (needle) =>
+            body.findIndex((line) => (needle instanceof RegExp ? needle.test(line) : line.includes(needle)));
+        const parseAt = firstIndex(PARSE);
         for (const counter of counters) {
-            if (!body.includes(ARMS[counter])) {
+            const armAt = firstIndex(ARMS[counter]);
+            if (armAt < 0) {
                 failures.push(`${probeFile}: ${owner} reads ${counter} without arming it (${ARMS[counter]})`);
+                continue;
+            }
+            if (parseAt >= 0 && armAt > parseAt) {
+                failures.push(
+                    `${probeFile}: ${owner} arms ${counter} on line ${armAt + 1} of the function, ` +
+                        `after the parse on line ${parseAt + 1}; the region measures nothing`
+                );
             }
         }
     }
