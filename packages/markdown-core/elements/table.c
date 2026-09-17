@@ -1221,12 +1221,16 @@ static bool table_parse_multiline(table_source *source, size_t start, table_cand
         goto failed;
     }
     size_t end = delimiter + 1;
+    /* This search judges with `table_full_boundary` and `.blanks`, both of
+     * which read RAW BYTES. It must not build the per-scalar column map: the
+     * lines it walks may never become part of a table, and every routine that
+     * does read the map builds it for the lines it reads. On `block-hr.x1` a
+     * lone ` -  -  -  -  -` keeps a headerless multiline alive to EOF, and the
+     * map built here covered 56,680 of that document's 56,704 non-blank
+     * characters for a candidate that then failed. */
     for (; table_source_get(source, end); end++) {
         if (table_full_boundary(source, end) && (!table_source_get(source, end + 1) || source->lines[end + 1].blanks)) {
             break;
-        }
-        if (!table_source_columns(source, end)) {
-            goto failed;
         }
     }
     if (end >= source->count) {

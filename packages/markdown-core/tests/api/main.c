@@ -5711,6 +5711,36 @@ static void malformed_scalar_terminates(test_batch_runner *runner) {
     }
 }
 
+/* A line of separated dashes keeps a headerless multiline candidate alive: no
+ * closing boundary is ever found, so the search walks to end of input. That
+ * search judges with dash counts and blank flags, both read from raw bytes, so
+ * it must not build the per-scalar column map for the lines it passes. Before,
+ * `block-hr.x1` decoded 56,680 of its 56,704 non-blank characters into a map
+ * that the failing candidate then discarded. Geometry must stay flat in the
+ * number of lines the search crosses. */
+static void multiline_boundary_search_builds_no_geometry(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    size_t geometry[2] = {0, 0};
+    for (size_t step = 0; step < 2; step++) {
+        size_t lines = step ? 512 : 32;
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_puts(&source, " -  -  -  -  -\n");
+        for (size_t i = 0; i < lines; i++) {
+            markdown_core_strbuf_puts(&source, "prose line with several words and no table in it\n");
+        }
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+        OK(runner, root != NULL, "dash-run document parses: lines=%zu", lines);
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "no table is produced: lines=%zu", lines);
+        geometry[step] = work.table_geometry_lines;
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+    OK(runner, geometry[1] <= geometry[0] + 4,
+       "a 16x longer boundary search builds no more column geometry: %zu then %zu", geometry[0], geometry[1]);
+}
+
 static void simple_table_body_boundaries(test_batch_runner *runner) {
     const char *tails[] = {"# heading\nbody\n", "> quote\n> next\n", "```\ncode\n```\n"};
     const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_CALLOUT,
@@ -6013,6 +6043,7 @@ int main(void) {
     table_candidate_work(runner);
     bounded_scanners(runner);
     malformed_scalar_terminates(runner);
+    multiline_boundary_search_builds_no_geometry(runner);
     postprocess_rewrites_every_owned_tree(runner);
     standalone_formula_as_owned_root(runner);
     simple_table_body_boundaries(runner);
