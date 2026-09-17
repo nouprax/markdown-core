@@ -45,7 +45,7 @@ static int utf8proc_charlen(const uint8_t *str, bufsize_t str_len) {
     return length;
 }
 
-int markdown_core_utf8proc_iterate(const uint8_t *str, bufsize_t str_len, int32_t *dst) {
+int markdown_core_utf8proc_iterate_general(const uint8_t *str, bufsize_t str_len, int32_t *dst) {
     int length;
     int32_t uc = -1;
 
@@ -158,12 +158,6 @@ void markdown_core_utf8proc_case_fold(markdown_core_strbuf *dest, const uint8_t 
         str += char_len;
         len -= char_len;
     }
-}
-
-// matches anything in the Zs class, plus LF, CR, TAB, FF.
-int markdown_core_utf8proc_is_space(int32_t uc) {
-    return (uc == 9 || uc == 10 || uc == 12 || uc == 13 || uc == 32 || uc == 160 || uc == 5760 ||
-            (uc >= 8192 && uc <= 8202) || uc == 8239 || uc == 8287 || uc == 12288);
 }
 
 // matches anything in the P[cdefios] classes.
