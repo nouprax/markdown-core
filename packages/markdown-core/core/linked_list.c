@@ -3,13 +3,12 @@
 #include "alloc.h"
 #include "markdown-core.h"
 
-void markdown_core_llist_free_full(markdown_core_mem *mem, markdown_core_llist *head,
-                                   markdown_core_free_func free_func) {
+void markdown_core_llist_free_full(markdown_core_llist *head, markdown_core_free_func free_func) {
     markdown_core_llist *tmp, *prev;
 
     for (tmp = head; tmp;) {
         if (free_func) {
-            free_func(mem, tmp->data);
+            free_func(tmp->data);
         }
 
         prev = tmp;
@@ -18,6 +17,4 @@ void markdown_core_llist_free_full(markdown_core_mem *mem, markdown_core_llist *
     }
 }
 
-void markdown_core_llist_free(markdown_core_mem *mem, markdown_core_llist *head) {
-    markdown_core_llist_free_full(mem, head, NULL);
-}
+void markdown_core_llist_free(markdown_core_llist *head) { markdown_core_llist_free_full(head, NULL); }

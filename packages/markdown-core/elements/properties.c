@@ -86,7 +86,7 @@ static markdown_core_string copy(properties *p, const unsigned char *s, size_t s
     }
     return (markdown_core_string){data, size};
 }
-static void free_value(markdown_core_mem *mem, markdown_core_metadata_value *v) {
+static void free_value(markdown_core_metadata_value *v) {
     if (v->kind == MARKDOWN_CORE_METADATA_SCALAR &&
         (v->as.scalar.kind == MARKDOWN_CORE_METADATA_NUMBER || v->as.scalar.kind == MARKDOWN_CORE_METADATA_TEXT)) {
         markdown_core_free((void *)v->as.scalar.value.string.data);
@@ -98,20 +98,20 @@ static void free_value(markdown_core_mem *mem, markdown_core_metadata_value *v) 
     }
     memset(v, 0, sizeof(*v));
 }
-void markdown_core_metadata_fields_free(markdown_core_mem *mem, markdown_core_metadata_fields *metadata) {
+void markdown_core_metadata_fields_free(markdown_core_metadata_fields *metadata) {
     if (!metadata) {
         return;
     }
-    free_value(mem, &metadata->name);
-    free_value(mem, &metadata->title);
-    free_value(mem, &metadata->subtitle);
-    free_value(mem, &metadata->time);
-    free_value(mem, &metadata->date);
-    free_value(mem, &metadata->authors);
-    free_value(mem, &metadata->keywords);
-    free_value(mem, &metadata->abstract);
-    free_value(mem, &metadata->state);
-    free_value(mem, &metadata->comment);
+    free_value(&metadata->name);
+    free_value(&metadata->title);
+    free_value(&metadata->subtitle);
+    free_value(&metadata->time);
+    free_value(&metadata->date);
+    free_value(&metadata->authors);
+    free_value(&metadata->keywords);
+    free_value(&metadata->abstract);
+    free_value(&metadata->state);
+    free_value(&metadata->comment);
 }
 static void skip(decoder *d) {
     const unsigned char *s = d->owner->source;
@@ -170,7 +170,7 @@ static bool hex4(decoder *d, uint32_t *scalar) {
 static bool quoted(decoder *d, markdown_core_string *value) {
     const unsigned char *s = d->owner->source;
     unsigned char quote = s[d->pos++];
-    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(d->owner->parser->mem);
+    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT();
     bool closed = false, valid = true;
     while (d->pos < d->end && valid && !buf.oom) {
         unsigned char c = s[d->pos++];
@@ -318,7 +318,7 @@ static bool literal(decoder *d, size_t key_start, markdown_core_metadata_value *
         return false;
     }
     d->pos = next_line(s, d->pos, d->end);
-    markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT(d->owner->parser->mem);
+    markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
     size_t indent = 0, clipped = 0;
     bool valid = true;
     while (d->pos < d->end) {
@@ -426,12 +426,12 @@ static bool list_item(decoder *d, scalar_context structure, markdown_core_metada
     bool valid = scalar(d, structure, &value);
     if (!valid || (value.as.scalar.kind != MARKDOWN_CORE_METADATA_NUMBER &&
                    value.as.scalar.kind != MARKDOWN_CORE_METADATA_TEXT)) {
-        free_value(d->owner->parser->mem, &value);
+        free_value(&value);
         return false;
     }
     if (!grow(d->owner, (void **)&list->as.list.items, capacity, list->as.list.count + 1,
               sizeof(*list->as.list.items))) {
-        free_value(d->owner->parser->mem, &value);
+        free_value(&value);
         return false;
     }
     list->as.list.items[list->as.list.count++] = (markdown_core_metadata_list_item){
@@ -564,7 +564,7 @@ static bool field(decoder *d) {
     return true;
 failed:
     markdown_core_free((void *)name.data);
-    free_value(p->parser->mem, &value);
+    free_value(&value);
     return false;
 }
 /* Return the byte after a directly authored block key's colon. The same
@@ -741,7 +741,7 @@ size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsign
         return 0;
     }
     properties p = {.parser = parser, .source = source};
-    markdown_core_node *node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_METADATA, parser->mem);
+    markdown_core_node *node = markdown_core_node_new(MARKDOWN_CORE_NODE_METADATA);
     markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_METADATA);
     if (!node) {
         parser->oom = true;

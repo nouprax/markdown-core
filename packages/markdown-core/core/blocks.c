@@ -66,12 +66,12 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser);
 
 static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, bufsize_t bytes);
 
-static markdown_core_node *make_block(markdown_core_parser *parser, markdown_core_mem *mem, markdown_core_node_type tag,
-                                      int start_line, int start_column) {
+static markdown_core_node *make_block(markdown_core_parser *parser, markdown_core_node_type tag, int start_line,
+                                      int start_column) {
     markdown_core_node *e;
 
     markdown_core_parser_note_kind(parser, tag);
-    e = markdown_core_node_new_with_mem(tag, mem);
+    e = markdown_core_node_new(tag);
     if (!e) {
         return NULL;
     }
@@ -85,8 +85,8 @@ static markdown_core_node *make_block(markdown_core_parser *parser, markdown_cor
 }
 
 // Create a root document node.
-static markdown_core_node *make_document(markdown_core_parser *parser, markdown_core_mem *mem) {
-    markdown_core_node *e = make_block(parser, mem, MARKDOWN_CORE_NODE_DOCUMENT, 1, 1);
+static markdown_core_node *make_document(markdown_core_parser *parser) {
+    markdown_core_node *e = make_block(parser, MARKDOWN_CORE_NODE_DOCUMENT, 1, 1);
     return e;
 }
 
@@ -165,23 +165,19 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     parser->lookahead_entries_alloc = 0;
 }
 
-static markdown_core_parser *S_parser_new(markdown_core_mem *mem) {
+static markdown_core_parser *S_parser_new(void) {
     markdown_core_parser *parser;
     markdown_core_node *document;
 
-    if (!mem) {
-        return NULL;
-    }
     parser = (markdown_core_parser *)markdown_core_alloc(1, sizeof(*parser));
     if (!parser) {
         return NULL;
     }
-    parser->mem = mem;
-    markdown_core_strbuf_init(parser->mem, &parser->curline, 256);
-    markdown_core_strbuf_init(parser->mem, &parser->line_scratch, 0);
-    markdown_core_strbuf_init(parser->mem, &parser->lookahead_last_line, 0);
+    markdown_core_strbuf_init(&parser->curline, 256);
+    markdown_core_strbuf_init(&parser->line_scratch, 0);
+    markdown_core_strbuf_init(&parser->lookahead_last_line, 0);
 
-    document = make_document(parser, parser->mem);
+    document = make_document(parser);
     parser->document_structure = markdown_core_structure_for_kind(MARKDOWN_CORE_NODE_DOCUMENT);
     parser->document_structure->init_document(parser);
     parser->root = document;
@@ -200,11 +196,9 @@ static markdown_core_parser *S_parser_new(markdown_core_mem *mem) {
 }
 
 static void S_parser_free(markdown_core_parser *parser) {
-    markdown_core_mem *mem;
     if (!parser) {
         return;
     }
-    mem = parser->mem;
     S_parser_dispose(parser);
     markdown_core_free(parser->element_allocation);
     markdown_core_strbuf_free(&parser->curline);
@@ -688,7 +682,7 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
     parent = markdown_core_block_parent_for(parser, parent, block_type);
 
     markdown_core_node *child =
-        make_block(parser, parser->mem, block_type, parser->line_number,
+        make_block(parser, block_type, parser->line_number,
                    markdown_core_parser_source_column(parser, parser->line_number, start_column));
     if (!child || child->content.oom) {
         parser->oom = true;
@@ -1088,11 +1082,11 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
 }
 
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len) {
-    return markdown_core_parse_document_with_mem(buffer, len, markdown_core_get_default_mem_allocator(), NULL, NULL);
+    return markdown_core_parse_document_with_setup(buffer, len, NULL, NULL);
 }
 
-markdown_core_node *markdown_core_parse_document_with_mem(const char *source, size_t length, markdown_core_mem *mem,
-                                                          markdown_core_parser_setup_func setup, void *context) {
+markdown_core_node *markdown_core_parse_document_with_setup(const char *source, size_t length,
+                                                            markdown_core_parser_setup_func setup, void *context) {
     static const unsigned char empty[] = "";
     markdown_core_parser *parser;
     markdown_core_node *document;
@@ -1100,7 +1094,7 @@ markdown_core_node *markdown_core_parse_document_with_mem(const char *source, si
     if ((!source && length != 0) || length > (size_t)(INT32_MAX / 2)) {
         return NULL;
     }
-    parser = S_parser_new(mem);
+    parser = S_parser_new();
     if (!parser) {
         return NULL;
     }
@@ -2366,8 +2360,7 @@ uint64_t markdown_core_source_key(const void *entry) {
 /* Eight stable byte passes order the two nonnegative 32-bit coordinates.
  * This bound holds for every source shape on every libc; there is no
  * comparison-sort worst case or input-size-dependent alternate path. */
-int markdown_core_order_source_entries(markdown_core_mem *mem, void *entries, size_t count, size_t stride,
-                                       uint64_t (*key)(const void *)) {
+int markdown_core_order_source_entries(void *entries, size_t count, size_t stride, uint64_t (*key)(const void *)) {
     if (!count) {
         return 1;
     }
@@ -2404,8 +2397,8 @@ int markdown_core_order_source_entries(markdown_core_mem *mem, void *entries, si
     return 1;
 }
 
-int markdown_core_block_order_definitions(markdown_core_mem *mem, markdown_core_definition_collection *collection) {
-    return markdown_core_order_source_entries(mem, collection->values, collection->count, sizeof(*collection->values),
+int markdown_core_block_order_definitions(markdown_core_definition_collection *collection) {
+    return markdown_core_order_source_entries(collection->values, collection->count, sizeof(*collection->values),
                                               markdown_core_source_key);
 }
 

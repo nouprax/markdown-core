@@ -25,7 +25,6 @@ typedef struct {
 } delimiter_run;
 
 struct markdown_core_inline_state {
-    markdown_core_mem *mem;
     markdown_core_chunk input;
     markdown_core_attribute_parser attributes;
     bufsize_t heading_attributes_start, text_end, heading_label_end;
@@ -83,12 +82,12 @@ struct markdown_core_inline_state {
 markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state *inline_state,
                                                       markdown_core_node_type t, int start_column, int end_column,
                                                       markdown_core_chunk s);
-markdown_core_node *markdown_core_inline_make_simple(markdown_core_mem *mem, markdown_core_node_type t);
+markdown_core_node *markdown_core_inline_make_simple(markdown_core_node_type t);
 markdown_core_node *markdown_core_inline_make_simple_noted(markdown_core_inline_state *inline_state,
                                                            markdown_core_node_type t);
 markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_inline_state *inline_state,
                                                                 markdown_core_node_type t);
-void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number,
+void markdown_core_inline_state_from_buf(markdown_core_parser *parser, int line_number,
                                          markdown_core_inline_state *inline_state, markdown_core_chunk *chunk,
                                          markdown_core_map *refmap);
 unsigned char markdown_core_inline_peek_char_n(markdown_core_inline_state *inline_state, bufsize_t n);

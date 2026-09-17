@@ -17,7 +17,7 @@
 
 static markdown_core_node *make_str_with_entities(markdown_core_inline_state *inline_state, int start_column,
                                                   int end_column, markdown_core_chunk *content) {
-    markdown_core_strbuf unescaped = MARKDOWN_CORE_BUF_INIT(inline_state->mem);
+    markdown_core_strbuf unescaped = MARKDOWN_CORE_BUF_INIT();
 
     if (houdini_unescape_html(&unescaped, content->data, content->len)) {
         if (unescaped.oom) {
@@ -31,7 +31,7 @@ static markdown_core_node *make_str_with_entities(markdown_core_inline_state *in
 
 static markdown_core_chunk markdown_core_clean_autolink(markdown_core_inline_state *inline_state,
                                                         markdown_core_chunk *url, int is_email) {
-    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(inline_state->mem);
+    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT();
 
     markdown_core_chunk_trim(url);
 
@@ -66,11 +66,10 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
         // `elements.txt` records both spellings of one construct on one line
         // disagreeing about it three columns apart.
         markdown_core_chunk destination = markdown_core_clean_autolink(inline_state, &url, is_email);
-        link->as.link->resource =
-            markdown_core_resource_new(inline_state->mem, destination, markdown_core_optional_chunk_absent());
+        link->as.link->resource = markdown_core_resource_new(destination, markdown_core_optional_chunk_absent());
         if (!link->as.link->resource) {
             inline_state->oom = 1;
-            markdown_core_chunk_free(inline_state->mem, &destination);
+            markdown_core_chunk_free(&destination);
             markdown_core_node_free(link);
             return NULL;
         }
@@ -345,7 +344,7 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
 
     markdown_core_inline_state_set_offset(inline_state, (int)(max_rewind + link_end));
 
-    markdown_core_node *node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LINK, parser->mem);
+    markdown_core_node *node = markdown_core_node_new(MARKDOWN_CORE_NODE_LINK);
     markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_LINK);
     if (!node) {
         parser->oom = true;
@@ -353,20 +352,20 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
     }
 
     markdown_core_strbuf buf;
-    markdown_core_strbuf_init(parser->mem, &buf, 10);
+    markdown_core_strbuf_init(&buf, 10);
     markdown_core_strbuf_puts(&buf, "http://");
     markdown_core_strbuf_put(&buf, data, (bufsize_t)link_end);
     {
         markdown_core_chunk url = markdown_core_chunk_buf_detach(&buf);
         node->as.link->resource =
-            url.data ? markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent()) : NULL;
+            url.data ? markdown_core_resource_new(url, markdown_core_optional_chunk_absent()) : NULL;
         if (!node->as.link->resource) {
-            markdown_core_chunk_free(parser->mem, &url);
+            markdown_core_chunk_free(&url);
             parser->oom = true;
         }
     }
 
-    markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
+    markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
     markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_TEXT);
     if (!text) {
         parser->oom = true;
@@ -424,7 +423,7 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     markdown_core_inline_state_set_offset(inline_state, (int)(max_rewind + link_end));
     markdown_core_node_unput(parser, parent, rewind);
 
-    markdown_core_node *node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LINK, parser->mem);
+    markdown_core_node *node = markdown_core_node_new(MARKDOWN_CORE_NODE_LINK);
     markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_LINK);
     if (!node) {
         parser->oom = true;
@@ -432,12 +431,12 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     }
 
     markdown_core_chunk url = markdown_core_chunk_dup(chunk, max_rewind - rewind, (bufsize_t)(link_end + rewind));
-    node->as.link->resource = markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent());
+    node->as.link->resource = markdown_core_resource_new(url, markdown_core_optional_chunk_absent());
     if (!node->as.link->resource) {
         parser->oom = true;
     }
 
-    markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
+    markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
     markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_TEXT);
     if (!text) {
         parser->oom = true;
@@ -566,14 +565,14 @@ static bool validate_protocol(const char protocol[], uint8_t *data, size_t rewin
 static markdown_core_node *email_text_fragment(markdown_core_parser *parser, markdown_core_node *source_map,
                                                const markdown_core_chunk *source, size_t start, size_t length) {
     assert(length);
-    markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
+    markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
     markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_TEXT);
     if (!text) {
         parser->oom = true;
         return NULL;
     }
     markdown_core_chunk literal = markdown_core_chunk_dup(source, (bufsize_t)start, (bufsize_t)length);
-    if (!markdown_core_chunk_to_cstr(parser->mem, &literal)) {
+    if (!markdown_core_chunk_to_cstr(&literal)) {
         parser->oom = true;
         markdown_core_node_free(text);
         return NULL;
@@ -687,7 +686,7 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             continue;
         }
 
-        markdown_core_node *link_node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LINK, parser->mem);
+        markdown_core_node *link_node = markdown_core_node_new(MARKDOWN_CORE_NODE_LINK);
         markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_LINK);
         if (!link_node) {
             parser->oom = true;
@@ -699,7 +698,7 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         size_t link_len = link_end + rewind;
         size_t post_start = start + offset + max_rewind + link_end;
         markdown_core_strbuf buf;
-        markdown_core_strbuf_init(parser->mem, &buf, 10);
+        markdown_core_strbuf_init(&buf, 10);
         if (auto_mailto) {
             markdown_core_strbuf_puts(&buf, "mailto:");
         }
@@ -707,9 +706,9 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         {
             markdown_core_chunk url = markdown_core_chunk_buf_detach(&buf);
             link_node->as.link->resource =
-                url.data ? markdown_core_resource_new(parser->mem, url, markdown_core_optional_chunk_absent()) : NULL;
+                url.data ? markdown_core_resource_new(url, markdown_core_optional_chunk_absent()) : NULL;
             if (!link_node->as.link->resource) {
-                markdown_core_chunk_free(parser->mem, &url);
+                markdown_core_chunk_free(&url);
                 parser->oom = true;
                 markdown_core_node_free(link_node);
                 break;
@@ -745,13 +744,13 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         return;
     }
     markdown_core_chunk tail = markdown_core_chunk_dup(&source, (bufsize_t)start, (bufsize_t)remaining);
-    if (!markdown_core_chunk_to_cstr(parser->mem, &tail)) {
+    if (!markdown_core_chunk_to_cstr(&tail)) {
         parser->oom = true;
         return;
     }
     set_sourcepos_from_range(parser, text, &source_map, start, remaining);
     *text->as.literal = tail;
-    markdown_core_chunk_free(parser->mem, &source);
+    markdown_core_chunk_free(&source);
 }
 
 static int postprocess(const markdown_core_element *element, markdown_core_parser *parser, markdown_core_node *root) {

@@ -123,21 +123,9 @@ typedef struct markdown_core_element markdown_core_element;
 /** Defines the memory allocation functions to be used by Markdown Core
  * when parsing and allocating a document tree
  */
-typedef struct markdown_core_mem {
-    void *(*calloc)(size_t, size_t);
-    void *(*realloc)(void *, size_t);
-    void (*free)(void *);
-} markdown_core_mem;
-
-/** The default memory allocator; uses the system's calloc,
- * realloc and free.
+/** Callback for freeing user data.
  */
-MARKDOWN_CORE_EXPORT
-markdown_core_mem *markdown_core_get_default_mem_allocator(void);
-
-/** Callback for freeing user data with a 'markdown_core_mem' context.
- */
-typedef void (*markdown_core_free_func)(markdown_core_mem *mem, void *user_data);
+typedef void (*markdown_core_free_func)(void *user_data);
 
 /*
  * ## Basic data structures
@@ -161,13 +149,12 @@ typedef struct _markdown_core_llist {
  *  data pointer of each of its elements
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_llist_free_full(markdown_core_mem *mem, markdown_core_llist *head,
-                                   markdown_core_free_func free_func);
+void markdown_core_llist_free_full(markdown_core_llist *head, markdown_core_free_func free_func);
 
 /** Free the list starting with 'head'
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_llist_free(markdown_core_mem *mem, markdown_core_llist *head);
+void markdown_core_llist_free(markdown_core_llist *head);
 
 /**
  * ## Creating and Destroying Nodes
@@ -183,15 +170,13 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new(markdown_core_no
  * allocator used to allocate the node.  Note:  be sure to use the same
  * allocator for every node in a tree, or bad things can happen.
  */
-MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem(markdown_core_node_type type,
-                                                                         markdown_core_mem *mem);
+MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new(markdown_core_node_type type);
 
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
                                                                          const markdown_core_element *element);
 
-MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type,
-                                                                                 markdown_core_mem *mem,
-                                                                                 const markdown_core_element *element);
+MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
+                                                                         const markdown_core_element *element);
 
 /** Frees the memory allocated for a node and any children.
  */

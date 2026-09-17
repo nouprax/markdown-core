@@ -34,6 +34,6 @@ typedef struct markdown_core_metadata_fields {
 } markdown_core_metadata_fields;
 
 /* The document owns the committed result; decoder temporaries use the same allocator. */
-void markdown_core_metadata_fields_free(markdown_core_mem *mem, markdown_core_metadata_fields *metadata);
+void markdown_core_metadata_fields_free(markdown_core_metadata_fields *metadata);
 
 #endif

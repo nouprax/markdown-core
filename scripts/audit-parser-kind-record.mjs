@@ -22,7 +22,7 @@ const pkg = path.join(root, "packages/markdown-core");
 const NOTE = "markdown_core_parser_note_kind";
 /** A write and its recording must sit within this many lines of each other. */
 const WINDOW = 4;
-const WRITES = /\bmarkdown_core_node_(?:new_with_mem(?:_and_ext)?|set_kind)\s*\(/g;
+const WRITES = /\bmarkdown_core_node_(?:new(?:_with_ext)?|set_kind)\s*\(/g;
 
 /** `file` -> `enclosing function` -> why its kind is recorded somewhere else.
  * A `*` covers the whole file. */

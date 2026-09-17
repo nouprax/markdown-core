@@ -72,7 +72,7 @@ void markdown_core_block_reserve_node_anchor(markdown_core_parser *parser, ancho
 }
 
 void markdown_core_block_prepare_headings(markdown_core_parser *parser, markdown_core_heading_collection *headings) {
-    if (!markdown_core_order_source_entries(parser->mem, headings->values, headings->count, sizeof(*headings->values),
+    if (!markdown_core_order_source_entries(headings->values, headings->count, sizeof(*headings->values),
                                             markdown_core_source_key)) {
         parser->oom = true;
         return;
@@ -227,7 +227,7 @@ static void append_anchor_suffix(markdown_core_strbuf *base, size_t ordinal) {
 void markdown_core_block_finalize_heading_anchors(markdown_core_parser *parser,
                                                   markdown_core_heading_collection *headings,
                                                   anchor_registry *registry) {
-    markdown_core_strbuf base = MARKDOWN_CORE_BUF_INIT(parser->mem);
+    markdown_core_strbuf base = MARKDOWN_CORE_BUF_INIT();
     for (size_t i = 0; i < headings->count && !parser->oom; i++) {
         markdown_core_heading_parse *heading = &headings->values[i];
         markdown_core_chunk *anchor = &heading->node->attributes.anchor;
@@ -258,9 +258,9 @@ void markdown_core_block_finalize_heading_anchors(markdown_core_parser *parser,
             if (parser->oom) {
                 break;
             }
-            markdown_core_chunk_free(parser->mem, anchor);
+            markdown_core_chunk_free(anchor);
             *anchor = (markdown_core_chunk){base.ptr, base.size, 0};
-            if (!markdown_core_chunk_to_cstr(parser->mem, anchor)) {
+            if (!markdown_core_chunk_to_cstr(anchor)) {
                 parser->oom = true;
                 break;
             }
@@ -276,9 +276,9 @@ void markdown_core_block_finalize_heading_anchors(markdown_core_parser *parser,
                 parser->oom = true;
                 break;
             }
-            markdown_core_chunk_free(parser->mem, &resource->url);
+            markdown_core_chunk_free(&resource->url);
             resource->url = (markdown_core_chunk){base.ptr, base.size, 0};
-            if (!markdown_core_chunk_to_cstr(parser->mem, &resource->url)) {
+            if (!markdown_core_chunk_to_cstr(&resource->url)) {
                 parser->oom = true;
             }
         }
@@ -317,13 +317,12 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
         markdown_core_chunk label = {inline_state.input.data, inline_state.heading_label_end, 0};
         if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
-            markdown_core_resource *resource = markdown_core_resource_new(parser->mem, markdown_core_chunk_literal(""),
-                                                                          markdown_core_optional_chunk_absent());
+            markdown_core_resource *resource =
+                markdown_core_resource_new(markdown_core_chunk_literal(""), markdown_core_optional_chunk_absent());
             if (!resource) {
                 inline_state.oom = 1;
             } else {
-                markdown_core_map_record *record =
-                    markdown_core_reference_create(parser->mem, parser->refmap, &label, resource);
+                markdown_core_map_record *record = markdown_core_reference_create(parser->refmap, &label, resource);
                 if (record) {
                     record->implicit = true;
                     record->source_key =
@@ -346,7 +345,6 @@ void markdown_core_finish_heading(markdown_core_parser *parser, markdown_core_he
 
 void markdown_core_dispose_heading(markdown_core_heading_parse *heading) {
     if (heading->pending) {
-        markdown_core_mem *mem = heading->pending->mem;
         markdown_core_inline_clear_inlines(heading->pending);
         markdown_core_free(heading->pending);
         heading->pending = NULL;
@@ -360,8 +358,8 @@ void markdown_core_heading_begin_inlines(markdown_core_parser *parser, markdown_
         while (line > 0 && !markdown_core_is_line_end(inline_state->input.data[line - 1])) {
             line--;
         }
-        inline_state->attributes = (markdown_core_attribute_parser){
-            .mem = parser->mem, .data = inline_state->input.data, .length = inline_state->input.len};
+        inline_state->attributes =
+            (markdown_core_attribute_parser){.data = inline_state->input.data, .length = inline_state->input.len};
         inline_state->heading_attributes_start =
             markdown_core_attributes_tail(&inline_state->attributes, line, inline_state->input.len);
         if (inline_state->heading_attributes_start >= 0) {

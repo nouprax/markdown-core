@@ -68,14 +68,14 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *par
         end--;
         parser->callout_scan_work++;
     }
-    if (!markdown_core_chunk_to_cstr(parser->mem, &variant)) {
+    if (!markdown_core_chunk_to_cstr(&variant)) {
         parser->oom = true;
         return true;
     }
     node->as.callout->variant = markdown_core_optional_chunk_present(variant);
     node->as.callout->collapsed = (markdown_core_optional_bool){has_fold, collapsed};
     if (end > pos) {
-        markdown_core_node *title = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+        markdown_core_node *title = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
         markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
         if (!title) {
             parser->oom = true;

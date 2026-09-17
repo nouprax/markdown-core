@@ -122,14 +122,14 @@ static int index_input(markdown_core_attribute_parser *p) {
     return 1;
 }
 
-void markdown_core_attributes_free(markdown_core_mem *mem, markdown_core_attributes *v) {
-    markdown_core_chunk_free(mem, &v->anchor);
+void markdown_core_attributes_free(markdown_core_attributes *v) {
+    markdown_core_chunk_free(&v->anchor);
     for (size_t i = 0; i < v->class_count; i++) {
-        markdown_core_chunk_free(mem, &v->classes[i]);
+        markdown_core_chunk_free(&v->classes[i]);
     }
     for (size_t i = 0; i < v->record_count; i++) {
-        markdown_core_chunk_free(mem, &v->records[i].name);
-        markdown_core_chunk_free(mem, &v->records[i].value);
+        markdown_core_chunk_free(&v->records[i].name);
+        markdown_core_chunk_free(&v->records[i].value);
     }
     markdown_core_free(v->classes);
     markdown_core_free(v->records);
@@ -141,18 +141,18 @@ void markdown_core_attribute_parser_free(markdown_core_attribute_parser *p) {
     p->ends = NULL;
 }
 
-static int copy(markdown_core_mem *mem, markdown_core_chunk *into, const unsigned char *s, bufsize_t n) {
+static int copy(markdown_core_chunk *into, const unsigned char *s, bufsize_t n) {
     unsigned char *data = markdown_core_alloc((size_t)n + 1, 1);
     if (!data) {
         return 0;
     }
     memcpy(data, s, (size_t)n);
-    markdown_core_chunk_free(mem, into);
+    markdown_core_chunk_free(into);
     *into = (markdown_core_chunk){data, n, 1};
     return 1;
 }
 
-static int reserve(markdown_core_mem *mem, void **items, size_t count, size_t *capacity, size_t size) {
+static int reserve(void **items, size_t count, size_t *capacity, size_t size) {
     if (count < *capacity) {
         return 1;
     }
@@ -172,22 +172,22 @@ static int reserve(markdown_core_mem *mem, void **items, size_t count, size_t *c
     return 1;
 }
 
-static int append_class(markdown_core_mem *mem, markdown_core_attributes *v, const unsigned char *s, bufsize_t n) {
-    if (!reserve(mem, (void **)&v->classes, v->class_count, &v->class_capacity, sizeof(*v->classes))) {
+static int append_class(markdown_core_attributes *v, const unsigned char *s, bufsize_t n) {
+    if (!reserve((void **)&v->classes, v->class_count, &v->class_capacity, sizeof(*v->classes))) {
         return 0;
     }
     markdown_core_chunk item = {0};
-    if (!copy(mem, &item, s, n)) {
+    if (!copy(&item, s, n)) {
         return 0;
     }
     v->classes[v->class_count++] = item;
     return 1;
 }
 
-static int normalize(markdown_core_mem *mem, markdown_core_attributes *v, const unsigned char *name, bufsize_t length,
+static int normalize(markdown_core_attributes *v, const unsigned char *name, bufsize_t length,
                      const unsigned char *value, bufsize_t size) {
     if (length == 2 && memcmp(name, "id", 2) == 0) {
-        return copy(mem, &v->anchor, value, size);
+        return copy(&v->anchor, value, size);
     }
     if (length == 5 && memcmp(name, "class", 5) == 0) {
         bufsize_t word = 0, at = 0;
@@ -195,22 +195,22 @@ static int normalize(markdown_core_mem *mem, markdown_core_attributes *v, const 
             bufsize_t width;
             int32_t cp = scalar(value, size, at, &width);
             if (markdown_core_utf8proc_is_space(cp) || cp == 11) {
-                if (at > word && !append_class(mem, v, value + word, at - word)) {
+                if (at > word && !append_class(v, value + word, at - word)) {
                     return 0;
                 }
                 word = at + width;
             }
             at += width;
         }
-        return at == word || append_class(mem, v, value + word, at - word);
+        return at == word || append_class(v, value + word, at - word);
     }
-    if (!reserve(mem, (void **)&v->records, v->record_count, &v->record_capacity, sizeof(*v->records))) {
+    if (!reserve((void **)&v->records, v->record_count, &v->record_capacity, sizeof(*v->records))) {
         return 0;
     }
     markdown_core_record item = {0};
-    if (!copy(mem, &item.name, name, length) || !copy(mem, &item.value, value, size)) {
-        markdown_core_chunk_free(mem, &item.name);
-        markdown_core_chunk_free(mem, &item.value);
+    if (!copy(&item.name, name, length) || !copy(&item.value, value, size)) {
+        markdown_core_chunk_free(&item.name);
+        markdown_core_chunk_free(&item.value);
         return 0;
     }
     v->records[v->record_count++] = item;
@@ -268,7 +268,7 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
         return 0;
     }
     markdown_core_attributes value = {0};
-    markdown_core_strbuf decoded = MARKDOWN_CORE_BUF_INIT(p->mem);
+    markdown_core_strbuf decoded = MARKDOWN_CORE_BUF_INIT();
     bufsize_t at = start + 1;
     while (at < finish - 1) {
         p->work++;
@@ -277,7 +277,7 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
             continue;
         }
         if (s[at] == '-') {
-            if (!append_class(p->mem, &value, (const unsigned char *)"unnumbered", 10)) {
+            if (!append_class(&value, (const unsigned char *)"unnumbered", 10)) {
                 goto oom;
             }
             at++;
@@ -287,8 +287,8 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
             unsigned char marker = s[at++];
             bufsize_t from = at;
             at = scan_name(p, finish, at);
-            if (marker == '#' ? !copy(p->mem, &value.anchor, s + from, at - from)
-                              : !append_class(p->mem, &value, s + from, at - from)) {
+            if (marker == '#' ? !copy(&value.anchor, s + from, at - from)
+                              : !append_class(&value, s + from, at - from)) {
                 goto oom;
             }
             continue;
@@ -348,7 +348,7 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
         if (quoted) {
             at++;
         }
-        if (decoded.oom || !normalize(p->mem, &value, s + name, name_length, decoded.ptr, decoded.size)) {
+        if (decoded.oom || !normalize(&value, s + name, name_length, decoded.ptr, decoded.size)) {
             goto oom;
         }
     }
@@ -360,7 +360,7 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
 oom:
     p->oom = 1;
     markdown_core_strbuf_free(&decoded);
-    markdown_core_attributes_free(p->mem, &value);
+    markdown_core_attributes_free(&value);
     return 0;
 }
 
@@ -371,8 +371,7 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
     if (start == inline_state->heading_attributes_start) {
         return 0;
     }
-    if (!inline_state->attributes.mem) {
-        inline_state->attributes.mem = inline_state->mem;
+    if (!inline_state->attributes.data) {
         inline_state->attributes.data = inline_state->input.data;
         inline_state->attributes.length = inline_state->input.len;
     }
@@ -398,7 +397,7 @@ bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, mar
     while (info_end > 0 && markdown_core_block_is_space_or_tab(source[info_end - 1])) {
         info_end--;
     }
-    markdown_core_attribute_parser attributes = {.mem = parser->mem, .data = source, .length = length};
+    markdown_core_attribute_parser attributes = {.data = source, .length = length};
     bufsize_t attribute_start = markdown_core_attributes_tail(&attributes, 0, info_end);
     if (attribute_start >= 0 &&
         markdown_core_attributes_parse(&attributes, attribute_start, &node->attributes, &attribute_end)) {
@@ -413,7 +412,7 @@ bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, mar
 }
 
 static void dispose_inline(markdown_core_inline_state *inline_state) {
-    if (inline_state->attributes.mem) {
+    if (inline_state->attributes.data) {
         inline_state->owner_parser->attribute_work += inline_state->attributes.work;
         markdown_core_attribute_parser_free(&inline_state->attributes);
     }

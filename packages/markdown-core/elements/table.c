@@ -37,7 +37,7 @@ typedef struct {
     uint16_t n_columns;
 } pipe_row;
 
-static void free_node_table(markdown_core_mem *mem, markdown_core_table *table) {
+static void free_node_table(markdown_core_table *table) {
     if (!table) {
         return;
     }
@@ -212,7 +212,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     // with the allocation refused. The other three lose the lead paragraph
     // WITHOUT setting parser->oom, so the document comes back short and the
     // failure bit says everything was fine.
-    paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+    paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!paragraph) {
         parser->oom = true;
@@ -563,7 +563,7 @@ static int contains_inlines(const markdown_core_element *element, markdown_core_
            (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL && node->content.size > 0);
 }
 
-static void opaque_alloc(const markdown_core_element *self, markdown_core_mem *mem, markdown_core_node *node) {
+static void opaque_alloc(const markdown_core_element *self, markdown_core_node *node) {
     /* A NULL payload makes the table facade accessors fail; no incomplete
      * table is returned by a successful parse. */
     if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
@@ -573,9 +573,7 @@ static void opaque_alloc(const markdown_core_element *self, markdown_core_mem *m
     }
 }
 
-static void opaque_free(const markdown_core_element *self, markdown_core_mem *mem, markdown_core_node *node) {
-    free_node_table(mem, node->opaque);
-}
+static void opaque_free(const markdown_core_element *self, markdown_core_node *node) { free_node_table(node->opaque); }
 
 static int visit_owned_subtrees(const markdown_core_element *self, markdown_core_node *node,
                                 markdown_core_owned_subtree_visitor visitor, void *context) {
@@ -1519,8 +1517,7 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
             goto done;
         }
     }
-    if (!markdown_core_order_source_entries(source->parser->mem, closed, closed_count, sizeof(*closed),
-                                            table_region_source_key)) {
+    if (!markdown_core_order_source_entries(closed, closed_count, sizeof(*closed), table_region_source_key)) {
         source->parser->oom = true;
         goto done;
     }
@@ -1899,7 +1896,7 @@ static void table_fill_cell(table_source *source, markdown_core_node *node, cons
 static markdown_core_node *table_child(markdown_core_parser *parser, markdown_core_node *parent,
                                        markdown_core_node_type kind, int first_line, int first_column, int last_line,
                                        int last_column) {
-    markdown_core_node *node = markdown_core_node_new_with_mem(kind, parser->mem);
+    markdown_core_node *node = markdown_core_node_new(kind);
     markdown_core_parser_note_kind(parser, kind);
     if (!node) {
         parser->oom = true;

@@ -305,7 +305,7 @@ static markdown_core_node *new_bib_item(markdown_core_inline_state *inline_state
                                             : MARKDOWN_CORE_BIB_MODE_AUTHOR_IN_TEXT;
     item->as.citation->value =
         markdown_core_chunk_dup(&inline_state->input, key->key_start, key->key_end - key->key_start);
-    if (!markdown_core_chunk_to_cstr(inline_state->mem, &item->as.citation->value)) {
+    if (!markdown_core_chunk_to_cstr(&item->as.citation->value)) {
         inline_state->oom = 1;
         return NULL;
     }

@@ -90,7 +90,6 @@ typedef struct {
 } markdown_core_definition_collection;
 
 struct markdown_core_parser {
-    struct markdown_core_mem *mem;
     /* A hashtable of urls in the current document for cross-references */
     struct markdown_core_map *refmap;
     /* The labels this document defines footnotes for (see references.h). The
@@ -355,8 +354,7 @@ typedef struct {
 } markdown_core_block_lookahead;
 
 /* Stable source-coordinate ordering, shared by deferred nodes and cell geometry. */
-int markdown_core_order_source_entries(markdown_core_mem *mem, void *entries, size_t count, size_t stride,
-                                       uint64_t (*key)(const void *));
+int markdown_core_order_source_entries(void *entries, size_t count, size_t stride, uint64_t (*key)(const void *));
 
 struct markdown_core_block_reader;
 /* Query the ordinary block-start rules before the table slot. Paragraph
@@ -402,8 +400,8 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
  * Returning false aborts the transaction. The
  * parser never escapes this call and is destroyed before it returns. */
 typedef bool (*markdown_core_parser_setup_func)(markdown_core_parser *parser, void *context);
-markdown_core_node *markdown_core_parse_document_with_mem(const char *source, size_t length, markdown_core_mem *mem,
-                                                          markdown_core_parser_setup_func setup, void *context);
+markdown_core_node *markdown_core_parse_document_with_setup(const char *source, size_t length,
+                                                            markdown_core_parser_setup_func setup, void *context);
 
 #ifdef __cplusplus
 }

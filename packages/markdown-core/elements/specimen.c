@@ -51,8 +51,8 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_parser 
 
 void markdown_core_block_prepare_specimens(markdown_core_parser *parser) {
     markdown_core_definition_collection *collection = &parser->specimens;
-    if (!markdown_core_key_index_init(&parser->specimen_ids, parser->mem, collection->count) ||
-        (collection->count && !markdown_core_block_order_definitions(parser->mem, collection))) {
+    if (!markdown_core_key_index_init(&parser->specimen_ids, collection->count) ||
+        (collection->count && !markdown_core_block_order_definitions(collection))) {
         parser->oom = true;
         return;
     }
@@ -72,14 +72,14 @@ static bool markdown_core_specimen_open(markdown_core_parser *parser, markdown_c
     bufsize_t matched = start->matched;
     markdown_core_specimen_value specimen = start->specimen;
 
-    if (specimen.id.has_value && !markdown_core_chunk_to_cstr(parser->mem, &specimen.id.value)) {
+    if (specimen.id.has_value && !markdown_core_chunk_to_cstr(&specimen.id.value)) {
         parser->oom = true;
         return false;
     }
     *container =
         markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_SPECIMEN, parser->first_nonspace + 1);
     if (!*container) {
-        markdown_core_optional_chunk_free(parser->mem, &specimen.id);
+        markdown_core_optional_chunk_free(&specimen.id);
         return false;
     }
     if ((*container)->prev && (*container)->prev->kind == MARKDOWN_CORE_NODE_SPECIMEN) {

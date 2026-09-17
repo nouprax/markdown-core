@@ -109,7 +109,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, markdo
 }
 
 static markdown_core_node *handle_entity(markdown_core_inline_state *inline_state) {
-    markdown_core_strbuf ent = MARKDOWN_CORE_BUF_INIT(inline_state->mem);
+    markdown_core_strbuf ent = MARKDOWN_CORE_BUF_INIT();
     bufsize_t len;
 
     advance(inline_state);
@@ -230,7 +230,7 @@ markdown_core_node *markdown_core_text_parse(markdown_core_parser *parser, markd
 static void complete_inline(markdown_core_parser *parser, markdown_core_node *node, int word_depth) {
     if (node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) {
         if (word_depth > 0) {
-            markdown_core_chunk_free(parser->mem, node->as.literal);
+            markdown_core_chunk_free(node->as.literal);
             *node->as.literal = markdown_core_chunk_literal("\xC2\xA0");
         }
         node->flags &= ~MARKDOWN_CORE_NODE__ESCAPED_SPACE;

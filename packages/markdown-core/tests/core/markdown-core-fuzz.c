@@ -12,8 +12,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     /* The whole input is Markdown, parsed as the one dialect: the engine always
      * attaches every element. The dialect has no
      * switches, so there is no configuration prefix to fuzz. */
-    markdown_core_node *doc = markdown_core_parse_document_with_mem(
-        (const char *)data, size, markdown_core_get_default_mem_allocator(), NULL, NULL);
+    markdown_core_node *doc = markdown_core_parse_document_with_setup((const char *)data, size, NULL, NULL);
     if (!doc) {
         return 0;
     }

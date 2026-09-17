@@ -26,7 +26,7 @@ void markdown_core_parse_task_prefix(markdown_core_parser *parser, markdown_core
     /* Own the marker before consuming any source; allocation failure aborts
      * the parse rather than changing recognition or borrowing the line buffer. */
     markdown_core_chunk marker = {(unsigned char *)input + start + 1, width, 0};
-    if (!markdown_core_chunk_to_cstr(parser->mem, &marker)) {
+    if (!markdown_core_chunk_to_cstr(&marker)) {
         parser->oom = true;
         return;
     }

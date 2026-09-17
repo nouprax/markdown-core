@@ -94,10 +94,10 @@ markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state
                                                       markdown_core_node_type t, int start_column, int end_column,
                                                       markdown_core_chunk s) {
     markdown_core_parser_note_kind(inline_state->owner_parser, t);
-    markdown_core_node *e = markdown_core_node_new_with_mem(t, inline_state->mem);
+    markdown_core_node *e = markdown_core_node_new(t);
     if (!e) {
         /* Frees an owned literal; borrowed chunks only reset fields. */
-        markdown_core_chunk_free(inline_state->mem, &s);
+        markdown_core_chunk_free(&s);
         inline_state->oom = 1;
         return NULL;
     }
@@ -107,9 +107,7 @@ markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state
 }
 
 // Create an inline with no value.
-markdown_core_node *markdown_core_inline_make_simple(markdown_core_mem *mem, markdown_core_node_type t) {
-    return markdown_core_node_new_with_mem(t, mem);
-}
+markdown_core_node *markdown_core_inline_make_simple(markdown_core_node_type t) { return markdown_core_node_new(t); }
 
 /* Records the kind it creates. Every parse-time caller reaches the parser
  * through its inline state; the mem-only form above stays for callers that
@@ -117,7 +115,7 @@ markdown_core_node *markdown_core_inline_make_simple(markdown_core_mem *mem, mar
 markdown_core_node *markdown_core_inline_make_simple_noted(markdown_core_inline_state *inline_state,
                                                            markdown_core_node_type t) {
     markdown_core_parser_note_kind(inline_state->owner_parser, t);
-    return markdown_core_node_new_with_mem(t, inline_state->mem);
+    return markdown_core_node_new(t);
 }
 
 /* markdown_core_inline_make_simple with the inline state's loss flag for handlers that consume input
@@ -131,13 +129,12 @@ markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_in
     return e;
 }
 
-void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number,
+void markdown_core_inline_state_from_buf(markdown_core_parser *parser, int line_number,
                                          markdown_core_inline_state *inline_state, markdown_core_chunk *chunk,
                                          markdown_core_map *refmap) {
     memset(inline_state, 0, sizeof(*inline_state));
     inline_state->special_chars = parser ? parser->special_chars : EMPTY_CHAR_SET;
     inline_state->skip_chars = parser ? parser->skip_chars : EMPTY_CHAR_SET;
-    inline_state->mem = mem;
     inline_state->input = *chunk;
     inline_state->line = line_number;
     inline_state->owner_parser = parser;
@@ -848,7 +845,7 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
         markdown_core_parser_mark_content(parser, parent, parent->start_line,
                                           parent->start_column + parent->internal_offset);
     }
-    markdown_core_inline_state_from_buf(parser, parser->mem, parent->start_line, inline_state, &content, refmap);
+    markdown_core_inline_state_from_buf(parser, parent->start_line, inline_state, &content, refmap);
     inline_state->owner = parent;
     inline_state->owner_structure = markdown_core_node_structure(parent);
     /* Block buffers include their terminating line ending. An inline field

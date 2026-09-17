@@ -12,12 +12,10 @@ markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
     if (root == NULL) {
         return NULL;
     }
-    markdown_core_mem *mem = root->content.mem;
     markdown_core_iter *iter = (markdown_core_iter *)markdown_core_alloc(1, sizeof(markdown_core_iter));
     if (!iter) {
         return NULL;
     }
-    iter->mem = mem;
     iter->root = root;
     iter->cur.ev_type = MARKDOWN_CORE_EVENT_NONE;
     iter->cur.node = NULL;
@@ -92,7 +90,7 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
         return 1;
     }
     markdown_core_iter *iter = markdown_core_iter_new(root);
-    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(root->content.mem);
+    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT();
     markdown_core_event_type ev_type;
     markdown_core_node *cur, *tmp, *next;
     int ok = 1;
@@ -163,7 +161,7 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
                 cur->content_mark_offset = 0;
             }
             markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
-            markdown_core_chunk_free(iter->mem, cur->as.literal);
+            markdown_core_chunk_free(cur->as.literal);
             *cur->as.literal = markdown_core_chunk_buf_detach(&buf);
             if (!cur->as.literal->data) {
                 // The buffer was poisoned, so this run's bytes are LOST rather
@@ -185,7 +183,7 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
         // mutation rule -- so `iter->next` already names a node outside this
         // one's subtree.
         if (cur->as.literal->len == 0) {
-            markdown_core_chunk_free(iter->mem, cur->as.literal);
+            markdown_core_chunk_free(cur->as.literal);
             markdown_core_node_free(cur);
         }
     }

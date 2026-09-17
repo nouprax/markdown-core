@@ -126,7 +126,7 @@ static markdown_core_node *handle_backticks(markdown_core_inline_state *inline_s
          * `hi`lo` reported Text 1:5..1:8 inside a seven-byte paragraph. */
         return make_str(inline_state, inline_state->pos - openticks.len, inline_state->pos - 1, openticks);
     } else {
-        markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(inline_state->mem);
+        markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT();
 
         markdown_core_strbuf_set(&buf, inline_state->input.data + startpos, endpos - startpos - openticks.len);
         S_normalize_code(&buf);

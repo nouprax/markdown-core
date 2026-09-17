@@ -21,8 +21,7 @@ const unsigned char markdown_core_strbuf__initbuf[1] = {0};
 #define MIN(x, y) ((x < y) ? x : y)
 #endif
 
-void markdown_core_strbuf_init(markdown_core_mem *mem, markdown_core_strbuf *buf, bufsize_t initial_size) {
-    buf->mem = mem;
+void markdown_core_strbuf_init(markdown_core_strbuf *buf, bufsize_t initial_size) {
     buf->asize = 0;
     buf->size = 0;
     buf->oom = 0;
@@ -96,7 +95,7 @@ void markdown_core_strbuf_free(markdown_core_strbuf *buf) {
         markdown_core_free(buf->ptr);
     }
 
-    markdown_core_strbuf_init(buf->mem, buf, 0);
+    markdown_core_strbuf_init(buf, 0);
 }
 
 void markdown_core_strbuf_clear(markdown_core_strbuf *buf) {
@@ -207,7 +206,7 @@ unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf) {
         return (unsigned char *)markdown_core_alloc(1, 1);
     }
 
-    markdown_core_strbuf_init(buf->mem, buf, 0);
+    markdown_core_strbuf_init(buf, 0);
     return data;
 }
 

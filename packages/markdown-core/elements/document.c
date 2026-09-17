@@ -9,8 +9,8 @@
 #include "block_identifier.h"
 
 static void init_document(markdown_core_parser *parser) {
-    parser->refmap = markdown_core_reference_map_new(parser->mem);
-    parser->footnote_defs = markdown_core_footnote_definition_map_new(parser->mem);
+    parser->refmap = markdown_core_reference_map_new();
+    parser->footnote_defs = markdown_core_footnote_definition_map_new();
     if (!parser->refmap || !parser->footnote_defs) {
         parser->oom = true;
     }
@@ -42,8 +42,8 @@ static void prepare_document(markdown_core_parser *parser) {
     if (parser->oom) {
         return;
     }
-    if (!markdown_core_key_index_init(&parser->anchors.index, parser->mem, parser->headings.count) ||
-        !markdown_core_key_index_init(&parser->anchors.resources, parser->mem, 0)) {
+    if (!markdown_core_key_index_init(&parser->anchors.index, parser->headings.count) ||
+        !markdown_core_key_index_init(&parser->anchors.resources, 0)) {
         parser->oom = true;
     }
 }

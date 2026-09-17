@@ -17,8 +17,8 @@ markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_state
 bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
                                struct bracket *opener, markdown_core_link_candidate *candidate, bufsize_t initial_pos);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK;
-markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_core_chunk *url, int *lost);
-markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost);
+markdown_core_chunk markdown_core_clean_url(markdown_core_chunk *url, int *lost);
+markdown_core_optional_chunk markdown_core_clean_title(markdown_core_chunk *title, int *lost);
 
 /* Reads ONE link reference definition off the front of `input`, registers its
  * label and the resource it states in `refmap`, and returns the number of
@@ -26,9 +26,8 @@ markdown_core_optional_chunk markdown_core_clean_title(markdown_core_mem *mem, m
  * definition produces no node (M2): it is consumed, and every reference that
  * resolves to it is the `Link` or `Embedded` it names. A NULL refmap performs the
  * same recognition without registering or allocating a definition resource. */
-bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
-                                               markdown_core_map *refmap, markdown_core_attribute_parser *attributes,
-                                               uint64_t source_key);
+bufsize_t markdown_core_parse_reference_inline(markdown_core_chunk *input, markdown_core_map *refmap,
+                                               markdown_core_attribute_parser *attributes, uint64_t source_key);
 
 void markdown_core_inline_pop_bracket(markdown_core_inline_state *inline_state);
 markdown_core_node *markdown_core_inline_handle_close_bracket(markdown_core_parser *parser,

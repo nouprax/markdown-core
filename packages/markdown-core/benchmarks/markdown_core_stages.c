@@ -5,7 +5,7 @@
  * calls, and the stage split is read afterwards out of the call graph, at the
  * two boundaries the transaction already has internally
  * (`S_parse_source` and `S_finish_parse` inside
- * `markdown_core_parse_document_with_mem`). Nothing about the product build is
+ * `markdown_core_parse_document_with_setup`). Nothing about the product build is
  * special-cased for measurement; only the profiling flavour's inlining flag
  * keeps those two boundaries from being folded into their caller.
  */

@@ -29,13 +29,11 @@ static void write_chunk(FILE *census, const markdown_core_chunk *chunk) {
 }
 
 int bench_parse_attributes(const char *source, size_t length, attribute_receipt *receipt, FILE *census) {
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
     /* One index over the whole buffer, exactly as an inline parse builds one
      * over a line: the index exists so overlapping failed candidates cannot
      * rescan an extent, and giving each list its own would measure a parser
      * this repository does not ship. */
-    markdown_core_attribute_parser parser = {
-        .mem = mem, .data = (const unsigned char *)source, .length = (bufsize_t)length};
+    markdown_core_attribute_parser parser = {.data = (const unsigned char *)source, .length = (bufsize_t)length};
     bufsize_t at = 0;
 
     while (at < (bufsize_t)length) {
