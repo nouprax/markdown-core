@@ -305,15 +305,15 @@ static inline void markdown_core_parser_note_kind(markdown_core_parser *parser, 
     }
 }
 
-static inline markdown_core_node *markdown_core_parser_new_node(markdown_core_parser *parser,
-                                                                markdown_core_node_type type) {
+static inline markdown_core_node *markdown_core_parser_make_node(markdown_core_parser *parser,
+                                                                 markdown_core_node_type type) {
     markdown_core_parser_note_kind(parser, type);
     return markdown_core_node_new(type);
 }
 
-static inline markdown_core_node *markdown_core_parser_new_node_with_ext(markdown_core_parser *parser,
-                                                                         markdown_core_node_type type,
-                                                                         const markdown_core_element *element) {
+static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdown_core_parser *parser,
+                                                                          markdown_core_node_type type,
+                                                                          const markdown_core_element *element) {
     markdown_core_parser_note_kind(parser, type);
     return markdown_core_node_new_with_ext(type, element);
 }

@@ -526,7 +526,7 @@ static void strip_formula_padding(const unsigned char **literal, bufsize_t *len)
 static markdown_core_node *make_formula_node(const markdown_core_element *element, markdown_core_parser *parser,
                                              markdown_core_formula_mode mode, const unsigned char *literal,
                                              bufsize_t literal_len) {
-    markdown_core_node *node = markdown_core_parser_new_node_with_ext(parser, MARKDOWN_CORE_NODE_FORMULA, element);
+    markdown_core_node *node = markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_FORMULA, element);
     if (!node) {
         parser->oom = true;
         return NULL;
@@ -663,7 +663,7 @@ static markdown_core_node *new_formula_block_from_literal(const markdown_core_el
                                                           markdown_core_parser *parser, markdown_core_node *oldnode,
                                                           const unsigned char *literal, bufsize_t literal_len) {
     markdown_core_node *formula =
-        markdown_core_parser_new_node_with_ext(parser, MARKDOWN_CORE_NODE_FORMULA_BLOCK, element);
+        markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_FORMULA_BLOCK, element);
     if (!formula) {
         return NULL;
     }

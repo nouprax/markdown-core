@@ -259,7 +259,7 @@ static markdown_core_node *make_label_node(const markdown_core_element *element,
                                            const unsigned char *label, bufsize_t label_len, int start_line,
                                            int start_column, int end_column) {
     markdown_core_node *label_node =
-        markdown_core_parser_new_node_with_ext(parser, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL, element);
+        markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL, element);
     if (!label_node) {
         return NULL;
     }
@@ -358,7 +358,7 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
 static markdown_core_node *make_directive_node(const markdown_core_element *element, markdown_core_parser *parser,
                                                const unsigned char *name, bufsize_t name_len, int start_line,
                                                int start_column, int end_line, int end_column) {
-    markdown_core_node *node = markdown_core_parser_new_node_with_ext(parser, MARKDOWN_CORE_NODE_DIRECTIVE, element);
+    markdown_core_node *node = markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_DIRECTIVE, element);
     node_directive *directive;
 
     if (!node) {

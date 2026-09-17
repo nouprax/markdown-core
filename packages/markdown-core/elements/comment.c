@@ -141,7 +141,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     if (close < 0) {
         return NULL;
     }
-    node = markdown_core_parser_new_node_with_ext(parser, MARKDOWN_CORE_NODE_COMMENT, element);
+    node = markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_COMMENT, element);
     if (!node) {
         parser->oom = true;
         return NULL;

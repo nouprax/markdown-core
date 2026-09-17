@@ -159,7 +159,7 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_par
         return NULL;
     }
     definition->as.definition->compact = compact;
-    markdown_core_node *term = markdown_core_parser_new_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
+    markdown_core_node *term = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!term) {
         parser->oom = true;
         return definition;

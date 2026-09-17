@@ -70,7 +70,7 @@ static markdown_core_node *make_block(markdown_core_parser *parser, markdown_cor
                                       int start_column) {
     markdown_core_node *e;
 
-    e = markdown_core_parser_new_node(parser, tag);
+    e = markdown_core_parser_make_node(parser, tag);
     if (!e) {
         return NULL;
     }

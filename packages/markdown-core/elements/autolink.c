@@ -344,7 +344,7 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
 
     markdown_core_inline_state_set_offset(inline_state, (int)(max_rewind + link_end));
 
-    markdown_core_node *node = markdown_core_parser_new_node(parser, MARKDOWN_CORE_NODE_LINK);
+    markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_LINK);
     if (!node) {
         parser->oom = true;
         return NULL;
@@ -364,7 +364,7 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
         }
     }
 
-    markdown_core_node *text = markdown_core_parser_new_node(parser, MARKDOWN_CORE_NODE_TEXT);
+    markdown_core_node *text = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_TEXT);
     if (!text) {
         parser->oom = true;
         markdown_core_node_free(node);
@@ -421,7 +421,7 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     markdown_core_inline_state_set_offset(inline_state, (int)(max_rewind + link_end));
     markdown_core_node_unput(parser, parent, rewind);
 
-    markdown_core_node *node = markdown_core_parser_new_node(parser, MARKDOWN_CORE_NODE_LINK);
+    markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_LINK);
     if (!node) {
         parser->oom = true;
         return NULL;
@@ -433,7 +433,7 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
         parser->oom = true;
     }
 
-    markdown_core_node *text = markdown_core_parser_new_node(parser, MARKDOWN_CORE_NODE_TEXT);
+    markdown_core_node *text = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_TEXT);
     if (!text) {
         parser->oom = true;
         markdown_core_node_free(node);
@@ -561,7 +561,7 @@ static bool validate_protocol(const char protocol[], uint8_t *data, size_t rewin
 static markdown_core_node *email_text_fragment(markdown_core_parser *parser, markdown_core_node *source_map,
                                                const markdown_core_chunk *source, size_t start, size_t length) {
     assert(length);
-    markdown_core_node *text = markdown_core_parser_new_node(parser, MARKDOWN_CORE_NODE_TEXT);
+    markdown_core_node *text = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_TEXT);
     if (!text) {
         parser->oom = true;
         return NULL;
@@ -681,7 +681,7 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             continue;
         }
 
-        markdown_core_node *link_node = markdown_core_parser_new_node(parser, MARKDOWN_CORE_NODE_LINK);
+        markdown_core_node *link_node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_LINK);
         if (!link_node) {
             parser->oom = true;
             break;

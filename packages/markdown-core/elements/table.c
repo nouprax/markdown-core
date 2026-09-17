@@ -212,7 +212,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     // with the allocation refused. The other three lose the lead paragraph
     // WITHOUT setting parser->oom, so the document comes back short and the
     // failure bit says everything was fine.
-    paragraph = markdown_core_parser_new_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
+    paragraph = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!paragraph) {
         parser->oom = true;
         return;
@@ -1895,7 +1895,7 @@ static void table_fill_cell(table_source *source, markdown_core_node *node, cons
 static markdown_core_node *table_child(markdown_core_parser *parser, markdown_core_node *parent,
                                        markdown_core_node_type kind, int first_line, int first_column, int last_line,
                                        int last_column) {
-    markdown_core_node *node = markdown_core_parser_new_node(parser, kind);
+    markdown_core_node *node = markdown_core_parser_make_node(parser, kind);
     if (!node) {
         parser->oom = true;
         return NULL;

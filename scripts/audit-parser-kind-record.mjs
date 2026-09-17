@@ -7,7 +7,7 @@
  * That used to be policed here, over twenty-one creation sites each paired
  * with a separate `markdown_core_parser_note_kind` call. It is not policed any
  * more, because recording is now part of producing a node:
- * `markdown_core_parser_new_node`, `markdown_core_parser_new_node_with_ext`
+ * `markdown_core_parser_make_node`, `markdown_core_parser_make_node_with_ext`
  * and `markdown_core_parser_set_node_kind` record the kind they are given.
  *
  * What is left to hold is that production code uses THOSE and not the
@@ -28,7 +28,7 @@ const pkg = path.join(root, "packages/markdown-core");
 /** The parser-less forms. Production code reaches them only through the
  * recording wrappers in `parser.h`. */
 const UNRECORDED = /\bmarkdown_core_node_(?:new(?:_with_ext)?|set_kind)\s*\(/g;
-const RECORDING = /\bmarkdown_core_parser_(?:new_node(?:_with_ext)?|set_node_kind)\s*\(/g;
+const RECORDING = /\bmarkdown_core_parser_(?:make_node(?:_with_ext)?|set_node_kind)\s*\(/g;
 
 /** Where the parser-less forms are allowed to appear: the two headers that
  * DECLARE them, the translation unit that DEFINES them, and `parser.h`, where
