@@ -9,10 +9,10 @@
  * is fixed cost that no document-size argument applies to, so it is excluded
  * rather than amortized into a number that looks like parsing.
  *
- *   source_to_buffer   markdown-core  markdown_core_parse_document_with_mem
+ *   source_to_buffer   markdown-core  markdown_core_parse_document_with_setup
  *                                       -> S_parse_source
  *                      cmark          cmark_parser_feed
- *   buffer_to_ast      markdown-core  markdown_core_parse_document_with_mem
+ *   buffer_to_ast      markdown-core  markdown_core_parse_document_with_setup
  *                                       -> S_finish_parse
  *                      cmark          cmark_parser_finish
  *
@@ -81,8 +81,8 @@ const ENGINES = {
     "markdown-core": {
         runner: "packages/markdown-core/benchmarks/markdown_core_stage_runner",
         stages: {
-            source_to_buffer: { caller: "markdown_core_parse_document_with_mem", callee: "S_parse_source" },
-            buffer_to_ast: { caller: "markdown_core_parse_document_with_mem", callee: "S_finish_parse" }
+            source_to_buffer: { caller: "markdown_core_parse_document_with_setup", callee: "S_parse_source" },
+            buffer_to_ast: { caller: "markdown_core_parse_document_with_setup", callee: "S_finish_parse" }
         }
     },
     cmark: {
