@@ -92,6 +92,8 @@ jobs:
               run: pnpm lint:c
             - name: Audit corpus reach
               run: pnpm audit:corpus-reach
+            - name: Audit the node integrity check
+              run: pnpm audit:node-integrity-check
 
     health-check-es:
         needs: changes
@@ -898,6 +900,25 @@ jobs:
                   retention-days: 7
                   path: build/ci-artifacts/c
 
+    # The node integrity check is compiled in only by the Debug configuration.
+    # It is the tree's only structural self-check, so the configuration that
+    # carries it is built and run like any other test consumer rather than
+    # left to whoever remembers to configure Debug by hand.
+    c-debug-test-build:
+        name: Build Test - C Debug / Node Integrity
+        needs: builds-ready
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Build immutable debug test artifact
+              run: scripts/build-c-test-artifact.sh debug - build/ci-artifacts/c
+            - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: c-debug-${{ github.sha }}
+                  if-no-files-found: error
+                  retention-days: 7
+                  path: build/ci-artifacts/c
+
     c-sanitizer-test-build:
         name: Build Test - C Sanitizer / ${{ matrix.label }}
         needs: builds-ready
@@ -993,6 +1014,19 @@ jobs:
               shell: bash
               run: scripts/run-c-test-artifact.sh build/ci-artifacts/c "${{ matrix.suite }}" Release
 
+    c-debug-test:
+        name: Test - C Debug / Node Integrity
+        needs: build-tests-ready
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+              with:
+                  name: c-debug-${{ github.sha }}
+                  path: build/ci-artifacts/c
+            - name: Run the debug suite without building
+              run: scripts/run-c-test-artifact.sh build/ci-artifacts/c correctness-debug
+
     # ThreadSanitizer gates the frozen concurrency contract. All sanitizer
     # consumers execute a prebuilt instrumented tree on a fresh runner.
     c-sanitizer-test:
@@ -1050,6 +1084,7 @@ jobs:
             - es-test-build
             - c-test-build
             - c-test-build-windows
+            - c-debug-test-build
             - c-sanitizer-test-build
         runs-on: ubuntu-latest
         steps:
@@ -1067,6 +1102,7 @@ jobs:
             - es-test
             - c-test
             - c-test-windows
+            - c-debug-test
             - c-sanitizer-test
         runs-on: ubuntu-latest
         steps:
@@ -1078,6 +1114,7 @@ jobs:
                   ES_TEST: ${{ needs.es-test.result }}
                   C_TEST: ${{ needs.c-test.result }}
                   C_TEST_WINDOWS: ${{ needs.c-test-windows.result }}
+                  C_DEBUG_TEST: ${{ needs.c-debug-test.result }}
                   C_SANITIZER_TEST: ${{ needs.c-sanitizer-test.result }}
               run: |
                   for result in \
@@ -1087,6 +1124,7 @@ jobs:
                       "$ES_TEST" \
                       "$C_TEST" \
                       "$C_TEST_WINDOWS" \
+                      "$C_DEBUG_TEST" \
                       "$C_SANITIZER_TEST"
                   do
                       if [ "$result" != success ]; then

@@ -10,9 +10,9 @@ configuration=${4:-}
 
 case "$preset" in
     default) build_dir=build/cmake ;;
-    asan | ubsan | tsan) build_dir="build/$preset" ;;
+    debug | asan | ubsan | tsan) build_dir="build/$preset" ;;
     *)
-        echo "usage: $0 default|asan|ubsan|tsan <ON|OFF|-> <output-dir> [configuration]" >&2
+        echo "usage: $0 default|debug|asan|ubsan|tsan <ON|OFF|-> <output-dir> [configuration]" >&2
         exit 2
         ;;
 esac

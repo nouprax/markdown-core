@@ -78,13 +78,6 @@ target_link_libraries(${PROGRAM} libmarkdown-core-public-static)
 set_target_properties(${PROGRAM} PROPERTIES COMPILE_FLAGS
                                             "-DMARKDOWN_CORE_STATIC_DEFINE -DMARKDOWN_CORE_ELEMENTS_STATIC_DEFINE")
 
-# Check integrity of node structure when compiled as debug:
-set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DMARKDOWN_CORE_DEBUG_NODES -DDEBUG")
-set(CMAKE_LINKER_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG}")
-
-set(CMAKE_C_FLAGS_PROFILE "${CMAKE_C_FLAGS_RELEASE} -pg")
-set(CMAKE_LINKER_PROFILE "${CMAKE_LINKER_FLAGS_RELEASE} -pg")
-
 # -fvisibility=hidden
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)

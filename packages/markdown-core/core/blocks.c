@@ -2439,22 +2439,39 @@ typedef struct {
     size_t pass_count;
 } finish_phases;
 
+/* Every writer of this tree is checked, not only the first one.
+ *
+ * `markdown_core_node_check` is the one structural self-check this tree has,
+ * and each postprocess pass rewrites the subtree it is handed -- unlinking,
+ * relinking and freeing nodes -- which is precisely where a parent/sibling
+ * disagreement would be introduced. Checking only after consolidation would
+ * attribute every such break to consolidation. This is compiled in only when
+ * `MARKDOWN_CORE_DEBUG_NODES` is defined, which no shipping configuration
+ * defines, so the per-pass cost is not a release cost. */
+#if MARKDOWN_CORE_DEBUG_NODES
+#define MARKDOWN_CORE_CHECK_TREE(root)                                                                                 \
+    do {                                                                                                               \
+        if (markdown_core_node_check((root), stderr) != 0) {                                                           \
+            abort();                                                                                                   \
+        }                                                                                                              \
+    } while (0)
+#else
+#define MARKDOWN_CORE_CHECK_TREE(root) ((void)0)
+#endif
+
 static int S_finish_tree(markdown_core_parser *parser, markdown_core_node *root, void *context) {
     const finish_phases *phases = (const finish_phases *)context;
 
     if (!markdown_core_consolidate_text_nodes_with_parser(parser, root)) {
         return 0;
     }
-#if MARKDOWN_CORE_DEBUG_NODES
-    if (markdown_core_node_check(root, stderr) != 0) {
-        abort();
-    }
-#endif
+    MARKDOWN_CORE_CHECK_TREE(root);
     for (size_t i = 0; i < phases->pass_count; i++) {
         const markdown_core_element *element = phases->passes[i];
         if (!element->postprocess_func(element, parser, root) || parser->oom) {
             return 0;
         }
+        MARKDOWN_CORE_CHECK_TREE(root);
     }
     return 1;
 }

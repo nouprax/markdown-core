@@ -144,6 +144,28 @@ ctest --preset correctness-asan
 
 Use the corresponding preset names for other sanitizers. Where TSan is
 unsupported, default builds still run the native concurrency regressions.
+
+## The node integrity check
+
+`markdown_core_node_check` walks a finished root and reports every parent,
+sibling and containment relation that disagrees with its counterpart. It is the
+only structural self-check this tree has, and it is compiled in by
+`MARKDOWN_CORE_DEBUG_NODES`, which the `debug` preset alone defines:
+
+```sh
+cmake --preset debug
+cmake --build --preset debug --parallel
+ctest --preset correctness-debug
+```
+
+The engine runs it after text consolidation and again after each postprocess
+pass, so a break is attributed to the pass that introduced it. A configuration
+that does not define the macro is indistinguishable from one where the check
+passes, which is how it stayed dead for the whole of its life: the define was
+set in `core/`, where `set()` cannot reach the sibling directory that builds the
+archive the test runners link, and no preset configured `Debug` at all.
+`pnpm audit:node-integrity-check` holds both halves against the generated
+compiler flags and the CI graph rather than against the source text.
 Tests must not silently skip. Swift time limits belong to Swift Testing traits;
 other timeouts belong to their native runner declarations.
 

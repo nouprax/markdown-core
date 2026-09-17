@@ -55,6 +55,21 @@ if(MARKDOWN_CORE_FUZZ_QUADRATIC)
     set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${FUZZER_FLAGS}")
 endif()
 
+# THE NODE INTEGRITY CHECK BELONGS TO THE PACKAGE, NOT TO core/.
+#
+# `MARKDOWN_CORE_DEBUG_NODES` compiles in the only structural self-check this
+# tree has: `markdown_core_node_check` over every finished root. The engine
+# sources are compiled into targets in three directories -- the archive the
+# test runners link, `libmarkdown-core-public-static`, is built in elements/ --
+# and `set()` reaches subdirectories only, never siblings. Set in core/ it
+# reached exactly one target and the check was dead code in every configuration
+# anything runs. It is set here, before `add_subdirectory`, so it reaches every
+# target in the package.
+#
+# `CMAKE_C_FLAGS_DEBUG` is per-configuration, so this is correct under
+# multi-config generators as well and needs no `CMAKE_BUILD_TYPE` test.
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DMARKDOWN_CORE_DEBUG_NODES -DDEBUG")
+
 # Sanitizer build types instrument the whole package (core, elements, and
 # test runners), not just the core directory.
 if(CMAKE_BUILD_TYPE STREQUAL "Ubsan")

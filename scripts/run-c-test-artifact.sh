@@ -9,7 +9,7 @@ configuration=${3:-}
 
 test -d "$artifact_dir"
 case "$test_preset" in
-    correctness | conformance | correctness-asan | correctness-ubsan | correctness-tsan) ;;
+    correctness | conformance | correctness-debug | correctness-asan | correctness-ubsan | correctness-tsan) ;;
     *)
         echo "usage: $0 <artifact-dir> <ctest-preset> [configuration]" >&2
         exit 2
