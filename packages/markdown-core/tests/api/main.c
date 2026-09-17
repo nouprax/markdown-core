@@ -5503,6 +5503,37 @@ static void bounded_scanners(test_batch_runner *runner) {
 
 /* Oracle-confirmed simple-body ownership is invariant under line ending,
  * EOF termination and block-looking inline cell content. */
+/* A BUFFER WALK MUST TERMINATE, whatever the bytes are.
+ *
+ * Valid UTF-8 is the public precondition and what malformed input parses to is
+ * not defined -- but the walk itself must still end and stay inside its own
+ * buffer. `markdown_core_utf8proc_anchor` used to assert that precondition and
+ * then add the decoder's width, which is NEGATIVE when no character starts
+ * there; Release is the default build type, so the assertion was compiled out
+ * and `# heading \xff\xfe tail` walked backwards below the literal forever.
+ * Anchors are derived from every heading, so one stray byte in one heading hung
+ * the parser. */
+static void malformed_scalar_terminates(test_batch_runner *runner) {
+    /* Each reaches a different decode-and-advance walk: the heading anchor,
+     * the attribute value, and an ordinary text run. */
+    static const char *const sources[] = {
+        "# heading \xff\xfe tail\n\nbody\n",
+        "# title {.cls\xff\xfe}\n\nbody\n",
+        "para \xff\xfe more\n",
+        "# \xe4\xb8\n",
+        "# \x80\x80\x80\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); i++) {
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)sources[i], strlen(sources[i]), NULL);
+        OK(runner, document != NULL, "malformed scalar source %zu parses to a document", i);
+        if (document) {
+            OK(runner, markdown_core_document_root(document) != NULL, "malformed scalar source %zu has a root", i);
+            markdown_core_document_free(document);
+        }
+    }
+}
+
 static void simple_table_body_boundaries(test_batch_runner *runner) {
     const char *tails[] = {"# heading\nbody\n", "> quote\n> next\n", "```\ncode\n```\n"};
     const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_CALLOUT,
@@ -5804,6 +5835,7 @@ int main(void) {
     grid_opening_memory(runner);
     table_candidate_work(runner);
     bounded_scanners(runner);
+    malformed_scalar_terminates(runner);
     simple_table_body_boundaries(runner);
     simple_table_footer_work(runner);
     grid_caption_search_work(runner);
