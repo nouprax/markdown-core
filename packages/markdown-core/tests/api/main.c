@@ -2829,6 +2829,7 @@ static void table_values(test_batch_runner *runner) {
 /* Many contractions followed by many address splits must retain one linear
  * source map, rather than copying every unconsumed suffix for each link. */
 static int observed_source_marks;
+static int roots_read_after_delete;
 static int observe_source_marks(const markdown_core_element *element, markdown_core_parser *parser,
                                 markdown_core_node *root) {
     (void)element;
@@ -5868,6 +5869,68 @@ static void definition_open_gate_admits_only_possible_terms(test_batch_runner *r
     }
 }
 
+/* A postprocess pass may free any node it reaches, and a Cite OWNS its
+ * citations' prefix and suffix roots -- freeing it frees them. So the set of
+ * owned roots is not stable across passes, and a pass that enumerates them
+ * must enumerate them ITSELF rather than reuse what an earlier pass found.
+ *
+ * This ran clean while the finish stage walked per pass, crashed under ASan
+ * the moment the walk recorded the roots for later passes to replay, and is
+ * here so that the next attempt at that optimization trips on a test. The
+ * second pass only reads `root->kind`; that read is the use-after-free. */
+static int postprocess_deletes_cites(const markdown_core_element *element, markdown_core_parser *parser,
+                                     markdown_core_node *root) {
+    (void)element;
+    (void)parser;
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type event;
+    if (!iter) {
+        parser->oom = true;
+        return 0;
+    }
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_CITE && node != root) {
+            markdown_core_node_unlink(node);
+            markdown_core_node_free(node);
+        }
+    }
+    markdown_core_iter_free(iter);
+    return 1;
+}
+
+static int postprocess_reads_its_root(const markdown_core_element *element, markdown_core_parser *parser,
+                                      markdown_core_node *root) {
+    (void)element;
+    (void)parser;
+    roots_read_after_delete += root->kind != MARKDOWN_CORE_NODE_NONE;
+    return 1;
+}
+
+static const markdown_core_node_type CITE_DELETE_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
+
+static bool attach_delete_then_read(markdown_core_parser *parser, void *context) {
+    static const markdown_core_element deleter = {
+        .name = "cite-deleter", .postprocess_func = postprocess_deletes_cites, .postprocess_kinds = CITE_DELETE_KINDS};
+    static const markdown_core_element reader = {
+        .name = "root-reader", .postprocess_func = postprocess_reads_its_root, .postprocess_kinds = CITE_DELETE_KINDS};
+    (void)context;
+    return markdown_core_parser_attach_element(parser, &deleter) &&
+           markdown_core_parser_attach_element(parser, &reader);
+}
+
+static void owned_roots_are_reenumerated_per_pass(test_batch_runner *runner) {
+    static const char source[] = "See [pre text @doe99 post text] and [more @smith2020 tail].\n";
+    roots_read_after_delete = 0;
+    markdown_core_node *doc = markdown_core_parse_document_with_mem(
+        source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(), attach_delete_then_read, NULL);
+    OK(runner, doc != NULL, "a pass that deletes a subtree owner, followed by one that reads its roots, parses");
+    INT_EQ(runner, count_kind(doc, MARKDOWN_CORE_NODE_CITE), 0, "the cites are gone");
+    OK(runner, roots_read_after_delete > 0, "the following pass still received roots to read: %d",
+       roots_read_after_delete);
+    markdown_core_node_free(doc);
+}
+
 static void simple_table_body_boundaries(test_batch_runner *runner) {
     const char *tails[] = {"# heading\nbody\n", "> quote\n> next\n", "```\ncode\n```\n"};
     const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_CALLOUT,
@@ -6173,6 +6236,7 @@ int main(void) {
     multiline_boundary_search_builds_no_geometry(runner);
     table_open_gate_admits_only_possible_tables(runner);
     definition_open_gate_admits_only_possible_terms(runner);
+    owned_roots_are_reenumerated_per_pass(runner);
     postprocess_rewrites_every_owned_tree(runner);
     standalone_formula_as_owned_root(runner);
     simple_table_body_boundaries(runner);
