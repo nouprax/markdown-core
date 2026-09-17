@@ -5809,6 +5809,65 @@ static void table_open_gate_admits_only_possible_tables(test_batch_runner *runne
     }
 }
 
+/* Definition list is the other element whose opening grammar spans two lines:
+ * a TERM is arbitrary prose, so nothing about the term's own line can rule the
+ * grammar out, and the opener used to open a full lookahead transaction on
+ * every line just to read the next one and find out.
+ *
+ * With both two-line gates in place, a document that holds neither a table
+ * separator nor a definition marker must pull NO lookahead line at all.
+ * `block_lookahead_work` counts lines pulled, so zero is the whole claim.
+ *
+ * The gate reads raw source, and a bare CR ends a line here. Getting the line
+ * end wrong does not LOSE a definition list -- the gate only over-admits --
+ * it silently runs the search to end of input, so one marker anywhere makes
+ * every line look possible again. The CR case below is what makes that a
+ * failure rather than a corpus blind spot. */
+static void definition_open_gate_admits_only_possible_terms(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+    for (size_t i = 0; i < 256; i++) {
+        markdown_core_strbuf_puts(&source, "an ordinary prose line with no marker on it\n\n");
+    }
+    inline_work work = {0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+    OK(runner, root != NULL, "marker-free prose document parses");
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 0, "and produces no definition list");
+    INT_EQ(runner, work.lookahead, 0, "neither two-line opener pulls a line where its grammar cannot open");
+    markdown_core_node_free(root);
+    markdown_core_strbuf_free(&source);
+
+    /* CR-only prose with one marker at the very end. Reading the line with
+     * `memchr` for '\n' makes every line find that marker. */
+    markdown_core_strbuf cr = MARKDOWN_CORE_BUF_INIT(mem);
+    for (size_t i = 0; i < 256; i++) {
+        markdown_core_strbuf_puts(&cr, "an ordinary prose line with no marker on it\r\r");
+    }
+    markdown_core_strbuf_puts(&cr, "term\r: body\r");
+    inline_work cr_work = {0};
+    markdown_core_node *cr_root =
+        markdown_core_parse_document_with_mem((char *)cr.ptr, cr.size, mem, measure_inline_work, &cr_work);
+    OK(runner, cr_root != NULL, "CR-only prose document parses");
+    INT_EQ(runner, count_kind(cr_root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 1,
+           "the CR-terminated definition list at the end is still found");
+    OK(runner, cr_work.lookahead <= 8, "a CR line ends the line the gate reads: %zu pulls", cr_work.lookahead);
+    markdown_core_node_free(cr_root);
+    markdown_core_strbuf_free(&cr);
+
+    /* A marker one line down, and one after a blank, are what the gate must
+     * not miss: the transaction skips at most one blank line. */
+    static const char *const shapes[] = {"term\n: body\n", "term\n\n: body\n"};
+    for (size_t i = 0; i < sizeof(shapes) / sizeof(*shapes); i++) {
+        markdown_core_node *built =
+            markdown_core_parse_document_with_mem(shapes[i], strlen(shapes[i]), mem, NULL, NULL);
+        OK(runner, built != NULL, "definition shape %zu parses", i);
+        INT_EQ(runner, count_kind(built, MARKDOWN_CORE_NODE_DEFINITION_LIST), 1,
+               "the gate admits a definition list with %zu blank lines before its marker", i);
+        markdown_core_node_free(built);
+    }
+}
+
 static void simple_table_body_boundaries(test_batch_runner *runner) {
     const char *tails[] = {"# heading\nbody\n", "> quote\n> next\n", "```\ncode\n```\n"};
     const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_CALLOUT,
@@ -6113,6 +6172,7 @@ int main(void) {
     malformed_scalar_terminates(runner);
     multiline_boundary_search_builds_no_geometry(runner);
     table_open_gate_admits_only_possible_tables(runner);
+    definition_open_gate_admits_only_possible_terms(runner);
     postprocess_rewrites_every_owned_tree(runner);
     standalone_formula_as_owned_root(runner);
     simple_table_body_boundaries(runner);
