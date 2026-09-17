@@ -116,13 +116,6 @@ typedef struct markdown_core_parser markdown_core_parser;
 typedef struct markdown_core_iter markdown_core_iter;
 typedef struct markdown_core_element markdown_core_element;
 
-/**
- * ## Custom memory allocator support
- */
-
-/** Defines the memory allocation functions to be used by Markdown Core
- * when parsing and allocating a document tree
- */
 /** Callback for freeing user data.
  */
 typedef void (*markdown_core_free_func)(void *user_data);
@@ -166,15 +159,9 @@ void markdown_core_llist_free(markdown_core_llist *head);
  */
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new(markdown_core_node_type type);
 
-/** Same as `markdown_core_node_new`, but explicitly listing the memory
- * allocator used to allocate the node.  Note:  be sure to use the same
- * allocator for every node in a tree, or bad things can happen.
+/** Same as `markdown_core_node_new`, with the element whose descriptor owns
+ * the node's behaviour.
  */
-MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new(markdown_core_node_type type);
-
-MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
-                                                                         const markdown_core_element *element);
-
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
                                                                          const markdown_core_element *element);
 
