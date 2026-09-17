@@ -7,6 +7,7 @@ include(GNUInstallDirs)
 set(LIBRARY "libmarkdown-core")
 set(STATICLIBRARY "libmarkdown-core_static")
 set(HEADERS
+    alloc.h
     markdown-core.h
     markdown-core-element-api.h
     parser.h
@@ -27,6 +28,7 @@ set(HEADERS
     element.h
     delimiter.h)
 set(LIBRARY_SOURCES
+    alloc.c
     markdown_core.c
     node.c
     iterator.c
