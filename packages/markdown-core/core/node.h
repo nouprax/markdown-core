@@ -356,8 +356,6 @@ MARKDOWN_CORE_EXPORT bool markdown_core_node_can_contain_type(markdown_core_node
                                                               markdown_core_node_type child_type);
 
 typedef int (*markdown_core_owned_subtree_visitor)(markdown_core_node **root_slot, void *context);
-int markdown_core_visit_inline_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
-                                        void *context);
 int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
                                        void *context);
 

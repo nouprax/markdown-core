@@ -177,4 +177,40 @@ struct markdown_core_element {
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;
 };
 
+/* Defined here rather than in node.c because the ANSWER IS NO for almost every
+ * node, and the question was costing a cross-translation-unit call to find that
+ * out. `walk_owned_trees` asks it once per node of every tree it walks --
+ * 2,981,851 times over the 65 same-job benchmark documents, of which 136,500
+ * reach an element hook and about 26,800 visit anything at all. Inlined, the
+ * common answer is a compare against `kind` and a NULL test on a pointer.
+ *
+ * It lives in element.h, not beside its declaration in node.h, because it
+ * reads through `markdown_core_element`, which node.h only forward-declares.
+ *
+ * Kept as ONE definition rather than a cheap predicate placed beside the real
+ * one: a second copy of "which kinds can own a subtree" drifts from the list
+ * below the first time a kind is added to it. */
+static inline int markdown_core_visit_inline_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
+                                        void *context) {
+    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION && node->as.definition->term &&
+        !visitor(&node->as.definition->term, context)) {
+        return 0;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->title &&
+        !visitor(&node->as.callout->title, context)) {
+        return 0;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_CITE) {
+        for (markdown_core_node *item = node->as.cite->citations; item; item = item->next) {
+            if ((item->as.citation->prefix && !visitor(&item->as.citation->prefix, context)) ||
+                (item->as.citation->suffix && !visitor(&item->as.citation->suffix, context))) {
+                return 0;
+            }
+        }
+    }
+    const markdown_core_element *element = node->element;
+    return !element || !element->visit_owned_subtrees_func ||
+           element->visit_owned_subtrees_func(element, node, visitor, context);
+}
+
 #endif
