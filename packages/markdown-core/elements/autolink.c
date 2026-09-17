@@ -748,8 +748,7 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
     markdown_core_chunk_free(parser->mem, &source);
 }
 
-static markdown_core_node *postprocess(const markdown_core_element *element, markdown_core_parser *parser,
-                                       markdown_core_node *root) {
+static int postprocess(const markdown_core_element *element, markdown_core_parser *parser, markdown_core_node *root) {
     markdown_core_iter *iter;
     markdown_core_event_type ev;
     markdown_core_node *node;
@@ -759,7 +758,7 @@ static markdown_core_node *postprocess(const markdown_core_element *element, mar
     iter = markdown_core_iter_new(root);
     if (!iter) {
         parser->oom = true;
-        return NULL;
+        return 0;
     }
 
     while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
@@ -785,7 +784,7 @@ static markdown_core_node *postprocess(const markdown_core_element *element, mar
 
     markdown_core_iter_free(iter);
 
-    return root;
+    return !parser->oom;
 }
 
 static const markdown_core_node_type AUTOLINK_POSTPROCESS_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};

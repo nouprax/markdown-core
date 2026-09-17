@@ -813,11 +813,11 @@ bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_
     return context.whitespace;
 }
 
-typedef int (*tree_phase_func)(markdown_core_parser *parser, markdown_core_node **root_slot, void *context);
+typedef int (*tree_phase_func)(markdown_core_parser *parser, markdown_core_node *root, void *context);
 typedef void (*tree_node_func)(markdown_core_parser *parser, markdown_core_node *node, int script_depth, void *context);
 
 typedef struct {
-    markdown_core_node **slot;
+    markdown_core_node *root;
     markdown_core_iter *iter;
     int script_depth;
 } owned_tree_frame;
@@ -829,9 +829,8 @@ typedef struct {
     int script_depth;
 } owned_tree_walk;
 
-static int push_owned_tree(markdown_core_node **slot, void *context) {
-    owned_tree_walk *walk = context;
-    if (!slot || !*slot || walk->parser->oom) {
+static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
+    if (!root || walk->parser->oom) {
         return !walk->parser->oom;
     }
     if (walk->count == walk->capacity) {
@@ -848,21 +847,28 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
         walk->frames = frames;
         walk->capacity = capacity;
     }
-    walk->frames[walk->count++] = (owned_tree_frame){slot, NULL, walk->script_depth};
+    walk->frames[walk->count++] = (owned_tree_frame){root, NULL, walk->script_depth};
     return 1;
 }
 
+/* The owned-subtree visitor reports SLOTS, because destruction has to clear
+ * them. A walk only reads one: no phase may substitute a field's root. */
+static int push_owned_tree(markdown_core_node **slot, void *context) {
+    return push_owned_root(slot ? *slot : NULL, context);
+}
+
 /* Every independent inline tree uses the same explicit continuation stack.
- * Field roots remain owned by their live slots until their children finish;
- * a completion phase may then replace that root. Depth never uses C frames. */
-static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node **slot, tree_node_func enter,
+ * A field root stays the node its owner put there -- no phase may substitute
+ * one -- so a frame carries the root itself and never the slot holding it.
+ * Depth never uses C frames. */
+static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *root, tree_node_func enter,
                             tree_phase_func finish, void *context, int script_depth) {
     owned_tree_walk walk = {.parser = parser, .script_depth = script_depth};
-    push_owned_tree(slot, &walk);
+    push_owned_root(root, &walk);
     while (walk.count && !parser->oom) {
         owned_tree_frame *frame = &walk.frames[walk.count - 1];
         if (!frame->iter) {
-            frame->iter = markdown_core_iter_new(*frame->slot);
+            frame->iter = markdown_core_iter_new(frame->root);
             if (!frame->iter) {
                 parser->oom = true;
                 break;
@@ -870,7 +876,7 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node **s
         }
         markdown_core_event_type event = markdown_core_iter_next(frame->iter);
         if (event == MARKDOWN_CORE_EVENT_DONE) {
-            markdown_core_node **completed = frame->slot;
+            markdown_core_node *completed = frame->root;
             markdown_core_iter_free(frame->iter);
             walk.count--;
             if (finish && !finish(parser, completed, context)) {
@@ -923,7 +929,7 @@ static void complete_inline_node(markdown_core_parser *parser, markdown_core_nod
 
 static int process_inline_fields(markdown_core_parser *parser, markdown_core_node *root, void *context,
                                  int script_depth) {
-    return walk_owned_trees(parser, &root, complete_inline_node, NULL, context, script_depth);
+    return walk_owned_trees(parser, root, complete_inline_node, NULL, context, script_depth);
 }
 
 static int complete_independent_inlines(markdown_core_node **slot, void *context) {
@@ -2249,14 +2255,13 @@ typedef struct {
 } tree_phase_context;
 static int apply_independent_phase(markdown_core_node **slot, void *context) {
     tree_phase_context *phase = context;
-    return walk_owned_trees(phase->parser, slot, NULL, phase->phase, phase->context, 0);
+    return walk_owned_trees(phase->parser, *slot, NULL, phase->phase, phase->context, 0);
 }
 
 /* Document definitions are independent roots, followed by the content tree.
- * Each family advances through the live slot after a phase replaces its root. */
-static int S_apply_tree_phase(markdown_core_parser *parser, markdown_core_node **root_slot, tree_phase_func phase,
+ * A phase rewrites each root in place; none of them is ever substituted. */
+static int S_apply_tree_phase(markdown_core_parser *parser, markdown_core_node *root, tree_phase_func phase,
                               void *context) {
-    markdown_core_node *root = root_slot ? *root_slot : NULL;
     if (!root || parser->oom) {
         return !parser->oom;
     }
@@ -2264,7 +2269,7 @@ static int S_apply_tree_phase(markdown_core_parser *parser, markdown_core_node *
     if (!markdown_core_visit_block_subtrees(root, apply_independent_phase, &phase_context)) {
         return 0;
     }
-    return walk_owned_trees(parser, root_slot, NULL, phase, context, 0);
+    return walk_owned_trees(parser, root, NULL, phase, context, 0);
 }
 
 /* Register at syntax commitment; no completed-tree discovery pass is needed.
@@ -2374,26 +2379,22 @@ void markdown_core_block_own_definitions(markdown_core_definition_collection *co
     }
 }
 
-static int S_consolidate_tree(markdown_core_parser *parser, markdown_core_node **root_slot, void *context) {
+static int S_consolidate_tree(markdown_core_parser *parser, markdown_core_node *root, void *context) {
     (void)context;
-    return markdown_core_consolidate_text_nodes_with_parser(parser, *root_slot);
+    return markdown_core_consolidate_text_nodes_with_parser(parser, root);
 }
 
 #if MARKDOWN_CORE_DEBUG_NODES
-static int S_check_tree(markdown_core_parser *parser, markdown_core_node **root_slot, void *context) {
+static int S_check_tree(markdown_core_parser *parser, markdown_core_node *root, void *context) {
     (void)parser;
     (void)context;
-    return markdown_core_node_check(*root_slot, stderr) == 0;
+    return markdown_core_node_check(root, stderr) == 0;
 }
 #endif
 
-static int S_postprocess_tree(markdown_core_parser *parser, markdown_core_node **root_slot, void *context) {
+static int S_postprocess_tree(markdown_core_parser *parser, markdown_core_node *root, void *context) {
     const markdown_core_element *element = (const markdown_core_element *)context;
-    markdown_core_node *processed = element->postprocess_func(element, parser, *root_slot);
-    if (processed) {
-        *root_slot = processed;
-    }
-    return !parser->oom;
+    return element->postprocess_func(element, parser, root) && !parser->oom;
 }
 
 static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
@@ -2422,7 +2423,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         goto failed;
     }
 
-    if (!S_apply_tree_phase(parser, &parser->root, S_consolidate_tree, NULL)) {
+    if (!S_apply_tree_phase(parser, parser->root, S_consolidate_tree, NULL)) {
         parser->oom = true;
     }
     if (parser->oom) {
@@ -2430,7 +2431,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     }
 
 #if MARKDOWN_CORE_DEBUG_NODES
-    if (!S_apply_tree_phase(parser, &parser->root, S_check_tree, NULL)) {
+    if (!S_apply_tree_phase(parser, parser->root, S_check_tree, NULL)) {
         abort();
     }
 #endif
@@ -2458,7 +2459,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
                 continue;
             }
         }
-        if (!S_apply_tree_phase(parser, &parser->root, S_postprocess_tree, (void *)element)) {
+        if (!S_apply_tree_phase(parser, parser->root, S_postprocess_tree, (void *)element)) {
             parser->oom = true;
         }
     }

@@ -1484,20 +1484,22 @@ static bool attach_dispatch_observers(markdown_core_parser *parser, void *contex
  * loses documents. */
 static int postprocess_runs[2];
 
-static markdown_core_node *count_postprocess_absent(const markdown_core_element *element, markdown_core_parser *parser,
-                                                    markdown_core_node *root) {
+static int count_postprocess_absent(const markdown_core_element *element, markdown_core_parser *parser,
+                                    markdown_core_node *root) {
     (void)element;
+    (void)root;
     (void)parser;
     postprocess_runs[0]++;
-    return root;
+    return 1;
 }
 
-static markdown_core_node *count_postprocess_present(const markdown_core_element *element, markdown_core_parser *parser,
-                                                     markdown_core_node *root) {
+static int count_postprocess_present(const markdown_core_element *element, markdown_core_parser *parser,
+                                     markdown_core_node *root) {
     (void)element;
+    (void)root;
     (void)parser;
     postprocess_runs[1]++;
-    return root;
+    return 1;
 }
 
 static const markdown_core_node_type OBSERVER_ABSENT_KINDS[] = {MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_NONE};
@@ -2827,11 +2829,12 @@ static void table_values(test_batch_runner *runner) {
 /* Many contractions followed by many address splits must retain one linear
  * source map, rather than copying every unconsumed suffix for each link. */
 static int observed_source_marks;
-static markdown_core_node *observe_source_marks(const markdown_core_element *element, markdown_core_parser *parser,
-                                                markdown_core_node *root) {
+static int observe_source_marks(const markdown_core_element *element, markdown_core_parser *parser,
+                                markdown_core_node *root) {
     (void)element;
+    (void)root;
     observed_source_marks = parser->line_marks_size;
-    return root;
+    return 1;
 }
 
 static void table_source_map_growth(test_batch_runner *runner) {
@@ -3061,11 +3064,12 @@ static void properties_source_boundaries(test_batch_runner *runner) {
 }
 
 static size_t properties_decoded_bytes;
-static markdown_core_node *observe_properties(const markdown_core_element *element, markdown_core_parser *parser,
-                                              markdown_core_node *root) {
+static int observe_properties(const markdown_core_element *element, markdown_core_parser *parser,
+                              markdown_core_node *root) {
     (void)element;
+    (void)root;
     properties_decoded_bytes = parser->metadata_decoded_bytes;
-    return root;
+    return 1;
 }
 static void properties_member_work(test_batch_runner *runner) {
     static const markdown_core_element observer = {.postprocess_func = observe_properties};
@@ -3370,12 +3374,12 @@ typedef struct {
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
 } inline_work;
-static markdown_core_node *record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
-                                              markdown_core_node *root) {
+static int record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
+                              markdown_core_node *root) {
     (void)element;
     inline_work *work = root->user_data;
     if (!work) {
-        return root;
+        return 1;
     }
     work->cross_link = parser->cross_link_scan_work;
     work->autolink_domains = parser->autolink_domain_work;
@@ -3415,7 +3419,7 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
             note->kind == MARKDOWN_CORE_NODE_FOOTNOTE && note->parent == NULL && note->as.footnote->id.data != NULL;
     }
     root->user_data = NULL;
-    return root;
+    return 1;
 }
 static const markdown_core_element WORK_RECORDER = {.name = "work-recorder", .postprocess_func = record_inline_work};
 static bool measure_inline_work(markdown_core_parser *parser, void *context) {
@@ -3860,16 +3864,189 @@ static void footnote_registration(test_batch_runner *runner) {
     }
 }
 
+/* The postprocess contract says a pass may rewrite the tree rooted at `root`
+ * but may not substitute a different node for `root` itself. These two passes
+ * are the requirements that contract has to keep serving: strip every comment,
+ * and replace every html node with a placeholder. Both reach every owned
+ * subtree -- a definition term, a callout title, a cite prefix, a table
+ * caption, a directive label -- and in none of them is the node to remove or
+ * replace ever the root, because a field root is the container its OWNER
+ * created and the comment or html sits inside it. */
+static int contract_removed_comments;
+static int contract_replaced_html;
+static int contract_root_was_target;
+
+static int strip_comments(const markdown_core_element *element, markdown_core_parser *parser,
+                          markdown_core_node *root) {
+    (void)element;
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type event;
+    if (!iter) {
+        parser->oom = true;
+        return 0;
+    }
+    /* At EXIT the iterator already holds the parent or following sibling, so
+     * unlinking and freeing this node cannot invalidate traversal state. */
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event != MARKDOWN_CORE_EVENT_EXIT ||
+            (node->kind != MARKDOWN_CORE_NODE_COMMENT && node->kind != MARKDOWN_CORE_NODE_COMMENT_BLOCK)) {
+            continue;
+        }
+        if (node == root) {
+            contract_root_was_target++;
+            continue;
+        }
+        markdown_core_node_unlink(node);
+        markdown_core_node_free(node);
+        contract_removed_comments++;
+    }
+    markdown_core_iter_free(iter);
+    return 1;
+}
+
+static int html_to_placeholder(const markdown_core_element *element, markdown_core_parser *parser,
+                               markdown_core_node *root) {
+    (void)element;
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type event;
+    if (!iter) {
+        parser->oom = true;
+        return 0;
+    }
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event != MARKDOWN_CORE_EVENT_EXIT ||
+            (node->kind != MARKDOWN_CORE_NODE_HTML && node->kind != MARKDOWN_CORE_NODE_HTML_BLOCK)) {
+            continue;
+        }
+        if (node == root) {
+            contract_root_was_target++;
+            continue;
+        }
+        if (markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_TEXT) == MARKDOWN_CORE_NODE_SET_KIND_OK) {
+            markdown_core_node_set_literal(node, "[html]");
+            contract_replaced_html++;
+            continue;
+        }
+        /* Inline Text is not containable where this html node sits, so the
+         * placeholder is a block. A non-root node is replaced through its
+         * parent, which is exactly what the root has none of. */
+        markdown_core_node *para = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+        if (!para || !text || !markdown_core_node_set_literal(text, "[html]") ||
+            !markdown_core_node_append_child(para, text)) {
+            markdown_core_node_free(para);
+            markdown_core_node_free(text);
+            parser->oom = true;
+            markdown_core_iter_free(iter);
+            return 0;
+        }
+        if (!markdown_core_node_insert_before(node, para)) {
+            markdown_core_node_free(para);
+            continue;
+        }
+        markdown_core_node_unlink(node);
+        markdown_core_node_free(node);
+        contract_replaced_html++;
+    }
+    markdown_core_iter_free(iter);
+    return 1;
+}
+
+static void postprocess_rewrites_every_owned_tree(test_batch_runner *runner) {
+    static const markdown_core_element strip = {.name = "strip-comments", .postprocess_func = strip_comments};
+    static const markdown_core_element placeholder = {.name = "html-placeholder",
+                                                      .postprocess_func = html_to_placeholder};
+    const markdown_core_element *elements[] = {&strip, &placeholder};
+    static const struct {
+        const char *source;
+        int comments, html;
+    } cases[] = {
+        {"Body %%gone%% and <b>h</b> tail\n", 1, 2},
+        {"Term %%gone%% <b>h</b>\n: Body %%gone%% <b>h</b>\n", 2, 4},
+        {"> [!NOTE] Title %%gone%% <b>h</b>\n> Body\n", 1, 2},
+        {"See [pre %%gone%% <b>h</b> @doe99 post].\n", 1, 2},
+        {"| a |\n| - |\n| b |\n\nTable: Cap %%gone%% <b>h</b>\n", 1, 2},
+        {":::note[Label %%gone%% <b>h</b>]\nBody\n:::\n", 1, 2},
+        /* The whole block is the construct: still never the walked root. */
+        {"%%whole paragraph is a comment%%\n", 1, 0},
+        {"<div>whole block is html</div>\n", 0, 1},
+        {"Term\n: %%only a comment%%\n", 1, 0},
+        {"Term\n: <b>only html</b>\n", 0, 2},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        contract_removed_comments = 0;
+        contract_replaced_html = 0;
+        contract_root_was_target = 0;
+        markdown_core_node *root = parse_with_probes(cases[i].source, strlen(cases[i].source), elements, 2);
+        OK(runner, root != NULL, "contract case %zu parses", i);
+        if (!root) {
+            continue;
+        }
+        int left = 0;
+        markdown_core_iter *iter = markdown_core_iter_new(root);
+        markdown_core_event_type event;
+        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            markdown_core_node *node = markdown_core_iter_get_node(iter);
+            if (event != MARKDOWN_CORE_EVENT_ENTER) {
+                continue;
+            }
+            if (node->kind == MARKDOWN_CORE_NODE_COMMENT || node->kind == MARKDOWN_CORE_NODE_COMMENT_BLOCK ||
+                node->kind == MARKDOWN_CORE_NODE_HTML || node->kind == MARKDOWN_CORE_NODE_HTML_BLOCK) {
+                left++;
+            }
+        }
+        markdown_core_iter_free(iter);
+        INT_EQ(runner, contract_removed_comments, cases[i].comments, "contract case %zu strips its comments", i);
+        INT_EQ(runner, contract_replaced_html, cases[i].html, "contract case %zu replaces its html", i);
+        INT_EQ(runner, contract_root_was_target, 0, "contract case %zu never meets the target at a root", i);
+        INT_EQ(runner, left, 0, "contract case %zu leaves neither kind behind", i);
+        markdown_core_node_free(root);
+    }
+}
+
+/* A standalone formula is promoted to a FormulaBlock only where the paragraph
+ * wrapping it has a parent to take the substitute. As a definition term it is
+ * the root of an owned subtree, which has none: the promotion is skipped and
+ * the term keeps the inline Formula. It used to be attempted and its missing
+ * parent reported to the caller as a failed allocation. */
+static void standalone_formula_as_owned_root(test_batch_runner *runner) {
+    markdown_core_node *root = parse("$$x$$\n: Definition body\n");
+    OK(runner, root != NULL, "a formula-only definition term parses");
+    if (!root) {
+        return;
+    }
+    markdown_core_node *found = NULL;
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type event;
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_DEFINITION) {
+            found = node->as.definition->term;
+            break;
+        }
+    }
+    markdown_core_iter_free(iter);
+    OK(runner, found != NULL, "the definition carries a term");
+    if (found) {
+        INT_EQ(runner, found->kind, MARKDOWN_CORE_NODE_PARAGRAPH, "the term root is still its owner's paragraph");
+        OK(runner, found->first_child && found->first_child->kind == MARKDOWN_CORE_NODE_FORMULA,
+           "the term holds the inline formula");
+    }
+    markdown_core_node_free(root);
+}
+
 typedef struct {
     size_t removed;
     bool resolved, index_released;
 } footnote_postprocess_probe;
 
-static markdown_core_node *remove_footnotes(const markdown_core_element *element, markdown_core_parser *parser,
-                                            markdown_core_node *root) {
+static int remove_footnotes(const markdown_core_element *element, markdown_core_parser *parser,
+                            markdown_core_node *root) {
     (void)element;
     if (root->kind != MARKDOWN_CORE_NODE_DOCUMENT) {
-        return root;
+        return 1;
     }
     footnote_postprocess_probe *probe = root->user_data;
     probe->index_released =
@@ -3883,7 +4060,7 @@ static markdown_core_node *remove_footnotes(const markdown_core_element *element
         probe->removed++;
     }
     root->user_data = NULL;
-    return root;
+    return 1;
 }
 
 static bool observe_footnote_removal(markdown_core_parser *parser, void *context) {
@@ -5836,6 +6013,8 @@ int main(void) {
     table_candidate_work(runner);
     bounded_scanners(runner);
     malformed_scalar_terminates(runner);
+    postprocess_rewrites_every_owned_tree(runner);
+    standalone_formula_as_owned_root(runner);
     simple_table_body_boundaries(runner);
     simple_table_footer_work(runner);
     grid_caption_search_work(runner);
