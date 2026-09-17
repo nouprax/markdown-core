@@ -76,6 +76,83 @@ for (const file of SUBSTITUTERS) {
     }
 }
 
+/* (4) A probe counter read outside an armed region is a test that passes as
+ * `0 <= 0`. `grid_opening_memory` did exactly that after the probes moved to
+ * the link seam: it reset the byte counters by hand, never enabled them, and
+ * its memory assertions compared zero against zero for every shape and size.
+ * A counter that is only READ where it is armed cannot go quiet like that. */
+const ARMS = {
+    properties_peak_bytes: "properties_probe_arm",
+    properties_live_bytes: "properties_probe_arm",
+    payload_live: "payload_probe_arm",
+    payload_allocations: "payload_probe_arm",
+    text_allocation_calls: "text_counting = 1"
+};
+/* The interposer, the arming helpers and the accounting helper are where these
+ * live; `marker_free_count` needs no arming because its branch is ungated. */
+const PROBE_INFRASTRUCTURE = new Set([
+    "markdown_core_alloc",
+    "markdown_core_realloc",
+    "markdown_core_free",
+    "payload_probe_arm",
+    "payload_probe_disarm",
+    "properties_probe_arm",
+    "properties_probe_disarm",
+    "properties_account",
+    "allocation_refused"
+]);
+{
+    const probeFile = "tests/api/main.c";
+    const probeSource = fs.readFileSync(path.join(pkg, probeFile), "utf8");
+    const lines = probeSource.split("\n");
+    const definitions = [];
+    lines.forEach((line, index) => {
+        const match = /^[A-Za-z_][\w *]*?\b(\w+)\([^;]*\)\s*\{\s*$/.exec(line);
+        if (match) definitions.push({ line: index, name: match[1] });
+    });
+    const enclosing = (index) => {
+        let found = null;
+        for (const definition of definitions) {
+            if (definition.line <= index) found = definition.name;
+            else break;
+        }
+        return found;
+    };
+    const bodyOf = (name) => {
+        const start = definitions.find((definition) => definition.name === name).line;
+        const collected = [];
+        let opened = false;
+        for (let i = start; i < lines.length; i += 1) {
+            collected.push(lines[i]);
+            if (lines[i].includes("{")) opened = true;
+            if (opened && lines[i] === "}") break;
+        }
+        return collected.join("\n");
+    };
+    const readers = new Map();
+    lines.forEach((line, index) => {
+        if (/^\s*(\*|\/\*|static\s)/.test(line)) return;
+        for (const counter of Object.keys(ARMS)) {
+            if (!line.includes(counter)) continue;
+            const owner = enclosing(index);
+            if (!owner || PROBE_INFRASTRUCTURE.has(owner)) continue;
+            if (!readers.has(owner)) readers.set(owner, new Set());
+            readers.get(owner).add(counter);
+        }
+    });
+    for (const [owner, counters] of readers) {
+        const body = bodyOf(owner);
+        for (const counter of counters) {
+            if (!body.includes(ARMS[counter])) {
+                failures.push(`${probeFile}: ${owner} reads ${counter} without arming it (${ARMS[counter]})`);
+            }
+        }
+    }
+    if (!readers.size) {
+        failures.push(`${probeFile}: found no probe-counter readers; the audit is not reaching the tests`);
+    }
+}
+
 if (failures.length) {
     for (const failure of failures) {
         console.error(`audit-allocator-seam: ${failure}`);

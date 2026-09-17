@@ -5364,7 +5364,7 @@ static void grid_opening_memory(test_batch_runner *runner) {
             size_t baseline = 0;
             for (int grid = 0; grid <= 1; grid++) {
                 source.ptr[0] = grid ? '+' : 'x';
-                properties_live_bytes = properties_peak_bytes = 0;
+                properties_probe_arm();
                 inline_work work = {0};
                 markdown_core_node *root = markdown_core_parse_document_with_setup(
                     (const char *)source.ptr, source.size, measure_inline_work, &work);
@@ -5384,6 +5384,7 @@ static void grid_opening_memory(test_batch_runner *runner) {
                        "invalid opening rejection has bounded source work");
                 }
                 markdown_core_node_free(root);
+                properties_probe_disarm();
                 if (!grid) {
                     baseline = properties_peak_bytes;
                 }
