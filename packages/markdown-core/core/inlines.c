@@ -46,30 +46,39 @@ static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inli
  * them. */
 void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
                                       int to) {
-    int line, column;
-
     /* Every content-bearing block has a map by the time its inlines are parsed
      * -- `markdown_core_parse_inlines` gives one to any block whose content was
      * SET rather than fed -- so there is no arithmetic left to fall back to.
      * The inline state built straight out of a chunk by
      * `markdown_core_parse_reference_inline` has no owner and creates no nodes,
      * which is why the miss below leaves the position at calloc's zero rather
-     * than guessing. */
-    if (markdown_core_parser_content_place(inline_state->owner_parser, inline_state->owner, from, &line, &column)) {
-        node->start_line = line;
-        node->start_column = column;
+     * than guessing.
+     *
+     * The span resolves both ends with one search each. Placing the node and
+     * slicing its owner's map for it used to be four searches for the same two
+     * questions. */
+    markdown_core_content_span span;
+    markdown_core_parser_content_span(inline_state->owner_parser, inline_state->owner, from, to, &span);
+    if (span.has_start) {
+        node->start_line = span.start_line;
+        node->start_column = span.start_column;
     }
-    if (markdown_core_parser_content_end_place(inline_state->owner_parser, inline_state->owner, to, &line, &column)) {
-        node->end_line = line;
-        node->end_column = column;
+    if (span.has_end) {
+        node->end_line = span.end_line;
+        node->end_column = span.end_column;
     }
     if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0 && inline_state->owner) {
         /* Copied bytes take a view of the source map; a decoded source token
          * maps each of its output bytes to that token's authored extent. */
         if (node->as.literal->len == to - from + 1 &&
             memcmp(node->as.literal->data, inline_state->input.data + from, (size_t)node->as.literal->len) == 0) {
-            markdown_core_parser_adopt_content_marks(inline_state->owner_parser, inline_state->owner, node, from,
-                                                     to - from + 1);
+            /* The writes stay HERE, inside the gate: a node that is not a
+             * verbatim copy of its source must keep `content_mark_count` at
+             * zero, because that count is read elsewhere as "is there a
+             * mapping at all". */
+            if (span.has_start && span.has_end && inline_state->owner->content_mark_count) {
+                markdown_core_parser_adopt_content_span(inline_state->owner, node, &span, from);
+            }
         } else {
             node->content_mark_count = 0;
             node->content_mark_offset = 0;

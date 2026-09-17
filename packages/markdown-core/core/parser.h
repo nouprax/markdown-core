@@ -53,6 +53,27 @@ typedef struct {
     int indent;
 } markdown_core_line_mark;
 
+/* A content span resolved against one node's map: where it begins, where it
+ * ends, and the two runs that answer both.
+ *
+ * Placing an inline node and slicing its owner's map for it are the SAME two
+ * queries -- `content_place(from)` and `content_end_place(to)` locate exactly
+ * the runs `adopt_content_marks(from, to - from + 1)` then searched for again.
+ * Every inline node paid for four binary searches to ask two questions.
+ *
+ * `has_end` is separate from `has_start` because the two offsets are checked
+ * independently: several element entry points compute `to` as `x - 1`, which
+ * is -1 at the start of a buffer, and a span may legitimately have a start and
+ * no end. `last` is resolved by its own search rather than by walking forward
+ * from `first`, so a span whose `to` precedes its `from` still names the run
+ * that contains `to`. */
+typedef struct {
+    int first, last;
+    int start_line, start_column;
+    int end_line, end_column;
+    bool has_start, has_end;
+} markdown_core_content_span;
+
 /* Parse-time edges for document-owned footnote and specimen definitions.
  * Every definition is already owned in the block tree or a value field.
  * The index is discarded before any mutating postprocessor runs. */
@@ -368,5 +389,10 @@ markdown_core_node *markdown_core_parse_document_with_mem(const char *source, si
 #ifdef __cplusplus
 }
 #endif
+
+int markdown_core_parser_content_span(markdown_core_parser *parser, markdown_core_node *node, bufsize_t from,
+                                      bufsize_t to, markdown_core_content_span *span);
+void markdown_core_parser_adopt_content_span(markdown_core_node *owner, markdown_core_node *node,
+                                             const markdown_core_content_span *span, bufsize_t from);
 
 #endif

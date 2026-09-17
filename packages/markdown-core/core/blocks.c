@@ -513,6 +513,50 @@ static int S_content_place(markdown_core_parser *parser, markdown_core_node *nod
     return 1;
 }
 
+/* Resolve both ends of [from, to] against `node`'s map with one search each.
+ * Returns 0 when the node has no map at all, in which case neither end is
+ * resolved. The caller owns what it does with the answer: the run indices are
+ * handed back rather than written onto a node, because whether a slice is
+ * taken at all is a decision only the caller can make -- writing
+ * `content_mark_count` on a node that is not a verbatim copy of its source
+ * would give every SPAN, LINK and EMPHASIS node a map it does not have, and
+ * three places read that count as the question "is there a mapping". */
+int markdown_core_parser_content_span(markdown_core_parser *parser, markdown_core_node *node, bufsize_t from,
+                                      bufsize_t to, markdown_core_content_span *span) {
+    span->has_start = false;
+    span->has_end = false;
+    if (!parser || !node || node->content_mark_count <= 0) {
+        return 0;
+    }
+    if (from >= 0) {
+        bufsize_t offset = from + node->content_mark_offset;
+        span->first = markdown_core_block_content_mark_at(parser, node, offset);
+        const markdown_core_line_mark *mark = &parser->line_marks[span->first];
+        span->start_line = mark->line;
+        span->start_column = mark->column + (int)(offset - mark->content_offset) * mark->source_step;
+        span->has_start = true;
+    }
+    if (to >= 0) {
+        bufsize_t offset = to + node->content_mark_offset;
+        span->last = markdown_core_block_content_mark_at(parser, node, offset);
+        const markdown_core_line_mark *mark = &parser->line_marks[span->last];
+        span->end_line = mark->line;
+        span->end_column =
+            mark->column + (int)(offset - mark->content_offset) * mark->source_step + mark->source_width - 1;
+        span->has_end = true;
+    }
+    return 1;
+}
+
+/* Take the slice a resolved span already names. `from` is the span's own
+ * start offset, which the runs were resolved against. */
+void markdown_core_parser_adopt_content_span(markdown_core_node *owner, markdown_core_node *node,
+                                             const markdown_core_content_span *span, bufsize_t from) {
+    node->content_mark = span->first;
+    node->content_mark_count = span->last - span->first + 1;
+    node->content_mark_offset = from + owner->content_mark_offset;
+}
+
 int markdown_core_parser_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
                                        int *line, int *column) {
     return S_content_place(parser, node, offset, false, line, column);
