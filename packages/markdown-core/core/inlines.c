@@ -93,8 +93,7 @@ void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, 
 markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state *inline_state,
                                                       markdown_core_node_type t, int start_column, int end_column,
                                                       markdown_core_chunk s) {
-    markdown_core_parser_note_kind(inline_state->owner_parser, t);
-    markdown_core_node *e = markdown_core_node_new(t);
+    markdown_core_node *e = markdown_core_parser_new_node(inline_state->owner_parser, t);
     if (!e) {
         /* Frees an owned literal; borrowed chunks only reset fields. */
         markdown_core_chunk_free(&s);
@@ -106,23 +105,19 @@ markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state
     return e;
 }
 
-// Create an inline with no value.
-markdown_core_node *markdown_core_inline_make_simple(markdown_core_node_type t) { return markdown_core_node_new(t); }
-
 /* Records the kind it creates. Every parse-time caller reaches the parser
  * through its inline state; the mem-only form above stays for callers that
  * have no parse at all. */
-markdown_core_node *markdown_core_inline_make_simple_noted(markdown_core_inline_state *inline_state,
-                                                           markdown_core_node_type t) {
-    markdown_core_parser_note_kind(inline_state->owner_parser, t);
-    return markdown_core_node_new(t);
+markdown_core_node *markdown_core_inline_make_simple(markdown_core_inline_state *inline_state,
+                                                     markdown_core_node_type t) {
+    return markdown_core_parser_new_node(inline_state->owner_parser, t);
 }
 
 /* markdown_core_inline_make_simple with the inline state's loss flag for handlers that consume input
  * before creating the node. */
 markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_inline_state *inline_state,
                                                                 markdown_core_node_type t) {
-    markdown_core_node *e = markdown_core_inline_make_simple_noted(inline_state, t);
+    markdown_core_node *e = markdown_core_inline_make_simple(inline_state, t);
     if (!e) {
         inline_state->oom = 1;
     }
@@ -613,7 +608,7 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
 
     // Allocate before mutating either run. OOM leaves the source intact and
     // aborts the shared parse transaction.
-    inline_node = markdown_core_inline_make_simple_noted(inline_state, kind);
+    inline_node = markdown_core_inline_make_simple(inline_state, kind);
     if (!inline_node) {
         inline_state->oom = 1;
         return closer->next;

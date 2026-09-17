@@ -54,7 +54,7 @@ static markdown_core_chunk markdown_core_clean_autolink(markdown_core_inline_sta
 static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inline_state *inline_state,
                                                               int start_column, int end_column, markdown_core_chunk url,
                                                               int is_email) {
-    markdown_core_node *link = markdown_core_inline_make_simple_noted(inline_state, MARKDOWN_CORE_NODE_LINK);
+    markdown_core_node *link = markdown_core_inline_make_simple(inline_state, MARKDOWN_CORE_NODE_LINK);
     markdown_core_node *text;
     if (!link) {
         inline_state->oom = 1;
@@ -344,8 +344,7 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
 
     markdown_core_inline_state_set_offset(inline_state, (int)(max_rewind + link_end));
 
-    markdown_core_node *node = markdown_core_node_new(MARKDOWN_CORE_NODE_LINK);
-    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_LINK);
+    markdown_core_node *node = markdown_core_parser_new_node(parser, MARKDOWN_CORE_NODE_LINK);
     if (!node) {
         parser->oom = true;
         return NULL;
@@ -365,8 +364,7 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
         }
     }
 
-    markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
-    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_TEXT);
+    markdown_core_node *text = markdown_core_parser_new_node(parser, MARKDOWN_CORE_NODE_TEXT);
     if (!text) {
         parser->oom = true;
         markdown_core_node_free(node);
@@ -423,8 +421,7 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     markdown_core_inline_state_set_offset(inline_state, (int)(max_rewind + link_end));
     markdown_core_node_unput(parser, parent, rewind);
 
-    markdown_core_node *node = markdown_core_node_new(MARKDOWN_CORE_NODE_LINK);
-    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_LINK);
+    markdown_core_node *node = markdown_core_parser_new_node(parser, MARKDOWN_CORE_NODE_LINK);
     if (!node) {
         parser->oom = true;
         return NULL;
@@ -436,8 +433,7 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
         parser->oom = true;
     }
 
-    markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
-    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_TEXT);
+    markdown_core_node *text = markdown_core_parser_new_node(parser, MARKDOWN_CORE_NODE_TEXT);
     if (!text) {
         parser->oom = true;
         markdown_core_node_free(node);
@@ -565,8 +561,7 @@ static bool validate_protocol(const char protocol[], uint8_t *data, size_t rewin
 static markdown_core_node *email_text_fragment(markdown_core_parser *parser, markdown_core_node *source_map,
                                                const markdown_core_chunk *source, size_t start, size_t length) {
     assert(length);
-    markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
-    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_TEXT);
+    markdown_core_node *text = markdown_core_parser_new_node(parser, MARKDOWN_CORE_NODE_TEXT);
     if (!text) {
         parser->oom = true;
         return NULL;
@@ -686,8 +681,7 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             continue;
         }
 
-        markdown_core_node *link_node = markdown_core_node_new(MARKDOWN_CORE_NODE_LINK);
-        markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_LINK);
+        markdown_core_node *link_node = markdown_core_parser_new_node(parser, MARKDOWN_CORE_NODE_LINK);
         if (!link_node) {
             parser->oom = true;
             break;

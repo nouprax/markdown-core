@@ -455,8 +455,8 @@ static bool open_setext(markdown_core_parser *parser, markdown_core_node **conta
 
     if (has_content) {
 
-        markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_HEADING);
-        markdown_core_node_set_kind_result result = markdown_core_node_set_kind(*container, MARKDOWN_CORE_NODE_HEADING);
+        markdown_core_node_set_kind_result result =
+            markdown_core_parser_set_node_kind(parser, *container, MARKDOWN_CORE_NODE_HEADING);
         if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
             if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
                 parser->oom = true;

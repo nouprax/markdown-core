@@ -278,12 +278,51 @@ struct markdown_core_parser {
     bufsize_t line_marks_alloc;
 };
 
-/* Record a kind at the moment the parse produces it. The one way production
- * code writes `kinds_created`; see that field. */
+/* THE PARSE'S NODE OPERATIONS, WHICH RECORD THE KIND THEY PRODUCE.
+ *
+ * `kinds_created` decides which postprocess passes run, so a production site
+ * that writes a kind without recording it does not fail a build or a test --
+ * it makes the gate skip a pass some document needed, and the defect surfaces
+ * as a missing rewrite far from the line that caused it. That is a bad thing
+ * to police with an audit over twenty-one call sites, so it is not policed:
+ * recording is part of producing a node, in the two operations below.
+ *
+ * `markdown_core_node_new` and `markdown_core_node_set_kind` stay for callers
+ * that have no parse -- the tests build trees by hand -- and production code
+ * uses these instead, which `scripts/audit-parser-kind-record.mjs` holds.
+ *
+ * The record OVER-APPROXIMATES, deliberately. A node the parse creates and
+ * then discards leaves its bit set although the finished tree holds no such
+ * node. Making it exact would mean observing REMOVAL, and the only way to do
+ * that is another walk of the whole tree -- which is the cost this record
+ * exists to avoid. Over-approximating can only make the gate skip fewer
+ * passes, never miss one, because a kind in the finished tree was necessarily
+ * created; and a pass that runs over a tree holding none of its declared kinds
+ * finds nothing to do. */
 static inline void markdown_core_parser_note_kind(markdown_core_parser *parser, markdown_core_node_type kind) {
     if (parser) {
         markdown_core_node_kind_set_add(&parser->kinds_created, kind);
     }
+}
+
+static inline markdown_core_node *markdown_core_parser_new_node(markdown_core_parser *parser,
+                                                                markdown_core_node_type type) {
+    markdown_core_parser_note_kind(parser, type);
+    return markdown_core_node_new(type);
+}
+
+static inline markdown_core_node *markdown_core_parser_new_node_with_ext(markdown_core_parser *parser,
+                                                                         markdown_core_node_type type,
+                                                                         const markdown_core_element *element) {
+    markdown_core_parser_note_kind(parser, type);
+    return markdown_core_node_new_with_ext(type, element);
+}
+
+static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
+                                                                                    markdown_core_node *node,
+                                                                                    markdown_core_node_type kind) {
+    markdown_core_parser_note_kind(parser, kind);
+    return markdown_core_node_set_kind(node, kind);
 }
 
 /* ONE LINE OF THE BLOCK-START LOOKAHEAD'S RESUME CACHE.

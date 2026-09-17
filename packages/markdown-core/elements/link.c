@@ -460,8 +460,8 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
         markdown_core_optional_chunk_free(&title);
         return false;
     }
-    inl = markdown_core_inline_make_simple_noted(inline_state,
-                                                 is_image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK);
+    inl = markdown_core_inline_make_simple(inline_state,
+                                           is_image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK);
     if (inl && record) {
         /* A RESOLVED REFERENCE IS THE LINK OR EMBEDDED IT NAMES (M2), and it reads
          * its destination and title through the definition's resource, which

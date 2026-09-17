@@ -212,8 +212,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     // with the allocation refused. The other three lose the lead paragraph
     // WITHOUT setting parser->oom, so the document comes back short and the
     // failure bit says everything was fine.
-    paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
+    paragraph = markdown_core_parser_new_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!paragraph) {
         parser->oom = true;
         return;
@@ -305,8 +304,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
         return NULL;
     }
 
-    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_TABLE);
-    markdown_core_node_set_kind_result result = markdown_core_node_set_kind(parent_container, MARKDOWN_CORE_NODE_TABLE);
+    markdown_core_node_set_kind_result result =
+        markdown_core_parser_set_node_kind(parser, parent_container, MARKDOWN_CORE_NODE_TABLE);
     if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
         if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
             parser->oom = true;
@@ -1896,8 +1895,7 @@ static void table_fill_cell(table_source *source, markdown_core_node *node, cons
 static markdown_core_node *table_child(markdown_core_parser *parser, markdown_core_node *parent,
                                        markdown_core_node_type kind, int first_line, int first_column, int last_line,
                                        int last_column) {
-    markdown_core_node *node = markdown_core_node_new(kind);
-    markdown_core_parser_note_kind(parser, kind);
+    markdown_core_node *node = markdown_core_parser_new_node(parser, kind);
     if (!node) {
         parser->oom = true;
         return NULL;

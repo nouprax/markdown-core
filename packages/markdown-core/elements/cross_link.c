@@ -86,10 +86,8 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     }
     /* A lone ^ is an ordinary nonempty heading part, not a block identifier. */
     block_id = block_id && target_end > hash + 2;
-    node = markdown_core_node_new_with_ext(embedded ? MARKDOWN_CORE_NODE_CROSS_EMBEDDED : MARKDOWN_CORE_NODE_CROSS_LINK,
-                                           element);
-    markdown_core_parser_note_kind(parser,
-                                   embedded ? MARKDOWN_CORE_NODE_CROSS_EMBEDDED : MARKDOWN_CORE_NODE_CROSS_LINK);
+    node = markdown_core_parser_new_node_with_ext(
+        parser, embedded ? MARKDOWN_CORE_NODE_CROSS_EMBEDDED : MARKDOWN_CORE_NODE_CROSS_LINK, element);
     if (!node) {
         parser->oom = true;
         return NULL;
