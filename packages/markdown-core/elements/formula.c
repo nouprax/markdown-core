@@ -529,6 +529,7 @@ static markdown_core_node *make_formula_node(const markdown_core_element *elemen
                                              bufsize_t literal_len) {
     markdown_core_node *node =
         markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_FORMULA, parser->mem, element);
+    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_FORMULA);
     if (!node) {
         parser->oom = true;
         return NULL;
@@ -704,11 +705,18 @@ static markdown_core_node *replace_with_formula_block(const markdown_core_elemen
     return NULL;
 }
 
-/* Process one node and return the node that now occupies its position. The
- * caller owns traversal: keeping it iterative makes enabled formula syntax
- * safe for an arbitrarily deep tree even when the tree contains no formula. */
-static markdown_core_node *postprocess_node(const markdown_core_element *element, markdown_core_parser *parser,
-                                            markdown_core_node *node) {
+/* Process one node, returning 0 only on failure. The caller owns traversal:
+ * keeping it iterative makes enabled formula syntax safe for an arbitrarily
+ * deep tree even when the tree contains no formula.
+ *
+ * `may_replace` is 0 for the root of the walked tree, which belongs to whoever
+ * holds it -- the parser for the document, the owning element for a field such
+ * as a definition term. Substituting a node there is not merely disallowed, it
+ * cannot be carried out: a field root is detached, so the attach a
+ * substitution needs has no parent to take, and `$$x$$\n: body\n` used to
+ * report that missing parent to the caller as an allocation failure. */
+static int postprocess_node(const markdown_core_element *element, markdown_core_parser *parser,
+                            markdown_core_node *node, int may_replace) {
     if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
         if (formula && !formula->literal.data) {
@@ -720,51 +728,46 @@ static markdown_core_node *postprocess_node(const markdown_core_element *element
             }
             markdown_core_strbuf_clear(&node->content);
         }
-        return node;
+        return !parser->oom;
     }
 
-    if (node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code->info)) {
-        markdown_core_node *formula =
-            replace_with_formula_block(element, parser, node, node->as.code->literal.data, node->as.code->literal.len);
-        if (!formula) {
+    if (may_replace && node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code->info)) {
+        if (!replace_with_formula_block(element, parser, node, node->as.code->literal.data,
+                                        node->as.code->literal.len)) {
             parser->oom = true;
+            return 0;
         }
-        return formula;
+        return 1;
     }
 
     /* Only an anonymous paragraph is a removable wrapper. A declared anchor
      * or attributes belong to that paragraph, even when its only remaining
      * content is a standalone formula. */
-    if (node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && !node->attributes.anchor.len && !node->attributes.class_count &&
-        !node->attributes.record_count && node->first_child && node->first_child == node->last_child &&
-        node->first_child->kind == MARKDOWN_CORE_NODE_FORMULA && is_standalone_formula_node(node->first_child)) {
+    if (may_replace && node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && !node->attributes.anchor.len &&
+        !node->attributes.class_count && !node->attributes.record_count && node->first_child &&
+        node->first_child == node->last_child && node->first_child->kind == MARKDOWN_CORE_NODE_FORMULA &&
+        is_standalone_formula_node(node->first_child)) {
         node_formula *formula = get_formula(node->first_child);
-        if (formula) {
-            markdown_core_node *block =
-                replace_with_formula_block(element, parser, node, formula->literal.data, formula->literal.len);
-            if (!block) {
-                parser->oom = true;
-            }
-            return block;
+        if (formula &&
+            !replace_with_formula_block(element, parser, node, formula->literal.data, formula->literal.len)) {
+            parser->oom = true;
+            return 0;
         }
     }
 
-    return node;
+    return 1;
 }
 
-static markdown_core_node *postprocess(const markdown_core_element *element, markdown_core_parser *parser,
-                                       markdown_core_node *root) {
+static int postprocess(const markdown_core_element *element, markdown_core_parser *parser, markdown_core_node *root) {
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type event;
 
     if (!iter) {
         parser->oom = true;
-        return NULL;
+        return 0;
     }
     while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node;
-        markdown_core_node *processed;
-        bool is_root;
 
         /* At EXIT the iterator has already selected the parent or following
          * sibling as its next node, so replacing and freeing this node cannot
@@ -773,17 +776,12 @@ static markdown_core_node *postprocess(const markdown_core_element *element, mar
             continue;
         }
         node = markdown_core_iter_get_node(iter);
-        is_root = node == root;
-        processed = postprocess_node(element, parser, node);
-        if (!processed) {
+        if (!postprocess_node(element, parser, node, node != root)) {
             break;
-        }
-        if (is_root) {
-            root = processed;
         }
     }
     markdown_core_iter_free(iter);
-    return root;
+    return !parser->oom;
 }
 
 /* `$` and `\\` open a formula, and that is the whole set. `\\` is in the dispatch

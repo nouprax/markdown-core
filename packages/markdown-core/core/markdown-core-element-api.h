@@ -192,8 +192,20 @@ typedef int (*markdown_core_contains_inlines_func)(const markdown_core_element *
 
 typedef int (*markdown_core_accepts_lines_func)(const markdown_core_element *element, markdown_core_node *node);
 
-typedef markdown_core_node *(*markdown_core_postprocess_func)(const markdown_core_element *element,
-                                                              markdown_core_parser *parser, markdown_core_node *root);
+/** Rewrite the tree rooted at 'root' in place.
+ *
+ * Return 1 on success and 0 on failure, having set 'parser->oom' to report it.
+ *
+ * 'root' itself belongs to whoever holds it: the parser for the document, and
+ * the owning element for a node-valued field such as a definition term or a
+ * table caption. A pass may rewrite 'root' in place -- change its kind, its
+ * literal, its children -- but it may NOT substitute a different node for it,
+ * and the signature does not let it try. A field root's kind is part of its
+ * owner's contract, and substituting one cannot even be expressed: the field
+ * root is detached, so the attach a substitution needs has no parent to take.
+ */
+typedef int (*markdown_core_postprocess_func)(const markdown_core_element *element, markdown_core_parser *parser,
+                                              markdown_core_node *root);
 
 typedef int (*markdown_core_ispunct_func)(char c);
 

@@ -142,6 +142,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
         return NULL;
     }
     node = markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_COMMENT, parser->mem, element);
+    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_COMMENT);
     if (!node) {
         parser->oom = true;
         return NULL;
@@ -230,6 +231,7 @@ void markdown_core_block_convert_comment_block(markdown_core_parser *parser, mar
     assert(literal->alloc);
     markdown_core_chunk owned_literal = *literal;
     *literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
+    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_COMMENT_BLOCK);
     markdown_core_node_set_kind_result result = markdown_core_node_set_kind(b, MARKDOWN_CORE_NODE_COMMENT_BLOCK);
     if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
         *literal = owned_literal;

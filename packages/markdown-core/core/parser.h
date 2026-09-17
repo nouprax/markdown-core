@@ -53,6 +53,27 @@ typedef struct {
     int indent;
 } markdown_core_line_mark;
 
+/* A content span resolved against one node's map: where it begins, where it
+ * ends, and the two runs that answer both.
+ *
+ * Placing an inline node and slicing its owner's map for it are the SAME two
+ * queries -- `content_place(from)` and `content_end_place(to)` locate exactly
+ * the runs `adopt_content_marks(from, to - from + 1)` then searched for again.
+ * Every inline node paid for four binary searches to ask two questions.
+ *
+ * `has_end` is separate from `has_start` because the two offsets are checked
+ * independently: several element entry points compute `to` as `x - 1`, which
+ * is -1 at the start of a buffer, and a span may legitimately have a start and
+ * no end. `last` is resolved by its own search rather than by walking forward
+ * from `first`, so a span whose `to` precedes its `from` still names the run
+ * that contains `to`. */
+typedef struct {
+    int first, last;
+    int start_line, start_column;
+    int end_line, end_column;
+    bool has_start, has_end;
+} markdown_core_content_span;
+
 /* Parse-time edges for document-owned footnote and specimen definitions.
  * Every definition is already owned in the block tree or a value field.
  * The index is discarded before any mutating postprocessor runs. */
@@ -227,7 +248,18 @@ struct markdown_core_parser {
     /* Every node kind this parse produced, accumulated by the consolidation
      * walk that already visits every node just before the postprocess passes
      * run, so the record costs no traversal of its own. */
-    markdown_core_node_kind_set kinds_seen;
+    /* WHICH KINDS THIS PARSE PRODUCED, recorded where they are produced.
+     *
+     * Every node creation and every `set_kind` that a parse performs writes
+     * here, so the postprocess gate can be evaluated before the finish stage
+     * walks anything. Gathering it by a walk instead is what forced the finish
+     * stage to traverse the document twice: the gate could not be read until
+     * the walk that produced it had finished. See the gate in `S_finish_parse`
+     * for what the set over-approximates and why that is sound.
+     *
+     * Every production creation site goes through `markdown_core_parser_note_kind`;
+     * `scripts/audit-parser-kind-record.mjs` holds that. */
+    markdown_core_node_kind_set kinds_created;
     markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
      * the special/emphasis-skip characters of the attached inline elements.
@@ -246,6 +278,14 @@ struct markdown_core_parser {
     bufsize_t line_marks_size;
     bufsize_t line_marks_alloc;
 };
+
+/* Record a kind at the moment the parse produces it. The one way production
+ * code writes `kinds_created`; see that field. */
+static inline void markdown_core_parser_note_kind(markdown_core_parser *parser, markdown_core_node_type kind) {
+    if (parser) {
+        markdown_core_node_kind_set_add(&parser->kinds_created, kind);
+    }
+}
 
 /* ONE LINE OF THE BLOCK-START LOOKAHEAD'S RESUME CACHE.
  *
@@ -368,5 +408,10 @@ markdown_core_node *markdown_core_parse_document_with_mem(const char *source, si
 #ifdef __cplusplus
 }
 #endif
+
+int markdown_core_parser_content_span(markdown_core_parser *parser, markdown_core_node *node, bufsize_t from,
+                                      bufsize_t to, markdown_core_content_span *span);
+void markdown_core_parser_adopt_content_span(markdown_core_node *owner, markdown_core_node *node,
+                                             const markdown_core_content_span *span, bufsize_t from);
 
 #endif

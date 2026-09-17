@@ -11,12 +11,10 @@ void markdown_core_parse_task_prefix(markdown_core_parser *parser, markdown_core
         return;
     }
 
-    /* Valid UTF-8 is a caller precondition. Decode only the candidate scalar;
-     * a malformed prefix never searches for a later closing bracket. */
+    /* Valid UTF-8 is a caller precondition. Decode only the candidate scalar. */
     int32_t scalar;
-    bufsize_t width = markdown_core_utf8proc_iterate(input + start + 1, len - start - 1, &scalar);
-    if (width <= 0 || len - start < width + 3 || input[start + width + 1] != ']' ||
-        !task_separator(input[start + width + 2])) {
+    bufsize_t width = markdown_core_utf8proc_step(input + start + 1, len - start - 1, &scalar);
+    if (len - start < width + 3 || input[start + width + 1] != ']' || !task_separator(input[start + width + 2])) {
         return;
     }
 

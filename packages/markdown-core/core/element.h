@@ -43,8 +43,38 @@ typedef enum {
     MARKDOWN_CORE_CONTENT_PROSE,
     MARKDOWN_CORE_CONTENT_LITERAL
 } markdown_core_content_mode;
-const markdown_core_element *markdown_core_structure_for_kind(markdown_core_node_type kind);
-const markdown_core_element *markdown_core_node_structure(const markdown_core_node *node);
+/* Which element defines the structure of a node KIND -- distinct from
+ * `node->element`, which is the element that created that node INSTANCE.
+ *
+ * This is a pure function of the kind: two loads from a constant table. It
+ * used to live behind a call in core-elements.c, out of line and in another
+ * translation unit, 17 instructions asked once per element-descriptor field
+ * access. On the 65 same-job documents that was about 5.7 million calls;
+ * `block-list-flat` spent 5.48% of its whole parse inside it, and cmark has
+ * no counterpart at all.
+ *
+ * So the tables are declared here and the projection is what it always was,
+ * an array index, at every call site. It is NOT cached on the node: a cached
+ * copy is a second answer to "which element defines this kind" that has to be
+ * rewritten at every kind change and can be wrong in between. Both tables sit
+ * in the same shared object as their callers, which are built with hidden
+ * visibility, so the index resolves PC-relative with no indirection. */
+#define MARKDOWN_CORE_NODE_STRUCTURE_COUNT 0x0018
+extern const markdown_core_element *const markdown_core_block_structure[MARKDOWN_CORE_NODE_STRUCTURE_COUNT];
+extern const markdown_core_element *const markdown_core_inline_structure[MARKDOWN_CORE_NODE_STRUCTURE_COUNT];
+
+static inline const markdown_core_element *markdown_core_structure_for_kind(markdown_core_node_type kind) {
+    unsigned index = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+    if (index >= MARKDOWN_CORE_NODE_STRUCTURE_COUNT) {
+        return NULL;
+    }
+    return MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind) ? markdown_core_inline_structure[index]
+                                                  : markdown_core_block_structure[index];
+}
+
+static inline const markdown_core_element *markdown_core_node_structure(const markdown_core_node *node) {
+    return node ? markdown_core_structure_for_kind((markdown_core_node_type)node->kind) : NULL;
+}
 
 /* What the block dispatcher may know about a hook's grammar without entering
  * it: the COMPLETE set of first non-space bytes that can lead the hook to claim
@@ -176,5 +206,41 @@ struct markdown_core_element {
     markdown_core_opaque_free_func opaque_free_func;
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;
 };
+
+/* Defined here rather than in node.c because the ANSWER IS NO for almost every
+ * node, and the question was costing a cross-translation-unit call to find that
+ * out. `walk_owned_trees` asks it once per node of every tree it walks --
+ * 2,981,851 times over the 65 same-job benchmark documents, of which 136,500
+ * reach an element hook and about 26,800 visit anything at all. Inlined, the
+ * common answer is a compare against `kind` and a NULL test on a pointer.
+ *
+ * It lives in element.h, not beside its declaration in node.h, because it
+ * reads through `markdown_core_element`, which node.h only forward-declares.
+ *
+ * Kept as ONE definition rather than a cheap predicate placed beside the real
+ * one: a second copy of "which kinds can own a subtree" drifts from the list
+ * below the first time a kind is added to it. */
+static inline int markdown_core_visit_inline_subtrees(markdown_core_node *node,
+                                                      markdown_core_owned_subtree_visitor visitor, void *context) {
+    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION && node->as.definition->term &&
+        !visitor(&node->as.definition->term, context)) {
+        return 0;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->title &&
+        !visitor(&node->as.callout->title, context)) {
+        return 0;
+    }
+    if (node->kind == MARKDOWN_CORE_NODE_CITE) {
+        for (markdown_core_node *item = node->as.cite->citations; item; item = item->next) {
+            if ((item->as.citation->prefix && !visitor(&item->as.citation->prefix, context)) ||
+                (item->as.citation->suffix && !visitor(&item->as.citation->suffix, context))) {
+                return 0;
+            }
+        }
+    }
+    const markdown_core_element *element = node->element;
+    return !element || !element->visit_owned_subtrees_func ||
+           element->visit_owned_subtrees_func(element, node, visitor, context);
+}
 
 #endif

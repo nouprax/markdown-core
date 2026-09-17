@@ -27,7 +27,7 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_parser 
     bool alnum = false;
     while (pos < input->len) {
         int32_t scalar;
-        int width = markdown_core_utf8proc_iterate(input->data + pos, input->len - pos, &scalar);
+        int width = markdown_core_utf8proc_step(input->data + pos, input->len - pos, &scalar);
         parser->specimen_work++;
         if (markdown_core_utf8proc_is_letter(scalar) || markdown_core_utf8proc_is_number(scalar)) {
             alnum = true;

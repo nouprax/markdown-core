@@ -46,30 +46,39 @@ static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inli
  * them. */
 void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
                                       int to) {
-    int line, column;
-
     /* Every content-bearing block has a map by the time its inlines are parsed
      * -- `markdown_core_parse_inlines` gives one to any block whose content was
      * SET rather than fed -- so there is no arithmetic left to fall back to.
      * The inline state built straight out of a chunk by
      * `markdown_core_parse_reference_inline` has no owner and creates no nodes,
      * which is why the miss below leaves the position at calloc's zero rather
-     * than guessing. */
-    if (markdown_core_parser_content_place(inline_state->owner_parser, inline_state->owner, from, &line, &column)) {
-        node->start_line = line;
-        node->start_column = column;
+     * than guessing.
+     *
+     * The span resolves both ends with one search each. Placing the node and
+     * slicing its owner's map for it used to be four searches for the same two
+     * questions. */
+    markdown_core_content_span span;
+    markdown_core_parser_content_span(inline_state->owner_parser, inline_state->owner, from, to, &span);
+    if (span.has_start) {
+        node->start_line = span.start_line;
+        node->start_column = span.start_column;
     }
-    if (markdown_core_parser_content_end_place(inline_state->owner_parser, inline_state->owner, to, &line, &column)) {
-        node->end_line = line;
-        node->end_column = column;
+    if (span.has_end) {
+        node->end_line = span.end_line;
+        node->end_column = span.end_column;
     }
     if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0 && inline_state->owner) {
         /* Copied bytes take a view of the source map; a decoded source token
          * maps each of its output bytes to that token's authored extent. */
         if (node->as.literal->len == to - from + 1 &&
             memcmp(node->as.literal->data, inline_state->input.data + from, (size_t)node->as.literal->len) == 0) {
-            markdown_core_parser_adopt_content_marks(inline_state->owner_parser, inline_state->owner, node, from,
-                                                     to - from + 1);
+            /* The writes stay HERE, inside the gate: a node that is not a
+             * verbatim copy of its source must keep `content_mark_count` at
+             * zero, because that count is read elsewhere as "is there a
+             * mapping at all". */
+            if (span.has_start && span.has_end && inline_state->owner->content_mark_count) {
+                markdown_core_parser_adopt_content_span(inline_state->owner, node, &span, from);
+            }
         } else {
             node->content_mark_count = 0;
             node->content_mark_offset = 0;
@@ -83,6 +92,7 @@ void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, 
 markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state *inline_state,
                                                       markdown_core_node_type t, int start_column, int end_column,
                                                       markdown_core_chunk s) {
+    markdown_core_parser_note_kind(inline_state->owner_parser, t);
     markdown_core_node *e = markdown_core_node_new_with_mem(t, inline_state->mem);
     if (!e) {
         /* Frees an owned literal; borrowed chunks only reset fields. */
@@ -100,11 +110,20 @@ markdown_core_node *markdown_core_inline_make_simple(markdown_core_mem *mem, mar
     return markdown_core_node_new_with_mem(t, mem);
 }
 
+/* Records the kind it creates. Every parse-time caller reaches the parser
+ * through its inline state; the mem-only form above stays for callers that
+ * have no parse at all. */
+markdown_core_node *markdown_core_inline_make_simple_noted(markdown_core_inline_state *inline_state,
+                                                           markdown_core_node_type t) {
+    markdown_core_parser_note_kind(inline_state->owner_parser, t);
+    return markdown_core_node_new_with_mem(t, inline_state->mem);
+}
+
 /* markdown_core_inline_make_simple with the inline state's loss flag for handlers that consume input
  * before creating the node. */
 markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_inline_state *inline_state,
                                                                 markdown_core_node_type t) {
-    markdown_core_node *e = markdown_core_inline_make_simple(inline_state->mem, t);
+    markdown_core_node *e = markdown_core_inline_make_simple_noted(inline_state, t);
     if (!e) {
         inline_state->oom = 1;
     }
@@ -596,7 +615,7 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
 
     // Allocate before mutating either run. OOM leaves the source intact and
     // aborts the shared parse transaction.
-    inline_node = markdown_core_inline_make_simple(inline_state->mem, kind);
+    inline_node = markdown_core_inline_make_simple_noted(inline_state, kind);
     if (!inline_node) {
         inline_state->oom = 1;
         return closer->next;
@@ -754,10 +773,14 @@ static int has_inline_field(markdown_core_node **root_slot, void *context) {
     return 1;
 }
 
-// Parse an inline, advancing inline state, and add it as a child of parent.
+/* Parse an inline, advancing inline state, and add it as a child of the
+ * state's OWNER. The owner used to be passed in alongside the state, and both
+ * callers passed the same node on every iteration of their loop -- so the
+ * owner's structural element, a pure function of its kind, was re-derived once
+ * per inline token. It is resolved once now, where the owner is set. */
 // Return 0 if no inline can be parsed, 1 otherwise.
-int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                      markdown_core_node *parent) {
+int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
+    markdown_core_node *parent = inline_state->owner;
     markdown_core_node *new_inl = NULL;
     unsigned char c;
     bufsize_t startpos, endpos;
@@ -773,7 +796,7 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
                            markdown_core_chunk_dup(&inline_state->input, startpos, inline_state->pos - startpos));
         goto append;
     }
-    const markdown_core_element *structure = markdown_core_node_structure(parent);
+    const markdown_core_element *structure = inline_state->owner_structure;
     if (structure && structure->claim_inline_tail && structure->claim_inline_tail(inline_state, parent)) {
         return 0;
     }
@@ -826,13 +849,14 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
     }
     markdown_core_inline_state_from_buf(parser, parser->mem, parent->start_line, inline_state, &content, refmap);
     inline_state->owner = parent;
+    inline_state->owner_structure = markdown_core_node_structure(parent);
     /* Block buffers include their terminating line ending. An inline field
      * ends at its owner's delimiter: its trailing spaces are body content. */
     if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P(parent->kind)) {
         markdown_core_chunk_rtrim(&inline_state->input);
     }
 
-    const markdown_core_element *structure = markdown_core_node_structure(parent);
+    const markdown_core_element *structure = inline_state->owner_structure;
     if (structure && structure->begin_inline) {
         structure->begin_inline(parser, inline_state, parent);
     }
@@ -858,7 +882,7 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
     while (!parser->oom && !inline_state->oom) {
         complete_inline_token(parser, inline_state);
         if (parser->oom || inline_state->oom || markdown_core_inline_is_eof(inline_state) ||
-            !markdown_core_inline_parse_inline(parser, inline_state, inline_state->owner)) {
+            !markdown_core_inline_parse_inline(parser, inline_state)) {
             break;
         }
     }

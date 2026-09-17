@@ -306,8 +306,7 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
             inline_state.oom = 1;
             break;
         }
-        if (markdown_core_inline_is_eof(&inline_state) ||
-            !markdown_core_inline_parse_inline(parser, &inline_state, heading->node)) {
+        if (markdown_core_inline_is_eof(&inline_state) || !markdown_core_inline_parse_inline(parser, &inline_state)) {
             break;
         }
     }
@@ -457,6 +456,7 @@ static bool open_setext(markdown_core_parser *parser, markdown_core_node **conta
 
     if (has_content) {
 
+        markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_HEADING);
         markdown_core_node_set_kind_result result = markdown_core_node_set_kind(*container, MARKDOWN_CORE_NODE_HEADING);
         if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
             if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {

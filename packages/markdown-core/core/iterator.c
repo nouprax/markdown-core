@@ -106,13 +106,6 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
      * happened to be safe; with the contract total it is a use-after-free. */
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
-        /* This walk already reaches every node, so it is where the parse
-         * records which kinds it produced. The postprocess passes that follow
-         * read that record to skip a tree they can do nothing with; outside a
-         * parse there is nobody to tell. */
-        if (parser && ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-            markdown_core_node_kind_set_add(&parser->kinds_seen, cur->kind);
-        }
         if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->kind != MARKDOWN_CORE_NODE_TEXT) {
             continue;
         }

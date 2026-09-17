@@ -112,7 +112,7 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(markdown_core_par
         return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("]"));
     }
     cite = markdown_core_inline_make_footnote_cite(inline_state, opener, inline_state->pos);
-    footnote = cite ? markdown_core_inline_make_simple(inline_state->mem, MARKDOWN_CORE_NODE_FOOTNOTE) : NULL;
+    footnote = cite ? markdown_core_inline_make_simple_noted(inline_state, MARKDOWN_CORE_NODE_FOOTNOTE) : NULL;
     if (!footnote) {
         if (cite) {
             markdown_core_node_free(cite);

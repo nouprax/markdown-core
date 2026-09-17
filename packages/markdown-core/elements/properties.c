@@ -131,10 +131,7 @@ static bool single_line(markdown_core_string s) {
 static bool printable(properties *p, size_t start, size_t end) {
     for (size_t i = start; i < end;) {
         int32_t c;
-        int n = markdown_core_utf8proc_iterate(p->source + i, (bufsize_t)(end - i), &c);
-        if (n <= 0) {
-            return false; /* Valid UTF-8 remains the public precondition. */
-        }
+        int n = markdown_core_utf8proc_step(p->source + i, (bufsize_t)(end - i), &c);
         if (!(c == 9 || c == 10 || c == 13 || (c >= 0x20 && c <= 0x7e) || c == 0x85 || (c >= 0xa0 && c <= 0xd7ff) ||
               (c >= 0xe000 && c <= 0xfffd) || c >= 0x10000)) {
             return false;
@@ -744,6 +741,7 @@ size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsign
     }
     properties p = {.parser = parser, .source = source};
     markdown_core_node *node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_METADATA, parser->mem);
+    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_METADATA);
     if (!node) {
         parser->oom = true;
         return 0;

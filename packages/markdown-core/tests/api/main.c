@@ -1484,20 +1484,22 @@ static bool attach_dispatch_observers(markdown_core_parser *parser, void *contex
  * loses documents. */
 static int postprocess_runs[2];
 
-static markdown_core_node *count_postprocess_absent(const markdown_core_element *element, markdown_core_parser *parser,
-                                                    markdown_core_node *root) {
+static int count_postprocess_absent(const markdown_core_element *element, markdown_core_parser *parser,
+                                    markdown_core_node *root) {
     (void)element;
+    (void)root;
     (void)parser;
     postprocess_runs[0]++;
-    return root;
+    return 1;
 }
 
-static markdown_core_node *count_postprocess_present(const markdown_core_element *element, markdown_core_parser *parser,
-                                                     markdown_core_node *root) {
+static int count_postprocess_present(const markdown_core_element *element, markdown_core_parser *parser,
+                                     markdown_core_node *root) {
     (void)element;
+    (void)root;
     (void)parser;
     postprocess_runs[1]++;
-    return root;
+    return 1;
 }
 
 static const markdown_core_node_type OBSERVER_ABSENT_KINDS[] = {MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_NONE};
@@ -2827,11 +2829,13 @@ static void table_values(test_batch_runner *runner) {
 /* Many contractions followed by many address splits must retain one linear
  * source map, rather than copying every unconsumed suffix for each link. */
 static int observed_source_marks;
-static markdown_core_node *observe_source_marks(const markdown_core_element *element, markdown_core_parser *parser,
-                                                markdown_core_node *root) {
+static int roots_read_after_delete;
+static int observe_source_marks(const markdown_core_element *element, markdown_core_parser *parser,
+                                markdown_core_node *root) {
     (void)element;
+    (void)root;
     observed_source_marks = parser->line_marks_size;
-    return root;
+    return 1;
 }
 
 static void table_source_map_growth(test_batch_runner *runner) {
@@ -3061,11 +3065,12 @@ static void properties_source_boundaries(test_batch_runner *runner) {
 }
 
 static size_t properties_decoded_bytes;
-static markdown_core_node *observe_properties(const markdown_core_element *element, markdown_core_parser *parser,
-                                              markdown_core_node *root) {
+static int observe_properties(const markdown_core_element *element, markdown_core_parser *parser,
+                              markdown_core_node *root) {
     (void)element;
+    (void)root;
     properties_decoded_bytes = parser->metadata_decoded_bytes;
-    return root;
+    return 1;
 }
 static void properties_member_work(test_batch_runner *runner) {
     static const markdown_core_element observer = {.postprocess_func = observe_properties};
@@ -3370,12 +3375,12 @@ typedef struct {
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
 } inline_work;
-static markdown_core_node *record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
-                                              markdown_core_node *root) {
+static int record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
+                              markdown_core_node *root) {
     (void)element;
     inline_work *work = root->user_data;
     if (!work) {
-        return root;
+        return 1;
     }
     work->cross_link = parser->cross_link_scan_work;
     work->autolink_domains = parser->autolink_domain_work;
@@ -3415,7 +3420,7 @@ static markdown_core_node *record_inline_work(const markdown_core_element *eleme
             note->kind == MARKDOWN_CORE_NODE_FOOTNOTE && note->parent == NULL && note->as.footnote->id.data != NULL;
     }
     root->user_data = NULL;
-    return root;
+    return 1;
 }
 static const markdown_core_element WORK_RECORDER = {.name = "work-recorder", .postprocess_func = record_inline_work};
 static bool measure_inline_work(markdown_core_parser *parser, void *context) {
@@ -3860,16 +3865,189 @@ static void footnote_registration(test_batch_runner *runner) {
     }
 }
 
+/* The postprocess contract says a pass may rewrite the tree rooted at `root`
+ * but may not substitute a different node for `root` itself. These two passes
+ * are the requirements that contract has to keep serving: strip every comment,
+ * and replace every html node with a placeholder. Both reach every owned
+ * subtree -- a definition term, a callout title, a cite prefix, a table
+ * caption, a directive label -- and in none of them is the node to remove or
+ * replace ever the root, because a field root is the container its OWNER
+ * created and the comment or html sits inside it. */
+static int contract_removed_comments;
+static int contract_replaced_html;
+static int contract_root_was_target;
+
+static int strip_comments(const markdown_core_element *element, markdown_core_parser *parser,
+                          markdown_core_node *root) {
+    (void)element;
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type event;
+    if (!iter) {
+        parser->oom = true;
+        return 0;
+    }
+    /* At EXIT the iterator already holds the parent or following sibling, so
+     * unlinking and freeing this node cannot invalidate traversal state. */
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event != MARKDOWN_CORE_EVENT_EXIT ||
+            (node->kind != MARKDOWN_CORE_NODE_COMMENT && node->kind != MARKDOWN_CORE_NODE_COMMENT_BLOCK)) {
+            continue;
+        }
+        if (node == root) {
+            contract_root_was_target++;
+            continue;
+        }
+        markdown_core_node_unlink(node);
+        markdown_core_node_free(node);
+        contract_removed_comments++;
+    }
+    markdown_core_iter_free(iter);
+    return 1;
+}
+
+static int html_to_placeholder(const markdown_core_element *element, markdown_core_parser *parser,
+                               markdown_core_node *root) {
+    (void)element;
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type event;
+    if (!iter) {
+        parser->oom = true;
+        return 0;
+    }
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event != MARKDOWN_CORE_EVENT_EXIT ||
+            (node->kind != MARKDOWN_CORE_NODE_HTML && node->kind != MARKDOWN_CORE_NODE_HTML_BLOCK)) {
+            continue;
+        }
+        if (node == root) {
+            contract_root_was_target++;
+            continue;
+        }
+        if (markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_TEXT) == MARKDOWN_CORE_NODE_SET_KIND_OK) {
+            markdown_core_node_set_literal(node, "[html]");
+            contract_replaced_html++;
+            continue;
+        }
+        /* Inline Text is not containable where this html node sits, so the
+         * placeholder is a block. A non-root node is replaced through its
+         * parent, which is exactly what the root has none of. */
+        markdown_core_node *para = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+        if (!para || !text || !markdown_core_node_set_literal(text, "[html]") ||
+            !markdown_core_node_append_child(para, text)) {
+            markdown_core_node_free(para);
+            markdown_core_node_free(text);
+            parser->oom = true;
+            markdown_core_iter_free(iter);
+            return 0;
+        }
+        if (!markdown_core_node_insert_before(node, para)) {
+            markdown_core_node_free(para);
+            continue;
+        }
+        markdown_core_node_unlink(node);
+        markdown_core_node_free(node);
+        contract_replaced_html++;
+    }
+    markdown_core_iter_free(iter);
+    return 1;
+}
+
+static void postprocess_rewrites_every_owned_tree(test_batch_runner *runner) {
+    static const markdown_core_element strip = {.name = "strip-comments", .postprocess_func = strip_comments};
+    static const markdown_core_element placeholder = {.name = "html-placeholder",
+                                                      .postprocess_func = html_to_placeholder};
+    const markdown_core_element *elements[] = {&strip, &placeholder};
+    static const struct {
+        const char *source;
+        int comments, html;
+    } cases[] = {
+        {"Body %%gone%% and <b>h</b> tail\n", 1, 2},
+        {"Term %%gone%% <b>h</b>\n: Body %%gone%% <b>h</b>\n", 2, 4},
+        {"> [!NOTE] Title %%gone%% <b>h</b>\n> Body\n", 1, 2},
+        {"See [pre %%gone%% <b>h</b> @doe99 post].\n", 1, 2},
+        {"| a |\n| - |\n| b |\n\nTable: Cap %%gone%% <b>h</b>\n", 1, 2},
+        {":::note[Label %%gone%% <b>h</b>]\nBody\n:::\n", 1, 2},
+        /* The whole block is the construct: still never the walked root. */
+        {"%%whole paragraph is a comment%%\n", 1, 0},
+        {"<div>whole block is html</div>\n", 0, 1},
+        {"Term\n: %%only a comment%%\n", 1, 0},
+        {"Term\n: <b>only html</b>\n", 0, 2},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        contract_removed_comments = 0;
+        contract_replaced_html = 0;
+        contract_root_was_target = 0;
+        markdown_core_node *root = parse_with_probes(cases[i].source, strlen(cases[i].source), elements, 2);
+        OK(runner, root != NULL, "contract case %zu parses", i);
+        if (!root) {
+            continue;
+        }
+        int left = 0;
+        markdown_core_iter *iter = markdown_core_iter_new(root);
+        markdown_core_event_type event;
+        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            markdown_core_node *node = markdown_core_iter_get_node(iter);
+            if (event != MARKDOWN_CORE_EVENT_ENTER) {
+                continue;
+            }
+            if (node->kind == MARKDOWN_CORE_NODE_COMMENT || node->kind == MARKDOWN_CORE_NODE_COMMENT_BLOCK ||
+                node->kind == MARKDOWN_CORE_NODE_HTML || node->kind == MARKDOWN_CORE_NODE_HTML_BLOCK) {
+                left++;
+            }
+        }
+        markdown_core_iter_free(iter);
+        INT_EQ(runner, contract_removed_comments, cases[i].comments, "contract case %zu strips its comments", i);
+        INT_EQ(runner, contract_replaced_html, cases[i].html, "contract case %zu replaces its html", i);
+        INT_EQ(runner, contract_root_was_target, 0, "contract case %zu never meets the target at a root", i);
+        INT_EQ(runner, left, 0, "contract case %zu leaves neither kind behind", i);
+        markdown_core_node_free(root);
+    }
+}
+
+/* A standalone formula is promoted to a FormulaBlock only where the paragraph
+ * wrapping it has a parent to take the substitute. As a definition term it is
+ * the root of an owned subtree, which has none: the promotion is skipped and
+ * the term keeps the inline Formula. It used to be attempted and its missing
+ * parent reported to the caller as a failed allocation. */
+static void standalone_formula_as_owned_root(test_batch_runner *runner) {
+    markdown_core_node *root = parse("$$x$$\n: Definition body\n");
+    OK(runner, root != NULL, "a formula-only definition term parses");
+    if (!root) {
+        return;
+    }
+    markdown_core_node *found = NULL;
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type event;
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_DEFINITION) {
+            found = node->as.definition->term;
+            break;
+        }
+    }
+    markdown_core_iter_free(iter);
+    OK(runner, found != NULL, "the definition carries a term");
+    if (found) {
+        INT_EQ(runner, found->kind, MARKDOWN_CORE_NODE_PARAGRAPH, "the term root is still its owner's paragraph");
+        OK(runner, found->first_child && found->first_child->kind == MARKDOWN_CORE_NODE_FORMULA,
+           "the term holds the inline formula");
+    }
+    markdown_core_node_free(root);
+}
+
 typedef struct {
     size_t removed;
     bool resolved, index_released;
 } footnote_postprocess_probe;
 
-static markdown_core_node *remove_footnotes(const markdown_core_element *element, markdown_core_parser *parser,
-                                            markdown_core_node *root) {
+static int remove_footnotes(const markdown_core_element *element, markdown_core_parser *parser,
+                            markdown_core_node *root) {
     (void)element;
     if (root->kind != MARKDOWN_CORE_NODE_DOCUMENT) {
-        return root;
+        return 1;
     }
     footnote_postprocess_probe *probe = root->user_data;
     probe->index_released =
@@ -3883,7 +4061,7 @@ static markdown_core_node *remove_footnotes(const markdown_core_element *element
         probe->removed++;
     }
     root->user_data = NULL;
-    return root;
+    return 1;
 }
 
 static bool observe_footnote_removal(markdown_core_parser *parser, void *context) {
@@ -5503,6 +5681,320 @@ static void bounded_scanners(test_batch_runner *runner) {
 
 /* Oracle-confirmed simple-body ownership is invariant under line ending,
  * EOF termination and block-looking inline cell content. */
+/* A BUFFER WALK MUST TERMINATE, whatever the bytes are.
+ *
+ * Valid UTF-8 is the public precondition and what malformed input parses to is
+ * not defined -- but the walk itself must still end and stay inside its own
+ * buffer. `markdown_core_utf8proc_anchor` used to assert that precondition and
+ * then add the decoder's width, which is NEGATIVE when no character starts
+ * there; Release is the default build type, so the assertion was compiled out
+ * and `# heading \xff\xfe tail` walked backwards below the literal forever.
+ * Anchors are derived from every heading, so one stray byte in one heading hung
+ * the parser. */
+static void malformed_scalar_terminates(test_batch_runner *runner) {
+    /* Each reaches a different decode-and-advance walk: the heading anchor,
+     * the attribute value, and an ordinary text run. */
+    static const char *const sources[] = {
+        "# heading \xff\xfe tail\n\nbody\n",
+        "# title {.cls\xff\xfe}\n\nbody\n",
+        "para \xff\xfe more\n",
+        "# \xe4\xb8\n",
+        "# \x80\x80\x80\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); i++) {
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)sources[i], strlen(sources[i]), NULL);
+        OK(runner, document != NULL, "malformed scalar source %zu parses to a document", i);
+        if (document) {
+            OK(runner, markdown_core_document_root(document) != NULL, "malformed scalar source %zu has a root", i);
+            markdown_core_document_free(document);
+        }
+    }
+}
+
+/* A line of separated dashes keeps a headerless multiline candidate alive: no
+ * closing boundary is ever found, so the search walks to end of input. That
+ * search judges with dash counts and blank flags, both read from raw bytes, so
+ * it must not build the per-scalar column map for the lines it passes. Before,
+ * `block-hr.x1` decoded 56,680 of its 56,704 non-blank characters into a map
+ * that the failing candidate then discarded. Geometry must stay flat in the
+ * number of lines the search crosses. */
+static void multiline_boundary_search_builds_no_geometry(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    size_t geometry[2] = {0, 0};
+    for (size_t step = 0; step < 2; step++) {
+        size_t lines = step ? 512 : 32;
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+        markdown_core_strbuf_puts(&source, " -  -  -  -  -\n");
+        for (size_t i = 0; i < lines; i++) {
+            markdown_core_strbuf_puts(&source, "prose line with several words and no table in it\n");
+        }
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+        OK(runner, root != NULL, "dash-run document parses: lines=%zu", lines);
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "no table is produced: lines=%zu", lines);
+        geometry[step] = work.table_geometry_lines;
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+    OK(runner, geometry[1] <= geometry[0] + 4,
+       "a 16x longer boundary search builds no more column geometry: %zu then %zu", geometry[0], geometry[1]);
+}
+
+/* Table is the one element whose opening grammar spans two lines: a Pandoc
+ * simple table WITH a header has an arbitrary-prose first line, so no
+ * first-byte gate can exclude it, and the opener used to open a full lookahead
+ * transaction on every line just to fetch the next one and find out.
+ *
+ * With the two-line gate a document that holds no separator anywhere must
+ * make the opener capture no line at all -- `table_separator_scans` counts
+ * lines the opener captured and lexed, so zero is the whole claim.
+ *
+ * The gate reads that second line from raw source, and a bare CR ends a line
+ * here: an implementation reaching for `memchr` for '\n' runs past one and
+ * stops recognizing real simple tables in CR-only input. The endings loop
+ * below is what makes that a test failure rather than a corpus blind spot. */
+static void table_open_gate_admits_only_possible_tables(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+    for (size_t i = 0; i < 256; i++) {
+        markdown_core_strbuf_puts(&source, "an ordinary prose line with no separator on it\n\n");
+    }
+    inline_work work = {0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+    OK(runner, root != NULL, "prose-only document parses");
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "prose-only document produces no table");
+    INT_EQ(runner, work.table_separator_scans, 0, "the opener captures no line where no table can open");
+    markdown_core_node_free(root);
+    markdown_core_strbuf_free(&source);
+
+    /* The line end matters in a way the table below cannot show. Reading the
+     * second line with `memchr` for '\n' does not LOSE a table here -- the
+     * gate only over-admits -- it silently runs the scan to end of input, so
+     * one separator anywhere makes every line look possible again. In CR-only
+     * input that is the difference between no captures and one per line. */
+    markdown_core_strbuf cr = MARKDOWN_CORE_BUF_INIT(mem);
+    for (size_t i = 0; i < 256; i++) {
+        markdown_core_strbuf_puts(&cr, "an ordinary prose line with no separator on it\r\r");
+    }
+    markdown_core_strbuf_puts(&cr, "-- --\r");
+    inline_work cr_work = {0};
+    markdown_core_node *cr_root =
+        markdown_core_parse_document_with_mem((char *)cr.ptr, cr.size, mem, measure_inline_work, &cr_work);
+    OK(runner, cr_root != NULL, "CR-only prose document parses");
+    OK(runner, cr_work.table_separator_scans <= 4, "a CR line ends the line the gate reads: %zu captures",
+       cr_work.table_separator_scans);
+    markdown_core_node_free(cr_root);
+    markdown_core_strbuf_free(&cr);
+
+    /* A separator one line down is exactly what the gate must not miss. */
+    static const char *const endings[] = {"\n", "\r", "\r\n"};
+    static const char *const rows[] = {"Right Left", "----- ----", "12    12"};
+    for (size_t e = 0; e < sizeof(endings) / sizeof(*endings); e++) {
+        markdown_core_strbuf table = MARKDOWN_CORE_BUF_INIT(mem);
+        for (size_t r = 0; r < sizeof(rows) / sizeof(*rows); r++) {
+            markdown_core_strbuf_puts(&table, rows[r]);
+            markdown_core_strbuf_puts(&table, endings[e]);
+        }
+        markdown_core_strbuf_puts(&table, endings[e]);
+        markdown_core_node *built =
+            markdown_core_parse_document_with_mem((char *)table.ptr, table.size, mem, NULL, NULL);
+        OK(runner, built != NULL, "simple table parses with ending %zu", e);
+        INT_EQ(runner, count_kind(built, MARKDOWN_CORE_NODE_TABLE), 1,
+               "the gate admits a simple table whatever ends its header line: ending=%zu", e);
+        INT_EQ(runner, count_kind(built, MARKDOWN_CORE_NODE_TABLE_CELL), 4, "and it keeps its cells: ending=%zu", e);
+        markdown_core_node_free(built);
+        markdown_core_strbuf_free(&table);
+    }
+}
+
+/* Definition list is the other element whose opening grammar spans two lines:
+ * a TERM is arbitrary prose, so nothing about the term's own line can rule the
+ * grammar out, and the opener used to open a full lookahead transaction on
+ * every line just to read the next one and find out.
+ *
+ * With both two-line gates in place, a document that holds neither a table
+ * separator nor a definition marker must pull NO lookahead line at all.
+ * `block_lookahead_work` counts lines pulled, so zero is the whole claim.
+ *
+ * The gate reads raw source, and a bare CR ends a line here. Getting the line
+ * end wrong does not LOSE a definition list -- the gate only over-admits --
+ * it silently runs the search to end of input, so one marker anywhere makes
+ * every line look possible again. The CR case below is what makes that a
+ * failure rather than a corpus blind spot. */
+static void definition_open_gate_admits_only_possible_terms(test_batch_runner *runner) {
+    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT(mem);
+    for (size_t i = 0; i < 256; i++) {
+        markdown_core_strbuf_puts(&source, "an ordinary prose line with no marker on it\n\n");
+    }
+    inline_work work = {0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_mem((char *)source.ptr, source.size, mem, measure_inline_work, &work);
+    OK(runner, root != NULL, "marker-free prose document parses");
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 0, "and produces no definition list");
+    INT_EQ(runner, work.lookahead, 0, "neither two-line opener pulls a line where its grammar cannot open");
+    markdown_core_node_free(root);
+    markdown_core_strbuf_free(&source);
+
+    /* CR-only prose with one marker at the very end. Reading the line with
+     * `memchr` for '\n' makes every line find that marker. */
+    markdown_core_strbuf cr = MARKDOWN_CORE_BUF_INIT(mem);
+    for (size_t i = 0; i < 256; i++) {
+        markdown_core_strbuf_puts(&cr, "an ordinary prose line with no marker on it\r\r");
+    }
+    markdown_core_strbuf_puts(&cr, "term\r: body\r");
+    inline_work cr_work = {0};
+    markdown_core_node *cr_root =
+        markdown_core_parse_document_with_mem((char *)cr.ptr, cr.size, mem, measure_inline_work, &cr_work);
+    OK(runner, cr_root != NULL, "CR-only prose document parses");
+    INT_EQ(runner, count_kind(cr_root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 1,
+           "the CR-terminated definition list at the end is still found");
+    OK(runner, cr_work.lookahead <= 8, "a CR line ends the line the gate reads: %zu pulls", cr_work.lookahead);
+    markdown_core_node_free(cr_root);
+    markdown_core_strbuf_free(&cr);
+
+    /* A marker one line down, and one after a blank, are what the gate must
+     * not miss: the transaction skips at most one blank line. */
+    static const char *const shapes[] = {"term\n: body\n", "term\n\n: body\n"};
+    for (size_t i = 0; i < sizeof(shapes) / sizeof(*shapes); i++) {
+        markdown_core_node *built =
+            markdown_core_parse_document_with_mem(shapes[i], strlen(shapes[i]), mem, NULL, NULL);
+        OK(runner, built != NULL, "definition shape %zu parses", i);
+        INT_EQ(runner, count_kind(built, MARKDOWN_CORE_NODE_DEFINITION_LIST), 1,
+               "the gate admits a definition list with %zu blank lines before its marker", i);
+        markdown_core_node_free(built);
+    }
+}
+
+/* A postprocess pass may free any node it reaches, and a Cite OWNS its
+ * citations' prefix and suffix roots -- freeing it frees them. So the set of
+ * owned roots is not stable across passes, and no list of them survives a pass
+ * that is allowed to run.
+ *
+ * This crashed under ASan the moment the finish stage recorded the roots for
+ * later passes to replay, and is here so that the next attempt trips on a test
+ * rather than on a user. The finish stage still enumerates the roots once, but
+ * it never holds them: every phase a root needs runs at the single point where
+ * that root's iteration completes, which is after every owned root nested
+ * inside it is finished and popped. The second pass only reads `root->kind`;
+ * under a replay that read is the use-after-free. */
+static int postprocess_deletes_cites(const markdown_core_element *element, markdown_core_parser *parser,
+                                     markdown_core_node *root) {
+    (void)element;
+    (void)parser;
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type event;
+    if (!iter) {
+        parser->oom = true;
+        return 0;
+    }
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_CITE && node != root) {
+            markdown_core_node_unlink(node);
+            markdown_core_node_free(node);
+        }
+    }
+    markdown_core_iter_free(iter);
+    return 1;
+}
+
+static int postprocess_reads_its_root(const markdown_core_element *element, markdown_core_parser *parser,
+                                      markdown_core_node *root) {
+    (void)element;
+    (void)parser;
+    roots_read_after_delete += root->kind != MARKDOWN_CORE_NODE_NONE;
+    return 1;
+}
+
+static const markdown_core_node_type CITE_DELETE_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
+
+static bool attach_delete_then_read(markdown_core_parser *parser, void *context) {
+    static const markdown_core_element deleter = {
+        .name = "cite-deleter", .postprocess_func = postprocess_deletes_cites, .postprocess_kinds = CITE_DELETE_KINDS};
+    static const markdown_core_element reader = {
+        .name = "root-reader", .postprocess_func = postprocess_reads_its_root, .postprocess_kinds = CITE_DELETE_KINDS};
+    (void)context;
+    return markdown_core_parser_attach_element(parser, &deleter) &&
+           markdown_core_parser_attach_element(parser, &reader);
+}
+
+static void a_pass_may_free_the_roots_a_later_pass_reads(test_batch_runner *runner) {
+    static const char source[] = "See [pre text @doe99 post text] and [more @smith2020 tail].\n";
+    roots_read_after_delete = 0;
+    markdown_core_node *doc = markdown_core_parse_document_with_mem(
+        source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(), attach_delete_then_read, NULL);
+    OK(runner, doc != NULL, "a pass that deletes a subtree owner, followed by one that reads its roots, parses");
+    INT_EQ(runner, count_kind(doc, MARKDOWN_CORE_NODE_CITE), 0, "the cites are gone");
+    OK(runner, roots_read_after_delete > 0, "the following pass still received roots to read: %d",
+       roots_read_after_delete);
+    markdown_core_node_free(doc);
+}
+
+/* ONE ENUMERATION, NOT ONE PER PHASE.
+ *
+ * Finding the owned roots is a full traversal of the document, and it used to
+ * be paid again for every postprocess pass. Nothing in the public surface
+ * counts traversals, but the ORDER the passes observe says which shape ran:
+ * a traversal per pass shows every root to pass A before pass B sees any,
+ * while one traversal shows each root to A and then to B before moving on.
+ *
+ * The document has three roots -- the content tree, a definition term and a
+ * callout title -- so `AAABBB` is the old shape and `ABABAB` the fused one.
+ * Restoring the per-phase enumeration turns this test red with `AAABBB`. */
+static char phase_order[64];
+static size_t phase_order_len;
+
+static int postprocess_records_a(const markdown_core_element *element, markdown_core_parser *parser,
+                                 markdown_core_node *root) {
+    (void)element;
+    (void)parser;
+    (void)root;
+    if (phase_order_len + 1 < sizeof(phase_order)) {
+        phase_order[phase_order_len++] = 'A';
+    }
+    return 1;
+}
+
+static int postprocess_records_b(const markdown_core_element *element, markdown_core_parser *parser,
+                                 markdown_core_node *root) {
+    (void)element;
+    (void)parser;
+    (void)root;
+    if (phase_order_len + 1 < sizeof(phase_order)) {
+        phase_order[phase_order_len++] = 'B';
+    }
+    return 1;
+}
+
+static bool attach_two_recorders(markdown_core_parser *parser, void *context) {
+    static const markdown_core_element first = {.name = "phase-a", .postprocess_func = postprocess_records_a};
+    static const markdown_core_element second = {.name = "phase-b", .postprocess_func = postprocess_records_b};
+    (void)context;
+    return markdown_core_parser_attach_element(parser, &first) && markdown_core_parser_attach_element(parser, &second);
+}
+
+static void finish_stage_runs_every_phase_at_each_root(test_batch_runner *runner) {
+    static const char source[] = "term\n: body\n\n> [!note] title\n> body\n";
+    phase_order_len = 0;
+    memset(phase_order, 0, sizeof(phase_order));
+    markdown_core_node *doc = markdown_core_parse_document_with_mem(
+        source, sizeof(source) - 1, markdown_core_get_default_mem_allocator(), attach_two_recorders, NULL);
+    OK(runner, doc != NULL, "the document with two owned roots parses");
+    OK(runner, phase_order_len >= 6, "both passes ran over every root: %zu visits", phase_order_len);
+    /* Every root sees A immediately followed by B: no pass ran ahead of the
+     * other over the whole document, so there was one enumeration. */
+    int interleaved = phase_order_len % 2 == 0;
+    for (size_t i = 0; interleaved && i < phase_order_len; i += 2) {
+        interleaved = phase_order[i] == 'A' && phase_order[i + 1] == 'B';
+    }
+    OK(runner, interleaved, "every root ran both phases before the next root: %s", phase_order);
+    markdown_core_node_free(doc);
+}
+
 static void simple_table_body_boundaries(test_batch_runner *runner) {
     const char *tails[] = {"# heading\nbody\n", "> quote\n> next\n", "```\ncode\n```\n"};
     const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_CALLOUT,
@@ -5804,6 +6296,14 @@ int main(void) {
     grid_opening_memory(runner);
     table_candidate_work(runner);
     bounded_scanners(runner);
+    malformed_scalar_terminates(runner);
+    multiline_boundary_search_builds_no_geometry(runner);
+    table_open_gate_admits_only_possible_tables(runner);
+    definition_open_gate_admits_only_possible_terms(runner);
+    a_pass_may_free_the_roots_a_later_pass_reads(runner);
+    finish_stage_runs_every_phase_at_each_root(runner);
+    postprocess_rewrites_every_owned_tree(runner);
+    standalone_formula_as_owned_root(runner);
     simple_table_body_boundaries(runner);
     simple_table_footer_work(runner);
     grid_caption_search_work(runner);

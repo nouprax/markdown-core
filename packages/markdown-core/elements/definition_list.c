@@ -38,6 +38,67 @@ static bool markdown_core_block_definition_marker(markdown_core_chunk *input, in
            (markdown_core_block_is_space_or_tab(input->data[at + 1]) || markdown_core_is_line_end(input->data[at + 1]));
 }
 
+/* A definition marker is ':' or '~' followed by a space, a tab or the line
+ * end. Asking whether the NEXT line carries one used to mean opening a full
+ * lookahead transaction -- chain walk, reserve, snapshot, then a line pulled
+ * at 548 Ir -- on every line of every document, because a definition TERM is
+ * arbitrary prose and nothing about the term's own line can rule the grammar
+ * out. This is that question answered from raw source first.
+ *
+ * Container continuation strips a PREFIX from the line the transaction would
+ * read, and stripping a prefix can neither create such a pair nor move one,
+ * so finding none in the raw bytes means the transaction cannot match.
+ *
+ * `memchr` does the searching, not a byte loop: prose lines run to hundreds
+ * of bytes (269 on average in `lorem1`, 881 at the longest) and a per-byte
+ * scan of them costs more than the transaction it replaces -- measured, as a
+ * 11.9% REGRESSION on that document before this was written this way.
+ *
+ * The line end is the parser's own: a bare CR terminates a line here, and
+ * `memchr` for '\n' alone would run past one and search the wrong bytes. */
+static bool definition_line_admits(const unsigned char *from, const unsigned char *to) {
+    for (const unsigned char *p = from; p < to;) {
+        const unsigned char *colon = memchr(p, ':', (size_t)(to - p));
+        const unsigned char *tilde = memchr(p, '~', (size_t)(to - p));
+        const unsigned char *hit = !colon ? tilde : (!tilde || colon < tilde ? colon : tilde);
+        if (!hit) {
+            return false;
+        }
+        if (hit + 1 == to || markdown_core_block_is_space_or_tab(hit[1])) {
+            return true;
+        }
+        p = hit + 1;
+    }
+    return false;
+}
+
+static bool definition_next_lines_admit(markdown_core_parser *parser) {
+    const unsigned char *cursor = parser->lookahead_cursor, *end = parser->lookahead_end;
+    /* The transaction skips at most one BLANK line (`blanks <= 1` below), so
+     * two physical lines are read. BOTH, always: a line that is only a
+     * container marker -- a bare '>' -- is not blank in raw source but is
+     * blank once the chain strips it, and stopping at it would miss the
+     * marker on the line after. Reading one line more than a given case needs
+     * only over-admits. */
+    for (int line = 0; line < 2 && cursor && cursor < end; line++) {
+        const unsigned char *eol = cursor;
+        while (eol < end && !markdown_core_is_line_end((char)*eol)) {
+            eol++;
+        }
+        if (definition_line_admits(cursor, eol)) {
+            return true;
+        }
+        cursor = eol;
+        if (cursor < end && *cursor == '\r') {
+            cursor++;
+        }
+        if (cursor < end && *cursor == '\n') {
+            cursor++;
+        }
+    }
+    return false;
+}
+
 static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, markdown_core_node *parent,
                                                   markdown_core_chunk *input, bool *compact) {
     parser->definition_list_work++;
@@ -56,6 +117,9 @@ static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, 
         if (reference || parser->oom) {
             return false;
         }
+    }
+    if (!definition_next_lines_admit(parser)) {
+        return false;
     }
     markdown_core_block_lookahead lookahead;
     if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST, &lookahead)) {
@@ -96,6 +160,7 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_par
     }
     definition->as.definition->compact = compact;
     markdown_core_node *term = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+    markdown_core_parser_note_kind(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!term) {
         parser->oom = true;
         return definition;
