@@ -59,13 +59,12 @@ typedef enum {
  * rewritten at every kind change and can be wrong in between. Both tables sit
  * in the same shared object as their callers, which are built with hidden
  * visibility, so the index resolves PC-relative with no indirection. */
-#define MARKDOWN_CORE_NODE_STRUCTURE_COUNT 0x0018
-extern const markdown_core_element *const markdown_core_block_structure[MARKDOWN_CORE_NODE_STRUCTURE_COUNT];
-extern const markdown_core_element *const markdown_core_inline_structure[MARKDOWN_CORE_NODE_STRUCTURE_COUNT];
+extern const markdown_core_element *const markdown_core_block_structure[MARKDOWN_CORE_NODE_KIND_COUNT];
+extern const markdown_core_element *const markdown_core_inline_structure[MARKDOWN_CORE_NODE_KIND_COUNT];
 
 static inline const markdown_core_element *markdown_core_structure_for_kind(markdown_core_node_type kind) {
     unsigned index = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
-    if (index >= MARKDOWN_CORE_NODE_STRUCTURE_COUNT) {
+    if (index >= MARKDOWN_CORE_NODE_KIND_COUNT) {
         return NULL;
     }
     return MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind) ? markdown_core_inline_structure[index]

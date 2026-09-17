@@ -475,8 +475,10 @@ for job in \
     es-test \
     c-test-build \
     c-test-build-windows \
+    c-debug-test-build \
     c-sanitizer-test-build \
     c-test \
+    c-debug-test \
     c-sanitizer-test \
     builds-ready \
     build-tests-ready \
@@ -544,6 +546,7 @@ for consumer in \
     es-test \
     c-test \
     c-test-windows \
+    c-debug-test \
     c-sanitizer-test; do
     consumer_job=$(job_body "$consumer" "$ci")
     if ! grep -Fq '        needs: build-tests-ready' <<<"$consumer_job"; then
@@ -575,6 +578,7 @@ for contract in \
     es-test-build \
     c-test-build \
     c-test-build-windows \
+    c-debug-test-build \
     c-sanitizer-test-build; do
     contract_job=$(job_body "$contract" "$ci")
     if ! grep -Fq '        needs: builds-ready' <<<"$contract_job"; then
@@ -596,6 +600,10 @@ search '^        name: Build Test - ES / Test Bundle$' "$ci"
 search '^        name: Build Test - Kotlin ' "$ci"
 search '^        name: Build Test - Swift / Test Products$' "$ci"
 search '^        name: Test - C Sanitizer ' "$ci"
+# The node integrity check exists in exactly one configuration. A CI graph that
+# builds it and never runs it is the state this repository was already in.
+search '^        name: Build Test - C Debug / Node Integrity$' "$ci"
+search '^        name: Test - C Debug / Node Integrity$' "$ci"
 if search '^        name:.*matrix\.(os|suite|compiler|shared|sanitizer|platform|version|target-id|artifact-label)' "$ci"; then
     echo "matrix implementation fields leaked into a visible CI job name" >&2
     exit 1

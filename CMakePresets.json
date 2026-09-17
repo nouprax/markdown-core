@@ -12,6 +12,16 @@
             }
         },
         {
+            "name": "debug",
+            "displayName": "Debug (node integrity check compiled in)",
+            "binaryDir": "${sourceDir}/build/debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "MARKDOWN_CORE_BENCHMARKS": "OFF",
+                "MARKDOWN_CORE_SHARED": "OFF"
+            }
+        },
+        {
             "name": "benchmark",
             "displayName": "Callgrind stage profiling",
             "binaryDir": "${sourceDir}/build/benchmark",
@@ -57,6 +67,7 @@
     ],
     "buildPresets": [
         { "name": "default", "configurePreset": "default" },
+        { "name": "debug", "configurePreset": "debug" },
         { "name": "benchmark", "configurePreset": "benchmark" },
         { "name": "asan", "configurePreset": "asan" },
         { "name": "ubsan", "configurePreset": "ubsan" },
@@ -76,6 +87,13 @@
             "configurePreset": "default",
             "output": { "outputOnFailure": true },
             "filter": { "include": { "label": "^conformance$" } }
+        },
+        {
+            "name": "correctness-debug",
+            "displayName": "Correctness suites with the node integrity check compiled in",
+            "configurePreset": "debug",
+            "output": { "outputOnFailure": true },
+            "filter": { "exclude": { "label": "^conformance$" } }
         },
         {
             "name": "correctness-asan",

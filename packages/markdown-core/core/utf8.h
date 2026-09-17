@@ -14,8 +14,44 @@ void markdown_core_utf8proc_case_fold(markdown_core_strbuf *dest, const uint8_t 
 MARKDOWN_CORE_EXPORT
 void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf);
 
+/* The general decoder. Callers do not name this one: they name
+ * `markdown_core_utf8proc_iterate` below, which settles the single-byte case
+ * itself and delegates everything else here. */
 MARKDOWN_CORE_EXPORT
-int markdown_core_utf8proc_iterate(const uint8_t *str, bufsize_t str_len, int32_t *dst);
+int markdown_core_utf8proc_iterate_general(const uint8_t *str, bufsize_t str_len, int32_t *dst);
+
+/* DECODE ONE CHARACTER, with the single-byte case where the compiler can see
+ * it.
+ *
+ * This is not an "ASCII path" -- this parser is UTF-8 and nothing else. It is
+ * the one-byte branch of UTF-8 itself: a byte below 0x80 can be neither a
+ * continuation byte (0x80-0xBF) nor a lead byte (0xC2+), so it is always a
+ * complete one-byte scalar equal to its own value. utf8.c's own class table
+ * says exactly that -- `utf8proc_utf8class[0..127]` is all 1s -- and the
+ * switch in the general decoder then takes `case 1: uc = str[0]`. Identical
+ * bit for bit, so this is not a fast path with its own semantics; it is the
+ * same answer, reached without an out-of-line call.
+ *
+ * Decoding is NOT skippable in general. `markdown_core_utf8proc_is_space`
+ * matches the Zs class, every non-control member of which (160, 5760,
+ * 8192-8202, 8239, 8287, 12288) is at or above 128. What this removes is the
+ * CALL on the bytes where the encoding has already settled the answer, which
+ * is most of them.
+ *
+ * `bufsize_t` is a SIGNED int32_t, so the guard is `> 0`: a zero or negative
+ * length falls through to the general decoder, which returns -1 and writes -1
+ * through `dst`. Reading str[0] first would be a read out of bounds.
+ *
+ * The inline wrapper carries the name the callers use, rather than the general
+ * decoder carrying it and a `_fast` variant sitting beside it. A call site
+ * cannot then be written, or left behind by a rename, that misses this. */
+static inline int markdown_core_utf8proc_iterate(const uint8_t *str, bufsize_t str_len, int32_t *dst) {
+    if (str_len > 0 && str[0] < 0x80) {
+        *dst = (int32_t)str[0];
+        return 1;
+    }
+    return markdown_core_utf8proc_iterate_general(str, str_len, dst);
+}
 
 /* DECODE AND ADVANCE, total.
  *
@@ -64,8 +100,17 @@ static inline int markdown_core_utf8proc_step(const uint8_t *str, bufsize_t len,
     return 1;
 }
 
-MARKDOWN_CORE_EXPORT
-int markdown_core_utf8proc_is_space(int32_t uc);
+/* Anything in the Zs class, plus LF, CR, TAB, FF.
+ *
+ * Eleven comparisons on a scalar: no state, no table, no allocation. It was an
+ * out-of-line call in another translation unit, which at nineteen call sites
+ * cost more to reach than to evaluate. Nothing outside this library ever named
+ * it -- not the export map, not a test, not a benchmark -- so there is no
+ * second definition to drift from this one. */
+static inline int markdown_core_utf8proc_is_space(int32_t uc) {
+    return (uc == 9 || uc == 10 || uc == 12 || uc == 13 || uc == 32 || uc == 160 || uc == 5760 ||
+            (uc >= 8192 && uc <= 8202) || uc == 8239 || uc == 8287 || uc == 12288);
+}
 
 MARKDOWN_CORE_EXPORT
 int markdown_core_utf8proc_is_punctuation(int32_t uc);

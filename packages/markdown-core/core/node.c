@@ -92,74 +92,56 @@ typedef union {
 
 static void *S_initial_payload(markdown_core_node *node) { return (markdown_core_node_allocation *)node + 1; }
 
-/* Record size is a property of the kind, independent of the input shape. */
+/* RECORD SIZE IS A PROPERTY OF THE KIND, so it is an array index.
+ *
+ * This was a 24-branch switch on the kind, compiled as a decision tree and
+ * entered once per node -- 26.4% of `markdown_core_node_new_with_ext` on the
+ * same-job corpus, at about 891,000 nodes. The kind already indexes two other
+ * tables this way (`markdown_core_block_structure` and its inline twin, in
+ * core/element.h), and the encoding is what makes that work: the low bits of
+ * a kind are a dense ordinal within its class, and the class is one bit test.
+ *
+ * A kind absent from its table gets 0, which is what the switch's `default`
+ * gave it: no record, and `as.data` left NULL. The element types numbered in
+ * elements/markdown-core-elements.h are exactly those -- their payload comes
+ * from `opaque_alloc_func`, not from here. */
+static const size_t S_block_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
+    [MARKDOWN_CORE_NODE_DOCUMENT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_document_value),
+    [MARKDOWN_CORE_NODE_CALLOUT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_callout),
+    [MARKDOWN_CORE_NODE_LIST & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_list),
+    [MARKDOWN_CORE_NODE_LIST_ITEM & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_list),
+    [MARKDOWN_CORE_NODE_CODE_BLOCK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_code),
+    [MARKDOWN_CORE_NODE_HTML_BLOCK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_html_block),
+    [MARKDOWN_CORE_NODE_HEADING & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_heading),
+    [MARKDOWN_CORE_NODE_FOOTNOTE & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_footnote_value),
+    [MARKDOWN_CORE_NODE_TABLE_CELL & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_table_cell),
+    [MARKDOWN_CORE_NODE_COMMENT_BLOCK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
+    [MARKDOWN_CORE_NODE_SPECIMEN & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_specimen_value),
+    [MARKDOWN_CORE_NODE_DEFINITION & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_definition),
+    [MARKDOWN_CORE_NODE_DEFINITION_BODY & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_definition_body_value),
+    [MARKDOWN_CORE_NODE_METADATA & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_metadata_fields),
+};
+
+static const size_t S_inline_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
+    [MARKDOWN_CORE_NODE_TEXT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
+    [MARKDOWN_CORE_NODE_CODE & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
+    [MARKDOWN_CORE_NODE_HTML & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
+    [MARKDOWN_CORE_NODE_LINK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_link),
+    [MARKDOWN_CORE_NODE_EMBEDDED & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_link),
+    [MARKDOWN_CORE_NODE_CITE & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_cite),
+    [MARKDOWN_CORE_NODE_COMMENT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
+    [MARKDOWN_CORE_NODE_CITATION & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_citation_item),
+    [MARKDOWN_CORE_NODE_CROSS_LINK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_cross_reference),
+    [MARKDOWN_CORE_NODE_CROSS_EMBEDDED & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_cross_embedded),
+};
+
 static size_t S_node_payload_size(markdown_core_node_type type) {
-    size_t size = 0;
-    switch ((uint16_t)type) {
-    case MARKDOWN_CORE_NODE_DEFINITION:
-        size = sizeof(markdown_core_definition);
-        break;
-    case MARKDOWN_CORE_NODE_DEFINITION_BODY:
-        size = sizeof(markdown_core_definition_body_value);
-        break;
-    case MARKDOWN_CORE_NODE_METADATA:
-        size = sizeof(markdown_core_metadata_fields);
-        break;
-    case MARKDOWN_CORE_NODE_DOCUMENT:
-        size = sizeof(markdown_core_document_value);
-        break;
-    case MARKDOWN_CORE_NODE_LIST:
-    case MARKDOWN_CORE_NODE_LIST_ITEM:
-        size = sizeof(markdown_core_list);
-        break;
-    case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        size = sizeof(markdown_core_code);
-        break;
-    case MARKDOWN_CORE_NODE_HTML_BLOCK:
-        size = sizeof(markdown_core_html_block);
-        break;
-    case MARKDOWN_CORE_NODE_HEADING:
-        size = sizeof(markdown_core_heading);
-        break;
-    case MARKDOWN_CORE_NODE_CALLOUT:
-        size = sizeof(markdown_core_callout);
-        break;
-    case MARKDOWN_CORE_NODE_TEXT:
-    case MARKDOWN_CORE_NODE_HTML:
-    case MARKDOWN_CORE_NODE_CODE:
-    case MARKDOWN_CORE_NODE_COMMENT:
-    case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
-        size = sizeof(markdown_core_chunk);
-        break;
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_EMBEDDED:
-        size = sizeof(markdown_core_link);
-        break;
-    case MARKDOWN_CORE_NODE_CROSS_LINK:
-        size = sizeof(markdown_core_cross_reference);
-        break;
-    case MARKDOWN_CORE_NODE_CROSS_EMBEDDED:
-        size = sizeof(markdown_core_cross_embedded);
-        break;
-    case MARKDOWN_CORE_NODE_CITE:
-        size = sizeof(markdown_core_cite);
-        break;
-    case MARKDOWN_CORE_NODE_CITATION:
-        size = sizeof(markdown_core_citation_item);
-        break;
-    case MARKDOWN_CORE_NODE_FOOTNOTE:
-        size = sizeof(markdown_core_footnote_value);
-        break;
-    case MARKDOWN_CORE_NODE_SPECIMEN:
-        size = sizeof(markdown_core_specimen_value);
-        break;
-    case MARKDOWN_CORE_NODE_TABLE_CELL:
-        size = sizeof(markdown_core_table_cell);
-        break;
-    default:
-        break;
+    unsigned index = (unsigned)type & MARKDOWN_CORE_NODE_VALUE_MASK;
+
+    if (index >= MARKDOWN_CORE_NODE_KIND_COUNT) {
+        return 0;
     }
-    return size;
+    return MARKDOWN_CORE_NODE_TYPE_INLINE_P(type) ? S_inline_payload_size[index] : S_block_payload_size[index];
 }
 
 /* Establish defaults over zero-initialized storage. */
@@ -186,7 +168,9 @@ markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type
     if (!node) {
         return NULL;
     }
-    markdown_core_strbuf_init(&node->content, 0);
+    /* The allocation above is `calloc`, so every field of `content` but `ptr`
+     * already holds what an init would write. */
+    markdown_core_strbuf_init_zeroed(&node->content);
     node->kind = (uint16_t)type;
     node->element = element;
     node->as.data = payload_size ? S_initial_payload(node) : NULL;

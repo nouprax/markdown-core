@@ -81,7 +81,7 @@ const markdown_core_element *const *markdown_core_core_elements(size_t *count) {
 
 /* Explicitly sized, so a kind whose value index outgrows the projection is a
  * compile error here rather than a silent NULL at every lookup. */
-const markdown_core_element *const markdown_core_block_structure[MARKDOWN_CORE_NODE_STRUCTURE_COUNT] = {
+const markdown_core_element *const markdown_core_block_structure[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_TABLE & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_TABLE,
     [MARKDOWN_CORE_NODE_TABLE_ROW & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_TABLE,
     [MARKDOWN_CORE_NODE_TABLE_CELL & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_TABLE,
@@ -106,7 +106,7 @@ const markdown_core_element *const markdown_core_block_structure[MARKDOWN_CORE_N
     [MARKDOWN_CORE_NODE_TABLE_CAPTION & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_TABLE,
 };
 
-const markdown_core_element *const markdown_core_inline_structure[MARKDOWN_CORE_NODE_STRUCTURE_COUNT] = {
+const markdown_core_element *const markdown_core_inline_structure[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_CITE & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_CITATION,
     [MARKDOWN_CORE_NODE_CITATION & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_CITATION,
     [MARKDOWN_CORE_NODE_COMMENT & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_COMMENT,
