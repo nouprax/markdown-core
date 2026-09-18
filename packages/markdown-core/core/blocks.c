@@ -1228,9 +1228,26 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
 // Find first nonspace character from current offset, setting
 // parser->first_nonspace, parser->first_nonspace_column,
 // parser->indent, and parser->blank. Does not advance parser->offset.
+/* THE DISTANCE TO THE NEXT TAB STOP IS DERIVED, NOT CARRIED.
+ *
+ * This used to open with `chars_to_tab = TAB_STOP - (parser->column %
+ * TAB_STOP)` and then maintain that counter across every space: decrement,
+ * test for zero, reset. Two things were wrong with that. The division ran on
+ * EVERY call, including the majority that consume no whitespace at all and
+ * the ones that take the `first_nonspace <= offset` early-out; and `column`
+ * is a SIGNED int32_t (`bufsize_t`), so `% TAB_STOP` cannot be compiled to an
+ * AND -- the compiler must emit the sign-correcting sequence, about ten
+ * instructions, measured at 10.6 Ir per call.
+ *
+ * The counter was never independent state: `first_nonspace_column` starts at
+ * `column` and rises by one per space, so `chars_to_tab` equalled
+ * `TAB_STOP - (first_nonspace_column % TAB_STOP)` at every point of the walk
+ * -- including the reset, which is the case where that expression yields
+ * TAB_STOP. Deriving it at the one place it is read leaves the space branch
+ * with nothing to maintain, and pays for the division only on a line that
+ * actually contains a tab. */
 void markdown_core_block_find_first_nonspace(markdown_core_parser *parser, markdown_core_chunk *input) {
     char c;
-    int chars_to_tab = TAB_STOP - (parser->column % TAB_STOP);
 
     if (parser->first_nonspace <= parser->offset) {
         parser->first_nonspace = parser->offset;
@@ -1239,14 +1256,9 @@ void markdown_core_block_find_first_nonspace(markdown_core_parser *parser, markd
             if (c == ' ') {
                 parser->first_nonspace += 1;
                 parser->first_nonspace_column += 1;
-                chars_to_tab = chars_to_tab - 1;
-                if (chars_to_tab == 0) {
-                    chars_to_tab = TAB_STOP;
-                }
             } else if (c == '\t') {
                 parser->first_nonspace += 1;
-                parser->first_nonspace_column += chars_to_tab;
-                chars_to_tab = TAB_STOP;
+                parser->first_nonspace_column += TAB_STOP - (parser->first_nonspace_column % TAB_STOP);
             } else {
                 break;
             }
@@ -1507,46 +1519,32 @@ static bool S_lookahead_reserve_chain(markdown_core_parser *parser, int depth) {
     return true;
 }
 
-/* The cache entry of a source line, growing the cache to reach it. Lines are
- * numbered from the first line any lookahead visited: candidates come in
- * source order and each begins at the line after its own, so no lookahead
- * asks about an earlier line. NULL when the cache could not grow, with the
- * parse marked lost. */
-markdown_core_lookahead_entry *markdown_core_parser_lookahead_entry(markdown_core_parser *parser, int line) {
-    int index;
+/* THE GROWTH HALF of `markdown_core_parser_lookahead_entry`, which is the rare
+ * one: the cache doubles, so this runs a handful of times per document. The
+ * index-into-the-array half is a `static inline` in parser.h, where the note
+ * on why the two are split lives. NULL when the cache could not grow, with
+ * the parse marked lost. */
+markdown_core_lookahead_entry *markdown_core_parser_lookahead_entry_grow(markdown_core_parser *parser, int index) {
+    int capacity = parser->lookahead_entries_alloc ? parser->lookahead_entries_alloc : 64;
+    markdown_core_lookahead_entry *entries;
 
-    if (parser->lookahead_base_line == 0) {
-        parser->lookahead_base_line = line;
+    while (capacity <= index) {
+        capacity = capacity > INT_MAX / 2 ? INT_MAX : capacity * 2;
     }
-    index = line - parser->lookahead_base_line;
-    if (index < 0) {
-        /* Unreachable by the ordering argument above; a line before the base
-         * is matched without the cache rather than through it. */
+    if ((size_t)capacity > SIZE_MAX / sizeof(*entries)) {
+        parser->oom = true;
         return NULL;
     }
-    if (index >= parser->lookahead_entries_alloc) {
-        int capacity = parser->lookahead_entries_alloc ? parser->lookahead_entries_alloc : 64;
-        markdown_core_lookahead_entry *entries;
-        while (capacity <= index) {
-            capacity = capacity > INT_MAX / 2 ? INT_MAX : capacity * 2;
-        }
-        if ((size_t)capacity > SIZE_MAX / sizeof(*entries)) {
-            parser->oom = true;
-            return NULL;
-        }
-        entries = markdown_core_realloc(parser->lookahead_entries, (size_t)capacity * sizeof(*entries));
-        if (!entries) {
-            parser->oom = true;
-            return NULL;
-        }
-        memset(entries + parser->lookahead_entries_alloc, 0,
-               (size_t)(capacity - parser->lookahead_entries_alloc) * sizeof(*entries));
-        parser->lookahead_entries = entries;
-        parser->lookahead_entries_alloc = capacity;
+    entries = markdown_core_realloc(parser->lookahead_entries, (size_t)capacity * sizeof(*entries));
+    if (!entries) {
+        parser->oom = true;
+        return NULL;
     }
-    if (parser->lookahead_entries_used <= index) {
-        parser->lookahead_entries_used = index + 1;
-    }
+    memset(entries + parser->lookahead_entries_alloc, 0,
+           (size_t)(capacity - parser->lookahead_entries_alloc) * sizeof(*entries));
+    parser->lookahead_entries = entries;
+    parser->lookahead_entries_alloc = capacity;
+    parser->lookahead_entries_used = index + 1;
     return &parser->lookahead_entries[index];
 }
 
