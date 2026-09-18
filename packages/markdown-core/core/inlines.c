@@ -139,6 +139,7 @@ void markdown_core_inline_state_from_buf(markdown_core_parser *parser, int line_
         const markdown_core_element **owners = parser->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_INIT];
         size_t count = parser->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_INIT];
         for (size_t i = 0; i < count; i++) {
+            parser->inline_hook_work++;
             owners[i]->init_inline(inline_state);
         }
     }
@@ -859,6 +860,7 @@ void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state
     const markdown_core_element **owners = parser->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_DISPOSE];
     size_t dispose_count = parser->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_DISPOSE];
     for (size_t i = 0; i < dispose_count; i++) {
+        parser->inline_hook_work++;
         owners[i]->dispose_inline(inline_state);
     }
     while (inline_state->last_delim) {
@@ -881,6 +883,7 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
         const markdown_core_element **owners = parser->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_FINISH];
         size_t count = parser->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_FINISH];
         for (size_t i = 0; i < count; i++) {
+            parser->inline_hook_work++;
             owners[i]->finish_inline(inline_state);
         }
         markdown_core_inline_process_delimiters(parser, inline_state, 0, NULL);

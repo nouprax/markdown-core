@@ -187,6 +187,13 @@ struct markdown_core_parser {
     /* Ordinary whitespace scalars and contextual-space lookahead bytes. */
     size_t whitespace_work;
     size_t bracket_work;
+    /* Elements the inline-content hook dispatch EXAMINED, counted one per
+     * element per family per inline-content node. The projection's whole claim
+     * is that this grows with the declarers and not with the registry, and
+     * nothing else can see the difference: a dispatch that went back to
+     * scanning every attached element would build the identical tree. So the
+     * invariant is asserted on this counter rather than on output. */
+    size_t inline_hook_work;
     /* Opener checks of the `%%` comment scanner; and the lines the block-start
      * lookahead visited plus the prefix bytes each visit matched itself, for
      * the linearity gates of both. */

@@ -3455,6 +3455,7 @@ typedef struct {
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
+    size_t inline_hooks;
 } inline_work;
 static int record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                               markdown_core_node *root) {
@@ -3468,6 +3469,7 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
     work->opaque = parser->opaque_scan_work;
     work->delimiters = parser->delimiter_work;
     work->whitespace = parser->whitespace_work;
+    work->inline_hooks = parser->inline_hook_work;
     work->brackets = parser->bracket_work;
     work->citations = parser->citation_work;
     work->citation_brace_bytes = parser->citation_brace_bytes;
@@ -5853,6 +5855,61 @@ static void table_open_gate_admits_only_possible_tables(test_batch_runner *runne
     }
 }
 
+/* THE INLINE-HOOK PROJECTION'S WORK INVARIANT.
+ *
+ * Three inline-content hooks used to be found by scanning the whole element
+ * registry once per inline-content node. They are projected now, so the
+ * dispatch examines the elements that DECLARED each hook and no others.
+ *
+ * Nothing about the output can tell those two apart: a dispatch that went back
+ * to scanning every attached element would call the same hooks in the same
+ * order and build the identical tree, so every golden, every spec example and
+ * every byte-equivalence check would still pass. `inline_hook_work` counts the
+ * elements the dispatch examined, which is the one place the difference is
+ * visible.
+ *
+ * The adversarial shape is the one that defeats the scan: attach elements that
+ * declare NO inline hook at all. Under the scan the work grows with the
+ * registry, so attaching 32 of them multiplies it; under the projection they
+ * are not in any family's list and the count cannot move. The second assertion
+ * is the load-bearing one; the first is there so the invariant cannot be
+ * satisfied by a counter that never fires. */
+static const markdown_core_element INLINE_HOOK_BYSTANDER = {0};
+
+static bool attach_inline_hook_bystanders(markdown_core_parser *parser, void *context) {
+    parser->root->user_data = context;
+    for (size_t i = 0; i < 32; i++) {
+        if (!markdown_core_parser_attach_element(parser, &INLINE_HOOK_BYSTANDER)) {
+            return false;
+        }
+    }
+    return markdown_core_parser_attach_element(parser, &WORK_RECORDER);
+}
+
+static void inline_hook_projection_ignores_non_owners(test_batch_runner *runner) {
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+    for (size_t i = 0; i < 256; i++) {
+        markdown_core_strbuf_puts(&source, "a paragraph with *emphasis* and a `code span` in it\n\n");
+    }
+
+    inline_work plain = {0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &plain);
+    OK(runner, root != NULL, "the inline-hook work document parses");
+    OK(runner, plain.inline_hooks > 0, "the inline-hook dispatch examines at least one owner, so the counter is live");
+    markdown_core_node_free(root);
+
+    inline_work crowded = {0};
+    root = markdown_core_parse_document_with_setup((char *)source.ptr, source.size, attach_inline_hook_bystanders,
+                                                   &crowded);
+    OK(runner, root != NULL, "the same document parses with 32 hookless elements attached");
+    INT_EQ(runner, (int)crowded.inline_hooks, (int)plain.inline_hooks,
+           "elements that declare no inline hook add no work to the per-node dispatch");
+    markdown_core_node_free(root);
+
+    markdown_core_strbuf_free(&source);
+}
+
 /* Definition list is the other element whose opening grammar spans two lines:
  * a TERM is arbitrary prose, so nothing about the term's own line can rule the
  * grammar out, and the opener used to open a full lookahead transaction on
@@ -6337,6 +6394,7 @@ int main(void) {
     malformed_scalar_terminates(runner);
     multiline_boundary_search_builds_no_geometry(runner);
     table_open_gate_admits_only_possible_tables(runner);
+    inline_hook_projection_ignores_non_owners(runner);
     definition_open_gate_admits_only_possible_terms(runner);
     a_pass_may_free_the_roots_a_later_pass_reads(runner);
     finish_stage_runs_every_phase_at_each_root(runner);
