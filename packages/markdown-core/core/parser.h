@@ -29,6 +29,30 @@ typedef enum {
     MARKDOWN_CORE_BLOCK_HOOK_COUNT
 } markdown_core_block_hook;
 
+/* THE INLINE-CONTENT HOOK FAMILIES, projected for the same reason and with one
+ * difference: a block hook family is asked per LINE and can be gated on the
+ * line's first byte, while these three are asked once per inline-content NODE
+ * and have nothing to gate on. So they get the projection and not the gate
+ * maps.
+ *
+ * Each of the three was a scan of every attached element looking for the few
+ * that declare the hook, run per inline-content node: `init` from
+ * `markdown_core_inline_state_from_buf`, `finish` from
+ * `markdown_core_inline_finish_inlines`, `dispose` from
+ * `markdown_core_inline_clear_inlines`. With thirty core elements and one
+ * declarer for `init` and for `finish`, that is ninety iterations per node to
+ * find six calls.
+ *
+ * Order inside a family is descriptor order, which is what the scan gave, so a
+ * projected family calls the same hooks on the same states in the same
+ * sequence. */
+typedef enum {
+    MARKDOWN_CORE_INLINE_HOOK_INIT,
+    MARKDOWN_CORE_INLINE_HOOK_FINISH,
+    MARKDOWN_CORE_INLINE_HOOK_DISPOSE,
+    MARKDOWN_CORE_INLINE_HOOK_COUNT
+} markdown_core_inline_hook;
+
 /* Immutable runs map logical content bytes to authored byte intervals.
  * Blocks append runs as lines arrive; transformed cells and decoded inline
  * tokens append runs when assembled. Nodes retain index slices with an origin,
@@ -244,6 +268,11 @@ struct markdown_core_parser {
      * every owner is asked, which is the behaviour a gate replaces. */
     uint8_t *block_gate_bytes[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     uint8_t *block_gate_allocation;
+    /* The inline-content families, projected from the same registry and in the
+     * same descriptor order. Zero counts before the projection runs, which is
+     * why it runs unconditionally on the one path that creates a parser. */
+    const markdown_core_element **inline_hooks[MARKDOWN_CORE_INLINE_HOOK_COUNT];
+    size_t inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     /* Every node kind this parse produced, accumulated by the consolidation
      * walk that already visits every node just before the postprocess passes
      * run, so the record costs no traversal of its own. */
