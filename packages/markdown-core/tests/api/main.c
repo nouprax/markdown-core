@@ -29,6 +29,7 @@
 
 #include "ast_internal.h"
 #include "block_internal.h"
+#include "inline_internal.h"
 
 #include "harness.h"
 #include "cplusplus.h"
@@ -5278,6 +5279,53 @@ static void inline_placement_probes_the_map_a_bounded_number_of_times(test_batch
     }
 }
 
+/* THE CURSOR'S FAST PATH AGREES WITH THE SPAN ON EVERY PLACEMENT. A node is
+ * placed from the run the cursor names when both of its ends lie on that run;
+ * otherwise the span resolves each end on its own. The two must give the same
+ * positions for every pair of offsets a container has -- including a reversed
+ * pair, which is how an empty field is placed ([x, x - 1]) and which puts the
+ * two ends on two runs when x is a line's first byte -- from every run the
+ * cursor can be on. The probe runs when the container's inlines are finished,
+ * with the map complete and the state still alive. */
+static int placement_disagreements, placements_checked;
+static void probe_placements(markdown_core_inline_state *inline_state) {
+    markdown_core_parser *parser = inline_state->owner_parser;
+    markdown_core_node *owner = inline_state->owner;
+    if (!owner || owner->kind != MARKDOWN_CORE_NODE_PARAGRAPH) {
+        return;
+    }
+    int first = owner->content_mark, last = first + owner->content_mark_count - 1;
+    for (int cursor = first; cursor <= last; cursor++) {
+        for (int from = 0; from < inline_state->input.len; from++) {
+            for (int to = -1; to < inline_state->input.len; to++) {
+                markdown_core_node placed = {.kind = MARKDOWN_CORE_NODE_SOFT_BREAK};
+                markdown_core_content_span span = {0};
+                inline_state->mark_cursor = cursor;
+                markdown_core_inline_state_place(inline_state, &placed, from, to);
+                markdown_core_parser_content_span(parser, owner, from, to, &span, NULL);
+                placements_checked++;
+                if (placed.start_line != span.start_line || placed.start_column != span.start_column ||
+                    (to >= 0 && (placed.end_line != span.end_line || placed.end_column != span.end_column))) {
+                    placement_disagreements++;
+                }
+            }
+        }
+    }
+}
+
+static void placement_from_the_cursor_agrees_with_the_span(test_batch_runner *runner) {
+    static const markdown_core_element probe = {.name = "probe-placements", .finish_inline = probe_placements};
+    const markdown_core_element *elements[] = {&probe};
+    static const char source[] = "ab\ncd\n> ef\n> gh\n\n- ij\n  kl\n";
+    placement_disagreements = placements_checked = 0;
+    markdown_core_node *root = parse_with_probes(source, sizeof(source) - 1, elements, 1);
+    OK(runner, root != NULL, "the probe parses");
+    OK(runner, placements_checked > 0, "the probe saw the paragraphs: checked=%d", placements_checked);
+    INT_EQ(runner, placement_disagreements, 0,
+           "every placement from every cursor, reversed pairs across runs included, matches the span");
+    markdown_core_node_free(root);
+}
+
 static void attribute_attachment_linear_work(test_batch_runner *runner) {
     static const struct {
         const char *prefix, *unit, *suffix;
@@ -7268,6 +7316,7 @@ int main(void) {
     delimiter_entries_are_pooled_across_inline_containers(runner);
     releasing_an_empty_attribute_value_makes_no_allocator_call(runner);
     inline_placement_probes_the_map_a_bounded_number_of_times(runner);
+    placement_from_the_cursor_agrees_with_the_span(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
     heading_registry_invariants(runner);

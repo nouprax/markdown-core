@@ -75,9 +75,16 @@ void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, 
     bufsize_t from_offset = from + owner->content_mark_offset;
     bufsize_t to_offset = to + owner->content_mark_offset;
     parser->content_mark_queries++;
-    if (from >= 0 && to >= 0 && cursor >= owner->content_mark && cursor <= last &&
-        from_offset >= mark->content_offset &&
-        (cursor == last || to_offset < parser->line_marks[cursor + 1].content_offset)) {
+    /* Both ends must lie on the cursor's run, each on its own: a span's ends
+     * are resolved independently (an empty field is placed as [x, x - 1], and
+     * when x is a line's first byte its two ends are on two runs), so a test
+     * that bounded `from` from below and `to` from above alone would measure
+     * such a span in one run with a distance the run does not contain. */
+    bufsize_t run_start = mark->content_offset;
+    bool bounded = cursor < last;
+    bufsize_t run_end = bounded ? parser->line_marks[cursor + 1].content_offset : 0;
+    if (from >= 0 && to >= 0 && cursor >= owner->content_mark && cursor <= last && from_offset >= run_start &&
+        to_offset >= run_start && (!bounded || (from_offset < run_end && to_offset < run_end))) {
         span.first = span.last = cursor;
         span.start_line = span.end_line = mark->line;
         span.start_column = mark->column + (int)(from_offset - mark->content_offset) * mark->source_step;
