@@ -75,11 +75,10 @@ spaces.
 :data[label]{muted dup=first dup=last unicode=中文😀 title="My Video"}
 .
 Document scope=1:1..1:74 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:74 anchor=null attributes={} children=2
-    ├── Directive scope=1:1..1:12 anchor=null attributes={} name="data" children=0
-    │   └── DirectiveLabel scope=1:6..1:12 anchor=null attributes={} children=1
-    │       └── Text scope=1:7..1:11 anchor=null attributes={} literal="label" children=0
-    └── Text scope=1:13..1:74 anchor=null attributes={} literal="{muted dup=first dup=last unicode=中文😀 title=\"My Video\"}" children=0
+└── Paragraph scope=1:1..1:74 anchor=null attributes={} children=1
+    └── Directive scope=1:1..1:74 anchor=null attributes={muted="true" dup="first" dup="last" unicode="中文😀" title="My Video"} name="data" children=0
+        └── DirectiveLabel scope=1:6..1:12 anchor=null attributes={} children=1
+            └── Text scope=1:7..1:11 anchor=null attributes={} literal="label" children=0
 ````````````````````````````````
 
 `id` is an ordinary key: its last value wins while its first source position is
@@ -507,7 +506,7 @@ Document scope=1:1..1:14 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:8 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
-    └── Directive scope=1:1..1:8 anchor="b" attributes={} name="n" children=0
+    └── Directive scope=1:1..1:8 anchor="a#b" attributes={} name="n" children=0
 ````````````````````````````````
 
 A shorthand marker with no name after it is not a valid attribute and
@@ -623,32 +622,29 @@ Document scope=1:1..1:12 anchor=null attributes={} children=1
     └── Directive scope=1:1..1:12 anchor=null attributes={a="x" b="1"} name="n" children=0
 ````````````````````````````````
 
-An attribute name may not begin with punctuation, so a leading colon makes
-the whole block invalid and it falls back to text. `:` and `.` are allowed
-from the second character on, which is why `{a:b}` is a name.
+An attribute name is taken as written, so a leading colon or underscore is
+part of it: `{:_a}` is the bare attribute `:_a`, recorded as `:_a="true"`.
 
 ```````````````````````````````` example
 :x{:_a}
 .
 Document scope=1:1..1:7 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=2
-    ├── Directive scope=1:1..1:2 anchor=null attributes={} name="x" children=0
-    └── Text scope=1:3..1:7 anchor=null attributes={} literal="{:_a}" children=0
+└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
+    └── Directive scope=1:1..1:7 anchor=null attributes={:_a="true"} name="x" children=0
 ````````````````````````````````
 
-A symbol is punctuation for this rule too.
+A symbol is a name byte like any other.
 
 ```````````````````````````````` example
 :x{a$b}
 .
 Document scope=1:1..1:7 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=2
-    ├── Directive scope=1:1..1:2 anchor=null attributes={} name="x" children=0
-    └── Text scope=1:3..1:7 anchor=null attributes={} literal="{a$b}" children=0
+└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
+    └── Directive scope=1:1..1:7 anchor=null attributes={a$b="true"} name="x" children=0
 ````````````````````````````````
 
-Letters outside ASCII are names, not punctuation; the grammar is applied to
-code points rather than bytes.
+Bytes outside ASCII are name bytes too; nothing in a name is classified by
+Unicode category, so the grammar never decodes a scalar to accept one.
 
 ```````````````````````````````` example
 :x{中文=1}
@@ -664,37 +660,33 @@ Document scope=1:1..1:12 anchor=null attributes={} children=1
 :x{a:b .c}
 .
 Document scope=1:1..1:10 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=4
-    ├── Directive scope=1:1..1:2 anchor=null attributes={} name="x" children=0
-    ├── Text scope=1:3..1:4 anchor=null attributes={} literal="{a" children=0
-    ├── Directive scope=1:5..1:6 anchor=null attributes={} name="b" children=0
-    └── Text scope=1:7..1:10 anchor=null attributes={} literal=" .c}" children=0
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+    └── Directive scope=1:1..1:10 anchor=null attributes={.c a:b="true"} name="x" children=0
 ````````````````````````````````
 
 A name may begin with a hyphen or an underscore, unlike a DIRECTIVE name, which
-may not. Every other punctuation mark still ends the block.
+may not; a hyphen is the `unnumbered` class only when it stands alone. The
+bytes that end a name are whitespace, `=`, `}`, a quote of either kind and
+`{`; every other byte continues it.
 
 ```````````````````````````````` example
 :n{-a=1 _b=2}
 .
 Document scope=1:1..1:13 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=2
-    ├── Directive scope=1:1..1:2 anchor=null attributes={} name="n" children=0
-    └── Text scope=1:3..1:13 anchor=null attributes={} literal="{-a=1 _b=2}" children=0
+└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
+    └── Directive scope=1:1..1:13 anchor=null attributes={-a="1" _b="2"} name="n" children=0
 ````````````````````````````````
 
-A shorthand value is not a name. It ends at the next marker, at the block's end
-or at whitespace, and six characters -- a quote of either kind, `<`, `=`, `>`
-and a backtick -- reject it outright and take the block with them. Everything
-else is a value character, so a class may contain an ampersand.
+A shorthand's name follows the same rule: it ends at whitespace, `=`, `}`, a
+quote or `{`, and an empty one rejects the block. Everything else is a name
+byte, so a class may contain an ampersand, a dollar sign or a backtick.
 
 ```````````````````````````````` example
 :n{.a&b .c$d}
 .
 Document scope=1:1..1:13 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=2
-    ├── Directive scope=1:1..1:2 anchor=null attributes={} name="n" children=0
-    └── Text scope=1:3..1:13 anchor=null attributes={} literal="{.a&b .c$d}" children=0
+└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
+    └── Directive scope=1:1..1:13 anchor=null attributes={.a&b .c$d} name="n" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -706,19 +698,16 @@ Document scope=1:1..1:8 anchor=null attributes={} children=1
     └── Text scope=1:3..1:8 anchor=null attributes={} literal="{.a=b}" children=0
 ````````````````````````````````
 
-The two quotes are the same rule, but they never reach it: the raw scan of the
-block tracks quoting, so `{.a"b}` has no closing brace outside a quote and is
-malformed one step earlier. `=`, `<`, `>` and the backtick are the four that
-this rule alone decides -- a pin on a quote proves nothing here, which a mutant
-that deleted the whole reject set and survived is what said so.
+A quote ends the name and, standing where a member boundary or `=` must be,
+rejects the block: `{.a"b}` is malformed. `=` ends the name too, and a
+shorthand admits no assignment, so `{.a=b}` is malformed as well.
 
 ```````````````````````````````` example
 :n{.a`b}
 .
 Document scope=1:1..1:8 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=2
-    ├── Directive scope=1:1..1:2 anchor=null attributes={} name="n" children=0
-    └── Text scope=1:3..1:8 anchor=null attributes={} literal="{.a`b}" children=0
+└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+    └── Directive scope=1:1..1:8 anchor=null attributes={.a`b} name="n" children=0
 ````````````````````````````````
 
 Character references are decoded in an attribute's value, and in a shorthand's
@@ -729,9 +718,8 @@ value, and nowhere else in the attribute block: a name is taken as written
 :n{a=&amp; b="&amp; &#65; &#x41;" .&amp; c=&notreal;}
 .
 Document scope=1:1..1:53 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:53 anchor=null attributes={} children=2
-    ├── Directive scope=1:1..1:2 anchor=null attributes={} name="n" children=0
-    └── Text scope=1:3..1:53 anchor=null attributes={} literal="{a=& b=\"& A A\" .& c=&notreal;}" children=0
+└── Paragraph scope=1:1..1:53 anchor=null attributes={} children=1
+    └── Directive scope=1:1..1:53 anchor=null attributes={.&amp; a="&amp;" b="& A A" c="&notreal;"} name="n" children=0
 ````````````````````````````````
 
 The decoding happens after the block has been scanned, never during it, so a
@@ -746,17 +734,15 @@ Document scope=1:1..1:24 anchor=null attributes={} children=1
     └── Directive scope=1:1..1:24 anchor=null attributes={a="x&#125;y" b="p&#32;q"} name="n" children=0
 ````````````````````````````````
 
-A reference in a NAME is not decoded, so `&` is what the name starts with, and
-that is punctuation: the block is malformed and its source stays text -- where
-the ordinary inline rules do decode it.
+A reference in a NAME is not decoded: the name is `&#97;` as written, not
+`a`, and the record keeps that spelling.
 
 ```````````````````````````````` example
 :n{&#97;=v}
 .
 Document scope=1:1..1:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=2
-    ├── Directive scope=1:1..1:2 anchor=null attributes={} name="n" children=0
-    └── Text scope=1:3..1:11 anchor=null attributes={} literal="{a=v}" children=0
+└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
+    └── Directive scope=1:1..1:11 anchor=null attributes={&#97;="v"} name="n" children=0
 ````````````````````````````````
 
 The current engine requires the semicolon, as it does at inherited CommonMark
@@ -878,23 +864,21 @@ Document scope=1:1..1:10 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:10 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:10 anchor=null attributes={} children=2
-    ├── Directive scope=1:1..1:2 anchor=null attributes={} name="x" children=0
-    └── Text scope=1:3..1:10 anchor=null attributes={} literal="{a=b c}t" children=0
+    ├── Directive scope=1:1..1:9 anchor=null attributes={a="b" c="true"} name="x" children=0
+    └── Text scope=1:10..1:10 anchor=null attributes={} literal="t" children=0
 ````````````````````````````````
 
-An unquoted value may span a line ending before it starts; the value itself is
-what may not.
+A line ending straight after `=` ends an empty value, and what follows on the
+next line is the next member.
 
 ```````````````````````````````` example
 :x{a=
 b}t
 .
 Document scope=1:1..2:3 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..2:3 anchor=null attributes={} children=4
-    ├── Directive scope=1:1..1:2 anchor=null attributes={} name="x" children=0
-    ├── Text scope=1:3..1:5 anchor=null attributes={} literal="{a=" children=0
-    ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
-    └── Text scope=2:1..2:3 anchor=null attributes={} literal="b}t" children=0
+└── Paragraph scope=1:1..2:3 anchor=null attributes={} children=2
+    ├── Directive scope=1:1..2:2 anchor=null attributes={a="" b="true"} name="x" children=0
+    └── Text scope=2:3..2:3 anchor=null attributes={} literal="t" children=0
 ````````````````````````````````
 
 D21's own pins, which the oracle has not got: a closing fence closes the

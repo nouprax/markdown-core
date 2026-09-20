@@ -4819,8 +4819,8 @@ static void attribute_linear_work(test_batch_runner *runner) {
         const char *prefix, *unit, *suffix;
         bool valid;
     } cases[] = {
-        {"{", ".a k=1 ", "}", true},   {"{", "k=1 k=2 class='a a' ", "}", true},
-        {"", "{#valid ", "?}", false}, {"", "{k=bad ", "", false},
+        {"{", ".a k=1 ", "}", true},    {"{", "k=1 k=2 class='a a' ", "}", true},
+        {"", "{#valid ", "\"}", false}, {"", "{k=bad ", "", false},
         {"", "{k=' ", "", false},
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {

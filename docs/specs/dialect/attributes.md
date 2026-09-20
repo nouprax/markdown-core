@@ -21,23 +21,33 @@ validate units, or choose a layout.
 | `.name` | Append one class. |
 | `class="one two"` | Split the value into classes. |
 | `key=value` | Append an ordered name/value record. |
-| `-` | Append the class `unnumbered`. |
+| `key` | A bare name: the record `key="true"`. |
+| `-` | Standing alone, append the class `unnumbered`. |
 | `{}` | An empty attribute container. |
 
-Class and assignment names begin with a Unicode letter, followed by letters,
-numbers, `-`, `_`, `:`, or `.`. Identifier shorthands allow those characters
-without the letter-first requirement and must be nonempty. Names and values
-are case-sensitive. The exact lowercase `id` and `class` names are special;
-other assignments are records. A generic bare word such as `{disabled}` is
-invalid.
+Names are taken as written, as in an HTML start tag. A name is one or more
+bytes other than space, tab, a line ending, `=`, `}`, `"`, `'`, or `{`;
+nothing is classified by Unicode category, so `{中文=值}`, `{1a=b}`,
+`{_k=v}` and `{a#b=c}` are records named exactly as spelled. A member's first
+byte selects its shape: `#` and `.` begin the identifier and class shorthands,
+whose names follow the same rule and must be nonempty; a `-` followed by a
+separator or the closing brace is the `unnumbered` class; anything else begins
+a name. A name followed by `=` is an assignment, and a name followed by a
+separator or the closing brace is a bare attribute, recorded as
+`name="true"`. Names and values are case-sensitive. The exact lowercase `id`
+and `class` names are special, in a bare form too: `{id}` is the anchor `true`
+and `{class}` the class `true`; other assignments are records.
 
 ```markdown
-`value`{#first #last .one class="two one" k=1 k=2}
+`value`{#first #last .one class="two one" k=1 k=2 disabled}
 ```
 
 The code's anchor is `last`, its classes are `one`, `two`, `one`, and its
-records retain both `k="1"` and `k="2"` in order. Classes and records are not
-deduplicated. An empty final `id=` clears the anchor candidate.
+records retain `k="1"`, `k="2"` and `disabled="true"` in order. Classes and
+records are not deduplicated. An empty final `id=` clears the anchor
+candidate. Because `#` and `.` are ordinary name bytes after a member's first
+byte, `{#a#b}` is the single anchor `a#b` and `{.one.two}` the single class
+`one.two`; a second anchor needs a separator, as in `{#a #b}`.
 
 ## Values and spacing
 

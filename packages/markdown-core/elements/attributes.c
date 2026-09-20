@@ -19,17 +19,41 @@ static int32_t scalar(const unsigned char *s, bufsize_t n, bufsize_t p, bufsize_
     *width = markdown_core_utf8proc_step(s + p, n - p, &cp);
     return cp;
 }
-static int name_rest(int32_t cp) {
-    return markdown_core_utf8proc_is_letter(cp) || markdown_core_utf8proc_is_number(cp) || cp == '-' || cp == '_' ||
-           cp == ':' || cp == '.';
+/* A NAME IS TAKEN AS WRITTEN, as in an HTML start tag: any byte that is not a
+ * separator, the assignment sign, the closing brace, a quote or an opening
+ * brace continues it. Nothing is classified by Unicode category -- a lead
+ * byte, a continuation byte, a digit and an underscore are all name bytes --
+ * so the run is found by one byte test per byte and no decode. `#`, `.` and
+ * a lone `-` mean something else only as a member's FIRST byte; inside a name
+ * they are name bytes like any other. */
+static int name_terminator(unsigned char c) {
+    switch (c) {
+    case ' ':
+    case '\t':
+    case '\n':
+    case '\r':
+    case '=':
+    case '}':
+    case '"':
+    case '\'':
+    case '{':
+        return 1;
+    default:
+        return 0;
+    }
+}
+/* A member boundary: what may follow a bare name or the `unnumbered` dash. */
+static int member_boundary(const unsigned char *s, bufsize_t n, bufsize_t p) {
+    return p >= n || horizontal(s[p]) || newline(s[p]) || s[p] == '}';
 }
 
 /* Reverse dynamic programming over the regular member grammar. ends[p] is
  * the end of a complete member suffix (including its closing brace), or zero.
- * Quotes and unquoted runs need only two preceding byte states; name runs
- * need one scalar state. Thus the index costs two offsets per input byte.
- * Assignment continuations are separate from valid member suffixes: a bare
- * '=' can never become a member through a whitespace or shorthand state. */
+ * Quotes and unquoted runs need only two preceding byte states; a name run
+ * needs one, the position of its next terminator byte. Thus the index costs
+ * two offsets per input byte and never decodes a scalar. Assignment
+ * continuations are separate from valid member suffixes: a bare '=' can never
+ * become a member through a whitespace or shorthand state. */
 static bufsize_t suffix(markdown_core_attribute_parser *p, bufsize_t at) { return p->ends[at].end; }
 
 static int index_input(markdown_core_attribute_parser *p) {
@@ -69,21 +93,20 @@ static int index_input(markdown_core_attribute_parser *p) {
                 }
             }
             p->ends[i].assignment_end = suffix(p, end);
-        } else if (c == '-') {
+        } else if (c == '-' && member_boundary(s, n, i + 1)) {
             p->ends[i].end = suffix(p, i + 1);
         } else if (c == '#' || c == '.') {
-            if (i + 1 < n) {
-                bufsize_t width;
-                int32_t cp = scalar(s, n, i + 1, &width);
-                if (c == '#' ? name_rest(cp) : markdown_core_utf8proc_is_letter(cp)) {
-                    p->ends[i].end = suffix(p, name_end);
-                }
+            if (i + 1 < n && !name_terminator(s[i + 1])) {
+                p->ends[i].end = suffix(p, name_end);
             }
-        } else if ((c & 0xc0) != 0x80) {
-            bufsize_t width;
-            int32_t cp = scalar(s, n, i, &width);
-            if (markdown_core_utf8proc_is_letter(cp) && name_end < n && s[name_end] == '=') {
+        } else if (!name_terminator(c)) {
+            /* A name runs to `name_end`. Followed by `=` it is an assignment;
+             * followed by a member boundary it is a bare attribute; followed
+             * by a quote or an opening brace it is nothing. */
+            if (name_end < n && s[name_end] == '=') {
                 p->ends[i].end = p->ends[name_end].assignment_end;
+            } else if (name_end < n && member_boundary(s, n, name_end)) {
+                p->ends[i].end = suffix(p, name_end);
             }
         }
 
@@ -111,12 +134,8 @@ static int index_input(markdown_core_attribute_parser *p) {
         if (!horizontal(c)) {
             spaces = i;
         }
-        if ((c & 0xc0) != 0x80) {
-            bufsize_t width;
-            int32_t cp = scalar(s, n, i, &width);
-            if (!name_rest(cp)) {
-                name_end = i;
-            }
+        if (name_terminator(c)) {
+            name_end = i;
         }
     }
     return 1;
@@ -219,13 +238,9 @@ static int normalize(markdown_core_attributes *v, const unsigned char *name, buf
 
 static bufsize_t scan_name(markdown_core_attribute_parser *p, bufsize_t n, bufsize_t at) {
     const unsigned char *s = p->data;
-    while (at < n) {
-        bufsize_t width;
+    while (at < n && !name_terminator(s[at])) {
         p->work++;
-        if (!name_rest(scalar(s, n, at, &width))) {
-            break;
-        }
-        at += width;
+        at++;
     }
     return at;
 }
@@ -276,7 +291,7 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
             at++;
             continue;
         }
-        if (s[at] == '-') {
+        if (s[at] == '-' && member_boundary(s, finish, at + 1)) {
             if (!append_class(&value, (const unsigned char *)"unnumbered", 10)) {
                 goto oom;
             }
@@ -296,6 +311,13 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
         bufsize_t name = at;
         at = scan_name(p, finish, at);
         bufsize_t name_length = at - name;
+        if (at >= finish - 1 || s[at] != '=') {
+            /* A bare name: the index admitted it only at a member boundary. */
+            if (!normalize(&value, s + name, name_length, (const unsigned char *)"true", 4)) {
+                goto oom;
+            }
+            continue;
+        }
         at++; /* '=' */
         bufsize_t last = at;
         int quoted = 0;

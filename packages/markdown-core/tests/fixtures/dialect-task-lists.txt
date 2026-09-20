@@ -409,7 +409,7 @@ Document scope=1:1..13:3 anchor=null attributes={} children=3
 Document scope=1:1..3:7 anchor=null attributes={} children=1
 └── List scope=1:1..3:7 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
     └── ListItem scope=1:1..3:7 anchor=null attributes={} marker=null children=1
-        └── Paragraph scope=1:3..3:7 anchor=null attributes={} children=8
+        └── Paragraph scope=1:3..3:7 anchor=null attributes={} children=7
             ├── Text scope=1:3..1:5 anchor=null attributes={} literal="[x]" children=0
             ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
             ├── Directive scope=2:1..2:38 anchor=null attributes={.a .b .c .v .f .a .tail} name="n" children=0
@@ -417,8 +417,7 @@ Document scope=1:1..3:7 anchor=null attributes={} children=1
             ├── Emphasis scope=2:41..2:47 anchor=null attributes={} children=1
             │   └── Text scope=2:42..2:46 anchor=null attributes={} literal=".foo." children=0
             ├── SoftBreak scope=2:48..2:48 anchor=null attributes={} children=0
-            ├── Directive scope=3:1..3:2 anchor=null attributes={} name="x" children=0
-            └── Text scope=3:3..3:7 anchor=null attributes={} literal="{:_a}" children=0
+            └── Directive scope=3:1..3:7 anchor=null attributes={:_a="true"} name="x" children=0
 ````````````````````````````````
 
 ## UTF-8 marker widths preserve nested tab indentation and byte scopes
