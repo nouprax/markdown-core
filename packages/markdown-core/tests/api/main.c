@@ -3541,7 +3541,8 @@ typedef struct {
     /* The finish stage's traversal count and its denominator (parser.h):
      * recorded by a global pass at the document root, which is the last root
      * the finish walk completes, so these are the stage's totals. */
-    size_t inline_completed, finish_events, finish_entered, finish_roots;
+    size_t finish_events, finish_entered, finish_roots;
+    size_t nodes_created, nodes_created_before_finish, nodes_freed, nodes_freed_before_finish;
 } inline_work;
 static int record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                               markdown_core_node *root) {
@@ -3550,10 +3551,13 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
     if (!work) {
         return 1;
     }
-    work->inline_completed = parser->inline_nodes_completed;
     work->finish_events = parser->finish_walk_events;
     work->finish_entered = parser->finish_nodes_entered;
     work->finish_roots = parser->finish_walk_roots;
+    work->nodes_created = parser->nodes_created;
+    work->nodes_created_before_finish = parser->nodes_created_before_finish;
+    work->nodes_freed = parser->nodes_freed;
+    work->nodes_freed_before_finish = parser->nodes_freed_before_finish;
     work->cross_link = parser->cross_link_scan_work;
     work->autolink_domains = parser->autolink_domain_work;
     work->opaque = parser->opaque_scan_work;
@@ -6437,6 +6441,7 @@ static void census_mailto_links(markdown_core_node *root, mailto_census *census)
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type event;
     bool seen_link = false;
+    markdown_core_visit_block_subtrees(root, census_owned_root, census);
     while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node = markdown_core_iter_get_node(iter);
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
@@ -6458,35 +6463,92 @@ static void census_mailto_links(markdown_core_node *root, mailto_census *census)
     markdown_core_iter_free(iter);
 }
 
+static markdown_core_node *first_of_kind(markdown_core_node *root, markdown_core_node_type kind) {
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_node *found = NULL;
+    markdown_core_event_type event;
+    while (!found && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == kind) {
+            found = node;
+        }
+    }
+    markdown_core_iter_free(iter);
+    return found;
+}
+
+/* EVERY NODE THE FINISH STAGE WAS HANDED, counted by the test's own walk:
+ * the root's children through the public iterator, each node's owned field
+ * roots through the inline-subtree visitor, and the document's definition
+ * chains through the block-subtree visitor. */
+static size_t owned_node_census(markdown_core_node *root);
+
+static int census_owned_nodes(markdown_core_node **slot, void *context) {
+    if (slot && *slot) {
+        *(size_t *)context += owned_node_census(*slot);
+    }
+    return 1;
+}
+
+static size_t owned_node_census(markdown_core_node *root) {
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type event;
+    size_t count = 0;
+    markdown_core_visit_block_subtrees(root, census_owned_nodes, &count);
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        if (event == MARKDOWN_CORE_EVENT_ENTER) {
+            markdown_core_node *node = markdown_core_iter_get_node(iter);
+            count++;
+            markdown_core_visit_inline_subtrees(node, census_owned_nodes, &count);
+        }
+    }
+    markdown_core_iter_free(iter);
+    return count;
+}
+
+/* The one-traversal identity (parser.h): the finish stage entered each node
+ * it was handed exactly once, and the finished tree is those nodes less the
+ * ones the stage freed plus the ones its steps made. */
+static size_t nodes_handed_to_finish(const inline_work *work, size_t finished_tree) {
+    return finished_tree + (work->nodes_freed - work->nodes_freed_before_finish) -
+           (work->nodes_created - work->nodes_created_before_finish);
+}
+
 /* ONE TRAVERSAL PER ROOT, AND EVERY FINISH HOOK INSIDE IT.
  *
  * The finish stage used to walk each root once to find the owned roots, once
  * more for consolidation, once more for autolink and once more for formula --
- * three or four private iterators over every node. It walks each root ONCE
- * now, and consolidation, autolink and formula are steps of that walk.
+ * three or four private iterators over every node -- and the inline stage
+ * walked every root once more before it to complete the nodes. It walks each
+ * root ONCE now: completion is the walk's ENTER, and consolidation, autolink
+ * and formula are steps of that walk.
  *
- * Nothing in the output can tell the shapes apart: four walks build the same
+ * Nothing in the output can tell the shapes apart: five walks build the same
  * tree as one. So the invariant is asserted on the parser's own counters
- * (parser.h). The nodes the finish stage ENTERED must equal the nodes the
- * inline stage COMPLETED, which is the last count of the tree taken before the
- * finish stage begins: one traversal enters each of them exactly once, a step
- * never enters the nodes it inserts, and a stage that walked each root k times
- * enters k times as many. Then every iterator step the stage took must be one
- * of those events, `events == 2 * entered + roots`, which is what says
- * consolidation's advances over the siblings it absorbs are the only steps
- * beyond the walk's own. The identity alone would not do: a second whole-root
- * walk that counted itself the same way keeps it, and only the denominator
- * catches it.
+ * (parser.h) against a census the test takes itself. The nodes the finish
+ * stage ENTERED must equal the nodes it was handed: the finished tree, plus
+ * the nodes the stage freed, less the nodes its steps made --
+ * one traversal enters each of them exactly once, a step never enters the
+ * nodes it inserts, and a stage that walked each root k times enters k times
+ * as many. Then every iterator step the stage took must be one of those
+ * events, `events == 2 * entered + roots`, which is what says consolidation's
+ * advances over the siblings it absorbs are the only steps beyond the walk's
+ * own. The identity alone would not do: a second whole-root walk that counted
+ * itself the same way keeps it, and only the denominator catches it.
  *
  * The document is chosen so that every fused hook actually acts, and on
  * nested owned roots: emails inside a definition term, a callout title, a
- * citation affix and a table caption (autolink, on four field roots and the
- * document); escapes that leave adjacent Text nodes for consolidation to
+ * citation affix, a table caption, a footnote body and an inline footnote
+ * (autolink, on field roots, a block definition, a parentless definition and
+ * the document); escapes that leave adjacent Text nodes for consolidation to
  * merge before autolink sees them (`x\.y@z.com` must come out as ONE
  * address); a standalone `$$` block and a `formula` fence for formula's
- * promotion and replacement; and a Link inside a field root followed by an
+ * promotion and replacement; a Link inside a field root followed by an
  * address outside it, which a per-walk rather than per-root "inside a link"
- * fact would silently swallow. */
+ * fact would silently swallow; and an escaped space inside a superscript,
+ * which completion turns into NBSP and which must therefore be completed
+ * before the Text beside it absorbs it. */
+
 static void finish_stage_walks_each_root_once(test_batch_runner *runner) {
     static const char source[] = "Term a\\.b@c.io $x$\n"
                                  ": body with x\\.y@z.com and $$y$$\n"
@@ -6500,7 +6562,9 @@ static void finish_stage_walks_each_root_once(test_batch_runner *runner) {
                                  "> [!note] [in a link](u) title q@r.st\n"
                                  "> body s@t.uv\n"
                                  "\n"
-                                 "See [pre a@b.co @doe99 post c@d.ef].\n"
+                                 "See [pre a@b.co @doe99 post c@d.ef] and a note[^n] here^[inline u@v.wx] ^a\\ b^.\n"
+                                 "\n"
+                                 "[^n]: body t@u.vw\n"
                                  "\n"
                                  "| a |\n"
                                  "| - |\n"
@@ -6514,28 +6578,49 @@ static void finish_stage_walks_each_root_once(test_batch_runner *runner) {
     if (!root) {
         return;
     }
-    size_t nodes = total_nodes(root);
+    size_t finished = owned_node_census(root);
     INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_FORMULA_BLOCK), 2,
            "formula's step promoted the standalone block and replaced the fence");
-    OK(runner, work.finish_roots >= 5, "the document and its field roots were each completed: %zu roots",
-       work.finish_roots);
-    OK(runner, work.inline_completed > 0, "the inline stage completed the tree: %zu nodes", work.inline_completed);
-    OK(runner, work.finish_entered == work.inline_completed,
-       "the finish stage entered every node the inline stage completed exactly once: %zu entered, %zu completed",
-       work.finish_entered, work.inline_completed);
+    OK(runner, work.finish_roots >= 6,
+       "the document, its field roots and the inline footnote were each completed: %zu roots", work.finish_roots);
+    OK(runner, work.nodes_freed - work.nodes_freed_before_finish >= 4,
+       "consolidation freed the siblings it absorbed and formula's step the fence and paragraph it replaced, "
+       "with their children: %zu freed",
+       work.nodes_freed - work.nodes_freed_before_finish);
+    OK(runner, work.nodes_created > work.nodes_created_before_finish,
+       "autolink's and formula's steps made nodes inside the walk: %zu of %zu",
+       work.nodes_created - work.nodes_created_before_finish, work.nodes_created);
+    OK(runner, work.finish_entered == nodes_handed_to_finish(&work, finished),
+       "the finish stage entered every node it was handed exactly once: %zu entered, %zu in the finished tree, "
+       "%zu freed, %zu made",
+       work.finish_entered, finished, work.nodes_freed - work.nodes_freed_before_finish,
+       work.nodes_created - work.nodes_created_before_finish);
     OK(runner, work.finish_events == 2 * work.finish_entered + work.finish_roots,
        "and every step it took was one of those events: %zu events, %zu entered, %zu roots", work.finish_events,
        work.finish_entered, work.finish_roots);
-    OK(runner, work.finish_events < 2 * (2 * nodes + work.finish_roots),
+    OK(runner, work.finish_events < 2 * (2 * finished + work.finish_roots),
        "so it took fewer steps than two traversals of the finished tree: %zu events for %zu nodes", work.finish_events,
-       nodes);
+       finished);
 
     /* Every address became a link -- seven of them, four on field roots the
      * public iterator does not descend into -- including the one
      * consolidation had to assemble first and the one after a Link. */
     mailto_census census = {0};
     census_mailto_links(root, &census);
-    INT_EQ(runner, (int)census.mailto, 7, "autolink's step linked every address on every root");
+    INT_EQ(runner, (int)census.mailto, 9, "autolink's step linked every address on every root");
+    /* The escaped space is its own Text until consolidation; completion made
+     * it NBSP before the Text before it absorbed it, so the superscript holds
+     * ONE Text reading `a b` with the NBSP between. */
+    markdown_core_node *superscript = first_of_kind(root, MARKDOWN_CORE_NODE_SUPERSCRIPT);
+    OK(runner,
+       superscript && superscript->first_child && !superscript->first_child->next &&
+           superscript->first_child->kind == MARKDOWN_CORE_NODE_TEXT &&
+           superscript->first_child->as.literal->len == 4 &&
+           memcmp(superscript->first_child->as.literal->data,
+                  "a\xC2\xA0"
+                  "b",
+                  4) == 0,
+       "an absorbed escaped space was completed to NBSP before it was merged");
     INT_EQ(runner, (int)census.merged, 1, "the escape-split address was consolidated before autolink scanned it");
     INT_EQ(runner, (int)census.after_link, 1,
            "the address after a Link on a field root is linked: the state is per root");
@@ -6574,12 +6659,12 @@ static void finish_stage_is_one_traversal_at_any_depth(test_batch_runner *runner
                     /* Document, Paragraph, the nesting, and the addresses as
                      * ONE Text: the Links are autolink's, made from inside the
                      * finish walk and never entered by it. */
-                    OK(runner, work.inline_completed >= sizes[d] + 3,
-                       "the inline stage completed the nesting: %zu nodes at depth %zu width %zu",
-                       work.inline_completed, sizes[d], sizes[w]);
-                    OK(runner, work.finish_entered == work.inline_completed,
-                       "one traversal at depth %zu width %zu: %zu entered, %zu completed", sizes[d], sizes[w],
-                       work.finish_entered, work.inline_completed);
+                    size_t census = owned_node_census(root), handed = nodes_handed_to_finish(&work, census);
+                    OK(runner, handed >= sizes[d] + 3,
+                       "the walk was handed the nesting: %zu nodes at depth %zu width %zu", handed, sizes[d], sizes[w]);
+                    OK(runner, work.finish_entered == handed,
+                       "one traversal at depth %zu width %zu: %zu entered, %zu handed", sizes[d], sizes[w],
+                       work.finish_entered, handed);
                     OK(runner, work.finish_events == 2 * work.finish_entered + work.finish_roots,
                        "and every step was one of its events at depth %zu width %zu: %zu events, %zu entered, "
                        "%zu roots",
@@ -6636,11 +6721,12 @@ static void a_whole_root_pass_costs_one_traversal(test_batch_runner *runner) {
     INT_EQ(runner, (int)(controlled.finish_roots - plain.finish_roots), 1, "and completes that root once more");
     INT_EQ(runner, (int)(controlled.finish_entered - plain.finish_entered), (int)control_root_nodes,
            "entering each of its nodes once");
-    INT_EQ(runner, (int)controlled.inline_completed, (int)plain.inline_completed,
-           "while the denominator, taken before the finish stage, is the same tree either way");
-    OK(runner, controlled.finish_entered > controlled.inline_completed,
-       "so the extra traversal is exactly what the one-traversal equality refuses: %zu entered, %zu completed",
-       controlled.finish_entered, controlled.inline_completed);
+    size_t census = owned_node_census(root), handed = nodes_handed_to_finish(&controlled, census);
+    INT_EQ(runner, (int)plain.finish_entered, (int)handed,
+           "while the denominator, the nodes the stage was handed, is the same tree either way");
+    OK(runner, controlled.finish_entered > handed,
+       "so the extra traversal is exactly what the one-traversal equality refuses: %zu entered, %zu handed",
+       controlled.finish_entered, handed);
     markdown_core_node_free(root);
 }
 

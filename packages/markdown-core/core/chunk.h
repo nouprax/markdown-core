@@ -10,7 +10,8 @@
 #include "buffer.h"
 #include "markdown_core_ctype.h"
 
-#define MARKDOWN_CORE_CHUNK_EMPTY {NULL, 0, 0}
+#define MARKDOWN_CORE_CHUNK_EMPTY                                                                                      \
+    { NULL, 0, 0 }
 
 typedef struct markdown_core_chunk {
     unsigned char *data;

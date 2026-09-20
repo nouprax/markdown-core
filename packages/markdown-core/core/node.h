@@ -393,4 +393,9 @@ bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a
 }
 #endif
 
+/* `markdown_core_node_free`, reporting how many nodes it released: the node,
+ * its descendants and every owned field root under them. The parse's own
+ * free (parser.h) counts this, so removal is observed where it is done. */
+size_t markdown_core_node_release(markdown_core_node *node);
+
 #endif

@@ -206,16 +206,19 @@ typedef int (*markdown_core_accepts_lines_func)(const markdown_core_element *ele
  * the subtree is untouched and about to be walked). It may READ the siblings
  * that FOLLOW the current node, but never unlink, move or free one of them:
  * the walk's lookahead already names the node after the current one. It may
- * free only the node whose EXIT is current, and it may insert only BEFORE the
- * current node, which the walk has passed and never visits again. A step
- * never walks anything itself; the walk it is part of is the one traversal
- * the finish stage makes.
+ * free only the node whose EXIT is current, and only when that node owns no
+ * field roots (the walk pushed those at its ENTER and keeps them for the
+ * passes); it may insert only BEFORE the current node, which the walk has
+ * passed and never visits again. A step never walks anything itself; the walk
+ * it is part of is the one traversal the finish stage makes.
  *
- * A postprocess PASS is GLOBAL. It receives a whole root after the root's walk
- * has completed, walks it itself, and may read state outside that root (the
- * document's footnotes, say). It costs a traversal of the root per pass, which
- * is why the element hooks that rewrite one node at a time are steps and only
- * a rewrite that needs the whole finished root is a pass.
+ * A postprocess PASS is GLOBAL. It receives a whole root after every root's
+ * walk has completed and the document has been finalized -- the footnotes
+ * and specimens in their chains, the headings holding their anchors -- walks
+ * it itself, and may read state outside that root (the document's footnotes,
+ * say). It costs a traversal of the root per pass, which is why the element
+ * hooks that rewrite one node at a time are steps and only a rewrite that
+ * needs the whole finished root is a pass.
  *
  * One element declares one or the other, never both: an element that needs
  * both shapes has two concerns, and `markdown_core_parser_attach_element`

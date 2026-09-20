@@ -30,7 +30,8 @@ typedef struct {
 
 extern const unsigned char markdown_core_strbuf__initbuf[];
 
-#define MARKDOWN_CORE_BUF_INIT() {(unsigned char *)markdown_core_strbuf__initbuf, 0, 0, 0}
+#define MARKDOWN_CORE_BUF_INIT()                                                                                       \
+    { (unsigned char *)markdown_core_strbuf__initbuf, 0, 0, 0 }
 
 /**
  * Initialize a markdown_core_strbuf structure.

@@ -32,6 +32,8 @@ const STEP = /\.finish_step\s*=\s*(\w+)/;
 const PASS = /\.postprocess_func\s*=\s*(\w+)/;
 /** Opening an iterator is the one way to walk; `<iterator.h>` is where it is declared. */
 const WALKS = /\bmarkdown_core_iter_new\s*\(|#include\s*[<"]iterator\.h[>"]/;
+/** A step frees through the parse, which counts what it released (parser.h). */
+const BARE_FREE = /\bmarkdown_core_node_free\s*\(/;
 
 const failures = [];
 let steps = 0;
@@ -56,6 +58,14 @@ for (const { symbol, file, source, body } of ordered) {
                 "a step never walks, the finish walk it is part of is the one traversal"
         );
     }
+    const bare = BARE_FREE.exec(stripped);
+    if (bare) {
+        const line = stripped.slice(0, bare.index).split("\n").length;
+        failures.push(
+            `${file}:${line}: ${symbol} declares a finish step and frees a node outside the parse; ` +
+                "a step frees through markdown_core_parser_free_node, which counts the release"
+        );
+    }
 }
 
 if (!steps) {
@@ -70,5 +80,5 @@ if (failures.length) {
 }
 console.log(
     `audit-finish-hook-shapes: ${steps} finish step${steps === 1 ? "" : "s"} and ${passes} postprocess pass` +
-        `${passes === 1 ? "" : "es"}, no descriptor declares both, no step opens an iterator`
+        `${passes === 1 ? "" : "es"}, no descriptor declares both, no step opens an iterator or frees outside the parse`
 );

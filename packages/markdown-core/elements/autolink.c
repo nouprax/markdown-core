@@ -69,7 +69,7 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
         if (!link->as.link->resource) {
             inline_state->oom = 1;
             markdown_core_chunk_free(&destination);
-            markdown_core_node_free(link);
+            markdown_core_parser_free_node(inline_state->owner_parser, link);
             return NULL;
         }
     }
@@ -366,7 +366,7 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
     markdown_core_node *text = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_TEXT);
     if (!text) {
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_parser_free_node(parser, node);
         return NULL;
     }
     *text->as.literal = markdown_core_chunk_dup(chunk, (bufsize_t)max_rewind, (bufsize_t)link_end);
@@ -435,7 +435,7 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     markdown_core_node *text = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_TEXT);
     if (!text) {
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_parser_free_node(parser, node);
         return NULL;
     }
     *text->as.literal = url;
@@ -568,7 +568,7 @@ static markdown_core_node *email_text_fragment(markdown_core_parser *parser, mar
     markdown_core_chunk literal = markdown_core_chunk_dup(source, (bufsize_t)start, (bufsize_t)length);
     if (!markdown_core_chunk_to_cstr(&literal)) {
         parser->oom = true;
-        markdown_core_node_free(text);
+        markdown_core_parser_free_node(parser, text);
         return NULL;
     }
     *text->as.literal = literal;
@@ -708,7 +708,7 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
             if (!link_node->as.link->resource) {
                 markdown_core_chunk_free(&url);
                 parser->oom = true;
-                markdown_core_node_free(link_node);
+                markdown_core_parser_free_node(parser, link_node);
                 break;
             }
         }
@@ -716,14 +716,14 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
 
         markdown_core_node *link_text = email_text_fragment(parser, &source_map, &source, link_start, link_len);
         if (!link_text) {
-            markdown_core_node_free(link_node);
+            markdown_core_parser_free_node(parser, link_node);
             break;
         }
         markdown_core_node_attach_owned(link_node, link_text, NULL);
         if (prefix_len) {
             markdown_core_node *prefix = email_text_fragment(parser, &source_map, &source, prefix_start, prefix_len);
             if (!prefix) {
-                markdown_core_node_free(link_node);
+                markdown_core_parser_free_node(parser, link_node);
                 break;
             }
             markdown_core_node_attach_owned(text->parent, prefix, text);
@@ -741,7 +741,7 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
         return MARKDOWN_CORE_FINISH_CONTINUE;
     }
     if (!remaining) {
-        markdown_core_node_free(text);
+        markdown_core_parser_free_node(parser, text);
         return MARKDOWN_CORE_FINISH_CONSUMED;
     }
     markdown_core_chunk tail = markdown_core_chunk_dup(&source, (bufsize_t)start, (bufsize_t)remaining);

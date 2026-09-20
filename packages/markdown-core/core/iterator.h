@@ -35,10 +35,17 @@ struct markdown_core_iter {
  * consistent: every absorbed operand was unlinked before it was freed), and
  * CONTINUE otherwise. The engine's finish walk runs this before any element
  * step at a Text's EXIT, on the walk's own iterator, which is what keeps an
- * absorbed sibling's events from ever reaching a step. */
+ * absorbed sibling's events from ever reaching a step.
+ *
+ * `complete`, when given, is applied to each sibling before it is absorbed,
+ * with `depth` as its word-delimiter depth: the walk completes a node at its
+ * ENTER, and an absorbed sibling's ENTER is stepped over here, so this is
+ * where its completion happens. The public entry point passes none. */
+typedef void (*markdown_core_complete_node_func)(struct markdown_core_parser *, markdown_core_node *, int);
 markdown_core_finish_result markdown_core_consolidate_text_step(struct markdown_core_parser *parser,
                                                                 markdown_core_iter *iter, markdown_core_node *cur,
-                                                                markdown_core_strbuf *scratch);
+                                                                markdown_core_strbuf *scratch,
+                                                                markdown_core_complete_node_func complete, int depth);
 
 /* The step applied at every Text EXIT of a walk over `root`.
  * `markdown_core_consolidate_text_nodes` is this with no parser. */

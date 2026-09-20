@@ -242,35 +242,46 @@ struct markdown_core_parser {
      * scanning every attached element would build the identical tree. So the
      * invariant is asserted on this counter rather than on output. */
     size_t inline_hook_work;
-    /* THE FINISH STAGE'S TRAVERSAL COUNT, in four numbers the output cannot
-     * show. The stage's whole claim is that it walks each owned root ONCE and
-     * runs consolidation and every finish step from inside that one walk; a
-     * stage that walked a root once per hook would build the identical tree,
-     * so the claim is asserted on these rather than on a dump.
+    /* THE FINISH STAGE'S TRAVERSAL COUNT, in numbers the output cannot show.
+     * The stage's whole claim is that it walks each owned root ONCE and runs
+     * inline completion, consolidation and every finish step from inside that
+     * one walk; a stage that walked a root once per hook would build the
+     * identical tree, so the claim is asserted on these rather than on a dump.
      *
-     * `inline_nodes_completed` is the denominator: one per node the inline
-     * stage's completion walk entered, which is the last walk to visit every
-     * node before the finish stage starts. Nothing between the two changes the
-     * set -- the document's finalization moves definitions into their chains
-     * and creates and frees no node -- so it is exactly the node count the
-     * finish stage is handed, without a traversal to take it.
      * `finish_walk_events` is every iterator step the finish stage took: the
      * walk's own ENTER, EXIT and DONE events, plus the ENTER and EXIT that
      * consolidation advances over when it absorbs a following Text sibling
-     * (those nodes are visited -- by consolidation, which frees them -- and
-     * counted as visited). Repositioning the cursor back to the survivor's
-     * EXIT is not a step: that event was already delivered.
+     * (those nodes are visited -- by consolidation, which completes and frees
+     * them -- and counted as visited). Repositioning the cursor back to the
+     * survivor's EXIT is not a step: that event was already delivered.
      * `finish_nodes_entered` is the ENTER events among them, absorbed siblings
      * included; `finish_walk_roots` is the DONE events, one per root walked.
      *
-     * One traversal per root is therefore exactly
-     * `finish_nodes_entered == inline_nodes_completed` -- the nodes a step
-     * inserts are never entered, and a stage that walked each root k times,
-     * counting as the engine's walks count, would enter k times as many --
-     * with `finish_walk_events == 2 * finish_nodes_entered + finish_walk_roots`
-     * saying that every step taken was one of those events. A whole-root
-     * consolidation driven through the public entry point with a parser adds
-     * exactly one traversal of that root to all three.
+     * The denominator is taken without a traversal, at the two seams where
+     * nodes come and go. `nodes_created` counts every node a parse makes, at
+     * the same operation that records the node's kind, so the audit that
+     * holds one holds the other; `nodes_freed` counts every node a parse
+     * releases through `markdown_core_parser_free_node`, which the finish
+     * stage's every free takes -- consolidation's, and each step's, which the
+     * finish-hook audit holds -- and which counts the descendants and field
+     * roots that go with a node, since the release loop visits each of them.
+     * The walk notes both in `..._before_finish` as it starts. The finished
+     * tree holds every node that existed when the walk started, less those
+     * the stage freed, plus those its steps made, so one traversal per root
+     * is exactly
+     *
+     *   finish_nodes_entered == nodes in the finished tree
+     *                           + (nodes_freed - nodes_freed_before_finish)
+     *                           - (nodes_created - nodes_created_before_finish)
+     *
+     * where the finished tree is counted by whoever holds it (the api test
+     * walks it with the public iterator and the owned-subtree visitors), and
+     * a stage that walked each root k times, counting as the engine's walks
+     * count, would enter k times as many. `finish_walk_events == 2 *
+     * finish_nodes_entered + finish_walk_roots` then says that every step
+     * taken was one of those events. A whole-root consolidation driven through
+     * the public entry point with a parser adds exactly one traversal of that
+     * root to the events, the entered and the roots.
      *
      * The count sees only the walks that report themselves: the engine's
      * finish walk and that public entry point. A traversal that keeps no count
@@ -278,7 +289,8 @@ struct markdown_core_parser {
      * here, so the other half of the invariant is held on the source:
      * scripts/audit-finish-hook-shapes.mjs refuses a translation unit that
      * declares a finish step and opens an iterator. */
-    size_t inline_nodes_completed;
+    size_t nodes_created, nodes_created_before_finish;
+    size_t nodes_freed, nodes_freed_before_finish;
     size_t finish_walk_events;
     size_t finish_nodes_entered;
     size_t finish_walk_roots;
@@ -449,16 +461,34 @@ static inline void markdown_core_parser_note_kind(markdown_core_parser *parser, 
     }
 }
 
+/* A creation records the kind and counts the node: the count is the finish
+ * stage's denominator (the traversal counters above). */
+static inline void markdown_core_parser_note_node(markdown_core_parser *parser, markdown_core_node_type kind) {
+    if (parser) {
+        markdown_core_node_kind_set_add(&parser->kinds_created, kind);
+        parser->nodes_created++;
+    }
+}
+
+/* A release counts what it freed, for the same denominator; a caller with no
+ * parse frees as the public function does. */
+static inline void markdown_core_parser_free_node(markdown_core_parser *parser, markdown_core_node *node) {
+    size_t released = markdown_core_node_release(node);
+    if (parser) {
+        parser->nodes_freed += released;
+    }
+}
+
 static inline markdown_core_node *markdown_core_parser_make_node(markdown_core_parser *parser,
                                                                  markdown_core_node_type type) {
-    markdown_core_parser_note_kind(parser, type);
+    markdown_core_parser_note_node(parser, type);
     return markdown_core_node_new(type);
 }
 
 static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdown_core_parser *parser,
                                                                           markdown_core_node_type type,
                                                                           const markdown_core_element *element) {
-    markdown_core_parser_note_kind(parser, type);
+    markdown_core_parser_note_node(parser, type);
     return markdown_core_node_new_with_ext(type, element);
 }
 

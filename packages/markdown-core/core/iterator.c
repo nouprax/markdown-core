@@ -106,7 +106,8 @@ static void S_count_step(markdown_core_parser *parser, markdown_core_event_type 
  * `S_is_leaf` list, so its EXIT was suppressed and freeing at ENTER
  * happened to be safe; with the contract total it is a use-after-free. */
 markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_parser *parser, markdown_core_iter *iter,
-                                                                markdown_core_node *cur, markdown_core_strbuf *buf) {
+                                                                markdown_core_node *cur, markdown_core_strbuf *buf,
+                                                                markdown_core_complete_node_func complete, int depth) {
     markdown_core_node *tmp, *next;
 
     assert(iter->cur.node == cur && iter->cur.ev_type == MARKDOWN_CORE_EVENT_EXIT);
@@ -131,6 +132,9 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
              * this one is ever handed a node this one is about to free. */
             S_count_step(parser, markdown_core_iter_next(iter)); /* tmp ENTER */
             S_count_step(parser, markdown_core_iter_next(iter)); /* tmp EXIT  */
+            if (complete) {
+                complete(parser, tmp, depth);
+            }
             if (parser && !markdown_core_parser_append_content_marks(parser, tmp, &combined_map, 0,
                                                                      tmp->as.literal->len, buf->size)) {
                 return MARKDOWN_CORE_FINISH_FAILED;
@@ -152,7 +156,7 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
                 cur->end_column = tmp->end_column;
             }
             next = tmp->next;
-            markdown_core_node_free(tmp);
+            markdown_core_parser_free_node(parser, tmp);
             tmp = next;
         }
         /* Every node the loop freed was ahead of the cursor and is now
@@ -191,7 +195,7 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
     // event to nothing else.
     if (cur->as.literal->len == 0) {
         markdown_core_chunk_free(cur->as.literal);
-        markdown_core_node_free(cur);
+        markdown_core_parser_free_node(parser, cur);
         return MARKDOWN_CORE_FINISH_CONSUMED;
     }
     return MARKDOWN_CORE_FINISH_CONTINUE;
@@ -220,7 +224,7 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
         if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->kind != MARKDOWN_CORE_NODE_TEXT) {
             continue;
         }
-        if (markdown_core_consolidate_text_step(parser, iter, cur, &buf) == MARKDOWN_CORE_FINISH_FAILED) {
+        if (markdown_core_consolidate_text_step(parser, iter, cur, &buf, NULL, 0) == MARKDOWN_CORE_FINISH_FAILED) {
             ok = 0;
             break;
         }

@@ -298,9 +298,11 @@ static void S_splice_owned_fields(markdown_core_node *owner, markdown_core_node 
     }
 }
 
-static void S_free_nodes(markdown_core_node *e) {
+static size_t S_free_nodes(markdown_core_node *e) {
     markdown_core_node *next;
+    size_t released = 0;
     while (e != NULL) {
+        released++;
         markdown_core_attributes_free(&e->attributes);
         markdown_core_strbuf_free(&e->content);
 
@@ -327,13 +329,16 @@ static void S_free_nodes(markdown_core_node *e) {
         markdown_core_free(e);
         e = next;
     }
+    return released;
 }
 
-void markdown_core_node_free(markdown_core_node *node) {
+size_t markdown_core_node_release(markdown_core_node *node) {
     S_node_unlink(node);
     node->next = NULL;
-    S_free_nodes(node);
+    return S_free_nodes(node);
 }
+
+void markdown_core_node_free(markdown_core_node *node) { (void)markdown_core_node_release(node); }
 
 markdown_core_node_type markdown_core_node_get_type(markdown_core_node *node) {
     if (node == NULL) {

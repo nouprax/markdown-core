@@ -159,8 +159,9 @@ ctest --preset correctness-debug
 ```
 
 The engine runs it once per owned root when that root's finish walk completes
--- text consolidation and every element finish step run from inside that one
-walk, so a break one of them introduced is attributed to the root's walk -- and
+-- inline completion, text consolidation and every element finish step run
+from inside that one walk, so a break one of them introduced is attributed to
+the root's walk -- and
 again after each global postprocess pass, so a break a pass introduced is
 attributed to that pass. A configuration
 that does not define the macro is indistinguishable from one where the check
