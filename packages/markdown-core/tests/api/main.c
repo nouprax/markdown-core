@@ -5141,7 +5141,10 @@ static void source_entries_order_by_the_key_bytes_that_differ(test_batch_runner 
                 column = i % 7;
                 break;
             case 1:
-                line = (int)((COUNT - i) << 23);
+                /* The key's top byte is the line's bits 24..31, and a line is
+                 * a nonnegative int, so seven of those bits vary: the keys
+                 * differ in the top byte alone, with ties. */
+                line = (int)(((COUNT - i) % 127 + 1) << 24);
                 column = 1;
                 break;
             case 2:
