@@ -242,9 +242,14 @@ typedef enum {
  * in `finish_exit_kinds` (asked once the node's subtree is complete), and
  * `MARKDOWN_CORE_EVENT_ENTER` or `MARKDOWN_CORE_EVENT_EXIT` for a node of a
  * kind it declared in `finish_scope_kinds` (the kinds whose extent it tracks).
- * It is asked at no other event, and at none at all in a parse that produced
- * no kind of those it declared in `finish_acts_on_kinds`, the kinds it acts on:
- * the same gate that skips a pass skips a step.
+ * It is asked at no other event, and at the EXIT of a kind it is asked at
+ * only once the parse has produced a kind of those it declared in
+ * `finish_acts_on_kinds`, the kinds it acts on: the same gate that skips a
+ * pass skips a step, read at the event rather than before the walk, because
+ * the walk parses each container's inline content at that container's ENTER
+ * and a kind's first node may be made after the walk began. The ENTER and
+ * EXIT of a scope kind are delivered whenever the extent is walked, so the
+ * state a step keeps for an extent is always in step with the tree.
  * 'is_root' is 1 when 'node' is the root of the tree being walked; a root
  * belongs to whoever holds it and may be rewritten in place but never
  * replaced or freed. '*state' is one word the walk keeps for this element

@@ -15,9 +15,10 @@
  * iterator at all. It has no walk to make; the walk it is part of is the one
  * traversal the finish stage makes.
  *
- * AND THE AUDIT MUST SEE SOMETHING: the dialect's two in-tree hooks, autolink
- * and formula, are steps, and a run that finds no step-declaring descriptor
- * is reaching the wrong sources.
+ * AND THE AUDIT MUST SEE SOMETHING: the dialect's in-tree hooks -- the
+ * paragraph's removal of a reference-only paragraph, the list's layout, the
+ * definition list's extents, autolink and formula -- are steps, and a run
+ * that finds no step-declaring descriptor is reaching the wrong sources.
  */
 
 import path from "node:path";

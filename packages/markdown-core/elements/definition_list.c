@@ -230,9 +230,24 @@ static bool continue_container(markdown_core_parser *parser, markdown_core_node 
     return node->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY ||
            markdown_core_definition_list_continue(parser, node, input);
 }
-static void complete_block(markdown_core_parser *parser, markdown_core_node *node) {
+/* A definition list, a definition and a body end where their last child
+ * ends: taken at each one's EXIT, from inside the one finish walk, where the
+ * children are complete. */
+static markdown_core_finish_result finish_step(const markdown_core_element *element, markdown_core_parser *parser,
+                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
+                                               void **state) {
+    (void)element;
+    (void)parser;
+    (void)event;
+    (void)is_root;
+    (void)state;
+    assert(event == MARKDOWN_CORE_EVENT_EXIT);
     markdown_core_definition_list_complete(node);
+    return MARKDOWN_CORE_FINISH_CONTINUE;
 }
+static const markdown_core_node_type DEFINITION_LIST_EXIT_KINDS[] = {
+    MARKDOWN_CORE_NODE_DEFINITION_LIST, MARKDOWN_CORE_NODE_DEFINITION, MARKDOWN_CORE_NODE_DEFINITION_BODY,
+    MARKDOWN_CORE_NODE_NONE};
 static void finalize_block(markdown_core_parser *parser, markdown_core_node *node) {
     if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
         markdown_core_definition_list_close_body(node);
@@ -240,7 +255,8 @@ static void finalize_block(markdown_core_parser *parser, markdown_core_node *nod
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
-    .complete_block = complete_block,
+    .finish_step = finish_step,
+    .finish_exit_kinds = DEFINITION_LIST_EXIT_KINDS,
     .finalize_block = finalize_block,
 
     .accepts_blank = markdown_core_block_definition_body_blank_continues,

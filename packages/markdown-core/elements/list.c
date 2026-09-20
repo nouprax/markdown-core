@@ -266,18 +266,31 @@ static bool continue_container(markdown_core_parser *parser, markdown_core_node 
                                const markdown_core_node *joining, bool *taken) {
     return markdown_core_list_continue(parser, node, input, joining, taken);
 }
-static void complete_block(markdown_core_parser *parser, markdown_core_node *node) {
-    if (node->kind == MARKDOWN_CORE_NODE_LIST) {
-        markdown_core_block_finalize_list(node);
-    }
+/* A LIST IS LAID OUT AT ITS EXIT, from inside the one finish walk: tight or
+ * loose is read off its items and their children, which are complete there
+ * -- a paragraph that was only definitions has been released at its own
+ * EXIT, before this. */
+static markdown_core_finish_result finish_step(const markdown_core_element *element, markdown_core_parser *parser,
+                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
+                                               void **state) {
+    (void)element;
+    (void)parser;
+    (void)event;
+    (void)is_root;
+    (void)state;
+    assert(event == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_LIST);
+    markdown_core_block_finalize_list(node);
+    return MARKDOWN_CORE_FINISH_CONTINUE;
 }
+static const markdown_core_node_type LIST_EXIT_KINDS[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_NONE};
 static bool blank_line(markdown_core_parser *parser, markdown_core_node *node) {
     return !(node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !node->first_child &&
              node->start_line == parser->line_number);
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
-    .complete_block = complete_block,
+    .finish_step = finish_step,
+    .finish_exit_kinds = LIST_EXIT_KINDS,
     .blank_line = blank_line,
     .speculative_flags = MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK,
 

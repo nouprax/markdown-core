@@ -5,9 +5,13 @@
 extern "C" {
 #endif
 
+#include <assert.h>
+#include <stdbool.h>
+
 #include "markdown-core.h"
 #include "markdown-core-element-api.h"
 #include "buffer.h"
+#include "node.h"
 
 typedef struct {
     markdown_core_event_type ev_type;
@@ -19,6 +23,67 @@ struct markdown_core_iter {
     markdown_core_iter_state cur;
     markdown_core_iter_state next;
 };
+
+/* THE ITERATOR'S STEP, IN THE HEADER. The finish walk takes one per event of
+ * every node of every root, and it keeps its iterators in its own frames
+ * rather than behind an allocation, so the step is here, where the walk can
+ * keep the state in registers instead of calling across a translation unit
+ * for it: `markdown_core_iter_next` is this behind the public call, and
+ * `markdown_core_iter_new` is `markdown_core_iter_init` on a heap iterator. */
+static inline void markdown_core_iter_init(markdown_core_iter *iter, markdown_core_node *root) {
+    iter->root = root;
+    iter->cur.ev_type = MARKDOWN_CORE_EVENT_NONE;
+    iter->cur.node = NULL;
+    iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
+    iter->next.node = root;
+}
+
+static inline markdown_core_event_type markdown_core_iter_step(markdown_core_iter *iter) {
+    markdown_core_event_type ev_type = iter->next.ev_type;
+    markdown_core_node *node = iter->next.node;
+
+    iter->cur.ev_type = ev_type;
+    iter->cur.node = node;
+
+    if (ev_type == MARKDOWN_CORE_EVENT_DONE) {
+        return ev_type;
+    }
+
+    /* roll forward to next item, setting both fields */
+    if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
+        if (node->first_child == NULL) {
+            /* stay on this node but exit */
+            iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
+        } else {
+            iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
+            iter->next.node = node->first_child;
+        }
+    } else if (node == iter->root) {
+        /* don't move past root */
+        iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
+        iter->next.node = NULL;
+    } else if (node->next) {
+        iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
+        iter->next.node = node->next;
+    } else if (node->parent) {
+        iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
+        iter->next.node = node->parent;
+    } else {
+        assert(false);
+        iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
+        iter->next.node = NULL;
+    }
+
+    return ev_type;
+}
+
+/* Whether consolidation has anything to do at `text`'s EXIT: a Text sibling
+ * to absorb, or no bytes of its own to keep. The step below answers the same
+ * two questions itself; this is what lets the walk ask them in place and
+ * enter the step only when one holds. */
+static inline bool markdown_core_text_needs_consolidation(const markdown_core_node *text) {
+    return (text->next && text->next->kind == MARKDOWN_CORE_NODE_TEXT) || text->as.literal->len == 0;
+}
 
 /* TEXT CONSOLIDATION IS ONE STEP OF A WALK, not a walk of its own.
  *

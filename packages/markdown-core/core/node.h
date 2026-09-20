@@ -351,6 +351,17 @@ MARKDOWN_CORE_EXPORT bool markdown_core_node_can_contain_type(markdown_core_node
                                                               markdown_core_node_type child_type);
 
 typedef int (*markdown_core_owned_subtree_visitor)(markdown_core_node **root_slot, void *context);
+/* The chains a document owns as roots of their own, in the order the visitor
+ * below takes them. */
+#define MARKDOWN_CORE_DOCUMENT_CHAINS 2
+/* Visit the roots of each chain appended since `last`, one entry per chain
+ * naming the last root visited there (NULL for none yet), and advance `last`
+ * over each root visited. Registration appends to a chain, so this finds
+ * exactly what came after the previous visit. Returns 0 when the visitor
+ * refuses, and sets `*found` when it visited anything. */
+int markdown_core_visit_block_subtrees_since(markdown_core_node *node,
+                                             markdown_core_node *last[MARKDOWN_CORE_DOCUMENT_CHAINS],
+                                             markdown_core_owned_subtree_visitor visitor, void *context, bool *found);
 int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
                                        void *context);
 

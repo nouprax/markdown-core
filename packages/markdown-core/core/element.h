@@ -135,7 +135,6 @@ struct markdown_core_element {
     bool (*blank_line)(markdown_core_parser *, markdown_core_node *);
     bool (*ends_block)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *);
     void (*finalize_block)(markdown_core_parser *, markdown_core_node *);
-    void (*complete_block)(markdown_core_parser *, markdown_core_node *);
 
     bool (*scan_block_start)(markdown_core_parser *, struct markdown_core_block_start_context *,
                              struct markdown_core_block_start *);
@@ -269,21 +268,34 @@ struct markdown_core_element {
  * Kept as ONE definition rather than a cheap predicate placed beside the real
  * one: a second copy of "which kinds can own a subtree" drifts from the list
  * below the first time a kind is added to it. */
+/* WHICH KINDS CAN OWN A SUBTREE THROUGH THEIR OWN RECORD: the one predicate,
+ * read by the visitor below and projected into the finish walk's per-kind
+ * record (parser.h, MARKDOWN_CORE_FINISH_KIND_FIELDS), so the walk asks it
+ * once per parse per kind rather than three compares per node. An element
+ * that owns subtrees through `visit_owned_subtrees_func` is found through
+ * the node's `element`, which the walk tests beside the flag. */
+static inline bool markdown_core_kind_owns_fields(markdown_core_node_type kind) {
+    return kind == MARKDOWN_CORE_NODE_DEFINITION || kind == MARKDOWN_CORE_NODE_CALLOUT ||
+           kind == MARKDOWN_CORE_NODE_CITE;
+}
+
 static inline int markdown_core_visit_inline_subtrees(markdown_core_node *node,
                                                       markdown_core_owned_subtree_visitor visitor, void *context) {
-    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION && node->as.definition->term &&
-        !visitor(&node->as.definition->term, context)) {
-        return 0;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->title &&
-        !visitor(&node->as.callout->title, context)) {
-        return 0;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_CITE) {
-        for (markdown_core_node *item = node->as.cite->citations; item; item = item->next) {
-            if ((item->as.citation->prefix && !visitor(&item->as.citation->prefix, context)) ||
-                (item->as.citation->suffix && !visitor(&item->as.citation->suffix, context))) {
-                return 0;
+    if (markdown_core_kind_owns_fields((markdown_core_node_type)node->kind)) {
+        if (node->kind == MARKDOWN_CORE_NODE_DEFINITION && node->as.definition->term &&
+            !visitor(&node->as.definition->term, context)) {
+            return 0;
+        }
+        if (node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->title &&
+            !visitor(&node->as.callout->title, context)) {
+            return 0;
+        }
+        if (node->kind == MARKDOWN_CORE_NODE_CITE) {
+            for (markdown_core_node *item = node->as.cite->citations; item; item = item->next) {
+                if ((item->as.citation->prefix && !visitor(&item->as.citation->prefix, context)) ||
+                    (item->as.citation->suffix && !visitor(&item->as.citation->suffix, context))) {
+                    return 0;
+                }
             }
         }
     }

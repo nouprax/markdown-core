@@ -1799,6 +1799,46 @@ static void finish_step_skips_absent_kinds(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
+/* THE GATE IS READ AT THE EVENT. The walk parses each container's inline
+ * content at that container's ENTER, so a kind the step acts on may first be
+ * made after the walk began; the gate opens when it is. A step asked at a
+ * Paragraph's EXIT that acts on inline Code is asked at the paragraph that
+ * holds the first Code and at every paragraph after it, and not at the
+ * paragraphs before it -- where no Code existed and the step could have
+ * found none. A scope kind's ENTER and EXIT are delivered whatever the gate
+ * says, so the extent the step tracks is always in step with the tree. */
+static const markdown_core_node_type OBSERVER_LATE_KINDS[] = {MARKDOWN_CORE_NODE_CODE, MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_node_type SCOPE_AT_LINK[] = {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_NONE};
+
+static bool attach_late_step_observers(markdown_core_parser *parser, void *context) {
+    static const markdown_core_element late = {.name = "step-late-observer",
+                                               .finish_step = count_step_absent,
+                                               .finish_acts_on_kinds = OBSERVER_LATE_KINDS,
+                                               .finish_exit_kinds = STEP_AT_PARAGRAPH};
+    static const markdown_core_element scoped = {.name = "step-scoped-observer",
+                                                 .finish_step = count_step_present,
+                                                 .finish_acts_on_kinds = OBSERVER_ABSENT_KINDS,
+                                                 .finish_scope_kinds = SCOPE_AT_LINK};
+    (void)context;
+    return markdown_core_parser_attach_element(parser, &late) && markdown_core_parser_attach_element(parser, &scoped);
+}
+
+static void finish_step_gate_opens_when_its_kind_is_made(test_batch_runner *runner) {
+    static const char source[] = "prose first\n\nthen `code` in [a link](u)\n\nand prose again\n";
+    markdown_core_node *doc;
+
+    step_asked[0] = 0;
+    step_asked[1] = 0;
+    doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_late_step_observers, NULL);
+    OK(runner, doc != NULL, "a document whose acted-on kind appears in its second paragraph parses");
+    INT_EQ(runner, step_asked[0], 2,
+           "a step acting on a kind first made by the walk is asked from that paragraph's EXIT on: not at the "
+           "first paragraph, at the second and the third");
+    INT_EQ(runner, step_asked[1], 2,
+           "a step tracking a Link's extent receives the Link's ENTER and EXIT whatever its gate says");
+    markdown_core_node_free(doc);
+}
+
 /* A declared kind set is written with a macro, because a descriptor cannot call
  * a function, and the macro cannot tell a block kind from an inline one -- the
  * field it fills says which. So check every set the dialect declares against
@@ -3583,7 +3623,7 @@ typedef struct {
     /* The finish stage's traversal count and its denominator (parser.h):
      * recorded by a global pass at the document root, which is the last root
      * the finish walk completes, so these are the stage's totals. */
-    size_t finish_events, finish_entered, finish_roots;
+    size_t finish_events, finish_entered, finish_roots, finish_parsed;
     size_t nodes_created, nodes_created_before_finish, nodes_freed, nodes_freed_before_finish;
     size_t delimiter_pushes;
     size_t pooled_delimiters;
@@ -3600,6 +3640,7 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
     work->finish_events = parser->finish_walk_events;
     work->finish_entered = parser->finish_nodes_entered;
     work->finish_roots = parser->finish_walk_roots;
+    work->finish_parsed = parser->finish_nodes_parsed;
     work->nodes_created = parser->nodes_created;
     work->nodes_created_before_finish = parser->nodes_created_before_finish;
     work->nodes_freed = parser->nodes_freed;
@@ -6806,10 +6847,12 @@ static size_t owned_node_census(markdown_core_node *root) {
 
 /* The one-traversal identity (parser.h): the finish stage entered each node
  * it was handed exactly once, and the finished tree is those nodes less the
- * ones the stage freed plus the ones its steps made. */
+ * ones the stage freed plus the ones its steps made. The nodes the walk's own
+ * inline parsing made are handed to it -- made at a container's ENTER, they
+ * are the next events -- so they come out of the "made" term. */
 static size_t nodes_handed_to_finish(const inline_work *work, size_t finished_tree) {
     return finished_tree + (work->nodes_freed - work->nodes_freed_before_finish) -
-           (work->nodes_created - work->nodes_created_before_finish);
+           (work->nodes_created - work->nodes_created_before_finish - work->finish_parsed);
 }
 
 /* ONE TRAVERSAL PER ROOT, AND EVERY FINISH HOOK INSIDE IT.
@@ -6817,18 +6860,21 @@ static size_t nodes_handed_to_finish(const inline_work *work, size_t finished_tr
  * The finish stage used to walk each root once to find the owned roots, once
  * more for consolidation, once more for autolink and once more for formula --
  * three or four private iterators over every node -- and the inline stage
- * walked every root once more before it to complete the nodes. It walks each
- * root ONCE now: completion is the walk's ENTER, and consolidation, autolink
- * and formula are steps of that walk.
+ * walked every root once more before it to complete the nodes, and once more
+ * before that to find the containers whose inline content to parse, and the
+ * block stage once more to lay out the lists. It walks each root ONCE now:
+ * inline parsing and completion are the walk's ENTER, and consolidation, the
+ * list layout, autolink and formula are steps of that walk.
  *
- * Nothing in the output can tell the shapes apart: five walks build the same
- * tree as one. So the invariant is asserted on the parser's own counters
+ * Nothing in the output can tell the shapes apart: seven walks build the
+ * same tree as one. So the invariant is asserted on the parser's own counters
  * (parser.h) against a census the test takes itself. The nodes the finish
  * stage ENTERED must equal the nodes it was handed: the finished tree, plus
- * the nodes the stage freed, less the nodes its steps made --
- * one traversal enters each of them exactly once, a step never enters the
- * nodes it inserts, and a stage that walked each root k times enters k times
- * as many. Then every iterator step the stage took must be one of those
+ * the nodes the stage freed, less the nodes its steps made, plus the nodes
+ * its own inline parsing made (which it enters: they are the next events
+ * after the ENTER that made them) -- one traversal enters each of them
+ * exactly once, a step never enters the nodes it inserts, and a stage that
+ * walked each root k times enters k times as many. Then every iterator step the stage took must be one of those
  * events, `events == 2 * entered + roots`, which is what says consolidation's
  * advances over the siblings it absorbs are the only steps beyond the walk's
  * own. The identity alone would not do: a second whole-root walk that counted
@@ -6899,6 +6945,12 @@ static void finish_stage_walks_each_root_once(test_batch_runner *runner) {
     OK(runner, work.finish_events < 2 * (2 * finished + work.finish_roots),
        "so it took fewer steps than two traversals of the finished tree: %zu events for %zu nodes", work.finish_events,
        finished);
+    /* The inline content was parsed by the walk, not before it: the nodes
+     * that parsing made were made after the walk noted its starting point,
+     * and every one of them is a node the walk entered. */
+    OK(runner, work.finish_parsed > 0 && work.finish_parsed <= work.nodes_created - work.nodes_created_before_finish,
+       "the walk parsed the inline content itself: %zu nodes made by its parsing of the %zu made inside it",
+       work.finish_parsed, work.nodes_created - work.nodes_created_before_finish);
 
     /* Every address became a link -- seven of them, four on field roots the
      * public iterator does not descend into -- including the one
@@ -7466,6 +7518,7 @@ int main(void) {
     stray_delimiter(runner);
     postprocess_skips_absent_kinds(runner);
     finish_step_skips_absent_kinds(runner);
+    finish_step_gate_opens_when_its_kind_is_made(runner);
     postprocess_kind_sets_are_well_formed(runner);
     block_gate_admits_every_opener(runner);
     inline_dispatch_ownership(runner);

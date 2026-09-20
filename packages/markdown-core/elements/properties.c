@@ -872,7 +872,7 @@ size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsign
     payload(&p);
     markdown_core_free(p.lines);
     if (parser->oom) {
-        markdown_core_node_free(node);
+        markdown_core_parser_release_node(parser, node);
         return 0;
     }
     parser->root->as.document->metadata = node;

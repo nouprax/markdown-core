@@ -738,7 +738,7 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
 
     // if opener has 0 characters, remove it and its associated inline
     if (opener_num_chars == 0) {
-        markdown_core_node_free(opener_inl);
+        markdown_core_parser_release_node(inline_state->owner_parser, opener_inl);
         markdown_core_inline_remove_delimiter(inline_state, opener);
     } else if (opener_num_chars < minimum_width) {
         markdown_core_inline_remove_delimiter(inline_state, opener); // A remaining single sign is only text.
@@ -747,7 +747,7 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     // if closer has 0 characters, remove it and its associated inline
     if (closer_num_chars == 0) {
         // remove empty closer inline
-        markdown_core_node_free(closer_inl);
+        markdown_core_parser_release_node(inline_state->owner_parser, closer_inl);
         // remove closer from list
         tmp_delim = closer->next;
         markdown_core_inline_remove_delimiter(inline_state, closer);

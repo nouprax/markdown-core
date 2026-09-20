@@ -149,7 +149,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     *node->as.literal = markdown_core_chunk_dup(input, start + 2, close - start - 2);
     if (!markdown_core_chunk_to_cstr(node->as.literal)) {
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_parser_release_node(parser, node);
         return NULL;
     }
     /* The scope covers both delimiters and the body. */

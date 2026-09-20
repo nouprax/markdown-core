@@ -16,60 +16,19 @@ markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
     if (!iter) {
         return NULL;
     }
-    iter->root = root;
-    iter->cur.ev_type = MARKDOWN_CORE_EVENT_NONE;
-    iter->cur.node = NULL;
-    iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-    iter->next.node = root;
+    markdown_core_iter_init(iter, root);
     return iter;
 }
 
 void markdown_core_iter_free(markdown_core_iter *iter) { markdown_core_free(iter); }
 
-markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
-    markdown_core_event_type ev_type = iter->next.ev_type;
-    markdown_core_node *node = iter->next.node;
-
-    iter->cur.ev_type = ev_type;
-    iter->cur.node = node;
-
-    if (ev_type == MARKDOWN_CORE_EVENT_DONE) {
-        return ev_type;
-    }
-
-    /* roll forward to next item, setting both fields */
-    if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-        if (node->first_child == NULL) {
-            /* stay on this node but exit */
-            iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
-        } else {
-            iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-            iter->next.node = node->first_child;
-        }
-    } else if (node == iter->root) {
-        /* don't move past root */
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
-        iter->next.node = NULL;
-    } else if (node->next) {
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-        iter->next.node = node->next;
-    } else if (node->parent) {
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
-        iter->next.node = node->parent;
-    } else {
-        assert(false);
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
-        iter->next.node = NULL;
-    }
-
-    return ev_type;
-}
+markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) { return markdown_core_iter_step(iter); }
 
 void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *current,
                               markdown_core_event_type event_type) {
     iter->next.ev_type = event_type;
     iter->next.node = current;
-    markdown_core_iter_next(iter);
+    markdown_core_iter_step(iter);
 }
 
 markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter) { return iter->cur.node; }

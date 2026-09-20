@@ -476,7 +476,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
     } else if (inl) {
         inl->as.link->resource = markdown_core_resource_new(url, title);
         if (!inl->as.link->resource) {
-            markdown_core_node_free(inl);
+            markdown_core_parser_release_node(parser, inl);
             inl = NULL;
         }
     }
@@ -524,7 +524,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
     }
 
     // Free the bracket [:
-    markdown_core_node_free(opener->inl_text);
+    markdown_core_parser_release_node(parser, opener->inl_text);
 
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
     markdown_core_inline_pop_bracket(inline_state);
@@ -618,7 +618,7 @@ void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inl
         markdown_core_node_attach_owned(opener->inl_text->parent, replacement, opener->inl_text->next);
     } else {
         markdown_core_node_attach_owned(opener->inl_text->parent, replacement, opener->inl_text);
-        markdown_core_node_free(opener->inl_text);
+        markdown_core_parser_release_node(inline_state->owner_parser, opener->inl_text);
     }
 }
 

@@ -77,14 +77,17 @@ they do for an explicit reference definition. The heading's attributes do not
 become inherited reference attributes.
 
 The finish walk reserves effective explicit anchors at each node's ENTER,
-while it discovers owned label/title fields. It visits only completed child
+while it discovers owned label/title fields. The walk parses each container's
+inline content at that container's ENTER, so it visits only completed child
 trees, after bracket reductions and occurrence attributes have settled; a
 temporary inline later discarded by a footnote call cannot reserve an anchor.
-Field parsing has already appended inline footnotes, which the walk visits as
-the document's own roots. Block footnotes are still attached to the content
-tree during this walk; the document's finalization, which follows it, moves
-them into their chains and then gives the headings their anchors. No
-anchor-specific whole-tree traversal is needed. The
+An inline footnote is appended to the document's own roots by the parse that
+declares it -- a heading's, during the document's preparation, or a
+container's, from inside the walk -- and the walk visits those roots before
+the content tree and again after it, until none is new. Block footnotes are
+still attached to the content tree during this walk; the document's
+finalization, which follows it, moves them into their chains and then gives
+the headings their anchors. No anchor-specific whole-tree traversal is needed. The
 registry and C facade use one effective-anchor accessor for local-over-inherited
 precedence. A reference resource's inherited anchor
 is hashed only on its first emitted inheriting occurrence. This identity index

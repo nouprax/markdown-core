@@ -1085,20 +1085,32 @@ const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_n
 }
 
 /* Document-owned definition values are independent roots, not child edges. */
-int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
-                                       void *context) {
+int markdown_core_visit_block_subtrees_since(markdown_core_node *node,
+                                             markdown_core_node *last[MARKDOWN_CORE_DOCUMENT_CHAINS],
+                                             markdown_core_owned_subtree_visitor visitor, void *context, bool *found) {
+    *found = false;
     if (node->kind != MARKDOWN_CORE_NODE_DOCUMENT) {
         return 1;
     }
-    markdown_core_node **families[] = {&node->as.document->footnotes, &node->as.document->specimens};
-    for (size_t i = 0; i < sizeof(families) / sizeof(*families); i++) {
-        for (markdown_core_node **slot = families[i]; *slot; slot = &(*slot)->next) {
+    markdown_core_node **families[MARKDOWN_CORE_DOCUMENT_CHAINS] = {&node->as.document->footnotes,
+                                                                    &node->as.document->specimens};
+    for (size_t i = 0; i < MARKDOWN_CORE_DOCUMENT_CHAINS; i++) {
+        for (markdown_core_node **slot = last[i] ? &last[i]->next : families[i]; *slot; slot = &(*slot)->next) {
             if (!visitor(slot, context)) {
                 return 0;
             }
+            last[i] = *slot;
+            *found = true;
         }
     }
     return 1;
+}
+
+int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
+                                       void *context) {
+    markdown_core_node *last[MARKDOWN_CORE_DOCUMENT_CHAINS] = {NULL, NULL};
+    bool found;
+    return markdown_core_visit_block_subtrees_since(node, last, visitor, context, &found);
 }
 
 uint32_t markdown_core_node_block_kind_bit(markdown_core_node_type kind) {

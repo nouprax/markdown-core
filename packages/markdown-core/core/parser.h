@@ -87,19 +87,55 @@ static inline size_t markdown_core_finish_key(markdown_core_event_type event, ma
     return 2 * markdown_core_finish_kind_index(kind) + (event == MARKDOWN_CORE_EVENT_EXIT);
 }
 
-/* The key of the one event the engine's own step, text consolidation, acts
- * at. A constant, so the walk compares the key it computed anyway. */
-#define MARKDOWN_CORE_FINISH_TEXT_EXIT_KEY                                                                             \
-    (2 * (MARKDOWN_CORE_NODE_KIND_COUNT + ((size_t)MARKDOWN_CORE_NODE_TEXT & MARKDOWN_CORE_NODE_VALUE_MASK)) + 1)
+/* The kind index of the one kind the engine's own step, text consolidation,
+ * acts at. A constant, so the walk compares the index it computed anyway. */
+#define MARKDOWN_CORE_FINISH_TEXT_INDEX                                                                                \
+    (MARKDOWN_CORE_NODE_KIND_COUNT + ((size_t)MARKDOWN_CORE_NODE_TEXT & MARKDOWN_CORE_NODE_VALUE_MASK))
 
 /* One projected step: the element, and which of the walk's per-root state
  * words is its own. An element that declared several kinds appears under each
  * of them with the same slot, so its state is one fact per root. A list ends
- * at an entry whose element is NULL. */
+ * at an entry whose element is NULL.
+ *
+ * THE GATE IS READ AT THE EVENT. A step that declares the kinds it acts on is
+ * asked at an EXIT of a kind it declared it is asked at only once the parse
+ * has produced one of the kinds it acts on -- the same fact a pass is gated
+ * on, read when the event comes rather than before the walk, because the walk
+ * parses inline content as it goes and a kind's first node may be made after
+ * the walk began. `acts_on` is that declaration as a set, and `gated` says
+ * whether the test is worth making: it is false for an entry at a kind the
+ * step acts on (a node of that kind is being exited, so the parse produced
+ * one), for a step that declared nothing, and for a scope-kind entry (the
+ * ENTER and EXIT that bound an extent are delivered whenever the extent is
+ * walked, so the state the step keeps for the extent is always in step). */
 typedef struct markdown_core_finish_step_entry {
     const markdown_core_element *element;
     size_t slot;
+    markdown_core_node_kind_set acts_on;
+    bool gated;
 } markdown_core_finish_step_entry;
+
+/* WHAT THE FINISH WALK ASKS OF A KIND, answered once per parse per kind and
+ * read as one record per event (see walk_owned_trees in blocks.c), so that
+ * the walk's common path reads no descriptor. Each flag is a fact of the
+ * kind's structure element: PARSES, the kind may hold inline content the walk
+ * parses at its ENTER (it declares `inline_content`, or a
+ * `contains_inlines_func` the walk then asks about the node); DEFERRED, the
+ * content was parsed before the walk (a heading's, by the document's
+ * preparation); FIELDS, the kind can own a field root through its own record
+ * (`markdown_core_kind_owns_fields`, element.h -- a subtree an element owns
+ * is found through the node's `element`, which the walk tests beside this).
+ * `complete` is the element's `complete_inline`, NULL for a kind whose
+ * element declares none. The out-of-table index answers nothing. */
+enum {
+    MARKDOWN_CORE_FINISH_KIND_PARSES = 1u << 0,
+    MARKDOWN_CORE_FINISH_KIND_DEFERRED = 1u << 1,
+    MARKDOWN_CORE_FINISH_KIND_FIELDS = 1u << 2
+};
+typedef struct markdown_core_finish_kind {
+    void (*complete)(struct markdown_core_parser *, markdown_core_node *, int);
+    uint8_t flags;
+} markdown_core_finish_kind;
 
 /* Immutable runs map logical content bytes to authored byte intervals.
  * Blocks append runs as lines arrive; transformed cells and decoded inline
@@ -276,13 +312,15 @@ struct markdown_core_parser {
      * finish-hook audit holds -- and which counts the descendants and field
      * roots that go with a node, since the release loop visits each of them.
      * The walk notes both in `..._before_finish` as it starts. The finished
-     * tree holds every node that existed when the walk started, less those
-     * the stage freed, plus those its steps made, so one traversal per root
-     * is exactly
+     * tree holds every node that existed when the walk started, plus those
+     * the walk's inline parsing handed it (`finish_nodes_parsed`, which the
+     * walk enters), less those the stage freed, plus those its steps made
+     * (which it never enters), so one traversal per root is exactly
      *
      *   finish_nodes_entered == nodes in the finished tree
      *                           + (nodes_freed - nodes_freed_before_finish)
      *                           - (nodes_created - nodes_created_before_finish)
+     *                           + finish_nodes_parsed
      *
      * where the finished tree is counted by whoever holds it (the api test
      * walks it with the public iterator and the owned-subtree visitors), and
@@ -301,6 +339,13 @@ struct markdown_core_parser {
      * declares a finish step and opens an iterator. */
     size_t nodes_created, nodes_created_before_finish;
     size_t nodes_freed, nodes_freed_before_finish;
+    /* The nodes the walk's own inline parsing handed it, at the ENTER of each
+     * container it parsed: what the parse made less what it discarded before
+     * returning (a bracket's opener text, a token that failed to close), which
+     * is why every parse-time release is counted (the kind-record audit holds
+     * that). Made after the walk started, so the identity above adds them
+     * back. */
+    size_t finish_nodes_parsed;
     size_t finish_walk_events;
     size_t finish_nodes_entered;
     size_t finish_walk_roots;
@@ -411,20 +456,24 @@ struct markdown_core_parser {
      * points into the same allocation as the block and inline-content
      * families, at a list terminated by a NULL element, or is NULL when
      * nothing declared the key. The lists are projected when the parser is
-     * set up and GATED when the tree is complete: the finish stage drops, in
-     * place, every step whose acted-on kinds the parse never produced, the
-     * way it drops such a pass. `finish_step_slots` is how many state words
-     * the walk keeps per root: one per element that declares a step. */
+     * set up; each entry carries its gate (markdown_core_finish_step_entry),
+     * which the walk reads at the event. `finish_step_slots` is how many
+     * state words the walk keeps per root: one per element that declares a
+     * step. `finish_kinds` is the walk's per-kind record, by kind index
+     * (markdown_core_finish_kind), projected beside the lists. */
     markdown_core_finish_step_entry *finish_dispatch[MARKDOWN_CORE_FINISH_KEY_COUNT];
     size_t finish_step_slots;
+    markdown_core_finish_kind finish_kinds[MARKDOWN_CORE_FINISH_KIND_COUNT + 1];
     /* WHICH KINDS THIS PARSE PRODUCED, recorded where they are produced.
      *
      * Every node creation and every `set_kind` that a parse performs writes
-     * here, so the postprocess gate can be evaluated before the finish stage
-     * walks anything. Gathering it by a walk instead is what forced the finish
-     * stage to traverse the document twice: the gate could not be read until
-     * the walk that produced it had finished. See the gate in `S_finish_parse`
-     * for what the set over-approximates and why that is sound.
+     * here, so the gate on a finish hook is read from a record rather than
+     * gathered by a walk: a pass is selected once the finish walk -- which
+     * parses the inline content -- has completed, and a step reads it at
+     * each event it is asked at (markdown_core_finish_step_entry). Gathering
+     * it by a walk instead is what forced the finish stage to traverse the
+     * document twice. See the gate in `S_finish_parse` for what the set
+     * over-approximates and why that is sound.
      *
      * Every production creation site goes through `markdown_core_parser_note_kind`;
      * `scripts/audit-parser-kind-record.mjs` holds that. */
@@ -607,6 +656,14 @@ static inline void markdown_core_parser_release_node(markdown_core_parser *parse
     if (parser) {
         parser->nodes_freed += released;
     }
+}
+
+/* Whether the walk asks `entry`'s step at the event it is projected to: its
+ * gate, read against the kinds the parse has produced so far. */
+static inline bool markdown_core_finish_step_admitted(const markdown_core_finish_step_entry *entry,
+                                                      const markdown_core_parser *parser) {
+    return !entry->gated || (entry->acts_on.blocks & parser->kinds_created.blocks) ||
+           (entry->acts_on.inlines & parser->kinds_created.inlines);
 }
 
 static inline markdown_core_node *markdown_core_parser_make_node(markdown_core_parser *parser,

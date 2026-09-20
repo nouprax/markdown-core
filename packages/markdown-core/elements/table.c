@@ -237,7 +237,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     markdown_core_strbuf_put(&paragraph->content, parent_string + first, content_end - first);
     if (paragraph->content.oom) {
         parser->oom = true;
-        markdown_core_node_free(paragraph);
+        markdown_core_parser_release_node(parser, paragraph);
         return;
     }
 
@@ -262,7 +262,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
         // markdown_core_node_free, not markdown_core_free: the node owns a content
         // buffer by now, and freeing the struct alone leaks it.
         parser->oom = true;
-        markdown_core_node_free(paragraph);
+        markdown_core_parser_release_node(parser, paragraph);
         return;
     }
     /* A table split completes this paragraph just as a later block start
@@ -1908,7 +1908,7 @@ static markdown_core_node *table_child(markdown_core_parser *parser, markdown_co
     node->start_column = markdown_core_parser_source_column(parser, first_line, first_column);
     node->end_column = markdown_core_parser_source_column(parser, last_line, last_column);
     if (parent && !markdown_core_node_attach_owned(parent, node, NULL)) {
-        markdown_core_node_free(node);
+        markdown_core_parser_release_node(parser, node);
         parser->oom = true;
         return NULL;
     }
