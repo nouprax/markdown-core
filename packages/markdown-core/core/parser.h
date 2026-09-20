@@ -232,6 +232,8 @@ struct markdown_core_parser {
     size_t definition_registration_work;
     /* Run bytes, opener comparisons, and child moves in the shared delimiter algorithm. */
     size_t delimiter_work;
+    /* Delimiter entries pushed, against which the pool's growth is measured. */
+    size_t delimiter_pushes;
     /* Ordinary whitespace scalars and contextual-space lookahead bytes. */
     size_t whitespace_work;
     size_t bracket_work;
@@ -392,6 +394,10 @@ struct markdown_core_parser {
      * why it runs unconditionally on the one path that creates a parser. */
     const markdown_core_element **inline_hooks[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     size_t inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_COUNT];
+    /* Delimiter entries removed from an inline parse, kept for the next push
+     * (see `markdown_core_inline_push_delimiter_entry`); linked through `next`
+     * and released with the parser. */
+    struct delimiter *free_delimiters;
     /* The finish steps by key (see `markdown_core_finish_key`): each entry
      * points into the same allocation as the block and inline-content
      * families, at a list terminated by a NULL element, or is NULL when

@@ -207,6 +207,12 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     parser->line_marks_size = 0;
     parser->line_marks_alloc = 0;
 
+    while (parser->free_delimiters) {
+        delimiter *entry = parser->free_delimiters;
+        parser->free_delimiters = entry->next;
+        markdown_core_free(entry);
+    }
+
     /* The block-start lookahead's chain and resume cache are parser state of
      * the same kind: indexed by open containers and source lines, owned by no
      * node, and dead with the parse. */
@@ -2721,27 +2727,61 @@ uint64_t markdown_core_source_key(const void *entry) {
     return ((uint64_t)(uint32_t)node->start_line << 32) | (uint32_t)node->start_column;
 }
 
-/* Eight stable byte passes order the two nonnegative 32-bit coordinates.
- * This bound holds for every source shape on every libc; there is no
- * comparison-sort worst case or input-size-dependent alternate path. */
+/* A STABLE LINEAR ORDERING BY SOURCE COORDINATE, keyed once.
+ *
+ * The key packs two nonnegative 32-bit coordinates, and a counting pass per
+ * key byte orders any set of them in linear work with no comparison-sort worst
+ * case. What is not constant is WHICH bytes carry information: the entries a
+ * grid table closes, or the headings of one document, differ in their low line
+ * and column bytes and agree on every other. A pass over a byte on which every
+ * key agrees moves every entry to where it already is, so the passes run are
+ * exactly those over bytes on which some key differs -- found by one pass
+ * that also computes the keys, once, so that they travel with their entries
+ * instead of being recomputed twice per entry per pass. The same pass sees
+ * whether the entries are already in order, and a stable sort of an ordered
+ * input is the identity, so nothing is moved or allocated for it. Every input
+ * shape is still bounded by eight passes; none pays for a pass that cannot
+ * change it. */
 int markdown_core_order_source_entries(void *entries, size_t count, size_t stride, uint64_t (*key)(const void *)) {
-    if (!count) {
+    if (count < 2) {
         return 1;
     }
-    if (count > SIZE_MAX / stride) {
+    if (count > SIZE_MAX / stride || count > SIZE_MAX / (2 * sizeof(uint64_t))) {
         return 0;
+    }
+    unsigned char *source = entries;
+    uint64_t *keys = markdown_core_alloc(count, 2 * sizeof(uint64_t));
+    if (!keys) {
+        return 0;
+    }
+    uint64_t *key_source = keys;
+    uint64_t *key_target = keys + count;
+    uint64_t differing = 0;
+    bool ordered = true;
+    key_source[0] = key(source);
+    for (size_t i = 1; i < count; i++) {
+        key_source[i] = key(source + i * stride);
+        differing |= key_source[i] ^ key_source[0];
+        ordered = ordered && key_source[i - 1] <= key_source[i];
+    }
+    if (ordered) {
+        markdown_core_free(keys);
+        return 1;
     }
     unsigned char *scratch = markdown_core_alloc(count, stride);
-    unsigned char *source = entries;
-    unsigned char *target = scratch;
     if (!scratch) {
+        markdown_core_free(keys);
         return 0;
     }
+    unsigned char *target = scratch;
     for (unsigned shift = 0; shift < 64; shift += 8) {
+        if (!((differing >> shift) & 255)) {
+            continue;
+        }
         size_t offsets[256] = {0};
         size_t offset = 0;
         for (size_t i = 0; i < count; i++) {
-            offsets[(key(source + i * stride) >> shift) & 255]++;
+            offsets[(key_source[i] >> shift) & 255]++;
         }
         for (size_t byte = 0; byte < 256; byte++) {
             size_t length = offsets[byte];
@@ -2749,15 +2789,22 @@ int markdown_core_order_source_entries(void *entries, size_t count, size_t strid
             offset += length;
         }
         for (size_t i = 0; i < count; i++) {
-            size_t destination = offsets[(key(source + i * stride) >> shift) & 255]++;
+            size_t destination = offsets[(key_source[i] >> shift) & 255]++;
+            key_target[destination] = key_source[i];
             memcpy(target + destination * stride, source + i * stride, stride);
         }
         unsigned char *swap = source;
         source = target;
         target = swap;
+        uint64_t *key_swap = key_source;
+        key_source = key_target;
+        key_target = key_swap;
     }
-    assert(source == entries);
+    if (source != entries) {
+        memcpy(entries, source, count * stride);
+    }
     markdown_core_free(scratch);
+    markdown_core_free(keys);
     return 1;
 }
 

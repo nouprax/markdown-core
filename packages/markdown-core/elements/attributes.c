@@ -290,7 +290,16 @@ bufsize_t markdown_core_attributes_end(markdown_core_attribute_parser *p, bufsiz
     return answer == INVALID ? 0 : answer;
 }
 
+/* RELEASES WHAT THE VALUE OWNS, AND NOTHING FOR A VALUE THAT OWNS NOTHING.
+ * Every node carries a value and most carry an empty one -- no Text node has
+ * attributes -- and the node's release visits each of them, so the empty value
+ * is the common call. It owns no vector, no arena and no anchor bytes, and a
+ * release that walked it anyway made three round trips into the allocation
+ * module to free nothing, then cleared a struct that was already zero. */
 void markdown_core_attributes_free(markdown_core_attributes *v) {
+    if (!v->classes && !v->records && !v->arena && !v->anchor.alloc) {
+        return;
+    }
     markdown_core_chunk_free(&v->anchor);
     for (size_t i = 0; i < v->class_count; i++) {
         markdown_core_chunk_free(&v->classes[i]);

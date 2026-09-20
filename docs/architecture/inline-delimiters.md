@@ -18,8 +18,11 @@ The private stack contains five source-ordered entry kinds:
 | Affix boundary | A committed item splits prefix, key and suffix inline fields | Advances every rule's opener-search floor |
 | Field | A consumed token owns inline fields that must finish before the next token | Parses those fields once, then becomes a boundary or is removed |
 
-Every entry uses the same allocation, linking and removal operations. Fields
-borrow their token owner; the AST owns the field trees. A field event is always
+Every entry uses the same allocation, linking and removal operations, and the
+allocation is pooled by the parser: a removed entry goes to the parser's free
+list and the next push takes it back, so the allocator is asked once per live
+slot rather than once per push, and the pool is released with the parser.
+Fields borrow their token owner; the AST owns the field trees. A field event is always
 the last entry when token scanning pauses. Completing it cannot change the
 parent stack because each field has its own inline state. No script cursor boundary or per-marker boundary snapshot is retained.
 

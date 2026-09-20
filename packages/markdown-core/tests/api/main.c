@@ -28,6 +28,7 @@
 #include <markdown_core.h>
 
 #include "ast_internal.h"
+#include "block_internal.h"
 
 #include "harness.h"
 #include "cplusplus.h"
@@ -54,6 +55,9 @@
  * counter runs only between `payload_probe_arm` and `payload_probe_disarm`,
  * where the test allocates and frees everything it asserts about. */
 static size_t payload_allocations, payload_fail_at, payload_live;
+/* Calls into the free seam while counting, a null pointer included: the count
+ * for a release that has nothing to release. */
+static size_t payload_releases;
 static int payload_counting;
 static int strbuf_refuse_next;
 static void *marker_to_free;
@@ -112,7 +116,7 @@ static void properties_probe_disarm(void) {
  * So the probes check themselves. Disarming a region that counted nothing
  * aborts, which cannot be arranged around by moving a line. */
 static void payload_probe_arm(void) {
-    payload_allocations = payload_fail_at = payload_live = 0;
+    payload_allocations = payload_fail_at = payload_live = payload_releases = 0;
     payload_counting = 1;
 }
 
@@ -215,6 +219,7 @@ void markdown_core_free(void *pointer) {
     }
     if (payload_counting) {
         payload_live -= pointer != NULL;
+        payload_releases++;
     }
     free(pointer);
 }
@@ -3543,6 +3548,8 @@ typedef struct {
      * the finish walk completes, so these are the stage's totals. */
     size_t finish_events, finish_entered, finish_roots;
     size_t nodes_created, nodes_created_before_finish, nodes_freed, nodes_freed_before_finish;
+    size_t delimiter_pushes;
+    size_t pooled_delimiters;
 } inline_work;
 static int record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                               markdown_core_node *root) {
@@ -3562,6 +3569,11 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
     work->autolink_domains = parser->autolink_domain_work;
     work->opaque = parser->opaque_scan_work;
     work->delimiters = parser->delimiter_work;
+    work->delimiter_pushes = parser->delimiter_pushes;
+    work->pooled_delimiters = 0;
+    for (const delimiter *entry = parser->free_delimiters; entry; entry = entry->next) {
+        work->pooled_delimiters++;
+    }
     work->whitespace = parser->whitespace_work;
     work->inline_hooks = parser->inline_hook_work;
     work->properties_lines = parser->properties_line_work;
@@ -5082,6 +5094,149 @@ static void attribute_values_are_one_arena(test_batch_runner *runner) {
         INT_EQ(runner, payload_live, 0, "freeing the value releases every allocation");
         markdown_core_strbuf_free(&source);
     }
+}
+
+/* ORDERING IS LINEAR IN THE ENTRIES AND PASSES ONLY OVER KEY BYTES THAT DIFFER.
+ * The shapes below are the ones a pass-skipping implementation can get wrong:
+ * keys that differ in the top byte only, keys that differ in every byte, and
+ * ties, which a stable ordering must leave in arrival order. An ordered input
+ * is the identity and moves nothing. */
+typedef struct source_entry {
+    markdown_core_node *node;
+    int serial;
+} source_entry;
+
+static int source_entries_ordered(const source_entry *entries, size_t count) {
+    for (size_t i = 1; i < count; i++) {
+        uint64_t previous = markdown_core_source_key(&entries[i - 1]);
+        uint64_t current = markdown_core_source_key(&entries[i]);
+        if (previous > current || (previous == current && entries[i - 1].serial > entries[i].serial)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void source_entries_order_by_the_key_bytes_that_differ(test_batch_runner *runner) {
+    enum { COUNT = 1000 };
+    static markdown_core_node nodes[COUNT];
+    source_entry entries[COUNT];
+    static const struct {
+        const char *name;
+        int allocations;
+    } shapes[] = {
+        {"already ordered", 1},
+        {"top byte only", 2},
+        {"every byte", 2},
+        {"ties", 2},
+    };
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        uint32_t state = 0x9E3779B9u;
+        for (int i = 0; i < COUNT; i++) {
+            state = state * 1664525u + 1013904223u;
+            int line, column;
+            switch (shape) {
+            case 0:
+                line = i / 7;
+                column = i % 7;
+                break;
+            case 1:
+                line = (int)((COUNT - i) << 23);
+                column = 1;
+                break;
+            case 2:
+                line = (int)(state >> 1);
+                column = (int)((state * 2654435761u) >> 1);
+                break;
+            default:
+                line = (i * 31) % 5;
+                column = 0;
+                break;
+            }
+            nodes[i].start_line = line;
+            nodes[i].start_column = column;
+            entries[i] = (source_entry){&nodes[i], i};
+        }
+        payload_probe_arm();
+        int ok = markdown_core_order_source_entries(entries, COUNT, sizeof(*entries), markdown_core_source_key);
+        size_t allocations = payload_allocations;
+        size_t live = payload_live;
+        payload_probe_disarm();
+        OK(runner, ok && source_entries_ordered(entries, COUNT), "%s: entries are ordered by key, ties by arrival",
+           shapes[shape].name);
+        INT_EQ(runner, (int)allocations, shapes[shape].allocations,
+               "%s: the keys are computed once and an ordered input moves nothing", shapes[shape].name);
+        INT_EQ(runner, (int)live, 0, "%s: the scratch is released", shapes[shape].name);
+    }
+    OK(runner,
+       markdown_core_order_source_entries(entries, 0, sizeof(*entries), markdown_core_source_key) &&
+           markdown_core_order_source_entries(entries, 1, sizeof(*entries), markdown_core_source_key),
+       "fewer than two entries are ordered as they are");
+}
+
+/* A DELIMITER ENTRY IS ALLOCATED ONCE PER LIVE SLOT, NOT ONCE PER PUSH. The
+ * pushes grow with the inline containers a document has; the entries the
+ * parser holds at the end -- every entry it ever allocated, since a container
+ * returns all of its entries when it is cleared -- do not. */
+static void delimiter_entries_are_pooled_across_inline_containers(test_batch_runner *runner) {
+    static const char paragraph[] = "*a* **b** _c_ d *e f* g\n\n";
+    size_t pushes_per_paragraph = 0, pooled_for_one = 0, nodes_for_one = 0;
+    for (size_t count = 1; count <= 64; count *= 8) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_strbuf_puts(&source, paragraph);
+        }
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_setup((const char *)source.ptr, source.size, measure_inline_work, &work);
+        OK(runner, root != NULL, "the document parses");
+        size_t emphases = 0;
+        markdown_core_iter *iter = markdown_core_iter_new(root);
+        markdown_core_event_type ev;
+        while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            markdown_core_node *node = markdown_core_iter_get_node(iter);
+            if (ev == MARKDOWN_CORE_EVENT_ENTER &&
+                (node->kind == MARKDOWN_CORE_NODE_EMPHASIS || node->kind == MARKDOWN_CORE_NODE_STRONG)) {
+                emphases++;
+            }
+        }
+        markdown_core_iter_free(iter);
+        if (count == 1) {
+            pushes_per_paragraph = work.delimiter_pushes;
+            pooled_for_one = work.pooled_delimiters;
+            nodes_for_one = emphases;
+            OK(runner, pushes_per_paragraph > 0 && pooled_for_one > 0 && nodes_for_one == 4,
+               "one paragraph pushes entries and leaves them pooled: pushes=%zu pooled=%zu", pushes_per_paragraph,
+               pooled_for_one);
+        } else {
+            INT_EQ(runner, (int)work.delimiter_pushes, (int)(count * pushes_per_paragraph),
+                   "pushes grow with the paragraphs: count=%zu", count);
+            INT_EQ(runner, (int)work.pooled_delimiters, (int)pooled_for_one, "the entries allocated do not: count=%zu",
+                   count);
+            INT_EQ(runner, (int)emphases, (int)(count * nodes_for_one), "a reused entry parses as a fresh one");
+        }
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
+/* Every node's release visits its attribute value, and most values are empty. */
+static void releasing_an_empty_attribute_value_makes_no_allocator_call(test_batch_runner *runner) {
+    static const char container[] = "{#a .b k=v}";
+    markdown_core_attribute_parser parser = {.data = (const unsigned char *)container, .length = sizeof(container) - 1};
+    markdown_core_attributes value = {0};
+    markdown_core_attributes empty = {0};
+    bufsize_t end = 0;
+    payload_probe_arm();
+    OK(runner, markdown_core_attributes_parse(&parser, 0, &value, &end), "the container parses");
+    markdown_core_attribute_parser_free(&parser);
+    size_t releases = payload_releases;
+    markdown_core_attributes_free(&empty);
+    INT_EQ(runner, (int)payload_releases, (int)releases, "an empty value is released without entering the allocator");
+    markdown_core_attributes_free(&value);
+    INT_EQ(runner, (int)payload_live, 0, "a value that owns strings releases them all");
+    OK(runner, payload_releases > releases, "and does so through the allocator");
+    payload_probe_disarm();
 }
 
 static void attribute_attachment_linear_work(test_batch_runner *runner) {
@@ -7070,6 +7225,9 @@ int main(void) {
     attribute_linear_work(runner);
     attribute_recognition_is_memoised(runner);
     attribute_values_are_one_arena(runner);
+    source_entries_order_by_the_key_bytes_that_differ(runner);
+    delimiter_entries_are_pooled_across_inline_containers(runner);
+    releasing_an_empty_attribute_value_makes_no_allocator_call(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
     heading_registry_invariants(runner);

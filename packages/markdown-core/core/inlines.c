@@ -343,15 +343,38 @@ void markdown_core_inline_remove_delimiter(markdown_core_inline_state *inline_st
     if (delim->can_close) {
         inline_state->delim_closers[delim->rule]--;
     }
-    markdown_core_free(delim);
+    /* Returned to the parser's pool, not to the allocator: see the push. */
+    delim->next = inline_state->owner_parser->free_delimiters;
+    inline_state->owner_parser->free_delimiters = delim;
 }
 
+/* DELIMITER ENTRIES ARE POOLED BY THE PARSER. An entry lives from its push to
+ * the reduction or clearing that removes it, which is within one inline
+ * container's parse, and a document pushes one per marker run and one per
+ * whitespace boundary between them. Taking each from the allocator and giving
+ * it back was the largest fixed cost per delimiter in an emphasis-heavy
+ * document, larger than classifying the run. The parser keeps the entries it
+ * has removed on a free list and hands them out again, so the allocator is
+ * asked only when more entries are live at once than ever were before: the
+ * pool's size is the largest live count in the document, and it is released
+ * with the parser. Every inline state that pushes has a parser; the one built
+ * without (`markdown_core_parse_reference_inline`) scans a label and pushes
+ * nothing. */
 delimiter *markdown_core_inline_push_delimiter_entry(markdown_core_inline_state *inline_state, delimiter_kind kind,
                                                      bufsize_t position) {
-    delimiter *entry = (delimiter *)markdown_core_alloc(1, sizeof(delimiter));
-    if (!entry) {
-        inline_state->oom = 1;
-        return NULL;
+    markdown_core_parser *parser = inline_state->owner_parser;
+    assert(parser);
+    parser->delimiter_pushes++;
+    delimiter *entry = parser->free_delimiters;
+    if (entry) {
+        parser->free_delimiters = entry->next;
+        memset(entry, 0, sizeof(*entry));
+    } else {
+        entry = (delimiter *)markdown_core_alloc(1, sizeof(delimiter));
+        if (!entry) {
+            inline_state->oom = 1;
+            return NULL;
+        }
     }
     entry->kind = kind;
     entry->position = position;
