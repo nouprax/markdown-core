@@ -249,6 +249,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .continue_container = continue_container,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_definition_list_scan,
+    .scan_block_gate = {.bytes = ":~"},
     .try_opening_paragraph = try_paragraph,
 };
 

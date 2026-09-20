@@ -88,7 +88,14 @@ static inline const markdown_core_element *markdown_core_node_structure(const ma
  *
  * A gate is a statement about ONE LINE. A grammar decided by a later line --
  * a Pandoc simple table, whose prose header is only a table because the NEXT
- * line is dashes -- cannot be expressed here and must not be gated. */
+ * line is dashes -- cannot be expressed here and must not be gated.
+ *
+ * A gate speaks about a line that is NOT indented code. Four columns of
+ * indentation are a block start of their own, decided by no byte, so the scan
+ * and interrupt families ask an indented line only of the owners whose
+ * `maximum_block_indent` reaches it, whatever their gate says, and ask a
+ * non-indented line only of the owners whose gate admits its first byte. The
+ * two descriptor facts compose; neither is a branch on the input. */
 typedef struct markdown_core_block_gate {
     const char *bytes;
 } markdown_core_block_gate;
@@ -132,6 +139,9 @@ struct markdown_core_element {
 
     bool (*scan_block_start)(markdown_core_parser *, struct markdown_core_block_start_context *,
                              struct markdown_core_block_start *);
+    /* What `scan_block_start` needs on a non-indented line before it is worth
+     * entering; an indented line reaches it through `maximum_block_indent`. */
+    markdown_core_block_gate scan_block_gate;
     /* Last refusal before an ordinary paragraph, after opaque blocks/tables. */
     markdown_core_open_block_func try_opening_paragraph;
     markdown_core_match_block_func last_block_matches;
@@ -141,6 +151,8 @@ struct markdown_core_element {
     markdown_core_open_block_func try_opening_block;
     /* What `try_opening_block` needs on the line before it is worth entering. */
     markdown_core_block_gate open_block_gate;
+    /* What `try_interrupting_block` needs on a non-indented line. */
+    markdown_core_block_gate interrupt_block_gate;
     /* Non-consuming recognition before this element's block-opening slot.
      * Shares the producer's grammar; may report allocation failure, but never
      * opens a node or claims source. */

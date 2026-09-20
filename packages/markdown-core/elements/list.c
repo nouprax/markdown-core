@@ -287,6 +287,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .blank_runs = true,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_list_scan,
+    /* A bullet, or an ordered marker: a numeral or `#`, closed or not. */
+    .scan_block_gate = {.bytes = "*-+(#0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"},
 };
 
 int markdown_core_block_consume_item_marker(markdown_core_parser *parser, markdown_core_chunk *input,

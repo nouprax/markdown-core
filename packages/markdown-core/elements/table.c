@@ -2213,6 +2213,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .dispose_parser = dispose_parser,
 
     .try_interrupting_block = try_interrupting_block,
+    /* A delimiter row leading a dash-led table. */
+    .interrupt_block_gate = {.bytes = "-"},
 
     .name = "table",
     .last_block_matches = matches,

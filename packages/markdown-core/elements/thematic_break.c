@@ -58,5 +58,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_THEMATIC_BREAK = {
     .name = "thematic_break",
     .maximum_block_indent = 3,
     .scan_block_start = scan_thematic,
+    .scan_block_gate = {.bytes = "*-_"},
     .blank_opaque = true,
 };

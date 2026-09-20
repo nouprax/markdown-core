@@ -160,6 +160,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .continue_container = continue_container,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_footnote_scan,
+    .scan_block_gate = {.bytes = "["},
 
     .match_inline = match,
     .terminates_text = "^",

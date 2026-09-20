@@ -391,12 +391,13 @@ struct markdown_core_parser {
     /* The one block behind the block families, the inline-content families
      * and the finish steps. */
     void *block_hook_allocation;
-    /* Each family's declared gates flattened to one 256-bit admitted-byte map
-     * per owner, in the family's own order, so a line tests a bit rather than
-     * walking a declared set. A NULL map means the family declared nothing and
-     * every owner is asked, which is the behaviour a gate replaces. */
-    uint8_t *block_gate_bytes[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
-    uint8_t *block_gate_allocation;
+    /* Each family's declared gates projected to one list of owners per key
+     * (a first non-space byte, no byte, or an indented line), in the family's
+     * own order, so a line reads the owners its key names rather than asking
+     * every owner (see S_gate_candidates). A NULL table means the family
+     * declared nothing and every owner is asked, which is the behaviour a
+     * gate replaces. */
+    uint8_t *block_gate_lists[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     /* The inline-content families, projected from the same registry and in the
      * same descriptor order. Zero counts before the projection runs, which is
      * why it runs unconditionally on the one path that creates a parser. */

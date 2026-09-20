@@ -1819,38 +1819,74 @@ static bool sweep_block_gates(markdown_core_parser *parser, void *context) {
     const markdown_core_element *const *elements = parser->elements;
     size_t element_count = parser->element_count;
 
+    /* A byte the gate does not admit must be one the hook rejects, whatever
+     * container it is asked in and whether or not a paragraph is open: a scan
+     * hook is asked from inside a definition too (definition_list's), and a
+     * setext underline is a heading only under a paragraph. A blank line, which
+     * no gate can name, is asked of no gated scan hook, so each must reject it
+     * as well. Line endings are left out of the byte sweep -- a line made of
+     * them is not a line -- and covered by the blank probe. */
+    static const markdown_core_node_type containers[] = {MARKDOWN_CORE_NODE_DOCUMENT, MARKDOWN_CORE_NODE_DEFINITION};
     for (size_t i = 0; i < element_count; i++) {
         const markdown_core_element *element = elements[i];
-        if (!element->try_opening_block || !element->open_block_gate.bytes) {
-            continue;
-        }
-        sweep->gated++;
-        for (int byte = 1; byte < 256; byte++) {
-            unsigned char line[8];
-            markdown_core_parser probe = {0};
-            markdown_core_node *parent;
-            markdown_core_node *opened;
-
-            if (byte == '\n' || byte == '\r' || strchr(element->open_block_gate.bytes, byte)) {
+        const struct {
+            const char *family;
+            const char *bytes;
+        } gates[] = {{"open", element->try_opening_block ? element->open_block_gate.bytes : NULL},
+                     {"scan", element->scan_block_start ? element->scan_block_gate.bytes : NULL},
+                     {"interrupt", element->try_interrupting_block ? element->interrupt_block_gate.bytes : NULL}};
+        for (size_t g = 0; g < sizeof(gates) / sizeof(*gates); g++) {
+            if (!gates[g].bytes) {
                 continue;
             }
-            parent = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
-            if (!parent) {
-                continue;
-            }
-            line[0] = (unsigned char)byte;
-            line[1] = (unsigned char)byte;
-            line[2] = (unsigned char)byte;
-            line[3] = '\n';
-            opened = element->try_opening_block(element, 0, &probe, parent, line, 4);
-            if (opened) {
-                sweep->violations++;
-                if (sweep->first_bad_byte < 0) {
-                    sweep->first_bad_byte = byte;
-                    sweep->first_bad_element = element->name;
+            sweep->gated++;
+            for (int byte = 0; byte < 256; byte++) {
+                unsigned char line[8];
+                bool blank = byte == '\n';
+                if (byte == '\r' || byte == 0 || (!blank && strchr(gates[g].bytes, byte))) {
+                    continue;
+                }
+                line[0] = (unsigned char)byte;
+                line[1] = blank ? 0 : (unsigned char)byte;
+                line[2] = blank ? 0 : (unsigned char)byte;
+                line[3] = '\n';
+                for (size_t c = 0; c < sizeof(containers) / sizeof(*containers); c++) {
+                    for (int paragraph = 0; paragraph < 2; paragraph++) {
+                        markdown_core_parser probe = {0};
+                        markdown_core_node *parent = markdown_core_node_new(containers[c]);
+                        markdown_core_chunk input = {line, blank ? 1 : 4, 0};
+                        bool claimed = false;
+                        if (!parent) {
+                            continue;
+                        }
+                        if (gates[g].family[0] == 'o') {
+                            claimed = element->try_opening_block(element, 0, &probe, parent, line, input.len) != NULL;
+                        } else if (gates[g].family[0] == 's') {
+                            block_start_context context = {.container = parent,
+                                                           .input = &input,
+                                                           .first = 0,
+                                                           .column = 1,
+                                                           .indent = 0,
+                                                           .paragraph = paragraph != 0,
+                                                           .lazy = false,
+                                                           .all_matched = true,
+                                                           .depth = 1};
+                            block_start start = {0};
+                            claimed = element->scan_block_start(&probe, &context, &start);
+                        } else {
+                            claimed = element->try_interrupting_block(&probe, parent, &input, false) != NULL;
+                        }
+                        if (claimed) {
+                            sweep->violations++;
+                            if (sweep->first_bad_byte < 0) {
+                                sweep->first_bad_byte = byte;
+                                sweep->first_bad_element = element->name;
+                            }
+                        }
+                        markdown_core_node_free(parent);
+                    }
                 }
             }
-            markdown_core_node_free(parent);
         }
     }
     return true;
@@ -1937,7 +1973,7 @@ static void block_gate_admits_every_opener(test_batch_runner *runner) {
     const char *first_bad_element = sweep.first_bad_element;
     markdown_core_node_free(probe_doc);
 
-    OK(runner, gated > 0, "at least one element declares a block-start gate for this law to bind");
+    OK(runner, gated >= 13, "every scan and interrupt hook, and the gated openers, declare a gate: gated=%zu", gated);
     OK(runner, violations == 0, "no gated opener claims a line its gate excludes");
     if (violations) {
         fprintf(stderr, "element %s opened a block on byte 0x%02x, which its gate excludes\n",
@@ -5326,6 +5362,26 @@ static void placement_from_the_cursor_agrees_with_the_span(test_batch_runner *ru
     markdown_core_node_free(root);
 }
 
+/* A LINE WHOSE FIRST BYTE NO SCAN OWNER DECLARED REACHES NONE OF THEM. The
+ * projection reads the line's key and asks only the owners listed under it;
+ * `!` leads nothing, so the list and specimen scanners, whose work counters
+ * count every byte they look at and which nothing else drives on this
+ * document, never see the line. */
+static void an_undeclared_first_byte_reaches_no_gated_scanner(test_batch_runner *runner) {
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+    for (int i = 0; i < 512; i++) {
+        markdown_core_strbuf_puts(&source, "! prose that no block grammar starts on\n\n");
+    }
+    inline_work work = {0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup((const char *)source.ptr, source.size, measure_inline_work, &work);
+    OK(runner, root != NULL, "the document parses");
+    INT_EQ(runner, (int)work.list_markers, 0, "the list scanner is not asked about a line it cannot start");
+    INT_EQ(runner, (int)work.specimens, 0, "nor the specimen scanner");
+    markdown_core_node_free(root);
+    markdown_core_strbuf_free(&source);
+}
+
 static void attribute_attachment_linear_work(test_batch_runner *runner) {
     static const struct {
         const char *prefix, *unit, *suffix;
@@ -7317,6 +7373,7 @@ int main(void) {
     releasing_an_empty_attribute_value_makes_no_allocator_call(runner);
     inline_placement_probes_the_map_a_bounded_number_of_times(runner);
     placement_from_the_cursor_agrees_with_the_span(runner);
+    an_undeclared_first_byte_reaches_no_gated_scanner(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
     heading_registry_invariants(runner);

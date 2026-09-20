@@ -197,6 +197,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .name = "code_block",
     .maximum_block_indent = INT_MAX,
     .scan_block_start = scan_code,
+    /* A fence; an indented block is reached through the indent bound. */
+    .scan_block_gate = {.bytes = "`~"},
     .last_block_matches = continue_code,
     .content_mode = MARKDOWN_CORE_CONTENT_LITERAL,
     .finalize_block = finalize_code,
