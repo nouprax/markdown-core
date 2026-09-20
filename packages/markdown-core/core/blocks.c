@@ -1858,8 +1858,23 @@ static bool S_gate_admits(const markdown_core_parser *parser, markdown_core_bloc
  * together, once per line, and separate blocks would scatter them. Failure
  * leaves every list empty, which parses as "no element opens a block" rather
  * than as a wrong grammar, and is reported through parser->oom. */
+static bool S_element_implements_inline(const markdown_core_element *element, markdown_core_inline_hook hook) {
+    switch (hook) {
+    case MARKDOWN_CORE_INLINE_HOOK_INIT:
+        return element->init_inline != NULL;
+    case MARKDOWN_CORE_INLINE_HOOK_FINISH:
+        return element->finish_inline != NULL;
+    case MARKDOWN_CORE_INLINE_HOOK_DISPOSE:
+        return element->dispose_inline != NULL;
+    case MARKDOWN_CORE_INLINE_HOOK_COUNT:
+        break;
+    }
+    return false;
+}
+
 static void S_project_block_hooks(markdown_core_parser *parser) {
     size_t totals[MARKDOWN_CORE_BLOCK_HOOK_COUNT] = {0};
+    size_t inline_totals[MARKDOWN_CORE_INLINE_HOOK_COUNT] = {0};
     size_t total = 0;
 
     markdown_core_free(parser->block_hook_allocation);
@@ -1869,6 +1884,8 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
     memset(parser->block_hooks, 0, sizeof(parser->block_hooks));
     memset(parser->block_hook_counts, 0, sizeof(parser->block_hook_counts));
     memset(parser->block_gate_bytes, 0, sizeof(parser->block_gate_bytes));
+    memset(parser->inline_hooks, 0, sizeof(parser->inline_hooks));
+    memset(parser->inline_hook_counts, 0, sizeof(parser->inline_hook_counts));
 
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
         for (size_t i = 0; i < parser->element_count; i++) {
@@ -1877,6 +1894,20 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
             }
         }
         total += totals[hook];
+    }
+    /* The inline-content families share this one allocation rather than taking
+     * their own. Not tidiness: a second small block here lands between a
+     * grown-by-realloc parse buffer and its headroom, and the realloc that used
+     * to extend in place starts copying instead. On `chain-link-candidates`
+     * that showed up as +466,301 Ir of `memcpy` for a projection that saves
+     * that document almost nothing. */
+    for (size_t hook = 0; hook < MARKDOWN_CORE_INLINE_HOOK_COUNT; hook++) {
+        for (size_t i = 0; i < parser->element_count; i++) {
+            if (S_element_implements_inline(parser->elements[i], (markdown_core_inline_hook)hook)) {
+                inline_totals[hook]++;
+            }
+        }
+        total += inline_totals[hook];
     }
     if (!total) {
         return;
@@ -1895,6 +1926,15 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
         parser->block_hook_counts[hook] = totals[hook];
         for (size_t i = 0; i < parser->element_count; i++) {
             if (S_element_implements(parser->elements[i], (markdown_core_block_hook)hook)) {
+                entries[at++] = parser->elements[i];
+            }
+        }
+    }
+    for (size_t hook = 0; hook < MARKDOWN_CORE_INLINE_HOOK_COUNT; hook++) {
+        parser->inline_hooks[hook] = entries + at;
+        parser->inline_hook_counts[hook] = inline_totals[hook];
+        for (size_t i = 0; i < parser->element_count; i++) {
+            if (S_element_implements_inline(parser->elements[i], (markdown_core_inline_hook)hook)) {
                 entries[at++] = parser->elements[i];
             }
         }
