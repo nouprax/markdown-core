@@ -203,6 +203,16 @@ struct markdown_core_parser {
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
     /* Properties work: source ranges decoded once at their owning boundary. */
     size_t metadata_decoded_bytes;
+    /* Bytes the properties envelope's two search passes examine: the fence
+     * pass hands each byte to `memchr` once, and the index pass hands each
+     * envelope byte to the LF search and the CR search once each, so the
+     * total is bounded by three times the document. Nothing about the output
+     * can see how many times a line's geometry was derived, so that bound is
+     * asserted on this counter. What the counter proves is exactly that: the
+     * searches' bound and, through the bare-CR case, that the LF memo holds.
+     * A consumer that re-derived a line with a byte loop of its own would not
+     * be counted here; it is kept out by there being no such loop to call. */
+    size_t properties_line_work;
     /* Bytes examined by the shared block-identifier suffix scanner. */
     size_t block_identifier_work;
     size_t callout_scan_work;

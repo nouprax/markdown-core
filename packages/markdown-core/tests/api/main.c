@@ -3459,6 +3459,7 @@ typedef struct {
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
     size_t inline_hooks;
+    size_t properties_lines;
 } inline_work;
 static int record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                               markdown_core_node *root) {
@@ -3473,6 +3474,7 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
     work->delimiters = parser->delimiter_work;
     work->whitespace = parser->whitespace_work;
     work->inline_hooks = parser->inline_hook_work;
+    work->properties_lines = parser->properties_line_work;
     work->brackets = parser->bracket_work;
     work->citations = parser->citation_work;
     work->citation_brace_bytes = parser->citation_brace_bytes;
@@ -6033,6 +6035,112 @@ static void inline_hook_projection_ignores_non_owners(test_batch_runner *runner)
     markdown_core_strbuf_free(&source);
 }
 
+/* THE PROPERTIES ENVELOPE'S LINE-GEOMETRY BOUND.
+ *
+ * The closing fence has to be found before any member can be decoded, since
+ * every member's end bound depends on it. That search used to walk every
+ * line byte by byte and discard what it found, and each member line was then
+ * scanned again by the member classifier and twice by the boundary search --
+ * four byte scans per line on the metadata corpus, and more for a literal
+ * block or a block sequence, whose decoders walked their lines once more.
+ * Now the fence is found by one `memchr` pass that allocates nothing, the
+ * envelope's lines are recorded by one pass over exactly the envelope, and
+ * everything after that reads geometry from the index.
+ *
+ * Nothing about the output can tell those apart: a consumer that scanned a
+ * line it already had would build the identical document, so every golden,
+ * every spec example and the byte-equivalence check would still pass. The
+ * bound is asserted on `properties_line_work` instead, which counts the bytes
+ * the searches cover. K = 3: the fence pass hands each document byte to
+ * `memchr` once, and the index pass hands each envelope byte to the LF search
+ * and then to the CR search bounded by the LF, so the count is at most three
+ * times the document whatever ends its lines. One more derivation of every
+ * member's first line through the scanner -- what the boundary search used to
+ * do -- adds that line's bytes per member and breaks the bound. The shapes
+ * are the ones the former consumers rescanned: scalar members, a block
+ * sequence, a literal block and a comment line. A bare CR ends a line here,
+ * and a search for '\n' alone runs past one to the end of the envelope on
+ * every line, so the CR-only document is what makes losing the LF memo a
+ * failure rather than a blind spot; the decoded values are checked under
+ * every ending so the geometry itself is held, not only its cost. The first
+ * assertion keeps the bound from being met by a counter that never fires.
+ *
+ * What this cannot see is a consumer that re-derived a line with a byte loop
+ * of its own, which the counter never learns of. There is no such loop left
+ * in properties.c to call; the gate holds the searches to their bound. */
+static void properties_envelope_derives_each_line_once(test_batch_runner *runner) {
+    static const char *const endings[] = {"\n", "\r", "\r\n"};
+    for (size_t e = 0; e < sizeof(endings) / sizeof(*endings); e++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        char line[64];
+        markdown_core_strbuf_puts(&source, "---");
+        markdown_core_strbuf_puts(&source, endings[e]);
+        for (size_t i = 0; i < 512; i++) {
+            snprintf(line, sizeof(line), "unknown-%zu: value %zu", i, i);
+            markdown_core_strbuf_puts(&source, line);
+            markdown_core_strbuf_puts(&source, endings[e]);
+        }
+        markdown_core_strbuf_puts(&source, "keywords:");
+        markdown_core_strbuf_puts(&source, endings[e]);
+        for (size_t i = 0; i < 256; i++) {
+            snprintf(line, sizeof(line), "  - item %zu", i);
+            markdown_core_strbuf_puts(&source, line);
+            markdown_core_strbuf_puts(&source, endings[e]);
+        }
+        markdown_core_strbuf_puts(&source, "abstract: |");
+        markdown_core_strbuf_puts(&source, endings[e]);
+        for (size_t i = 0; i < 256; i++) {
+            snprintf(line, sizeof(line), "  literal line %zu", i);
+            markdown_core_strbuf_puts(&source, line);
+            markdown_core_strbuf_puts(&source, endings[e]);
+        }
+        markdown_core_strbuf_puts(&source, "# a comment line the skip must step over");
+        markdown_core_strbuf_puts(&source, endings[e]);
+        markdown_core_strbuf_puts(&source, "title: \"Envelope\"");
+        markdown_core_strbuf_puts(&source, endings[e]);
+        markdown_core_strbuf_puts(&source, "---");
+        markdown_core_strbuf_puts(&source, endings[e]);
+        markdown_core_strbuf_puts(&source, "body");
+        markdown_core_strbuf_puts(&source, endings[e]);
+
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
+        OK(runner, root != NULL, "the envelope document parses: ending=%zu", e);
+        markdown_core_node *metadata = root ? root->as.document->metadata : NULL;
+        OK(runner, metadata != NULL, "the envelope is recognized: ending=%zu", e);
+        if (metadata) {
+            markdown_core_metadata_scalar scalar;
+            const markdown_core_metadata_value *record = markdown_core_metadata_title(metadata);
+            OK(runner,
+               markdown_core_metadata_value_scalar(record, &scalar) && scalar.kind == MARKDOWN_CORE_METADATA_TEXT &&
+                   scalar.value.string.length == 8 && !memcmp(scalar.value.string.data, "Envelope", 8),
+               "the scalar member after the multi-line members decodes: ending=%zu", e);
+            record = markdown_core_metadata_keywords(metadata);
+            OK(runner, record && record->kind == MARKDOWN_CORE_METADATA_LIST && record->as.list.count == 256,
+               "the block sequence owns exactly its item lines: ending=%zu", e);
+            record = markdown_core_metadata_abstract(metadata);
+            size_t breaks = 0;
+            bool text =
+                markdown_core_metadata_value_scalar(record, &scalar) && scalar.kind == MARKDOWN_CORE_METADATA_TEXT;
+            for (size_t i = 0; text && i < scalar.value.string.length; i++) {
+                breaks += scalar.value.string.data[i] == '\n';
+            }
+            /* "literal line N" for N in 0..255, each ending in one LF. */
+            size_t expected = 10 * 14 + 90 * 15 + 156 * 16 + 256;
+            OK(runner, text && breaks == 256 && scalar.value.string.length == expected,
+               "the literal block owns exactly its lines with endings normalized: ending=%zu", e);
+        }
+        OK(runner, work.properties_lines > 0, "the fence search examines bytes, so the counter is live: ending=%zu", e);
+        OK(runner, work.properties_lines <= 3 * (size_t)source.size,
+           "the fence pass and the index pass examine each byte at most three times: %zu bytes examined for %d "
+           "source bytes, ending=%zu",
+           work.properties_lines, source.size, e);
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
 /* Definition list is the other element whose opening grammar spans two lines:
  * a TERM is arbitrary prose, so nothing about the term's own line can rule the
  * grammar out, and the opener used to open a full lookahead transaction on
@@ -6520,6 +6628,7 @@ int main(void) {
     multiline_boundary_search_builds_no_geometry(runner);
     table_open_gate_admits_only_possible_tables(runner);
     inline_hook_projection_ignores_non_owners(runner);
+    properties_envelope_derives_each_line_once(runner);
     definition_open_gate_admits_only_possible_terms(runner);
     a_pass_may_free_the_roots_a_later_pass_reads(runner);
     finish_stage_runs_every_phase_at_each_root(runner);
