@@ -38,11 +38,11 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, markdo
         if ((end == inline_state->input.len && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->kind)) ||
             (end < inline_state->input.len &&
              markdown_core_is_line_end(markdown_core_inline_peek_at(inline_state, end)))) {
-            return make_str(inline_state, start, start, markdown_core_chunk_literal("\\"));
+            return make_str(inline_state, start, start, markdown_core_chunk_dup(&inline_state->input, start, 1));
         }
         advance(inline_state);
-        markdown_core_node *escaped =
-            make_str(inline_state, start, inline_state->pos - 1, markdown_core_chunk_literal("\\ "));
+        markdown_core_node *escaped = make_str(inline_state, start, inline_state->pos - 1,
+                                               markdown_core_chunk_dup(&inline_state->input, start, 2));
         if (escaped) {
             /* Contextual escape token: inline completion decodes it once the
              * delimiter/bracket engine has established its semantic owner. */
@@ -104,7 +104,8 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, markdo
         }
         return hard;
     } else {
-        return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("\\"));
+        return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
+                        markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
     }
 }
 
@@ -118,8 +119,8 @@ static markdown_core_node *handle_entity(markdown_core_inline_state *inline_stat
                                inline_state->input.len - inline_state->pos);
 
     if (len == 0) {
-        markdown_core_node *literal =
-            make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("&"));
+        markdown_core_node *literal = make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
+                                               markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
         /* Not an entity: the `&` IS the literal, so it is content. */
         return literal;
     }

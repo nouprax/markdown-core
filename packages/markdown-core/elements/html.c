@@ -79,7 +79,8 @@ static markdown_core_node *handle_pointy_brace(markdown_core_inline_state *inlin
     }
 
     // if nothing matches, just return the opening <:
-    return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("<"));
+    return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
+                    markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
 }
 
 static markdown_core_node *match(const markdown_core_element *self, markdown_core_parser *parser,

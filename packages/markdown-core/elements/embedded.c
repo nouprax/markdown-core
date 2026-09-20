@@ -96,14 +96,15 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
     if (markdown_core_inline_peek_char(inline_state) == '[' &&
         markdown_core_inline_peek_char_n(inline_state, 1) != '^') {
         inline_state->pos++;
-        markdown_core_node *text =
-            make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1, markdown_core_chunk_literal("!["));
+        markdown_core_node *text = make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
+                                            markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 2, 2));
         if (text) {
             markdown_core_inline_push_bracket(inline_state, BRACKET_IMAGE, text);
         }
         return text;
     }
-    return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("!"));
+    return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
+                    markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_EMBEDDED = {

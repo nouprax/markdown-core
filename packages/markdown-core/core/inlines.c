@@ -28,72 +28,28 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
 
 static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inline_state);
 
-/* Give `node` the source extent of the content bytes [from, to].
- *
- * THIS IS THE WHOLE OF THE INLINE POSITION MODEL: a position is a PROJECTION
- * of the byte range a node covers, asked of requirement 10's content-to-source
- * map, and not a counter each handler keeps in step. The two arguments every
- * maker already took were byte offsets into the block's content buffer and
- * were being turned into columns by addition -- which is right only while the
- * whole block is one line that starts where the block does. Everything the old
- * arithmetic needed a correction term for -- a span that crosses a line
- * ending, a continuation line with a different stripped prefix, a construct
- * whose end is on a later line than its start -- is answered by asking twice.
- *
- * The fallback is the old arithmetic and it is reached by a block whose
- * content was SET rather than fed: a table cell, the paragraph a table was
- * split out of, a reference definition parsed straight out of a chunk. Those
- * have no marks to project through, and Step 8's second half is where they get
- * them. */
+/* The element API's placement: the inline fast path (inline_internal.h),
+ * behind a call, for the makers outside this translation unit. */
 void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
                                       int to) {
-    /* Every content-bearing block has a map by the time its inlines are parsed
-     * -- `markdown_core_parse_inlines` gives one to any block whose content was
-     * SET rather than fed -- so there is no arithmetic left to fall back to.
-     * The inline state built straight out of a chunk by
-     * `markdown_core_parse_reference_inline` has no owner and creates no nodes,
-     * which is why the miss below leaves the position at calloc's zero rather
-     * than guessing.
-     *
-     * THE CURSOR'S RUN IS THE FRAME A PLACEMENT IS MEASURED IN. The parser
-     * reads `input` left to right and a Text never crosses a line ending, so
-     * the node being placed almost always lies whole on the run the previous
-     * placement ended in: both of its ends are then that run's line and
-     * column plus a distance, and nothing is searched. A node that leaves the
-     * run -- the next line's first token, an emphasis closed across lines, a
-     * link placed back at its opener -- is resolved by the span, which probes
-     * from the cursor and moves it to where the node ends. */
-    markdown_core_parser *parser = inline_state->owner_parser;
-    markdown_core_node *owner = inline_state->owner;
+    markdown_core_inline_place(inline_state, node, from, to);
+}
+
+/* A placement that leaves the frame -- the next line's first token, an
+ * emphasis closed across lines, a link placed back at its opener, an end
+ * the caller left unresolved -- is answered by the span, which probes from
+ * the cursor and moves it to where the node ends; the frame is then read
+ * from the run the cursor moved to. The fallback of the old arithmetic is
+ * gone: every content-bearing block has a map by the time its inlines are
+ * parsed (`markdown_core_inline_start_inlines` gives one to any block whose
+ * content was SET rather than fed), and a state with no map places nothing
+ * (`mapped`, tested by the fast path before it comes here). */
+void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline_state, markdown_core_node *node,
+                                              int from, int to) {
     markdown_core_content_span span;
-    if (!parser || !owner || owner->content_mark_count <= 0) {
-        return;
-    }
-    int cursor = inline_state->mark_cursor;
-    int last = owner->content_mark + owner->content_mark_count - 1;
-    const markdown_core_line_mark *mark = &parser->line_marks[cursor];
-    bufsize_t from_offset = from + owner->content_mark_offset;
-    bufsize_t to_offset = to + owner->content_mark_offset;
-    parser->content_mark_queries++;
-    /* Both ends must lie on the cursor's run, each on its own: a span's ends
-     * are resolved independently (an empty field is placed as [x, x - 1], and
-     * when x is a line's first byte its two ends are on two runs), so a test
-     * that bounded `from` from below and `to` from above alone would measure
-     * such a span in one run with a distance the run does not contain. */
-    bufsize_t run_start = mark->content_offset;
-    bool bounded = cursor < last;
-    bufsize_t run_end = bounded ? parser->line_marks[cursor + 1].content_offset : 0;
-    if (from >= 0 && to >= 0 && cursor >= owner->content_mark && cursor <= last && from_offset >= run_start &&
-        to_offset >= run_start && (!bounded || (from_offset < run_end && to_offset < run_end))) {
-        span.first = span.last = cursor;
-        span.start_line = span.end_line = mark->line;
-        span.start_column = mark->column + (int)(from_offset - mark->content_offset) * mark->source_step;
-        span.end_column =
-            mark->column + (int)(to_offset - mark->content_offset) * mark->source_step + mark->source_width - 1;
-        span.has_start = span.has_end = true;
-    } else {
-        markdown_core_parser_content_span(parser, owner, from, to, &span, &inline_state->mark_cursor);
-    }
+    markdown_core_parser_content_span(inline_state->owner_parser, inline_state->owner, from, to, &span,
+                                      &inline_state->mark_cursor);
+    markdown_core_inline_seat_cursor(inline_state);
     if (span.has_start) {
         node->start_line = span.start_line;
         node->start_column = span.start_column;
@@ -103,28 +59,22 @@ void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, 
         node->end_column = span.end_column;
     }
     if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0) {
-        /* A Text whose bytes ARE the source bytes of its scope takes a view
-         * of the source map; a decoded token, or a literal shorter than its
-         * scope, maps each of its bytes to the whole authored extent. The
-         * common Text is a view of `input` at `from`, which is that fact by
-         * identity; an element that placed a copy it made (a citation prefix
-         * moved into its own buffer) is asked byte for byte. */
-        const markdown_core_chunk *literal = node->as.literal;
-        if (literal->len == to - from + 1 &&
-            (literal->data == inline_state->input.data + from ||
-             memcmp(literal->data, inline_state->input.data + from, (size_t)literal->len) == 0)) {
-            /* The writes stay HERE, inside the gate: a node that is not a
-             * verbatim copy of its source must keep `content_mark_count` at
-             * zero, because that count is read elsewhere as "is there a
-             * mapping at all". */
-            if (span.has_start && span.has_end) {
-                markdown_core_parser_adopt_content_span(owner, node, &span, from);
-            }
+        /* A Text placed with an end unresolved keeps no map at all: the
+         * writes stay inside the verbatim gate, and a partial span names no
+         * slice to take. */
+        if (span.has_start && span.has_end) {
+            markdown_core_inline_map_text(inline_state, node, from, to, span.first, span.last);
         } else {
-            node->content_mark_count = 0;
-            node->content_mark_offset = 0;
-            markdown_core_parser_append_content_mark(parser, node, 0, node->start_line, node->start_column,
-                                                     node->end_column - node->start_column + 1, 0);
+            const markdown_core_chunk *literal = node->as.literal;
+            if (!(literal->len == to - from + 1 &&
+                  (literal->data == inline_state->input.data + from ||
+                   memcmp(literal->data, inline_state->input.data + from, (size_t)literal->len) == 0))) {
+                node->content_mark_count = 0;
+                node->content_mark_offset = 0;
+                markdown_core_parser_append_content_mark(inline_state->owner_parser, node, 0, node->start_line,
+                                                         node->start_column, node->end_column - node->start_column + 1,
+                                                         0);
+            }
         }
     }
 }
@@ -141,7 +91,7 @@ markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state
         return NULL;
     }
     *e->as.literal = s;
-    markdown_core_inline_state_place(inline_state, e, start_column, end_column);
+    markdown_core_inline_place(inline_state, e, start_column, end_column);
     return e;
 }
 
@@ -907,6 +857,7 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
     inline_state->owner = parent;
     inline_state->owner_structure = markdown_core_node_structure(parent);
     inline_state->mark_cursor = parent->content_mark;
+    markdown_core_inline_seat_cursor(inline_state);
     /* Block buffers include their terminating line ending. An inline field
      * ends at its owner's delimiter: its trailing spaces are body content. */
     if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P(parent->kind)) {
@@ -1120,9 +1071,10 @@ markdown_core_node *markdown_core_inline_state_make_delimiter_text(markdown_core
 /* The cursor's position, asked of the map from the cursor's run. */
 static int S_cursor_place(markdown_core_inline_state *inline_state, int *line, int *column) {
     markdown_core_content_span span;
-    if (!markdown_core_parser_content_span(inline_state->owner_parser, inline_state->owner, inline_state->pos, -1,
-                                           &span, &inline_state->mark_cursor) ||
-        !span.has_start) {
+    int placed = markdown_core_parser_content_span(inline_state->owner_parser, inline_state->owner, inline_state->pos,
+                                                   -1, &span, &inline_state->mark_cursor);
+    markdown_core_inline_seat_cursor(inline_state);
+    if (!placed || !span.has_start) {
         return 0;
     }
     *line = span.start_line;

@@ -3629,6 +3629,8 @@ typedef struct {
     size_t pooled_delimiters;
     size_t content_mark_queries;
     size_t content_mark_probes;
+    /* The runs the content-to-source map holds when the parse ends. */
+    size_t line_marks;
 } inline_work;
 static int record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                               markdown_core_node *root) {
@@ -3652,6 +3654,7 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
     work->delimiter_pushes = parser->delimiter_pushes;
     work->content_mark_queries = parser->content_mark_queries;
     work->content_mark_probes = parser->content_mark_probes;
+    work->line_marks = (size_t)parser->line_marks_size;
     work->pooled_delimiters = 0;
     for (const delimiter *entry = parser->free_delimiters; entry; entry = entry->next) {
         work->pooled_delimiters++;
@@ -5356,6 +5359,42 @@ static void inline_placement_probes_the_map_a_bounded_number_of_times(test_batch
     }
 }
 
+/* CONSOLIDATION APPENDS NO RUN WHEN ITS OPERANDS ARE VIEWS. A Text that is a
+ * verbatim copy of its source holds a slice of its container's runs, and the
+ * siblings consolidation absorbs were placed left to right in that container,
+ * so the merged Text is the slice from the first operand's first run to the
+ * last operand's last: a paragraph whose literal asterisks and brackets split
+ * it into several Texts ends the parse with exactly the runs its lines gave
+ * the map, as a paragraph of the same lines with one Text does. An operand
+ * that is not a view -- a decoded entity, whose literal is shorter than its
+ * scope -- breaks the chain, and the merged map is materialized run by run.
+ * The positions are the same either way; the api test's own dumps and the
+ * corpus hold that, and this holds the mechanism. */
+static void consolidation_keeps_a_view_when_its_operands_are_views(test_batch_runner *runner) {
+    static const char split[] = "a_b_c[d]e\nf_g\n";
+    static const char whole[] = "aaaaaaaaa\nfff\n";
+    static const char decoded[] = "a&amp;b_c\nfff\n";
+    inline_work split_work = {0}, whole_work = {0}, decoded_work = {0};
+    markdown_core_node *split_root =
+        markdown_core_parse_document_with_setup(split, sizeof(split) - 1, measure_inline_work, &split_work);
+    markdown_core_node *whole_root =
+        markdown_core_parse_document_with_setup(whole, sizeof(whole) - 1, measure_inline_work, &whole_work);
+    markdown_core_node *decoded_root =
+        markdown_core_parse_document_with_setup(decoded, sizeof(decoded) - 1, measure_inline_work, &decoded_work);
+    OK(runner, split_root && whole_root && decoded_root, "the three paragraphs parse");
+    INT_EQ(runner, count_kind(split_root, MARKDOWN_CORE_NODE_TEXT), 2,
+           "the literal asterisks and brackets were merged into one Text per line");
+    INT_EQ(runner, split_work.line_marks, whole_work.line_marks,
+           "and merging views appended no run: %zu runs, as the one-Text paragraph's %zu", split_work.line_marks,
+           whole_work.line_marks);
+    OK(runner, decoded_work.line_marks > whole_work.line_marks,
+       "a decoded operand materializes the merged map: %zu runs against %zu", decoded_work.line_marks,
+       whole_work.line_marks);
+    markdown_core_node_free(split_root);
+    markdown_core_node_free(whole_root);
+    markdown_core_node_free(decoded_root);
+}
+
 /* THE CURSOR'S FAST PATH AGREES WITH THE SPAN ON EVERY PLACEMENT. A node is
  * placed from the run the cursor names when both of its ends lie on that run;
  * otherwise the span resolves each end on its own. The two must give the same
@@ -5378,6 +5417,7 @@ static void probe_placements(markdown_core_inline_state *inline_state) {
                 markdown_core_node placed = {.kind = MARKDOWN_CORE_NODE_SOFT_BREAK};
                 markdown_core_content_span span = {0};
                 inline_state->mark_cursor = cursor;
+                markdown_core_inline_seat_cursor(inline_state);
                 markdown_core_inline_state_place(inline_state, &placed, from, to);
                 markdown_core_parser_content_span(parser, owner, from, to, &span, NULL);
                 placements_checked++;
@@ -7532,6 +7572,7 @@ int main(void) {
     delimiter_entries_are_pooled_across_inline_containers(runner);
     releasing_an_empty_attribute_value_makes_no_allocator_call(runner);
     inline_placement_probes_the_map_a_bounded_number_of_times(runner);
+    consolidation_keeps_a_view_when_its_operands_are_views(runner);
     placement_from_the_cursor_agrees_with_the_span(runner);
     an_undeclared_first_byte_reaches_no_gated_scanner(runner);
     attribute_attachment_linear_work(runner);

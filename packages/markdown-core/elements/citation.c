@@ -704,8 +704,8 @@ bool markdown_core_citation_defer_tail(markdown_core_inline_state *inline_state,
     if (opener->author && !opener->close_text && markdown_core_inline_peek_char(inline_state) != '(' &&
         markdown_core_inline_peek_char(inline_state) != '[' &&
         markdown_core_inline_citation_group_valid(&opener->citations, true)) {
-        markdown_core_node *close =
-            make_str(inline_state, initial_pos - 1, initial_pos - 1, markdown_core_chunk_literal("]"));
+        markdown_core_node *close = make_str(inline_state, initial_pos - 1, initial_pos - 1,
+                                             markdown_core_chunk_dup(&inline_state->input, initial_pos - 1, 1));
         delimiter *end =
             close ? markdown_core_inline_push_delimiter_entry(inline_state, DELIMITER_CITATION_TOKEN, initial_pos)
                   : NULL;

@@ -549,9 +549,24 @@ static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_near(markdown_c
     return at;
 }
 
+/* The same question with no hint: the plain search, for the block phase and
+ * the map copies, which ask it once per node or per run rather than once per
+ * token and carry no cursor. Kept apart from `near` so that a block-phase
+ * caller inlines a search and not the probe loop and its accounting, which
+ * are the placement's. */
 static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_at(markdown_core_parser *parser,
                                                                     const markdown_core_node *node, bufsize_t offset) {
-    return markdown_core_block_content_mark_near(parser, node, offset, node->content_mark);
+    const markdown_core_line_mark *marks = parser->line_marks;
+    int lo = node->content_mark, hi = lo + node->content_mark_count - 1;
+    while (lo < hi) {
+        int mid = lo + (hi - lo + 1) / 2;
+        if (marks[mid].content_offset <= offset) {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    return lo;
 }
 
 /* Resolve both ends of [from, to] against `node`'s map, each found from the

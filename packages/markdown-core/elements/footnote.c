@@ -109,7 +109,8 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(markdown_core_par
         !markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_CITE)) {
         inline_state->no_link_openers = opener->outer_no_link_openers;
         markdown_core_inline_pop_bracket(inline_state);
-        return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("]"));
+        return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
+                        markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
     }
     cite = markdown_core_inline_make_footnote_cite(inline_state, opener, inline_state->pos);
     footnote = cite ? markdown_core_inline_make_simple(inline_state, MARKDOWN_CORE_NODE_FOOTNOTE) : NULL;
@@ -144,8 +145,8 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
         return NULL;
     }
     inline_state->pos += 2;
-    markdown_core_node *node =
-        make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1, markdown_core_chunk_literal("^["));
+    markdown_core_node *node = make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
+                                        markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 2, 2));
     if (node) {
         markdown_core_inline_push_bracket(inline_state, BRACKET_FOOTNOTE, node);
     }
