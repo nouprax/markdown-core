@@ -24,17 +24,26 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_parser 
     if ((digits && !value->start) || BLOCK_PEEK(input, pos++) != '@') {
         return 0;
     }
-    /* "Any string of alphanumeric characters, underscores, or hyphens", as
-     * Pandoc's manual has it, with alphanumeric meaning the Unicode letter and
-     * number categories: the same class a reference's key is read with
-     * (citation.c), so that every label a definition can carry is one a
-     * reference can name. The closing parenthesis ends the label, and `_` and
-     * `-` may stand anywhere in it. */
+    /* A LABEL IS WHAT A BARE REFERENCE READS WHOLE. A reference `@label` is
+     * scanned as a citation key (citation.c): Unicode letters, numbers and
+     * `_` are key characters, and internal punctuation stands singly between
+     * them. Pandoc's manual gives the definition "alphanumeric characters,
+     * underscores, or hyphens", and the hyphen is the one punctuation mark of
+     * that class, so a label is key characters with `-` singly between them,
+     * read by the same rule the reference applies -- a definition the
+     * reference could not name whole would be unreachable, so it is not a
+     * definition: `(@a--b)` and `(@x-)` are text. */
     bufsize_t label = pos;
     while (pos < input->len) {
         unsigned char c = input->data[pos];
-        int width = c == '_' || c == '-' ? 1 : markdown_core_utf8proc_alnum_width(input->data + pos, input->len - pos);
+        int width = c == '_' ? 1 : markdown_core_utf8proc_alnum_width(input->data + pos, input->len - pos);
         parser->specimen_work++;
+        if (!width && c == '-' && pos > label && pos + 1 < input->len) {
+            unsigned char next = input->data[pos + 1];
+            int following =
+                next == '_' ? 1 : markdown_core_utf8proc_alnum_width(input->data + pos + 1, input->len - pos - 1);
+            width = following ? 1 + following : 0;
+        }
         if (!width) {
             break;
         }

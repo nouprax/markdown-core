@@ -9,7 +9,11 @@ export function auditParserBoundaries(sources, { elementHeaders = [], syntaxScan
         const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
         for (const match of code.matchAll(/\bMARKDOWN_CORE_NODE_([A-Z][A-Z_]*)\b/g)) {
             const kind = match[1];
-            if (["NONE", "DOCUMENT", "TEXT"].includes(kind) || kind.startsWith("TYPE_")) continue;
+            // The structural roots, the type and value masks, and the kind
+            // count are the engine's own vocabulary, not an element's kind.
+            if (["NONE", "DOCUMENT", "TEXT", "VALUE_MASK", "KIND_COUNT"].includes(kind) || kind.startsWith("TYPE_")) {
+                continue;
+            }
             failures.push(`${file}: engine refers to element kind ${kind}`);
         }
         for (const [, name] of code.matchAll(/\b(_?scan_\w+)\s*\(/g)) {
