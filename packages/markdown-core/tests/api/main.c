@@ -6348,6 +6348,53 @@ static void multiline_boundary_search_builds_no_geometry(test_batch_runner *runn
        "a 16x longer boundary search builds no more column geometry: %zu then %zu", geometry[0], geometry[1]);
 }
 
+/* THE DEFINITION GATE READS A PREFIX, NEVER A LINE. The transaction that
+ * decides a definition term reads the next line stripped of its container
+ * prefix and asks whether it begins with a marker; the raw-source key that
+ * spares the transaction asks the same question of the same byte, past the
+ * quote markers and whitespace a prefix can be made of. So prose that merely
+ * contains ": " opens no transaction at all, and the key's cost is the
+ * container depth whatever the prose length: on lines of 4,096 bytes with a
+ * ": " in the middle of each, the lookahead visits no line and the gate's
+ * work is a constant per line. The gate must still admit what the grammar
+ * accepts: a marker after the blank the grammar allows, and one behind a
+ * quote marker. */
+static void definition_gate_reads_the_prefix_not_the_line(test_batch_runner *runner) {
+    static const size_t lines = 64;
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+    for (size_t i = 0; i < lines; i++) {
+        for (size_t j = 0; j < 2048; j++) {
+            markdown_core_strbuf_putc(&source, 'a' + (char)(j % 26));
+        }
+        markdown_core_strbuf_puts(&source, ": ");
+        for (size_t j = 0; j < 2048; j++) {
+            markdown_core_strbuf_putc(&source, 'a' + (char)(j % 26));
+        }
+        markdown_core_strbuf_puts(&source, "\n\n");
+    }
+    inline_work work = {0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
+    OK(runner, root != NULL, "prose with a colon-space in every line parses");
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 0, "and holds no definition list");
+    INT_EQ(runner, work.lookahead, 0, "the definition gate opened no lookahead transaction for it");
+    OK(runner, work.definition_lists <= 2 * lines,
+       "and the gate's own work is a constant per paragraph-opening line, not the line: %zu for %zu lines",
+       work.definition_lists, lines);
+    markdown_core_node_free(root);
+    markdown_core_strbuf_free(&source);
+
+    static const char *const admitted[] = {"Term\n: body\n",        "Term\n\n: body\n", "> Term\n> : body\n",
+                                           "> Term\n>\n> : body\n", "Term\n~ body\n",   "Term\n:\n"};
+    for (size_t i = 0; i < sizeof(admitted) / sizeof(*admitted); i++) {
+        root = markdown_core_parse_document(admitted[i], strlen(admitted[i]));
+        OK(runner, root != NULL, "definition shape %zu parses", i);
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 1,
+               "the key admits the definition the grammar accepts: shape %zu", i);
+        markdown_core_node_free(root);
+    }
+}
+
 /* Table is the one element whose opening grammar spans two lines: a Pandoc
  * simple table WITH a header has an arbitrary-prose first line, so no
  * first-byte gate can exclude it, and the opener used to open a full lookahead
@@ -7436,6 +7483,7 @@ int main(void) {
     ordered_numeral_ceiling(runner);
     citation_sparse_brace_storage(runner);
     definition_list_linear_work(runner);
+    definition_gate_reads_the_prefix_not_the_line(runner);
     citation_linear_work(runner);
     cross_link_linear_work(runner);
     inline_footnote_linear_work(runner);

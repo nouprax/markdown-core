@@ -43,52 +43,34 @@ static bool markdown_core_block_definition_marker(markdown_core_chunk *input, in
  * lookahead transaction -- chain walk, reserve, snapshot, then a line pulled
  * at 548 Ir -- on every line of every document, because a definition TERM is
  * arbitrary prose and nothing about the term's own line can rule the grammar
- * out. This is that question answered from raw source first.
+ * out. This is that question answered from raw source first, as the
+ * grammar's own necessary condition.
  *
- * Container continuation strips a PREFIX from the line the transaction would
- * read, and stripping a prefix can neither create such a pair nor move one,
- * so finding none in the raw bytes means the transaction cannot match.
- *
- * `memchr` does the searching, not a byte loop: prose lines run to hundreds
- * of bytes (269 on average in `lorem1`, 881 at the longest) and a per-byte
- * scan of them costs more than the transaction it replaces -- measured, as a
- * 11.9% REGRESSION on that document before this was written this way.
- *
- * The line end is the parser's own: a bare CR terminates a line here, and
- * `memchr` for '\n' alone would run past one and search the wrong bytes. */
-static bool definition_line_admits(const unsigned char *from, const unsigned char *to) {
-    for (const unsigned char *p = from; p < to;) {
-        const unsigned char *colon = memchr(p, ':', (size_t)(to - p));
-        const unsigned char *tilde = memchr(p, '~', (size_t)(to - p));
-        const unsigned char *hit = !colon ? tilde : (!tilde || colon < tilde ? colon : tilde);
-        if (!hit) {
-            return false;
-        }
-        if (hit + 1 == to || markdown_core_block_is_space_or_tab(hit[1])) {
-            return true;
-        }
-        p = hit + 1;
-    }
-    return false;
-}
-
+ * The transaction accepts only when the next line -- one blank line skipped
+ * at most -- begins, once its container prefix is stripped, with a marker.
+ * Container continuation strips nothing but quote markers and whitespace, so
+ * when a marker is there the raw bytes before it are all in {' ', '\t', '>'}:
+ * walking over those bytes lands on the byte the stripped line would show
+ * first, and a raw line made of nothing else is blank once stripped (or a
+ * bare quote opener, which the transaction refuses; yielding to the line
+ * after it only over-admits). So the key reads a prefix, never a line: its
+ * cost is the container depth, whatever the prose's length, where the
+ * `memchr` search it replaces read both lines end to end (97% of this
+ * hook's own cost on long prose) and admitted any line with ': ' in it.
+ * Every answer of false is a line the transaction would refuse too. */
 static bool definition_next_lines_admit(markdown_core_parser *parser) {
     const unsigned char *cursor = parser->lookahead_cursor, *end = parser->lookahead_end;
-    /* The transaction skips at most one BLANK line (`blanks <= 1` below), so
-     * two physical lines are read. BOTH, always: a line that is only a
-     * container marker -- a bare '>' -- is not blank in raw source but is
-     * blank once the chain strips it, and stopping at it would miss the
-     * marker on the line after. Reading one line more than a given case needs
-     * only over-admits. */
     for (int line = 0; line < 2 && cursor && cursor < end; line++) {
-        const unsigned char *eol = cursor;
-        while (eol < end && !markdown_core_is_line_end((char)*eol)) {
-            eol++;
+        const unsigned char *at = cursor;
+        while (at < end && (*at == ' ' || *at == '\t' || *at == '>')) {
+            at++;
         }
-        if (definition_line_admits(cursor, eol)) {
-            return true;
+        if (at < end && !markdown_core_is_line_end((char)*at)) {
+            return (*at == ':' || *at == '~') && (at + 1 == end || markdown_core_block_is_space_or_tab(at[1]) ||
+                                                  markdown_core_is_line_end((char)at[1]));
         }
-        cursor = eol;
+        /* Blank once stripped: the transaction skips one such line. */
+        cursor = at;
         if (cursor < end && *cursor == '\r') {
             cursor++;
         }
@@ -106,6 +88,12 @@ static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, 
         markdown_core_block_definition_marker(input, parser->first_nonspace, parser->indent)) {
         return false;
     }
+    /* The next line first: it refuses almost every line, and it costs the
+     * container depth where the reference re-parse below costs the line. Both
+     * are conjuncts of one decision, so the order changes nothing else. */
+    if (!definition_next_lines_admit(parser)) {
+        return false;
+    }
     markdown_core_chunk term = {input->data + parser->first_nonspace, input->len - parser->first_nonspace, 0};
     if (term.data[0] == '[') {
         parser->definition_list_work += term.len;
@@ -117,9 +105,6 @@ static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, 
         if (reference || parser->oom) {
             return false;
         }
-    }
-    if (!definition_next_lines_admit(parser)) {
-        return false;
     }
     markdown_core_block_lookahead lookahead;
     if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST, &lookahead)) {
