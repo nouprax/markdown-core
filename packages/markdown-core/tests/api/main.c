@@ -618,14 +618,17 @@ static void directive_element_accessors(test_batch_runner *runner) {
            "set directive name succeeds");
     STR_EQ(runner, markdown_core_elements_get_directive_name(directive), "next_name-2",
            "directive name setter updates payload");
-    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "bad-"), 0,
-           "set directive name rejects trailing hyphen");
-    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "-bad"), 0,
-           "set directive name rejects leading hyphen");
-    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "_bad"), 0,
-           "set directive name rejects leading underscore");
-    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "bad_"), 0,
-           "set directive name rejects trailing underscore");
+    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "bad-"), 1,
+           "a name may end with a hyphen: it is a string without spaces");
+    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "1a.b"), 1,
+           "a name may begin with a digit and hold punctuation");
+    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "中文"), 1, "a name may be any bytes");
+    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "has space"), 0, "a name may not hold a space");
+    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "a[b"), 0,
+           "a name may not hold the label opener");
+    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "a:b"), 0, "a name may not hold a colon");
+    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "next_name-2"), 1,
+           "a valid name is accepted again");
     INT_EQ(runner, markdown_core_elements_set_directive_name(directive, ""), 0,
            "set directive name rejects empty name");
     STR_EQ(runner, markdown_core_elements_get_directive_name(directive), "next_name-2",

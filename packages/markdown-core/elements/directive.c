@@ -62,28 +62,36 @@ static int has_only_spaces_until_line_end(const unsigned char *data, bufsize_t l
     return is_line_end(data, len, pos);
 }
 
-/* Names use the dialect's Unicode letter/number/mark categories. */
+/* A NAME IS A STRING WITHOUT SPACES, as the generic-directive proposal puts
+ * it. Any byte that is not ASCII whitespace continues it, up to the `[` or
+ * `{` that opens the label or the attributes and the `:` that would make a
+ * block fence's colon count ambiguous. Nothing is classified by Unicode
+ * category: `:中文[中文]` names `中文`, `:1a[x]` names `1a`, and a name is
+ * found by one byte test per byte. What makes `12:30` text is not the `3`
+ * but the absence of a bracket part, which is where the inline form is
+ * anchored (see match_colon_directive). */
+static int name_byte(unsigned char c) {
+    switch (c) {
+    case ' ':
+    case '\t':
+    case '\n':
+    case '\r':
+    case '[':
+    case '{':
+    case ':':
+        return 0;
+    default:
+        return 1;
+    }
+}
+
 static int scan_name(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *name_start,
                      bufsize_t *name_len) {
     bufsize_t start = pos;
-    int32_t cp;
-    if (pos >= len) {
-        return 0;
+    while (pos < len && name_byte(data[pos])) {
+        pos++;
     }
-    int width = markdown_core_utf8proc_step(data + pos, len - pos, &cp);
-    if (!markdown_core_utf8proc_is_letter(cp)) {
-        return 0;
-    }
-    pos += width;
-    while (pos < len) {
-        width = markdown_core_utf8proc_step(data + pos, len - pos, &cp);
-        if (!(markdown_core_utf8proc_is_letter(cp) || markdown_core_utf8proc_is_number(cp) ||
-              markdown_core_utf8proc_is_mark(cp) || cp == '-' || cp == '_')) {
-            break;
-        }
-        pos += width;
-    }
-    if (data[pos - 1] == '-' || data[pos - 1] == '_') {
+    if (pos == start) {
         return 0;
     }
     *name_start = start;
@@ -423,10 +431,9 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
     memset(&attributes, 0, sizeof(attributes));
 
     /* A TEXT DIRECTIVE'S COLON MAY NOT SIT NEXT TO ANOTHER COLON, on either
-     * side. The trailing half keeps `:red:` available to emoji; the leading
-     * half keeps a run of colons whole, so `x ::a y` is text rather than
-     * `x :` plus a directive named `a`, and `x:::a` is text rather than `x::`
-     * plus one. `::name` and `:::name` at the start of a line are leaf and
+     * side: a run of colons stays whole, so `x ::a[y]` is text rather than
+     * `x :` plus a directive, and `x:::a[y]` is text rather than `x::` plus
+     * one. `::name` and `:::name` at the start of a line are leaf and
      * container directives and open through the block path, not this one. */
     if (offset > 0 && chunk->data[offset - 1] == ':') {
         return NULL;
@@ -440,11 +447,12 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
         return NULL;
     }
 
+    /* THE INLINE FORM IS ANCHORED ON ITS BRACKET PART. A name alone is text:
+     * the proposal's examples always carry a label or attributes, and it is
+     * that part, not the name's first character, that tells `:badge[new]`
+     * from the colon in `12:30` or `http://`. A part that fails to scan does
+     * not anchor; the name commits only once one part has. */
     pos = name_start + name_len;
-    if (pos < chunk->len && chunk->data[pos] == ':') {
-        return NULL;
-    }
-
     if (pos < chunk->len && chunk->data[pos] == '[') {
         bufsize_t label_end;
         if (scan_label(chunk->data, chunk->len, pos, &label_start, &label_len, &label_end)) {
@@ -454,8 +462,13 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
         }
     }
 
+    int has_attributes = 0;
     if (pos < chunk->len && chunk->data[pos] == '{') {
-        markdown_core_inline_state_attributes(inline_state, pos, &attributes, &pos);
+        has_attributes = markdown_core_inline_state_attributes(inline_state, pos, &attributes, &pos);
+    }
+    if (!has_label && !has_attributes) {
+        markdown_core_attributes_free(&attributes);
+        return NULL;
     }
 
     node = make_directive_node(element, parser, chunk->data + name_start, name_len, start_line, start_column,
@@ -542,13 +555,9 @@ static int parse_nameless_suffix(markdown_core_parser *parser, unsigned char *da
         }
     } else {
         bufsize_t start = pos;
-        while (pos < len) {
-            int32_t cp;
-            int width = markdown_core_utf8proc_step(data + pos, len - pos, &cp);
-            if (markdown_core_utf8proc_is_space(cp) || cp == ':' || cp == '{' || cp == '}') {
-                break;
-            }
-            pos += width;
+        while (pos < len && !ascii_is_line_space(data[pos]) && !is_line_end(data, len, pos) && data[pos] != ':' &&
+               data[pos] != '{' && data[pos] != '}') {
+            pos++;
         }
         if (pos == start) {
             return 0;

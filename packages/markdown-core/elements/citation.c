@@ -26,33 +26,40 @@ void markdown_core_inline_free_citation_tokens(markdown_core_inline_state *inlin
     tokens->last = NULL;
 }
 
-static bool citation_key_char(int32_t scalar) {
-    return scalar == '_' || markdown_core_utf8proc_is_letter(scalar) || markdown_core_utf8proc_is_number(scalar);
+/* THE WIDTH OF A KEY CHARACTER at `str`, or 0: Pandoc's "letter, digit or
+ * `_`", with letter and digit meaning the Unicode categories. A bare key has
+ * no delimiter after it, so the class of the next character is the only thing
+ * that ends it -- `@张三，如此说` must key `张三`, as Pandoc keys it -- and
+ * reading that class off the bytes would run the key into the clause. ASCII
+ * is decided on the byte; a byte at or above 0x80 decodes. */
+static int citation_key_width(const unsigned char *str, bufsize_t len) {
+    if (len > 0 && str[0] == '_') {
+        return 1;
+    }
+    return markdown_core_utf8proc_alnum_width(str, len);
 }
 
+/* An opener stands at the start of the input or after a character that is not
+ * a key character; that character begins at the last non-continuation byte
+ * before `pos`. */
 static bool markdown_core_inline_citation_opener(markdown_core_inline_state *inline_state, bufsize_t pos) {
+    const unsigned char *data = inline_state->input.data;
+    bufsize_t before = pos;
     if (!pos) {
         return true;
     }
-    bufsize_t before = pos - 1;
-    while (before && (inline_state->input.data[before] & 0xc0) == 0x80) {
+    do {
         before--;
-    }
-    int32_t scalar;
-    markdown_core_utf8proc_iterate(inline_state->input.data + before, pos - before, &scalar);
-    return !citation_key_char(scalar);
+    } while (before && (data[before] & 0xc0) == 0x80);
+    return !citation_key_width(data + before, pos - before);
 }
 
 static bool markdown_core_inline_citation_key_follows(markdown_core_inline_state *inline_state, bufsize_t at) {
     if (at >= inline_state->input.len) {
         return false;
     }
-    if (inline_state->input.data[at] == '{') {
-        return true;
-    }
-    int32_t scalar;
-    markdown_core_utf8proc_iterate(inline_state->input.data + at, inline_state->input.len - at, &scalar);
-    return citation_key_char(scalar);
+    return inline_state->input.data[at] == '{' ||
+           citation_key_width(inline_state->input.data + at, inline_state->input.len - at);
 }
 
 static bool source_escaped(markdown_core_inline_state *inline_state, bufsize_t at, bufsize_t begin) {
@@ -192,23 +199,21 @@ static bool scan_citation_key(markdown_core_inline_state *inline_state, bufsize_
         token->key_end = token->end - 1;
         return true;
     }
+    /* Internal punctuation is single and must be followed by a key
+     * character, as Pandoc has it: `@Foo_bar.baz.` keeps `Foo_bar.baz` and
+     * `@Foo_bar--baz` stops at `Foo_bar`. */
+    const unsigned char *data = inline_state->input.data;
+    bufsize_t len = inline_state->input.len;
     token->key_start = pos;
-    while (pos < inline_state->input.len) {
-        int32_t scalar;
-        int width =
-            markdown_core_utf8proc_iterate(inline_state->input.data + pos, inline_state->input.len - pos, &scalar);
+    while (pos < len) {
+        unsigned char c = data[pos];
+        int width = citation_key_width(data + pos, len - pos);
         inline_state->owner_parser->citation_work++;
-        if (citation_key_char(scalar)) {
+        if (width) {
             pos += width;
-        } else if (pos > token->key_start && scalar < 128 && strchr(":.#$%&-+?<>~/", scalar) &&
-                   pos + width < inline_state->input.len) {
-            int32_t next;
-            markdown_core_utf8proc_iterate(inline_state->input.data + pos + width,
-                                           inline_state->input.len - pos - width, &next);
-            if (!citation_key_char(next)) {
-                break;
-            }
-            pos += width;
+        } else if (pos > token->key_start && c < 128 && c && strchr(":.#$%&-+?<>~/", c) &&
+                   citation_key_width(data + pos + 1, len - pos - 1)) {
+            pos++;
         } else {
             break;
         }

@@ -4,7 +4,7 @@
         "runner": "unified / remark",
         "why": "The oracles below are micromark extensions, which emit a token stream rather than a tree. remark is the harness that runs them and turns the tokens into mdast, so it is what this gate executes — but the syntax decisions being compared are the extensions' own.",
         "authorities": {
-            "directives": "micromark-extension-directive@4.0.0 for directive envelopes, labels, and attachment positions (run through remark-directive); the shared attribute member grammar is explicitly Pandoc-owned",
+            "directives": "micromark-extension-directive@4.0.0 for directive labels, attachment positions and the block forms (run through remark-directive); the inline name rule and its need for a bracket part follow the generic directive proposal, and the shared attribute member grammar is the dialect's own",
             "math": "micromark-extension-math@3.1.0",
             "footnotes and tables": "micromark-extension-gfm-* (remark-gfm)"
         },
@@ -230,13 +230,6 @@
             "why": "The attribute member grammar is the dialect's own, stated in attributes.md: a name is taken as written, like an HTML start tag's, and a bare member is recorded with the value `true`. remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
         },
         {
-            "id": "shared-attributes-letter-first",
-            "input": ":1a[]\n",
-            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
-            "summary": "A directive name begins with a Unicode letter, so a digit-first name is text.",
-            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
-        },
-        {
             "id": "shared-attributes-unquoted-quote",
             "input": ":n{a=b\"c\"}\n",
             "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
@@ -342,11 +335,11 @@
             "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
         },
         {
-            "id": "shared-attributes-unicode-directive-name",
-            "input": "12:30 :3d a:b :é\n",
-            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
-            "summary": "Directive names accept non-ASCII Unicode letters and reject digit-first names, including the second half of a time.",
-            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+            "id": "directive-name-as-written",
+            "input": "12:30 :3d[x] a:b[x] :é[x] :1a[x] :a.b[x]\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "`12:30` is text, since the name after its colon has no bracket part, and `.` is a name byte so `:a.b[x]` names `a.b`; remark makes `:30` a directive and ends a name at the dot.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
         },
         {
             "id": "shared-attributes-normalization-order",
@@ -454,11 +447,116 @@
             "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
         },
         {
-            "id": "shared-attributes-unicode-name-categories",
+            "id": "directive-name-needs-part-categories",
             "input": "12:30 :3d a:b :é :字 :á :😀 :Ⅳ :aⅣ :a- :a_\n",
-            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
-            "summary": "Directive names use Unicode letter first, then letters, numbers and marks or internal hyphen/underscore; numeric-letter and symbol starts and trailing separators are rejected.",
-            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "No colon here is followed by a name with a bracket part, so all of it is text; remark makes a directive of each name its character classes admit.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-unclosed-link",
+            "input": ":note[See [docs](https://examp\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "The label never closes, so the colon has no part to anchor on and `:note` is text; remark keeps a part-less directive before the bracket run.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-unclosed-labels",
+            "input": ":a[b and :c[\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "Neither label closes, so both colons are text; remark keeps two part-less directives.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-edge-hyphen-underscore",
+            "input": ":a-[]\n:-a[]\n:_a[]\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "A hyphen or underscore may begin or end a name; remark rejects each of these.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-en-dash",
+            "input": "a :b–c[d]\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "Punctuation of any width is a name byte, so `:b–c[d]` names `b–c`; remark ends the name at the en dash and keeps a part-less `:b`.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-trailing-underscore",
+            "input": ":a_[]\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "An underscore may end a name; remark rejects it.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-empty-id",
+            "input": ":n{#}\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "The container is invalid and there is no label, so the colon is text; remark keeps a part-less directive before the braces.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-empty-class",
+            "input": ":n{.}\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "As directive-name-needs-part-empty-id, for an empty class shorthand.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-shorthand-assignment",
+            "input": ":n{.a=b}\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "As directive-name-needs-part-empty-id, for a shorthand followed by `=`.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-unclosed-label-utf8",
+            "input": ":nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnéz[unclosed\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "The label never closes, so the whole run is text; remark keeps a part-less directive whose name ends before the bracket.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-bare",
+            "input": ":name :name[label] :name{.c} :name[label]{.c}\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "`:name` with no part is text; the three forms with a part agree. remark makes the bare form a directive too.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-trailing-hyphen-with-label",
+            "input": "x ::a[y] x:::a[y] :red:[y] :a-b_c[y] :d-[y]\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "`:d-[y]` names `d-`; remark rejects the trailing hyphen. The colon-adjacency cases agree as text.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-unclosed-label-attrs",
+            "input": ":a[b :c{d\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "Neither the label nor the container closes, so both colons are text; remark keeps two part-less directives.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-invalid-containers",
+            "input": ":n{\"a} :n{a\"b} :n{{a} :n{=} :n{#} :n{.}\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "Every container is invalid and no name has a label, so all of it is text; remark keeps a part-less directive before each.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-quoted-blank-line",
+            "input": ":n{k=\"x\n\ny\"}\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "The container cannot cross the blank line and there is no label, so `:n` is text; remark keeps a part-less directive.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-unterminated-quotes",
+            "input": ":n{#x \"bad} :n{#x .a k=\"unterminated\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "Both containers are invalid and neither name has a label, so all of it is text; remark keeps a part-less directive before each.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
         },
         {
             "id": "task-prefix-before-block-content",

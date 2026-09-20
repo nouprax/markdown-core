@@ -24,23 +24,23 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_parser 
     if ((digits && !value->start) || BLOCK_PEEK(input, pos++) != '@') {
         return 0;
     }
+    /* "Any string of alphanumeric characters, underscores, or hyphens", as
+     * Pandoc's manual has it, with alphanumeric meaning the Unicode letter and
+     * number categories: the same class a reference's key is read with
+     * (citation.c), so that every label a definition can carry is one a
+     * reference can name. The closing parenthesis ends the label, and `_` and
+     * `-` may stand anywhere in it. */
     bufsize_t label = pos;
-    bool alnum = false;
     while (pos < input->len) {
-        int32_t scalar;
-        int width = markdown_core_utf8proc_step(input->data + pos, input->len - pos, &scalar);
+        unsigned char c = input->data[pos];
+        int width = c == '_' || c == '-' ? 1 : markdown_core_utf8proc_alnum_width(input->data + pos, input->len - pos);
         parser->specimen_work++;
-        if (markdown_core_utf8proc_is_letter(scalar) || markdown_core_utf8proc_is_number(scalar)) {
-            alnum = true;
-        } else if ((scalar == '_' || scalar == '-') && alnum) {
-            alnum = false;
-        } else {
+        if (!width) {
             break;
         }
         pos += width;
     }
-    if ((pos != label && !alnum) || BLOCK_PEEK(input, pos) != ')' ||
-        !markdown_core_isspace(BLOCK_PEEK(input, pos + 1))) {
+    if (BLOCK_PEEK(input, pos) != ')' || !markdown_core_isspace(BLOCK_PEEK(input, pos + 1))) {
         return 0;
     }
     if (pos > label) {

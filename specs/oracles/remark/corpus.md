@@ -196,9 +196,8 @@ difference is registered rather than fixed.
 :note[See [docs](https://examp
 .
 Document scope=1:1..1:30 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:30 anchor=null attributes={} children=2
-    ├── Directive scope=1:1..1:5 anchor=null attributes={} name="note" children=0
-    └── Text scope=1:6..1:30 anchor=null attributes={} literal="[See [docs](https://examp" children=0
+└── Paragraph scope=1:1..1:30 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:30 anchor=null attributes={} literal=":note[See [docs](https://examp" children=0
 ````````````````````````````````
 
 A row with more cells than the header declares. cmark-gfm drops the excess
@@ -382,25 +381,18 @@ Ragged rows use their own table's width, including tables nested in containers.
 > | first | second | third | ignored |
 .
 Document scope=1:1..9:38 anchor=null attributes={} children=2
-├── Table scope=1:1..4:28 anchor=null attributes={} columns=[none:null,none:null] children=3
+├── Table scope=1:1..4:28 anchor=null attributes={} columns=[none:null,none:null] children=1
+│   ├── TableCaption scope=3:1..4:28 anchor=null attributes={} children=3
+│   │   ├── Text scope=3:2..3:13 anchor=null attributes={} literal="badge[short]" children=0
+│   │   ├── SoftBreak scope=3:14..3:14 anchor=null attributes={} children=0
+│   │   └── Text scope=4:1..4:28 anchor=null attributes={} literal="| first | second | ignored |" children=0
 │   ├── TableHead children=1
 │   │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
 │   │       ├── TableCell scope=1:2..1:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
 │   │       │   └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
 │   │       └── TableCell scope=1:6..1:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
 │   │           └── Text scope=1:7..1:7 anchor=null attributes={} literal="b" children=0
-│   ├── TableBody children=2
-│   │   ├── TableRow scope=3:1..3:13 anchor=null attributes={} children=2
-│   │   │   ├── TableCell scope=3:1..3:13 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │   │   │   └── Directive scope=3:1..3:13 anchor=null attributes={} name="badge" children=0
-│   │   │   │       └── DirectiveLabel scope=3:7..3:13 anchor=null attributes={} children=1
-│   │   │   │           └── Text scope=3:8..3:12 anchor=null attributes={} literal="short" children=0
-│   │   │   └── TableCell scope=3:13..3:13 anchor=null attributes={} rowspan=1 colspan=1 children=0
-│   │   └── TableRow scope=4:1..4:28 anchor=null attributes={} children=2
-│   │       ├── TableCell scope=4:2..4:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │       │   └── Text scope=4:3..4:7 anchor=null attributes={} literal="first" children=0
-│   │       └── TableCell scope=4:10..4:17 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │           └── Text scope=4:11..4:16 anchor=null attributes={} literal="second" children=0
+│   ├── TableBody children=0
 │   └── TableFoot children=0
 └── Callout scope=6:1..9:38 anchor=null attributes={} variant=null collapsed=null children=1
     └── Table scope=6:3..9:38 anchor=null attributes={} columns=[none:null,none:null,none:null] children=3
