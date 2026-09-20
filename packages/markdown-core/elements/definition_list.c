@@ -65,6 +65,15 @@ static bool definition_next_lines_admit(markdown_core_parser *parser) {
     for (int line = 0; line < 2 && cursor && cursor < end; line++) {
         const unsigned char *at = cursor;
         while (at < end && parser->container_prefix[*at]) {
+            /* A declared prefix byte that is also a marker byte -- a
+             * container whose continuation strips ':' or '~' -- cannot be
+             * told from the marker here; only the transaction can, so the
+             * key admits. No element declares one today; the rule is what
+             * lets one do so without this key silently refusing the
+             * definitions inside it. */
+            if (*at == ':' || *at == '~') {
+                return true;
+            }
             at++;
         }
         if (at < end && !markdown_core_is_line_end((char)*at)) {

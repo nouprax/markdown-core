@@ -6558,6 +6558,65 @@ static void container_prefix_is_projected_from_the_elements(test_batch_runner *r
     markdown_core_node_free(probe_doc);
 }
 
+/* A container may declare a prefix byte that is also the definition marker
+ * byte. Raw source cannot tell the two apart, so the key must hand such a
+ * line to the transaction rather than walk over the marker and refuse the
+ * definition: a key that walked it would make a definition nested in that
+ * container silently parse as prose. */
+static const markdown_core_element COLON_PREFIX_CONTAINER = {.name = "colon-prefix", .container_prefix_bytes = ":"};
+static const markdown_core_element TILDE_PREFIX_CONTAINER = {.name = "tilde-prefix", .container_prefix_bytes = "~"};
+static bool attach_marker_prefix_containers(markdown_core_parser *parser, void *context) {
+    parser->root->user_data = context;
+    return markdown_core_parser_attach_element(parser, &COLON_PREFIX_CONTAINER) &&
+           markdown_core_parser_attach_element(parser, &TILDE_PREFIX_CONTAINER) &&
+           markdown_core_parser_attach_element(parser, &WORK_RECORDER);
+}
+static void a_prefix_byte_that_is_a_marker_byte_hands_the_line_to_the_transaction(test_batch_runner *runner) {
+    static const char *const sources[] = {"Term\n: body\n", "Term\n~ body\n", "> Term\n> : body\n"};
+    for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); i++) {
+        inline_work work = {0};
+        markdown_core_node *root = markdown_core_parse_document_with_setup(sources[i], strlen(sources[i]),
+                                                                           attach_marker_prefix_containers, &work);
+        OK(runner, root != NULL, "shape %zu parses with marker bytes declared as prefix bytes", i);
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 1,
+               "and the definition is still recognised: shape %zu", i);
+        OK(runner, work.lookahead >= 1, "because the key handed the line to the transaction: shape %zu", i);
+        markdown_core_node_free(root);
+    }
+}
+
+/* THE REGISTRY IS BOUNDED WHERE THE PROJECTION NEEDS IT TO BE. The block-start
+ * projection lists a family's owners by byte, so the attachment API refuses
+ * the element that would make an owner index or a count not fit, leaving the
+ * registry as it was; without that bound a release build would wrap the byte
+ * and dispatch to the wrong owner. */
+static const markdown_core_element REGISTRY_FILLER = {.name = "registry-filler"};
+typedef struct {
+    size_t attached, count, refused_again;
+} registry_fill;
+static bool fill_the_registry(markdown_core_parser *parser, void *context) {
+    registry_fill *fill = context;
+    while (markdown_core_parser_attach_element(parser, &REGISTRY_FILLER)) {
+        fill->attached++;
+    }
+    fill->count = parser->element_count;
+    fill->refused_again = !markdown_core_parser_attach_element(parser, &REGISTRY_FILLER);
+    return true;
+}
+static void the_registry_refuses_the_element_the_projection_could_not_index(test_batch_runner *runner) {
+    registry_fill fill = {0, 0, 0};
+    static const char probe_source[] = "- item\n\nTerm\n: body\n";
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup(probe_source, sizeof(probe_source) - 1, fill_the_registry, &fill);
+    OK(runner, root != NULL, "the document parses with the registry full");
+    OK(runner, fill.attached >= 1, "attachment succeeded up to the bound: %zu attached", fill.attached);
+    INT_EQ(runner, (int)fill.count, MARKDOWN_CORE_ELEMENT_LIMIT, "and stopped exactly at the bound");
+    OK(runner, fill.refused_again, "every attachment past it is refused");
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LIST), 1, "the projection still dispatches to the list owner");
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 1, "and to the definition owner");
+    markdown_core_node_free(root);
+}
+
 /* Table is the one element whose opening grammar spans two lines: a Pandoc
  * simple table WITH a header has an arbitrary-prose first line, so no
  * first-byte gate can exclude it, and the opener used to open a full lookahead
@@ -7711,6 +7770,8 @@ int main(void) {
     definition_list_linear_work(runner);
     definition_gate_reads_the_prefix_not_the_line(runner);
     container_prefix_is_projected_from_the_elements(runner);
+    a_prefix_byte_that_is_a_marker_byte_hands_the_line_to_the_transaction(runner);
+    the_registry_refuses_the_element_the_projection_could_not_index(runner);
     citation_linear_work(runner);
     cross_link_linear_work(runner);
     inline_footnote_linear_work(runner);

@@ -159,7 +159,7 @@ static void S_register_element(markdown_core_parser *parser, const markdown_core
  * rule refuses, leave the previous registry intact. */
 int markdown_core_parser_attach_element(markdown_core_parser *parser, const markdown_core_element *element) {
     size_t count = parser->element_count;
-    if (S_element_rejection(element)) {
+    if (S_element_rejection(element) || count >= MARKDOWN_CORE_ELEMENT_LIMIT) {
         return 0;
     }
     const markdown_core_element **entries = markdown_core_alloc(count + 1, sizeof(*entries));
@@ -2345,7 +2345,9 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
         size_t stride = totals[hook] + 1;
         uint8_t *table = tables + table_at;
         parser->block_gate_lists[hook] = table;
-        assert(totals[hook] < 256);
+        /* Counts and indices are bytes: the attachment API bounds the
+         * registry so that they fit (MARKDOWN_CORE_ELEMENT_LIMIT). */
+        assert(totals[hook] <= MARKDOWN_CORE_ELEMENT_LIMIT);
         /* Owners are appended in family order, so each list keeps it. */
         for (size_t i = 0; i < totals[hook]; i++) {
             const markdown_core_element *element = parser->block_hooks[hook][i];

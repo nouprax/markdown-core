@@ -100,6 +100,13 @@ typedef struct markdown_core_block_gate {
     const char *bytes;
 } markdown_core_block_gate;
 
+/* How many elements one registry holds at most. The block-start projection
+ * lists a family's owners by byte -- a count and then owner indices -- so a
+ * family may have at most 255 owners and an owner index at most 254; the
+ * attachment API refuses the element that would break that, leaving the
+ * registry as it was, rather than the projection wrapping a byte. */
+#define MARKDOWN_CORE_ELEMENT_LIMIT 255
+
 struct markdown_core_element {
     /* Negative/zero/positive precedence separates protected tokens, ordinary
      * alternatives, and literal fallbacks without a second dispatch algorithm. */
@@ -138,7 +145,10 @@ struct markdown_core_element {
      * walking over indentation and these, so a byte left out here does not
      * make the parser slower, it makes it WRONG: the construct inside this
      * container is silently never recognised. Projected with the hooks into
-     * `parser->container_prefix`. */
+     * `parser->container_prefix`. A declared byte that is also the marker
+     * byte of the grammar asking (':' or '~' for a definition) cannot be told
+     * from that marker in raw source, so the key hands such a line to the
+     * lookahead rather than walking over it. */
     const char *container_prefix_bytes;
     bool (*accepts_blank)(markdown_core_parser *, markdown_core_node *);
     bool (*blank_line)(markdown_core_parser *, markdown_core_node *);

@@ -531,11 +531,12 @@ void markdown_core_parser_advance_offset(markdown_core_parser *parser, const cha
  *  See the documentation for markdown_core_element for more information.
  *
  *  Returns 'true' if the 'element' was successfully attached,
- *  'false' otherwise: on allocation failure, and for a descriptor the
+ *  'false' otherwise: on allocation failure, for a descriptor the
  *  registration rule refuses -- one that declares both a finish step and a
  *  postprocess pass (see the two shapes above), or where a step is asked
- *  without a step, or one kind as both an exit and a scope kind -- with the
- *  registry left as it was.
+ *  without a step, or one kind as both an exit and a scope kind -- and once
+ *  the registry holds 255 elements (the block-start projection lists a
+ *  family's owners by byte), with the registry left as it was.
  */
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_attach_element(markdown_core_parser *parser, const markdown_core_element *element);
