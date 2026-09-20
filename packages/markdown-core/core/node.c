@@ -243,9 +243,12 @@ static void free_node_as(markdown_core_node *node) {
     }
     /* Free only the allocation this node owns separately. Pointer equality
      * cannot establish ownership: an allocator may place a replacement right
-     * after a fieldless node's allocation. */
-    markdown_core_free(node->node_data_allocation);
-    node->node_data_allocation = NULL;
+     * after a fieldless node's allocation. Almost no node owns one -- a kind
+     * change installs it -- so the release is entered only when there is one. */
+    if (node->node_data_allocation) {
+        markdown_core_free(node->node_data_allocation);
+        node->node_data_allocation = NULL;
+    }
     node->as.data = NULL;
 }
 
@@ -303,8 +306,17 @@ static size_t S_free_nodes(markdown_core_node *e) {
     size_t released = 0;
     while (e != NULL) {
         released++;
-        markdown_core_attributes_free(&e->attributes);
-        markdown_core_strbuf_free(&e->content);
+        /* Almost no node owns an attribute value or a content buffer: the
+         * test each releaser makes first is made here, so a node that owns
+         * neither pays the compares and no call. The attribute test is the
+         * releaser's own (markdown_core_attributes_free); a buffer that still
+         * points at the shared initial storage owns nothing. */
+        if (e->attributes.classes || e->attributes.records || e->attributes.arena || e->attributes.anchor.alloc) {
+            markdown_core_attributes_free(&e->attributes);
+        }
+        if (e->content.ptr != markdown_core_strbuf__initbuf) {
+            markdown_core_strbuf_free(&e->content);
+        }
 
         if (e->user_data && e->user_data_free_func) {
             e->user_data_free_func(e->user_data);
@@ -1111,43 +1123,6 @@ int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_o
     markdown_core_node *last[MARKDOWN_CORE_DOCUMENT_CHAINS] = {NULL, NULL};
     bool found;
     return markdown_core_visit_block_subtrees_since(node, last, visitor, context, &found);
-}
-
-uint32_t markdown_core_node_block_kind_bit(markdown_core_node_type kind) {
-    unsigned value;
-
-    if ((kind & MARKDOWN_CORE_NODE_TYPE_MASK) != MARKDOWN_CORE_NODE_TYPE_BLOCK) {
-        return 0;
-    }
-    value = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
-    /* Every block kind too large for a bit of its own shares the last one.
-     * Sharing can only make two different kinds look alike, never make one
-     * disappear, so a set built this way OVER-approximates: the cost of an
-     * extension kind beyond the word is a hook entered once too often, not a
-     * construct silently never recognised. A private bit per kind would be the
-     * other way round, and that is the direction that loses documents. */
-    if (value >= 31) {
-        return 1u << 31;
-    }
-    return 1u << value;
-}
-
-uint32_t markdown_core_node_inline_kind_bit(markdown_core_node_type kind) {
-    unsigned value;
-
-    if ((kind & MARKDOWN_CORE_NODE_TYPE_MASK) != MARKDOWN_CORE_NODE_TYPE_INLINE) {
-        return 0;
-    }
-    value = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
-    if (value >= 31) {
-        return 1u << 31;
-    }
-    return 1u << value;
-}
-
-void markdown_core_node_kind_set_add(markdown_core_node_kind_set *set, markdown_core_node_type kind) {
-    set->blocks |= markdown_core_node_block_kind_bit(kind);
-    set->inlines |= markdown_core_node_inline_kind_bit(kind);
 }
 
 bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a,
