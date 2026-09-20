@@ -4867,6 +4867,126 @@ static void attribute_linear_work(test_batch_runner *runner) {
     }
 }
 
+/* THE FORWARD RECOGNISER IS MEMOISED, and these are the shapes that defeat a
+ * forward scan without the memo: every `{` is asked, and each answer must cost
+ * the bytes its own member owns, not the bytes to the end of the extent. The
+ * old reverse index was oblivious to them, which is why `attribute_linear_work`
+ * never needed them. Recognition only -- a valid candidate here may carry a
+ * value as long as the extent, and materialising every one would be quadratic
+ * output, not quadratic recognition. */
+static void attribute_recognition_is_memoised(test_batch_runner *runner) {
+    static const struct {
+        const char *prefix, *unit, *suffix;
+        /* Valid candidates: all `{`, only the last `{`, or none. */
+        enum { NONE, LAST, ALL } valid;
+    } cases[] = {
+        /* Each `{` fails at the next `{` in O(1); the last closes. */
+        {"", "{", "k=v}", LAST},
+        /* Each opener's lookahead ends at the next unit's quote. */
+        {"", "{k=\" ", "", NONE},
+        /* Same, then the one failing lookahead per kind scans the tail once. */
+        {"", "{k='", "\"\"\"\"\"\"\"\"", NONE},
+        /* One lookahead decides a value of braces; no `}` is a candidate. */
+        {"{k=\"", "}", "\"}", ALL},
+        /* Every candidate's value is a suffix of the first's: memoised `=`. */
+        {"", "{k=x", "}", ALL},
+        /* A shared tail reached through a bare name and whitespace. */
+        {"", "{a ", "{b=1}", LAST},
+    };
+    for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
+        for (size_t count = 128; count <= 8192; count *= 4) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+            markdown_core_strbuf_puts(&source, cases[c].prefix);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, cases[c].unit);
+            }
+            markdown_core_strbuf_puts(&source, cases[c].suffix);
+            markdown_core_attribute_parser parser = {.data = source.ptr, .length = source.size};
+            size_t attempts = 0, valid = 0;
+            bufsize_t last = -1;
+            for (bufsize_t at = 0; at < source.size; at++) {
+                if (source.ptr[at] != '{') {
+                    continue;
+                }
+                bufsize_t end = markdown_core_attributes_end(&parser, at);
+                attempts++;
+                if (end) {
+                    valid++;
+                    INT_EQ(runner, end, source.size, "a valid candidate closes at the extent's end");
+                }
+                last = at;
+            }
+            size_t expected = cases[c].valid == ALL ? attempts : cases[c].valid == LAST ? 1 : 0;
+            INT_EQ(runner, (int)valid, (int)expected, "memoised recognition answers as the grammar does: case=%zu", c);
+            OK(runner, parser.work <= 12 * (size_t)source.size + attempts,
+               "recognition from every candidate is linear: case=%zu size=%d work=%zu", c, source.size, parser.work);
+            /* The memo invariants: asking again costs a constant, and a walk
+             * that reaches known ground stops there. */
+            size_t before = parser.work;
+            markdown_core_attributes_end(&parser, last);
+            OK(runner, parser.work - before <= 8, "a repeated query costs a constant: case=%zu extra=%zu", c,
+               parser.work - before);
+            markdown_core_attribute_parser_free(&parser);
+            if (c == 4) {
+                /* Ask the LAST candidate first on a fresh memo: it walks its
+                 * own `k=` and the whole value; then the FIRST, whose value
+                 * scan steps over every memoised `=` once. Then the middle
+                 * one, which reaches its memoised `=` after one name byte. */
+                markdown_core_attribute_parser fresh = {.data = source.ptr, .length = source.size};
+                markdown_core_attributes_end(&fresh, last);
+                markdown_core_attributes_end(&fresh, 0);
+                before = fresh.work;
+                markdown_core_attributes_end(&fresh, (bufsize_t)(count / 2) * 4);
+                OK(runner, fresh.work - before <= 8,
+                   "a walk reaching a memoised `=` costs only its own bytes: extra=%zu", fresh.work - before);
+                markdown_core_attribute_parser_free(&fresh);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+/* THE STRINGS OF A VALUE ARE ONE ALLOCATION. A container's parse used to cost
+ * an allocation per anchor, class, name and value; now its strings are
+ * interned in one arena sized from the container, and the only allocations
+ * that grow with the member count are the two vectors, which double. So the
+ * count is logarithmic in the members, and everything is released with the
+ * value. The negative control is the per-string copy this replaced, which
+ * costs at least three allocations per member here. */
+static void attribute_values_are_one_arena(test_batch_runner *runner) {
+    for (size_t count = 8; count <= 8192; count *= 4) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        markdown_core_strbuf_puts(&source, "{");
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_strbuf_puts(&source, "k=v .c ");
+        }
+        markdown_core_strbuf_puts(&source, "}");
+        markdown_core_attribute_parser parser = {.data = source.ptr, .length = source.size};
+        markdown_core_attributes value = {0};
+        bufsize_t end = 0;
+        size_t doublings = 0;
+        for (size_t capacity = 8; capacity < count; capacity *= 2) {
+            doublings++;
+        }
+        payload_probe_arm();
+        int valid = markdown_core_attributes_parse(&parser, 0, &value, &end);
+        size_t allocations = payload_allocations;
+        payload_probe_disarm();
+        OK(runner, valid && value.record_count == count && value.class_count == count, "the container parses");
+        OK(runner, allocations <= 6 + 2 * doublings,
+           "a value's strings are one allocation, its vectors double: members=%zu allocations=%zu", count, allocations);
+        OK(runner,
+           value.arena != NULL && !value.anchor.alloc && !value.classes[0].alloc && !value.records[0].name.alloc,
+           "the strings live in the value's arena and own nothing themselves");
+        payload_counting = 1;
+        markdown_core_attributes_free(&value);
+        markdown_core_attribute_parser_free(&parser);
+        payload_counting = 0;
+        INT_EQ(runner, payload_live, 0, "freeing the value releases every allocation");
+        markdown_core_strbuf_free(&source);
+    }
+}
+
 static void attribute_attachment_linear_work(test_batch_runner *runner) {
     static const struct {
         const char *prefix, *unit, *suffix;
@@ -6327,6 +6447,8 @@ int main(void) {
     block_identifier_ownership(runner);
     reference_definition_lifetime(runner);
     attribute_linear_work(runner);
+    attribute_recognition_is_memoised(runner);
+    attribute_values_are_one_arena(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
     heading_registry_invariants(runner);
