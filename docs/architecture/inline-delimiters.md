@@ -18,8 +18,11 @@ The private stack contains five source-ordered entry kinds:
 | Affix boundary | A committed item splits prefix, key and suffix inline fields | Advances every rule's opener-search floor |
 | Field | A consumed token owns inline fields that must finish before the next token | Parses those fields once, then becomes a boundary or is removed |
 
-Every entry uses the same allocation, linking and removal operations. Fields
-borrow their token owner; the AST owns the field trees. A field event is always
+Every entry uses the same allocation, linking and removal operations, and the
+allocation is pooled by the parser: a removed entry goes to the parser's free
+list and the next push takes it back, so the allocator is asked once per live
+slot rather than once per push, and the pool is released with the parser.
+Fields borrow their token owner; the AST owns the field trees. A field event is always
 the last entry when token scanning pauses. Completing it cannot change the
 parent stack because each field has its own inline state. No script cursor boundary or per-marker boundary snapshot is retained.
 
@@ -114,13 +117,20 @@ Allocation failure frees continuations independently of the AST they borrow.
 
 Each populated affix owns a private inline root, exposed through the public
 Citation's prefix/suffix collections. Source trimming only changes raw edge
-whitespace; nested markup keeps its authored scope. Completion, consolidation,
-validation and element postprocessing traverse all owned inline roots using
-one explicit stack. Field order and inherited script depth are retained, and a
-phase rewrites each root in place: a field root is the node its owner put there
-and no phase substitutes another for it. Definition families start independent
-contexts. Disposal splices the same owned roots into the existing iterative
-node release path.
+whitespace; nested markup keeps its authored scope. The finish stage
+traverses all owned inline roots using one explicit stack, and walks each root
+exactly once: inline completion (the element's `complete_inline`, the
+document's anchor reservation) runs at each node's ENTER, text consolidation
+and every element finish step (autolink's email scan, formula's block
+promotion) run at the events of that one walk, and a global postprocess pass
+receives the root after its walk completes. A Text sibling that consolidation
+absorbs is completed by consolidation before it is read, since its ENTER is
+stepped over. The document's finalization -- footnote and specimen ownership,
+heading anchors -- follows the walk and reads the finished tree. Field order and inherited script depth are retained,
+and a phase rewrites each root in place: a field root is the node its owner put
+there and no phase substitutes another for it. Definition families start
+independent contexts. Disposal splices the same owned roots into the existing
+iterative node release path.
 
 Bare keys and balanced braced keys use a single lexical operation. Braced
 candidates share a lazy source index with the ordinary code and HTML token

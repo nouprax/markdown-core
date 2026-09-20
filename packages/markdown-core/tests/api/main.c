@@ -21,12 +21,14 @@
 #include "node.h"
 #include "buffer.h"
 #include "parser.h"
+#include "iterator.h"
 #include "element.h"
 #include "markdown-core-elements.h"
 
 #include <markdown_core.h>
 
 #include "ast_internal.h"
+#include "block_internal.h"
 
 #include "harness.h"
 #include "cplusplus.h"
@@ -53,6 +55,9 @@
  * counter runs only between `payload_probe_arm` and `payload_probe_disarm`,
  * where the test allocates and frees everything it asserts about. */
 static size_t payload_allocations, payload_fail_at, payload_live;
+/* Calls into the free seam while counting, a null pointer included: the count
+ * for a release that has nothing to release. */
+static size_t payload_releases;
 static int payload_counting;
 static int strbuf_refuse_next;
 static void *marker_to_free;
@@ -111,7 +116,7 @@ static void properties_probe_disarm(void) {
  * So the probes check themselves. Disarming a region that counted nothing
  * aborts, which cannot be arranged around by moving a line. */
 static void payload_probe_arm(void) {
-    payload_allocations = payload_fail_at = payload_live = 0;
+    payload_allocations = payload_fail_at = payload_live = payload_releases = 0;
     payload_counting = 1;
 }
 
@@ -214,6 +219,7 @@ void markdown_core_free(void *pointer) {
     }
     if (payload_counting) {
         payload_live -= pointer != NULL;
+        payload_releases++;
     }
     free(pointer);
 }
@@ -618,14 +624,17 @@ static void directive_element_accessors(test_batch_runner *runner) {
            "set directive name succeeds");
     STR_EQ(runner, markdown_core_elements_get_directive_name(directive), "next_name-2",
            "directive name setter updates payload");
-    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "bad-"), 0,
-           "set directive name rejects trailing hyphen");
-    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "-bad"), 0,
-           "set directive name rejects leading hyphen");
-    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "_bad"), 0,
-           "set directive name rejects leading underscore");
-    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "bad_"), 0,
-           "set directive name rejects trailing underscore");
+    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "bad-"), 1,
+           "a name may end with a hyphen: it is a string without spaces");
+    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "1a.b"), 1,
+           "a name may begin with a digit and hold punctuation");
+    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "中文"), 1, "a name may be any bytes");
+    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "has space"), 0, "a name may not hold a space");
+    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "a[b"), 0,
+           "a name may not hold the label opener");
+    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "a:b"), 0, "a name may not hold a colon");
+    INT_EQ(runner, markdown_core_elements_set_directive_name(directive, "next_name-2"), 1,
+           "a valid name is accepted again");
     INT_EQ(runner, markdown_core_elements_set_directive_name(directive, ""), 0,
            "set directive name rejects empty name");
     STR_EQ(runner, markdown_core_elements_get_directive_name(directive), "next_name-2",
@@ -1694,10 +1703,10 @@ static bool attach_postprocess_observers(markdown_core_parser *parser, void *con
      * every paragraph of prose contains. */
     static const markdown_core_element absent = {.name = "postprocess-absent-observer",
                                                  .postprocess_func = count_postprocess_absent,
-                                                 .postprocess_kinds = OBSERVER_ABSENT_KINDS};
+                                                 .finish_acts_on_kinds = OBSERVER_ABSENT_KINDS};
     static const markdown_core_element present = {.name = "postprocess-present-observer",
                                                   .postprocess_func = count_postprocess_present,
-                                                  .postprocess_kinds = OBSERVER_PRESENT_KINDS};
+                                                  .finish_acts_on_kinds = OBSERVER_PRESENT_KINDS};
     (void)context;
     return markdown_core_parser_attach_element(parser, &absent) &&
            markdown_core_parser_attach_element(parser, &present);
@@ -1720,6 +1729,72 @@ static void postprocess_skips_absent_kinds(test_batch_runner *runner) {
     OK(runner, doc != NULL, "a document with observing postprocess passes parses");
     INT_EQ(runner, postprocess_runs[0], 0, "a pass whose declared kinds never occurred does not walk the tree");
     INT_EQ(runner, postprocess_runs[1], 1, "a pass whose declared kind occurred runs exactly once");
+    markdown_core_node_free(doc);
+}
+
+/* THE SAME GATE SKIPS A STEP. A step declares the kinds it acts on apart
+ * from the kinds it is asked at, because they differ for formula: it acts on
+ * a Formula and is asked at the Paragraph that holds it. The gate reads the
+ * former, so a document that produced none of them never asks the step at
+ * all -- not at any of its paragraphs -- while a document that produced one
+ * asks it at every event it was projected to. Counted, not timed, for the
+ * same reason as the pass above: skipping is invisible in the output. */
+static int step_asked[2];
+
+static markdown_core_finish_result count_step_absent(const markdown_core_element *element, markdown_core_parser *parser,
+                                                     markdown_core_node *node, markdown_core_event_type event,
+                                                     int is_root, void **state) {
+    (void)element;
+    (void)parser;
+    (void)node;
+    (void)event;
+    (void)is_root;
+    (void)state;
+    step_asked[0]++;
+    return MARKDOWN_CORE_FINISH_CONTINUE;
+}
+
+static markdown_core_finish_result count_step_present(const markdown_core_element *element,
+                                                      markdown_core_parser *parser, markdown_core_node *node,
+                                                      markdown_core_event_type event, int is_root, void **state) {
+    (void)element;
+    (void)parser;
+    (void)node;
+    (void)event;
+    (void)is_root;
+    (void)state;
+    step_asked[1]++;
+    return MARKDOWN_CORE_FINISH_CONTINUE;
+}
+
+static const markdown_core_node_type STEP_AT_PARAGRAPH[] = {MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_NONE};
+
+static bool attach_step_observers(markdown_core_parser *parser, void *context) {
+    /* Both steps are asked at a Paragraph's EXIT; one acts on a kind this
+     * document cannot contain, the other on the Text every paragraph holds. */
+    static const markdown_core_element absent = {.name = "step-absent-observer",
+                                                 .finish_step = count_step_absent,
+                                                 .finish_acts_on_kinds = OBSERVER_ABSENT_KINDS,
+                                                 .finish_exit_kinds = STEP_AT_PARAGRAPH};
+    static const markdown_core_element present = {.name = "step-present-observer",
+                                                  .finish_step = count_step_present,
+                                                  .finish_acts_on_kinds = OBSERVER_PRESENT_KINDS,
+                                                  .finish_exit_kinds = STEP_AT_PARAGRAPH};
+    (void)context;
+    return markdown_core_parser_attach_element(parser, &absent) &&
+           markdown_core_parser_attach_element(parser, &present);
+}
+
+static void finish_step_skips_absent_kinds(test_batch_runner *runner) {
+    static const char source[] = "just some prose\n\nand a second paragraph\n";
+    markdown_core_node *doc;
+
+    step_asked[0] = 0;
+    step_asked[1] = 0;
+    doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_step_observers, NULL);
+    OK(runner, doc != NULL, "a document with observing finish steps parses");
+    INT_EQ(runner, step_asked[0], 0, "a step whose acted-on kinds never occurred is asked at no paragraph");
+    INT_EQ(runner, step_asked[1], 2, "a step whose acted-on kind occurred is asked at each paragraph's EXIT once");
     markdown_core_node_free(doc);
 }
 
@@ -1783,7 +1858,7 @@ static bool sweep_block_gates(markdown_core_parser *parser, void *context) {
 typedef struct {
     size_t declared;
     size_t malformed;
-    size_t without_pass;
+    size_t without_hook;
 } kind_set_sweep;
 
 static bool sweep_postprocess_kind_sets(markdown_core_parser *parser, void *context) {
@@ -1793,31 +1868,42 @@ static bool sweep_postprocess_kind_sets(markdown_core_parser *parser, void *cont
 
     for (size_t i = 0; i < element_count; i++) {
         const markdown_core_element *element = elements[i];
-        if (!element->postprocess_kinds) {
+        /* All of a step's lists -- the kinds it acts on, the kinds it is
+         * asked at and the kinds whose extent it tracks -- are declarations
+         * of kinds and obey the law. */
+        const markdown_core_node_type *lists[] = {element->finish_acts_on_kinds, element->finish_exit_kinds,
+                                                  element->finish_scope_kinds};
+        if (!element->finish_acts_on_kinds && !element->finish_exit_kinds && !element->finish_scope_kinds) {
             continue;
         }
         sweep->declared++;
-        if (!element->postprocess_func) {
-            sweep->without_pass++;
+        if (!element->postprocess_func && !element->finish_step) {
+            sweep->without_hook++;
         }
-        for (const markdown_core_node_type *kind = element->postprocess_kinds; *kind; kind++) {
-            /* Exactly one namespace must claim the kind. This is checkable only
-             * because the declaration keeps the KIND: block and inline values
-             * collide once masked -- masked 12 is a TableRow and an Embedded
-             * alike -- so a bit set reconstructed from a stored mask would
-             * agree with whichever namespace the reader already assumed, and a
-             * Formula written where a block kind belongs would pass. */
-            uint32_t as_block = markdown_core_node_block_kind_bit(*kind);
-            uint32_t as_inline = markdown_core_node_inline_kind_bit(*kind);
-            markdown_core_node_kind_set set = {0, 0};
+        if ((element->finish_exit_kinds || element->finish_scope_kinds) && !element->finish_step) {
+            sweep->without_hook++;
+        }
+        for (size_t list = 0; list < sizeof(lists) / sizeof(*lists); list++) {
+            for (const markdown_core_node_type *kind = lists[list]; kind && *kind; kind++) {
+                /* Exactly one namespace must claim the kind. This is checkable
+                 * only because the declaration keeps the KIND: block and
+                 * inline values collide once masked -- masked 12 is a TableRow
+                 * and an Embedded alike -- so a bit set reconstructed from a
+                 * stored mask would agree with whichever namespace the reader
+                 * already assumed, and a Formula written where a block kind
+                 * belongs would pass. */
+                uint32_t as_block = markdown_core_node_block_kind_bit(*kind);
+                uint32_t as_inline = markdown_core_node_inline_kind_bit(*kind);
+                markdown_core_node_kind_set set = {0, 0};
 
-            if ((as_block == 0) == (as_inline == 0)) {
-                sweep->malformed++;
-                continue;
-            }
-            markdown_core_node_kind_set_add(&set, *kind);
-            if (set.blocks != as_block || set.inlines != as_inline) {
-                sweep->malformed++;
+                if ((as_block == 0) == (as_inline == 0)) {
+                    sweep->malformed++;
+                    continue;
+                }
+                markdown_core_node_kind_set_add(&set, *kind);
+                if (set.blocks != as_block || set.inlines != as_inline) {
+                    sweep->malformed++;
+                }
             }
         }
     }
@@ -1834,8 +1920,8 @@ static void postprocess_kind_sets_are_well_formed(test_batch_runner *runner) {
     markdown_core_node *probe_doc = markdown_core_parse_document_with_setup(probe_source, sizeof(probe_source) - 1,
                                                                             sweep_postprocess_kind_sets, &sweep);
 
-    OK(runner, sweep.declared > 0, "at least one pass declares its kinds for this law to bind");
-    INT_EQ(runner, (int)sweep.without_pass, 0, "only a pass declares the kinds it acts on");
+    OK(runner, sweep.declared > 0, "at least one finish hook declares its kinds for this law to bind");
+    INT_EQ(runner, (int)sweep.without_hook, 0, "only a pass or a step declares the kinds it acts on");
     INT_EQ(runner, (int)sweep.malformed, 0, "every declared postprocess kind belongs to exactly one namespace");
     markdown_core_node_free(probe_doc);
 }
@@ -3456,6 +3542,14 @@ typedef struct {
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
     size_t inline_hooks;
+    size_t properties_lines;
+    /* The finish stage's traversal count and its denominator (parser.h):
+     * recorded by a global pass at the document root, which is the last root
+     * the finish walk completes, so these are the stage's totals. */
+    size_t finish_events, finish_entered, finish_roots;
+    size_t nodes_created, nodes_created_before_finish, nodes_freed, nodes_freed_before_finish;
+    size_t delimiter_pushes;
+    size_t pooled_delimiters;
 } inline_work;
 static int record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                               markdown_core_node *root) {
@@ -3464,12 +3558,25 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
     if (!work) {
         return 1;
     }
+    work->finish_events = parser->finish_walk_events;
+    work->finish_entered = parser->finish_nodes_entered;
+    work->finish_roots = parser->finish_walk_roots;
+    work->nodes_created = parser->nodes_created;
+    work->nodes_created_before_finish = parser->nodes_created_before_finish;
+    work->nodes_freed = parser->nodes_freed;
+    work->nodes_freed_before_finish = parser->nodes_freed_before_finish;
     work->cross_link = parser->cross_link_scan_work;
     work->autolink_domains = parser->autolink_domain_work;
     work->opaque = parser->opaque_scan_work;
     work->delimiters = parser->delimiter_work;
+    work->delimiter_pushes = parser->delimiter_pushes;
+    work->pooled_delimiters = 0;
+    for (const delimiter *entry = parser->free_delimiters; entry; entry = entry->next) {
+        work->pooled_delimiters++;
+    }
     work->whitespace = parser->whitespace_work;
     work->inline_hooks = parser->inline_hook_work;
+    work->properties_lines = parser->properties_line_work;
     work->brackets = parser->bracket_work;
     work->citations = parser->citation_work;
     work->citation_brace_bytes = parser->citation_brace_bytes;
@@ -4219,11 +4326,16 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         markdown_core_node_attach_owned(root, paragraph, NULL);
         markdown_core_node_attach_owned(paragraph, text, NULL);
         const unsigned char *original = text->as.literal->data;
+        void *state = NULL;
         text_allocation_calls = 0;
-        MARKDOWN_CORE_ELEMENT_AUTOLINK.postprocess_func(&MARKDOWN_CORE_ELEMENT_AUTOLINK, &parser, root);
+        /* The step as the finish walk asks it: at the Text's EXIT, outside a
+         * Link, with a fresh per-root state word. */
+        markdown_core_finish_result result = MARKDOWN_CORE_ELEMENT_AUTOLINK.finish_step(
+            &MARKDOWN_CORE_ELEMENT_AUTOLINK, &parser, text, MARKDOWN_CORE_EVENT_EXIT, 0, &state);
+        INT_EQ(runner, result, MARKDOWN_CORE_FINISH_CONTINUE, "a failed email scan leaves the Text in place");
         OK(runner, text->as.literal->data == original, "a failed email scan retains the original owned buffer");
         OK(runner, paragraph->first_child == text && text->next == NULL, "failed email scan preserves the tree");
-        OK(runner, text_allocation_calls <= 1, "no-hit postprocessing only needs its iterator");
+        INT_EQ(runner, text_allocation_calls, 0, "a no-hit step allocates nothing: it has no walk of its own");
         markdown_core_node_free(root);
         free(source);
     }
@@ -4819,8 +4931,8 @@ static void attribute_linear_work(test_batch_runner *runner) {
         const char *prefix, *unit, *suffix;
         bool valid;
     } cases[] = {
-        {"{", ".a k=1 ", "}", true},   {"{", "k=1 k=2 class='a a' ", "}", true},
-        {"", "{#valid ", "?}", false}, {"", "{k=bad ", "", false},
+        {"{", ".a k=1 ", "}", true},    {"{", "k=1 k=2 class='a a' ", "}", true},
+        {"", "{#valid ", "\"}", false}, {"", "{k=bad ", "", false},
         {"", "{k=' ", "", false},
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
@@ -4862,6 +4974,272 @@ static void attribute_linear_work(test_batch_runner *runner) {
             markdown_core_strbuf_free(&source);
         }
     }
+}
+
+/* THE FORWARD RECOGNISER IS MEMOISED, and these are the shapes that defeat a
+ * forward scan without the memo: every `{` is asked, and each answer must cost
+ * the bytes its own member owns, not the bytes to the end of the extent. The
+ * old reverse index was oblivious to them, which is why `attribute_linear_work`
+ * never needed them. Recognition only -- a valid candidate here may carry a
+ * value as long as the extent, and materialising every one would be quadratic
+ * output, not quadratic recognition. */
+static void attribute_recognition_is_memoised(test_batch_runner *runner) {
+    static const struct {
+        const char *prefix, *unit, *suffix;
+        /* Valid candidates: all `{`, only the last `{`, or none. */
+        enum { NONE, LAST, ALL } valid;
+    } cases[] = {
+        /* Each `{` fails at the next `{` in O(1); the last closes. */
+        {"", "{", "k=v}", LAST},
+        /* Each opener's lookahead ends at the next unit's quote. */
+        {"", "{k=\" ", "", NONE},
+        /* Same, then the one failing lookahead per kind scans the tail once. */
+        {"", "{k='", "\"\"\"\"\"\"\"\"", NONE},
+        /* One lookahead decides a value of braces; no `}` is a candidate. */
+        {"{k=\"", "}", "\"}", ALL},
+        /* Every candidate's value is a suffix of the first's: memoised `=`. */
+        {"", "{k=x", "}", ALL},
+        /* A shared tail reached through a bare name and whitespace. */
+        {"", "{a ", "{b=1}", LAST},
+    };
+    for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
+        for (size_t count = 128; count <= 8192; count *= 4) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+            markdown_core_strbuf_puts(&source, cases[c].prefix);
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, cases[c].unit);
+            }
+            markdown_core_strbuf_puts(&source, cases[c].suffix);
+            markdown_core_attribute_parser parser = {.data = source.ptr, .length = source.size};
+            size_t attempts = 0, valid = 0;
+            bufsize_t last = -1;
+            for (bufsize_t at = 0; at < source.size; at++) {
+                if (source.ptr[at] != '{') {
+                    continue;
+                }
+                bufsize_t end = markdown_core_attributes_end(&parser, at);
+                attempts++;
+                if (end) {
+                    valid++;
+                    INT_EQ(runner, end, source.size, "a valid candidate closes at the extent's end");
+                }
+                last = at;
+            }
+            size_t expected = cases[c].valid == ALL ? attempts : cases[c].valid == LAST ? 1 : 0;
+            INT_EQ(runner, (int)valid, (int)expected, "memoised recognition answers as the grammar does: case=%zu", c);
+            OK(runner, parser.work <= 12 * (size_t)source.size + attempts,
+               "recognition from every candidate is linear: case=%zu size=%d work=%zu", c, source.size, parser.work);
+            /* The memo invariants: asking again costs a constant, and a walk
+             * that reaches known ground stops there. */
+            size_t before = parser.work;
+            markdown_core_attributes_end(&parser, last);
+            OK(runner, parser.work - before <= 8, "a repeated query costs a constant: case=%zu extra=%zu", c,
+               parser.work - before);
+            markdown_core_attribute_parser_free(&parser);
+            if (c == 4) {
+                /* Ask the LAST candidate first on a fresh memo: it walks its
+                 * own `k=` and the whole value; then the FIRST, whose value
+                 * scan steps over every memoised `=` once. Then the middle
+                 * one, which reaches its memoised `=` after one name byte. */
+                markdown_core_attribute_parser fresh = {.data = source.ptr, .length = source.size};
+                markdown_core_attributes_end(&fresh, last);
+                markdown_core_attributes_end(&fresh, 0);
+                before = fresh.work;
+                markdown_core_attributes_end(&fresh, (bufsize_t)(count / 2) * 4);
+                OK(runner, fresh.work - before <= 8,
+                   "a walk reaching a memoised `=` costs only its own bytes: extra=%zu", fresh.work - before);
+                markdown_core_attribute_parser_free(&fresh);
+            }
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+/* THE STRINGS OF A VALUE ARE ONE ALLOCATION. A container's parse used to cost
+ * an allocation per anchor, class, name and value; now its strings are
+ * interned in one arena sized from the container, and the only allocations
+ * that grow with the member count are the two vectors, which double. So the
+ * count is logarithmic in the members, and everything is released with the
+ * value. The negative control is the per-string copy this replaced, which
+ * costs at least three allocations per member here. */
+static void attribute_values_are_one_arena(test_batch_runner *runner) {
+    for (size_t count = 8; count <= 8192; count *= 4) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        markdown_core_strbuf_puts(&source, "{");
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_strbuf_puts(&source, "k=v .c ");
+        }
+        markdown_core_strbuf_puts(&source, "}");
+        markdown_core_attribute_parser parser = {.data = source.ptr, .length = source.size};
+        markdown_core_attributes value = {0};
+        bufsize_t end = 0;
+        size_t doublings = 0;
+        for (size_t capacity = 8; capacity < count; capacity *= 2) {
+            doublings++;
+        }
+        payload_probe_arm();
+        int valid = markdown_core_attributes_parse(&parser, 0, &value, &end);
+        size_t allocations = payload_allocations;
+        payload_probe_disarm();
+        OK(runner, valid && value.record_count == count && value.class_count == count, "the container parses");
+        OK(runner, allocations <= 6 + 2 * doublings,
+           "a value's strings are one allocation, its vectors double: members=%zu allocations=%zu", count, allocations);
+        OK(runner,
+           value.arena != NULL && !value.anchor.alloc && !value.classes[0].alloc && !value.records[0].name.alloc,
+           "the strings live in the value's arena and own nothing themselves");
+        payload_counting = 1;
+        markdown_core_attributes_free(&value);
+        markdown_core_attribute_parser_free(&parser);
+        payload_counting = 0;
+        INT_EQ(runner, payload_live, 0, "freeing the value releases every allocation");
+        markdown_core_strbuf_free(&source);
+    }
+}
+
+/* ORDERING IS LINEAR IN THE ENTRIES AND PASSES ONLY OVER KEY BYTES THAT DIFFER.
+ * The shapes below are the ones a pass-skipping implementation can get wrong:
+ * keys that differ in the top byte only, keys that differ in every byte, and
+ * ties, which a stable ordering must leave in arrival order. An ordered input
+ * is the identity and moves nothing. */
+typedef struct source_entry {
+    markdown_core_node *node;
+    int serial;
+} source_entry;
+
+static int source_entries_ordered(const source_entry *entries, size_t count) {
+    for (size_t i = 1; i < count; i++) {
+        uint64_t previous = markdown_core_source_key(&entries[i - 1]);
+        uint64_t current = markdown_core_source_key(&entries[i]);
+        if (previous > current || (previous == current && entries[i - 1].serial > entries[i].serial)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void source_entries_order_by_the_key_bytes_that_differ(test_batch_runner *runner) {
+    enum { COUNT = 1000 };
+    static markdown_core_node nodes[COUNT];
+    source_entry entries[COUNT];
+    static const struct {
+        const char *name;
+        int allocations;
+    } shapes[] = {
+        {"already ordered", 1},
+        {"top byte only", 2},
+        {"every byte", 2},
+        {"ties", 2},
+    };
+    for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
+        uint32_t state = 0x9E3779B9u;
+        for (int i = 0; i < COUNT; i++) {
+            state = state * 1664525u + 1013904223u;
+            int line, column;
+            switch (shape) {
+            case 0:
+                line = i / 7;
+                column = i % 7;
+                break;
+            case 1:
+                /* The key's top byte is the line's bits 24..31, and a line is
+                 * a nonnegative int, so seven of those bits vary: the keys
+                 * differ in the top byte alone, with ties. */
+                line = (int)(((COUNT - i) % 127 + 1) << 24);
+                column = 1;
+                break;
+            case 2:
+                line = (int)(state >> 1);
+                column = (int)((state * 2654435761u) >> 1);
+                break;
+            default:
+                line = (i * 31) % 5;
+                column = 0;
+                break;
+            }
+            nodes[i].start_line = line;
+            nodes[i].start_column = column;
+            entries[i] = (source_entry){&nodes[i], i};
+        }
+        payload_probe_arm();
+        int ok = markdown_core_order_source_entries(entries, COUNT, sizeof(*entries), markdown_core_source_key);
+        size_t allocations = payload_allocations;
+        size_t live = payload_live;
+        payload_probe_disarm();
+        OK(runner, ok && source_entries_ordered(entries, COUNT), "%s: entries are ordered by key, ties by arrival",
+           shapes[shape].name);
+        INT_EQ(runner, (int)allocations, shapes[shape].allocations,
+               "%s: the keys are computed once and an ordered input moves nothing", shapes[shape].name);
+        INT_EQ(runner, (int)live, 0, "%s: the scratch is released", shapes[shape].name);
+    }
+    OK(runner,
+       markdown_core_order_source_entries(entries, 0, sizeof(*entries), markdown_core_source_key) &&
+           markdown_core_order_source_entries(entries, 1, sizeof(*entries), markdown_core_source_key),
+       "fewer than two entries are ordered as they are");
+}
+
+/* A DELIMITER ENTRY IS ALLOCATED ONCE PER LIVE SLOT, NOT ONCE PER PUSH. The
+ * pushes grow with the inline containers a document has; the entries the
+ * parser holds at the end -- every entry it ever allocated, since a container
+ * returns all of its entries when it is cleared -- do not. */
+static void delimiter_entries_are_pooled_across_inline_containers(test_batch_runner *runner) {
+    static const char paragraph[] = "*a* **b** _c_ d *e f* g\n\n";
+    size_t pushes_per_paragraph = 0, pooled_for_one = 0, nodes_for_one = 0;
+    for (size_t count = 1; count <= 64; count *= 8) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_strbuf_puts(&source, paragraph);
+        }
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_setup((const char *)source.ptr, source.size, measure_inline_work, &work);
+        OK(runner, root != NULL, "the document parses");
+        size_t emphases = 0;
+        markdown_core_iter *iter = markdown_core_iter_new(root);
+        markdown_core_event_type ev;
+        while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            markdown_core_node *node = markdown_core_iter_get_node(iter);
+            if (ev == MARKDOWN_CORE_EVENT_ENTER &&
+                (node->kind == MARKDOWN_CORE_NODE_EMPHASIS || node->kind == MARKDOWN_CORE_NODE_STRONG)) {
+                emphases++;
+            }
+        }
+        markdown_core_iter_free(iter);
+        if (count == 1) {
+            pushes_per_paragraph = work.delimiter_pushes;
+            pooled_for_one = work.pooled_delimiters;
+            nodes_for_one = emphases;
+            OK(runner, pushes_per_paragraph > 0 && pooled_for_one > 0 && nodes_for_one == 4,
+               "one paragraph pushes entries and leaves them pooled: pushes=%zu pooled=%zu", pushes_per_paragraph,
+               pooled_for_one);
+        } else {
+            INT_EQ(runner, (int)work.delimiter_pushes, (int)(count * pushes_per_paragraph),
+                   "pushes grow with the paragraphs: count=%zu", count);
+            INT_EQ(runner, (int)work.pooled_delimiters, (int)pooled_for_one, "the entries allocated do not: count=%zu",
+                   count);
+            INT_EQ(runner, (int)emphases, (int)(count * nodes_for_one), "a reused entry parses as a fresh one");
+        }
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
+/* Every node's release visits its attribute value, and most values are empty. */
+static void releasing_an_empty_attribute_value_makes_no_allocator_call(test_batch_runner *runner) {
+    static const char container[] = "{#a .b k=v}";
+    markdown_core_attribute_parser parser = {.data = (const unsigned char *)container, .length = sizeof(container) - 1};
+    markdown_core_attributes value = {0};
+    markdown_core_attributes empty = {0};
+    bufsize_t end = 0;
+    payload_probe_arm();
+    OK(runner, markdown_core_attributes_parse(&parser, 0, &value, &end), "the container parses");
+    markdown_core_attribute_parser_free(&parser);
+    size_t releases = payload_releases;
+    markdown_core_attributes_free(&empty);
+    INT_EQ(runner, (int)payload_releases, (int)releases, "an empty value is released without entering the allocator");
+    markdown_core_attributes_free(&value);
+    INT_EQ(runner, (int)payload_live, 0, "a value that owns strings releases them all");
+    OK(runner, payload_releases > releases, "and does so through the allocator");
+    payload_probe_disarm();
 }
 
 static void attribute_attachment_linear_work(test_batch_runner *runner) {
@@ -5910,6 +6288,112 @@ static void inline_hook_projection_ignores_non_owners(test_batch_runner *runner)
     markdown_core_strbuf_free(&source);
 }
 
+/* THE PROPERTIES ENVELOPE'S LINE-GEOMETRY BOUND.
+ *
+ * The closing fence has to be found before any member can be decoded, since
+ * every member's end bound depends on it. That search used to walk every
+ * line byte by byte and discard what it found, and each member line was then
+ * scanned again by the member classifier and twice by the boundary search --
+ * four byte scans per line on the metadata corpus, and more for a literal
+ * block or a block sequence, whose decoders walked their lines once more.
+ * Now the fence is found by one `memchr` pass that allocates nothing, the
+ * envelope's lines are recorded by one pass over exactly the envelope, and
+ * everything after that reads geometry from the index.
+ *
+ * Nothing about the output can tell those apart: a consumer that scanned a
+ * line it already had would build the identical document, so every golden,
+ * every spec example and the byte-equivalence check would still pass. The
+ * bound is asserted on `properties_line_work` instead, which counts the bytes
+ * the searches cover. K = 3: the fence pass hands each document byte to
+ * `memchr` once, and the index pass hands each envelope byte to the LF search
+ * and then to the CR search bounded by the LF, so the count is at most three
+ * times the document whatever ends its lines. One more derivation of every
+ * member's first line through the scanner -- what the boundary search used to
+ * do -- adds that line's bytes per member and breaks the bound. The shapes
+ * are the ones the former consumers rescanned: scalar members, a block
+ * sequence, a literal block and a comment line. A bare CR ends a line here,
+ * and a search for '\n' alone runs past one to the end of the envelope on
+ * every line, so the CR-only document is what makes losing the LF memo a
+ * failure rather than a blind spot; the decoded values are checked under
+ * every ending so the geometry itself is held, not only its cost. The first
+ * assertion keeps the bound from being met by a counter that never fires.
+ *
+ * What this cannot see is a consumer that re-derived a line with a byte loop
+ * of its own, which the counter never learns of. There is no such loop left
+ * in properties.c to call; the gate holds the searches to their bound. */
+static void properties_envelope_derives_each_line_once(test_batch_runner *runner) {
+    static const char *const endings[] = {"\n", "\r", "\r\n"};
+    for (size_t e = 0; e < sizeof(endings) / sizeof(*endings); e++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        char line[64];
+        markdown_core_strbuf_puts(&source, "---");
+        markdown_core_strbuf_puts(&source, endings[e]);
+        for (size_t i = 0; i < 512; i++) {
+            snprintf(line, sizeof(line), "unknown-%zu: value %zu", i, i);
+            markdown_core_strbuf_puts(&source, line);
+            markdown_core_strbuf_puts(&source, endings[e]);
+        }
+        markdown_core_strbuf_puts(&source, "keywords:");
+        markdown_core_strbuf_puts(&source, endings[e]);
+        for (size_t i = 0; i < 256; i++) {
+            snprintf(line, sizeof(line), "  - item %zu", i);
+            markdown_core_strbuf_puts(&source, line);
+            markdown_core_strbuf_puts(&source, endings[e]);
+        }
+        markdown_core_strbuf_puts(&source, "abstract: |");
+        markdown_core_strbuf_puts(&source, endings[e]);
+        for (size_t i = 0; i < 256; i++) {
+            snprintf(line, sizeof(line), "  literal line %zu", i);
+            markdown_core_strbuf_puts(&source, line);
+            markdown_core_strbuf_puts(&source, endings[e]);
+        }
+        markdown_core_strbuf_puts(&source, "# a comment line the skip must step over");
+        markdown_core_strbuf_puts(&source, endings[e]);
+        markdown_core_strbuf_puts(&source, "title: \"Envelope\"");
+        markdown_core_strbuf_puts(&source, endings[e]);
+        markdown_core_strbuf_puts(&source, "---");
+        markdown_core_strbuf_puts(&source, endings[e]);
+        markdown_core_strbuf_puts(&source, "body");
+        markdown_core_strbuf_puts(&source, endings[e]);
+
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
+        OK(runner, root != NULL, "the envelope document parses: ending=%zu", e);
+        markdown_core_node *metadata = root ? root->as.document->metadata : NULL;
+        OK(runner, metadata != NULL, "the envelope is recognized: ending=%zu", e);
+        if (metadata) {
+            markdown_core_metadata_scalar scalar;
+            const markdown_core_metadata_value *record = markdown_core_metadata_title(metadata);
+            OK(runner,
+               markdown_core_metadata_value_scalar(record, &scalar) && scalar.kind == MARKDOWN_CORE_METADATA_TEXT &&
+                   scalar.value.string.length == 8 && !memcmp(scalar.value.string.data, "Envelope", 8),
+               "the scalar member after the multi-line members decodes: ending=%zu", e);
+            record = markdown_core_metadata_keywords(metadata);
+            OK(runner, record && record->kind == MARKDOWN_CORE_METADATA_LIST && record->as.list.count == 256,
+               "the block sequence owns exactly its item lines: ending=%zu", e);
+            record = markdown_core_metadata_abstract(metadata);
+            size_t breaks = 0;
+            bool text =
+                markdown_core_metadata_value_scalar(record, &scalar) && scalar.kind == MARKDOWN_CORE_METADATA_TEXT;
+            for (size_t i = 0; text && i < scalar.value.string.length; i++) {
+                breaks += scalar.value.string.data[i] == '\n';
+            }
+            /* "literal line N" for N in 0..255, each ending in one LF. */
+            size_t expected = 10 * 14 + 90 * 15 + 156 * 16 + 256;
+            OK(runner, text && breaks == 256 && scalar.value.string.length == expected,
+               "the literal block owns exactly its lines with endings normalized: ending=%zu", e);
+        }
+        OK(runner, work.properties_lines > 0, "the fence search examines bytes, so the counter is live: ending=%zu", e);
+        OK(runner, work.properties_lines <= 3 * (size_t)source.size,
+           "the fence pass and the index pass examine each byte at most three times: %zu bytes examined for %d "
+           "source bytes, ending=%zu",
+           work.properties_lines, source.size, e);
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
 /* Definition list is the other element whose opening grammar spans two lines:
  * a TERM is arbitrary prose, so nothing about the term's own line can rule the
  * grammar out, and the opener used to open a full lookahead transaction on
@@ -6011,10 +6495,12 @@ static int postprocess_reads_its_root(const markdown_core_element *element, mark
 static const markdown_core_node_type CITE_DELETE_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
 
 static bool attach_delete_then_read(markdown_core_parser *parser, void *context) {
-    static const markdown_core_element deleter = {
-        .name = "cite-deleter", .postprocess_func = postprocess_deletes_cites, .postprocess_kinds = CITE_DELETE_KINDS};
-    static const markdown_core_element reader = {
-        .name = "root-reader", .postprocess_func = postprocess_reads_its_root, .postprocess_kinds = CITE_DELETE_KINDS};
+    static const markdown_core_element deleter = {.name = "cite-deleter",
+                                                  .postprocess_func = postprocess_deletes_cites,
+                                                  .finish_acts_on_kinds = CITE_DELETE_KINDS};
+    static const markdown_core_element reader = {.name = "root-reader",
+                                                 .postprocess_func = postprocess_reads_its_root,
+                                                 .finish_acts_on_kinds = CITE_DELETE_KINDS};
     (void)context;
     return markdown_core_parser_attach_element(parser, &deleter) &&
            markdown_core_parser_attach_element(parser, &reader);
@@ -6091,6 +6577,422 @@ static void finish_stage_runs_every_phase_at_each_root(test_batch_runner *runner
     }
     OK(runner, interleaved, "every root ran both phases before the next root: %s", phase_order);
     markdown_core_node_free(doc);
+}
+
+/* The mailto links of a root and of every owned field root under it: the
+ * public iterator walks children only, and a definition term, a callout
+ * title, a citation affix or a table caption is a root of its own. */
+typedef struct {
+    size_t mailto, merged, after_link;
+} mailto_census;
+
+static void census_mailto_links(markdown_core_node *root, mailto_census *census);
+
+static int census_owned_root(markdown_core_node **slot, void *context) {
+    if (slot && *slot) {
+        census_mailto_links(*slot, context);
+    }
+    return 1;
+}
+
+static void census_mailto_links(markdown_core_node *root, mailto_census *census) {
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type event;
+    bool seen_link = false;
+    markdown_core_visit_block_subtrees(root, census_owned_root, census);
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        markdown_core_visit_inline_subtrees(node, census_owned_root, census);
+        if (node->kind != MARKDOWN_CORE_NODE_LINK || !node->as.link->resource) {
+            continue;
+        }
+        const char *url = (const char *)node->as.link->resource->url.data;
+        if (strncmp(url, "mailto:", 7) != 0) {
+            seen_link = true;
+            continue;
+        }
+        census->mailto++;
+        census->merged += strcmp(url, "mailto:x.y@z.com") == 0;
+        census->after_link += seen_link && strcmp(url, "mailto:q@r.st") == 0;
+    }
+    markdown_core_iter_free(iter);
+}
+
+static markdown_core_node *first_of_kind(markdown_core_node *root, markdown_core_node_type kind) {
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_node *found = NULL;
+    markdown_core_event_type event;
+    while (!found && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == kind) {
+            found = node;
+        }
+    }
+    markdown_core_iter_free(iter);
+    return found;
+}
+
+/* EVERY NODE THE FINISH STAGE WAS HANDED, counted by the test's own walk:
+ * the root's children through the public iterator, each node's owned field
+ * roots through the inline-subtree visitor, and the document's definition
+ * chains through the block-subtree visitor. */
+static size_t owned_node_census(markdown_core_node *root);
+
+static int census_owned_nodes(markdown_core_node **slot, void *context) {
+    if (slot && *slot) {
+        *(size_t *)context += owned_node_census(*slot);
+    }
+    return 1;
+}
+
+static size_t owned_node_census(markdown_core_node *root) {
+    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_event_type event;
+    size_t count = 0;
+    markdown_core_visit_block_subtrees(root, census_owned_nodes, &count);
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        if (event == MARKDOWN_CORE_EVENT_ENTER) {
+            markdown_core_node *node = markdown_core_iter_get_node(iter);
+            count++;
+            markdown_core_visit_inline_subtrees(node, census_owned_nodes, &count);
+        }
+    }
+    markdown_core_iter_free(iter);
+    return count;
+}
+
+/* The one-traversal identity (parser.h): the finish stage entered each node
+ * it was handed exactly once, and the finished tree is those nodes less the
+ * ones the stage freed plus the ones its steps made. */
+static size_t nodes_handed_to_finish(const inline_work *work, size_t finished_tree) {
+    return finished_tree + (work->nodes_freed - work->nodes_freed_before_finish) -
+           (work->nodes_created - work->nodes_created_before_finish);
+}
+
+/* ONE TRAVERSAL PER ROOT, AND EVERY FINISH HOOK INSIDE IT.
+ *
+ * The finish stage used to walk each root once to find the owned roots, once
+ * more for consolidation, once more for autolink and once more for formula --
+ * three or four private iterators over every node -- and the inline stage
+ * walked every root once more before it to complete the nodes. It walks each
+ * root ONCE now: completion is the walk's ENTER, and consolidation, autolink
+ * and formula are steps of that walk.
+ *
+ * Nothing in the output can tell the shapes apart: five walks build the same
+ * tree as one. So the invariant is asserted on the parser's own counters
+ * (parser.h) against a census the test takes itself. The nodes the finish
+ * stage ENTERED must equal the nodes it was handed: the finished tree, plus
+ * the nodes the stage freed, less the nodes its steps made --
+ * one traversal enters each of them exactly once, a step never enters the
+ * nodes it inserts, and a stage that walked each root k times enters k times
+ * as many. Then every iterator step the stage took must be one of those
+ * events, `events == 2 * entered + roots`, which is what says consolidation's
+ * advances over the siblings it absorbs are the only steps beyond the walk's
+ * own. The identity alone would not do: a second whole-root walk that counted
+ * itself the same way keeps it, and only the denominator catches it.
+ *
+ * The document is chosen so that every fused hook actually acts, and on
+ * nested owned roots: emails inside a definition term, a callout title, a
+ * citation affix, a table caption, a footnote body and an inline footnote
+ * (autolink, on field roots, a block definition, a parentless definition and
+ * the document); escapes that leave adjacent Text nodes for consolidation to
+ * merge before autolink sees them (`x\.y@z.com` must come out as ONE
+ * address); a standalone `$$` block and a `formula` fence for formula's
+ * promotion and replacement; a Link inside a field root followed by an
+ * address outside it, which a per-walk rather than per-root "inside a link"
+ * fact would silently swallow; and an escaped space inside a superscript,
+ * which completion turns into NBSP and which must therefore be completed
+ * before the Text beside it absorbs it. */
+
+static void finish_stage_walks_each_root_once(test_batch_runner *runner) {
+    static const char source[] = "Term a\\.b@c.io $x$\n"
+                                 ": body with x\\.y@z.com and $$y$$\n"
+                                 "\n"
+                                 "$$block$$\n"
+                                 "\n"
+                                 "```formula\n"
+                                 "E=mc^2\n"
+                                 "```\n"
+                                 "\n"
+                                 "> [!note] [in a link](u) title q@r.st\n"
+                                 "> body s@t.uv\n"
+                                 "\n"
+                                 "See [pre a@b.co @doe99 post c@d.ef] and a note[^n] here^[inline u@v.wx] ^a\\ b^.\n"
+                                 "\n"
+                                 "[^n]: body t@u.vw\n"
+                                 "\n"
+                                 "| a |\n"
+                                 "| - |\n"
+                                 "| b |\n"
+                                 "\n"
+                                 "Table: cap e@f.gh\n";
+    inline_work work = {0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, measure_inline_work, &work);
+    OK(runner, root != NULL, "the document that feeds every finish hook parses");
+    if (!root) {
+        return;
+    }
+    size_t finished = owned_node_census(root);
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_FORMULA_BLOCK), 2,
+           "formula's step promoted the standalone block and replaced the fence");
+    OK(runner, work.finish_roots >= 6,
+       "the document, its field roots and the inline footnote were each completed: %zu roots", work.finish_roots);
+    OK(runner, work.nodes_freed - work.nodes_freed_before_finish >= 4,
+       "consolidation freed the siblings it absorbed and formula's step the fence and paragraph it replaced, "
+       "with their children: %zu freed",
+       work.nodes_freed - work.nodes_freed_before_finish);
+    OK(runner, work.nodes_created > work.nodes_created_before_finish,
+       "autolink's and formula's steps made nodes inside the walk: %zu of %zu",
+       work.nodes_created - work.nodes_created_before_finish, work.nodes_created);
+    OK(runner, work.finish_entered == nodes_handed_to_finish(&work, finished),
+       "the finish stage entered every node it was handed exactly once: %zu entered, %zu in the finished tree, "
+       "%zu freed, %zu made",
+       work.finish_entered, finished, work.nodes_freed - work.nodes_freed_before_finish,
+       work.nodes_created - work.nodes_created_before_finish);
+    OK(runner, work.finish_events == 2 * work.finish_entered + work.finish_roots,
+       "and every step it took was one of those events: %zu events, %zu entered, %zu roots", work.finish_events,
+       work.finish_entered, work.finish_roots);
+    OK(runner, work.finish_events < 2 * (2 * finished + work.finish_roots),
+       "so it took fewer steps than two traversals of the finished tree: %zu events for %zu nodes", work.finish_events,
+       finished);
+
+    /* Every address became a link -- seven of them, four on field roots the
+     * public iterator does not descend into -- including the one
+     * consolidation had to assemble first and the one after a Link. */
+    mailto_census census = {0};
+    census_mailto_links(root, &census);
+    INT_EQ(runner, (int)census.mailto, 9, "autolink's step linked every address on every root");
+    /* The escaped space is its own Text until consolidation; completion made
+     * it NBSP before the Text before it absorbed it, so the superscript holds
+     * ONE Text reading `a b` with the NBSP between. */
+    markdown_core_node *superscript = first_of_kind(root, MARKDOWN_CORE_NODE_SUPERSCRIPT);
+    OK(runner,
+       superscript && superscript->first_child && !superscript->first_child->next &&
+           superscript->first_child->kind == MARKDOWN_CORE_NODE_TEXT &&
+           superscript->first_child->as.literal->len == 4 &&
+           memcmp(superscript->first_child->as.literal->data,
+                  "a\xC2\xA0"
+                  "b",
+                  4) == 0,
+       "an absorbed escaped space was completed to NBSP before it was merged");
+    INT_EQ(runner, (int)census.merged, 1, "the escape-split address was consolidated before autolink scanned it");
+    INT_EQ(runner, (int)census.after_link, 1,
+           "the address after a Link on a field root is linked: the state is per root");
+    markdown_core_node_free(root);
+}
+
+/* The shape that defeats a per-hook walk: depth and width vary independently
+ * -- `deep_inline_construction`'s generator, Span or Embedded nesting around
+ * a run of addresses that autolink's step links -- and the finish stage's
+ * count must stay at exactly one traversal whatever they are. A stage that
+ * walked once per hook enters three or four times the nodes the inline stage
+ * completed, at every size, which is what the equality refuses. */
+static void finish_stage_is_one_traversal_at_any_depth(test_batch_runner *runner) {
+    const size_t sizes[] = {1, 64, 1024, 8192};
+    for (size_t shape = 0; shape < 2; shape++) {
+        for (size_t d = 0; d < 4; d++) {
+            for (size_t w = 0; w < 4; w += 3) {
+                markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+                for (size_t i = 0; i < sizes[d]; i++) {
+                    markdown_core_strbuf_puts(&source, shape ? "[" : "![");
+                }
+                for (size_t i = 0; i < sizes[w]; i++) {
+                    markdown_core_strbuf_puts(&source, "a@b.co ");
+                }
+                for (size_t i = 0; i < sizes[d]; i++) {
+                    markdown_core_strbuf_puts(&source, shape ? "]{}" : "](u)");
+                }
+                markdown_core_strbuf_putc(&source, '\n');
+                inline_work work = {0};
+                markdown_core_node *root = markdown_core_parse_document_with_setup(
+                    (const char *)source.ptr, source.size, measure_inline_work, &work);
+                OK(runner, root != NULL, "shape %zu depth %zu width %zu parses", shape, sizes[d], sizes[w]);
+                if (root) {
+                    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), sizes[w],
+                           "autolink's step linked every address at depth %zu", sizes[d]);
+                    /* Document, Paragraph, the nesting, and the addresses as
+                     * ONE Text: the Links are autolink's, made from inside the
+                     * finish walk and never entered by it. */
+                    size_t census = owned_node_census(root), handed = nodes_handed_to_finish(&work, census);
+                    OK(runner, handed >= sizes[d] + 3,
+                       "the walk was handed the nesting: %zu nodes at depth %zu width %zu", handed, sizes[d], sizes[w]);
+                    OK(runner, work.finish_entered == handed,
+                       "one traversal at depth %zu width %zu: %zu entered, %zu handed", sizes[d], sizes[w],
+                       work.finish_entered, handed);
+                    OK(runner, work.finish_events == 2 * work.finish_entered + work.finish_roots,
+                       "and every step was one of its events at depth %zu width %zu: %zu events, %zu entered, "
+                       "%zu roots",
+                       sizes[d], sizes[w], work.finish_events, work.finish_entered, work.finish_roots);
+                    markdown_core_node_free(root);
+                }
+                markdown_core_strbuf_free(&source);
+            }
+        }
+    }
+}
+
+/* THE NEGATIVE CONTROL: the counter measures traversals.
+ *
+ * A global pass that consolidates its root again through the public entry
+ * point pays one more traversal of that root, and the counter must say so --
+ * exactly 2n + 1 for a root of n nodes, since the finish walk has already
+ * merged every run and this second pass absorbs nothing. If the counter did
+ * not move, the assertion above would be vacuous. */
+static size_t control_root_nodes;
+
+static int consolidate_document_again(const markdown_core_element *element, markdown_core_parser *parser,
+                                      markdown_core_node *root) {
+    (void)element;
+    if (root->kind != MARKDOWN_CORE_NODE_DOCUMENT) {
+        return 1;
+    }
+    control_root_nodes = total_nodes(root);
+    return markdown_core_consolidate_text_nodes_with_parser(parser, root);
+}
+
+static bool attach_control_then_recorder(markdown_core_parser *parser, void *context) {
+    static const markdown_core_element control = {.name = "consolidate-again",
+                                                  .postprocess_func = consolidate_document_again};
+    parser->root->user_data = context;
+    return markdown_core_parser_attach_element(parser, &control) &&
+           markdown_core_parser_attach_element(parser, &WORK_RECORDER);
+}
+
+static void a_whole_root_pass_costs_one_traversal(test_batch_runner *runner) {
+    static const char source[] = "Term a\\.b@c.io\n: body with x\\.y@z.com\n\n> [!note] title q@r.st\n> body\n";
+    inline_work plain = {0}, controlled = {0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, measure_inline_work, &plain);
+    OK(runner, root != NULL, "the control document parses");
+    markdown_core_node_free(root);
+    control_root_nodes = 0;
+    root =
+        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_control_then_recorder, &controlled);
+    OK(runner, root != NULL, "the control document parses with the consolidating pass attached");
+    OK(runner, control_root_nodes > 0, "the control pass saw the document root");
+    INT_EQ(runner, (int)(controlled.finish_events - plain.finish_events), (int)(2 * control_root_nodes + 1),
+           "a whole-root consolidation costs exactly one traversal of its root: 2n+1 for n=%zu", control_root_nodes);
+    INT_EQ(runner, (int)(controlled.finish_roots - plain.finish_roots), 1, "and completes that root once more");
+    INT_EQ(runner, (int)(controlled.finish_entered - plain.finish_entered), (int)control_root_nodes,
+           "entering each of its nodes once");
+    size_t census = owned_node_census(root), handed = nodes_handed_to_finish(&controlled, census);
+    INT_EQ(runner, (int)plain.finish_entered, (int)handed,
+           "while the denominator, the nodes the stage was handed, is the same tree either way");
+    OK(runner, controlled.finish_entered > handed,
+       "so the extra traversal is exactly what the one-traversal equality refuses: %zu entered, %zu handed",
+       controlled.finish_entered, handed);
+    markdown_core_node_free(root);
+}
+
+/* A descriptor declares a LOCAL step or a GLOBAL pass, never both; the one
+ * that declares both is refused at attachment, with the registry untouched, so
+ * the parse that tried to attach it reports the refusal rather than running
+ * an element whose two hooks have no contract between them. */
+static markdown_core_finish_result no_op_finish_step(const markdown_core_element *element, markdown_core_parser *parser,
+                                                     markdown_core_node *node, markdown_core_event_type event,
+                                                     int is_root, void **state) {
+    (void)element;
+    (void)parser;
+    (void)node;
+    (void)event;
+    (void)is_root;
+    (void)state;
+    return MARKDOWN_CORE_FINISH_CONTINUE;
+}
+
+typedef struct {
+    size_t before, after;
+    int attached;
+} attach_probe;
+
+static bool attach_step_and_pass(markdown_core_parser *parser, void *context) {
+    static const markdown_core_element both = {
+        .name = "step-and-pass", .finish_step = no_op_finish_step, .postprocess_func = postprocess_records_a};
+    attach_probe *probe = context;
+    probe->before = parser->element_count;
+    probe->attached = markdown_core_parser_attach_element(parser, &both);
+    probe->after = parser->element_count;
+    return probe->attached != 0;
+}
+
+static bool attach_overlapping_step(markdown_core_parser *parser, void *context) {
+    static const markdown_core_element overlapping = {.name = "step-exit-and-scope",
+                                                      .finish_step = no_op_finish_step,
+                                                      .finish_exit_kinds = STEP_AT_PARAGRAPH,
+                                                      .finish_scope_kinds = STEP_AT_PARAGRAPH};
+    attach_probe *probe = context;
+    probe->before = parser->element_count;
+    probe->attached = markdown_core_parser_attach_element(parser, &overlapping);
+    probe->after = parser->element_count;
+    return probe->attached != 0;
+}
+
+static bool attach_kindless_step(markdown_core_parser *parser, void *context) {
+    static const markdown_core_element kindless = {.name = "step-at-no-kind", .finish_step = no_op_finish_step};
+    attach_probe *probe = context;
+    probe->before = parser->element_count;
+    probe->attached = markdown_core_parser_attach_element(parser, &kindless);
+    probe->after = parser->element_count;
+    return probe->attached != 0;
+}
+
+/* An ordinal past MARKDOWN_CORE_NODE_KIND_COUNT: the shape of an extension
+ * kind the dispatch table cannot index. */
+static const markdown_core_node_type STEP_AT_OUT_OF_TABLE_KIND[] = {
+    (markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_INLINE | (MARKDOWN_CORE_NODE_KIND_COUNT + 8)),
+    MARKDOWN_CORE_NODE_NONE};
+
+static bool attach_out_of_table_step(markdown_core_parser *parser, void *context) {
+    static const markdown_core_element outside = {.name = "step-outside-the-table",
+                                                  .finish_step = no_op_finish_step,
+                                                  .finish_exit_kinds = STEP_AT_OUT_OF_TABLE_KIND};
+    attach_probe *probe = context;
+    probe->before = parser->element_count;
+    probe->attached = markdown_core_parser_attach_element(parser, &outside);
+    probe->after = parser->element_count;
+    return probe->attached != 0;
+}
+
+static void an_element_declares_one_finish_shape(test_batch_runner *runner) {
+    static const char source[] = "prose\n";
+    attach_probe probe = {0, 0, -1};
+    markdown_core_node *doc =
+        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_step_and_pass, &probe);
+    INT_EQ(runner, probe.attached, 0, "a descriptor with both a finish step and a postprocess pass is refused");
+    INT_EQ(runner, (int)probe.after, (int)probe.before, "and the registry is left as it was");
+    OK(runner, doc == NULL, "so the parse whose setup tried to attach it reports the refusal");
+    if (doc) {
+        markdown_core_node_free(doc);
+    }
+    probe = (attach_probe){0, 0, -1};
+    doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_overlapping_step, &probe);
+    INT_EQ(runner, probe.attached, 0, "a step declaring one kind as both an exit kind and a scope kind is refused");
+    INT_EQ(runner, (int)probe.after, (int)probe.before, "with the registry left as it was");
+    OK(runner, doc == NULL, "and the parse reports that refusal too");
+    if (doc) {
+        markdown_core_node_free(doc);
+    }
+    probe = (attach_probe){0, 0, -1};
+    doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_kindless_step, &probe);
+    INT_EQ(runner, probe.attached, 0, "a step asked at no kind, which would never be called, is refused");
+    INT_EQ(runner, (int)probe.after, (int)probe.before, "with the registry left as it was");
+    OK(runner, doc == NULL, "and the parse reports the refusal");
+    if (doc) {
+        markdown_core_node_free(doc);
+    }
+    probe = (attach_probe){0, 0, -1};
+    doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_out_of_table_step, &probe);
+    INT_EQ(runner, probe.attached, 0,
+           "a step at a kind the dispatch table cannot index is refused rather than asked at every such node");
+    INT_EQ(runner, (int)probe.after, (int)probe.before, "with the registry left as it was");
+    OK(runner, doc == NULL, "and the parse reports the refusal");
+    if (doc) {
+        markdown_core_node_free(doc);
+    }
 }
 
 static void simple_table_body_boundaries(test_batch_runner *runner) {
@@ -6324,6 +7226,11 @@ int main(void) {
     block_identifier_ownership(runner);
     reference_definition_lifetime(runner);
     attribute_linear_work(runner);
+    attribute_recognition_is_memoised(runner);
+    attribute_values_are_one_arena(runner);
+    source_entries_order_by_the_key_bytes_that_differ(runner);
+    delimiter_entries_are_pooled_across_inline_containers(runner);
+    releasing_an_empty_attribute_value_makes_no_allocator_call(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
     heading_registry_invariants(runner);
@@ -6395,9 +7302,14 @@ int main(void) {
     multiline_boundary_search_builds_no_geometry(runner);
     table_open_gate_admits_only_possible_tables(runner);
     inline_hook_projection_ignores_non_owners(runner);
+    properties_envelope_derives_each_line_once(runner);
     definition_open_gate_admits_only_possible_terms(runner);
     a_pass_may_free_the_roots_a_later_pass_reads(runner);
     finish_stage_runs_every_phase_at_each_root(runner);
+    finish_stage_walks_each_root_once(runner);
+    finish_stage_is_one_traversal_at_any_depth(runner);
+    a_whole_root_pass_costs_one_traversal(runner);
+    an_element_declares_one_finish_shape(runner);
     postprocess_rewrites_every_owned_tree(runner);
     standalone_formula_as_owned_root(runner);
     simple_table_body_boundaries(runner);
@@ -6410,6 +7322,7 @@ int main(void) {
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
     postprocess_skips_absent_kinds(runner);
+    finish_step_skips_absent_kinds(runner);
     postprocess_kind_sets_are_well_formed(runner);
     block_gate_admits_every_opener(runner);
     inline_dispatch_ownership(runner);

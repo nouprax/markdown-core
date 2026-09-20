@@ -155,11 +155,6 @@
             "note": "The non-table lead is parsed once, so an escaped backslash remains distinct from a pipe escape."
         },
         {
-            "id": "text-directive",
-            "input": "[foo:_x_@y.z](u) and [mailto:x@y.z](u)\n\nEmail me at:x@y.z or mailto:x@y.z, not word:name@nodot.\n",
-            "note": "`word:name@nodot` has no address after its colon, so the dialect's text directive claims `:name`; cmark-gfm has no directives and keeps the text. The two links and the emphasis inside the link agree."
-        },
-        {
             "id": "task-prefix-grammar",
             "input": "- [x] foo\n  - [ ] bar\n  - [x] baz\n- [ ] bim\n\nShow a regular (non task) list to show that it has the same structure\n- [@] foo\n  - [@] bar\n  - [@] baz\n- [@] bim\n",
             "note": "O5 task-lists.md: one authored scalar, the complete structural separator run, and opening-line-only recognition precede the first block. The opacity witness also retains formula, CrossLink and Comment bodies under their existing modules."

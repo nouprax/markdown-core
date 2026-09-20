@@ -14,6 +14,7 @@ test("engine boundaries allow shared model and descriptor operations", () => {
         audit(`
         /* MARKDOWN_CORE_NODE_HEADING and scan_atx_heading() describe a caller. */
         if (node->kind == MARKDOWN_CORE_NODE_TEXT) source_map(node->as.literal);
+        indexable = ((unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK) < MARKDOWN_CORE_NODE_KIND_COUNT;
         structure->scan_block_start(parser, context, candidate);
         structure->finalize_block(parser, node);
     `),

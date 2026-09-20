@@ -121,6 +121,26 @@ int markdown_core_utf8proc_is_punctuation_or_symbol(int32_t uc);
 int markdown_core_utf8proc_is_letter(int32_t uc);
 int markdown_core_utf8proc_is_number(int32_t uc);
 int markdown_core_utf8proc_is_mark(int32_t uc);
+
+/* THE WIDTH OF AN ALPHANUMERIC CHARACTER at `str`, or 0 when the character
+ * there is not one (or `len` is 0). "Alphanumeric" is what Pandoc's grammar
+ * means by it, a Unicode letter or number: the class that ends a name which
+ * has no delimiter after it, such as a bare citation key, where `@张三，`
+ * must key `张三` and not the clause. ASCII is decided on the byte; only a
+ * byte at or above 0x80 decodes a scalar. */
+static inline int markdown_core_utf8proc_alnum_width(const uint8_t *str, bufsize_t len) {
+    int32_t scalar;
+    int width;
+    if (len <= 0) {
+        return 0;
+    }
+    if (str[0] < 0x80) {
+        return (str[0] >= '0' && str[0] <= '9') || ((str[0] | 0x20) >= 'a' && (str[0] | 0x20) <= 'z');
+    }
+    width = markdown_core_utf8proc_iterate(str, len, &scalar);
+    return width > 0 && (markdown_core_utf8proc_is_letter(scalar) || markdown_core_utf8proc_is_number(scalar)) ? width
+                                                                                                               : 0;
+}
 /* Append the anchors module's Unicode projection of a valid UTF-8 literal. */
 void markdown_core_utf8proc_anchor(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len);
 

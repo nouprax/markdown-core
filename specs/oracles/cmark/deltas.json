@@ -24,13 +24,6 @@
             "handling": "Keyed to the exact specification regression input; erasing all titles would hide real title-resolution defects."
         },
         {
-            "id": "text-directive",
-            "kind": "deliberate-difference",
-            "summary": "The dialect's text directive claims a colon-led name, `:abc`, wherever the directives module admits one; CommonMark leaves the bytes as text.",
-            "rationale": "The dialect index lists directives as a feature of the one language, judged by remark (`pnpm check:mdast-parity`), and remark-directive parses the same input to the same text directive.",
-            "handling": "Keyed to the exact specification input."
-        },
-        {
             "id": "empty-text-node",
             "kind": "deliberate-difference",
             "summary": "cmark can emit a Text node with an empty literal after hard-break processing. Markdown Core and mdast omit nodes that own no content.",
@@ -92,11 +85,6 @@
             "id": "gfm-autolink-literal",
             "input": "foo@bar.example.com\n",
             "note": ".tools/cmark/0.31.2/test/spec.txt:8936: cmark keeps the text; the dialect links the URL or address inside it, as cmark-gfm does."
-        },
-        {
-            "id": "text-directive",
-            "input": "<m:abc>\n",
-            "note": ".tools/cmark/0.31.2/test/spec.txt:8915: `m` is one letter, so no angle-bracket autolink forms and `:abc` is a text directive; remark-directive agrees."
         },
         {
             "id": "refdef-title-rewind",

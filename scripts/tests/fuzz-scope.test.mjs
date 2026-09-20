@@ -59,3 +59,38 @@ test("custom task and definition envelopes belong to their extension oracles", (
         assert.equal(outsideSharedFuzzScope(input), null, input);
     }
 });
+
+test("a text directive without a part is remark's form, not the dialect's", () => {
+    // Truncation strips a part, adjacency breaks one: each leaves remark a
+    // bare-name directive where the dialect keeps text.
+    for (const input of [
+        ":emp\n",
+        "- a [\n:emp\nb.|\n:a[b [c] d] :e[f \\] g]\n",
+        ":n{class=x\n",
+        ":a[b [c]\n",
+        ":a[b\n",
+        "x :a.b[y]\n",
+        "prose :name{ text\n",
+        // remark takes digits as a name, so a clock time is its directive too.
+        "12:30 http://x\n"
+    ]) {
+        assert.equal(outsideSharedFuzzScope(input), "part-less-text-directives", input);
+    }
+    // A part after the name is the shared form; an invalid second part after a
+    // valid first is dropped by both; block forms need no part in either.
+    for (const input of [
+        ":a[b]\n",
+        ":a{.c}\n",
+        ":a[b]{.c}\n",
+        ":a[]\n",
+        ":a[b]{c\n",
+        "::leaf\n",
+        ":::box\nbody\n:::\n",
+        "http://x ::\n",
+        "`:emp`\n",
+        "    :emp\n",
+        ":emoji:\n"
+    ]) {
+        assert.equal(outsideSharedFuzzScope(input), null, input);
+    }
+});

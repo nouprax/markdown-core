@@ -16,25 +16,29 @@ owned node, not an ordinary content child.
 
 ## Inline directives
 
-The name may be followed immediately by an optional bracketed label, then an
-optional [attribute container](attributes.md):
+A name is followed immediately by a bracketed label, an [attribute
+container](attributes.md), or both; the part is what makes the colon a
+directive:
 
 ```markdown
-:name :name[label] :name{.class}
+:name[label] :name{.class} :name[label]{.class}
 ```
 
-All three are directives. Names begin with a Unicode letter and continue with
-letters, numbers, combining marks, hyphens, or underscores; a name cannot end
-with a hyphen or underscore. Case is preserved. `12:30` is text, while `a:b`
-contains a directive at the colon. Adjacent colons or a colon immediately after
-the name prevent the inline form, so `:emoji:` has no directive meaning.
+A name is a string without spaces, taken as written: one or more bytes other
+than a space, a tab, a line ending, `[`, `{`, or `:`. Nothing is classified by
+Unicode category, so `:中文[中文]`, `:1a[x]` and `:a.b[x]` name `中文`, `1a`
+and `a.b`. Case is preserved. A name with no part after it is text -- `:name`
+alone, `12:30`, `http://x` -- and so is a colon adjacent to another colon, so
+`:emoji:` has no directive meaning and `x ::a[y]` is text. `a:b[x]` contains a
+directive at the colon.
 
 Labels parse inline Markdown, can balance nested brackets, and may span soft
 line breaks within one inline container. A backslash escapes the next byte
 while locating the label's closer. Nesting beyond 32 brackets fails the label.
-The name commits independently: an incomplete label or invalid attribute
-container leaves the directive without that part and resumes ordinary parsing
-at the failed opener.
+A part that fails to scan does not anchor the directive: with neither part
+valid the colon is text. Once one part is valid the name commits, and an
+invalid second part leaves the directive without it and resumes ordinary
+parsing at the failed opener.
 
 ## Leaf directives
 
@@ -45,8 +49,9 @@ Use two colons on a line of their own:
 ```
 
 The result is `DirectiveBlock` named `video`, with a label and attributes but
-empty block content. A space cannot separate the name from its label or
-attributes. Only spaces/tabs may follow the accepted parts on that line.
+empty block content. The name follows the inline rule; the block forms need no
+bracket part, since the fence anchors them. A space cannot separate the name
+from its label or attributes. Only spaces/tabs may follow the accepted parts on that line.
 
 ## Container directives
 

@@ -192,7 +192,77 @@ typedef int (*markdown_core_contains_inlines_func)(const markdown_core_element *
 
 typedef int (*markdown_core_accepts_lines_func)(const markdown_core_element *element, markdown_core_node *node);
 
-/** Rewrite the tree rooted at 'root' in place.
+/** THE TWO SHAPES OF A FINISH HOOK, and the invariant that keeps them apart.
+ *
+ * The finish stage walks every owned root of the document exactly once --
+ * the content tree, each definition term, callout title, citation affix,
+ * table caption and directive label -- and an element can take part in that
+ * walk in one of two ways.
+ *
+ * A finish STEP is LOCAL. It is called from inside the walk, at the events of
+ * the kinds it declared (`finish_exit_kinds`, `finish_scope_kinds`), and it
+ * may touch only what the walk guarantees is settled at that moment: the
+ * current node and, at EXIT, the current node's complete subtree (at ENTER
+ * the subtree is untouched and about to be walked). It may READ the siblings
+ * that FOLLOW the current node, but never unlink, move or free one of them:
+ * the walk's lookahead already names the node after the current one. It may
+ * free only the node whose EXIT is current, and only when that node owns no
+ * field roots (the walk pushed those at its ENTER and keeps them for the
+ * passes); it may insert only BEFORE the current node, which the walk has
+ * passed and never visits again. A step never walks anything itself; the walk
+ * it is part of is the one traversal the finish stage makes.
+ *
+ * A postprocess PASS is GLOBAL. It receives a whole root after every root's
+ * walk has completed and the document has been finalized -- the footnotes
+ * and specimens in their chains, the headings holding their anchors -- walks
+ * it itself, and may read state outside that root (the document's footnotes,
+ * say). It costs a traversal of the root per pass, which is why the element
+ * hooks that rewrite one node at a time are steps and only a rewrite that
+ * needs the whole finished root is a pass.
+ *
+ * One element declares one or the other, never both: an element that needs
+ * both shapes has two concerns, and `markdown_core_parser_attach_element`
+ * refuses the descriptor.
+ */
+
+/** What a finish step did to the current node. */
+typedef enum {
+    /** The node is still in the tree; the steps after this one run. */
+    MARKDOWN_CORE_FINISH_CONTINUE,
+    /** The node was freed or replaced. No later step sees this event: the
+     *  node it names is gone. Legal only at EXIT. */
+    MARKDOWN_CORE_FINISH_CONSUMED,
+    /** An allocation failed and 'parser->oom' is set. The walk stops. */
+    MARKDOWN_CORE_FINISH_FAILED
+} markdown_core_finish_result;
+
+/** Observe one event of the finish walk at 'node'.
+ *
+ * 'event' is `MARKDOWN_CORE_EVENT_EXIT` for a node of a kind the step declared
+ * in `finish_exit_kinds` (asked once the node's subtree is complete), and
+ * `MARKDOWN_CORE_EVENT_ENTER` or `MARKDOWN_CORE_EVENT_EXIT` for a node of a
+ * kind it declared in `finish_scope_kinds` (the kinds whose extent it tracks).
+ * It is asked at no other event, and at none at all in a parse that produced
+ * no kind of those it declared in `finish_acts_on_kinds`, the kinds it acts on:
+ * the same gate that skips a pass skips a step.
+ * 'is_root' is 1 when 'node' is the root of the tree being walked; a root
+ * belongs to whoever holds it and may be rewritten in place but never
+ * replaced or freed. '*state' is one word the walk keeps for this element
+ * per root, zero when the root's walk starts, so a step can carry a fact
+ * such as "inside a Link" across the events of one root and never across
+ * roots.
+ *
+ * The step obeys the LOCAL contract above. It returns CONSUMED when it freed
+ * or replaced 'node' (legal only at EXIT), FAILED with 'parser->oom' set when
+ * an allocation failed, and CONTINUE otherwise.
+ */
+typedef markdown_core_finish_result (*markdown_core_finish_step_func)(const markdown_core_element *element,
+                                                                      markdown_core_parser *parser,
+                                                                      markdown_core_node *node,
+                                                                      markdown_core_event_type event, int is_root,
+                                                                      void **state);
+
+/** Rewrite the tree rooted at 'root' in place, after its finish walk.
  *
  * Return 1 on success and 0 on failure, having set 'parser->oom' to report it.
  *
@@ -203,6 +273,12 @@ typedef int (*markdown_core_accepts_lines_func)(const markdown_core_element *ele
  * and the signature does not let it try. A field root's kind is part of its
  * owner's contract, and substituting one cannot even be expressed: the field
  * root is detached, so the attach a substitution needs has no parent to take.
+ *
+ * The pass is handed each root once its own walk -- text consolidation and
+ * every finish step -- has completed. What it may read of OTHER roots is not
+ * part of the contract: a pass that reads the document root while it is handed
+ * a field root sees that document in whatever state the finish stage has
+ * reached, which is not the state any pass is promised.
  */
 typedef int (*markdown_core_postprocess_func)(const markdown_core_element *element, markdown_core_parser *parser,
                                               markdown_core_node *root);
@@ -450,7 +526,11 @@ void markdown_core_parser_advance_offset(markdown_core_parser *parser, const cha
  *  See the documentation for markdown_core_element for more information.
  *
  *  Returns 'true' if the 'element' was successfully attached,
- *  'false' otherwise.
+ *  'false' otherwise: on allocation failure, and for a descriptor the
+ *  registration rule refuses -- one that declares both a finish step and a
+ *  postprocess pass (see the two shapes above), or where a step is asked
+ *  without a step, or one kind as both an exit and a scope kind -- with the
+ *  registry left as it was.
  */
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_attach_element(markdown_core_parser *parser, const markdown_core_element *element);

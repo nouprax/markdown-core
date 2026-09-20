@@ -31,8 +31,8 @@ locators, or build a bibliography. Keys need no declaration to be recognized.
 
 A bare key uses `authorInText`. An eligible `-@` uses `suppressAuthor` and omits
 the mode marker from the key and affixes. Ordinary bracketed items use `normal`.
-An opener must be at the start of the inline container or after a scalar other
-than a letter, number, or underscore. Thus `foo@bar` is not a citation opener.
+An opener must be at the start of the inline container or after a character
+that is not a key character (below). Thus `foo@bar` is not a citation opener.
 
 For `-@`, that condition is first tested at `-`. In `[Smith-@1990]`, the hyphen
 is prefix text and the citation has normal mode; `[Smith -@1990]` suppresses
@@ -40,10 +40,14 @@ the author. Escaped `\@` stays text.
 
 ## Citation keys
 
-Bare keys begin with a Unicode letter, number, or underscore. Their remaining
-runs can contain those characters separated by one of `: . # $ % & - + ? < >
-~ /`; punctuation must be followed by a key character. A final period therefore
-stays outside the key.
+A key character is a letter, a digit, or `_`, with letter and digit meaning
+the Unicode categories, as in Pandoc. A bare key has no delimiter after it,
+so the class of the next character is what ends it: `@张三，如此说` keys
+`张三`, and `@Foo_bar。` keys `Foo_bar`. Bare keys begin with a key character.
+Their remaining runs of key characters can be separated by one of `: . # $ %
+& - + ? < > ~ /`, singly; internal punctuation must be followed by a key
+character, so a final period stays outside the key and `@Foo_bar--baz` keys
+`Foo_bar`.
 
 ```markdown
 @Foo_bar.baz. and @{https://example.com/paper}

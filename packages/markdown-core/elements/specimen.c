@@ -24,23 +24,32 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_parser 
     if ((digits && !value->start) || BLOCK_PEEK(input, pos++) != '@') {
         return 0;
     }
+    /* A LABEL IS WHAT A BARE REFERENCE READS WHOLE. A reference `@label` is
+     * scanned as a citation key (citation.c): Unicode letters, numbers and
+     * `_` are key characters, and internal punctuation stands singly between
+     * them. Pandoc's manual gives the definition "alphanumeric characters,
+     * underscores, or hyphens", and the hyphen is the one punctuation mark of
+     * that class, so a label is key characters with `-` singly between them,
+     * read by the same rule the reference applies -- a definition the
+     * reference could not name whole would be unreachable, so it is not a
+     * definition: `(@a--b)` and `(@x-)` are text. */
     bufsize_t label = pos;
-    bool alnum = false;
     while (pos < input->len) {
-        int32_t scalar;
-        int width = markdown_core_utf8proc_step(input->data + pos, input->len - pos, &scalar);
+        unsigned char c = input->data[pos];
+        int width = c == '_' ? 1 : markdown_core_utf8proc_alnum_width(input->data + pos, input->len - pos);
         parser->specimen_work++;
-        if (markdown_core_utf8proc_is_letter(scalar) || markdown_core_utf8proc_is_number(scalar)) {
-            alnum = true;
-        } else if ((scalar == '_' || scalar == '-') && alnum) {
-            alnum = false;
-        } else {
+        if (!width && c == '-' && pos > label && pos + 1 < input->len) {
+            unsigned char next = input->data[pos + 1];
+            int following =
+                next == '_' ? 1 : markdown_core_utf8proc_alnum_width(input->data + pos + 1, input->len - pos - 1);
+            width = following ? 1 + following : 0;
+        }
+        if (!width) {
             break;
         }
         pos += width;
     }
-    if ((pos != label && !alnum) || BLOCK_PEEK(input, pos) != ')' ||
-        !markdown_core_isspace(BLOCK_PEEK(input, pos + 1))) {
+    if (BLOCK_PEEK(input, pos) != ')' || !markdown_core_isspace(BLOCK_PEEK(input, pos + 1))) {
         return 0;
     }
     if (pos > label) {

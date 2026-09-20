@@ -297,6 +297,24 @@
             "inputDigest": "aa9761ac5e76a6fd7613aec290e0ce6bd74250e894b2a9bb8ac14214c303f1fe",
             "oracleDigest": "96e43afb3551c27d17de97b989d846761f96a313dc4ff10ffc4fe2ee0e511eb3",
             "coreDigest": "2f3c875f743498bf6ff60936ba42d22342e5d502c1fb1abf28ebfd7fc722d012"
+        },
+        {
+            "id": "pandoc-bare-name-rejection",
+            "item": "P5",
+            "status": "projection",
+            "reason": "A bare attribute is valid in the dialect's own grammar and is recorded as `disabled=\"true\"`, so `[text]{disabled}` is a Span; Pandoc's bracketed_spans reader rejects a member with no `=` and keeps the bytes as text.",
+            "inputDigest": "82a1bf2b4ccc540bd4ed2be9bd014f121b64c190af1f6309441ec7437ab976d8",
+            "oracleDigest": "39ee1046b475599ccff590553b63433fcab8f53408c7de623ce2e4a5735e07b1",
+            "coreDigest": "0d11635b55761de83fe3ab1b0dc95f3970d57cdf02b14e5b20ad6fa9e707e382"
+        },
+        {
+            "id": "p5-malformed-fallback",
+            "item": "P5",
+            "status": "projection",
+            "reason": "A class name is taken as written, so `[x]{.1}` is a Span with class `1`; Pandoc requires a class to begin with a letter and keeps the bytes as text. The three malformed containers that follow agree as text, and the closing `[y]{.d}` agrees as a Span.",
+            "inputDigest": "dd383580da6a6cf5aeed7dcf8f90c36ee40e277d495d3aedf5112d45af756071",
+            "oracleDigest": "90473850631816cf58d2ed03ede03e8736cd0c850cee14342599a3b4d51e0847",
+            "coreDigest": "aeafac01221fa149cbba9e6bfe4011a99441ff2a1db3ca742de01afb312c7c0f"
         }
     ]
 }

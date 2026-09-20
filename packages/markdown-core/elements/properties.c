@@ -16,14 +16,41 @@
 /* Plain scalars in bracketed arrays stop at array separators; field-line
  * scalars keep that punctuation as text. Quoted strings share one decoder. */
 typedef enum { PROPERTY_SCALAR, ARRAY_SCALAR } scalar_context;
+/* One envelope line: its content is [start, end). The terminator -- LF, CR
+ * or CRLF -- follows `end` when the line has one, and the next line begins at
+ * the following record's `start`. */
+typedef struct {
+    size_t start, end;
+} source_line;
+/* THE ENVELOPE'S LINE INDEX.
+ *
+ * The closing fence has to be found before any member can be decoded, because
+ * every member's end bound depends on it, so one walk over every envelope line
+ * is unavoidable. That walk used to discard what it found, and each line's
+ * geometry was then derived again from bytes by every consumer that needed
+ * it: the member classifier, the boundary search (twice, since it pre-reads
+ * the line it stops at and the next member starts there), the field's
+ * value-line bound, the literal and block-sequence decoders and the comment
+ * skip -- four byte scans per member line on the metadata corpus, more for a
+ * literal or a sequence. Now one pass over the envelope records each line and
+ * everything after it indexes. `lines` holds the `count` member lines
+ * followed by the closing fence, so `lines[l + 1].start` is every line's
+ * successor and the envelope end is a line start like any other. The index
+ * is a workspace of this one parse, built only once the fence is found and
+ * only over the envelope, and freed at the end of the payload; it is never
+ * part of the document value. */
 typedef struct {
     markdown_core_parser *parser;
     const unsigned char *source;
     markdown_core_metadata_fields *metadata;
+    source_line *lines;
+    size_t count;
 } properties;
 typedef struct {
     properties *owner;
     size_t pos, end;
+    /* The index of a line at or before `pos`; decoder_line() catches it up. */
+    size_t line;
 } decoder;
 
 static bool space(unsigned char c) { return c == ' ' || c == '\t'; }
@@ -35,12 +62,6 @@ static bool plain_start(const unsigned char *s, size_t start, size_t end) {
     return !((s[start] == '?' || s[start] == ':') &&
              (start + 1 == end || space(s[start + 1]) || newline(s[start + 1])));
 }
-static size_t line_end(const unsigned char *s, size_t p, size_t end) {
-    while (p < end && !newline(s[p])) {
-        p++;
-    }
-    return p;
-}
 static size_t next_line(const unsigned char *s, size_t p, size_t end) {
     if (p < end && s[p] == '\r') {
         p++;
@@ -49,6 +70,69 @@ static size_t next_line(const unsigned char *s, size_t p, size_t end) {
         p++;
     }
     return p;
+}
+/* THE ONE PLACE A LINE END IS DERIVED FROM BYTES.
+ *
+ * A line ends at the first CR or LF, so a bare CR terminates a line here and
+ * `memchr` for '\n' alone would run past one. Two searches, the nearer wins:
+ * the LF is found first and bounds the CR search, which therefore never runs
+ * past the line. The LF position is remembered until the cursor passes it,
+ * because with a bare CR ending every line the LF search would otherwise
+ * cover the rest of the envelope again for each line; remembered, every byte
+ * is handed to each search once, so the whole pass examines at most two bytes
+ * per byte whatever the endings are. The scanner is bounded by the closing
+ * fence, so neither search can leave the envelope.
+ *
+ * `memchr` does the searching, not a byte loop, and the choice was measured
+ * both ways against the loop it replaces: two calls per line cost about 14 Ir
+ * each plus the record, so the break-even is roughly an eight-byte line --
+ * one-byte lines are 5% slower this way and 20-byte lines 4% faster, and the
+ * metadata corpus lines run 15 to 23 bytes (-3.6% and -5.4% on its two
+ * documents). `work` counts the bytes examined -- up to and including the
+ * hit, or the whole range when there is none -- and feeds
+ * `properties_line_work`, on which the pass's bound is asserted: the output
+ * cannot tell one derivation of a line from four. */
+typedef struct {
+    const unsigned char *s;
+    size_t end;
+    size_t lf;
+    size_t work;
+} line_scanner;
+static size_t find_lf(line_scanner *scanner, size_t p) {
+    const unsigned char *hit = memchr(scanner->s + p, '\n', scanner->end - p);
+    size_t at = hit ? (size_t)(hit - scanner->s) : scanner->end;
+    scanner->work += at - p + (hit != NULL);
+    return at;
+}
+static void line_scanner_init(line_scanner *scanner, const unsigned char *s, size_t start, size_t end) {
+    scanner->s = s;
+    scanner->end = end;
+    scanner->work = 0;
+    scanner->lf = find_lf(scanner, start);
+}
+static size_t scan_line_end(line_scanner *scanner, size_t p) {
+    if (p > scanner->lf) {
+        scanner->lf = find_lf(scanner, p);
+    }
+    /* An empty line has nothing to search for a CR in; the call would only
+     * cost its overhead. */
+    if (p == scanner->lf) {
+        return p;
+    }
+    const unsigned char *hit = memchr(scanner->s + p, '\r', scanner->lf - p);
+    size_t at = hit ? (size_t)(hit - scanner->s) : scanner->lf;
+    scanner->work += at - p + (hit != NULL);
+    return at;
+}
+/* The line holding the decoder's cursor. The cursor only moves forward, so
+ * the line index catches up to it through the index and never reads a byte.
+ * Past the last member line it rests on the closing fence. */
+static size_t decoder_line(decoder *d) {
+    const properties *p = d->owner;
+    while (d->line < p->count && p->lines[d->line + 1].start <= d->pos) {
+        d->line++;
+    }
+    return d->line;
 }
 static bool grow(properties *p, void **array, size_t *capacity, size_t count, size_t width) {
     if (count <= *capacity) {
@@ -119,8 +203,7 @@ static void skip(decoder *d) {
         if (space(s[d->pos]) || newline(s[d->pos])) {
             d->pos++;
         } else if (s[d->pos] == '#' && (d->pos == 0 || space(s[d->pos - 1]) || newline(s[d->pos - 1]))) {
-            size_t end = line_end(s, d->pos, d->end);
-            d->pos = end;
+            d->pos = d->owner->lines[decoder_line(d)].end;
         } else {
             break;
         }
@@ -299,11 +382,9 @@ static markdown_core_metadata_value *field_slot(markdown_core_metadata_fields *m
  * newline. No folding, escaping, chomping flags or explicit indent indicators. */
 static bool literal(decoder *d, size_t key_start, markdown_core_metadata_value *value) {
     const unsigned char *s = d->owner->source;
-    size_t key_line = key_start;
-    while (key_line && !newline(s[key_line - 1])) {
-        key_line--;
-    }
-    size_t key_indent = key_start - key_line;
+    const source_line *lines = d->owner->lines;
+    size_t key_line = decoder_line(d);
+    size_t key_indent = key_start - lines[key_line].start;
     d->pos++;
     if (d->pos < d->end && !space(s[d->pos]) && !newline(s[d->pos])) {
         return false;
@@ -312,17 +393,16 @@ static bool literal(decoder *d, size_t key_start, markdown_core_metadata_value *
         d->pos++;
     }
     if (d->pos < d->end && s[d->pos] == '#') {
-        d->pos = line_end(s, d->pos, d->end);
+        d->pos = lines[key_line].end;
     }
     if (d->pos < d->end && !newline(s[d->pos])) {
         return false;
     }
-    d->pos = next_line(s, d->pos, d->end);
     markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
-    size_t indent = 0, clipped = 0;
+    size_t indent = 0, clipped = 0, line = key_line + 1;
     bool valid = true;
-    while (d->pos < d->end) {
-        size_t end = line_end(s, d->pos, d->end), content = d->pos;
+    for (; lines[line].start < d->end; line++) {
+        size_t start = lines[line].start, end = lines[line].end, content = start;
         while (content < end && s[content] == ' ') {
             content++;
         }
@@ -334,18 +414,18 @@ static bool literal(decoder *d, size_t key_start, markdown_core_metadata_value *
             markdown_core_strbuf_putc(&text, '\n');
         } else {
             if (!indent) {
-                indent = content - d->pos;
+                indent = content - start;
             }
-            if (indent <= key_indent || content - d->pos < indent) {
+            if (indent <= key_indent || content - start < indent) {
                 valid = false;
                 break;
             }
-            markdown_core_strbuf_put(&text, s + d->pos + indent, (bufsize_t)(end - d->pos - indent));
+            markdown_core_strbuf_put(&text, s + start + indent, (bufsize_t)(end - start - indent));
             markdown_core_strbuf_putc(&text, '\n');
             clipped = (size_t)text.size;
         }
-        d->pos = next_line(s, end, d->end);
     }
+    d->pos = lines[line].start;
     value->kind = MARKDOWN_CORE_METADATA_SCALAR;
     value->as.scalar.kind = MARKDOWN_CORE_METADATA_TEXT;
     markdown_core_strbuf_truncate(&text, (bufsize_t)clipped);
@@ -476,32 +556,29 @@ static bool sequence(decoder *d, markdown_core_metadata_value *value) {
     }
     /* Each block member owns exactly its indented continuation. The decoder's
      * range contracts once, then resumes after it; no member is scanned twice. */
+    const source_line *lines = d->owner->lines;
     size_t outer_end = d->end;
     while (d->pos < outer_end && !d->owner->parser->oom) {
         size_t start = d->pos;
         if (s[start] != '-' || (start + 1 < outer_end && !space(s[start + 1]) && !newline(s[start + 1]))) {
             return false;
         }
-        size_t line_start = start;
-        while (line_start && !newline(s[line_start - 1])) {
-            line_start--;
-        }
-        size_t item_indent = start - line_start;
+        size_t line = decoder_line(d);
+        size_t item_indent = start - lines[line].start;
         d->pos++;
         while (d->pos < outer_end && space(s[d->pos])) {
             d->pos++;
         }
-        size_t e = next_line(s, line_end(s, start, outer_end), outer_end);
-        while (e < outer_end) {
-            size_t p = e, end = line_end(s, e, outer_end);
+        for (line++; lines[line].start < outer_end; line++) {
+            size_t p = lines[line].start, end = lines[line].end;
             while (p < end && space(s[p])) {
                 p++;
             }
-            if (p < end && s[p] != '#' && p - e <= item_indent) {
+            if (p < end && s[p] != '#' && p - lines[line].start <= item_indent) {
                 break;
             }
-            e = next_line(s, end, outer_end);
         }
+        size_t e = lines[line].start;
         d->end = e;
         bool valid = list_item(d, PROPERTY_SCALAR, value, &capacity);
         skip(d);
@@ -518,14 +595,17 @@ static bool sequence(decoder *d, markdown_core_metadata_value *value) {
 static bool field(decoder *d) {
     properties *p = d->owner;
     const unsigned char *s = p->source;
-    size_t start = d->pos;
+    size_t start = d->pos, key_line = decoder_line(d);
+    /* The key must close on the line it opened: its source ends at or before
+     * that line's end. A quoted key can run across lines; the decoded text is
+     * checked separately since escapes can put a newline into it. */
+    size_t value_line_end = p->lines[key_line].end;
     p->parser->metadata_decoded_bytes += d->end - start;
     markdown_core_string name = {0};
     markdown_core_metadata_value value = {0};
     bool quoted_key = d->pos < d->end && (s[d->pos] == '\'' || s[d->pos] == '"');
     bool valid = quoted_key ? quoted(d, &name) : plain(d, false, true, &name);
-    valid = valid && name.length && single_line(name) && !memchr(s + start, '\n', d->pos - start) &&
-            !memchr(s + start, '\r', d->pos - start);
+    valid = valid && name.length && single_line(name) && d->pos <= value_line_end;
     while (d->pos < d->end && space(s[d->pos])) {
         d->pos++;
     }
@@ -536,7 +616,6 @@ static bool field(decoder *d) {
     if (d->pos < d->end && !space(s[d->pos]) && !newline(s[d->pos])) {
         goto failed;
     }
-    size_t value_line_end = line_end(s, d->pos, d->end);
     skip(d);
     if (d->pos == d->end) {
         value.kind = MARKDOWN_CORE_METADATA_SCALAR;
@@ -609,13 +688,16 @@ static size_t block_key_end(const unsigned char *s, size_t start, size_t end) {
     return 0;
 }
 
-static size_t block_boundary(const unsigned char *s, size_t start, size_t end, size_t indent) {
+/* Return the index of the first line after `line` that the member starting
+ * there does not own, or `count` when it runs to the closing fence. */
+static size_t block_boundary(const properties *p, size_t line, size_t indent) {
+    const unsigned char *s = p->source;
     enum { VALUE_PREFIX, VALUE_SCALAR, VALUE_QUOTED, VALUE_SEQUENCE, VALUE_BRACKETED } form = VALUE_PREFIX;
-    size_t cursor = start, array_depth = 0, object_depth = 0;
+    size_t array_depth = 0, object_depth = 0;
     unsigned char quote = 0;
     bool first = true;
-    while (cursor < end) {
-        size_t e = line_end(s, cursor, end), nonspace = cursor;
+    for (; line < p->count; line++) {
+        size_t cursor = p->lines[line].start, e = p->lines[line].end, nonspace = cursor;
         while (nonspace < e && s[nonspace] == ' ') {
             nonspace++;
         }
@@ -632,7 +714,7 @@ static size_t block_boundary(const unsigned char *s, size_t start, size_t end, s
                                 ((form == VALUE_PREFIX || form == VALUE_SEQUENCE) && (list_line || separation)) ||
                                 array_depth != 0 || object_depth != 0 || (quote && !recovery_key);
             if (!continuation) {
-                return cursor;
+                return line;
             }
         }
         size_t token = first ? block_key_end(s, nonspace, e) : 0;
@@ -690,16 +772,14 @@ static size_t block_boundary(const unsigned char *s, size_t start, size_t end, s
             }
         }
         first = false;
-        cursor = next_line(s, e, end);
     }
-    return cursor;
+    return line;
 }
 
-static void payload(properties *p, size_t start, size_t end) {
+static void payload(properties *p) {
     const unsigned char *s = p->source;
-    size_t cursor = start;
-    while (cursor < end && !p->parser->oom) {
-        size_t first = cursor, e = line_end(s, cursor, end);
+    for (size_t line = 0; line < p->count && !p->parser->oom;) {
+        size_t first = p->lines[line].start, e = p->lines[line].end;
         while (first < e && s[first] == ' ') {
             first++;
         }
@@ -709,56 +789,94 @@ static void payload(properties *p, size_t start, size_t end) {
         }
         if (content == e || s[content] == '#' || s[first] == '%' ||
             (e - first >= 3 && memcmp(s + first, "...", 3) == 0 && (e == first + 3 || space(s[first + 3])))) {
-            cursor = next_line(s, e, end);
+            line++;
             continue;
         }
-        size_t indent = first - cursor;
-        size_t boundary = block_boundary(s, cursor, end, indent);
-        decoder d = {.owner = p, .pos = first, .end = boundary};
-        if (printable(p, first, boundary)) {
+        size_t indent = first - p->lines[line].start;
+        size_t boundary = block_boundary(p, line, indent);
+        decoder d = {.owner = p, .pos = first, .end = p->lines[boundary].start, .line = line};
+        if (printable(p, first, d.end)) {
             field(&d);
         }
-        cursor = boundary;
+        line = boundary;
     }
 }
 size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsigned char *source, size_t length) {
     size_t bom = length >= 3 && memcmp(source, "\xef\xbb\xbf", 3) == 0 ? 3 : 0;
-    size_t opening = line_end(source, bom, length);
-    if (opening != bom + 3 || opening == length || memcmp(source + bom, "---", 3)) {
+    /* The opener is exactly "---" and a line ending: a peek, not a scan. */
+    if (length < bom + 4 || memcmp(source + bom, "---", 3) || !newline(source[bom + 3])) {
         return 0;
     }
-    size_t start = next_line(source, opening, length), close = start;
-    size_t closing_line = 2;
+    size_t start = next_line(source, bom + 3, length), close = start, capacity = 0;
+    properties p = {.parser = parser, .source = source};
+    /* THE FENCE NEEDS NO LINE GEOMETRY. It is "---" bracketed by line ends,
+     * so the search for it is one `memchr` pass over the dashes, checked at
+     * each hit for the line start before it and the line end after it, and
+     * it allocates nothing: a document that opens with a thematic break and
+     * never closes an envelope -- ordinary Markdown -- costs one pass and
+     * one byte of state. The index is built afterwards, over exactly the
+     * envelope, so its memory is bounded by the envelope's lines and its
+     * searches can never run past the fence. */
+    bool closed = false;
+    size_t fence_work = 0;
     while (close < length) {
-        size_t e = line_end(source, close, length);
-        if (e == close + 3 && !memcmp(source + close, "---", 3)) {
+        const unsigned char *hit = memchr(source + close, '-', length - close);
+        if (!hit) {
+            fence_work += length - close;
             break;
         }
-        close = next_line(source, e, length);
-        closing_line++;
+        size_t at = (size_t)(hit - source);
+        fence_work += at - close + 1;
+        if (newline(source[at - 1]) && length - at >= 3 && source[at + 1] == '-' && source[at + 2] == '-' &&
+            (at + 3 == length || newline(source[at + 3]))) {
+            close = at;
+            closed = true;
+            break;
+        }
+        close = at + 1;
     }
-    if (close == length) {
+    parser->properties_line_work += fence_work;
+    if (!closed) {
         return 0;
     }
-    properties p = {.parser = parser, .source = source};
+    line_scanner index;
+    line_scanner_init(&index, source, start, close);
+    for (size_t at = start; at < close;) {
+        size_t e = scan_line_end(&index, at);
+        if (!grow(&p, (void **)&p.lines, &capacity, p.count + 1, sizeof(*p.lines))) {
+            break;
+        }
+        p.lines[p.count++] = (source_line){at, e};
+        at = next_line(source, e, close);
+    }
+    parser->properties_line_work += index.work;
+    /* The sentinel is the fence itself, so the index needs room for it even
+     * when the envelope is empty. */
+    if (parser->oom || !grow(&p, (void **)&p.lines, &capacity, p.count + 1, sizeof(*p.lines))) {
+        markdown_core_free(p.lines);
+        return 0;
+    }
+    p.lines[p.count] = (source_line){close, close + 3};
     markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_METADATA);
     if (!node) {
         parser->oom = true;
+        markdown_core_free(p.lines);
         return 0;
     }
     size_t consumed = next_line(source, close + 3, length);
     p.metadata = node->as.metadata;
     node->start_line = 1;
     node->start_column = (int)(bom + 1);
-    node->end_line = (int)closing_line;
+    node->end_line = (int)(p.count + 2);
     node->end_column = 3;
-    payload(&p, start, close);
+    payload(&p);
+    markdown_core_free(p.lines);
     if (parser->oom) {
         markdown_core_node_free(node);
         return 0;
     }
     parser->root->as.document->metadata = node;
-    parser->line_number = (int)closing_line;
+    parser->line_number = (int)(p.count + 2);
     parser->last_line_length = 3;
     return consumed;
 }

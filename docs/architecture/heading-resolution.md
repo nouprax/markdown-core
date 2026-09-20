@@ -76,21 +76,24 @@ to the resource once; bindings encode and decode that resource once, just as
 they do for an explicit reference definition. The heading's attributes do not
 become inherited reference attributes.
 
-The existing inline-completion walk reserves effective explicit anchors while
-it discovers owned label/title fields. It visits only completed child trees,
-after bracket reductions and occurrence attributes have settled; a temporary
-inline later discarded by a footnote call cannot reserve an anchor. Field
-parsing has already appended inline footnotes, which the completion loop also
-visits. Block footnotes are still attached to the content tree during this
-walk. No additional anchor-specific whole-tree traversal is needed. The
+The finish walk reserves effective explicit anchors at each node's ENTER,
+while it discovers owned label/title fields. It visits only completed child
+trees, after bracket reductions and occurrence attributes have settled; a
+temporary inline later discarded by a footnote call cannot reserve an anchor.
+Field parsing has already appended inline footnotes, which the walk visits as
+the document's own roots. Block footnotes are still attached to the content
+tree during this walk; the document's finalization, which follows it, moves
+them into their chains and then gives the headings their anchors. No
+anchor-specific whole-tree traversal is needed. The
 registry and C facade use one effective-anchor accessor for local-over-inherited
 precedence. A reference resource's inherited anchor
 is hashed only on its first emitted inheriting occurrence. This identity index
 is necessary to avoid repeatedly hashing a long definition anchor for every
 short reference; unreferenced or fully overridden definitions reserve nothing.
 
-The same completion walk resolves contextual script-space escape tokens after
-bracket/delimiter ownership is final. Heading projection and all later consumers
+The same walk resolves contextual script-space escape tokens after
+bracket/delimiter ownership is final, before consolidation merges the token's
+Text into its neighbours. Heading projection and all later consumers
 therefore read decoded literals; it never reinterprets authored escape spellings.
 Script depth follows child and owned-field edges; document-owned footnotes
 begin their own context. Failed enclosing candidates therefore leave field

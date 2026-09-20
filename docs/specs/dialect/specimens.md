@@ -45,9 +45,16 @@ container's start, independent of marker width. Bodies use ordinary block
 parsing and can contain multiple blocks. Definition markers never interrupt a
 paragraph; they are exempt from nested ordered-list start restrictions.
 
-Labels are runs of Unicode letters/numbers, optionally joined by single `_`
-or `-` separators. They retain case. Duplicate IDs retain all definitions, but
-references select the first. Specimen and footnote IDs are separate families.
+A label is what a bare reference reads whole. A reference `@label` is
+scanned as a [citation key](citations.md): letters, digits and `_` in the
+Unicode categories are key characters, and internal punctuation stands
+singly between them. Pandoc's manual gives the definition "alphanumeric
+characters, underscores, or hyphens", and the hyphen is the one punctuation
+mark of that class, so a label is key characters with `-` singly between
+them: `(@a-b)`, `(@_x)` and `(@a__b)` are labels, and `(@a--b)`, `(@x-)` and
+`(@-x)` are text, since `@a--b` and `@x-` name the key `a` and `x`. Labels
+retain case. Duplicate IDs retain all definitions, but references select the
+first. Specimen and footnote IDs are separate families.
 
 ## Reference forms
 

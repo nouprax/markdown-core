@@ -106,8 +106,10 @@ once by the same field parser.
 Finalization processes only the F registered values, with no tree walk to
 discover footnotes. Registration order differs from source order: definitions
 precede inline parsing, nested bodies close inside out, and directive labels
-parse after the main tree. Eight stable byte passes over the two 32-bit source
-coordinates bound ordering work by O(F). All authored ids are reserved before
+parse after the main tree. A stable counting pass per byte of the packed
+32-bit source coordinates bounds ordering work by O(F): the keys are computed
+once, only the bytes on which some key differs are passed over, and an input
+already in order is left where it is. All authored ids are reserved before
 inline ids are assigned. Collision probes consume disjoint authored-id
 namespaces, so their total is bounded by F plus the authored-id count.
 After every allocation succeeds, finalization moves the values into one
@@ -181,8 +183,8 @@ HTML and indentation rules, and queries do not alter the streaming line's
 thematic-break failure cache.
 
 Deferred cells can register headings and references out of physical order.
-Document completion stably orders entries by original line and column using a
-fixed-pass radix sort. Explicit reference definitions take priority over
+Document completion stably orders entries by original line and column using the
+same key-aware radix operation. Explicit reference definitions take priority over
 implicit heading definitions, then the earliest authored definition wins.
 
 The table caption is an independent element-owned root, visited before rows.

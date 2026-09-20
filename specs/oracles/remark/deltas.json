@@ -4,7 +4,7 @@
         "runner": "unified / remark",
         "why": "The oracles below are micromark extensions, which emit a token stream rather than a tree. remark is the harness that runs them and turns the tokens into mdast, so it is what this gate executes — but the syntax decisions being compared are the extensions' own.",
         "authorities": {
-            "directives": "micromark-extension-directive@4.0.0 for directive envelopes, labels, and attachment positions (run through remark-directive); the shared attribute member grammar is explicitly Pandoc-owned",
+            "directives": "micromark-extension-directive@4.0.0 for directive labels, attachment positions and the block forms (run through remark-directive); the inline name rule and its need for a bracket part follow the generic directive proposal, and the shared attribute member grammar is the dialect's own",
             "math": "micromark-extension-math@3.1.0",
             "footnotes and tables": "micromark-extension-gfm-* (remark-gfm)"
         },
@@ -14,7 +14,7 @@
             "Which construct wins when two extensions could claim the same line. That is decided by micromark's construct priority and by this repository's audited extension attachment order — each an artifact of its own architecture, not a rule either project specifies. Divergences of that kind are product grammar decisions rather than mdast parity deltas.",
             "LaTeX-style math delimiters. micromark-extension-math implements `$` and `$$` only, so `\\(x\\)` and `\\[x\\]` reach remark as ordinary escaped brackets. It has no opinion there to compare against, which is why packages/markdown-core/tests/fixtures/elements-formula-latex.txt is deliberately absent from the corpus below rather than present with six registered divergences. Registering them would read as `remark disagrees`, and it does not — it was never asked.",
             "Whether an extension is on. The dialect has no switches and every parse attaches every extension, so what an input parses to with a scanner excluded is not a property of the product; no fixture and no gate asserts it.",
-            "Attribute member grammar and consumer projection. Markdown Core deliberately uses the pinned Pandoc 3.11 grammar at every attachment site and projects IDs to the universal anchor and remaining values to shared classes and records; remark remains the evidence only for the directive envelope and attachment position, which the directives module states. New runtime differences caused by that planned migration must be registered when they begin reproducing."
+            "Attribute member grammar and consumer projection. Markdown Core takes attribute names as written, like an HTML start tag, at every attachment site (docs/specs/dialect/attributes.md) and projects IDs to the universal anchor and remaining values to shared classes and records; remark remains the evidence only for the directive envelope and attachment position, which the directives module states. New runtime differences in the member grammar must be registered when they begin reproducing."
         ]
     },
     "claim": "Within the evidence boundary above, Markdown Core's semantics are identical to the unified/remark ecosystem's except for the registered differences below. The check that enforces current runtime behavior is scripts/check-mdast-parity.mjs.",
@@ -211,9 +211,9 @@
         {
             "id": "shared-attributes-bare-member-atomic",
             "input": ":data[label]{muted dup=first dup=last unicode=中文😀 title=\"My Video\"}\n",
-            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
-            "summary": "A bare name invalidates the entire container; remark accepts a valueless member and deduplicates assignments.",
-            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+            "authority": "docs/specs/dialect/attributes.md",
+            "summary": "A bare member is recorded as `muted=\"true\"` and duplicate assignments are kept in source order; remark records the empty string and keeps only the last duplicate.",
+            "why": "The attribute member grammar is the dialect's own, stated in attributes.md: a name is taken as written, like an HTML start tag's, and a bare member is recorded with the value `true`. remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
         },
         {
             "id": "shared-attributes-unmatched-quote-fallback",
@@ -225,16 +225,9 @@
         {
             "id": "shared-attributes-shorthand-dots",
             "input": ":id{#one.two}\n:class{.one.two}\n:colon{#one:two .three:four}\n",
-            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "authority": "docs/specs/dialect/attributes.md",
             "summary": "Dots are name characters inside one ID or class, rather than successive remark shorthand members.",
-            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
-        },
-        {
-            "id": "shared-attributes-letter-first",
-            "input": ":1a[]\n",
-            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
-            "summary": "A directive name begins with a Unicode letter, so a digit-first name is text.",
-            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+            "why": "The attribute member grammar is the dialect's own, stated in attributes.md: a name is taken as written, like an HTML start tag's, and a bare member is recorded with the value `true`. remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
         },
         {
             "id": "shared-attributes-unquoted-quote",
@@ -260,23 +253,9 @@
         {
             "id": "shared-attributes-bare-colon-name",
             "input": ":x{a:b .c}\n",
-            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
-            "summary": "A colon in a name does not make a bare name into an assignment; malformed containers attach nothing.",
-            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
-        },
-        {
-            "id": "shared-attributes-invalid-underscore-name",
-            "input": ":n{-a=1 _b=2}\n",
-            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
-            "summary": "The special minus member is allowed, but an underscore-first assignment invalidates the whole container.",
-            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
-        },
-        {
-            "id": "shared-attributes-class-name-characters",
-            "input": ":n{.a&b .c$d}\n",
-            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
-            "summary": "Class shorthands admit letters, numbers, hyphens, underscores, dots and colons; ampersands and dollar signs invalidate the container.",
-            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+            "authority": "docs/specs/dialect/attributes.md",
+            "summary": "`a:b` is one bare member, recorded as `a:b=\"true\"`; remark records it with the empty string.",
+            "why": "The attribute member grammar is the dialect's own, stated in attributes.md: a name is taken as written, like an HTML start tag's, and a bare member is recorded with the value `true`. remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
         },
         {
             "id": "shared-attributes-invalid-entity-shorthand",
@@ -356,25 +335,25 @@
             "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
         },
         {
-            "id": "shared-attributes-unicode-directive-name",
-            "input": "12:30 :3d a:b :é\n",
-            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
-            "summary": "Directive names accept non-ASCII Unicode letters and reject digit-first names, including the second half of a time.",
-            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+            "id": "directive-name-as-written",
+            "input": "12:30 :3d[x] a:b[x] :é[x] :1a[x] :a.b[x]\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "`12:30` is text, since the name after its colon has no bracket part, and `.` is a name byte so `:a.b[x]` names `a.b`; remark makes `:30` a directive and ends a name at the dot.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
         },
         {
             "id": "shared-attributes-normalization-order",
             "input": ":n{#a#b}\n\n:n{-k=v}\n\n:n{.one.two #1}\n\n:n{k=\"a\\\"b&amp;c\" m=a&amp;b n= id=}\n\n:n{class=\"a b\" .a k=1 k=2}\n",
-            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "authority": "docs/specs/dialect/attributes.md",
             "summary": "The shared grammar retains dotted names, permits adjacent ID and minus members, accepts empty assignments, and preserves duplicate classes and records in source order.",
-            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+            "why": "The attribute member grammar is the dialect's own, stated in attributes.md: a name is taken as written, like an HTML start tag's, and a bare member is recorded with the value `true`. remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
         },
         {
             "id": "shared-attributes-invalid-member-boundaries",
-            "input": ":n{.1} :n{disabled} :n{_k=v} :n{=} :n{#} :n{.}\n",
-            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
-            "summary": "Class and assignment names begin with a letter; bare words are invalid. Invalid candidates attach no attributes.",
-            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+            "input": ":n{.1} :n{disabled} :n{_k=v} :n{1a=b} :n{中文=值} :n{a#b=c} :n{id} :n{-x}\n",
+            "authority": "docs/specs/dialect/attributes.md",
+            "summary": "A bare member is recorded with the value `true` where remark records the empty string; `#` is a name byte, so `a#b=c` is one assignment and `{id}` a bare `id` member projected to the anchor, where remark rejects both containers.",
+            "why": "The attribute member grammar is the dialect's own, stated in attributes.md: a name is taken as written, like an HTML start tag's, and a bare member is recorded with the value `true`. remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
         },
         {
             "id": "shared-attributes-single-quote-escapes",
@@ -421,9 +400,44 @@
         {
             "id": "shared-attributes-block-duplicate-values",
             "input": "::n[leaf]{#leaf .c k=1 k=2}\n\n:::n[container]{#box .c .c}\nbody\n:::\n",
-            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
+            "authority": "docs/specs/dialect/attributes.md",
             "summary": "Leaf and container directives use the same ordered normalized attributes; duplicate records and classes are retained.",
-            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+            "why": "The attribute member grammar is the dialect's own, stated in attributes.md: a name is taken as written, like an HTML start tag's, and a bare member is recorded with the value `true`. remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
+        },
+        {
+            "id": "shared-attributes-hash-in-id",
+            "input": ":n{#a#b}\n",
+            "authority": "docs/specs/dialect/attributes.md",
+            "summary": "`#` is a name byte, so `{#a#b}` is one ID, `a#b`; remark reads two ID shorthands and keeps the last.",
+            "why": "The attribute member grammar is the dialect's own, stated in attributes.md: a name is taken as written, like an HTML start tag's, and a bare member is recorded with the value `true`. remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
+        },
+        {
+            "id": "shared-attributes-bare-member-colon",
+            "input": ":x{:_a}\n",
+            "authority": "docs/specs/dialect/attributes.md",
+            "summary": "A bare member may begin with a colon and is recorded as `:_a=\"true\"`; remark rejects the container.",
+            "why": "The attribute member grammar is the dialect's own, stated in attributes.md: a name is taken as written, like an HTML start tag's, and a bare member is recorded with the value `true`. remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
+        },
+        {
+            "id": "shared-attributes-name-dollar",
+            "input": ":x{a$b}\n",
+            "authority": "docs/specs/dialect/attributes.md",
+            "summary": "`$` is a name byte, so `a$b` is a bare member recorded with the value `true`; remark rejects the container.",
+            "why": "The attribute member grammar is the dialect's own, stated in attributes.md: a name is taken as written, like an HTML start tag's, and a bare member is recorded with the value `true`. remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
+        },
+        {
+            "id": "shared-attributes-class-backtick",
+            "input": ":n{.a`b}\n",
+            "authority": "docs/specs/dialect/attributes.md",
+            "summary": "A backtick is a name byte, so `.a`b` is one class; remark rejects the container.",
+            "why": "The attribute member grammar is the dialect's own, stated in attributes.md: a name is taken as written, like an HTML start tag's, and a bare member is recorded with the value `true`. remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
+        },
+        {
+            "id": "shared-attributes-name-reference",
+            "input": ":n{&#97;=v}\n",
+            "authority": "docs/specs/dialect/attributes.md",
+            "summary": "A name is taken as written, so `&#97;=v` names `&#97;`; remark decodes the character reference to `a`.",
+            "why": "The attribute member grammar is the dialect's own, stated in attributes.md: a name is taken as written, like an HTML start tag's, and a bare member is recorded with the value `true`. remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
         },
         {
             "id": "shared-attributes-nested-line-normalization",
@@ -433,11 +447,116 @@
             "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
         },
         {
-            "id": "shared-attributes-unicode-name-categories",
+            "id": "directive-name-needs-part-categories",
             "input": "12:30 :3d a:b :é :字 :á :😀 :Ⅳ :aⅣ :a- :a_\n",
-            "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
-            "summary": "Directive names use Unicode letter first, then letters, numbers and marks or internal hyphen/underscore; numeric-letter and symbol starts and trailing separators are rejected.",
-            "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "No colon here is followed by a name with a bracket part, so all of it is text; remark makes a directive of each name its character classes admit.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-unclosed-link",
+            "input": ":note[See [docs](https://examp\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "The label never closes, so the colon has no part to anchor on and `:note` is text; remark keeps a part-less directive before the bracket run.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-unclosed-labels",
+            "input": ":a[b and :c[\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "Neither label closes, so both colons are text; remark keeps two part-less directives.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-edge-hyphen-underscore",
+            "input": ":a-[]\n:-a[]\n:_a[]\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "A hyphen or underscore may begin or end a name; remark rejects each of these.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-en-dash",
+            "input": "a :b–c[d]\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "Punctuation of any width is a name byte, so `:b–c[d]` names `b–c`; remark ends the name at the en dash and keeps a part-less `:b`.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-trailing-underscore",
+            "input": ":a_[]\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "An underscore may end a name; remark rejects it.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-empty-id",
+            "input": ":n{#}\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "The container is invalid and there is no label, so the colon is text; remark keeps a part-less directive before the braces.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-empty-class",
+            "input": ":n{.}\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "As directive-name-needs-part-empty-id, for an empty class shorthand.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-shorthand-assignment",
+            "input": ":n{.a=b}\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "As directive-name-needs-part-empty-id, for a shorthand followed by `=`.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-unclosed-label-utf8",
+            "input": ":nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnéz[unclosed\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "The label never closes, so the whole run is text; remark keeps a part-less directive whose name ends before the bracket.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-bare",
+            "input": ":name :name[label] :name{.c} :name[label]{.c}\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "`:name` with no part is text; the three forms with a part agree. remark makes the bare form a directive too.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-trailing-hyphen-with-label",
+            "input": "x ::a[y] x:::a[y] :red:[y] :a-b_c[y] :d-[y]\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "`:d-[y]` names `d-`; remark rejects the trailing hyphen. The colon-adjacency cases agree as text.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-unclosed-label-attrs",
+            "input": ":a[b :c{d\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "Neither the label nor the container closes, so both colons are text; remark keeps two part-less directives.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-invalid-containers",
+            "input": ":n{\"a} :n{a\"b} :n{{a} :n{=} :n{#} :n{.}\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "Every container is invalid and no name has a label, so all of it is text; remark keeps a part-less directive before each.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-quoted-blank-line",
+            "input": ":n{k=\"x\n\ny\"}\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "The container cannot cross the blank line and there is no label, so `:n` is text; remark keeps a part-less directive.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
+        },
+        {
+            "id": "directive-name-needs-part-unterminated-quotes",
+            "input": ":n{#x \"bad} :n{#x .a k=\"unterminated\n",
+            "authority": "docs/specs/dialect/directives.md",
+            "summary": "Both containers are invalid and neither name has a label, so all of it is text; remark keeps a part-less directive before each.",
+            "why": "An inline directive is a name that is a string without spaces, as the generic directive proposal on the CommonMark wiki has it, followed immediately by a bracketed label or an attribute container; it is that part that makes the colon a directive, and nothing in the name is classified by Unicode category. micromark-extension-directive's name character classes and its part-less `:name` form are that implementation's own rules, so remark is not the authority for either."
         },
         {
             "id": "task-prefix-before-block-content",
@@ -598,21 +717,21 @@
         },
         {
             "id": "p2-attribute-sites-69",
-            "input": "# T {.1}\n\n# T {#unclosed\n\n# T \\{.escaped}\n\nFirst\nLast {#setext .c}\n---\n\n",
+            "input": "# T {.}\n\n# T {#unclosed\n\n# T \\{.escaped}\n\nFirst\nLast {#setext .c}\n---\n\n",
             "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
-            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:445: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
         },
         {
             "id": "p2-attribute-sites-70",
-            "input": "~~~ {.c #code}\nx\n~~~\n\n``` C++ {.numberLines startFrom=10}\nx\n```\n\n~~~ Python {.1}\ny\n~~~\n\n~~~ lang {#unclosed\ny\n~~~\n",
+            "input": "~~~ {.c #code}\nx\n~~~\n\n``` C++ {.numberLines startFrom=10}\nx\n```\n\n~~~ Python {.}\ny\n~~~\n\n~~~ lang {#unclosed\ny\n~~~\n",
             "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
-            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:470: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
         },
         {
             "id": "p2-attribute-sites-71",
-            "input": "[x](/url){.own} ![image](/img){.wide width=50% height=2in}\n\n<mailto:a@b.com>{.email} <https://example.com>{.external}\n\n[x](/url){broken} ![image](/img){#unclosed\n",
+            "input": "[x](/url){.own} ![image](/img){.wide width=50% height=2in}\n\n<mailto:a@b.com>{.email} <https://example.com>{.external}\n\n[x](/url){\"broken} ![image](/img){#unclosed\n",
             "authority": "docs/specs/dialect/attributes.md; P2a–P2d",
-            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt:494: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
+            "note": "packages/markdown-core/tests/fixtures/dialect-attributes.txt: the dialect attaches normalized attributes at code, heading and link sites and inherits reference-definition values; remark has no such attachment sites. Fenced-code info remains the authored text outside the container. Its competing base/extension parse is preserved as exact evidence."
         },
         {
             "id": "p2-attribute-sites-72",

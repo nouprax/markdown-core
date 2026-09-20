@@ -35,6 +35,45 @@ Document scope=1:1..1:52 anchor=null attributes={} children=1
     └── Text scope=1:52..1:52 anchor=null attributes={} literal="." children=0
 ````````````````````````````````
 
+A key ends where the next character is not a letter, a digit or `_` by its
+Unicode category, as in Pandoc. Nothing separates a key from the punctuation
+after it in prose that puts no space before punctuation, so `@张三，如此说`
+keys `张三` and `[@张三，第 3 页]` keys `张三` with the rest as suffix; reading
+the class off the bytes would run the key into the clause.
+
+```````````````````````````````` example
+@张三，如此说。 [@张三，第 3 页] @张三、@李四 @Foo_bar。
+.
+Document scope=1:1..1:74 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:74 anchor=null attributes={} children=10
+    ├── Cite scope=1:1..1:7 anchor=null attributes={} children=1
+    │   └── Citation scope=1:1..1:7 anchor=null attributes={} referent=bib(key="张三",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    ├── Text scope=1:8..1:23 anchor=null attributes={} literal="，如此说。 " children=0
+    ├── Cite scope=1:24..1:44 anchor=null attributes={} children=1
+    │   └── Citation scope=1:25..1:43 anchor=null attributes={} referent=bib(key="张三",mode=normal) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=1
+    │           └── Text scope=1:32..1:43 anchor=null attributes={} literal="，第 3 页" children=0
+    ├── Text scope=1:45..1:45 anchor=null attributes={} literal=" " children=0
+    ├── Cite scope=1:46..1:52 anchor=null attributes={} children=1
+    │   └── Citation scope=1:46..1:52 anchor=null attributes={} referent=bib(key="张三",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    ├── Text scope=1:53..1:55 anchor=null attributes={} literal="、" children=0
+    ├── Cite scope=1:56..1:62 anchor=null attributes={} children=1
+    │   └── Citation scope=1:56..1:62 anchor=null attributes={} referent=bib(key="李四",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    ├── Text scope=1:63..1:63 anchor=null attributes={} literal=" " children=0
+    ├── Cite scope=1:64..1:71 anchor=null attributes={} children=1
+    │   └── Citation scope=1:64..1:71 anchor=null attributes={} referent=bib(key="Foo_bar",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    └── Text scope=1:72..1:74 anchor=null attributes={} literal="。" children=0
+````````````````````````````````
+
 ```````````````````````````````` example
 foo@bar 1@bar x_@bar (@bar)
 .

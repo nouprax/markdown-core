@@ -321,22 +321,19 @@ Document scope=1:1..3:31 anchor=null attributes={} children=1
 
 (1000000000@y) overflow
 
-(@bad__id) bad
+(@bad__id) shared
 
 (@x-) bad
+
+(@a--b) bad
+
+(@-x) bad
 .
-Document scope=1:1..9:9 anchor=null attributes={} children=4
+Document scope=1:1..13:9 anchor=null attributes={} children=5
 ├── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:10 anchor=null attributes={} literal="(0@x) zero" children=0
 ├── Paragraph scope=5:1..5:23 anchor=null attributes={} children=1
 │   └── Text scope=5:1..5:23 anchor=null attributes={} literal="(1000000000@y) overflow" children=0
-├── Paragraph scope=7:1..7:14 anchor=null attributes={} children=3
-│   ├── Text scope=7:1..7:1 anchor=null attributes={} literal="(" children=0
-│   ├── Cite scope=7:2..7:9 anchor=null attributes={} children=1
-│   │   └── Citation scope=7:2..7:9 anchor=null attributes={} referent=bib(key="bad__id",mode=authorInText) children=0
-│   │       ├── CitationPrefix children=0
-│   │       └── CitationSuffix children=0
-│   └── Text scope=7:10..7:14 anchor=null attributes={} literal=") bad" children=0
 ├── Paragraph scope=9:1..9:9 anchor=null attributes={} children=3
 │   ├── Text scope=9:1..9:1 anchor=null attributes={} literal="(" children=0
 │   ├── Cite scope=9:2..9:3 anchor=null attributes={} children=1
@@ -344,9 +341,21 @@ Document scope=1:1..9:9 anchor=null attributes={} children=4
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   └── Text scope=9:4..9:9 anchor=null attributes={} literal="-) bad" children=0
-└── Specimen scope=3:1..4:0 anchor=null attributes={} id="x" start=1 children=1
-    └── Paragraph scope=3:15..3:25 anchor=null attributes={} children=1
-        └── Text scope=3:15..3:25 anchor=null attributes={} literal="nine digits" children=0
+├── Paragraph scope=11:1..11:11 anchor=null attributes={} children=3
+│   ├── Text scope=11:1..11:1 anchor=null attributes={} literal="(" children=0
+│   ├── Cite scope=11:2..11:3 anchor=null attributes={} children=1
+│   │   └── Citation scope=11:2..11:3 anchor=null attributes={} referent=bib(key="a",mode=authorInText) children=0
+│   │       ├── CitationPrefix children=0
+│   │       └── CitationSuffix children=0
+│   └── Text scope=11:4..11:11 anchor=null attributes={} literal="--b) bad" children=0
+├── Paragraph scope=13:1..13:9 anchor=null attributes={} children=1
+│   └── Text scope=13:1..13:9 anchor=null attributes={} literal="(@-x) bad" children=0
+├── Specimen scope=3:1..4:0 anchor=null attributes={} id="x" start=1 children=1
+│   └── Paragraph scope=3:15..3:25 anchor=null attributes={} children=1
+│       └── Text scope=3:15..3:25 anchor=null attributes={} literal="nine digits" children=0
+└── Specimen scope=7:1..8:0 anchor=null attributes={} id="bad__id" start=null children=1
+    └── Paragraph scope=7:12..7:17 anchor=null attributes={} children=1
+        └── Text scope=7:12..7:17 anchor=null attributes={} literal="shared" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
