@@ -501,28 +501,31 @@ struct markdown_core_parser {
  *
  * A node's runs are contiguous in the parser's vector and ordered by content
  * offset, so the run containing an offset is the last whose start is at or
- * before it. The inline parser asks this once per node it places and reads
- * its container left to right, so the answer is almost always the run the
- * previous answer named or the one after it: a Text never crosses a line
+ * before it. `hint` is the run the caller last resolved, or the node's first
+ * run for a caller that keeps none: the inline parser's cold path reads its
+ * container left to right, so the answer is almost always the run the
+ * previous answer named or the one after it -- a Text never crosses a line
  * ending (a break is its own node), and the next token starts where the last
  * one ended. Those two runs are probed first. Only an offset farther ahead --
  * an opaque span across many lines -- or behind the hint -- a Link placed
  * back at its opener, a rewind -- is searched for, over the part of the run
  * on that side, so no query costs more than the search alone did.
  *
- * Defined here, with the span below, so that placing an inline node is one
- * straight-line body in the caller: the placement's cost is its fixed part,
- * not its probes, and a call for each of three steps was most of it. */
-static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_near(markdown_core_parser *parser,
+ * ONE SEARCH FOR ONE QUESTION: the block phase asks it from the first run
+ * and the placement's cold path from its cursor, through the same body. The
+ * probes are handed back rather than counted here, so the accounting that
+ * bounds the placement (the api test) is the placement's and a block-phase
+ * caller inlines the search alone. */
+static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_near(const markdown_core_parser *parser,
                                                                       const markdown_core_node *node, bufsize_t offset,
-                                                                      int hint) {
+                                                                      int hint, size_t *probes) {
     const markdown_core_line_mark *marks = parser->line_marks;
     int lo = node->content_mark, hi = lo + node->content_mark_count - 1;
     int at = hint >= lo && hint <= hi ? hint : lo;
-    size_t probes = 1;
+    size_t probed = 1;
     if (marks[at].content_offset <= offset) {
         if (at != hi && marks[at + 1].content_offset <= offset) {
-            probes++;
+            probed++;
             at++;
             if (at != hi && marks[at + 1].content_offset <= offset) {
                 lo = at + 1;
@@ -536,7 +539,7 @@ static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_near(markdown_c
     if (at < 0) {
         while (lo < hi) {
             int mid = lo + (hi - lo + 1) / 2;
-            probes++;
+            probed++;
             if (marks[mid].content_offset <= offset) {
                 lo = mid;
             } else {
@@ -545,28 +548,15 @@ static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_near(markdown_c
         }
         at = lo;
     }
-    parser->content_mark_probes += probes;
+    *probes += probed;
     return at;
 }
 
-/* The same question with no hint: the plain search, for the block phase and
- * the map copies, which ask it once per node or per run rather than once per
- * token and carry no cursor. Kept apart from `near` so that a block-phase
- * caller inlines a search and not the probe loop and its accounting, which
- * are the placement's. */
-static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_at(markdown_core_parser *parser,
+/* The same question from a caller that keeps no cursor and counts nothing. */
+static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_at(const markdown_core_parser *parser,
                                                                     const markdown_core_node *node, bufsize_t offset) {
-    const markdown_core_line_mark *marks = parser->line_marks;
-    int lo = node->content_mark, hi = lo + node->content_mark_count - 1;
-    while (lo < hi) {
-        int mid = lo + (hi - lo + 1) / 2;
-        if (marks[mid].content_offset <= offset) {
-            lo = mid;
-        } else {
-            hi = mid - 1;
-        }
-    }
-    return lo;
+    size_t probes = 0;
+    return markdown_core_block_content_mark_near(parser, node, offset, node->content_mark, &probes);
 }
 
 /* Resolve both ends of [from, to] against `node`'s map, each found from the
@@ -591,9 +581,10 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
         return 0;
     }
     int hint = cursor ? *cursor : node->content_mark;
+    size_t probes = 0;
     if (from >= 0) {
         bufsize_t offset = from + node->content_mark_offset;
-        span->first = markdown_core_block_content_mark_near(parser, node, offset, hint);
+        span->first = markdown_core_block_content_mark_near(parser, node, offset, hint, &probes);
         const markdown_core_line_mark *mark = &parser->line_marks[span->first];
         span->start_line = mark->line;
         span->start_column = mark->column + (int)(offset - mark->content_offset) * mark->source_step;
@@ -602,7 +593,7 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
     }
     if (to >= 0) {
         bufsize_t offset = to + node->content_mark_offset;
-        span->last = markdown_core_block_content_mark_near(parser, node, offset, hint);
+        span->last = markdown_core_block_content_mark_near(parser, node, offset, hint, &probes);
         hint = span->last;
         const markdown_core_line_mark *mark = &parser->line_marks[span->last];
         span->end_line = mark->line;
@@ -613,6 +604,7 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
     if (cursor) {
         *cursor = hint;
     }
+    parser->content_mark_probes += probes;
     return 1;
 }
 
