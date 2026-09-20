@@ -234,6 +234,14 @@ struct markdown_core_parser {
     size_t delimiter_work;
     /* Delimiter entries pushed, against which the pool's growth is measured. */
     size_t delimiter_pushes;
+    /* Inline placements asked of the content-to-source map, and the runs
+     * probed to answer the ones that left the cursor's run. The map's whole
+     * claim since #346 is that a placement made while a container is read
+     * left to right is measured in the cursor's run and probes nothing, and
+     * one that leaves it probes a bounded number of runs rather than
+     * searching the container's from scratch; the ratio is that claim. */
+    size_t content_mark_queries;
+    size_t content_mark_probes;
     /* Ordinary whitespace scalars and contextual-space lookahead bytes. */
     size_t whitespace_work;
     size_t bracket_work;
@@ -438,6 +446,121 @@ struct markdown_core_parser {
     bufsize_t line_marks_size;
     bufsize_t line_marks_alloc;
 };
+
+/* THE RUN AN OFFSET LIES IN, FOUND FROM WHERE THE LAST ONE WAS.
+ *
+ * A node's runs are contiguous in the parser's vector and ordered by content
+ * offset, so the run containing an offset is the last whose start is at or
+ * before it. The inline parser asks this once per node it places and reads
+ * its container left to right, so the answer is almost always the run the
+ * previous answer named or the one after it: a Text never crosses a line
+ * ending (a break is its own node), and the next token starts where the last
+ * one ended. Those two runs are probed first. Only an offset farther ahead --
+ * an opaque span across many lines -- or behind the hint -- a Link placed
+ * back at its opener, a rewind -- is searched for, over the part of the run
+ * on that side, so no query costs more than the search alone did.
+ *
+ * Defined here, with the span below, so that placing an inline node is one
+ * straight-line body in the caller: the placement's cost is its fixed part,
+ * not its probes, and a call for each of three steps was most of it. */
+static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_near(markdown_core_parser *parser,
+                                                                      const markdown_core_node *node, bufsize_t offset,
+                                                                      int hint) {
+    const markdown_core_line_mark *marks = parser->line_marks;
+    int lo = node->content_mark, hi = lo + node->content_mark_count - 1;
+    int at = hint >= lo && hint <= hi ? hint : lo;
+    size_t probes = 1;
+    if (marks[at].content_offset <= offset) {
+        if (at != hi && marks[at + 1].content_offset <= offset) {
+            probes++;
+            at++;
+            if (at != hi && marks[at + 1].content_offset <= offset) {
+                lo = at + 1;
+                at = -1;
+            }
+        }
+    } else {
+        hi = at - 1;
+        at = -1;
+    }
+    if (at < 0) {
+        while (lo < hi) {
+            int mid = lo + (hi - lo + 1) / 2;
+            probes++;
+            if (marks[mid].content_offset <= offset) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        at = lo;
+    }
+    parser->content_mark_probes += probes;
+    return at;
+}
+
+static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_at(markdown_core_parser *parser,
+                                                                    const markdown_core_node *node, bufsize_t offset) {
+    return markdown_core_block_content_mark_near(parser, node, offset, node->content_mark);
+}
+
+/* Resolve both ends of [from, to] against `node`'s map, each found from the
+ * run before it: `cursor`, when given, is the run the caller last resolved
+ * and is left on the run that answers `to`; a cursor outside the node's run,
+ * a zeroed one included, is a hint that is simply not taken.
+ * Returns 0 when the node has no map at all, in which case neither end is
+ * resolved. The caller owns what it does with the answer: the run indices are
+ * handed back rather than written onto a node, because whether a slice is
+ * taken at all is a decision only the caller can make -- writing
+ * `content_mark_count` on a node that is not a verbatim copy of its source
+ * would give every SPAN, LINK and EMPHASIS node a map it does not have, and
+ * three places read that count as the question "is there a mapping". */
+static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_parser *parser,
+                                                                  markdown_core_node *node, bufsize_t from,
+                                                                  bufsize_t to, markdown_core_content_span *span,
+                                                                  int *cursor) {
+    span->has_start = false;
+    span->has_end = false;
+    span->first = span->last = 0;
+    if (!parser || !node || node->content_mark_count <= 0) {
+        return 0;
+    }
+    int hint = cursor ? *cursor : node->content_mark;
+    if (from >= 0) {
+        bufsize_t offset = from + node->content_mark_offset;
+        span->first = markdown_core_block_content_mark_near(parser, node, offset, hint);
+        const markdown_core_line_mark *mark = &parser->line_marks[span->first];
+        span->start_line = mark->line;
+        span->start_column = mark->column + (int)(offset - mark->content_offset) * mark->source_step;
+        span->has_start = true;
+        hint = span->first;
+    }
+    if (to >= 0) {
+        bufsize_t offset = to + node->content_mark_offset;
+        span->last = markdown_core_block_content_mark_near(parser, node, offset, hint);
+        hint = span->last;
+        const markdown_core_line_mark *mark = &parser->line_marks[span->last];
+        span->end_line = mark->line;
+        span->end_column =
+            mark->column + (int)(offset - mark->content_offset) * mark->source_step + mark->source_width - 1;
+        span->has_end = true;
+    }
+    if (cursor) {
+        *cursor = hint;
+    }
+    return 1;
+}
+
+/* Take the slice a resolved span already names. `from` is the span's own
+ * start offset, which the runs were resolved against. */
+static MARKDOWN_CORE_INLINE void markdown_core_parser_adopt_content_span(markdown_core_node *owner,
+                                                                         markdown_core_node *node,
+                                                                         const markdown_core_content_span *span,
+                                                                         bufsize_t from) {
+    node->content_mark = span->first;
+    node->content_mark_count = span->last - span->first + 1;
+    node->content_mark_offset = from + owner->content_mark_offset;
+}
 
 /* THE PARSE'S NODE OPERATIONS, WHICH RECORD THE KIND THEY PRODUCE.
  *
@@ -662,10 +785,5 @@ markdown_core_node *markdown_core_parse_document_with_setup(const char *source, 
 #ifdef __cplusplus
 }
 #endif
-
-int markdown_core_parser_content_span(markdown_core_parser *parser, markdown_core_node *node, bufsize_t from,
-                                      bufsize_t to, markdown_core_content_span *span);
-void markdown_core_parser_adopt_content_span(markdown_core_node *owner, markdown_core_node *node,
-                                             const markdown_core_content_span *span, bufsize_t from);
 
 #endif

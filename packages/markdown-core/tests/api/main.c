@@ -3550,6 +3550,8 @@ typedef struct {
     size_t nodes_created, nodes_created_before_finish, nodes_freed, nodes_freed_before_finish;
     size_t delimiter_pushes;
     size_t pooled_delimiters;
+    size_t content_mark_queries;
+    size_t content_mark_probes;
 } inline_work;
 static int record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                               markdown_core_node *root) {
@@ -3570,6 +3572,8 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
     work->opaque = parser->opaque_scan_work;
     work->delimiters = parser->delimiter_work;
     work->delimiter_pushes = parser->delimiter_pushes;
+    work->content_mark_queries = parser->content_mark_queries;
+    work->content_mark_probes = parser->content_mark_probes;
     work->pooled_delimiters = 0;
     for (const delimiter *entry = parser->free_delimiters; entry; entry = entry->next) {
         work->pooled_delimiters++;
@@ -5240,6 +5244,38 @@ static void releasing_an_empty_attribute_value_makes_no_allocator_call(test_batc
     INT_EQ(runner, (int)payload_live, 0, "a value that owns strings releases them all");
     OK(runner, payload_releases > releases, "and does so through the allocator");
     payload_probe_disarm();
+}
+
+/* PLACING AN INLINE NODE PROBES THE SOURCE MAP A BOUNDED NUMBER OF TIMES,
+ * however many lines its container has. The inline parser reads left to
+ * right, so each placement is answered from the run the last one ended in or
+ * the one after; a search of the container's whole run would cost log2 of
+ * its lines per query, and the shape below has thousands of them. The
+ * container is one paragraph whose every line carries several tokens, so the
+ * probes per query are read where the search would be dearest. Placements
+ * behind the cursor -- a link closed after its opener, a rewind -- are
+ * answered by a search of the part behind it, so the bound is on the
+ * average, not on each query, and the links here exercise that path too. */
+static void inline_placement_probes_the_map_a_bounded_number_of_times(test_batch_runner *runner) {
+    static const char line[] = "a *b* c [d](/e) f\n";
+    for (size_t lines = 64; lines <= 4096; lines *= 8) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        for (size_t i = 0; i < lines; i++) {
+            markdown_core_strbuf_puts(&source, line);
+        }
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_setup((const char *)source.ptr, source.size, measure_inline_work, &work);
+        OK(runner, root != NULL, "the paragraph parses");
+        OK(runner, work.content_mark_queries >= 6 * lines, "every token asks the map: lines=%zu queries=%zu", lines,
+           work.content_mark_queries);
+        OK(runner, work.content_mark_probes <= 2 * work.content_mark_queries + 64,
+           "a placement is answered from the cursor, not by a search of the container: lines=%zu queries=%zu "
+           "probes=%zu",
+           lines, work.content_mark_queries, work.content_mark_probes);
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
 }
 
 static void attribute_attachment_linear_work(test_batch_runner *runner) {
@@ -7231,6 +7267,7 @@ int main(void) {
     source_entries_order_by_the_key_bytes_that_differ(runner);
     delimiter_entries_are_pooled_across_inline_containers(runner);
     releasing_an_empty_attribute_value_makes_no_allocator_call(runner);
+    inline_placement_probes_the_map_a_bounded_number_of_times(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
     heading_registry_invariants(runner);

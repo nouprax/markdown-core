@@ -48,6 +48,12 @@ struct markdown_core_inline_state {
      * asking the same question once per inline node. Written only beside
      * `owner`, in the one place that assigns it, so the pair cannot drift. */
     const markdown_core_element *owner_structure;
+    /* The run of `owner`'s map the last placement ended in, and the frame
+     * the next is measured in: the inline parser reads `input` left to right,
+     * so a node that lies whole on this run is placed by arithmetic, and one
+     * that leaves it is resolved by probing from here (see
+     * `markdown_core_inline_state_place`). Seeded on the owner's first run. */
+    int mark_cursor;
     markdown_core_map *refmap;
     delimiter *last_delim;
     delimiter_run cached_run;
