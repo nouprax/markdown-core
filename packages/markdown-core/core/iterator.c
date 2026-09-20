@@ -156,7 +156,7 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
                 cur->end_column = tmp->end_column;
             }
             next = tmp->next;
-            markdown_core_parser_free_node(parser, tmp);
+            markdown_core_parser_release_node(parser, tmp);
             tmp = next;
         }
         /* Every node the loop freed was ahead of the cursor and is now
@@ -195,7 +195,7 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
     // event to nothing else.
     if (cur->as.literal->len == 0) {
         markdown_core_chunk_free(cur->as.literal);
-        markdown_core_parser_free_node(parser, cur);
+        markdown_core_parser_release_node(parser, cur);
         return MARKDOWN_CORE_FINISH_CONSUMED;
     }
     return MARKDOWN_CORE_FINISH_CONTINUE;

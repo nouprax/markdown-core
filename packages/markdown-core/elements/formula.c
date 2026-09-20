@@ -463,7 +463,7 @@ static void free_nodes_through(markdown_core_parser *parser, markdown_core_node 
 
     while (node) {
         markdown_core_node *next = markdown_core_node_next(node);
-        markdown_core_parser_free_node(parser, node);
+        markdown_core_parser_release_node(parser, node);
         if (node == last) {
             break;
         }
@@ -532,14 +532,14 @@ static markdown_core_node *make_formula_node(const markdown_core_element *elemen
     }
     if (!get_formula(node)) {
         parser->oom = true;
-        markdown_core_parser_free_node(parser, node);
+        markdown_core_parser_release_node(parser, node);
         return NULL;
     }
 
     get_formula(node)->mode = mode;
     if (!set_formula_literal_bytes(node, literal, literal_len)) {
         parser->oom = true;
-        markdown_core_parser_free_node(parser, node);
+        markdown_core_parser_release_node(parser, node);
         return NULL;
     }
     return node;
@@ -621,7 +621,7 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
          * whole construct would fall back to the block. */
         free_nodes_through(parser, opener_node, closer_node);
     } else {
-        markdown_core_parser_free_node(parser, formula);
+        markdown_core_parser_release_node(parser, formula);
     }
 
 done:
@@ -667,7 +667,7 @@ static markdown_core_node *new_formula_block_from_literal(const markdown_core_el
         return NULL;
     }
     if (!get_formula(formula)) {
-        markdown_core_parser_free_node(parser, formula);
+        markdown_core_parser_release_node(parser, formula);
         return NULL;
     }
 
@@ -677,7 +677,7 @@ static markdown_core_node *new_formula_block_from_literal(const markdown_core_el
     formula->end_line = oldnode->end_line;
     formula->end_column = oldnode->end_column;
     if (!set_formula_literal_trimmed(formula, literal, literal_len)) {
-        markdown_core_parser_free_node(parser, formula);
+        markdown_core_parser_release_node(parser, formula);
         return NULL;
     }
     return formula;
@@ -694,10 +694,10 @@ static markdown_core_node *replace_with_formula_block(const markdown_core_elemen
     if (markdown_core_node_attach_owned(oldnode->parent, formula, oldnode)) {
         /* The bytes did not change hands, the node did. Said before the free,
          * because after it there is nothing left to name. */
-        markdown_core_parser_free_node(parser, oldnode);
+        markdown_core_parser_release_node(parser, oldnode);
         return formula;
     }
-    markdown_core_parser_free_node(parser, formula);
+    markdown_core_parser_release_node(parser, formula);
     return NULL;
 }
 

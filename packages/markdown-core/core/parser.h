@@ -263,7 +263,7 @@ struct markdown_core_parser {
      * nodes come and go. `nodes_created` counts every node a parse makes, at
      * the same operation that records the node's kind, so the audit that
      * holds one holds the other; `nodes_freed` counts every node a parse
-     * releases through `markdown_core_parser_free_node`, which the finish
+     * releases through `markdown_core_parser_release_node`, which the finish
      * stage's every free takes -- consolidation's, and each step's, which the
      * finish-hook audit holds -- and which counts the descendants and field
      * roots that go with a node, since the release loop visits each of them.
@@ -478,7 +478,7 @@ static inline void markdown_core_parser_note_node(markdown_core_parser *parser, 
 
 /* A release counts what it freed, for the same denominator; a caller with no
  * parse frees as the public function does. */
-static inline void markdown_core_parser_free_node(markdown_core_parser *parser, markdown_core_node *node) {
+static inline void markdown_core_parser_release_node(markdown_core_parser *parser, markdown_core_node *node) {
     size_t released = markdown_core_node_release(node);
     if (parser) {
         parser->nodes_freed += released;

@@ -63,7 +63,7 @@ for (const { symbol, file, source, body } of ordered) {
         const line = stripped.slice(0, bare.index).split("\n").length;
         failures.push(
             `${file}:${line}: ${symbol} declares a finish step and frees a node outside the parse; ` +
-                "a step frees through markdown_core_parser_free_node, which counts the release"
+                "a step frees through markdown_core_parser_release_node, which counts the release"
         );
     }
 }
