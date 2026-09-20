@@ -1,7 +1,34 @@
 import { unified } from "unified";
 import remarkParse from "remark-parse";
+import remarkDirective from "remark-directive";
 
 const commonmark = unified().use(remarkParse);
+const directives = unified().use(remarkParse).use(remarkDirective);
+
+/**
+ * The dialect has no part-less text directive: `:name` is a directive only
+ * when a bracketed label or an attribute container follows the name, and a
+ * part that fails to scan leaves the colon as text. remark-directive accepts
+ * the bare name, so wherever recombination or truncation strips or breaks a
+ * part -- `:a[b]` cut to `:a`, `:a{x}` cut to `:a{x`, a label whose closer
+ * lands past the cut -- the two disagree by design. The registry documents
+ * the rule on the inputs people wrote; a generated input reaches the same
+ * rule from a shape no entry can name, so the boundary is drawn on remark's
+ * own parse: a text directive whose whole span is the colon and its name has
+ * no part, and what it names is remark's, not the shared language.
+ */
+function partlessTextDirective(input) {
+    const pending = [directives.parse(input)];
+    while (pending.length) {
+        const node = pending.pop();
+        if (node.type === "textDirective") {
+            const span = node.position.end.offset - node.position.start.offset;
+            if (span === 1 + node.name.length) return true;
+        }
+        for (const child of node.children ?? []) pending.push(child);
+    }
+    return false;
+}
 
 /**
  * cmark, cmark-gfm and remark do not implement implicit heading references.
@@ -44,5 +71,6 @@ export function outsideSharedFuzzScope(input) {
         if (heading && unresolvedBracket) return "implicit-heading-references";
         for (const child of node.children ?? []) pending.push(child);
     }
+    if (input.includes(":") && partlessTextDirective(input)) return "part-less-text-directives";
     return null;
 }

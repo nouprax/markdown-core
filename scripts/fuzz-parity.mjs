@@ -150,7 +150,24 @@ const ORACLES = {
         // P5: a directive label with attributes can become a bracketed Span
         // when recombination invalidates its enclosing directive. Remark has
         // no Span syntax; span-after-failed-directive pins the exact witness.
-        excludeFragments: ["]{", "$", "[^", "://", /^[\s>]*(?:[-*+]|\d+[.)])\s+\[[ xX]\][ \t\v\f]*$/]
+        // A directive name is taken as written -- any run of bytes other than
+        // whitespace, `[`, `{` and `:` -- where remark-directive admits only
+        // ASCII letters, digits, `-` and `_`. A colon before a byte outside
+        // remark's class is therefore a name here and never one there
+        // (`directive-name-*` in the ledger); recombination puts such a
+        // colon before any bracket in the pool, so the shape is excluded
+        // rather than rediscovered. The part-less form, remark's directive
+        // where the dialect keeps text, is judged on remark's own parse by
+        // `outsideSharedFuzzScope`, since telling a part from a broken one
+        // needs bracket balance a substring cannot express.
+        excludeFragments: [
+            "]{",
+            "$",
+            "[^",
+            "://",
+            /^[\s>]*(?:[-*+]|\d+[.)])\s+\[[ xX]\][ \t\v\f]*$/,
+            /(^|[^:]):[^A-Za-z0-9\s[{:]/u
+        ]
     }
 };
 const oracle = ORACLES[oracleName];

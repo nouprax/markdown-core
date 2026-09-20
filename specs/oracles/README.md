@@ -37,8 +37,16 @@ not implement. `scripts/lib/fuzz-scope.mjs` conservatively classifies that
 composition with an independent CommonMark parse. It neither consults product
 output nor implements heading-label matching. Explicitly resolved references,
 headings without unresolved brackets, references without headings, and brackets
-inside code/HTML remain eligible for comparison. The scope tests run before
-every `pnpm fuzz:parity` invocation.
+inside code/HTML remain eligible for comparison. The same module draws the
+remark boundary for a part-less text directive: remark-directive accepts a bare
+`:name`, while the dialect anchors the inline form on a bracketed label or an
+attribute container and keeps the colon as text otherwise. Recombination and
+truncation strip and break parts, so an input where remark's own parse holds a
+text directive whose whole span is the colon and its name is classified out
+of scope, and the exact inputs people wrote stay in the registry. Names
+outside remark's ASCII class are a fragment exclusion of the remark oracle
+instead, since a substring names that shape. The scope tests run before every
+`pnpm fuzz:parity` invocation.
 
 Out-of-scope and exact registered inputs are reported separately from actual
 comparisons; neither counts as an agreement, and zero comparisons fails the
