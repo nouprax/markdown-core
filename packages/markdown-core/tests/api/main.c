@@ -6459,6 +6459,67 @@ static void table_open_gate_admits_only_possible_tables(test_batch_runner *runne
         markdown_core_node_free(built);
         markdown_core_strbuf_free(&table);
     }
+
+    /* A BOUNDARY ALONE OPENS NOTHING. The two grammars that start on a single
+     * dash run -- a multiline table with a header, a simple table with a
+     * header -- both refuse when the line below it is blank, so a thematic
+     * break followed by a blank line is asked of neither: no line captured,
+     * no column geometry built. The same boundary with a row below it is a
+     * table, which is what the gate must keep admitting. */
+    markdown_core_strbuf breaks = MARKDOWN_CORE_BUF_INIT();
+    /* Opened by prose: a document that begins with `---` begins frontmatter. */
+    markdown_core_strbuf_puts(&breaks, "prose\n\n");
+    for (size_t i = 0; i < 256; i++) {
+        markdown_core_strbuf_puts(&breaks, "---\n\n- item\n\n");
+    }
+    inline_work break_work = {0};
+    markdown_core_node *break_root =
+        markdown_core_parse_document_with_setup((char *)breaks.ptr, breaks.size, measure_inline_work, &break_work);
+    OK(runner, break_root != NULL, "thematic breaks and empty items followed by blanks parse");
+    INT_EQ(runner, count_kind(break_root, MARKDOWN_CORE_NODE_THEMATIC_BREAK), 256, "as thematic breaks");
+    INT_EQ(runner, count_kind(break_root, MARKDOWN_CORE_NODE_TABLE), 0, "and no table");
+    INT_EQ(runner, break_work.table_separator_scans, 0, "a boundary with a blank below it captures no line");
+    INT_EQ(runner, break_work.table_geometry_lines, 0, "and builds no column geometry");
+    markdown_core_node_free(break_root);
+    markdown_core_strbuf_free(&breaks);
+
+    static const char multiline[] = "-------------\n"
+                                    "Right  Left\n"
+                                    "-----  ----\n"
+                                    "12     12\n"
+                                    "-------------\n";
+    markdown_core_node *bounded = markdown_core_parse_document(multiline, sizeof(multiline) - 1);
+    OK(runner, bounded != NULL, "a multiline table with a header parses");
+    INT_EQ(runner, count_kind(bounded, MARKDOWN_CORE_NODE_TABLE), 1, "the gate admits the boundary a row follows");
+    markdown_core_node_free(bounded);
+
+    /* A CAPTION ENDS AT A BLANK LINE. The table after a trailing caption's
+     * blank is the next construct, parsed once by its own opener; it used to
+     * be parsed inside the caption's transaction as well and thrown away. The
+     * column geometry the two documents build on their own is exactly what
+     * the one document builds. */
+    static const char first[] = "Right  Left\n-----  ----\n12     12\n\nTable: caption\n";
+    static const char second[] = "Up  Down\n--  ----\n1   2\n";
+    inline_work first_work = {0}, second_work = {0}, both_work = {0};
+    markdown_core_node *first_root =
+        markdown_core_parse_document_with_setup(first, sizeof(first) - 1, measure_inline_work, &first_work);
+    markdown_core_node *second_root =
+        markdown_core_parse_document_with_setup(second, sizeof(second) - 1, measure_inline_work, &second_work);
+    markdown_core_strbuf both = MARKDOWN_CORE_BUF_INIT();
+    markdown_core_strbuf_puts(&both, first);
+    markdown_core_strbuf_puts(&both, "\n");
+    markdown_core_strbuf_puts(&both, second);
+    markdown_core_node *both_root =
+        markdown_core_parse_document_with_setup((char *)both.ptr, both.size, measure_inline_work, &both_work);
+    OK(runner, first_root && second_root && both_root, "a captioned table, a table, and the two together parse");
+    INT_EQ(runner, count_kind(both_root, MARKDOWN_CORE_NODE_TABLE), 2, "the two together are two tables");
+    INT_EQ(runner, both_work.table_geometry_lines, first_work.table_geometry_lines + second_work.table_geometry_lines,
+           "the table after the trailing caption's blank is parsed once: %zu lines of geometry, %zu + %zu apart",
+           both_work.table_geometry_lines, first_work.table_geometry_lines, second_work.table_geometry_lines);
+    markdown_core_node_free(first_root);
+    markdown_core_node_free(second_root);
+    markdown_core_node_free(both_root);
+    markdown_core_strbuf_free(&both);
 }
 
 /* THE INLINE-HOOK PROJECTION'S WORK INVARIANT.
