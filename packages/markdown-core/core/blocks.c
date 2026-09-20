@@ -440,20 +440,6 @@ int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_cor
 }
 
 /* Find the immutable run containing an offset, shared by slice and lookup. */
-int markdown_core_block_content_mark_at(markdown_core_parser *parser, const markdown_core_node *node,
-                                        bufsize_t offset) {
-    int lo = node->content_mark, hi = lo + node->content_mark_count - 1;
-    while (lo < hi) {
-        int mid = lo + (hi - lo + 1) / 2;
-        if (parser->line_marks[mid].content_offset <= offset) {
-            lo = mid;
-        } else {
-            hi = mid - 1;
-        }
-    }
-    return lo;
-}
-
 /* A map slice is a view into parser-owned immutable runs. Neither the source
  * nor the slice owns the vector; both end with the parse transaction. */
 int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, markdown_core_node *owner,
@@ -552,8 +538,8 @@ bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdo
  *
  * The answer is a projection of the block's mark run, not a counter anyone
  * maintains: find the slice the offset falls in and add the distance from its
- * start. Binary search, so a caller that asks once per inline node pays
- * log(lines in the block) rather than re-walking it. */
+ * start. The slice is found from the node's first run here; a caller with a
+ * position of its own to start from asks through `content_span`. */
 static int S_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t content_offset, bool end,
                            int *line, int *column) {
     const markdown_core_line_mark *mark;
@@ -568,50 +554,6 @@ static int S_content_place(markdown_core_parser *parser, markdown_core_node *nod
     *column = mark->column + (int)(content_offset - mark->content_offset) * mark->source_step +
               (end ? mark->source_width - 1 : 0);
     return 1;
-}
-
-/* Resolve both ends of [from, to] against `node`'s map with one search each.
- * Returns 0 when the node has no map at all, in which case neither end is
- * resolved. The caller owns what it does with the answer: the run indices are
- * handed back rather than written onto a node, because whether a slice is
- * taken at all is a decision only the caller can make -- writing
- * `content_mark_count` on a node that is not a verbatim copy of its source
- * would give every SPAN, LINK and EMPHASIS node a map it does not have, and
- * three places read that count as the question "is there a mapping". */
-int markdown_core_parser_content_span(markdown_core_parser *parser, markdown_core_node *node, bufsize_t from,
-                                      bufsize_t to, markdown_core_content_span *span) {
-    span->has_start = false;
-    span->has_end = false;
-    if (!parser || !node || node->content_mark_count <= 0) {
-        return 0;
-    }
-    if (from >= 0) {
-        bufsize_t offset = from + node->content_mark_offset;
-        span->first = markdown_core_block_content_mark_at(parser, node, offset);
-        const markdown_core_line_mark *mark = &parser->line_marks[span->first];
-        span->start_line = mark->line;
-        span->start_column = mark->column + (int)(offset - mark->content_offset) * mark->source_step;
-        span->has_start = true;
-    }
-    if (to >= 0) {
-        bufsize_t offset = to + node->content_mark_offset;
-        span->last = markdown_core_block_content_mark_at(parser, node, offset);
-        const markdown_core_line_mark *mark = &parser->line_marks[span->last];
-        span->end_line = mark->line;
-        span->end_column =
-            mark->column + (int)(offset - mark->content_offset) * mark->source_step + mark->source_width - 1;
-        span->has_end = true;
-    }
-    return 1;
-}
-
-/* Take the slice a resolved span already names. `from` is the span's own
- * start offset, which the runs were resolved against. */
-void markdown_core_parser_adopt_content_span(markdown_core_node *owner, markdown_core_node *node,
-                                             const markdown_core_content_span *span, bufsize_t from) {
-    node->content_mark = span->first;
-    node->content_mark_count = span->last - span->first + 1;
-    node->content_mark_offset = from + owner->content_mark_offset;
 }
 
 int markdown_core_parser_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
