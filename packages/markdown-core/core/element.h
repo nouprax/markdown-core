@@ -131,6 +131,15 @@ struct markdown_core_element {
 
     bool (*continue_container)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *,
                                const markdown_core_node *, bool *);
+    /* The bytes `continue_container` can strip from a line besides
+     * indentation: the COMPLETE set, as a gate's is, and NULL when it strips
+     * indentation only. A block-start question asked of a LATER line from raw
+     * source (the definition gate) reaches that line's first stripped byte by
+     * walking over indentation and these, so a byte left out here does not
+     * make the parser slower, it makes it WRONG: the construct inside this
+     * container is silently never recognised. Projected with the hooks into
+     * `parser->container_prefix`. */
+    const char *container_prefix_bytes;
     bool (*accepts_blank)(markdown_core_parser *, markdown_core_node *);
     bool (*blank_line)(markdown_core_parser *, markdown_core_node *);
     bool (*ends_block)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *);

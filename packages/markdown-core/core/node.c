@@ -307,14 +307,13 @@ static size_t S_free_nodes(markdown_core_node *e) {
     while (e != NULL) {
         released++;
         /* Almost no node owns an attribute value or a content buffer: the
-         * test each releaser makes first is made here, so a node that owns
-         * neither pays the compares and no call. The attribute test is the
-         * releaser's own (markdown_core_attributes_free); a buffer that still
-         * points at the shared initial storage owns nothing. */
-        if (e->attributes.classes || e->attributes.records || e->attributes.arena || e->attributes.anchor.alloc) {
+         * test each releaser makes first -- its own predicate, defined once
+         * beside it -- is made here, so a node that owns neither pays the
+         * compares and no call. */
+        if (markdown_core_attributes_owns(&e->attributes)) {
             markdown_core_attributes_free(&e->attributes);
         }
-        if (e->content.ptr != markdown_core_strbuf__initbuf) {
+        if (markdown_core_strbuf_owns(&e->content)) {
             markdown_core_strbuf_free(&e->content);
         }
 

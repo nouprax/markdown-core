@@ -5463,6 +5463,56 @@ static void an_undeclared_first_byte_reaches_no_gated_scanner(test_batch_runner 
     markdown_core_strbuf_free(&source);
 }
 
+/* THE LIST SCANNER READS A NUMERAL BY THE CLASS ITS FIRST BYTE NAMES. The
+ * scan gate must admit letters and digits -- fancy lists start on them -- so
+ * every prose line that begins with a word reaches the numeral scan, and a
+ * scan that read the whole alphanumeric run paid the word's length on every
+ * such line. The grammar accepts one letter, roman letters of one case, or
+ * decimal digits (at most nine), so the scan reads that class and stops at
+ * its boundary: a prose word ends the probe on its second byte, a long digit
+ * string on its eleventh, and every marker the grammar accepted or refused is
+ * accepted or refused as before. */
+static void the_list_scanner_reads_a_numeral_by_its_first_bytes_class(test_batch_runner *runner) {
+    static const size_t lines = 256;
+    static const struct {
+        const char *lead;
+        size_t ceiling;
+    } shapes[] = {{"Supercalifragilisticexpialidocious", 4}, {"mississippi", 4}, {"1234567890123456789012345678", 14}};
+    for (size_t s = 0; s < sizeof(shapes) / sizeof(*shapes); s++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        for (size_t i = 0; i < lines; i++) {
+            markdown_core_strbuf_puts(&source, shapes[s].lead);
+            markdown_core_strbuf_puts(&source, " is not a list marker\n\n");
+        }
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_setup((const char *)source.ptr, source.size, measure_inline_work, &work);
+        OK(runner, root != NULL, "shape %zu parses", s);
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LIST), 0, "and opens no list: shape %zu", s);
+        OK(runner, work.list_markers <= shapes[s].ceiling * lines,
+           "the scan reads the first byte's class, not the word: %zu units for %zu lines of shape %zu",
+           work.list_markers, lines, s);
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+
+    /* The accepted set, and the refused set, are the grammar's. */
+    static const struct {
+        const char *source;
+        int lists;
+    } markers[] = {{"a. x\n", 1},          {"iv. x\n", 1},          {"MMXX. x\n", 1}, {"(c) x\n", 1},
+                   {"123456789. x\n", 1},  {"i. x\nii. x\n", 1},    {"mix. x\n", 1},  {"#. x\n", 1},
+                   {"x) y\n", 1},          {"3rd. x\n", 0},         {"ab. x\n", 0},   {"Iv. x\n", 0},
+                   {"1234567890. x\n", 0}, {"12345678901. x\n", 0}, {"H. x\n", 0},    {"cat. x\n", 0}};
+    for (size_t m = 0; m < sizeof(markers) / sizeof(*markers); m++) {
+        markdown_core_node *root = markdown_core_parse_document(markers[m].source, strlen(markers[m].source));
+        OK(runner, root != NULL, "marker %zu parses", m);
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LIST), markers[m].lists,
+               "the class scan keeps the grammar's answer for marker %zu", m);
+        markdown_core_node_free(root);
+    }
+}
+
 static void attribute_attachment_linear_work(test_batch_runner *runner) {
     static const struct {
         const char *prefix, *unit, *suffix;
@@ -6424,8 +6474,23 @@ static void definition_gate_reads_the_prefix_not_the_line(test_batch_runner *run
     markdown_core_node_free(root);
     markdown_core_strbuf_free(&source);
 
-    static const char *const admitted[] = {"Term\n: body\n",        "Term\n\n: body\n", "> Term\n> : body\n",
-                                           "> Term\n>\n> : body\n", "Term\n~ body\n",   "Term\n:\n"};
+    /* Every container on the child spine, alone and nested (a footnote's
+     * body is owned off it and strips indentation like a list item), so the
+     * prefix bytes the key walks are checked against each continuation
+     * grammar rather than against the one the key was written for. */
+    static const char *const admitted[] = {"Term\n: body\n",
+                                           "Term\n\n: body\n",
+                                           "> Term\n> : body\n",
+                                           "> Term\n>\n> : body\n",
+                                           "Term\n~ body\n",
+                                           "Term\n:\n",
+                                           "- Term\n  : body\n",
+                                           "1. Term\n   : body\n",
+                                           "* Term\n\n  : body\n",
+                                           "- > Term\n  > : body\n",
+                                           "> - Term\n>   : body\n",
+                                           "> > Term\n> > : body\n",
+                                           "::: note\nTerm\n: body\n:::\n"};
     for (size_t i = 0; i < sizeof(admitted) / sizeof(*admitted); i++) {
         root = markdown_core_parse_document(admitted[i], strlen(admitted[i]));
         OK(runner, root != NULL, "definition shape %zu parses", i);
@@ -6433,6 +6498,64 @@ static void definition_gate_reads_the_prefix_not_the_line(test_batch_runner *run
                "the key admits the definition the grammar accepts: shape %zu", i);
         markdown_core_node_free(root);
     }
+}
+
+typedef struct {
+    size_t declared, missing, extra;
+    bool indentation;
+} container_prefix_sweep;
+
+/* The table is projected after setup, with the hooks, so it is read at the
+ * finish, from a pass, like the work counters. */
+static int record_container_prefix(const markdown_core_element *element, markdown_core_parser *parser,
+                                   markdown_core_node *root) {
+    (void)element;
+    container_prefix_sweep *sweep = root->user_data;
+    bool expected[256] = {false};
+    if (!sweep) {
+        return 1;
+    }
+    root->user_data = NULL;
+    expected[' '] = expected['\t'] = true;
+    for (size_t i = 0; i < parser->element_count; i++) {
+        const char *bytes = parser->elements[i]->container_prefix_bytes;
+        if (!bytes) {
+            continue;
+        }
+        sweep->declared++;
+        for (const unsigned char *c = (const unsigned char *)bytes; *c; c++) {
+            expected[*c] = true;
+            sweep->missing += !parser->container_prefix[*c];
+        }
+    }
+    sweep->indentation = parser->container_prefix[' '] && parser->container_prefix['\t'];
+    for (int byte = 0; byte < 256; byte++) {
+        sweep->extra += parser->container_prefix[byte] && !expected[byte];
+    }
+    return 1;
+}
+static const markdown_core_element CONTAINER_PREFIX_RECORDER = {.name = "container-prefix-recorder",
+                                                                .postprocess_func = record_container_prefix};
+static bool sweep_container_prefix(markdown_core_parser *parser, void *context) {
+    parser->root->user_data = context;
+    return markdown_core_parser_attach_element(parser, &CONTAINER_PREFIX_RECORDER);
+}
+
+/* The bytes the definition key walks over are not the key's own list: they
+ * are projected from what each container element declares its continuation
+ * strips, plus indentation, so a container added with a new prefix byte is
+ * declared beside its grammar and the key follows. The projection is checked
+ * here; the declarations are checked above, by the grammar. */
+static void container_prefix_is_projected_from_the_elements(test_batch_runner *runner) {
+    container_prefix_sweep sweep = {0, 0, 0, false};
+    static const char probe_source[] = "probe\n";
+    markdown_core_node *probe_doc =
+        markdown_core_parse_document_with_setup(probe_source, sizeof(probe_source) - 1, sweep_container_prefix, &sweep);
+    OK(runner, sweep.declared >= 1, "at least one container declares a prefix byte: declared=%zu", sweep.declared);
+    OK(runner, sweep.indentation, "indentation is a container prefix without any declaration");
+    INT_EQ(runner, (int)sweep.missing, 0, "every declared prefix byte is in the projected table");
+    INT_EQ(runner, (int)sweep.extra, 0, "and nothing else is");
+    markdown_core_node_free(probe_doc);
 }
 
 /* Table is the one element whose opening grammar spans two lines: a Pandoc
@@ -7575,6 +7698,7 @@ int main(void) {
     consolidation_keeps_a_view_when_its_operands_are_views(runner);
     placement_from_the_cursor_agrees_with_the_span(runner);
     an_undeclared_first_byte_reaches_no_gated_scanner(runner);
+    the_list_scanner_reads_a_numeral_by_its_first_bytes_class(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
     heading_registry_invariants(runner);
@@ -7586,6 +7710,7 @@ int main(void) {
     citation_sparse_brace_storage(runner);
     definition_list_linear_work(runner);
     definition_gate_reads_the_prefix_not_the_line(runner);
+    container_prefix_is_projected_from_the_elements(runner);
     citation_linear_work(runner);
     cross_link_linear_work(runner);
     inline_footnote_linear_work(runner);

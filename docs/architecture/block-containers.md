@@ -10,6 +10,10 @@ a second Markdown input and no subtree is reparsed.
 A definition term can open only at paragraph fallback, after higher-priority
 block starts decline. The shared lookahead carries the same container prefixes
 without committing source, and checks one optional blank line and one marker.
+Before that lookahead opens, a raw-source key reads the next line's first byte
+past indentation and past the prefix bytes each container element declares
+(`container_prefix_bytes`, projected into one parser table with the block
+hooks), so the transaction opens only where a marker can be.
 A reference-shaped line uses the reference parser's non-registering recognition
 operation. Once accepted, the one-line term owns an inline root, separate from
 its ordered block-body roots. The shared owned-inline traversal reaches that

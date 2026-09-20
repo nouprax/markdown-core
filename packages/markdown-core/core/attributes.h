@@ -43,6 +43,13 @@ typedef struct {
     int oom;
 } markdown_core_attribute_parser;
 
+/* Whether a value owns anything a release must free. Almost every value is
+ * empty -- every node carries one and no Text has attributes -- so this is
+ * the first test a release makes, shared with the node release that makes
+ * it in place before calling. */
+static MARKDOWN_CORE_INLINE bool markdown_core_attributes_owns(const markdown_core_attributes *value) {
+    return value->classes || value->records || value->arena || value->anchor.alloc;
+}
 void markdown_core_attributes_free(markdown_core_attributes *value);
 void markdown_core_attribute_parser_free(markdown_core_attribute_parser *parser);
 /* Recognition only: no values are decoded until the owner commits. Zero

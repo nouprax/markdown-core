@@ -158,6 +158,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
 
     .name = "callout",
     .continue_container = continue_container,
+    .container_prefix_bytes = ">",
     .blank_opaque = true,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_callout_scan,

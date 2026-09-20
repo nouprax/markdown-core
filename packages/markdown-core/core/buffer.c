@@ -91,7 +91,7 @@ void markdown_core_strbuf_free(markdown_core_strbuf *buf) {
         return;
     }
 
-    if (buf->ptr != markdown_core_strbuf__initbuf) {
+    if (markdown_core_strbuf_owns(buf)) {
         markdown_core_free(buf->ptr);
     }
 

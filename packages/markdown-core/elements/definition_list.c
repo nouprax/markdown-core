@@ -48,21 +48,23 @@ static bool markdown_core_block_definition_marker(markdown_core_chunk *input, in
  *
  * The transaction accepts only when the next line -- one blank line skipped
  * at most -- begins, once its container prefix is stripped, with a marker.
- * Container continuation strips nothing but quote markers and whitespace, so
- * when a marker is there the raw bytes before it are all in {' ', '\t', '>'}:
- * walking over those bytes lands on the byte the stripped line would show
- * first, and a raw line made of nothing else is blank once stripped (or a
- * bare quote opener, which the transaction refuses; yielding to the line
- * after it only over-admits). So the key reads a prefix, never a line: its
- * cost is the container depth, whatever the prose's length, where the
- * `memchr` search it replaces read both lines end to end (97% of this
- * hook's own cost on long prose) and admitted any line with ': ' in it.
- * Every answer of false is a line the transaction would refuse too. */
+ * A container continuation strips nothing but indentation and the bytes its
+ * element declares (`container_prefix_bytes`, projected to one table in
+ * `parser->container_prefix`: quote markers, today), so when a marker is
+ * there the raw bytes before it are all in that table: walking over them
+ * lands on the byte the stripped line would show first, and a raw line made
+ * of nothing else is blank once stripped (or a bare quote opener, which the
+ * transaction refuses; yielding to the line after it only over-admits). So
+ * the key reads a prefix, never a line: its cost is the container depth,
+ * whatever the prose's length, where the `memchr` search it replaces read
+ * both lines end to end (97% of this hook's own cost on long prose) and
+ * admitted any line with ': ' in it. Every answer of false is a line the
+ * transaction would refuse too. */
 static bool definition_next_lines_admit(markdown_core_parser *parser) {
     const unsigned char *cursor = parser->lookahead_cursor, *end = parser->lookahead_end;
     for (int line = 0; line < 2 && cursor && cursor < end; line++) {
         const unsigned char *at = cursor;
-        while (at < end && (*at == ' ' || *at == '\t' || *at == '>')) {
+        while (at < end && parser->container_prefix[*at]) {
             at++;
         }
         if (at < end && !markdown_core_is_line_end((char)*at)) {

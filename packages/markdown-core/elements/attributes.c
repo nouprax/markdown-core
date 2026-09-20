@@ -297,7 +297,7 @@ bufsize_t markdown_core_attributes_end(markdown_core_attribute_parser *p, bufsiz
  * release that walked it anyway made three round trips into the allocation
  * module to free nothing, then cleared a struct that was already zero. */
 void markdown_core_attributes_free(markdown_core_attributes *v) {
-    if (!v->classes && !v->records && !v->arena && !v->anchor.alloc) {
+    if (!markdown_core_attributes_owns(v)) {
         return;
     }
     markdown_core_chunk_free(&v->anchor);
@@ -314,9 +314,13 @@ void markdown_core_attributes_free(markdown_core_attributes *v) {
     memset(v, 0, sizeof(*v));
 }
 
+/* The memo exists only once recognition ran (see the recogniser above): a
+ * parser that never asked owns nothing and releases nothing. */
 void markdown_core_attribute_parser_free(markdown_core_attribute_parser *p) {
-    markdown_core_free(p->ends);
-    p->ends = NULL;
+    if (p->ends) {
+        markdown_core_free(p->ends);
+        p->ends = NULL;
+    }
 }
 
 /* THE STRINGS OF ONE VALUE ARE INTERNED IN ONE ARENA, built while the members

@@ -443,6 +443,12 @@ struct markdown_core_parser {
      * declared nothing and every owner is asked, which is the behaviour a
      * gate replaces. */
     uint8_t *block_gate_lists[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
+    /* Every byte a container continuation may strip ahead of a line's own
+     * first byte: indentation, and each element's `container_prefix_bytes`,
+     * projected with the hooks. A question asked of a later line from raw
+     * source walks these to land on the byte the stripped line would show
+     * first (see definition_next_lines_admit). */
+    bool container_prefix[256];
     /* The inline-content families, projected from the same registry and in the
      * same descriptor order. Zero counts before the projection runs, which is
      * why it runs unconditionally on the one path that creates a parser. */

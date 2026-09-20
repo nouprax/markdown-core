@@ -2171,6 +2171,17 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
     memset(parser->finish_dispatch, 0, sizeof(parser->finish_dispatch));
     parser->finish_step_slots = 0;
     S_project_finish_kinds(parser);
+    /* What a container continuation may strip, as one table over the byte:
+     * indentation, which every continuation strips, and the bytes each
+     * container element declares for its own. */
+    memset(parser->container_prefix, 0, sizeof(parser->container_prefix));
+    parser->container_prefix[' '] = parser->container_prefix['\t'] = true;
+    for (size_t i = 0; i < parser->element_count; i++) {
+        const char *bytes = parser->elements[i]->container_prefix_bytes;
+        for (const unsigned char *c = (const unsigned char *)bytes; bytes && *c; c++) {
+            parser->container_prefix[*c] = true;
+        }
+    }
 
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
         for (size_t i = 0; i < parser->element_count; i++) {
@@ -2436,10 +2447,15 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
     bool maybe_lazy = is_paragraph(parser->current);
     size_t depth = 0;
     const markdown_core_element *structure = markdown_core_node_structure(*container);
-    block_start start = {0};
 
     while (!S_structure_accepts_lines(structure, *container)) {
         bool paragraph = structure && structure->paragraph;
+        /* Not cleared: the dispatcher writes the three fields it reads, and
+         * the payload is the claiming owner's, written before its `open`
+         * reads it (scan_element_start). Clearing the 120 bytes here was
+         * paid by every line, the ones a code block or a properties block
+         * takes without a round of this loop included. */
+        block_start start;
         depth++;
         markdown_core_block_find_first_nonspace(parser, input);
         /* Indentation ahead of whatever opens here is the CONTAINER's, not the
