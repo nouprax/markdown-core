@@ -3,7 +3,6 @@
 #include "attributes.h"
 #include "autolink.h"
 #include "element.h"
-#include <iterator.h>
 #include <parser.h>
 #include <string.h>
 #include <utf8.h>
@@ -459,7 +458,7 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
  * pass sees: nothing in an address is special to the base language except
  * `_`, an intraword `_` is literal, and a `_` that does form emphasis splits
  * the address on both sides alike -- `[foo:_x_@y.z](u)` keeps its emphasis.
- * The runs are consolidated before that pass, which then links the address
+ * The runs are consolidated before that step, which then links the address
  * byte for byte as cmark-gfm links it, `mailto:` spelling included, and skips
  * it inside a link. */
 static markdown_core_node *address_match(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
@@ -577,7 +576,12 @@ static markdown_core_node *email_text_fragment(markdown_core_parser *parser, mar
     return text;
 }
 
-static void postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
+/* Split `text` around every email address it holds: a Link (with its own Text)
+ * and any prefix Text are attached BEFORE `text`, and `text` keeps the tail.
+ * A Text that is nothing but addresses is freed once its splits are in place;
+ * the return value says so, because the caller's event names a node that is
+ * then gone. Sets parser->oom on failure and leaves the tree consistent. */
+static markdown_core_finish_result postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
     size_t start = 0;
     size_t offset = 0;
     markdown_core_node source_map = {0};
@@ -730,70 +734,66 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         offset = 0;
     }
 
-    if (!start || parser->oom) {
-        return;
+    if (parser->oom) {
+        return MARKDOWN_CORE_FINISH_FAILED;
+    }
+    if (!start) {
+        return MARKDOWN_CORE_FINISH_CONTINUE;
     }
     if (!remaining) {
         markdown_core_node_free(text);
-        return;
+        return MARKDOWN_CORE_FINISH_CONSUMED;
     }
     markdown_core_chunk tail = markdown_core_chunk_dup(&source, (bufsize_t)start, (bufsize_t)remaining);
     if (!markdown_core_chunk_to_cstr(&tail)) {
         parser->oom = true;
-        return;
+        return MARKDOWN_CORE_FINISH_FAILED;
     }
     set_sourcepos_from_range(parser, text, &source_map, start, remaining);
     *text->as.literal = tail;
     markdown_core_chunk_free(&source);
+    return MARKDOWN_CORE_FINISH_CONTINUE;
 }
 
-static int postprocess(const markdown_core_element *element, markdown_core_parser *parser, markdown_core_node *root) {
-    markdown_core_iter *iter;
-    markdown_core_event_type ev;
-    markdown_core_node *node;
-    bool in_link = false;
-
-    /* The parser consolidates main and owned inline roots before postprocessing. */
-    iter = markdown_core_iter_new(root);
-    if (!iter) {
-        parser->oom = true;
-        return 0;
+/* The email scan is a finish STEP: it is asked, from inside the one finish
+ * walk, at a Text's EXIT (the kind it acts on) and at a Link's ENTER and EXIT
+ * (the kind whose extent it tracks). The Link events set and clear the
+ * per-root state word -- a Text inside a Link is never scanned, an address
+ * there is already a link's text -- and a Text's EXIT outside a Link is
+ * scanned. The walk has already consolidated that Text with the siblings that
+ * followed it when this is asked, so the scan sees the whole run, and the
+ * EXIT's lookahead already names the following survivor, so the splits
+ * inserted before the Text are never visited and the Text itself may be
+ * freed. */
+static markdown_core_finish_result finish_step(const markdown_core_element *element, markdown_core_parser *parser,
+                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
+                                               void **state) {
+    (void)element;
+    (void)is_root;
+    if (node->kind == MARKDOWN_CORE_NODE_LINK) {
+        *state = event == MARKDOWN_CORE_EVENT_ENTER ? node : NULL;
+        return MARKDOWN_CORE_FINISH_CONTINUE;
     }
-
-    while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        node = markdown_core_iter_get_node(iter);
-        if (in_link) {
-            if (ev == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_LINK) {
-                in_link = false;
-            }
-            continue;
-        }
-
-        if (ev == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_LINK) {
-            in_link = true;
-            continue;
-        }
-
-        /* EXIT lookahead already holds the original following sibling.
-         * Splits are inserted before Text, which may itself be freed. */
-        if (ev == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_TEXT) {
-            postprocess_text(parser, node);
-        }
+    assert(event == MARKDOWN_CORE_EVENT_EXIT);
+    if (*state) {
+        return MARKDOWN_CORE_FINISH_CONTINUE;
     }
-
-    markdown_core_iter_free(iter);
-
-    return !parser->oom;
+    return postprocess_text(parser, node);
 }
 
-static const markdown_core_node_type AUTOLINK_POSTPROCESS_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_node_type AUTOLINK_FINISH_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_node_type AUTOLINK_SCOPE_KINDS[] = {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_NONE};
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
     .name = "autolink",
     .match_inline = match,
-    .postprocess_func = postprocess,
-    /* `postprocess_text` only ever rewrites a Text node. */
-    .postprocess_kinds = AUTOLINK_POSTPROCESS_KINDS,
+    .finish_step = finish_step,
+    /* The step rewrites a Text -- the kind it acts on and the kind it is asked
+     * at are the same -- and reads a Link's ENTER and EXIT to know when a
+     * Text is inside one. */
+    .finish_acts_on_kinds = AUTOLINK_FINISH_KINDS,
+    .finish_exit_kinds = AUTOLINK_FINISH_KINDS,
+    .finish_scope_kinds = AUTOLINK_SCOPE_KINDS,
     .terminates_text = "<:w",
     .dispatch = "<:w",
 };

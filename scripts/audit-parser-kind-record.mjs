@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-/** `parser->kinds_created` decides which postprocess passes run. A production
+/** `parser->kinds_created` decides which finish hooks run -- a postprocess
+ * pass, or a finish step at every event it was projected to. A production
  * site that produces a node kind without recording it does not fail a build or
- * a test: it makes the gate skip a pass some document needed, and the defect
+ * a test: it makes the gate skip a hook some document needed, and the defect
  * surfaces as a missing rewrite far from the line that caused it.
  *
  * That used to be policed here, over twenty-one creation sites each paired

@@ -82,9 +82,125 @@ int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
     return markdown_core_consolidate_text_nodes_with_parser(NULL, root);
 }
 
+/* Every iterator step a finish-stage consolidation takes is counted on the
+ * parser when there is one, so the traversal count the finish stage claims
+ * can be checked (see the counters in parser.h). */
+static void S_count_step(markdown_core_parser *parser, markdown_core_event_type event) {
+    if (!parser) {
+        return;
+    }
+    parser->finish_walk_events++;
+    if (event == MARKDOWN_CORE_EVENT_ENTER) {
+        parser->finish_nodes_entered++;
+    } else if (event == MARKDOWN_CORE_EVENT_DONE) {
+        parser->finish_walk_roots++;
+    }
+}
+
 /* The surviving Text owns the concatenated literal and a concatenation of
  * its operands' source runs. A caller outside a parse has no parser-owned
- * map to retain and uses the public entry point with NULL. */
+ * map to retain and uses the public entry point with NULL.
+ *
+ * EXIT, not ENTER, and that is Step 5's mutation rule: the only node a walk
+ * may free is the one whose EXIT is current. `TEXT` was in the old
+ * `S_is_leaf` list, so its EXIT was suppressed and freeing at ENTER
+ * happened to be safe; with the contract total it is a use-after-free. */
+markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_parser *parser, markdown_core_iter *iter,
+                                                                markdown_core_node *cur, markdown_core_strbuf *buf) {
+    markdown_core_node *tmp, *next;
+
+    assert(iter->cur.node == cur && iter->cur.ev_type == MARKDOWN_CORE_EVENT_EXIT);
+    assert(cur->kind == MARKDOWN_CORE_NODE_TEXT);
+
+    if (cur->next && cur->next->kind == MARKDOWN_CORE_NODE_TEXT) {
+        markdown_core_node combined_map = {0};
+        if (parser &&
+            !markdown_core_parser_append_content_marks(parser, cur, &combined_map, 0, cur->as.literal->len, 0)) {
+            return MARKDOWN_CORE_FINISH_FAILED;
+        }
+        markdown_core_strbuf_clear(buf);
+        markdown_core_strbuf_put(buf, cur->as.literal->data, cur->as.literal->len);
+        if (buf->oom) {
+            return MARKDOWN_CORE_FINISH_FAILED;
+        }
+        tmp = cur->next;
+        while (tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT) {
+            /* Bring `tmp` to its own EXIT before freeing it: two events now,
+             * where a suppressed EXIT used to make one enough. They are steps
+             * of the walk this is part of, taken HERE so that no step after
+             * this one is ever handed a node this one is about to free. */
+            S_count_step(parser, markdown_core_iter_next(iter)); /* tmp ENTER */
+            S_count_step(parser, markdown_core_iter_next(iter)); /* tmp EXIT  */
+            if (parser && !markdown_core_parser_append_content_marks(parser, tmp, &combined_map, 0,
+                                                                     tmp->as.literal->len, buf->size)) {
+                return MARKDOWN_CORE_FINISH_FAILED;
+            }
+            markdown_core_strbuf_put(buf, tmp->as.literal->data, tmp->as.literal->len);
+            if (buf->oom) {
+                return MARKDOWN_CORE_FINISH_FAILED;
+            }
+            // ONLY AN OPERAND THAT OWNS BYTES CAN SAY WHERE THE RUN ENDS.
+            // An empty one has no last byte to end at, and the empties in
+            // this tree carry a zeroed position rather than an honest one,
+            // so taking their end put `1:1..1:0` on a run of four real
+            // characters. And the end is a LINE and a column together: this
+            // used to carry the column forward and leave the line behind,
+            // which is why a merged run crossing a line ending reported the
+            // first operand's line with the last operand's column.
+            if (tmp->as.literal->len > 0) {
+                cur->end_line = tmp->end_line;
+                cur->end_column = tmp->end_column;
+            }
+            next = tmp->next;
+            markdown_core_node_free(tmp);
+            tmp = next;
+        }
+        /* Every node the loop freed was ahead of the cursor and is now
+         * unlinked, so the cursor sits at the last one's EXIT. Re-establish
+         * `cur`'s EXIT: it recomputes the lookahead from the siblings that
+         * survived, and it is what makes the drop below legal under the
+         * rule rather than merely safe. It is not a step of the walk -- the
+         * event it re-delivers was delivered already -- so it is not counted. */
+        if (parser) {
+            cur->content_mark = combined_map.content_mark;
+            cur->content_mark_count = combined_map.content_mark_count;
+            cur->content_mark_offset = 0;
+        }
+        markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
+        markdown_core_chunk_free(cur->as.literal);
+        *cur->as.literal = markdown_core_chunk_buf_detach(buf);
+        if (!cur->as.literal->data) {
+            // The buffer was poisoned, so this run's bytes are LOST rather
+            // than absent. Report it and leave the node where it is: the
+            // drop below must only ever remove a node that is honestly
+            // empty, never one an allocation failure emptied.
+            return MARKDOWN_CORE_FINISH_FAILED;
+        }
+    }
+
+    // A `TEXT` NODE THAT OWNS NO BYTES IS NOT A NODE. It has no literal to
+    // render and no source to point at, so the only position it can carry
+    // is borrowed or zeroed -- and a consumer that walks children sees a
+    // child that is not there. Dropping it here also makes the third
+    // producer unreachable by construction: a run of empties can no longer
+    // merge into an empty, because the operands are gone before the merge.
+    //
+    // Freeing here is legal because `cur`'s EXIT is current -- Step 5's
+    // mutation rule -- so `iter->next` already names a node outside this
+    // one's subtree. The caller learns that `cur` is gone and hands this
+    // event to nothing else.
+    if (cur->as.literal->len == 0) {
+        markdown_core_chunk_free(cur->as.literal);
+        markdown_core_node_free(cur);
+        return MARKDOWN_CORE_FINISH_CONSUMED;
+    }
+    return MARKDOWN_CORE_FINISH_CONTINUE;
+}
+
+/* The same step, driven by a walk of its own. Inside a parse the finish walk
+ * runs the step itself and never comes here; this is the entry point for a
+ * tree built or rewritten outside a parse, and a pass that calls it with a
+ * parser pays -- and is counted for -- one more traversal of the root. */
 int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parser, markdown_core_node *root) {
     if (root == NULL) {
         return 1;
@@ -92,106 +208,27 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT();
     markdown_core_event_type ev_type;
-    markdown_core_node *cur, *tmp, *next;
     int ok = 1;
 
     if (!iter) {
         return 0;
     }
 
-    /* EXIT, not ENTER, and that is Step 5's mutation rule: the only node a walk
-     * may free is the one whose EXIT is current. `TEXT` was in the old
-     * `S_is_leaf` list, so its EXIT was suppressed and freeing at ENTER
-     * happened to be safe; with the contract total it is a use-after-free. */
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        cur = markdown_core_iter_get_node(iter);
+        markdown_core_node *cur = markdown_core_iter_get_node(iter);
+        S_count_step(parser, ev_type);
         if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->kind != MARKDOWN_CORE_NODE_TEXT) {
             continue;
         }
-
-        if (cur->next && cur->next->kind == MARKDOWN_CORE_NODE_TEXT) {
-            markdown_core_node combined_map = {0};
-            if (parser &&
-                !markdown_core_parser_append_content_marks(parser, cur, &combined_map, 0, cur->as.literal->len, 0)) {
-                goto failed;
-            }
-            markdown_core_strbuf_clear(&buf);
-            markdown_core_strbuf_put(&buf, cur->as.literal->data, cur->as.literal->len);
-            if (buf.oom) {
-                goto failed;
-            }
-            tmp = cur->next;
-            while (tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT) {
-                /* Bring `tmp` to its own EXIT before freeing it: two events
-                 * now, where a suppressed EXIT used to make one enough. */
-                markdown_core_iter_next(iter); /* tmp ENTER */
-                markdown_core_iter_next(iter); /* tmp EXIT  */
-                if (parser && !markdown_core_parser_append_content_marks(parser, tmp, &combined_map, 0,
-                                                                         tmp->as.literal->len, buf.size)) {
-                    goto failed;
-                }
-                markdown_core_strbuf_put(&buf, tmp->as.literal->data, tmp->as.literal->len);
-                if (buf.oom) {
-                    goto failed;
-                }
-                // ONLY AN OPERAND THAT OWNS BYTES CAN SAY WHERE THE RUN ENDS.
-                // An empty one has no last byte to end at, and the empties in
-                // this tree carry a zeroed position rather than an honest one,
-                // so taking their end put `1:1..1:0` on a run of four real
-                // characters. And the end is a LINE and a column together: this
-                // used to carry the column forward and leave the line behind,
-                // which is why a merged run crossing a line ending reported the
-                // first operand's line with the last operand's column.
-                if (tmp->as.literal->len > 0) {
-                    cur->end_line = tmp->end_line;
-                    cur->end_column = tmp->end_column;
-                }
-                next = tmp->next;
-                markdown_core_node_free(tmp);
-                tmp = next;
-            }
-            /* Every node the loop freed was ahead of the cursor and is now
-             * unlinked, so the cursor sits at the last one's EXIT. Re-establish
-             * `cur`'s EXIT: it recomputes the lookahead from the siblings that
-             * survived, and it is what makes the drop below legal under the
-             * rule rather than merely safe. */
-            if (parser) {
-                cur->content_mark = combined_map.content_mark;
-                cur->content_mark_count = combined_map.content_mark_count;
-                cur->content_mark_offset = 0;
-            }
-            markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
-            markdown_core_chunk_free(cur->as.literal);
-            *cur->as.literal = markdown_core_chunk_buf_detach(&buf);
-            if (!cur->as.literal->data) {
-                // The buffer was poisoned, so this run's bytes are LOST rather
-                // than absent. Report it and leave the node where it is: the
-                // drop below must only ever remove a node that is honestly
-                // empty, never one an allocation failure emptied.
-                goto failed;
-            }
-        }
-
-        // A `TEXT` NODE THAT OWNS NO BYTES IS NOT A NODE. It has no literal to
-        // render and no source to point at, so the only position it can carry
-        // is borrowed or zeroed -- and a consumer that walks children sees a
-        // child that is not there. Dropping it here also makes the third
-        // producer unreachable by construction: a run of empties can no longer
-        // merge into an empty, because the operands are gone before the merge.
-        //
-        // Freeing here is legal because `cur`'s EXIT is current -- Step 5's
-        // mutation rule -- so `iter->next` already names a node outside this
-        // one's subtree.
-        if (cur->as.literal->len == 0) {
-            markdown_core_chunk_free(cur->as.literal);
-            markdown_core_node_free(cur);
+        if (markdown_core_consolidate_text_step(parser, iter, cur, &buf) == MARKDOWN_CORE_FINISH_FAILED) {
+            ok = 0;
+            break;
         }
     }
+    if (ok) {
+        S_count_step(parser, MARKDOWN_CORE_EVENT_DONE);
+    }
 
-    goto done;
-failed:
-    ok = 0;
-done:
     markdown_core_strbuf_free(&buf);
     markdown_core_iter_free(iter);
     return ok;

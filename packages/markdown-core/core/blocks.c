@@ -89,7 +89,59 @@ static markdown_core_node *make_document(markdown_core_parser *parser) {
     return e;
 }
 
+/* Why a descriptor is refused, or NULL. The rule: an element takes part in
+ * the finish stage as a LOCAL step or as a GLOBAL pass, never both
+ * (markdown-core-element-api.h states the invariant). A descriptor that
+ * declares both would run its step from inside the walk and its pass after it,
+ * and nothing in either hook's contract says what the second may assume about
+ * the first's work; that is two concerns, which is two elements. A step is
+ * asked once per event, so a kind in both of its lists -- one EXIT declared
+ * twice -- is refused rather than delivered twice. A step asked at no kind
+ * would never be called, and is refused rather than silently kept. And a kind
+ * the dispatch table cannot index -- an ordinal at or past
+ * MARKDOWN_CORE_NODE_KIND_COUNT, or a value of neither class -- would share
+ * the table's one out-of-table key and be asked at every such node's events
+ * instead of its own, so it is refused too: that key is never declared. */
+static bool S_finish_kind_indexable(markdown_core_node_type kind) {
+    unsigned class = (unsigned)kind & MARKDOWN_CORE_NODE_TYPE_MASK;
+    return (class == MARKDOWN_CORE_NODE_TYPE_BLOCK || class == MARKDOWN_CORE_NODE_TYPE_INLINE) &&
+           ((unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK) < MARKDOWN_CORE_NODE_KIND_COUNT;
+}
+
+static const char *S_element_rejection(const markdown_core_element *element) {
+    if (element->finish_step && element->postprocess_func) {
+        return "declares both a finish step and a postprocess pass";
+    }
+    if ((element->finish_exit_kinds || element->finish_scope_kinds) && !element->finish_step) {
+        return "declares where a finish step is asked without a finish step";
+    }
+    if (element->finish_step) {
+        const markdown_core_node_type *lists[] = {element->finish_exit_kinds, element->finish_scope_kinds};
+        bool asked = false;
+        for (size_t list = 0; list < 2; list++) {
+            for (const markdown_core_node_type *kind = lists[list]; kind && *kind; kind++) {
+                if (!S_finish_kind_indexable(*kind)) {
+                    return "declares a finish step at a kind outside the kind table";
+                }
+                asked = true;
+            }
+        }
+        if (!asked) {
+            return "declares a finish step asked at no kind";
+        }
+    }
+    for (const markdown_core_node_type *exit = element->finish_exit_kinds; exit && *exit; exit++) {
+        for (const markdown_core_node_type *scope = element->finish_scope_kinds; scope && *scope; scope++) {
+            if (*exit == *scope) {
+                return "declares a kind as both a finish exit kind and a finish scope kind";
+            }
+        }
+    }
+    return NULL;
+}
+
 static void S_register_element(markdown_core_parser *parser, const markdown_core_element *element) {
+    assert(!S_element_rejection(element));
     if (element->parse_text) {
         parser->text_structure = element;
     }
@@ -103,9 +155,13 @@ static void S_register_element(markdown_core_parser *parser, const markdown_core
 
 /* Setup extends the same registry read by every phase. The fixed dialect is
  * borrowed; an extension acquires an independent contiguous snapshot before
- * replacing it. Allocation failure leaves the previous registry intact. */
+ * replacing it. Allocation failure, and a descriptor the one registration
+ * rule refuses, leave the previous registry intact. */
 int markdown_core_parser_attach_element(markdown_core_parser *parser, const markdown_core_element *element) {
     size_t count = parser->element_count;
+    if (S_element_rejection(element)) {
+        return 0;
+    }
     const markdown_core_element **entries = markdown_core_alloc(count + 1, sizeof(*entries));
     if (!entries) {
         return 0;
@@ -861,11 +917,27 @@ typedef struct {
     int script_depth;
 } owned_tree_frame;
 
+/* THE FINISH DISPATCH OF A WALK, or NULL for a walk that runs no finish step.
+ *
+ * A walk that carries this dispatches, at every event its iterator delivers,
+ * the engine's own consolidation (at a Text's EXIT, first) and then the steps
+ * the parser projected for that (event, kind), in descriptor order, until one
+ * of them consumes the node. The scratch buffer is consolidation's, allocated
+ * once for the walk rather than once per merged run. */
+typedef struct {
+    markdown_core_strbuf scratch;
+} finish_dispatch;
+
 typedef struct {
     markdown_core_parser *parser;
     owned_tree_frame *frames;
+    /* One word per projected step per frame, zero when a root's walk starts:
+     * frame i's words are `states + i * slots`. Sized with the frames. */
+    void **states;
+    size_t slots;
     size_t count, capacity;
     int script_depth;
+    finish_dispatch *steps;
 } owned_tree_walk;
 
 static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
@@ -874,7 +946,8 @@ static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
     }
     if (walk->count == walk->capacity) {
         size_t capacity = walk->capacity ? 2 * walk->capacity : 8;
-        if (capacity > SIZE_MAX / sizeof(*walk->frames)) {
+        if (capacity > SIZE_MAX / sizeof(*walk->frames) ||
+            (walk->slots && capacity > SIZE_MAX / sizeof(*walk->states) / walk->slots)) {
             walk->parser->oom = true;
             return 0;
         }
@@ -884,10 +957,82 @@ static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
             return 0;
         }
         walk->frames = frames;
+        if (walk->slots) {
+            void *states = markdown_core_realloc(walk->states, capacity * walk->slots * sizeof(*walk->states));
+            if (!states) {
+                walk->parser->oom = true;
+                return 0;
+            }
+            walk->states = states;
+        }
         walk->capacity = capacity;
+    }
+    if (walk->slots) {
+        memset(walk->states + walk->count * walk->slots, 0, walk->slots * sizeof(*walk->states));
     }
     walk->frames[walk->count++] = (owned_tree_frame){root, NULL, walk->script_depth};
     return 1;
+}
+
+/* One event of the finish walk, delivered to every step that acts on it.
+ *
+ * Consolidation goes first at a Text's EXIT and takes the walk's own iterator
+ * over the siblings it absorbs, so by the time an element step sees this
+ * event the Text holds its whole run and the absorbed nodes are gone -- they
+ * were never delivered to anything else, which is what makes freeing them
+ * safe. A step that consumes the node ends the event: the node it named is
+ * gone and there is nothing left to hand on.
+ *
+ * Returns CONSUMED when the node is gone, and FAILED with parser->oom set. */
+static markdown_core_finish_result dispatch_finish_event(owned_tree_walk *walk, owned_tree_frame *frame,
+                                                         markdown_core_event_type event, markdown_core_node *node) {
+    markdown_core_parser *parser = walk->parser;
+    markdown_core_finish_result result = MARKDOWN_CORE_FINISH_CONTINUE;
+    size_t key = markdown_core_finish_key(event, (markdown_core_node_type)node->kind);
+
+    if (key == MARKDOWN_CORE_FINISH_TEXT_EXIT_KEY) {
+        result = markdown_core_consolidate_text_step(parser, frame->iter, node, &walk->steps->scratch);
+        if (result != MARKDOWN_CORE_FINISH_CONTINUE) {
+            return result;
+        }
+    }
+    const markdown_core_finish_step_entry *entry = parser->finish_dispatch[key];
+    if (!entry) {
+        return result;
+    }
+    /* `frame` is the top of the stack, so its state words are the last row. */
+    void **states = walk->states + (walk->count - 1) * walk->slots;
+    int is_root = node == frame->root;
+    for (; entry->element; entry++) {
+        result = entry->element->finish_step(entry->element, parser, node, event, is_root, &states[entry->slot]);
+        if (result != MARKDOWN_CORE_FINISH_CONTINUE) {
+            /* A node is consumed only at its EXIT: at ENTER the lookahead
+             * names its first child, and a step that freed it here would
+             * have broken the LOCAL contract the API header states. */
+            assert(result == MARKDOWN_CORE_FINISH_FAILED || event == MARKDOWN_CORE_EVENT_EXIT);
+            break;
+        }
+    }
+    return result;
+}
+
+/* THE FINISH STAGE'S TRAVERSAL COUNT (parser.h): the walk's own events are
+ * kept in three registers and added to the parser's totals at each root's
+ * completion -- before that root's global passes, which read the totals so
+ * far -- and when the walk ends, so that counting an event costs an increment
+ * and not a read-modify-write of the parser. The events consolidation takes
+ * over the siblings it absorbs are counted by that step itself, on the parser
+ * (iterator.c, S_count_step): the step is shared with the public entry point,
+ * which has no walk and no registers, and both paths add to the same totals. */
+typedef struct {
+    size_t events, entered, roots;
+} finish_count;
+
+static void flush_finish_count(markdown_core_parser *parser, finish_count *count) {
+    parser->finish_walk_events += count->events;
+    parser->finish_nodes_entered += count->entered;
+    parser->finish_walk_roots += count->roots;
+    *count = (finish_count){0, 0, 0};
 }
 
 /* The owned-subtree visitor reports SLOTS, because destruction has to clear
@@ -899,10 +1044,17 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
 /* Every independent inline tree uses the same explicit continuation stack.
  * A field root stays the node its owner put there -- no phase may substitute
  * one -- so a frame carries the root itself and never the slot holding it.
- * Depth never uses C frames. */
-static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *root, tree_node_func enter,
-                            tree_phase_func finish, void *context, int script_depth) {
-    owned_tree_walk walk = {.parser = parser, .script_depth = script_depth};
+ * Depth never uses C frames.
+ *
+ * A walk runs `enter` at each node's ENTER, `steps` at every event (the
+ * finish stage's consolidation and element steps, on this walk's iterator),
+ * and `finish` on each root once its iteration completes. With `steps` the
+ * walk also keeps the finish stage's traversal count on the parser. */
+static inline int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *root, tree_node_func enter,
+                                   finish_dispatch *steps, tree_phase_func finish, void *context, int script_depth) {
+    owned_tree_walk walk = {
+        .parser = parser, .script_depth = script_depth, .steps = steps, .slots = steps ? parser->finish_step_slots : 0};
+    finish_count count = {0, 0, 0};
     push_owned_root(root, &walk);
     while (walk.count && !parser->oom) {
         owned_tree_frame *frame = &walk.frames[walk.count - 1];
@@ -914,10 +1066,17 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
             }
         }
         markdown_core_event_type event = markdown_core_iter_next(frame->iter);
+        if (steps) {
+            count.events++;
+        }
         if (event == MARKDOWN_CORE_EVENT_DONE) {
             markdown_core_node *completed = frame->root;
             markdown_core_iter_free(frame->iter);
             walk.count--;
+            if (steps) {
+                count.roots++;
+                flush_finish_count(parser, &count);
+            }
             if (finish && !finish(parser, completed, context)) {
                 parser->oom = true;
             }
@@ -927,8 +1086,22 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
         if (node->element && node->element->delimiter.body == DELIMITER_WORD_BODY) {
             frame->script_depth += event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
         }
+        if (steps) {
+            markdown_core_finish_result result = dispatch_finish_event(&walk, frame, event, node);
+            if (result == MARKDOWN_CORE_FINISH_FAILED) {
+                parser->oom = true;
+                break;
+            }
+            if (result == MARKDOWN_CORE_FINISH_CONSUMED) {
+                continue;
+            }
+        }
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
             continue;
+        }
+        /* A node is consumed only at its EXIT, so every ENTER reaches here. */
+        if (steps) {
+            count.entered++;
         }
         walk.script_depth = frame->script_depth;
         if (enter) {
@@ -939,7 +1112,9 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
             parser->oom = true;
         }
         /* The visitor reports fields in source order; a stack consumes their
-         * reversed registration order. No field is visited or scanned twice. */
+         * reversed registration order. No field is visited or scanned twice.
+         * The frames carry no state yet -- a pushed root's words are zero
+         * until its walk starts -- so swapping frames leaves nothing behind. */
         for (size_t left = first, right = walk.count; left < right && left < --right; left++) {
             owned_tree_frame swap = walk.frames[left];
             walk.frames[left] = walk.frames[right];
@@ -951,13 +1126,18 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
             markdown_core_iter_free(walk.frames[i].iter);
         }
     }
+    if (steps) {
+        flush_finish_count(parser, &count);
+    }
     markdown_core_free(walk.frames);
+    markdown_core_free(walk.states);
     return !parser->oom;
 }
 
 static void complete_inline_node(markdown_core_parser *parser, markdown_core_node *node, int script_depth,
                                  void *context) {
     const markdown_core_element *structure = markdown_core_node_structure(node);
+    parser->inline_nodes_completed++;
     if (structure && structure->complete_inline) {
         structure->complete_inline(parser, node, script_depth);
     }
@@ -968,7 +1148,7 @@ static void complete_inline_node(markdown_core_parser *parser, markdown_core_nod
 
 static int process_inline_fields(markdown_core_parser *parser, markdown_core_node *root, void *context,
                                  int script_depth) {
-    return walk_owned_trees(parser, root, complete_inline_node, NULL, context, script_depth);
+    return walk_owned_trees(parser, root, complete_inline_node, NULL, NULL, context, script_depth);
 }
 
 static int complete_independent_inlines(markdown_core_node **slot, void *context) {
@@ -1872,10 +2052,44 @@ static bool S_element_implements_inline(const markdown_core_element *element, ma
     return false;
 }
 
+/* The (event, kind) keys a finish step's declaration projects to, counted
+ * into `counts`: the EXIT of each kind it is asked at, and the ENTER and EXIT
+ * of each kind whose extent it tracks. An element without a step projects to
+ * none. Registration refused a step asked at no kind and a kind outside the
+ * table (S_element_rejection), so every key counted here is one the dispatch
+ * indexes and none is the out-of-table key. Returns how many keys the element
+ * added. */
+static size_t S_count_finish_keys(const markdown_core_element *element, size_t *counts) {
+    size_t keys = 0;
+    if (!element->finish_step) {
+        return 0;
+    }
+    for (const markdown_core_node_type *kind = element->finish_exit_kinds; kind && *kind; kind++) {
+        counts[markdown_core_finish_key(MARKDOWN_CORE_EVENT_EXIT, *kind)]++;
+        keys++;
+    }
+    for (const markdown_core_node_type *kind = element->finish_scope_kinds; kind && *kind; kind++) {
+        counts[markdown_core_finish_key(MARKDOWN_CORE_EVENT_ENTER, *kind)]++;
+        counts[markdown_core_finish_key(MARKDOWN_CORE_EVENT_EXIT, *kind)]++;
+        keys += 2;
+    }
+    return keys;
+}
+
+/* Append `element` under `key`, once: a kind written twice in one list is
+ * one declaration, and the step is asked once per event. */
+static void S_append_finish_step(markdown_core_parser *parser, markdown_core_finish_step_entry **next, size_t key,
+                                 const markdown_core_element *element, size_t slot) {
+    if (next[key] != parser->finish_dispatch[key] && next[key][-1].element == element) {
+        return;
+    }
+    *next[key]++ = (markdown_core_finish_step_entry){element, slot};
+}
+
 static void S_project_block_hooks(markdown_core_parser *parser) {
     size_t totals[MARKDOWN_CORE_BLOCK_HOOK_COUNT] = {0};
     size_t inline_totals[MARKDOWN_CORE_INLINE_HOOK_COUNT] = {0};
-    size_t total = 0;
+    size_t total = 0, step_total = 0;
 
     markdown_core_free(parser->block_hook_allocation);
     parser->block_hook_allocation = NULL;
@@ -1886,6 +2100,8 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
     memset(parser->block_gate_bytes, 0, sizeof(parser->block_gate_bytes));
     memset(parser->inline_hooks, 0, sizeof(parser->inline_hooks));
     memset(parser->inline_hook_counts, 0, sizeof(parser->inline_hook_counts));
+    memset(parser->finish_dispatch, 0, sizeof(parser->finish_dispatch));
+    parser->finish_step_slots = 0;
 
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
         for (size_t i = 0; i < parser->element_count; i++) {
@@ -1895,12 +2111,12 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
         }
         total += totals[hook];
     }
-    /* The inline-content families share this one allocation rather than taking
-     * their own. Not tidiness: a second small block here lands between a
-     * grown-by-realloc parse buffer and its headroom, and the realloc that used
-     * to extend in place starts copying instead. On `chain-link-candidates`
-     * that showed up as +466,301 Ir of `memcpy` for a projection that saves
-     * that document almost nothing. */
+    /* The inline-content families and the finish steps share this one
+     * allocation rather than taking their own. Not tidiness: a second small
+     * block here lands between a grown-by-realloc parse buffer and its
+     * headroom, and the realloc that used to extend in place starts copying
+     * instead. On `chain-link-candidates` that showed up as +466,301 Ir of
+     * `memcpy` for a projection that saves that document almost nothing. */
     for (size_t hook = 0; hook < MARKDOWN_CORE_INLINE_HOOK_COUNT; hook++) {
         for (size_t i = 0; i < parser->element_count; i++) {
             if (S_element_implements_inline(parser->elements[i], (markdown_core_inline_hook)hook)) {
@@ -1909,16 +2125,73 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
         }
         total += inline_totals[hook];
     }
-    if (!total) {
+    /* The finish steps by key: a count per key, then each declared key's list
+     * laid out in descriptor order with a terminator, then the table. */
+    size_t key_counts[MARKDOWN_CORE_FINISH_KEY_COUNT] = {0};
+    for (size_t i = 0; i < parser->element_count; i++) {
+        step_total += S_count_finish_keys(parser->elements[i], key_counts);
+    }
+    for (size_t key = 0; key < MARKDOWN_CORE_FINISH_KEY_COUNT; key++) {
+        step_total += key_counts[key] != 0; /* the terminator */
+    }
+    if (!total && !step_total) {
         return;
     }
 
-    const markdown_core_element **entries = markdown_core_alloc(total, sizeof(*entries));
-    if (!entries) {
+    /* The element-pointer lists first, then the step entries: both are
+     * pointer-aligned, so the second region starts where the first ends. */
+    size_t pointer_bytes = total * sizeof(const markdown_core_element *);
+    void *block = markdown_core_alloc(1, pointer_bytes + step_total * sizeof(markdown_core_finish_step_entry));
+    if (!block) {
         parser->oom = true;
         return;
     }
-    parser->block_hook_allocation = entries;
+    parser->block_hook_allocation = block;
+    const markdown_core_element **entries = block;
+    markdown_core_finish_step_entry *steps = (markdown_core_finish_step_entry *)((char *)block + pointer_bytes);
+
+    markdown_core_finish_step_entry *next[MARKDOWN_CORE_FINISH_KEY_COUNT];
+    size_t step_at = 0;
+    for (size_t key = 0; key < MARKDOWN_CORE_FINISH_KEY_COUNT; key++) {
+        if (!key_counts[key]) {
+            next[key] = NULL;
+            continue;
+        }
+        parser->finish_dispatch[key] = next[key] = steps + step_at;
+        step_at += key_counts[key] + 1;
+        steps[step_at - 1] = (markdown_core_finish_step_entry){NULL, 0};
+    }
+    assert(step_at == step_total);
+    for (size_t i = 0; i < parser->element_count; i++) {
+        const markdown_core_element *element = parser->elements[i];
+        size_t slot = parser->finish_step_slots;
+        bool projected = false;
+        if (!element->finish_step) {
+            continue;
+        }
+        for (const markdown_core_node_type *kind = element->finish_exit_kinds; kind && *kind; kind++) {
+            S_append_finish_step(parser, next, markdown_core_finish_key(MARKDOWN_CORE_EVENT_EXIT, *kind), element,
+                                 slot);
+            projected = true;
+        }
+        for (const markdown_core_node_type *kind = element->finish_scope_kinds; kind && *kind; kind++) {
+            S_append_finish_step(parser, next, markdown_core_finish_key(MARKDOWN_CORE_EVENT_ENTER, *kind), element,
+                                 slot);
+            S_append_finish_step(parser, next, markdown_core_finish_key(MARKDOWN_CORE_EVENT_EXIT, *kind), element,
+                                 slot);
+            projected = true;
+        }
+        /* A state word per element that projected anything, so the slot an
+         * entry names is always one the walk keeps. */
+        parser->finish_step_slots += projected;
+    }
+    for (size_t key = 0; key < MARKDOWN_CORE_FINISH_KEY_COUNT; key++) {
+        /* A kind written twice in one list was counted twice and appended
+         * once; the terminator moves up to close the list where it ends. */
+        if (next[key]) {
+            *next[key] = (markdown_core_finish_step_entry){NULL, 0};
+        }
+    }
 
     size_t at = 0;
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
@@ -2327,26 +2600,31 @@ finished:
 
 typedef struct {
     markdown_core_parser *parser;
+    finish_dispatch *steps;
     tree_phase_func phase;
     void *context;
 } tree_phase_context;
 static int apply_independent_phase(markdown_core_node **slot, void *context) {
     tree_phase_context *phase = context;
-    return walk_owned_trees(phase->parser, *slot, NULL, phase->phase, phase->context, 0);
+    return walk_owned_trees(phase->parser, *slot, NULL, phase->steps, phase->phase, phase->context, 0);
 }
 
-/* Document definitions are independent roots, followed by the content tree.
- * A phase rewrites each root in place; none of them is ever substituted. */
+/* THE FINISH STAGE'S ONE WALK. Document definitions are independent roots,
+ * followed by the content tree; every root is walked once, with the finish
+ * steps running inside the walk and `phase` -- the global passes -- run on
+ * each root as its walk completes. A phase rewrites each root in place; none
+ * of them is ever substituted. */
 static int S_apply_tree_phase(markdown_core_parser *parser, markdown_core_node *root, tree_phase_func phase,
                               void *context) {
     if (!root || parser->oom) {
         return !parser->oom;
     }
-    tree_phase_context phase_context = {parser, phase, context};
-    if (!markdown_core_visit_block_subtrees(root, apply_independent_phase, &phase_context)) {
-        return 0;
-    }
-    return walk_owned_trees(parser, root, NULL, phase, context, 0);
+    finish_dispatch steps = {MARKDOWN_CORE_BUF_INIT()};
+    tree_phase_context phase_context = {parser, &steps, phase, context};
+    int ok = markdown_core_visit_block_subtrees(root, apply_independent_phase, &phase_context) &&
+             walk_owned_trees(parser, root, NULL, &steps, phase, context, 0);
+    markdown_core_strbuf_free(&steps.scratch);
+    return ok;
 }
 
 /* Register at syntax commitment; no completed-tree discovery pass is needed.
@@ -2455,37 +2733,88 @@ void markdown_core_block_own_definitions(markdown_core_definition_collection *co
     }
 }
 
-/* THE FINISH STAGE IS ONE ENUMERATION, NOT ONE PER PHASE.
+/* THE FINISH STAGE IS ONE WALK, NOT ONE PER PHASE.
  *
- * Finding the owned roots is a full traversal of every node in the document,
- * and it used to be paid once for consolidation and again for each postprocess
- * pass. It is paid once here: every phase a root needs runs at the single
- * point where that root's iteration completes.
+ * Every owned root of the document is traversed exactly once here, and
+ * everything the finish stage does to a node happens from inside that one
+ * traversal: text consolidation at a Text's EXIT, and every finish step at the
+ * events of the kinds it declared. It used to be four traversals -- one to
+ * find the roots, and then one each for consolidation, autolink and formula,
+ * every one of them a private iterator over the whole root -- and before that
+ * one more per pass just to enumerate the roots again.
  *
- * That point is what makes this safe, and it is why caching the root list and
- * replaying it per pass was not: `walk_owned_trees` finishes a root only after
- * every owned root nested inside it is already finished and popped, so nothing
- * still on the stack lives inside the tree a phase is rewriting. A pass may
- * free an owned root -- a Cite owns its citations' prefix and suffix -- and
+ * What makes fusing them safe is the order the walk fixes. A Text's EXIT
+ * comes after every Text sibling it will absorb has been produced and before
+ * any step reads it, so a step at that EXIT sees the merged run, exactly as
+ * the separate autolink walk saw it after the separate consolidation walk. A
+ * Paragraph's EXIT comes after every child's EXIT, so formula's test of the
+ * children sees what consolidation left. And an owned root nested in a node
+ * -- a definition term, a citation's prefix -- is finished, popped and gone
+ * from the stack before that node's own children are visited, so nothing
+ * still on the stack lives inside a tree a step or pass is rewriting: a pass
+ * may free an owned root, a Cite owns its citations' prefix and suffix, and
  * there is no later replay to hand that freed root to.
  *
- * The pass list is chosen before the enumeration starts, which it can be only
+ * The global passes -- external elements that need a whole finished root --
+ * still run at the point where each root's walk completes, in descriptor
+ * order, and that list is chosen before the walk starts, which it can be only
  * because the record it reads is written where kinds are produced rather than
- * gathered by the consolidation walk. */
+ * gathered by a walk. */
 typedef struct {
     const markdown_core_element **passes;
     size_t pass_count;
 } finish_phases;
 
-/* Every writer of this tree is checked, not only the first one.
+/* THE GATE: a hook that declares the kinds it acts on runs only in a parse
+ * that produced one of them. The declared kinds are read here rather than
+ * stored as a bit set on the descriptor, so each keeps the namespace that
+ * tells a block from an inline; the list is a handful of entries per element,
+ * read once per parse. */
+static bool S_finish_hook_selected(const markdown_core_parser *parser, const markdown_core_element *element) {
+    markdown_core_node_kind_set declared = {0, 0};
+    if (!element->finish_acts_on_kinds) {
+        return true;
+    }
+    for (const markdown_core_node_type *kind = element->finish_acts_on_kinds; *kind; kind++) {
+        markdown_core_node_kind_set_add(&declared, *kind);
+    }
+    return markdown_core_node_kind_set_intersects(&declared, &parser->kinds_created);
+}
+
+/* The gate applied to the projected steps: every (event, kind) list keeps, in
+ * order, the steps the gate selects, and a list left empty becomes the NULL
+ * that costs an event one load. The lists are this parse's own memory, so
+ * the compaction is in place and allocates nothing. */
+static void S_gate_finish_steps(markdown_core_parser *parser) {
+    for (size_t key = 0; key < MARKDOWN_CORE_FINISH_KEY_COUNT; key++) {
+        markdown_core_finish_step_entry *list = parser->finish_dispatch[key], *kept = list;
+        if (!list) {
+            continue;
+        }
+        for (markdown_core_finish_step_entry *entry = list; entry->element; entry++) {
+            if (S_finish_hook_selected(parser, entry->element)) {
+                *kept++ = *entry;
+            }
+        }
+        *kept = (markdown_core_finish_step_entry){NULL, 0};
+        if (kept == list) {
+            parser->finish_dispatch[key] = NULL;
+        }
+    }
+}
+
+/* Every writer of this tree is checked.
  *
- * `markdown_core_node_check` is the one structural self-check this tree has,
- * and each postprocess pass rewrites the subtree it is handed -- unlinking,
- * relinking and freeing nodes -- which is precisely where a parent/sibling
- * disagreement would be introduced. Checking only after consolidation would
- * attribute every such break to consolidation. This is compiled in only when
+ * `markdown_core_node_check` is the one structural self-check this tree has.
+ * The finish walk rewrites the tree from inside -- consolidation and every
+ * step unlink, relink and free nodes -- so it is checked once per root when
+ * the walk completes, and then again after each global pass, which rewrites
+ * the whole root it is handed. A break introduced by a step is attributed to
+ * the root's walk rather than to the step: the steps are interleaved, and a
+ * per-step check would cost a traversal per step, which is the shape this
+ * stage exists not to have. This is compiled in only when
  * `MARKDOWN_CORE_DEBUG_NODES` is defined, which no shipping configuration
- * defines, so the per-pass cost is not a release cost. */
+ * defines, so the per-root cost is not a release cost. */
 #if MARKDOWN_CORE_DEBUG_NODES
 #define MARKDOWN_CORE_CHECK_TREE(root)                                                                                 \
     do {                                                                                                               \
@@ -2500,9 +2829,6 @@ typedef struct {
 static int S_finish_tree(markdown_core_parser *parser, markdown_core_node *root, void *context) {
     const finish_phases *phases = (const finish_phases *)context;
 
-    if (!markdown_core_consolidate_text_nodes_with_parser(parser, root)) {
-        return 0;
-    }
     MARKDOWN_CORE_CHECK_TREE(root);
     for (size_t i = 0; i < phases->pass_count; i++) {
         const markdown_core_element *element = phases->passes[i];
@@ -2540,17 +2866,17 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         goto failed;
     }
 
-    /* Choose the passes first, then walk once.
+    /* Choose the finish hooks first, then walk once.
      *
-     * An empty declaration means the pass always runs, so an element that says
-     * nothing keeps the behaviour it had. One that declares its kinds is
-     * skipped for a document that produced none of them, and skipping costs
-     * the whole pass: its walk over every root the enumeration finds.
-     *
-     * The declared kinds are projected here rather than stored as a bit set on
-     * the descriptor, so each kind keeps the namespace that tells a block from
-     * an inline; the list is a handful of entries per element, read once per
-     * parse.
+     * ONE GATE FOR BOTH SHAPES. An empty declaration means the hook always
+     * runs, so an element that says nothing keeps the behaviour it had. One
+     * that declares the kinds it acts on is skipped for a document that
+     * produced none of them: a pass is left out of the list below, and
+     * skipping saves the whole pass, its walk over every root; a step is
+     * dropped from every (event, kind) list it was projected to, in place --
+     * the lists are this parse's -- and skipping saves every event it would
+     * have been asked at, which for formula is every paragraph's EXIT of a
+     * document with no formula in it.
      *
      * `kinds_created` OVER-APPROXIMATES: a node the parse creates and then
      * discards -- the text a formula consumes -- leaves its bit set although
@@ -2570,20 +2896,11 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     }
     for (size_t i = 0; i < parser->element_count; i++) {
         const markdown_core_element *element = parser->elements[i];
-        if (!element->postprocess_func) {
-            continue;
+        if (element->postprocess_func && S_finish_hook_selected(parser, element)) {
+            phases.passes[phases.pass_count++] = element;
         }
-        if (element->postprocess_kinds) {
-            markdown_core_node_kind_set declared = {0, 0};
-            for (const markdown_core_node_type *kind = element->postprocess_kinds; *kind; kind++) {
-                markdown_core_node_kind_set_add(&declared, *kind);
-            }
-            if (!markdown_core_node_kind_set_intersects(&declared, &parser->kinds_created)) {
-                continue;
-            }
-        }
-        phases.passes[phases.pass_count++] = element;
     }
+    S_gate_finish_steps(parser);
 
     if (!S_apply_tree_phase(parser, parser->root, S_finish_tree, &phases)) {
         parser->oom = true;

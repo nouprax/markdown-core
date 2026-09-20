@@ -8,7 +8,6 @@
 
 #include <buffer.h>
 #include <chunk.h>
-#include <iterator.h>
 #include <markdown_core_ctype.h>
 #include <node.h>
 #include <parser.h>
@@ -138,7 +137,7 @@ static int set_formula_literal_bytes(markdown_core_node *node, const unsigned ch
         /* THE BORROW MUST NOT SURVIVE THE COPY FAILING. `data` belongs to the
          * caller and dies immediately: `make_backslash_delimited_formula` frees
          * its strbuf on the next statement, `replace_with_formula_block` frees
-         * the whole old code block, and `postprocess_node` clears the node's own
+         * the whole old code block, and `finish_step` clears the node's own
          * content. Keeping a borrowed pointer past that is a use-after-free that
          * every later read of the literal walks into -- ASan: heap-use-after-free
          * in markdown_core_elements_get_formula_literal -- and `parser->oom`
@@ -702,18 +701,27 @@ static markdown_core_node *replace_with_formula_block(const markdown_core_elemen
     return NULL;
 }
 
-/* Process one node, returning 0 only on failure. The caller owns traversal:
- * keeping it iterative makes enabled formula syntax safe for an arbitrarily
- * deep tree even when the tree contains no formula.
+/* The formula element's finish STEP: one node at its EXIT, from inside the one
+ * finish walk. At EXIT the walk's lookahead already names the parent or the
+ * following sibling, so replacing and freeing this node cannot invalidate the
+ * walk -- and the node's children are complete, so a Paragraph's test of its
+ * only child sees what consolidation left there. The walk is what makes
+ * enabled formula syntax safe for an arbitrarily deep tree: nothing here
+ * recurses or traverses.
  *
- * `may_replace` is 0 for the root of the walked tree, which belongs to whoever
- * holds it -- the parser for the document, the owning element for a field such
- * as a definition term. Substituting a node there is not merely disallowed, it
+ * `is_root` names the root of the walked tree, which belongs to whoever holds
+ * it -- the parser for the document, the owning element for a field such as a
+ * definition term. Substituting a node there is not merely disallowed, it
  * cannot be carried out: a field root is detached, so the attach a
  * substitution needs has no parent to take, and `$$x$$\n: body\n` used to
  * report that missing parent to the caller as an allocation failure. */
-static int postprocess_node(const markdown_core_element *element, markdown_core_parser *parser,
-                            markdown_core_node *node, int may_replace) {
+static markdown_core_finish_result finish_step(const markdown_core_element *element, markdown_core_parser *parser,
+                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
+                                               void **state) {
+    int may_replace = !is_root;
+    (void)state;
+    (void)event;
+    assert(event == MARKDOWN_CORE_EVENT_EXIT);
     if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
         if (formula && !formula->literal.data) {
@@ -725,16 +733,16 @@ static int postprocess_node(const markdown_core_element *element, markdown_core_
             }
             markdown_core_strbuf_clear(&node->content);
         }
-        return !parser->oom;
+        return parser->oom ? MARKDOWN_CORE_FINISH_FAILED : MARKDOWN_CORE_FINISH_CONTINUE;
     }
 
     if (may_replace && node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code->info)) {
         if (!replace_with_formula_block(element, parser, node, node->as.code->literal.data,
                                         node->as.code->literal.len)) {
             parser->oom = true;
-            return 0;
+            return MARKDOWN_CORE_FINISH_FAILED;
         }
-        return 1;
+        return MARKDOWN_CORE_FINISH_CONSUMED;
     }
 
     /* Only an anonymous paragraph is a removable wrapper. A declared anchor
@@ -745,40 +753,17 @@ static int postprocess_node(const markdown_core_element *element, markdown_core_
         node->first_child == node->last_child && node->first_child->kind == MARKDOWN_CORE_NODE_FORMULA &&
         is_standalone_formula_node(node->first_child)) {
         node_formula *formula = get_formula(node->first_child);
-        if (formula &&
-            !replace_with_formula_block(element, parser, node, formula->literal.data, formula->literal.len)) {
+        if (!formula) {
+            return MARKDOWN_CORE_FINISH_CONTINUE;
+        }
+        if (!replace_with_formula_block(element, parser, node, formula->literal.data, formula->literal.len)) {
             parser->oom = true;
-            return 0;
+            return MARKDOWN_CORE_FINISH_FAILED;
         }
+        return MARKDOWN_CORE_FINISH_CONSUMED;
     }
 
-    return 1;
-}
-
-static int postprocess(const markdown_core_element *element, markdown_core_parser *parser, markdown_core_node *root) {
-    markdown_core_iter *iter = markdown_core_iter_new(root);
-    markdown_core_event_type event;
-
-    if (!iter) {
-        parser->oom = true;
-        return 0;
-    }
-    while (!parser->oom && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node;
-
-        /* At EXIT the iterator has already selected the parent or following
-         * sibling as its next node, so replacing and freeing this node cannot
-         * invalidate traversal state. */
-        if (event != MARKDOWN_CORE_EVENT_EXIT) {
-            continue;
-        }
-        node = markdown_core_iter_get_node(iter);
-        if (!postprocess_node(element, parser, node, node != root)) {
-            break;
-        }
-    }
-    markdown_core_iter_free(iter);
-    return !parser->oom;
+    return MARKDOWN_CORE_FINISH_CONTINUE;
 }
 
 /* `$` and `\\` open a formula, and that is the whole set. `\\` is in the dispatch
@@ -786,9 +771,15 @@ static int postprocess(const markdown_core_element *element, markdown_core_parse
  * anyway, and it must stay in dispatch because `handle_backslash` asks whether any
  * element claims `\\` before taking a core fast path. */
 
-static const markdown_core_node_type FORMULA_POSTPROCESS_KINDS[] = {
-    MARKDOWN_CORE_NODE_FORMULA_BLOCK, MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_FORMULA,
-    MARKDOWN_CORE_NODE_NONE};
+/* What the step acts on -- the gate -- and where it is asked. A Formula's
+ * rewrite happens at its PARAGRAPH's EXIT (the paragraph is what becomes a
+ * FormulaBlock), so the two lists differ there and agree elsewhere. */
+static const markdown_core_node_type FORMULA_ACTS_ON_KINDS[] = {MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+                                                                MARKDOWN_CORE_NODE_CODE_BLOCK,
+                                                                MARKDOWN_CORE_NODE_FORMULA, MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_node_type FORMULA_EXIT_KINDS[] = {MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+                                                             MARKDOWN_CORE_NODE_CODE_BLOCK,
+                                                             MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_NONE};
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .interrupts_paragraph = true,
@@ -801,13 +792,16 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     /* `scan_formula_block_open` accepts only `$$` and `\\[`. */
     .open_block_gate = {.bytes = "$\\"},
     .probe_block = probe_formula_block,
-    .postprocess_func = postprocess,
-    /* `postprocess_node` acts on a FormulaBlock, on a CodeBlock whose info
-     * string names a formula, and on a Paragraph -- but that last branch also
-     * requires the paragraph's only child to be a Formula, so Formula is what
-     * the set has to name, not Paragraph. A document with none of the three
-     * has nothing for this pass to find. */
-    .postprocess_kinds = FORMULA_POSTPROCESS_KINDS,
+    .finish_step = finish_step,
+    /* The step acts on a FormulaBlock, on a CodeBlock whose info string names
+     * a formula, and on a standalone Formula -- a document with none of the
+     * three has nothing for it, and the gate skips it at every paragraph. It
+     * is asked at the EXIT of a FormulaBlock, of a CodeBlock, and of a
+     * Paragraph whose only child may be that Formula; so a document with a
+     * plain code fence and no formula lets the step in, and it is asked at
+     * every Paragraph EXIT there, where it finds no Formula and returns. */
+    .finish_acts_on_kinds = FORMULA_ACTS_ON_KINDS,
+    .finish_exit_kinds = FORMULA_EXIT_KINDS,
     .get_type_string_func = get_type_string,
     .can_contain_func = can_contain,
     .accepts_lines_func = accepts_lines,
