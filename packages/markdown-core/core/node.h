@@ -433,4 +433,48 @@ bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a
  * free (parser.h) counts this, so removal is observed where it is done. */
 size_t markdown_core_node_release(markdown_core_node *node);
 
+/* WHERE A NODE'S STORAGE COMES FROM, and where it goes back to.
+ *
+ * A node lives in a CELL: a fixed-size unit holding a header, the node and
+ * room for its kind's record. A parse takes its cells from SLABS -- one
+ * allocation of many cells -- through a pool it owns, and a caller with no
+ * parse takes one cell from the allocator. The header says which, so a node
+ * is released the same way whichever storage it came from, and nothing about
+ * the storage is visible through the node itself.
+ *
+ * A slab lives while anything holds it: each cell taken from it, and the pool
+ * while the slab is the one it takes cells from. A cell released during the
+ * parse goes back to the pool for reuse (and keeps holding its slab until the
+ * pool is disposed); a cell released with no pool drops its hold, and the slab
+ * is freed with its last one. So a subtree unlinked from a parsed document is
+ * as good as one built by hand: it outlives the document it came from and is
+ * released by `markdown_core_node_free` like any other. The size of what it
+ * keeps alive is the slab, not the node. Nodes of one slab are released from
+ * one thread at a time; two parses never share a slab.
+ *
+ * Why: a node's chunk was larger than the C library's fast-path size classes,
+ * so every release of one walked the allocator's merge path, and the
+ * document's teardown cost more than a third of its parse. */
+typedef struct markdown_core_node_slab markdown_core_node_slab;
+typedef struct markdown_core_node_pool {
+    /* The slab cells are being taken from, held by the pool. */
+    markdown_core_node_slab *current;
+    /* Cells of `current` already taken, from its start. */
+    size_t taken;
+    /* Cells released during the parse, linked through `next`, reused before
+     * another cell is taken from a slab. */
+    markdown_core_node *released;
+} markdown_core_node_pool;
+
+/* `markdown_core_node_new_with_ext` from a pool's cells. A NULL pool is the
+ * allocator's own cell, which is what the parser-less constructor takes. */
+markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, markdown_core_node_type type,
+                                                const markdown_core_element *element);
+/* `markdown_core_node_release` into a pool: the cells go back to it for
+ * reuse rather than dropping their slabs. A NULL pool is the plain release. */
+size_t markdown_core_node_pool_release(markdown_core_node_pool *pool, markdown_core_node *node);
+/* Drops what the pool holds: its released cells and its current slab. Cells
+ * still in use keep their slabs alive after this. */
+void markdown_core_node_pool_dispose(markdown_core_node_pool *pool);
+
 #endif
