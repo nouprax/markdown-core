@@ -56,6 +56,7 @@ import { fileURLToPath } from "node:url";
 import { baseName, costRecord, edgesBetween, foldNames, nodesEnteredFrom, parseCallgrind } from "./lib/callgrind.mjs";
 import { compiledFlags as readCompiledFlags, discardTree, effectiveFlags, markTree } from "./lib/compile-identity.mjs";
 import { caseClosure, splitWithCases } from "./lib/corpus-splits.mjs";
+import { boundarySource, pairReview } from "./lib/pair-review.mjs";
 import { pairingIdentity, pairRatios, proofWorkload, provenPair, validatePairs } from "./lib/corpus-pairs.mjs";
 import {
     BUILD_FLAG_VARIABLES,
@@ -1129,28 +1130,42 @@ function buildCorpus(options, manifest) {
         return emitted.get(key);
     };
     for (const entry of selected) {
-        const modes = [entry.samples, entry.chain, entry.counted, entry.generated].filter(Boolean).length;
+        const modes = [entry.samples, entry.chain, entry.counted, entry.generated, entry.boundary].filter(
+            Boolean
+        ).length;
         if (modes !== 1) {
-            fail(`corpus case ${entry.name} must name exactly one of "samples", "chain", "generated" or "counted"`);
+            fail(
+                `corpus case ${entry.name} must name exactly one of "samples", "chain", "generated", "counted" or "boundary"`
+            );
         }
         const unit = entry.samples ? documentsUnit(entry) : null;
         for (let scale = 1; scale <= options.scale; scale++) {
             const target = (entry.targetBytes ?? manifest.targetBytes) * scale;
-            const built = entry.chain
-                ? chainText(entry.chain, target)
-                : entry.generated
-                  ? generatedText(entry.generated, target)
-                  : entry.counted
-                    ? countedText(entry.counted, partnerUnits(entry.counted.match, scale))
-                    : (() => {
-                          const repeats = Math.max(1, Math.ceil(target / Buffer.byteLength(unit)));
-                          return { text: unit.repeat(repeats), length: repeats };
-                      })();
+            const built = entry.boundary
+                ? (() => {
+                      const source = documents.find((doc) => doc.case === entry.boundary.match && doc.scale === scale);
+                      if (!source) fail(`${entry.name}: boundary source must be generated first`);
+                      return {
+                          text: boundarySource(entry.boundary.cut, fs.readFileSync(source.file, "utf8")),
+                          length: source.units
+                      };
+                  })()
+                : entry.chain
+                  ? chainText(entry.chain, target)
+                  : entry.generated
+                    ? generatedText(entry.generated, target)
+                    : entry.counted
+                      ? countedText(entry.counted, partnerUnits(entry.counted.match, scale))
+                      : (() => {
+                            const repeats = Math.max(1, Math.ceil(target / Buffer.byteLength(unit)));
+                            return { text: unit.repeat(repeats), length: repeats };
+                        })();
             if (entry.generated) emitted.set(`${entry.name}|${scale}`, built.length);
             const file = path.join(directory, `${entry.name}.x${scale}.md`);
             fs.writeFileSync(file, built.text);
             documents.push({
                 case: entry.name,
+                ...(entry.boundary ? { boundary: entry.boundary } : {}),
                 dialect: entry.dialect,
                 gfm: entry.gfm === true,
                 /* The fields this case's tree carries that no reference builds.
@@ -1804,7 +1819,9 @@ export function markdownReport(report) {
      * whatever its `gfm` flag says, a split's `with` half is in no group, and
      * a twin whose dialect half was not measured is in no group either. */
     const roleOf = (item) => {
-        if (item.isomorph) return item.isomorph.proven ? "pair" : "candidate";
+        if (item.isomorph)
+            return item.isomorph.proven ? "pair" : item.isomorph.contract.review ? "reviewed" : "candidate";
+        if (item.boundary) return "boundary-base";
         if (isSplitWith.has(item.case)) return "split-with";
         if (item.gfm) return item.carries.length ? "unranked" : isIsomorph.has(item.case) ? "twin" : "gfm";
         if (item.dialect === "commonmark" && !item.carries.length) {
@@ -1942,6 +1959,8 @@ export function markdownReport(report) {
         lines.push("### Ratio against the reference", "");
         const paired = ranked.filter((item) => roleOf(item) === "pair");
         const candidates = ranked.filter((item) => roleOf(item) === "candidate");
+        const reviewedWorkloads = ranked.filter((item) => roleOf(item) === "reviewed");
+        const diagnostics = [...candidates, ...reviewedWorkloads];
         const bounded = ranked.filter((item) => roleOf(item) === "bound");
         lines.push(
             "Equivalent-work ratios require a domain, reversible source transformation and a structural proof.",
@@ -1949,7 +1968,7 @@ export function markdownReport(report) {
             "formal-pair summary. Candidate substitutions and count witnesses remain diagnostic measurements;",
             "they do not establish grammar isomorphism and are not averaged into equivalent-work results.",
             "",
-            `This run contains ${paired.length} proved-domain pair(s) and ${candidates.length} candidate pair(s).`,
+            `This run contains ${paired.length} proved-domain pair(s) and ${candidates.length} candidate pair(s) and ${reviewedWorkloads.length} reviewed workload(s).`,
             ""
         );
         if (bounded.length) {
@@ -2008,23 +2027,57 @@ export function markdownReport(report) {
         }
         lines.push("");
 
-        if (candidates.length) {
+        if (diagnostics.length) {
             lines.push(
-                "### Candidate pair diagnostics (equivalence unproved)",
+                reviewedWorkloads.length
+                    ? "### Reviewed pair diagnostics and remaining candidates"
+                    : "### Candidate pair diagnostics (equivalence unproved)",
                 "",
                 "These quotients retain the measured data without claiming equivalent work. A/B and B/R are",
                 "suppressed when B carries an unmatched field. A/R remains an arithmetic quotient, not Same-job.",
-                "Candidates are not proofs of impossibility; each row states the missing proof obligation.",
+                "Reviewed rows name a reconstruction or a measured boundary; pending rows remain explicitly unproved.",
                 "",
-                "| Dialect case | Paired input | A Ir | B Ir | R Ir | A/B | B/R | A/R | Pending obligation |",
+                "| Dialect case | Paired input | A Ir | B Ir | R Ir | A/B | B/R | A/R | Review / obligation |",
                 "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |"
             );
-            for (const item of candidates) {
+            for (const item of diagnostics) {
                 const pair = item.isomorph;
                 const q = (value) => (value === null ? "-" : `${value.toFixed(2)}x`);
                 lines.push(
                     `| ${item.case} | ${pair.case} | ${item.coreIr} | ${pair.coreIr} | ${pair.cmarkIr} |` +
-                        ` ${q(pair.grammar)} | ${q(pair.shape)} | ${q(pair.quotient)} | ${pair.contract.pending} |`
+                        ` ${q(pair.grammar)} | ${q(pair.shape)} | ${q(pair.quotient)} | ${pair.contract.review ? pairReview({ case: item.case, isomorph: pair.case, contract: pair.contract }).reason : pair.contract.pending} |`
+                );
+            }
+            lines.push("");
+        }
+
+        const reviewed = declarations
+            .filter((pair) => pair.contract.review)
+            .map((pair) => ({ pair, review: pairReview(pair) }));
+        const boundaryRows = reviewed.filter(
+            ({ pair, review }) => review.baseline && atScaleOne.has(pair.case) && atScaleOne.has(review.baseline)
+        );
+        if (boundaryRows.length) {
+            lines.push(
+                "### Reviewed corpus boundaries",
+                "",
+                "These are controlled whole-document interventions. Delta = Core(full) - Core(without),",
+                "including recognition/construction interaction and byte-length changes. It may be negative;",
+                "it is neither an isolated feature price nor a Same-job quotient. Reconstructed proof domains",
+                "are measured separately and their costs must not be subtracted from the original corpus.",
+                "",
+                "| Original | Boundary baseline | Full Ir | Without Ir | Delta Ir | Delta / original unit | Full/without bytes |",
+                "| --- | --- | ---: | ---: | ---: | ---: | ---: |"
+            );
+            for (const { pair, review } of boundaryRows) {
+                const full = atScaleOne.get(pair.case);
+                const base = atScaleOne.get(review.baseline);
+                if (full.units !== base.units) throw new Error(`${pair.case}: boundary unit count mismatch`);
+                const a = stageIr(full.engines, "markdown-core");
+                const b = stageIr(base.engines, "markdown-core");
+                if (a === null || b === null) continue;
+                lines.push(
+                    `| ${pair.case} | ${review.baseline} | ${a} | ${b} | ${a - b} | ${((a - b) / full.units).toFixed(2)} | ${full.bytes}/${base.bytes} |`
                 );
             }
             lines.push("");
@@ -2189,7 +2242,9 @@ export function markdownReport(report) {
             "| Case | Reference | Ratio | Core Ir/B | Dominant self cost |",
             "| --- | --- | ---: | ---: | --- |"
         );
-        for (const item of ranked.filter((entry) => roleOf(entry) !== "split-with").slice(0, 16)) {
+        for (const item of ranked
+            .filter((entry) => !["split-with", "boundary-base"].includes(roleOf(entry)))
+            .slice(0, 16)) {
             const hot = (item.engines["markdown-core"].hotPaths ?? [])
                 .slice(0, 3)
                 .map((entry) => `\`${entry.name}\` ${(entry.share * 100).toFixed(1)}%`)
@@ -2551,8 +2606,12 @@ function main() {
         corpus: { targetBytes: corpus.targetBytes, cases: corpus.documents.length, digest: corpus.digest },
         pairingDigest: pairingIdentity(
             manifest.pairs,
-            fs.readFileSync(path.join(root, "docs/architecture/benchmark-isomorphism.md"), "utf8"),
-            fs.readFileSync(path.join(root, "scripts/lib/corpus-pairs.mjs"), "utf8")
+            ["benchmark-isomorphism.md", "benchmark-pair-review.md"].map((name) =>
+                fs.readFileSync(path.join(root, "docs/architecture", name), "utf8")
+            ),
+            ["corpus-pairs.mjs", "pair-productions.mjs", "pair-review.mjs", "upstream-cmark.mjs"].map((name) =>
+                fs.readFileSync(path.join(root, "scripts/lib", name), "utf8")
+            )
         ),
         // Record the exact contracts beside the raw measurements.
         pairs: manifest.pairs,

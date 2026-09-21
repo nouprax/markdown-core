@@ -15,6 +15,7 @@
  * the audit, which is the one place a parser is built for them.
  */
 
+import { pairReview } from "./pair-review.mjs";
 import { provenPair } from "./corpus-pairs.mjs";
 
 /** Every case that is one half of a declared workload pair. */
@@ -65,7 +66,17 @@ export function caseClosure(manifest, names) {
     for (let before = -1; before !== wanted.size;) {
         before = wanted.size;
         for (const pair of manifest.pairs ?? []) {
-            if (wanted.has(pair.case)) wanted.add(pair.isomorph);
+            if (wanted.has(pair.case)) {
+                wanted.add(pair.isomorph);
+                if (pair.contract?.review) {
+                    const review = pairReview(pair);
+                    for (const proof of review.proofs) {
+                        const target = manifest.pairs.find((other) => other.contract.proof === proof);
+                        if (target) wanted.add(target.case);
+                    }
+                    if (review.baseline) wanted.add(review.baseline);
+                }
+            }
             if (wanted.has(pair.isomorph)) wanted.add(pair.case);
         }
         for (const split of manifest.splits ?? []) {
@@ -74,7 +85,7 @@ export function caseClosure(manifest, names) {
             }
         }
         for (const name of [...wanted]) {
-            const match = byName.get(name)?.counted?.match;
+            const match = byName.get(name)?.counted?.match ?? byName.get(name)?.boundary?.match;
             if (match) wanted.add(match);
         }
     }

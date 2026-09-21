@@ -12,6 +12,9 @@ import {
 } from "../lib/corpus-pairs.mjs";
 import { parseCanonicalDump, parseUpstreamXml } from "../lib/upstream-cmark.mjs";
 import { markdownReport } from "../benchmark-stages.mjs";
+import { productionProofs, productionWorkload, productionTree } from "../lib/pair-productions.mjs";
+import { boundarySource, pairReviews } from "../lib/pair-review.mjs";
+import { caseClosure } from "../lib/corpus-splits.mjs";
 import { publishesRatio } from "../lib/corpus-splits.mjs";
 
 const manifest = () =>
@@ -32,11 +35,10 @@ test("changing the pairing interpretation changes identity even with identical m
 
 test("every workload has one explicit contract and candidates cannot enter equivalent-work results", () => {
     const declared = manifest();
-    assert.equal(validatePairs(declared).length, 31);
-    assert.deepEqual(
-        declared.pairs.filter(provenPair).map((pair) => pair.case),
-        ["pair-insertion-dialect"]
-    );
+    assert.equal(validatePairs(declared).length, 73);
+    assert.equal(declared.pairs.filter(provenPair).length, 43);
+    assert.equal(declared.pairs.filter((pair) => pair.contract.review).length, 30);
+    assert.equal(declared.pairs.filter((pair) => pair.contract.pending).length, 0);
     const costs = { dialect: 240, common: 160, reference: 100 };
     assert.deepEqual(pairRatios(candidate, costs), {
         proven: false,
@@ -229,4 +231,132 @@ test("reports keep candidates out of formal medians, including filtered candidat
     const candidateOnly = markdownReport(reportFixture([candidate]));
     assert.doesNotMatch(candidateOnly, /\| Dialect, proved domain \|/);
     assert.match(candidateOnly, /\| candidate \| twin \| 200 \| 200 \| 200 \| 1.00x \| 1.00x \| 1.00x \|/);
+});
+
+test("every reviewed pair resolves to measured proof domains and/or a concrete boundary", () => {
+    const declared = manifest();
+    assert.equal(pairReviews.size, 30);
+    assert.equal([...pairReviews.values()].filter((review) => review.baseline).length, 12);
+    for (const pair of declared.pairs.filter((pair) => pair.contract.review)) {
+        const review = pairReviews.get(pair.contract.review);
+        const closure = caseClosure(declared, [pair.isomorph]);
+        assert.ok(review.proofs.length || review.baseline);
+        for (const proof of review.proofs)
+            assert.ok(closure.has(declared.pairs.find((other) => other.contract.proof === proof).case));
+        if (review.baseline) assert.ok(closure.has(review.baseline));
+        assert.equal(provenPair(pair), false);
+    }
+    const broken = manifest();
+    broken.cases = broken.cases.filter((entry) => entry.name !== "boundary-anchor-without");
+    assert.throws(() => validatePairs(broken), /boundary baseline/);
+    const noProof = manifest();
+    noProof.pairs = noProof.pairs.filter((pair) => pair.contract.proof !== "simple-matrix-v1");
+    assert.throws(() => validatePairs(noProof), /missing reconstructed proof/);
+});
+
+test("every production admits varying ordered units and rejects noninvertible or out-of-domain sources", () => {
+    for (const [id, proof] of productionProofs) {
+        const values = proof.unique
+            ? ["999999", "000000", "123456", "111111"]
+            : ["999999", "000000", "123456", "000000"];
+        const render = (template) => values.map((n) => template.replaceAll("{n:6}", n)).join("");
+        const dialect = render(proof.dialect);
+        const common = render(proof.common);
+        const result = productionWorkload(id, dialect, common);
+        assert.deepEqual(
+            result.children.map((node) => node.literal),
+            values,
+            id
+        );
+        assert.throws(() => productionWorkload(id, dialect, common.replace("999999", "999998")), /commute/);
+        assert.throws(() => productionWorkload(id, dialect + "extra", common), /outside/);
+        assert.throws(() => productionWorkload(id, dialect.replaceAll("999999", "1000000"), common), /outside/);
+        assert.throws(() => productionWorkload(id, dialect.replace("***", "**"), common), /outside/);
+        assert.throws(() => productionWorkload(id, "", ""), /commute/);
+    }
+});
+
+test("semantic actions reject payload, order, default-field and ownership changes with unchanged censuses", () => {
+    const id = "opaque-formula-v1";
+    const proof = productionProofs.get(id);
+    const expected = productionWorkload(
+        id,
+        proof.dialect.replaceAll("{n:6}", "000007"),
+        proof.common.replaceAll("{n:6}", "000007")
+    );
+    const tree = parseCanonicalDump(`Document anchor=null attributes={} children=2
+├── Paragraph anchor=null attributes={} children=3
+│   ├── Text anchor=null attributes={} literal="probe " children=0
+│   ├── Formula anchor=null attributes={} mode=embedded literal="body 000007" children=0
+│   └── Text anchor=null attributes={} literal=" end" children=0
+└── ThematicBreak anchor=null attributes={} children=0
+`);
+    assert.deepEqual(productionTree(id, "dialect", tree, expected), expected);
+    for (const mutate of [
+        (t) => (t.children[0].children[1].fields.literal = "body 000008"),
+        (t) => (t.children[0].children[1].fields.mode = "standalone"),
+        (t) => t.children[0].children.reverse(),
+        (t) => (t.children[0].children[1].fields.attributes = "{.unexpected}"),
+        (t) => t.children[1].children.push(t.children[0].children.pop())
+    ]) {
+        const changed = globalThis.structuredClone(tree);
+        mutate(changed);
+        assert.throws(() => productionTree(id, "dialect", changed, expected), /semantic tree mismatch/);
+    }
+});
+
+test("boundaries are controlled interventions and cannot silently measure unchanged or empty hosts", () => {
+    assert.equal(boundarySource("embed", "![[img|100x200]] and ![[img|label]]\n"), "![[img|]] and ![[img|label]]\n");
+    assert.equal(boundarySource("caption", "Table: Caption 2\n| h |\n| --- |\n| v |\n"), "| h |\n| --- |\n| v |\n");
+    assert.equal(boundarySource("metadata", "---\nstate: true\n---\n\nBody.\n"), "Body.\n");
+    assert.throws(() => boundarySource("anchor", "unchanged\n"), /no work/);
+    assert.throws(() => boundarySource("metadata", "---\nstate: true\n---\n\n"), /entire host/);
+    assert.throws(() => boundarySource("invented", "text"), /unknown boundary/);
+});
+
+test("boundary reports keep signed interaction costs separate from formal medians", () => {
+    const original = { case: "pair-anchor-dialect", isomorph: "pair-anchor-common", contract: { review: "anchor" } };
+    const fixture = reportFixture([original]);
+    const baseline = globalThis.structuredClone(fixture.cases[0]);
+    baseline.case = "boundary-anchor-without";
+    baseline.boundary = { match: original.case, cut: "anchor" };
+    baseline.carries = [];
+    baseline.engines["markdown-core"].stages.source_to_buffer = {
+        ...baseline.engines["markdown-core"].stages.source_to_buffer,
+        ir: 300
+    };
+    fixture.cases.push(baseline);
+    const report = markdownReport(fixture);
+    assert.match(report, /Reviewed corpus boundaries/);
+    assert.match(report, /\| pair-anchor-dialect \| boundary-anchor-without \| 200 \| 400 \| -200 \| -200.00 \|/);
+    assert.doesNotMatch(report, /\| Dialect, proved domain \|/);
+    fixture.cases[2].units = 2;
+    assert.throws(() => markdownReport(fixture), /boundary unit count mismatch/);
+});
+
+test("named graph domains reject duplicate definitions and require reference graph evidence", () => {
+    const id = "specimen-graph-v1";
+    const proof = productionProofs.get(id);
+    const dialect = proof.dialect.replaceAll("{n:6}", "000007");
+    const common = proof.common.replaceAll("{n:6}", "000007");
+    assert.throws(() => productionWorkload(id, dialect.repeat(2), common.repeat(2)), /duplicate binding/);
+    const expected = productionWorkload(id, dialect, common);
+    const tree = parseUpstreamXml(
+        `<document><paragraph><text>As </text><<unknown> /><text> shows.</text></paragraph><thematic_break /><<unknown>><paragraph><text>Example 000007.</text></paragraph></<unknown>></document>`
+    );
+    const html = proof.referenceHtml(["000007"]);
+    assert.deepEqual(productionTree(id, "reference", tree, expected, html), expected);
+    assert.throws(() => productionTree(id, "reference", tree, expected), /binding graph mismatch/);
+    for (const changed of [
+        html.replace('href="#fn-spec-000007"', 'href="#fn-spec-000008"'),
+        html.replace('id="fn-spec-000007"', 'id="fn-spec-000008"'),
+        html.replace(">1</a>", ">2</a>"),
+        html.replace('href="#fnref-spec-000007"', 'href="#fnref-spec-000008"')
+    ]) {
+        assert.throws(() => productionTree(id, "reference", tree, expected, changed), /binding graph mismatch/);
+    }
+    assert.equal(
+        boundarySource("specimenstart", "As (@spec-7) shows.\n\n(5@spec-7) Body.\n"),
+        "As (@spec-7) shows.\n\n(@spec-7) Body.\n"
+    );
 });

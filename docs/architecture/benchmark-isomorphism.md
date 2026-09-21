@@ -38,6 +38,9 @@ has exactly one contract:
 
 - `proof`: a registered proof with an independent executable domain recognizer
   and a checked structural projection for Core on both inputs and its reference.
+- `review`: a closed, registered adjudication of an old workload with reconstructed
+  proof domains and, where needed, a source boundary intervention. The original
+  workload stays diagnostic and cannot enter a formal median.
 - `pending`: the specific missing proof obligation. The workload continues to
   be measured and its existing substitution/count witnesses continue to run.
   Pending does not mean disproved or impossible. Prefer repairing the mapping
@@ -124,18 +127,12 @@ and measurement identities separate.
 
 ## Existing workload disposition
 
-All 30 former pairs remain in the registry as candidates, with an individual
-obligation beside each workload. The three substitution samples prove finite
-sample agreement; the other 27 check counts and selected fields/states. Neither
-mechanism establishes a reversible language mapping. No timing evidence is
-discarded, and pending pairs are not reclassified as proved unpairable.
-
-The review order is: delimiters and opaque leaves; ordered containers and
-positional cuts; then fields, declarations and reference graphs. In particular,
-metadata versus a code fence must account for member decoding, sparse grids
-must account for spans and cell ownership, and formula promotion versus a
-reference definition must account for replacement versus binding. A concrete
-AST wrapper alone is never grounds to reject a potential pairing.
+The [pair-by-pair review](benchmark-pair-review.md) closes all 30 former entries:
+18 have reconstructed languages and 12 have explicit source boundaries. Forty-two
+production domains supplement the recursive insertion proof. The originals and
+their substitution/count witnesses remain as diagnostics. Neither old witnesses
+nor a restricted replacement certify the whole old workload. Boundary deltas are
+whole-document interventions, including interactions, not isolated feature costs.
 
 Reports before schema 4 used the former eligibility rule. Their instruction
 counts remain historical measurements; the old 30-pair median must not be
@@ -143,6 +140,6 @@ compared with the new proved-domain median as a performance change. The new
 insertion pair also changes the corpus digest. Remeasure both parser revisions
 on the same corpus and toolchain for a performance comparison.
 Schema 4 also records a pairing-identity digest over the registry, proof document
-and executable contract checker. This identity must match when comparing
+and executable contract checkers, review/boundary definitions and XML adapter. This identity must match when comparing
 summaries: a changed proof status or mapping can change their membership even
 when every measured document's bytes are unchanged.

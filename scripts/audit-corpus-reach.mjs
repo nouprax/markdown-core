@@ -954,6 +954,8 @@ function stateReach(census, manifest) {
     }
     const measured = [];
     const pending = [];
+    const partitioned = [];
+    const reviewed = new Set(manifest.pairs.filter((pair) => pair.contract.review).map((pair) => pair.case));
     const candidates = new Set(manifest.pairs.filter((pair) => pair.contract.pending).map((pair) => pair.case));
     const boundOnly = [];
     const unreached = [];
@@ -962,9 +964,10 @@ function stateReach(census, manifest) {
         if (!reaching.length) unreached.push(state);
         else if (reaching.some((name) => publishes.get(name))) measured.push(state);
         else if (reaching.some((name) => candidates.has(name))) pending.push(state);
+        else if (reaching.some((name) => reviewed.has(name))) partitioned.push(state);
         else boundOnly.push(`${state} -- reached only by ${reaching.sort().join(", ")}`);
     }
-    return { measured, pending, boundOnly, unreached };
+    return { measured, pending, partitioned, boundOnly, unreached };
 }
 
 /* A function only brushed by a guard clause is not a grammar the corpus drives,
@@ -1206,11 +1209,15 @@ process.stdout.write(
         `  referenceless fields ${referenceless.length}, declared by every case that carries one` +
         `${miscarried.length ? ` -- ${miscarried.length} do not` : ""}\n` +
         `  grammar states measured ${states.measured.length}/${Object.keys(stateValidators).length}` +
-        ` (${states.pending.length} reached by candidates, ${states.boundOnly.length} reached only as a bound, ${states.unreached.length} not reached` +
+        ` (${states.pending.length} reached by candidates, ${states.partitioned.length} covered by reviewed partitions, ${states.boundOnly.length} reached only as a bound, ${states.unreached.length} not reached` +
         `${Object.keys(exempt.declared).length ? `, of which ${Object.keys(exempt.declared).length} bound by proof` : ""})\n`
 );
 
 if (options.states) {
+    if (states.partitioned.length)
+        process.stdout.write(
+            `\n  reviewed workload partitions (not equivalent-work states):\n    ${states.partitioned.join("\n    ")}\n`
+        );
     if (states.pending.length)
         process.stdout.write(`\n  equivalence proof pending:\n    ${states.pending.join("\n    ")}\n`);
     if (states.boundOnly.length) {
@@ -1269,11 +1276,15 @@ for (const state of Object.keys(exempt.declared)) {
  * named unpairability argument. A candidate never counts as proved. */
 {
     const missing = Object.keys(stateValidators).filter(
-        (state) => !states.measured.includes(state) && !states.pending.includes(state) && !(state in exempt.declared)
+        (state) =>
+            !states.measured.includes(state) &&
+            !states.pending.includes(state) &&
+            !states.partitioned.includes(state) &&
+            !(state in exempt.declared)
     );
     if (missing.length) {
         failures.push(
-            `these declared grammar states have no comparison, candidate proof obligation or entry in ` +
+            `these declared grammar states have no comparison, reviewed partition, candidate proof obligation or entry in ` +
                 `statesBoundByProof, so the corpus measures them only as bounds and says nowhere why:` +
                 `\n    ${missing.join("\n    ")}`
         );

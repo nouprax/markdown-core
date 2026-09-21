@@ -7,6 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { equalProofTrees, proofTree, proofWorkload, provenPair, validatePairs } from "./lib/corpus-pairs.mjs";
+import { productionProofs } from "./lib/pair-productions.mjs";
+import { boundarySource, pairReview } from "./lib/pair-review.mjs";
 import { parseCanonicalDump, parseUpstreamXml } from "./lib/upstream-cmark.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -125,7 +127,24 @@ function main() {
     for (const pair of manifest.pairs.filter(provenPair)) {
         const scales = fs.readdirSync(corpus).filter((file) => file.startsWith(`${pair.case}.x`));
         if (!scales.length) fail(`${pair.case}: no generated proof workloads`);
-        for (const file of scales) {
+        const trials = [...scales];
+        const production = productionProofs.get(pair.contract.proof);
+        if (production) {
+            const values = production.unique
+                ? ["999999", "000000", "123456"]
+                : ["999999", "000000", "123456", "000000"];
+            for (const [name, template] of [
+                [pair.case, production.dialect],
+                [pair.isomorph, production.common]
+            ]) {
+                fs.writeFileSync(
+                    path.join(corpus, `${name}.domain.md`),
+                    values.map((n) => template.replaceAll("{n:6}", n)).join("")
+                );
+            }
+            trials.push(`${pair.case}.domain.md`);
+        }
+        for (const file of trials) {
             const suffix = file.slice(pair.case.length);
             const input = (name) => path.join(corpus, name + suffix);
             const expected = proofWorkload(
@@ -140,20 +159,53 @@ function main() {
             ]) {
                 const output =
                     side === "reference"
-                        ? execFileSync(cmark, ["-t", "xml", input(name)], { encoding: "utf8", maxBuffer: 1 << 30 })
+                        ? execFileSync(
+                              cases.get(name).gfm ? gfm : cmark,
+                              [
+                                  ...(cases.get(name).gfm ? GFM_EXTENSIONS.flatMap((e) => ["-e", e]) : []),
+                                  "-t",
+                                  "xml",
+                                  input(name)
+                              ],
+                              { encoding: "utf8", maxBuffer: 1 << 30 }
+                          )
                         : execFileSync(DUMP, [input(name)], { encoding: "utf8", maxBuffer: 1 << 30 });
                 const tree = side === "reference" ? parseUpstreamXml(output) : parseCanonicalDump(output);
-                if (!equalProofTrees(proofTree(pair, side, tree), expected)) {
+                const referenceHtml =
+                    side === "reference" && productionProofs.get(pair.contract.proof)?.referenceHtml
+                        ? execFileSync(gfm, [...GFM_EXTENSIONS.flatMap((e) => ["-e", e]), "-t", "html", input(name)], {
+                              encoding: "utf8",
+                              maxBuffer: 1 << 30
+                          })
+                        : undefined;
+                if (!equalProofTrees(proofTree(pair, side, tree, expected, referenceHtml), expected)) {
                     failures.push(`${file}: ${side} output violates ${pair.contract.proof}`);
                 }
             }
         }
         process.stdout.write(
-            `  ${pair.case}: ${pair.contract.proof} (complete ordered trees, ${scales.length} scales)\n`
+            `  ${pair.case}: ${pair.contract.proof} (complete ordered trees, ${scales.length} scales${production ? ", domain extremes" : ""})\n`
+        );
+    }
+    for (const pair of manifest.pairs.filter((pair) => pair.contract.review)) {
+        const review = pairReview(pair);
+        if (review.baseline) {
+            for (const file of fs.readdirSync(corpus).filter((file) => file.startsWith(`${pair.case}.x`))) {
+                const suffix = file.slice(pair.case.length);
+                const source = fs.readFileSync(path.join(corpus, file), "utf8");
+                const baseline = fs.readFileSync(path.join(corpus, review.baseline + suffix), "utf8");
+                if (boundarySource(review.id, source) !== baseline) failures.push(`${file}: boundary source mismatch`);
+                // Parse both complete documents: cuts must remain valid parser workloads.
+                execFileSync(DUMP, [path.join(corpus, file)], { maxBuffer: 1 << 30 });
+                execFileSync(DUMP, [path.join(corpus, review.baseline + suffix)], { maxBuffer: 1 << 30 });
+            }
+        }
+        process.stdout.write(
+            `  reviewed ${review.id}: ${review.outcome}; ${review.proofs.length} proof domains${review.baseline ? `; ${review.baseline}` : ""}\n`
         );
     }
     const brokenSubstitutions = new Set();
-    // Keep the old sample witnesses while their language proofs are pending.
+    // Keep the old sample witnesses after their individual adjudications.
     // Unlike the proved-domain checks above, these counts do not observe order,
     // parentage or payload values and cannot authorize a same-job comparison.
     const elements = manifest.substitutionReference ?? {};
@@ -294,7 +346,7 @@ function main() {
     }
 
     process.stdout.write(
-        `\n  candidate witnesses checked against the reference ${declarations.length - broken.size + substitutions.length - brokenSubstitutions.size}/${declarations.length + substitutions.length}\n`
+        `\n  legacy witnesses checked against the reference ${declarations.length - broken.size + substitutions.length - brokenSubstitutions.size}/${declarations.length + substitutions.length}\n`
     );
     if (failures.length) {
         process.stderr.write(`corpus pair audit FAILED\n    ${failures.join("\n    ")}\n`);

@@ -6,6 +6,9 @@
  */
 import { createHash } from "node:crypto";
 
+import { productionProofs, productionTree, productionWorkload } from "./pair-productions.mjs";
+import { pairReview } from "./pair-review.mjs";
+
 const SPAN_PROOF = "insertion-strong-v1";
 
 /** Interpretation is part of measurement identity even when corpus bytes stay unchanged. */
@@ -27,7 +30,11 @@ export function provenPair(pair) {
     const contract = pair.contract;
     if (!contract || Object.keys(contract).length !== 1) throw new Error(`${pair.case}: one pairing contract required`);
     if (typeof contract.pending === "string" && contract.pending.trim()) return false;
-    if (contract.proof === SPAN_PROOF) return true;
+    if (contract.review) {
+        pairReview(pair);
+        return false;
+    }
+    if (contract.proof === SPAN_PROOF || productionProofs.has(contract.proof)) return true;
     throw new Error(`${pair.case}: unknown or incomplete pairing proof`);
 }
 
@@ -41,13 +48,34 @@ export function validatePairs(manifest) {
             if (!cases.has(name) || seen.has(name)) throw new Error(`${name}: missing or repeated pair half`);
             seen.add(name);
         }
+        if (pair.contract?.review) {
+            const review = pairReview(pair);
+            for (const proof of review.proofs) {
+                if (!manifest.pairs.some((other) => other.contract?.proof === proof))
+                    throw new Error(`${pair.case}: missing reconstructed proof ${proof}`);
+            }
+            if (review.baseline) {
+                const base = cases.get(review.baseline);
+                if (
+                    base?.boundary?.match !== pair.case ||
+                    base.boundary.cut !== review.id ||
+                    base.dialect !== "extended"
+                )
+                    throw new Error(`${pair.case}: missing or invalid boundary baseline`);
+            }
+        }
         const dialect = cases.get(pair.case);
         const reference = cases.get(pair.isomorph);
         if (dialect.dialect !== "extended" || (reference.dialect !== "commonmark" && !reference.gfm)) {
             throw new Error(`${pair.case}: pair must name a dialect input and a reference-language input`);
         }
-        if (provenPair(pair) && (reference.gfm || reference.carries?.length || dialect.carries?.length)) {
-            throw new Error(`${pair.case}: the span proof permits only plain inline content and the cmark reference`);
+        if (
+            provenPair(pair) &&
+            (reference.carries?.length ||
+                dialect.carries?.length ||
+                Boolean(reference.gfm) !== Boolean(productionProofs.get(pair.contract.proof)?.gfm))
+        ) {
+            throw new Error(`${pair.case}: proof requires its declared reference and no unmatched fields`);
         }
     }
     return manifest.pairs;
@@ -138,6 +166,7 @@ export function spanLanguage(source, marker) {
 /** Both recognition and inverse mapping are checked on the actual measured bytes. */
 export function proofWorkload(pair, dialect, common) {
     if (!provenPair(pair)) throw new Error(`${pair.case}: pending proof`);
+    if (productionProofs.has(pair.contract.proof)) return productionWorkload(pair.contract.proof, dialect, common);
     const left = spanLanguage(dialect, "++");
     const right = spanLanguage(common, "**");
     if (
@@ -150,14 +179,17 @@ export function proofWorkload(pair, dialect, common) {
 }
 
 /**
- * No universal kind erasure or arbitrary field ignore list. For this proof
- * only Insertion <-> Strong is renamed. Unrelated kinds and semantic fields
+ * Check semantic output against the independent source derivation. Production
+ * contracts use syntax-directed actions; the recursive span path below renames
+ * only Insertion <-> Strong. Unrelated kinds and semantic fields
  * fail closed; order, nesting and literal content survive the projection.
  * Scope coordinates and child-count printer metadata are outside this proof.
  */
-export function proofTree(pair, side, tree) {
+export function proofTree(pair, side, tree, expected, referenceHtml) {
     if (!provenPair(pair)) throw new Error(`${pair.case}: pending proof`);
     if (!["dialect", "common", "reference"].includes(side)) throw new Error("unknown proof side");
+    if (productionProofs.has(pair.contract.proof))
+        return productionTree(pair.contract.proof, side, tree, expected, referenceHtml);
     const span = side === "dialect" ? "Insertion" : "Strong";
     const out = node("Document");
     const stack = [[tree, out]];
