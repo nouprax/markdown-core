@@ -413,21 +413,21 @@
             "name": "pair-anchor-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "A paragraph carrying its own identifier #anchor-{n}#\n\n",
+                "unit": "> A paragraph carrying its own identifier\n\n#anchor-{n}#\n\n",
                 "scales": "block identifier declarations"
             },
             "carries": ["anchor"],
-            "builds": ["Paragraph"]
+            "builds": ["Callout", "Paragraph"]
         },
         {
             "name": "pair-anchor-common",
             "dialect": "commonmark",
             "counted": {
-                "unit": "A paragraph carrying its own identifier\n\n[anchor-{n}]: #anchor-{n}\n\n",
+                "unit": "> A paragraph carrying its own identifier\n\n[anchor-{n}]: #anchor-{n}\n\n",
                 "match": "pair-anchor-dialect",
                 "scales": "link reference definitions"
             },
-            "builds": ["Paragraph"]
+            "builds": ["Callout", "Paragraph"]
         },
         {
             "name": "pair-specimen-dialect",
@@ -501,7 +501,7 @@
             "name": "pair-xlink-common",
             "dialect": "commonmark",
             "counted": {
-                "unit": "See [](/target-{n}) and [Label {n}](/target-{n}) and [](/target-{n} \"\") and [](/target-{n}#sec-{n}) and [](#local-{n}) here.\n\n",
+                "unit": "See [](/target-{n}) and [](/target-{n} \"Label {n}\") and [](/target-{n} \"\") and [](/target-{n}#sec-{n}) and [](#local-{n}) here.\n\n",
                 "match": "pair-xlink-dialect",
                 "scales": "inline links"
             },
@@ -578,7 +578,7 @@
             "name": "pair-embed-common",
             "dialect": "commonmark",
             "counted": {
-                "unit": "See ![](/diagram-{n}.png) and ![Alt {n}](/diagram-{n}.png) and ![](/diagram-{n}.png) and ![](/diagram-{n}.png) and ![](/diagram-{n}.png) here.\n\n",
+                "unit": "See ![](/diagram-{n}.png) and ![](/diagram-{n}.png \"Alt {n}\") and ![](/diagram-{n}.png \"\") and ![](/diagram-{n}.png) and ![](/diagram-{n}.png) here.\n\n",
                 "match": "pair-embed-dialect",
                 "scales": "images"
             },
@@ -702,7 +702,7 @@
             "name": "pair-tcaption-common",
             "dialect": "commonmark",
             "counted": {
-                "unit": "- Row {n}\n\n  Mid {n}\n\n  Caption {n}\n\n---\n\n",
+                "unit": "- Row {n}\n  Mid {n}\n\n  Caption {n}\n\n---\n\n",
                 "match": "pair-tcaption-dialect",
                 "scales": "loose list continuations"
             },
@@ -818,7 +818,7 @@
             "name": "pair-cdirective-common",
             "dialect": "commonmark",
             "counted": {
-                "unit": "> Body paragraph {n}.\n\n> Body paragraph {n}.\n\n",
+                "unit": ">\n> Body paragraph {n}.\n>\n\n>\n> Body paragraph {n}.\n>\n\n",
                 "match": "pair-cdirective-dialect",
                 "scales": "block quotes"
             },
@@ -837,7 +837,7 @@
             "name": "pair-callout-common",
             "dialect": "extended",
             "counted": {
-                "unit": "- [x] Callout title {n}\n\n- [x] Collapsed title {n}\n\n- [x] Expanded title {n}\n\n",
+                "unit": "- [x] Callout title {n}\n\n* [x] Collapsed title {n}\n\n+ [x] Expanded title {n}\n\n",
                 "match": "pair-callout-dialect",
                 "scales": "task markers"
             },
@@ -871,7 +871,7 @@
             "name": "pair-sparsegrid-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "+---------+---------+\n| h{n:6}           |\n+=========+=========+\n| a{n:6} | b{n:6} |\n+---------+         +\n| c{n:6} | d{n:6} |\n+---------+---------+\n+         +         +\n+=========+=========+\n| f{n:6}           |\n+=========+=========+\n\nTable:\n\n",
+                "unit": "+---------+---------+\n| h{n:6}           |\n+=========+=========+\n| a{n:6} | b{n:6} |\n+---------+         +\n| c{n:6} | d{n:6} |\n+---------+---------+\n+         +         +\n+=========+=========+\n| f{n:6}           |\n+=========+=========+\n\nTable:\n\n---\n\n",
                 "scales": "sparse grid tables"
             },
             "builds": ["Table", "TableCell", "TableCaption"]
@@ -880,7 +880,7 @@
             "name": "pair-sparsegrid-common",
             "dialect": "commonmark",
             "counted": {
-                "unit": "- a{n:6}\n\n- b{n:6}\n\n  d{n:6}\n\n- c{n:6}\n\n- h{n:6}\n\n- f{n:6}\n\n-\n\n-\n\n",
+                "unit": "- a{n:6}\n\n- b{n:6}\n\n  d{n:6}\n\n- c{n:6}\n\n- h{n:6}\n\n- f{n:6}\n\n-\n\n-\n\n---\n\n",
                 "match": "pair-sparsegrid-dialect",
                 "scales": "loose list items"
             },
@@ -1085,31 +1085,46 @@
             "case": "pair-anchor-dialect",
             "isomorph": "pair-anchor-common",
             "counts": {
-                "case": "Paragraph",
-                "isomorph": "Paragraph"
+                "case": "Callout",
+                "isomorph": "Callout"
             },
             "binding": {
                 "declares": "anchor",
                 "sides": ["case"]
             },
-            "claim": "An explicit anchor DECLARES a name and binds it to the block it sits on; a link reference definition declares a name and binds it to a target. Same grammar shape -- one block, one name-to-target binding -- and the same subsequent operation at the level of the language: the name becomes addressable, so `[[Note#^id]]` resolves the one and `[id]` resolves the other. Both are read off the grammars. What each implementation then DOES behind that binding -- when it allocates, what it defers, what it skips -- is not part of the pairing; it is the thing being measured, and a pair rewritten until both engines run the same machinery would read 1.00x and measure nothing. DERIVED anchors are deliberately not paired: a heading whose anchor comes from its own text declares nothing, there is no name in the source to bind, and CommonMark has no production that derives one -- so block-heading has no isomorph and is reported as a bound. The two spellings differ in length, so the pair is generated to an equal COUNT of declarations rather than to equal bytes, and each name is indexed so both sides bind the same number of distinct identifiers.",
+            "claim": "An explicit anchor DECLARES a name and binds it to the block it sits on; a link reference definition declares a name and binds it to a target. Same grammar shape -- one block, one name-to-target binding -- and the same subsequent operation at the level of the language: the name becomes addressable, so `[[Note#^id]]` resolves the one and `[id]` resolves the other. Both are read off the grammars. What each implementation then DOES behind that binding -- when it allocates, what it defers, what it skips -- is not part of the pairing; it is the thing being measured, and a pair rewritten until both engines run the same machinery would read 1.00x and measure nothing. The declaration is spelled as its OWN LINE on both sides, because that is the one shape the two grammars share: block-identifiers.md admits `#name#` as a standalone line after a blank line that binds to the block before it, and a link reference definition is a standalone paragraph-shaped line that binds and leaves no node. The earlier unit carried the anchor as a TRAILER on the paragraph's own line, so the dialect spent one block open per binding while the twin spent two -- one for the paragraph and one for the definition line -- and the pair divided one line of block parsing by two. Now each unit is one block quote holding one paragraph, a blank line, and one declaration line on each side: the same lines, the same block opens, the same tree, one binding. The standalone spelling binds to a container rather than to a paragraph, which is why the block is a block quote; the quote is on both sides, so it lands in Shape and not in Grammar. DERIVED anchors are deliberately not paired: a heading whose anchor comes from its own text declares nothing, there is no name in the source to bind, and CommonMark has no production that derives one -- so block-heading has no isomorph and is reported as a bound. The two spellings differ in length, so the pair is generated to an equal COUNT of declarations rather than to equal bytes, and each name is indexed so both sides bind the same number of distinct identifiers.",
             "perUnit": {
                 "case": {
+                    "Callout": {
+                        "each": 1
+                    },
                     "Paragraph": {
                         "each": 1
                     }
                 },
                 "isomorph": {
+                    "Callout": {
+                        "each": 1
+                    },
                     "Paragraph": {
                         "each": 1
                     }
                 }
             },
             "reference": {
+                "Callout": {
+                    "xml": "block_quote"
+                },
                 "Paragraph": {
                     "xml": "paragraph"
                 }
-            }
+            },
+            "alsoCounts": [
+                {
+                    "case": "Paragraph",
+                    "isomorph": "Paragraph"
+                }
+            ]
         },
         {
             "case": "pair-specimen-dialect",
@@ -1218,7 +1233,7 @@
                 "case": "CrossLink",
                 "isomorph": "Link"
             },
-            "claim": "A cross link and an empty-text inline link are the same production: fixed bracket delimiters around a body that is NOT parsed as inline, producing one leaf node that stores the body as a destination and has no children. Neither resolves it -- the cross-link spec is explicit that the parser stores the strings and the application finds the resource, and an inline link's destination is likewise stored, not looked up -- so the subsequent operation matches too. The empty text is deliberate: a cross link has no inline body, and pairing it against a link that did have one would hand the reference an inline parse this side never performs. Not the same length, so the pair is generated to an equal COUNT. Each unit carries all five spellings the grammar admits -- bare, labelled, labelled-empty, anchored and current-document -- against five links, so every state of the cross-link's label and destination has a same-job number rather than one of them standing for the rest. The twin carries an empty TITLE where the dialect carries an empty LABEL, which is the same question asked of each grammar's own optional raw run. Where the work is genuinely unequal and stated rather than hidden: the dialect reads the label as a FIELD where the reference parses it as inline CONTENT, so the twin builds text nodes the dialect does not, and the dialect reads an anchor the reference leaves inside the destination string.",
+            "claim": "A cross link and an empty-text inline link are the same production: fixed bracket delimiters around a body that is NOT parsed as inline, producing one leaf node that stores the body as a destination and has no children. Neither resolves it -- the cross-link spec is explicit that the parser stores the strings and the application finds the resource, and an inline link's destination is likewise stored, not looked up -- so the subsequent operation matches too. The empty text is deliberate: a cross link has no inline body, and pairing it against a link that did have one would hand the reference an inline parse this side never performs. Not the same length, so the pair is generated to an equal COUNT. Each unit carries all five spellings the grammar admits -- bare, labelled, labelled-empty, anchored and current-document -- against five links, so every state of the cross-link's label and destination has a same-job number rather than one of them standing for the rest. The label is a FIELD: cross-links.md stores it as a raw string and never parses it as inline content. Its twin is therefore the link TITLE, which is the reference grammar's own optional raw run inside the link's delimiters, stored on the node as a field -- `[[target|Label]]` against `[](/target \"Label\")`, and `[[target|]]` against `[](/target \"\")`, the empty label against the empty title. An earlier twin spelled the labelled form as `[Label](/target)`, which parses the label as inline CONTENT and builds a Text node under the link; that handed the reference an inline parse and a node the dialect never has, and left the populated label the one spelling whose twin had a different shape from the empty one. Both sides are now childless leaves at every spelling, and the two trees have the same node count. Where the work is genuinely unequal and stated rather than hidden: the dialect reads an anchor out of the destination where the reference leaves it inside the destination string.",
             "demonstrates": {
                 "case": [
                     "crossLink.label.null",
@@ -1229,7 +1244,7 @@
                     "destination.cross.anchor.null",
                     "destination.cross.anchor.value"
                 ],
-                "isomorph": ["link.title.null", "link.title.empty", "escaping.empty-string"]
+                "isomorph": ["link.title.null", "link.title.empty", "link.title.value", "escaping.empty-string"]
             },
             "perUnit": {
                 "case": {
@@ -1340,7 +1355,7 @@
                 "case": "CrossEmbedded",
                 "isomorph": "Embedded"
             },
-            "claim": "A cross embed and an image are the same production: a `!` sigil immediately before a bracket-delimited destination that is NOT parsed as inline content, producing one leaf inline that stores the destination and has no children. The alt text is deliberately empty on the reference side -- a cross embed has no inline body, so an image that carried one would hand the reference an inline parse this side never performs, and with it empty both sides build a childless leaf. Neither resolves the destination: the cross-link spec says the parser stores the strings and the application finds the resource, and an image's destination is likewise stored. Not the same length, so the pair is generated to an equal COUNT. Each unit carries all five spellings -- bare, labelled, labelled-empty, one dimension and two -- against five images. The reference has no dimension suffix at all, so those two units are the dialect reading a raw run the reference never looks for; that is the measurement and it is why `crossEmbedded.dimensions.width` and `.width-height` have a ratio here instead of a bound. The label is the mirror of it: a FIELD on this side and inline CONTENT on the reference's, so the twin builds text nodes the dialect does not.",
+            "claim": "A cross embed and an image are the same production: a `!` sigil immediately before a bracket-delimited destination that is NOT parsed as inline content, producing one leaf inline that stores the destination and has no children. The alt text is empty on the reference side at every spelling -- a cross embed has no inline body, so an image that carried one would hand the reference an inline parse this side never performs, and with it empty both sides build a childless leaf. Neither resolves the destination: the cross-link spec says the parser stores the strings and the application finds the resource, and an image's destination is likewise stored. Not the same length, so the pair is generated to an equal COUNT. Each unit carries all five spellings -- bare, labelled, labelled-empty, one dimension and two -- against five images. The label is a FIELD, stored raw and never parsed as inline content, so its twin is the image TITLE, the reference grammar's own optional raw run stored on the node: `![[img|Alt]]` against `![](/img \"Alt\")`, and `![[img|]]` against `![](/img \"\")`. An earlier twin spelled the labelled form as `![Alt](/img)`, which parses the alt as inline content and builds a Text node the dialect never builds; the two trees now have the same node count. The reference has no dimension suffix at all, so those two units are the dialect reading a raw run the reference never looks for; that is the measurement and it is why `crossEmbedded.dimensions.width` and `.width-height` have a ratio here instead of a bound.",
             "demonstrates": {
                 "case": [
                     "crossEmbedded.label.null",
@@ -1350,7 +1365,7 @@
                     "crossEmbedded.dimensions.width",
                     "crossEmbedded.dimensions.width-height"
                 ],
-                "isomorph": ["embedded.dimensions.null", "embedded.title.null"]
+                "isomorph": ["embedded.dimensions.null", "embedded.title.null", "embedded.title.value"]
             },
             "perUnit": {
                 "case": {
@@ -1543,7 +1558,7 @@
             "absent": {
                 "case": ["Paragraph"]
             },
-            "claim": "The TRAILING table caption and a loose list item's continuation are the same production: a construct that a BLANK LINE DOES NOT CLOSE, absorbing the next line that matches its own continuation rule as a child holding inline content. A blank line closes every other leaf and container in CommonMark; a list is the exception, and this table is the dialect's. The continuation rules differ -- the caption's is the `: ` marker, the list item's is the content indent -- and that is what the pair measures. The earlier proof is the same one withdrawn for the leading form, and it was wrong here for a different reason: it said neither grammar adopts a FINISHED neighbouring block, but neither construct is finished at the blank line. The table is not done until the optional caption is resolved, exactly as a list is not done until a line arrives that is not one of its items. Both sides carry a thematic break to end the construct, and the twin carries three blocks per item against the table's three inline-bearing lines so the inline work matches. What holds the dialect side is the `absent` declaration: a caption line that went unread is a Paragraph, and this document must build none. The twin cannot be held the same way -- a list item holds Paragraphs whether or not it absorbed anything -- so the absence is declared per side rather than for both. The twin is held by its list being LOOSE. If the continuation lines stopped being absorbed they would become siblings of the list, leaving one item with one block and no blank line inside it -- a TIGHT list -- while the List, ListItem and ThematicBreak counts all stayed exactly as declared. `list.tight.false` is the state that cannot survive that, so the pair names it.",
+            "claim": "The TRAILING table caption and a loose list item's continuation are the same production: a construct that a BLANK LINE DOES NOT CLOSE, absorbing the next line that matches its own continuation rule as a child holding inline content. A blank line closes every other leaf and container in CommonMark; a list is the exception, and this table is the dialect's. The continuation rules differ -- the caption's is the `: ` marker, the list item's is the content indent -- and that is what the pair measures. The earlier proof is the same one withdrawn for the leading form, and it was wrong here for a different reason: it said neither grammar adopts a FINISHED neighbouring block, but neither construct is finished at the blank line. The table is not done until the optional caption is resolved, exactly as a list is not done until a line arrives that is not one of its items. Both sides carry a thematic break to end the construct. The unit is shaped so the measured production fires ONCE per unit on each side: the table is three contiguous lines, a blank line, and one absorbed caption line; the item is two contiguous lines under one paragraph, a blank line, and one absorbed continuation line. An earlier twin put a blank line between every pair of the item's three lines, so it survived two blank lines per unit against the table's one and the pair divided one absorption by two; the contiguous second line now enters through the item's ordinary per-line continuation, as the table's second row enters through its own. Three inline-bearing lines stand against three, and the two units build the same number of nodes. What holds the dialect side is the `absent` declaration: a caption line that went unread is a Paragraph, and this document must build none. The twin cannot be held the same way -- a list item holds Paragraphs whether or not it absorbed anything -- so the absence is declared per side rather than for both. The twin is held by its list being LOOSE. If the continuation line stopped being absorbed it would become a sibling of the list, leaving one item with one block and no blank line inside it -- a TIGHT list -- while the List, ListItem and ThematicBreak counts all stayed exactly as declared. `list.tight.false` is the state that cannot survive that, so the pair names it.",
             "demonstrates": {
                 "isomorph": ["list.tight.false"]
             },
@@ -1836,7 +1851,7 @@
                     "isomorph": "Paragraph"
                 }
             ],
-            "claim": "A container directive and a block quote are the same production: a CONTAINER BLOCK -- a start condition, a per-line continuation condition, and contents parsed as BLOCKS. CommonMark defines that category itself and puts the block quote and the list item in it; the container directive is a third member of it. What differs is which continuation condition: a block quote continues while its lines carry the marker, a directive continues until its closing fence. That is the thing being measured. The pair counts Paragraph alongside the container because block parsing of the contents is the second half of the criterion and 50 against 50 per 50 units is what shows it matches. The earlier refusal said CommonMark's only FENCE opens a leaf, which compares the fence construct rather than the container production -- the reference here is not the fenced code block, it is the block quote. What the reader should discount for: a fenced container spends two delimiter lines per unit where a prefix container spends none, so at equal COUNT the dialect document is about three times the lines. That is the cost of the grammar rather than a hidden inequality, and it is why the pair is sized by count and says so.",
+            "claim": "A container directive and a block quote are the same production: a CONTAINER BLOCK -- a start condition, a per-line continuation condition, and contents parsed as BLOCKS. CommonMark defines that category itself and puts the block quote and the list item in it; the container directive is a third member of it. What differs is which continuation condition: a block quote continues while its lines carry the marker, a directive continues until its closing fence. That is the thing being measured. The pair counts Paragraph alongside the container because block parsing of the contents is the second half of the criterion and 50 against 50 per 50 units is what shows it matches. The earlier refusal said CommonMark's only FENCE opens a leaf, which compares the fence construct rather than the container production -- the reference here is not the fenced code block, it is the block quote. A fenced container spends an opening line and a closing line that carry no content; the twin spends the same two lines as marker-only lines of the quote, `>` alone before and after the body, which the block quote grammar admits as lines of the container that hold a blank line and build nothing. So each container is three lines on both sides, one of them content, and the same tree comes out: an earlier twin spelled the quote as its body line alone, which put one line of block parsing against three and let the fence lines read as grammar cost when they are the container's lines like any other. The pair is still sized by count, since the units are not the same bytes.",
             "demonstrates": {
                 "case": ["directiveBlock.name.null", "markup.attributes.classes"]
             },
@@ -1881,7 +1896,7 @@
                 },
                 "sides": ["case", "isomorph"]
             },
-            "claim": "A callout marker and a GFM task marker are the same production: a bracketed token at the START of a container's first line, taken out of the content and kept as a FIELD, with the rest of that line parsed as inlines owned by the container. `[!note]` on a block quote's first line becomes the callout's variant; `[x]` on a list item's first line becomes the item's marker. Counting alone would prove nothing here, because a callout whose `[!note]` went unread is still a block quote and a list item whose `[x]` went unread is still a list item -- so the pair names the binding on BOTH sides, each under the field name its own kind uses, and the audit checks that every node of the counted kind carries it. That the dialect puts the remaining inlines in a Title group where the list item wraps them in a Paragraph is node materialisation, which is never grounds to refuse. Without this pair the dialect callout form was a bound: its syntax is a CommonMark block quote and its tree is not, so a reference on the same bytes built a different tree.",
+            "claim": "A callout marker and a GFM task marker are the same production: a bracketed token at the START of a container's first line, taken out of the content and kept as a FIELD, with the rest of that line parsed as inlines owned by the container. `[!note]` on a block quote's first line becomes the callout's variant; `[x]` on a list item's first line becomes the item's marker. Counting alone would prove nothing here, because a callout whose `[!note]` went unread is still a block quote and a list item whose `[x]` went unread is still a list item -- so the pair names the binding on BOTH sides, each under the field name its own kind uses, and the audit checks that every node of the counted kind carries it. That the dialect puts the remaining inlines in a Title group where the list item wraps them in a Paragraph is node materialisation, which is never grounds to refuse. The three items of a unit use three DIFFERENT bullet characters, because CommonMark makes a change of bullet start a new list: each item is then its own list, a top-level block that the blank line after it closes, exactly as each callout is its own block quote that the blank line closes. With one bullet character the whole twin was a single loose list -- every item a child of one node, joined across the blank lines by the list's continuation rule -- while the dialect was thousands of sibling blocks under the document, so the twin carried an extra container level, one node with thousands of children, and a per-item continuation question the callout never asks. Without this pair the dialect callout form was a bound: its syntax is a CommonMark block quote and its tree is not, so a reference on the same bytes built a different tree.",
             "demonstrates": {
                 "case": [
                     "callout.variant.value",
@@ -1973,6 +1988,10 @@
                 {
                     "case": "Text",
                     "isomorph": "Text"
+                },
+                {
+                    "case": "ThematicBreak",
+                    "isomorph": "ThematicBreak"
                 }
             ],
             "demonstrates": {
@@ -1988,7 +2007,7 @@
                     "table.column.relative.value"
                 ]
             },
-            "claim": "The SPARSE grid table, cell for cell against the same loose list item pair-gridcell-dialect uses and for the same reason: a per-line positional cut at a width established by an earlier line, whose joined remainders are parsed as BLOCKS. Where that pair carries one plain cell, this one carries every cell shape the grammar admits -- a cell spanning two rows, a cell spanning two columns, a cell with no content at all, a row with no cells, a populated foot and an empty caption -- against seven list items of which two are empty and one holds two blocks, so the cells, the blocks and the inline runs all match: 7 cells, 6 paragraphs and 6 text nodes per unit on each side. Reading the two ratios together is what separates the cost of the SPANS from the cost of the cut: everything else about the two pairs is the same production against the same reference. The index is six digits wide and the columns are sized for it, because `padStart` never truncates: an index that outgrew its placeholder would write one character too many, the row would stop closing at the border, and the table would quietly become a paragraph at a scale the x1 audit never reads. The generator refuses that outright now.",
+            "claim": "The SPARSE grid table, cell for cell against the same loose list item pair-gridcell-dialect uses and for the same reason: a per-line positional cut at a width established by an earlier line, whose joined remainders are parsed as BLOCKS. Where that pair carries one plain cell, this one carries every cell shape the grammar admits -- a cell spanning two rows, a cell spanning two columns, a cell with no content at all, a row with no cells, a populated foot and an empty caption -- against seven list items of which two are empty and one holds two blocks, so the cells, the blocks and the inline runs all match: 7 cells, 6 paragraphs and 6 text nodes per unit on each side. Reading the two ratios together is what separates the cost of the SPANS from the cost of the cut: everything else about the two pairs is the same production against the same reference. The index is six digits wide and the columns are sized for it, because `padStart` never truncates: an index that outgrew its placeholder would write one character too many, the row would stop closing at the border, and the table would quietly become a paragraph at a scale the x1 audit never reads. The generator refuses that outright now. Each unit ends in a thematic break on both sides, so that one table faces one list: a grid table closes at its border, but list items separated by blank lines are ONE loose list, and without the break every unit's seven items joined the previous unit's into a single list of thousands of children under one node while the dialect built one table per unit as a sibling of the document. The break is the same node on both sides and is counted, so it cannot tilt the pair.",
             "perUnit": {
                 "case": {
                     "TableCell": {
@@ -1999,6 +2018,9 @@
                     },
                     "Text": {
                         "each": 6
+                    },
+                    "ThematicBreak": {
+                        "each": 1
                     }
                 },
                 "isomorph": {
@@ -2010,6 +2032,9 @@
                     },
                     "Text": {
                         "each": 6
+                    },
+                    "ThematicBreak": {
+                        "each": 1
                     }
                 }
             },
@@ -2022,6 +2047,9 @@
                 },
                 "Text": {
                     "xml": "text"
+                },
+                "ThematicBreak": {
+                    "xml": "thematic_break"
                 }
             }
         },
