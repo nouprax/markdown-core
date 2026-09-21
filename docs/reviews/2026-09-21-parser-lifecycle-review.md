@@ -196,11 +196,21 @@ and source-list audits remain the integration gates.
 | [#358](https://github.com/nouprax/markdown-core/issues/358) | Already completed by #360. Preserve bounded numeral scanning and conditional memo release; existing adversarial tests pass. |
 | [#359](https://github.com/nouprax/markdown-core/issues/359) | Persistent consumed-prefix fact and explicit content-map value, including all other mapping consumers. |
 | [#360](https://github.com/nouprax/markdown-core/pull/360) | Treat as the integrated baseline, not pending work. Audit and preserve its dispatch/finish/gate invariants. |
-| [#361](https://github.com/nouprax/markdown-core/pull/361) | Current corrected corpus is authoritative, with #364 applied. No comparisons against mixed corpus identities. |
+| [#361](https://github.com/nouprax/markdown-core/pull/361) | Preserve the corrected measurements, with #364 and the proof-domain review in #366 applied. Rebuild both revisions on the current corpus; no comparisons against mixed corpus identities. |
 | [#362](https://github.com/nouprax/markdown-core/pull/362) | Retain slab ownership and its regression coverage. Its measured improvement must not be claimed again for this change. |
 | [#363](https://github.com/nouprax/markdown-core/issues/363) | Historical map measured primarily at `6cd9a7d`; distinguish confirmed costs from candidates and preserve its measurement caveats. Address shared ownership costs and unnecessary grow calls; do not assert an unmeasured new Ir ratio. |
 
-## Verification and limits
+## Initial verification snapshot (`5e37274`, before #366)
+
+The measurements in this section were captured for the initial PR revision
+`5e37274` against `5a154070`, using the old 268-document corpus and 20-byte
+geometry records. They predate the follow-up's 12-byte geometry, input workspace
+initialization and completed construction decisions. They are historical
+diagnostics, not measurements of the current head. The PR description and
+required CI benchmark publish the current 464-document comparison, rebuilt
+against main with #366's proof and boundary contracts. Read its full parse-path
+and outside-stage counts alongside the two stages; initial index reservation
+is now part of parser initialization rather than the source stage.
 
 The repair adds deterministic geometry, metadata rejection, workspace reuse,
 stateful containment, rejected-token ownership, consumed-prefix and normalized
@@ -225,13 +235,14 @@ current corpus pair/reach audits. The CommonMark and GFM parity gates pass
 Installed oracle checkouts are the repository-pinned cmark and cmark-gfm commits.
 
 A local diagnostic substituted the same allocator seam in the baseline and
-final Release static libraries. It counted allocation/reallocation calls and
+initial PR Release static libraries. It counted allocation/reallocation calls and
 peak requested live bytes for parse and document disposal, excluding the input
 buffer and canonical dump. Across those same 268 corpus files, calls decreased
 from 4,423,051 to 4,129,242 (6.64%); final live bytes were zero for every file.
-Representative scale-2 cases show both the benefit and the retained-index cost:
+Representative scale-2 cases show both the benefit and the retained-index cost
+of that initial snapshot:
 
-| Corpus case | Allocation calls, baseline → final | Peak requested bytes, baseline → final |
+| Corpus case | Allocation calls, baseline → initial PR | Peak requested bytes, baseline → initial PR |
 | --- | ---: | ---: |
 | `block-table-grid` | 28,807 → 8,872 | 4,931,098 → 5,052,138 |
 | `block-table-simple` | 27,177 → 11,519 | 7,776,218 → 8,008,490 |
@@ -244,15 +255,16 @@ Representative scale-2 cases show both the benefit and the retained-index cost:
 These are allocation diagnostics, not timings, RSS measurements, or a universal
 memory improvement. The empty-metadata case is particularly explicit: removing
 per-key allocation still retains physical geometry, so its peak rises by 17%.
-The final compact index reduces that case from the intermediate layout's
+Separating geometry from optional facts reduced that case from the intermediate layout's
 869,514 bytes to 246,946. Code-only inputs also retain the new physical index;
 the shown case grows by 66%. Optional facts are absent when no grammar or
 normalization query needs them. Deterministic tests gate scan work, scratch reuse and ownership rather than
 encoding these corpus-specific counts as implementation branches.
 
 The host is macOS arm64, using Apple Clang 21 and Swift 6.3.1; the repository's
-CI pins are not replaced by those local versions. Linux Callgrind was not run,
-so neither a speedup nor a new instruction ratio is claimed. Kotlin platform
+CI pins are not replaced by those local versions. Linux Callgrind was not run
+for this initial local snapshot, so it claims neither a speedup nor a new
+instruction ratio. Kotlin platform
 tests and an ES/Wasm rebuild require host toolchains not present in this
 session; static binding/projection review and Swift execution do not stand in
 for those runtime matrix jobs. The full packaging/toolchain verification
