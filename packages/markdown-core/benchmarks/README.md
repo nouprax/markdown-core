@@ -338,7 +338,7 @@ Each entry there carries its own claim, which is what the report quotes:
 | Dialect | Isomorph | Reference | What is the same |
 | --- | --- | --- | --- |
 | `A block #name#` | `[name]: #name` | `cmark` | one block, one name-to-target binding, entering a table of names |
-| `[body]{.c}` | `[body](/c)` | `cmark` | bracket, inline body, bracket, raw paired-delimiter suffix decoded into the node |
+| `[body]{.c}`, `[body]{kk="v"}` | `[body](/c)`, `[body](/c "v")` | `cmark` | bracket, inline body, bracket, raw paired-delimiter suffix of one member decoded into the node: one raw string, or a name and a quoted value against a destination and a quoted title |
 | `[[target]]` | `[](/target)` | `cmark` | fixed delimiters, raw body not parsed as inline, one leaf holding a destination, no lookup |
 | `![[img.png]]` | `![](/img.png)` | `cmark` | the same, with the embedding prefix in front of it |
 | `(@label) body` | `[^label]: body` | `cmark-gfm` | a labelled opener owning block content, leaving ordinary content for a side list |
@@ -583,17 +583,20 @@ rather than a count: a floor on how many states are measured passes a change
 that loses one and gains another, which is exactly the silent regression a floor
 is written to catch.
 
-**It stands at 128 of 131, and the other three cannot be closed.** They are
+**It stands at 129 of 131, and the other two cannot be closed.** They are
 reachable only through a construct this corpus has *proved* unpairable — an
-inline footnote's content, a specimen definition with no label, and an
-attribute list's keyed records — so no case can measure them against a
-reference, because no reference production of that shape exists to write one
-against. The third was not a bound until this was written: it had a same-job
-number from a pair that put `{key=value .cls}` on an inline directive against a
-title on an image, which is two productions in one row, and the number said
-nothing about either. Its cost is measured now where it can be — alone, against
-lexbor, and in place, as a [split](#splitting-a-corpus-the-remainder-inside-its-hosts) — and neither of those is a
-same-job ratio, so the ratchet counts it as what it is. Each is declared in `statesBoundByProof`
+inline footnote's content and a specimen definition with no label — so no case
+can measure them against a reference, because no reference production of that
+shape exists to write one against. The attribute list's records were nearly a
+third: `markup.attributes.records` had a same-job number from a pair that put
+`{key=value .cls}` on an inline directive against a title on an image, which is
+two productions in one row, and the number said nothing about either. It has
+one now from the span pair at one member — `{kk="v"}` against `(/c "v")`, a
+name and a quoted value against a destination and a quoted title, as `{.c}`
+against `(/c)` measures the class member — and what remains unpairable is the
+list itself, the repetition of members, measured alone against lexbor and in
+place as a [split](#splitting-a-corpus-the-remainder-inside-its-hosts), neither
+of which is a same-job ratio and neither of which is a state. Each of the two is declared in `statesBoundByProof`
 against the `unpairable` entry that binds it, and the audit checks that
 declaration in both directions: the proof must exist, and the state must really
 still be a bound. A state the corpus learns to measure loses its exemption in
@@ -643,7 +646,7 @@ the next proof has to get past them:
 | a container category with a start condition, a continuation condition and block contents | the container directive pairs |
 | a bracketed token at the start of a container's first line taken into a field — GFM's task marker | the callout pairs |
 | a paragraph annihilated into a declaration — CommonMark's link reference definition | the anchor pair works at all |
-| a scan over `name=value` attributes to decide that a run is a tag — raw HTML, which then keeps the run as one literal and decodes nothing | the keyed attribute list is proved unpairable by an enumeration that names it, and is measured as a [split](#splitting-a-corpus-the-remainder-inside-its-hosts) |
+| a scan over `name=value` attributes to decide that a run is a tag — raw HTML, which then keeps the run as one literal and decodes nothing | a class member and a record member each pair at one member inside the span pair; the list's repetition of members is proved unpairable by an enumeration that names it, and is measured as a [split](#splitting-a-corpus-the-remainder-inside-its-hosts) |
 
 **What is never a reason to refuse a pair** is that the two sides materialise
 different numbers of nodes. That is reasoning off the implementations, which is
@@ -883,8 +886,8 @@ one dump it takes of each document:
   any: the states are what the remainder demonstrates in every host, and a host
   reaching one on its own would make the difference something other than that
   state's price. Whether a state is a bound is the ratchet's question, not this
-  one — `markup.attributes.classes` is demonstrated here and keeps its same-job
-  number through the span pair;
+  one — both attribute states are demonstrated here and keep their same-job
+  numbers through the span pair, one member each;
 - the nodes carrying a populated field are exactly `each` per unit on the
   `with` side, every one of them of the kind the host names, and none on the
   `without` side, which is what says the remainder landed on every host node,
@@ -904,10 +907,12 @@ number here.
 
 ## The attribute grammar, against lexbor
 
-Attributes are the production the pairs cannot reach: `{#lane .stage k="v"}`
-builds a map, and no reference production decodes a delimited run into a map —
-`corpus.json` carries the enumeration under `unpairable` — so there is nothing
-in cmark or cmark-gfm to pair it with. The stage benchmark bounds it, and the
+Attributes are the production the pairs reach one member at a time:
+`{#lane .stage k="v"}` decodes into an anchor, classes and ordered records, a
+single member pairs against a link's suffix, and no reference production
+decodes a delimited list of repeated members — `corpus.json` carries the
+enumeration under `unpairable` — so the list has nothing in cmark or cmark-gfm
+to pair with. The stage benchmark bounds it, and the
 bound it reports on `inline-span` is mostly the inline parser around the
 attributes rather than the attributes; it also measures the list *in place*,
 as the [split](#splitting-a-corpus-the-remainder-inside-its-hosts) above, which
