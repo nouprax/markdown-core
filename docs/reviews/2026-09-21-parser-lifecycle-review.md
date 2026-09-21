@@ -53,6 +53,7 @@ The follow-up review closes the originally omitted construction boundaries:
 | Construction boundary | Proof / retained decision |
 | --- | --- |
 | `blocks.c:add_child` | `block_parent_for` selects and validates the parent; commit does not repeat its policy. |
+| Ordinary paragraph opening | Selects its parent before probing a detached identifier line, then calls the shared validated block constructor. It does not repeat the parent search. Exhausting the ancestry reports semantic refusal before allocating a child. |
 | `inlines.c:markdown_core_inline_parse_inline` | Fixed inline owners admit their grammar's token kinds; Debug/ASan checks the shared built-in rule. A dynamic callback is still evaluated for each constructed token because hooks can change it and policies may depend on current children. This is a first decision, not a replay or a cached owner-wide answer. |
 | `table.c:table_child` | The only attached pairs are fixed-element Table/Row and Row/Cell; caption construction has no parent. Both kind pairs and the element owner are asserted. |
 | Table lead paragraph | The destination is the converted table's parent, not the table. Acceptance for a new paragraph sibling is decided before conversion/allocation. Refusal leaves the original paragraph intact. |

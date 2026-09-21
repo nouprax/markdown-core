@@ -698,6 +698,10 @@ markdown_core_node *markdown_core_block_parent_for(markdown_core_parser *parser,
     // if 'parent' isn't the kind of node that can accept this child,
     // then back up til we hit a node that can.
     while (!markdown_core_node_can_contain_type(parent, block_type)) {
+        if (!parent->parent) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED);
+            return NULL;
+        }
         parent = markdown_core_block_finalize(parser, parent);
     }
     return parent;
@@ -707,7 +711,13 @@ markdown_core_node *markdown_core_block_parent_for(markdown_core_parser *parser,
 markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_node *parent,
                                                    markdown_core_node_type block_type, int start_column) {
     parent = markdown_core_block_parent_for(parser, parent, block_type);
+    return parent ? markdown_core_parser_add_child_validated(parser, parent, block_type, start_column) : NULL;
+}
 
+/* A selected parent is a semantic decision, not a hint to repeat the search. */
+markdown_core_node *markdown_core_parser_add_child_validated(markdown_core_parser *parser, markdown_core_node *parent,
+                                                             markdown_core_node_type block_type, int start_column) {
+    assert(parent);
     markdown_core_node *child =
         make_block(parser, block_type, parser->line_number,
                    markdown_core_parser_source_column(parser, parser->line_number, start_column));

@@ -59,4 +59,7 @@ bool markdown_core_block_continue_indented(markdown_core_parser *parser, markdow
 void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *input, markdown_core_parser *parser);
 markdown_core_node *markdown_core_block_parent_for(markdown_core_parser *parser, markdown_core_node *parent,
                                                    markdown_core_node_type kind);
+/* Commit a parent selected by block_parent_for without repeating its policy. */
+markdown_core_node *markdown_core_parser_add_child_validated(markdown_core_parser *parser, markdown_core_node *parent,
+                                                             markdown_core_node_type kind, int start_column);
 #endif

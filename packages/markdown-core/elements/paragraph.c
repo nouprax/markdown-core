@@ -61,12 +61,15 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
 markdown_core_node *markdown_core_paragraph_open_text(markdown_core_parser *parser, markdown_core_node *container,
                                                       markdown_core_chunk *input) {
     container = markdown_core_block_parent_for(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH);
+    if (!container) {
+        return NULL;
+    }
     parser->current = container;
     if (markdown_core_block_attach_identifier_line(parser, container, input) || parser->error) {
         return NULL;
     }
-    container =
-        markdown_core_parser_add_child(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH, parser->first_nonspace + 1);
+    container = markdown_core_parser_add_child_validated(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH,
+                                                         parser->first_nonspace + 1);
     if (container) {
         markdown_core_block_advance_offset(parser, input, parser->first_nonspace - parser->offset, false);
     }

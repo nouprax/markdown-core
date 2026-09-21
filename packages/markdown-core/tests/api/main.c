@@ -7305,6 +7305,31 @@ static void table_candidates_reuse_scratch(test_batch_runner *runner) {
 /* One semantic decision authorizes one commit. A stateful predicate that
  * accepts only the first link must not be consulted again after allocation. */
 static void parser_attachment_commits_one_decision(test_batch_runner *runner) {
+    conversion_policy paragraph_policy = {MARKDOWN_CORE_NODE_PARAGRAPH, 0, 1};
+    payload_probe_arm();
+    markdown_core_node *paragraph_root =
+        markdown_core_parse_document_with_setup("plain\n", 6, configure_conversion_policy, &paragraph_policy);
+    OK(runner, paragraph_root && count_kind(paragraph_root, MARKDOWN_CORE_NODE_PARAGRAPH) == 1,
+       "a paragraph commits its already selected parent");
+    INT_EQ(runner, paragraph_policy.allowed, 0, "paragraph parent selection consumes one acceptance");
+    INT_EQ(runner, paragraph_policy.rejections, 0, "paragraph construction never repeats parent selection");
+    markdown_core_node_free(paragraph_root);
+    INT_EQ(runner, payload_live, 0, "a selected paragraph releases all storage");
+    markdown_core_parser rejected = {0};
+    paragraph_root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
+    paragraph_root->element = &CONVERSION_POLICY;
+    paragraph_root->user_data = &paragraph_policy;
+    rejected.root = rejected.current = paragraph_root;
+    size_t attempts = payload_allocations;
+    OK(runner, !markdown_core_parser_add_child(&rejected, paragraph_root, MARKDOWN_CORE_NODE_PARAGRAPH, 1),
+       "root refusal terminates parent selection without walking past the root");
+    INT_EQ(runner, rejected.error, MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED,
+           "a rejected block parent reports semantic refusal");
+    INT_EQ(runner, payload_allocations, attempts, "refused parent selection allocates no child");
+    markdown_core_node_free(paragraph_root);
+    INT_EQ(runner, payload_live, 0, "refused parent selection releases all storage");
+    payload_probe_disarm();
+
     const char *source = "! [first](u) [second](v)\n";
     conversion_policy policy = {MARKDOWN_CORE_NODE_LINK, 0, 1};
     payload_probe_arm();
