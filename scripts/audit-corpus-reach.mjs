@@ -43,7 +43,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stateValidators } from "./lib/canonical-states.mjs";
-import { pairHalves, publishesRatio, splitManifestFailures } from "./lib/corpus-splits.mjs";
+import { publishesRatio, splitManifestFailures } from "./lib/corpus-splits.mjs";
+import { validatePairs } from "./lib/corpus-pairs.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const KIND_TABLE = path.join(root, "packages/markdown-core/elements/ast.c");
@@ -128,55 +129,18 @@ function declaredBuilds() {
     return declared;
 }
 
-/**
- * ISOMORPH PAIRS: where a ratio for a dialect-only construct comes from.
- *
- * cmark reads `++adds++` as a paragraph and `$x$` as text, so the ratio
- * against it on a dialect document is the cost of NOT having the feature. It
- * bounds what the construct costs and cannot say whether the construct is
- * slow, which is the only question the profile exists to answer.
- *
- * An isomorph pair answers it. The same document is written twice, once with
- * the dialect marker and once with a CommonMark marker of the same shape, and
- * the two are the SAME BYTES under a single-character substitution --
- * `++adds++` and `**adds**`, `%%hidden%%` and ``` ``hidden`` ```, `$x$` and
- * `` `x` ``. Three numbers then decompose the ratio:
- *
- *   ours(dialect) / ours(isomorph)   what this grammar costs over a
- *                                    CommonMark grammar building the same tree
- *   ours(isomorph) / cmark(isomorph) what this parser costs on the shape
- *                                    itself, where cmark did the same job
- *
- * and their product is ours(dialect) / cmark(isomorph): a same-job ratio for a
- * construct cmark does not implement, because cmark built the same tree from
- * the isomorphic document. The first factor is the one that names a grammar to
- * go look at.
- *
- * THE PAIRING IS A FACT, NOT A CLAIM, and this is what checks it. A pair whose
- * two documents parse to different trees is two different measurements
- * presented as one, and the report would attribute the difference in the trees
- * to the grammar. So: the substitution must reproduce the isomorph byte for
- * byte, and the two dumps must be identical once the kind names are erased --
- * same spans, same literals, same children, same attributes, differing only in
- * which grammar built each node.
- *
- * It is not a formality. The pairs it REJECTED are the reason it exists: a
- * grid table against a pipe table (a grid cell holds a paragraph, a pipe cell
- * holds inlines), a definition list against a bullet list (the definition
- * groups term and body under one node, the list does not), and a comment
- * against strong emphasis (strong parses its body, a comment keeps it
- * literal). Each of those looked isomorphic and was not.
- */
-function isomorphPairs() {
+/* Fixed sample substitutions are retained as regression witnesses. Passing
+ * this check does not prove a language mapping or permit a same-job ratio. */
+function substitutionWitnesses() {
     const manifest = JSON.parse(
         fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
     );
-    const declarations = manifest.isomorphs ?? [];
-    if (!Array.isArray(declarations)) fail("corpus.json: isomorphs must be a list of pairs");
+    const declarations = manifest.pairs.filter((pair) => pair.substitution);
+    if (!Array.isArray(declarations)) fail("corpus.json: substitution witnesses must be a list");
     const cases = new Map((manifest.cases ?? []).map((entry) => [entry.name, entry]));
     const pairs = [];
     for (const declaration of declarations) {
-        const { case: name, isomorph, substitution, ignore = [], claim } = declaration;
+        const { case: name, isomorph, substitution, ignore = [] } = declaration;
         const both = [name, isomorph];
         for (const side of both) {
             const entry = cases.get(side);
@@ -185,7 +149,6 @@ function isomorphPairs() {
                 fail(`corpus.json: isomorph pair side ${side} must be one case over one sample`);
             }
         }
-        if (!claim) fail(`corpus.json: isomorph pair ${name} states no claim about why the two are the same shape`);
         /* The dialect side has to be the side with something to isolate, and
          * the isomorph side has to be one a reference actually implements --
          * otherwise the pair produces two bounds rather than a ratio. */
@@ -247,7 +210,7 @@ function canonicalDump(text, ignore) {
         .join("\n");
 }
 
-function isomorphFailures(cli, pairs) {
+function substitutionWitnessFailures(cli, pairs) {
     const failures = [];
     for (const pair of pairs) {
         const dialect = fs.readFileSync(pair.sample(pair.name), "utf8");
@@ -327,7 +290,7 @@ function samplesOutsideTheirAggregate() {
     const commonmark = aggregate("mixed-commonmark");
     const extended = aggregate("mixed-extended");
     const paired = new Set();
-    for (const declaration of [...(manifest.isomorphs ?? []), ...(manifest.logicalIsomorphs ?? [])]) {
+    for (const declaration of manifest.pairs ?? []) {
         paired.add(declaration.case ?? declaration.name);
         paired.add(declaration.isomorph);
     }
@@ -558,38 +521,10 @@ function carriedFailures(cli, census, corpusDirectory, fields) {
     return failures;
 }
 
-/**
- * The invariants a LOGICAL isomorph rests on, checked against the parser.
- *
- * A substitution isomorph is the same document under a change of marker, so the
- * pair is held by the two trees being identical. Where no substitution can pair
- * a dialect construct with a CommonMark one, the corpus pairs the GRAMMAR
- * instead: two productions of the same shape whose subsequent operation is the
- * same. An explicit anchor binds a name to the block it sits on; a link
- * reference definition binds a name to a target. One block and one
- * name-to-target binding either way -- but written out, they are not the same
- * bytes and not the same tree, so nothing about the pair can be read off a
- * comparison of the two dumps.
- *
- * What is read off the parser instead is what the pair claims:
- *
- *   Both sides built the SAME NUMBER of the paired construct, each side counted
- *   by the kind it builds. The corpus generates them to an equal count, which is
- *   arithmetic; this is the parser agreeing that the bytes it was handed came
- *   out that way. For the anchor pair it is also what proves the reference
- *   side's definitions were CONSUMED: a definition the parser declined to read
- *   as one stays a paragraph, and the count doubles.
- *
- *   And, where a pair names a `binding`, the declaring side BOUND that many
- *   names while the reference side bound none in its tree -- its bindings are in
- *   the reference map, which is the whole reason the two spellings pair and the
- *   whole reason their trees differ.
- */
-function logicalIsomorphs() {
-    return (
-        JSON.parse(fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8"))
-            .logicalIsomorphs ?? []
-    );
+/* Count witnesses guard workload drift. They do not certify an isomorphism:
+ * order, payloads and ownership require the pair's separate domain proof. */
+function countedPairs() {
+    return corpusManifest().pairs.filter((pair) => pair.counts);
 }
 
 /* What the GENERATOR said it emitted, written beside the corpus it wrote. */
@@ -599,7 +534,7 @@ function generatedUnits(directory) {
     return JSON.parse(fs.readFileSync(file, "utf8"));
 }
 
-function logicalPairFailures(census, pairs, units) {
+function countWitnessFailures(census, pairs, units) {
     /* The messages, AND the set of pairs they came from. One pair can break
      * several invariants at once -- a binding pair fails once per side, and a
      * pair naming three states can fail three times -- so subtracting the
@@ -1013,21 +948,23 @@ function splitFailures(manifest, census, units) {
 }
 
 function stateReach(census, manifest) {
-    const paired = pairHalves(manifest);
     const publishes = new Map();
     for (const entry of manifest.cases ?? []) {
-        publishes.set(entry.name, publishesRatio(entry, paired));
+        publishes.set(entry.name, publishesRatio(entry, manifest));
     }
     const measured = [];
+    const pending = [];
+    const candidates = new Set(manifest.pairs.filter((pair) => pair.contract.pending).map((pair) => pair.case));
     const boundOnly = [];
     const unreached = [];
     for (const state of Object.keys(stateValidators)) {
         const reaching = [...census.perCaseStates].filter(([, states]) => states.has(state)).map(([name]) => name);
         if (!reaching.length) unreached.push(state);
         else if (reaching.some((name) => publishes.get(name))) measured.push(state);
+        else if (reaching.some((name) => candidates.has(name))) pending.push(state);
         else boundOnly.push(`${state} -- reached only by ${reaching.sort().join(", ")}`);
     }
-    return { measured, boundOnly, unreached };
+    return { measured, pending, boundOnly, unreached };
 }
 
 /* A function only brushed by a guard clause is not a grammar the corpus drives,
@@ -1168,9 +1105,10 @@ const sampleCount = fs
 const driven = new Set();
 const undriven = [];
 const drifted = [];
-const pairs = isomorphPairs();
-const logical = logicalIsomorphs();
+const pairs = substitutionWitnesses();
+const logical = countedPairs();
 const manifest = corpusManifest();
+validatePairs(manifest);
 /* The halves of every split, whose dumps the census keeps for the tree
  * comparison; every other document's dump is read once and dropped. */
 const splitHalves = new Set(
@@ -1197,8 +1135,8 @@ let splits;
         /* Read off the SAMPLES rather than the generated corpus: the pairing is
          * a property of the two documents as written, and the corpus repeats
          * each of them to a byte target, which says nothing further about it. */
-        notIsomorphic = isomorphFailures(binaries.dump, pairs);
-        unequalPairs = logicalPairFailures(census, logical, generatedUnits(corpusDir));
+        notIsomorphic = substitutionWitnessFailures(binaries.dump, pairs);
+        unequalPairs = countWitnessFailures(census, logical, generatedUnits(corpusDir));
         miscarried = carriedFailures(binaries.dump, census, path.dirname(documents[0]), referenceless);
         states = stateReach(census, manifest);
         exempt = statesBoundByProof();
@@ -1262,17 +1200,19 @@ process.stdout.write(
         `  samples with a case  ${sampleCount - orphaned.length}/${sampleCount}\n` +
         `  samples in their aggregate ${strayed.length ? `${strayed.length} are NOT` : "all"}\n` +
         `  cases still building ${declaredBuilds().size - drifted.length}/${declaredBuilds().size}\n` +
-        `  isomorph pairs held  ${pairs.length - notIsomorphic.length}/${pairs.length}\n` +
-        `  logical pairs held   ${logical.length - unequalPairs.broken.size}/${logical.length}\n` +
+        `  substitution witnesses held  ${pairs.length - notIsomorphic.length}/${pairs.length}\n` +
+        `  count witnesses held   ${logical.length - unequalPairs.broken.size}/${logical.length}\n` +
         `  split hosts held     ${splits.hosts - splits.broken.size}/${splits.hosts}\n` +
         `  referenceless fields ${referenceless.length}, declared by every case that carries one` +
         `${miscarried.length ? ` -- ${miscarried.length} do not` : ""}\n` +
         `  grammar states measured ${states.measured.length}/${Object.keys(stateValidators).length}` +
-        ` (${states.boundOnly.length} reached only as a bound, ${states.unreached.length} not reached` +
+        ` (${states.pending.length} reached by candidates, ${states.boundOnly.length} reached only as a bound, ${states.unreached.length} not reached` +
         `${Object.keys(exempt.declared).length ? `, of which ${Object.keys(exempt.declared).length} bound by proof` : ""})\n`
 );
 
 if (options.states) {
+    if (states.pending.length)
+        process.stdout.write(`\n  equivalence proof pending:\n    ${states.pending.join("\n    ")}\n`);
     if (states.boundOnly.length) {
         process.stdout.write(`\n  reached only as a bound:\n    ${states.boundOnly.join("\n    ")}\n`);
     }
@@ -1324,19 +1264,16 @@ for (const state of Object.keys(exempt.declared)) {
         );
     }
 }
-/* THE RATCHET, and it is an identity rather than a count. A floor on how MANY
- * states are measured passes a change that loses one and gains another, which
- * is exactly the silent regression the floor was written to catch. Coverage is
- * complete, so the invariant can be stated outright instead: every declared
- * grammar state is either measured with a same-job ratio or exempt against a
- * named proof, and anything else is named here. */
+/* Every state remains accounted for by identity: directly compared, reached
+ * by a candidate with an explicit missing-proof obligation, or bound by a
+ * named unpairability argument. A candidate never counts as proved. */
 {
     const missing = Object.keys(stateValidators).filter(
-        (state) => !states.measured.includes(state) && !(state in exempt.declared)
+        (state) => !states.measured.includes(state) && !states.pending.includes(state) && !(state in exempt.declared)
     );
     if (missing.length) {
         failures.push(
-            `these declared grammar states have neither a same-job ratio nor an entry in ` +
+            `these declared grammar states have no comparison, candidate proof obligation or entry in ` +
                 `statesBoundByProof, so the corpus measures them only as bounds and says nowhere why:` +
                 `\n    ${missing.join("\n    ")}`
         );

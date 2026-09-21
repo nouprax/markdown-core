@@ -15,10 +15,12 @@
  * the audit, which is the one place a parser is built for them.
  */
 
-/** Every case that is one half of a pair, of either kind. */
+import { provenPair } from "./corpus-pairs.mjs";
+
+/** Every case that is one half of a declared workload pair. */
 export function pairHalves(manifest) {
     const paired = new Set();
-    for (const declaration of [...(manifest.isomorphs ?? []), ...(manifest.logicalIsomorphs ?? [])]) {
+    for (const declaration of manifest.pairs ?? []) {
         paired.add(declaration.case);
         paired.add(declaration.isomorph);
     }
@@ -26,17 +28,14 @@ export function pairHalves(manifest) {
 }
 
 /**
- * Whether the driver publishes a same-job ratio for a case: either half of a
- * pair, or a case whose syntax a reference reads the same way and whose tree
- * carries no referenceless field. The same test the driver applies, written
- * once so the state census, the split checks and the report cannot disagree
- * about which cases are comparisons.
+ * Pair contracts take precedence over syntax flags: a GFM-backed candidate
+ * still has unproved additional work. Ordinary reference-language inputs
+ * remain comparisons when they carry no unmatched fields.
  */
-export function publishesRatio(entry, paired) {
-    return (
-        paired.has(entry.name) ||
-        ((entry.dialect === "commonmark" || entry.gfm === true) && !(entry.carries ?? []).length)
-    );
+export function publishesRatio(entry, manifest) {
+    const pair = (manifest.pairs ?? []).find((pair) => pair.case === entry.name);
+    if (pair) return provenPair(pair);
+    return (entry.dialect === "commonmark" || entry.gfm === true) && !(entry.carries ?? []).length;
 }
 
 /** The cases that exist only to be the `with` half of a split's host. */
@@ -65,7 +64,7 @@ export function caseClosure(manifest, names) {
     const byName = new Map((manifest.cases ?? []).map((entry) => [entry.name, entry]));
     for (let before = -1; before !== wanted.size;) {
         before = wanted.size;
-        for (const pair of [...(manifest.isomorphs ?? []), ...(manifest.logicalIsomorphs ?? [])]) {
+        for (const pair of manifest.pairs ?? []) {
             if (wanted.has(pair.case)) wanted.add(pair.isomorph);
             if (wanted.has(pair.isomorph)) wanted.add(pair.case);
         }
@@ -167,7 +166,7 @@ export function splitManifestFailures(manifest, units, stateNames) {
                         `dialect production by construction`
                 );
             }
-            if (paired.has(host.with) || publishesRatio(carrier, paired)) {
+            if (paired.has(host.with) || publishesRatio(carrier, manifest)) {
                 failHost(
                     `${host.with} would be published with a ratio of its own, so the states only the remainder ` +
                         `reaches would count as measured while the split says they are bounds`

@@ -65,7 +65,7 @@ test("a case named alone drags its comparison in, and only in the direction it i
     assert.deepEqual([...caseClosure(declared, [autolink.without])], [autolink.without]);
     assert.deepEqual([...caseClosure(declared, [autolink.with])].sort(), [autolink.with, autolink.without].sort());
     /* Either half of a pair drags the other. */
-    for (const pair of [...declared.isomorphs, ...declared.logicalIsomorphs]) {
+    for (const pair of declared.pairs) {
         assert.deepEqual([...caseClosure(declared, [pair.case])].sort(), [pair.case, pair.isomorph].sort());
         assert.deepEqual([...caseClosure(declared, [pair.isomorph])].sort(), [pair.case, pair.isomorph].sort());
     }
@@ -121,7 +121,7 @@ const MUTATIONS = [
     {
         rule: "a with half publishes no ratio of its own",
         mutate: (declared) =>
-            declared.logicalIsomorphs.push({ case: "split-attributes-code", isomorph: "pair-formulablock-common" }),
+            declared.pairs.push({ case: "split-attributes-code", isomorph: "pair-formulablock-common" }),
         expect: /would be published with a ratio of its own/u,
         host: "split-attributes-code"
     },
