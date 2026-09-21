@@ -61,7 +61,7 @@ static bool S_attach_block_identifier(markdown_core_parser *parser, markdown_cor
     }
     markdown_core_chunk identifier = candidate->identifier;
     if (!markdown_core_chunk_to_cstr(&identifier)) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
     markdown_core_chunk_free(&owner->attributes.anchor);
@@ -124,7 +124,7 @@ bool markdown_core_block_attach_identifier_line(markdown_core_parser *parser, ma
         followed_by_boundary = blank_lines > 0;
         markdown_core_parser_lookahead_end(&lookahead);
     }
-    if (!followed_by_boundary || parser->oom || !S_attach_block_identifier(parser, owner, &candidate)) {
+    if (!followed_by_boundary || parser->error || !S_attach_block_identifier(parser, owner, &candidate)) {
         return false;
     }
     markdown_core_block_set_end_to_current_line(parser, owner);

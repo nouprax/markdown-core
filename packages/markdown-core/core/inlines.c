@@ -88,7 +88,7 @@ markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state
     if (!e) {
         /* Frees an owned literal; borrowed chunks only reset fields. */
         markdown_core_chunk_free(&s);
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return NULL;
     }
     *e->as.literal = s;
@@ -110,7 +110,7 @@ markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_in
                                                                 markdown_core_node_type t) {
     markdown_core_node *e = markdown_core_inline_make_simple(inline_state, t);
     if (!e) {
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
     return e;
 }
@@ -363,7 +363,7 @@ delimiter *markdown_core_inline_push_delimiter_entry(markdown_core_inline_state 
     } else {
         entry = (delimiter *)markdown_core_alloc(1, sizeof(delimiter));
         if (!entry) {
-            inline_state->oom = 1;
+            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
             return NULL;
         }
     }
@@ -433,7 +433,7 @@ static void push_delimiter(markdown_core_inline_state *inline_state, const markd
     delimiter *delim;
     /* Elements may pass NULL after their own allocation failures. */
     if (!inl_text) {
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return;
     }
     /* `openers_bottom` is sized by MARKDOWN_CORE_DELIM_RULE_COUNT, so a rule
@@ -624,7 +624,7 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     // aborts the shared parse transaction.
     inline_node = markdown_core_inline_make_simple(inline_state, kind);
     if (!inline_node) {
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return closer->next;
     }
 
@@ -765,7 +765,7 @@ static markdown_core_node *try_elements(markdown_core_parser *parser, markdown_c
         const markdown_core_element *element = parser->inline_dispatch[i];
         res = element->match_inline(element, parser, parent, c, inline_state);
 
-        if (res || inline_state->pos != start || parser->oom || inline_state->oom) {
+        if (res || inline_state->pos != start || parser->error || inline_state->error) {
             break;
         }
     }
@@ -808,7 +808,7 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
         return 0;
     }
     new_inl = try_elements(parser, parent, c, inline_state);
-    if (inline_state->pos == token_start && !new_inl && !parser->oom && !inline_state->oom) {
+    if (inline_state->pos == token_start && !new_inl && !parser->error && !inline_state->error) {
         endpos = inline_state_find_special_char(inline_state);
         if (inline_state->pos < inline_state->text_end && endpos > inline_state->text_end) {
             endpos = inline_state->text_end;
@@ -826,13 +826,17 @@ append:
         }
     }
     if (new_inl != NULL) {
-        if (!markdown_core_node_attach_owned(parent, new_inl, NULL)) {
+        /* Fixed inline owners admit every token their grammar constructs. Only
+         * a dynamic policy needs a decision here; it may change during a hook. */
+        if (parent->element && parent->element->can_contain_func &&
+            !markdown_core_node_can_contain_type(parent, (markdown_core_node_type)new_inl->kind)) {
             /* A token constructor has consumed input. Refusing its result is
              * a failed parse, but the detached token is still ours to release. */
             markdown_core_parser_release_node(parser, new_inl);
-            inline_state->oom = 1;
+            inline_state->error = MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED;
             return 0;
         }
+        markdown_core_node_attach_validated(parent, new_inl, NULL);
         bool has_fields = false;
         markdown_core_visit_inline_subtrees(new_inl, has_inline_field, &has_fields);
         if (has_fields) {
@@ -888,20 +892,20 @@ void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state
     while (inline_state->last_delim) {
         markdown_core_inline_remove_delimiter(inline_state, inline_state->last_delim);
     }
-    if (inline_state->oom) {
-        parser->oom = true;
+    if (inline_state->error) {
+        markdown_core_parser_fail(parser, inline_state->error);
     }
 }
 
 bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
-    while (!parser->oom && !inline_state->oom) {
+    while (!parser->error && !inline_state->error) {
         complete_inline_token(parser, inline_state);
-        if (parser->oom || inline_state->oom || markdown_core_inline_is_eof(inline_state) ||
+        if (parser->error || inline_state->error || markdown_core_inline_is_eof(inline_state) ||
             !markdown_core_inline_parse_inline(parser, inline_state)) {
             break;
         }
     }
-    if (!parser->oom && !inline_state->oom) {
+    if (!parser->error && !inline_state->error) {
         const markdown_core_element **owners = parser->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_FINISH];
         size_t count = parser->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_FINISH];
         for (size_t i = 0; i < count; i++) {

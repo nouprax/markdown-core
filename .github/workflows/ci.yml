@@ -1202,6 +1202,14 @@ jobs:
             - name: Fuzz against the remark ecosystem
               run: pnpm fuzz:parity -- --oracle remark --iterations 400 --seed 1
 
+    stage-benchmark:
+        needs: changes
+        if: ${{ needs.changes.outputs.required == 'true' }}
+        uses: ./.github/workflows/stage-benchmark.yml
+        permissions:
+            actions: read
+            contents: read
+
     required-gates:
         # Push runs use an independent, non-required context. PR and
         # merge-queue runs alone own the name referenced by the ruleset.
@@ -1211,6 +1219,7 @@ jobs:
             - changes
             - tests-ready
             - upstream-parity
+            - stage-benchmark
         runs-on: ubuntu-latest
         steps:
             - name: Require the complete test and parity layers
@@ -1218,7 +1227,8 @@ jobs:
                   CHANGES: ${{ needs.changes.result }}
                   TESTS_READY: ${{ needs.tests-ready.result }}
                   UPSTREAM_PARITY: ${{ needs.upstream-parity.result }}
+                  SOURCE_BUDGET: ${{ needs.stage-benchmark.result }}
               run: |
-                  for result in "$CHANGES" "$TESTS_READY" "$UPSTREAM_PARITY"; do
+                  for result in "$CHANGES" "$TESTS_READY" "$UPSTREAM_PARITY" "$SOURCE_BUDGET"; do
                       test "$result" = success
                   done

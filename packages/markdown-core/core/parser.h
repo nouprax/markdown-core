@@ -11,6 +11,15 @@
 extern "C" {
 #endif
 
+/* A fatal parse transaction preserves its first cause. Optional grammar
+ * rejection is a normal no-match; rejection after consuming a token is fatal
+ * but is not an allocation failure. Buffers retain their own allocation flag. */
+typedef enum {
+    MARKDOWN_CORE_PARSE_OK,
+    MARKDOWN_CORE_PARSE_ALLOCATION_FAILED,
+    MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED
+} markdown_core_parse_error;
+
 #define MAX_LINK_LABEL_LENGTH 1000
 
 /* The block-start hook families, in the order a line consults them.
@@ -275,7 +284,7 @@ struct markdown_core_parser {
     /* Sticky allocation-failure flag: once any parse structure is lost, the
      * one-shot transaction reports the whole parse as failed (NULL) instead of
      * returning a silently truncated document. */
-    bool oom;
+    markdown_core_parse_error error;
     /* Bytes inspected by the cross-link scanner, for deterministic complexity gates. */
     size_t cross_link_scan_work;
     size_t autolink_domain_work;
@@ -646,6 +655,12 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
  * passes, never miss one, because a kind in the finished tree was necessarily
  * created; and a pass that runs over a tree holding none of its declared kinds
  * finds nothing to do. */
+static inline void markdown_core_parser_fail(markdown_core_parser *parser, markdown_core_parse_error error) {
+    if (!parser->error) {
+        parser->error = error;
+    }
+}
+
 static inline void markdown_core_parser_note_kind(markdown_core_parser *parser, markdown_core_node_type kind) {
     if (parser) {
         markdown_core_node_kind_set_add(&parser->kinds_created, kind);
@@ -702,7 +717,7 @@ static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_k
  * views and grammar facts share one lazily created record for that line. */
 typedef struct markdown_core_input_line {
     /* Input buffers, hence offsets and line counts, are bounded by INT32_MAX / 2. */
-    uint32_t start, end, next, nul_count;
+    uint32_t start, end;
     /* One-based index; zero means no query needs optional state for this line. */
     uint32_t facts;
 } markdown_core_input_line;
@@ -734,14 +749,30 @@ typedef struct markdown_core_line_facts {
      * after the run and where it begins, so a later scan whose extra containers
      * accept every blank line steps over the run at once. 0 when not a run. */
     int run_end;
+    /* Only NUL-bearing lines need this count; it occupies former padding. */
+    uint32_t nul_count;
     const unsigned char *run_end_cursor;
 } markdown_core_line_facts;
+/* A terminator is at most CRLF. Derive its end from immutable source bytes,
+ * rather than retain a third offset on every line. */
+static inline size_t markdown_core_input_line_next(const markdown_core_parser *parser,
+                                                   const markdown_core_input_line *line) {
+    size_t at = line->end;
+    if (at < parser->input_length && parser->input_source[at] == '\r') {
+        at++;
+    }
+    if (at < parser->input_length && parser->input_source[at] == '\n') {
+        at++;
+    }
+    return at;
+}
+
 /* Returned pointers are borrowed until the next request that grows the
  * index. Keep line numbers or copies across such a request. */
 markdown_core_input_line *markdown_core_parser_extend_source_lines(markdown_core_parser *parser, size_t index);
 
 static inline markdown_core_input_line *markdown_core_parser_source_line(markdown_core_parser *parser, int line) {
-    if (line < parser->input_first_line || parser->oom) {
+    if (line < parser->input_first_line || parser->error) {
         return NULL;
     }
     size_t index = (size_t)(line - parser->input_first_line);

@@ -124,13 +124,13 @@ static void prepare_citation_braces(markdown_core_inline_state *inline_state) {
         if (c == '{') {
             if (index->count == capacity) {
                 if (capacity > SIZE_MAX / sizeof(*index->entries) / 2) {
-                    inline_state->oom = 1;
+                    inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
                     return;
                 }
                 size_t grown = capacity ? capacity * 2 : 8;
                 void *entries = markdown_core_realloc(index->entries, grown * sizeof(*index->entries));
                 if (!entries) {
-                    inline_state->oom = 1;
+                    inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
                     return;
                 }
                 index->entries = entries;
@@ -183,7 +183,7 @@ static bool scan_citation_key(markdown_core_inline_state *inline_state, bufsize_
         if (!index->ready) {
             prepare_citation_braces(inline_state);
         }
-        if (inline_state->oom) {
+        if (inline_state->error) {
             return false;
         }
         while (index->cursor < index->count && index->entries[index->cursor].start < pos) {
@@ -244,7 +244,7 @@ static markdown_core_node *markdown_core_inline_read_citation_token(markdown_cor
     if (!boundary) {
         markdown_core_free(token);
         markdown_core_parser_release_node(inline_state->owner_parser, text);
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return NULL;
     }
     *token = value;
@@ -311,7 +311,7 @@ static markdown_core_node *new_bib_item(markdown_core_inline_state *inline_state
     item->as.citation->value =
         markdown_core_chunk_dup(&inline_state->input, key->key_start, key->key_end - key->key_start);
     if (!markdown_core_chunk_to_cstr(&item->as.citation->value)) {
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return NULL;
     }
     markdown_core_inline_state_place(inline_state, item, key->start, key->end - 1);
@@ -405,7 +405,7 @@ static bool trim_affix_node(markdown_core_inline_state *inline_state, markdown_c
 static void take_citation_affix(markdown_core_inline_state *inline_state, markdown_core_node **slot,
                                 markdown_core_node *first, markdown_core_node *after, bufsize_t start, bufsize_t end) {
     trim_citation_source(inline_state, &start, &end);
-    while (first != after && !inline_state->oom) {
+    while (first != after && !inline_state->error) {
         markdown_core_node *next = first->next;
         inline_state->owner_parser->citation_work++;
         if (trim_affix_node(inline_state, first, start, end)) {
@@ -451,7 +451,7 @@ static void remove_specimen_parenthesis(markdown_core_inline_state *inline_state
 }
 
 static void materialize_citation_key(markdown_core_inline_state *inline_state, citation_token *token) {
-    if (!token->key || token->node->kind == MARKDOWN_CORE_NODE_CITE || inline_state->oom) {
+    if (!token->key || token->node->kind == MARKDOWN_CORE_NODE_CITE || inline_state->error) {
         return;
     }
     if (!markdown_core_node_can_contain_type(token->node->parent, MARKDOWN_CORE_NODE_CITE)) {
@@ -490,7 +490,7 @@ static void materialize_citation_key(markdown_core_inline_state *inline_state, c
 }
 
 void markdown_core_inline_finish_citation_tokens(markdown_core_inline_state *inline_state, citation_tokens *tokens) {
-    for (citation_token *token = tokens->first; token && !inline_state->oom; token = token->next) {
+    for (citation_token *token = tokens->first; token && !inline_state->error; token = token->next) {
         resolve_citation_tail(inline_state, token, true);
         citation_boundary(inline_state, token, false);
         materialize_citation_key(inline_state, token);
@@ -522,7 +522,7 @@ bool markdown_core_inline_close_bibliography(markdown_core_parser *parser, markd
         return false;
     }
     bool first = true;
-    for (citation_token *token = opener->citations.first; token && !inline_state->oom; token = token->next) {
+    for (citation_token *token = opener->citations.first; token && !inline_state->error; token = token->next) {
         if (!token->key) {
             citation_boundary(inline_state, token, true);
             first = true;
@@ -536,7 +536,7 @@ bool markdown_core_inline_close_bibliography(markdown_core_parser *parser, markd
             materialize_citation_key(inline_state, token);
         }
     }
-    if (inline_state->oom) {
+    if (inline_state->error) {
         markdown_core_inline_pop_bracket(inline_state);
         return true;
     }
@@ -568,7 +568,7 @@ bool markdown_core_inline_close_bibliography(markdown_core_parser *parser, markd
     /* A key in the first tail section gives that section to a normal item.
      * Only a key-free section contributes a suffix to the external author. */
     bool tail_starts_item = tail && token && token->key;
-    while ((author_item || token) && !inline_state->oom) {
+    while ((author_item || token) && !inline_state->error) {
         citation_token *key = author_item ? opener->author : token;
         assert(key->key);
         citation_token *separator = author_item ? token : key->next;
@@ -616,7 +616,7 @@ bool markdown_core_inline_close_bibliography(markdown_core_parser *parser, markd
 
 static void resume_citation_tail(markdown_core_inline_state *inline_state, citation_token *token, bool ordinary) {
     bracket *pending = token->tail;
-    if (!pending || inline_state->oom || inline_state->owner_parser->oom) {
+    if (!pending || inline_state->error || inline_state->owner_parser->error) {
         return;
     }
     token->tail = NULL;
@@ -632,7 +632,7 @@ static void resume_citation_tail(markdown_core_inline_state *inline_state, citat
     markdown_core_node *literal = markdown_core_inline_handle_close_bracket(inline_state->owner_parser, inline_state);
     if (literal) {
         markdown_core_parser_release_node(inline_state->owner_parser, literal);
-    } else if (!inline_state->oom && !inline_state->owner_parser->oom) {
+    } else if (!inline_state->error && !inline_state->owner_parser->error) {
         markdown_core_parser_release_node(inline_state->owner_parser, close);
     }
     inline_state->pos = saved_pos;
@@ -647,7 +647,7 @@ static citation_resolution citation_resolution_for(citation_token *key, bool ord
 }
 
 static void resolve_citation_tail(markdown_core_inline_state *inline_state, citation_token *token, bool ordinary) {
-    if (!token->tail || inline_state->oom || inline_state->owner_parser->oom) {
+    if (!token->tail || inline_state->error || inline_state->owner_parser->error) {
         return;
     }
     citation_resolution *stack = NULL;
@@ -657,12 +657,12 @@ static void resolve_citation_tail(markdown_core_inline_state *inline_state, cita
         if (count == capacity) {
             size_t grown = capacity ? capacity * 2 : 8;
             if (grown > SIZE_MAX / sizeof(*stack)) {
-                inline_state->oom = 1;
+                inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
                 break;
             }
             void *values = markdown_core_realloc(stack, grown * sizeof(*stack));
             if (!values) {
-                inline_state->oom = 1;
+                inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
                 break;
             }
             stack = values;
@@ -670,7 +670,7 @@ static void resolve_citation_tail(markdown_core_inline_state *inline_state, cita
         }
         stack[count++] = next;
         bool descend = false;
-        while (count && !inline_state->oom && !inline_state->owner_parser->oom) {
+        while (count && !inline_state->error && !inline_state->owner_parser->error) {
             citation_resolution *frame = &stack[count - 1];
             citation_token *child = frame->next;
             if (!child) {
@@ -693,7 +693,7 @@ static void resolve_citation_tail(markdown_core_inline_state *inline_state, cita
                 break;
             }
         }
-        if (!descend || inline_state->oom || inline_state->owner_parser->oom) {
+        if (!descend || inline_state->error || inline_state->owner_parser->error) {
             break;
         }
     }
@@ -715,7 +715,7 @@ bool markdown_core_citation_defer_tail(markdown_core_inline_state *inline_state,
             if (close) {
                 markdown_core_parser_release_node(inline_state->owner_parser, close);
             }
-            inline_state->oom = 1;
+            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
             return true;
         }
         opener->close_text = close;

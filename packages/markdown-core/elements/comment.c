@@ -53,7 +53,7 @@ static int probe_comment_block(markdown_core_parser *parser, markdown_core_chunk
     markdown_core_chunk line;
     while (reader->next(reader->context, &line, &first, &indent)) {
         if (indent < 4 && is_fence_line(line.data, line.len, first)) {
-            return !parser->oom;
+            return !parser->error;
         }
     }
     return 0;
@@ -80,7 +80,7 @@ static markdown_core_node *open_block(const markdown_core_element *element, int 
     markdown_core_block_reader reader = {&lookahead, read_block_line};
     bool closed = probe_comment_block(parser, &line, first_nonspace, parser->indent, &reader);
     markdown_core_parser_lookahead_end(&lookahead);
-    if (!closed || parser->oom) {
+    if (!closed || parser->error) {
         return NULL;
     }
 
@@ -143,12 +143,12 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     }
     node = markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_COMMENT, element);
     if (!node) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
     *node->as.literal = markdown_core_chunk_dup(input, start + 2, close - start - 2);
     if (!markdown_core_chunk_to_cstr(node->as.literal)) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_parser_release_node(parser, node);
         return NULL;
     }
@@ -235,7 +235,7 @@ void markdown_core_block_convert_comment_block(markdown_core_parser *parser, mar
     if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
         *literal = owned_literal;
         if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
         return;
     }
@@ -264,7 +264,7 @@ static void finalize_comment(markdown_core_parser *parser, markdown_core_node *b
      * and retyped above. */
     *b->as.literal = markdown_core_chunk_buf_detach(node_content);
     if (!b->as.literal->data) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
 

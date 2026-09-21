@@ -3,7 +3,7 @@
 [Documentation](../specs/README.md) · [Syntax conformance](syntax-conformance.md)
 
 The repository separates platform correctness tests, public-contract
-conformance, and optional performance measurement. Each platform's native
+conformance, and performance measurement. Each platform's native
 runner owns its suite graph, discovery, filters, timeouts, and expectations.
 Root package scripts route to those runners without defining another test graph.
 
@@ -186,8 +186,7 @@ its artifact-specific CTest tree.
 
 ## Benchmarks and external corpora
 
-Performance measurement is a comparison against another parser, not against a
-previous run of this one. `pnpm benchmark:stages` runs Markdown Core and the
+`pnpm benchmark:stages` runs Markdown Core and the
 pinned cmark over byte-identical documents under callgrind and reports what
 each engine spends on the two parse paths: source bytes into block buffers,
 and those buffers into an AST. cmark splits exactly those two paths across
@@ -210,12 +209,17 @@ and a digest of the corpus — and **two reports whose tables differ are not
 comparable at all**, counts or ratios. A hosted runner and a developer's machine
 reproduce each other only as far as that table matches.
 
-The counts are still not time — they do not price a cache miss, a branch miss,
-or a stall — so they are evidence for an optimization, never a threshold.
+The counts are still not time: they do not price cache misses, branch misses,
+or stalls. Reference ratios remain diagnostic evidence. The source stage also
+has a required regression budget: CI rebuilds its event base with the current
+harness and corpus in the same job, verifies identical compile options and
+runtime libraries, and allows at most 2% more `source_to_buffer` instructions
+for each document/scale. A cheaper AST stage cannot offset a source regression.
+Both reports and raw dumps are published even when that budget fails.
 
-The runners exist only with `MARKDOWN_CORE_BENCHMARKS=ON` and are registered
-with neither CTest nor any required gate, so no preset change can turn a
-measurement into a merge gate. The engine has no measurement mode: it keeps one
+The runners exist only with `MARKDOWN_CORE_BENCHMARKS=ON`; CTest owns
+correctness, while the reusable stage workflow supplies the source budget to
+`Required gates`. The engine has no measurement mode: it keeps one
 parse entry with no feed/finish lifecycle, and the stage split is read out of
 the recorded call graph afterwards. The profiling flavour differs from Release by
 debug information, by keeping the single-call-site stage boundary out of line,

@@ -348,6 +348,10 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_INLINE_P(markdown_core_node 
     return node != NULL && MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)node->kind);
 }
 
+/* The fixed grammar and an element's retained kind domain, without callbacks.
+ * Checked mutation and construction assertions use this same rule. */
+bool markdown_core_node_can_contain_builtin(const markdown_core_node *node, markdown_core_node_type child_type);
+
 MARKDOWN_CORE_EXPORT bool markdown_core_node_can_contain_type(markdown_core_node *node,
                                                               markdown_core_node_type child_type);
 

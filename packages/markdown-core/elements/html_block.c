@@ -34,7 +34,7 @@ static void finalize_html(markdown_core_parser *parser, markdown_core_node *b) {
     int html_block_type = b->as.html_block->block_type;
     b->as.html_block->literal = markdown_core_chunk_buf_detach(node_content);
     if (!b->as.html_block->literal.data) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
     if (html_block_type == 2 && (b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0) {

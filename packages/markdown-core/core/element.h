@@ -207,6 +207,9 @@ struct markdown_core_element {
     const char *flanking_transparent; /* scan_delims looks through it */
     const char *name;
     markdown_core_get_type_string_func get_type_string_func;
+    /* A retained built-in payload may only parent these kinds after conversion.
+     * NULL uses the core kind domain. Dynamic policy remains a separate decision. */
+    const markdown_core_node_type *containment_kinds;
     markdown_core_can_contain_func can_contain_func;
     markdown_core_contains_inlines_func contains_inlines_func;
     markdown_core_accepts_lines_func accepts_lines_func;

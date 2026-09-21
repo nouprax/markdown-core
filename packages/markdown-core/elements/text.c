@@ -127,7 +127,7 @@ static markdown_core_node *handle_entity(markdown_core_inline_state *inline_stat
 
     inline_state->pos += len;
     if (ent.oom) {
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
     return make_str(inline_state, inline_state->pos - 1 - len, inline_state->pos - 1,
                     markdown_core_chunk_buf_detach(&ent));

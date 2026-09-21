@@ -111,9 +111,9 @@ static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, 
         markdown_core_attribute_parser attributes = {.data = term.data, .length = term.len};
         bool reference = markdown_core_parse_reference_inline(&term, NULL, &attributes, 0) != 0;
         parser->attribute_work += attributes.work;
-        parser->oom |= attributes.oom;
+        parser->error |= attributes.oom;
         markdown_core_attribute_parser_free(&attributes);
-        if (reference || parser->oom) {
+        if (reference || parser->error) {
             return false;
         }
     }
@@ -157,7 +157,7 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_par
     definition->as.definition->compact = compact;
     markdown_core_node *term = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!term) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return definition;
     }
     definition->as.definition->term = term;
@@ -173,7 +173,7 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_par
     markdown_core_strbuf_put(&term->content, input->data + begin, end - begin);
     if (term->content.oom || !markdown_core_parser_append_source_marks(parser, term, parser->line_number, begin + 1,
                                                                        term->content.size, 0)) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
     return definition;

@@ -16,20 +16,14 @@ name: Stage Benchmark
 # NOT a pull-request comment: a comment needs `pull-requests: write`, and a
 # workflow that both executes pull-request code and holds a write token is the
 # shape the previous pipeline needed two workflows and an artifact-validation
-# protocol to make safe. There is nothing to compare against a trusted baseline
-# here — the comparison is against a pinned cmark — so the whole trust split is
-# unnecessary rather than merely satisfied.
+# protocol to make safe. Both the event base and the pull-request head execute
+# with this read-only token; no privileged publisher consumes their artifacts.
 #
-# Nothing here gates a merge. Instruction counts do not price cache misses,
-# branch misses, or stalls; they are the evidence an optimization is argued
-# from, not a threshold.
+# The source stage gates regressions against the event's base in this same job.
+# Callgrind ratios against references remain diagnostics, not elapsed speedups.
 
 on:
-    pull_request:
-        types: [opened, reopened, synchronize]
-    push:
-        branches:
-            - main
+    workflow_call:
     workflow_dispatch:
 
 permissions:
@@ -37,7 +31,7 @@ permissions:
     contents: read
 
 concurrency:
-    group: stage-benchmark-${{ github.event.pull_request.number || github.ref }}
+    group: stage-benchmark-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
     cancel-in-progress: true
 
 jobs:
@@ -56,6 +50,7 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   persist-credentials: false
+                  fetch-depth: 0
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
                   node-version: 26.8.1
@@ -65,8 +60,14 @@ jobs:
                   sudo apt-get install --no-install-recommends --yes valgrind
             - name: Build the pinned reference checkouts
               run: scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm
-            - name: Measure every engine on the same corpus
-              run: node scripts/benchmark-stages.mjs --scale 2
+            - name: Measure every engine and gate source-stage regressions
+              env:
+                  BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+              run: |
+                  if [ -z "$BASE_REVISION" ] || [ "$BASE_REVISION" = 0000000000000000000000000000000000000000 ]; then
+                      BASE_REVISION=$(git rev-parse HEAD^)
+                  fi
+                  node scripts/benchmark-stages.mjs --scale 2 --baseline-ref "$BASE_REVISION"
             - name: Publish the report to the run summary
               if: ${{ always() }}
               run: |
@@ -87,6 +88,10 @@ jobs:
                       build/benchmark-stages/stages.json
                       build/benchmark-stages/callgrind
                       build/benchmark-stages/corpus
+                      build/benchmark-stages/baseline/stages.md
+                      build/benchmark-stages/baseline/stages.json
+                      build/benchmark-stages/baseline/callgrind
+                      build/benchmark-stages/baseline/corpus
                   if-no-files-found: error
                   retention-days: 30
 

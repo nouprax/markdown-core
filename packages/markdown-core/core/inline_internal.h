@@ -91,7 +91,7 @@ struct markdown_core_inline_state {
     const int8_t *skip_chars;
     /* Sticky allocation-failure flag, copied to the parser after the inline
      * pass so a lossy parse is reported instead of silently truncated. */
-    int oom;
+    markdown_core_parse_error error;
 };
 
 #define make_str(inline_state, sc, ec, s)                                                                              \

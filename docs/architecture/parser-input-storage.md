@@ -6,8 +6,9 @@ and node storage. Scratch never becomes an AST field.
 
 ## One physical input index
 
-`markdown_core_input_line` records the raw start, content end, next-line
-offset, and NUL count of one physical line. Container-prefix lookahead and
+`markdown_core_input_line` records the raw start, content end, and optional-fact
+index of one physical line. The next-line offset is derived from the immutable
+CR/LF terminator; NUL counts live only in the optional record. Container-prefix lookahead and
 table-search facts are addressed through that same entry. Compact geometry
 is stored for each line; a separate grow-only vector holds optional facts only
 for lines needing grammar state or a normalized view. The facts contain no copy
@@ -16,10 +17,31 @@ driver, speculative
 readers, properties envelope, and mapped cell driver extend and consult one
 index. There is no eager mapped-input scan followed by a second driver scan.
 
+Geometry is **12 bytes per visited line** on the supported ABIs, down from
+20. For L > 0 lines its vector reserves C = max(8, next_power_of_two(L))
+entries, or 12C resident bytes. Thus for L >= 8 the geometry alone occupies
+[12L, 24L) bytes: for one-byte LF-only lines it is 12–24 times input size;
+for two-byte `x\n` lines it is 6–12 times input size. This excludes the source,
+AST, allocator headers, optional facts and normalized payloads. It is a linear
+space bound with a substantial short-line constant, not a constant-space claim.
+The optional record is 64 bytes on LP64/LLP64 and is reserved only for queried
+or NUL-bearing lines; its vector has the same doubling bound. Capacity survives
+input changes, so the bound uses the maximum visited-line and fact counts of
+any active input during the parse, not just the final input's length.
+Tests use empty and one-character lines across capacity boundaries and assert
+record size, capacity, absence of optional facts, and one scan per source byte.
+
+The source driver advances through the static inline scanner in `blocks.c`.
+External lookahead calls a wrapper around that same scanner; there is one
+physical scanning algorithm, not separate driver and speculative scanners.
+
 Index lookups are constant time once a line exists. Extension scans each raw
 byte once for geometry; CR, LF, and CRLF each terminate one physical line.
 Pointers into the vector expire on growth, so consumers carry indices or
-geometry values across calls that can extend it. Changing the active input
+geometry values across calls that can extend it. Properties stores the envelope
+start index and loads geometry by value. Lookahead reacquires its fact record
+by line number after element callbacks. Table separator operations retain dash
+offsets and fetch interval values; they never return a borrowed dash pointer. Changing the active input
 resets its facts and used length while retaining vector capacity.
 
 NUL replacement belongs to the input view, before block grammar reads it.

@@ -48,9 +48,22 @@ A constructed token that cannot be attached is released and the transaction
 fails. Tests exercise rejection, live allocation balance, and a predicate that
 accepts only its first Link: one accepted decision must produce one Link.
 
-The checks in `table_child` and the table lead-paragraph transaction remain
-checked operations with explicit failure cleanup. They were not converted
-wholesale into assertions merely because #354 suggested doing so.
+The follow-up review closes the originally omitted construction boundaries:
+
+| Construction boundary | Proof / retained decision |
+| --- | --- |
+| `blocks.c:add_child` | `block_parent_for` selects and validates the parent; commit does not repeat its policy. |
+| `inlines.c:markdown_core_inline_parse_inline` | Fixed inline owners admit their grammar's token kinds; Debug/ASan checks the shared built-in rule. A dynamic callback is still evaluated for each constructed token because hooks can change it and policies may depend on current children. This is a first decision, not a replay or a cached owner-wide answer. |
+| `table.c:table_child` | The only attached pairs are fixed-element Table/Row and Row/Cell; caption construction has no parent. Both kind pairs and the element owner are asserted. |
+| Table lead paragraph | The destination is the converted table's parent, not the table. Acceptance for a new paragraph sibling is decided before conversion/allocation. Refusal leaves the original paragraph intact. |
+| Link/citation/footnote/formula/autolink rewrites | The existing recognition-time decision authorizes the commit; fresh built-in inline containers admit their transferred children. |
+| `node.c:attach_owned` and arbitrary mutation | Retain checked ownership/containment for unproven detached or arbitrary trees. Parser construction no longer calls `attach_owned`; arbitrary mutation additionally checks ancestry before unlinking. |
+
+The shared splice checks pure built-in containment in Debug/ASan without
+replaying dynamic callbacks. A subprocess regression deliberately attempts an
+invalid attachment; existing stateful-policy tests require one accepted
+decision to produce one commit. Fatal consumed-token rejection now retains a
+separate error cause rather than being mislabeled as allocation failure.
 
 ### P2: formula promotion classified semantic rejection as OOM
 
@@ -122,6 +135,28 @@ line. Allocation instrumentation exposed excessive metadata memory overhead;
 the final representation separates compact geometry from lazily created
 grammar facts under the same input owner. This is an ownership distinction,
 not a cardinality-dependent algorithm.
+
+## Follow-up: source frontier, space, and borrowed views
+
+The driver now advances the physical-line frontier through a static inline
+scanner in `blocks.c`. The external lookahead wrapper calls that same body.
+Geometry shrinks from 20 to 12 bytes per visited line; optional NUL counts use
+space in the existing 64-byte fact record. The exact capacity formula and
+12–24x LF-only / 6–12x one-character-line amplification are documented in
+`parser-input-storage.md`; short-line tests check space and scan work.
+
+Properties carries an envelope index and reads geometry values. Table dash
+slices are offsets with value access. Lookahead reacquires its fact record
+after element callbacks. A forced-moving allocator exercises metadata and
+table workspace growth; successful ASan runs alone are not the lifetime proof.
+
+CI rebuilds the event base with the current benchmark harness, corpus,
+references, compiler flags and runtime libraries. Every case at every scale
+has a source-stage Ir budget of 1.02 times its base, independently of total
+stage improvements. Raw base/current reports and failing rows are published
+before the gate fails. `Required gates` depends on this reusable benchmark
+workflow. Reference ratios, formal pairs, workload diagnostics and boundary
+splits keep the interpretation established by merged PR #366.
 
 ## Commit review ledger
 

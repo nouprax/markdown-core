@@ -66,7 +66,11 @@ disjointness. `markdown_core_node_attach_owned` validates local links and
 containment when the construction point has not already made that decision.
 `markdown_core_node_attach_validated` is the one non-failing splice used by
 both that operation and callers with an established containment decision.
-It asserts local link invariants without invoking a containment callback.
+It asserts local links and the pure built-in containment rule in Debug/ASan.
+Checked mutation and assertions share that rule. Built-in elements declare the
+parent-kind domain retained by their payload across conversion; an unrelated
+kind cannot silently inherit a different containment policy. Dynamic callbacks
+remain decision operations and are never replayed by an assertion.
 The arbitrary mutation API checks ancestry and containment once before
 unlinking, then commits through the same splice. A custom predicate therefore
 observes the original tree and is never called again after detachment.
@@ -74,7 +78,12 @@ Rejection leaves both trees unchanged. Optional rewrites, including formula
 promotion and email splitting, validate before allocating or consuming the
 old node; rejection preserves the authored content. A constructed inline
 token rejected by its destination remains owned by the parser and is released
-before the parse fails. There is no per-node allocator identity to check.
+before the parse fails with `MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED`.
+Parser and inline transactions use the same error enum; allocation failures use
+`MARKDOWN_CORE_PARSE_ALLOCATION_FAILED`, and propagation preserves the first
+cause. Buffer allocation flags remain allocation-only. Table lead splitting
+checks acceptance before conversion, so a refused optional split preserves the
+complete original paragraph. There is no per-node allocator identity to check.
 Kind conversion changes no edges and checks only containment.
 There is no safety mode, ancestry cache, or separate inline splice algorithm.
 A source-boundary audit keeps arbitrary reparenting out of parser construction;

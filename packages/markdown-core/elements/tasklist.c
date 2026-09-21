@@ -27,7 +27,7 @@ void markdown_core_parse_task_prefix(markdown_core_parser *parser, markdown_core
      * the parse rather than changing recognition or borrowing the line buffer. */
     markdown_core_chunk marker = {(unsigned char *)input + start + 1, width, 0};
     if (!markdown_core_chunk_to_cstr(&marker)) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
     item->as.list->task_marker = markdown_core_optional_chunk_present(marker);

@@ -226,7 +226,7 @@ static int scan_directive_attributes(markdown_core_parser *parser, unsigned char
                                      parsed_directive *parsed) {
     markdown_core_attribute_parser attributes = {.data = data, .length = len};
     bufsize_t end = markdown_core_attributes_end(&attributes, *pos);
-    parser->oom |= attributes.oom;
+    parser->error |= attributes.oom;
     parser->attribute_work += attributes.work;
     markdown_core_attribute_parser_free(&attributes);
     if (!end) {
@@ -328,7 +328,7 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
             bufsize_t end;
             int matched = markdown_core_attributes_parse(&attributes, 0, &node->attributes, &end);
             parser->attribute_work += attributes.work;
-            parser->oom |= attributes.oom;
+            parser->error |= attributes.oom;
             markdown_core_attribute_parser_free(&attributes);
             if (!matched) {
                 return 0;
@@ -370,18 +370,18 @@ static markdown_core_node *make_directive_node(const markdown_core_element *elem
     node_directive *directive;
 
     if (!node) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
 
     directive = get_directive(node);
     if (!directive) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_parser_release_node(parser, node);
         return NULL;
     }
     if (!set_chunk_bytes(&directive->name, name, name_len)) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_parser_release_node(parser, node);
         return NULL;
     }
@@ -475,7 +475,7 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
                                start_line, start_column);
     if (!node) {
         markdown_core_attributes_free(&attributes);
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
     directive = get_directive(node);
@@ -493,14 +493,14 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
                                      markdown_core_inline_state_get_column(inline_state) - 1);
         if (!label_node) {
             markdown_core_parser_release_node(parser, node);
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return NULL;
         }
         label_node->end_line = markdown_core_inline_state_get_line(inline_state);
         if (directive->label) {
             markdown_core_parser_release_node(parser, label_node);
             markdown_core_parser_release_node(parser, node);
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return NULL;
         }
         directive->label = label_node;
@@ -626,7 +626,7 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
     markdown_core_node_set_element(node, element);
     node->opaque = markdown_core_alloc(1, sizeof(node_directive));
     if (!node->opaque) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_parser_release_node(parser, node);
 
         return NULL;
@@ -635,7 +635,7 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
     if (!apply_parsed_directive(element, parser, node, input, &parsed, markdown_core_parser_get_line_number(parser),
                                 (int)first_nonspace)) {
         /* The suffix already validated; failure here is allocation loss. */
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_parser_release_node(parser, node);
 
         return NULL;
@@ -702,24 +702,9 @@ static const char *get_type_string(const markdown_core_element *element, markdow
     return "<unknown>";
 }
 
-static int can_contain(const markdown_core_element *element, markdown_core_node *node,
-                       markdown_core_node_type child_type) {
-    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE) {
-        return 0;
-    }
-
-    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
-        return MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM &&
-               child_type != MARKDOWN_CORE_NODE_DOCUMENT && child_type != MARKDOWN_CORE_NODE_DEFINITION &&
-               child_type != MARKDOWN_CORE_NODE_DEFINITION_BODY;
-    }
-
-    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
-        return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type) && child_type != MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
-    }
-
-    return 0;
-}
+static const markdown_core_node_type containment_kinds[] = {
+    MARKDOWN_CORE_NODE_DIRECTIVE, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
+    MARKDOWN_CORE_NODE_NONE};
 
 static int contains_inlines(const markdown_core_element *element, markdown_core_node *node) {
     return node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
@@ -770,7 +755,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .open_block_gate = {.bytes = ":"},
     .probe_block = probe_directive_block,
     .get_type_string_func = get_type_string,
-    .can_contain_func = can_contain,
+    .containment_kinds = containment_kinds,
     .contains_inlines_func = contains_inlines,
     .accepts_lines_func = accepts_lines,
     .opaque_alloc_func = directive_opaque_alloc,

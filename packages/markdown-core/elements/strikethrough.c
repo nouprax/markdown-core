@@ -18,14 +18,7 @@ static const char *get_type_string(const markdown_core_element *element, markdow
     return node->kind == MARKDOWN_CORE_NODE_STRIKETHROUGH ? "strikethrough" : "<unknown>";
 }
 
-static int can_contain(const markdown_core_element *element, markdown_core_node *node,
-                       markdown_core_node_type child_type) {
-    if (node->kind != MARKDOWN_CORE_NODE_STRIKETHROUGH) {
-        return false;
-    }
-
-    return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
-}
+static const markdown_core_node_type containment_kinds[] = {MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_NONE};
 
 /* `~` is the ONE byte in this repository that is genuinely
  * flanking-transparent, and it must stay so: it is inherited from cmark-gfm,
@@ -39,7 +32,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_STRIKETHROUGH = {
                   .double_kind = MARKDOWN_CORE_NODE_STRIKETHROUGH,
                   .exact_run = true},
     .get_type_string_func = get_type_string,
-    .can_contain_func = can_contain,
+    .containment_kinds = containment_kinds,
     .match_inline = match,
     .terminates_text = "~",
     .dispatch = "~",

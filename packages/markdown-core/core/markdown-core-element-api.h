@@ -238,7 +238,7 @@ typedef enum {
     /** The node was freed or replaced. No later step sees this event: the
      *  node it names is gone. Legal only at EXIT. */
     MARKDOWN_CORE_FINISH_CONSUMED,
-    /** An allocation failed and 'parser->oom' is set. The walk stops. */
+    /** An allocation failed and 'parser->error' is set. The walk stops. */
     MARKDOWN_CORE_FINISH_FAILED
 } markdown_core_finish_result;
 
@@ -264,7 +264,7 @@ typedef enum {
  * roots.
  *
  * The step obeys the LOCAL contract above. It returns CONSUMED when it freed
- * or replaced 'node' (legal only at EXIT), FAILED with 'parser->oom' set when
+ * or replaced 'node' (legal only at EXIT), FAILED with 'parser->error' set when
  * an allocation failed, and CONTINUE otherwise.
  */
 typedef markdown_core_finish_result (*markdown_core_finish_step_func)(const markdown_core_element *element,
@@ -275,7 +275,7 @@ typedef markdown_core_finish_result (*markdown_core_finish_step_func)(const mark
 
 /** Rewrite the tree rooted at 'root' in place, after its finish walk.
  *
- * Return 1 on success and 0 on failure, having set 'parser->oom' to report it.
+ * Return 1 on success and 0 on failure, having set 'parser->error' to report it.
  *
  * 'root' itself belongs to whoever holds it: the parser for the document, and
  * the owning element for a node-valued field such as a definition term or a

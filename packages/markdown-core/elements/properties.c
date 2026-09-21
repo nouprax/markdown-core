@@ -22,7 +22,7 @@ typedef struct {
     markdown_core_parser *parser;
     const unsigned char *source;
     markdown_core_metadata_fields *metadata;
-    source_line *lines;
+    size_t first_line;
     size_t count;
     /* One-token lookahead: the boundary line is the next member's line.
      * Its lexical classification belongs to this decoder, not to the core's
@@ -36,6 +36,12 @@ typedef struct {
     /* The index of a line at or before `pos`; decoder_line() catches it up. */
     size_t line;
 } decoder;
+
+/* Decode a pre-indexed envelope. Return geometry by value so a later parser
+ * operation cannot invalidate a decoder's line reference. */
+static source_line property_line(const properties *p, size_t line) {
+    return p->parser->input_lines[p->first_line + line];
+}
 
 static bool space(unsigned char c) { return c == ' ' || c == '\t'; }
 static bool newline(unsigned char c) { return c == '\r' || c == '\n'; }
@@ -60,7 +66,7 @@ static size_t next_line(const unsigned char *s, size_t p, size_t end) {
  * Past the last member line it rests on the closing fence. */
 static size_t decoder_line(decoder *d) {
     const properties *p = d->owner;
-    while (d->line < p->count && p->lines[d->line + 1].start <= d->pos) {
+    while (d->line < p->count && property_line(p, d->line + 1).start <= d->pos) {
         d->line++;
     }
     return d->line;
@@ -68,7 +74,7 @@ static size_t decoder_line(decoder *d) {
 static markdown_core_string copy(properties *p, const unsigned char *s, size_t size) {
     unsigned char *data = markdown_core_alloc(size + 1, 1);
     if (!data) {
-        p->parser->oom = true;
+        markdown_core_parser_fail(p->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return (markdown_core_string){0};
     }
     if (size) {
@@ -109,7 +115,7 @@ static void skip(decoder *d) {
         if (space(s[d->pos]) || newline(s[d->pos])) {
             d->pos++;
         } else if (s[d->pos] == '#' && (d->pos == 0 || space(s[d->pos - 1]) || newline(s[d->pos - 1]))) {
-            d->pos = d->owner->lines[decoder_line(d)].end;
+            d->pos = property_line(d->owner, decoder_line(d)).end;
         } else {
             break;
         }
@@ -132,7 +138,7 @@ static bool printable(properties *p, size_t start, size_t end) {
 }
 static bool finish_string(decoder *d, markdown_core_strbuf *buf, markdown_core_string *value) {
     if (buf->oom) {
-        d->owner->parser->oom = true;
+        markdown_core_parser_fail(d->owner->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
     *value = copy(d->owner, buf->ptr, (size_t)buf->size);
@@ -212,7 +218,7 @@ static bool quoted(decoder *d, markdown_core_string *value) {
     }
     valid = valid && closed && finish_string(d, &buf, value);
     if (buf.oom) {
-        d->owner->parser->oom = true;
+        markdown_core_parser_fail(d->owner->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     markdown_core_strbuf_free(&buf);
     return valid;
@@ -285,9 +291,8 @@ static markdown_core_metadata_value *field_slot(markdown_core_metadata_fields *m
  * newline. No folding, escaping, chomping flags or explicit indent indicators. */
 static bool literal(decoder *d, size_t key_start, markdown_core_metadata_value *value) {
     const unsigned char *s = d->owner->source;
-    const source_line *lines = d->owner->lines;
     size_t key_line = decoder_line(d);
-    size_t key_indent = key_start - lines[key_line].start;
+    size_t key_indent = key_start - property_line(d->owner, key_line).start;
     d->pos++;
     if (d->pos < d->end && !space(s[d->pos]) && !newline(s[d->pos])) {
         return false;
@@ -296,7 +301,7 @@ static bool literal(decoder *d, size_t key_start, markdown_core_metadata_value *
         d->pos++;
     }
     if (d->pos < d->end && s[d->pos] == '#') {
-        d->pos = lines[key_line].end;
+        d->pos = property_line(d->owner, key_line).end;
     }
     if (d->pos < d->end && !newline(s[d->pos])) {
         return false;
@@ -304,8 +309,8 @@ static bool literal(decoder *d, size_t key_start, markdown_core_metadata_value *
     markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
     size_t indent = 0, clipped = 0, line = key_line + 1;
     bool valid = true;
-    for (; lines[line].start < d->end; line++) {
-        size_t start = lines[line].start, end = lines[line].end, content = start;
+    for (; property_line(d->owner, line).start < d->end; line++) {
+        size_t start = property_line(d->owner, line).start, end = property_line(d->owner, line).end, content = start;
         while (content < end && s[content] == ' ') {
             content++;
         }
@@ -328,13 +333,13 @@ static bool literal(decoder *d, size_t key_start, markdown_core_metadata_value *
             clipped = (size_t)text.size;
         }
     }
-    d->pos = lines[line].start;
+    d->pos = property_line(d->owner, line).start;
     value->kind = MARKDOWN_CORE_METADATA_SCALAR;
     value->as.scalar.kind = MARKDOWN_CORE_METADATA_TEXT;
     markdown_core_strbuf_truncate(&text, (bufsize_t)clipped);
     valid = valid && finish_string(d, &text, &value->as.scalar.value.string);
     if (text.oom) {
-        d->owner->parser->oom = true;
+        markdown_core_parser_fail(d->owner->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     markdown_core_strbuf_free(&text);
     return valid;
@@ -402,7 +407,7 @@ static bool scalar(decoder *d, scalar_context structure, markdown_core_metadata_
         }
         markdown_core_free((void *)text.data);
     }
-    return valid && !d->owner->parser->oom;
+    return valid && !d->owner->parser->error;
 }
 static bool list_item(decoder *d, scalar_context structure, markdown_core_metadata_value *list, size_t *capacity) {
     markdown_core_metadata_value value = {0};
@@ -415,7 +420,7 @@ static bool list_item(decoder *d, scalar_context structure, markdown_core_metada
     void *items =
         markdown_core_reserve(list->as.list.items, capacity, list->as.list.count + 1, sizeof(*list->as.list.items));
     if (!items) {
-        d->owner->parser->oom = true;
+        markdown_core_parser_fail(d->owner->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         free_value(&value);
         return false;
     }
@@ -437,7 +442,7 @@ static bool sequence(decoder *d, markdown_core_metadata_value *value) {
             d->pos++;
             return true;
         }
-        while (d->pos < d->end && !d->owner->parser->oom) {
+        while (d->pos < d->end && !d->owner->parser->error) {
             if (!list_item(d, ARRAY_SCALAR, value, &capacity)) {
                 return false;
             }
@@ -462,29 +467,28 @@ static bool sequence(decoder *d, markdown_core_metadata_value *value) {
     }
     /* Each block member owns exactly its indented continuation. The decoder's
      * range contracts once, then resumes after it; no member is scanned twice. */
-    const source_line *lines = d->owner->lines;
     size_t outer_end = d->end;
-    while (d->pos < outer_end && !d->owner->parser->oom) {
+    while (d->pos < outer_end && !d->owner->parser->error) {
         size_t start = d->pos;
         if (s[start] != '-' || (start + 1 < outer_end && !space(s[start + 1]) && !newline(s[start + 1]))) {
             return false;
         }
         size_t line = decoder_line(d);
-        size_t item_indent = start - lines[line].start;
+        size_t item_indent = start - property_line(d->owner, line).start;
         d->pos++;
         while (d->pos < outer_end && space(s[d->pos])) {
             d->pos++;
         }
-        for (line++; lines[line].start < outer_end; line++) {
-            size_t p = lines[line].start, end = lines[line].end;
+        for (line++; property_line(d->owner, line).start < outer_end; line++) {
+            size_t p = property_line(d->owner, line).start, end = property_line(d->owner, line).end;
             while (p < end && space(s[p])) {
                 p++;
             }
-            if (p < end && s[p] != '#' && p - lines[line].start <= item_indent) {
+            if (p < end && s[p] != '#' && p - property_line(d->owner, line).start <= item_indent) {
                 break;
             }
         }
-        size_t e = lines[line].start;
+        size_t e = property_line(d->owner, line).start;
         d->end = e;
         bool valid = list_item(d, PROPERTY_SCALAR, value, &capacity);
         skip(d);
@@ -505,7 +509,7 @@ static bool field(decoder *d, size_t key_end) {
     /* The key must close on the line it opened: its source ends at or before
      * that line's end. A quoted key can run across lines; the decoded text is
      * checked separately since escapes can put a newline into it. */
-    size_t value_line_end = p->lines[key_line].end;
+    size_t value_line_end = property_line(p, key_line).end;
     markdown_core_string name = {0};
     markdown_core_metadata_value value = {0};
     bool quoted_key = d->pos < d->end && (s[d->pos] == '\'' || s[d->pos] == '"');
@@ -623,13 +627,13 @@ static void classify_line(properties *p, size_t line) {
     }
     p->classified = true;
     p->classified_line = line;
-    size_t first = p->lines[line].start, end = p->lines[line].end;
+    size_t first = property_line(p, line).start, end = property_line(p, line).end;
     while (first < end && p->source[first] == ' ') {
         first++;
     }
     p->first = first;
     p->key = block_key_end(p->source, first, end);
-    p->parser->metadata_key_work += end - p->lines[line].start;
+    p->parser->metadata_key_work += end - property_line(p, line).start;
 }
 
 /* Return the index of the first line after `line` that the member starting
@@ -642,7 +646,7 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
     bool first = true;
     for (; line < p->count; line++) {
         classify_line(p, line);
-        size_t cursor = p->lines[line].start, e = p->lines[line].end, nonspace = p->first;
+        size_t cursor = property_line(p, line).start, e = property_line(p, line).end, nonspace = p->first;
         if (!first && nonspace < e && nonspace - cursor <= indent) {
             bool list_line =
                 nonspace - cursor == indent && s[nonspace] == '-' && (nonspace + 1 == e || space(s[nonspace + 1]));
@@ -720,9 +724,9 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
 
 static void payload(properties *p) {
     const unsigned char *s = p->source;
-    for (size_t line = 0; line < p->count && !p->parser->oom;) {
+    for (size_t line = 0; line < p->count && !p->parser->error;) {
         classify_line(p, line);
-        size_t first = p->first, key = p->key, e = p->lines[line].end;
+        size_t first = p->first, key = p->key, e = property_line(p, line).end;
         size_t content = first;
         while (content < e && space(s[content])) {
             content++;
@@ -732,9 +736,9 @@ static void payload(properties *p) {
             line++;
             continue;
         }
-        size_t indent = first - p->lines[line].start;
+        size_t indent = first - property_line(p, line).start;
         size_t boundary = block_boundary(p, line, indent);
-        decoder d = {.owner = p, .pos = first, .end = p->lines[boundary].start, .line = line};
+        decoder d = {.owner = p, .pos = first, .end = property_line(p, boundary).start, .line = line};
         field(&d, key);
         line = boundary;
     }
@@ -785,10 +789,10 @@ size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsign
         return 0;
     }
     p.count = (size_t)number - 3;
-    p.lines = parser->input_lines + 1;
+    p.first_line = 1;
     markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_METADATA);
     if (!node) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return 0;
     }
     size_t consumed = next_line(source, close + 3, length);
@@ -798,7 +802,7 @@ size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsign
     node->end_line = (int)(p.count + 2);
     node->end_column = 3;
     payload(&p);
-    if (parser->oom) {
+    if (parser->error) {
         markdown_core_parser_release_node(parser, node);
         return 0;
     }

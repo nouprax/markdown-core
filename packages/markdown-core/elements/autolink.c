@@ -20,7 +20,7 @@ static markdown_core_node *make_str_with_entities(markdown_core_inline_state *in
 
     if (houdini_unescape_html(&unescaped, content->data, content->len)) {
         if (unescaped.oom) {
-            inline_state->oom = 1;
+            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         }
         return make_str(inline_state, start_column, end_column, markdown_core_chunk_buf_detach(&unescaped));
     } else {
@@ -45,7 +45,7 @@ static markdown_core_chunk markdown_core_clean_autolink(markdown_core_inline_sta
 
     houdini_unescape_html_f(&buf, url->data, url->len);
     if (buf.oom) {
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
     return markdown_core_chunk_buf_detach(&buf);
 }
@@ -56,7 +56,7 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
     markdown_core_node *link = markdown_core_inline_make_simple(inline_state, MARKDOWN_CORE_NODE_LINK);
     markdown_core_node *text;
     if (!link) {
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return NULL;
     }
     {
@@ -67,7 +67,7 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
         markdown_core_chunk destination = markdown_core_clean_autolink(inline_state, &url, is_email);
         link->as.link->resource = markdown_core_resource_new(destination, markdown_core_optional_chunk_absent());
         if (!link->as.link->resource) {
-            inline_state->oom = 1;
+            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
             markdown_core_chunk_free(&destination);
             markdown_core_parser_release_node(inline_state->owner_parser, link);
             return NULL;
@@ -345,7 +345,7 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
 
     markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_LINK);
     if (!node) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
 
@@ -359,13 +359,13 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
             url.data ? markdown_core_resource_new(url, markdown_core_optional_chunk_absent()) : NULL;
         if (!node->as.link->resource) {
             markdown_core_chunk_free(&url);
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
     }
 
     markdown_core_node *text = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_TEXT);
     if (!text) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_parser_release_node(parser, node);
         return NULL;
     }
@@ -422,19 +422,19 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
 
     markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_LINK);
     if (!node) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
 
     markdown_core_chunk url = markdown_core_chunk_dup(chunk, max_rewind - rewind, (bufsize_t)(link_end + rewind));
     node->as.link->resource = markdown_core_resource_new(url, markdown_core_optional_chunk_absent());
     if (!node->as.link->resource) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 
     markdown_core_node *text = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_TEXT);
     if (!text) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_parser_release_node(parser, node);
         return NULL;
     }
@@ -518,7 +518,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
          * `[mailto:x@y.z](u)` keeps its plain text as cmark-gfm does, and a
          * bracket that never closes still gets its link. */
         markdown_core_node *node = in_bracket ? NULL : url_match(parser, parent, inline_state);
-        return node || parser->oom ? node : address_match(parser, inline_state);
+        return node || parser->error ? node : address_match(parser, inline_state);
     }
 
     if (c == 'w' && !in_bracket) {
@@ -563,12 +563,12 @@ static markdown_core_node *email_text_fragment(markdown_core_parser *parser,
     assert(length);
     markdown_core_node *text = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_TEXT);
     if (!text) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
     markdown_core_chunk literal = markdown_core_chunk_dup(source, (bufsize_t)start, (bufsize_t)length);
     if (!markdown_core_chunk_to_cstr(&literal)) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_parser_release_node(parser, text);
         return NULL;
     }
@@ -581,7 +581,7 @@ static markdown_core_node *email_text_fragment(markdown_core_parser *parser,
  * and any prefix Text are attached BEFORE `text`, and `text` keeps the tail.
  * A Text that is nothing but addresses is freed once its splits are in place;
  * the return value says so, because the caller's event names a node that is
- * then gone. Sets parser->oom on failure and leaves the tree consistent. */
+ * then gone. Sets parser->error on failure and leaves the tree consistent. */
 static markdown_core_finish_result postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
     size_t start = 0;
     size_t offset = 0;
@@ -692,7 +692,7 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
         }
         markdown_core_node *link_node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_LINK);
         if (!link_node) {
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             break;
         }
         size_t prefix_start = start;
@@ -711,7 +711,7 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
                 url.data ? markdown_core_resource_new(url, markdown_core_optional_chunk_absent()) : NULL;
             if (!link_node->as.link->resource) {
                 markdown_core_chunk_free(&url);
-                parser->oom = true;
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                 markdown_core_parser_release_node(parser, link_node);
                 break;
             }
@@ -738,7 +738,7 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
         offset = 0;
     }
 
-    if (parser->oom) {
+    if (parser->error) {
         return MARKDOWN_CORE_FINISH_FAILED;
     }
     if (!start) {
@@ -750,7 +750,7 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
     }
     markdown_core_chunk tail = markdown_core_chunk_dup(&source, (bufsize_t)start, (bufsize_t)remaining);
     if (!markdown_core_chunk_to_cstr(&tail)) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return MARKDOWN_CORE_FINISH_FAILED;
     }
     set_sourcepos_from_range(parser, text, &source_map, start, remaining);

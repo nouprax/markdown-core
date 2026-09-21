@@ -62,7 +62,7 @@ markdown_core_node *markdown_core_paragraph_open_text(markdown_core_parser *pars
                                                       markdown_core_chunk *input) {
     container = markdown_core_block_parent_for(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH);
     parser->current = container;
-    if (markdown_core_block_attach_identifier_line(parser, container, input) || parser->oom) {
+    if (markdown_core_block_attach_identifier_line(parser, container, input) || parser->error) {
         return NULL;
     }
     container =

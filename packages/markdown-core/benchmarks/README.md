@@ -582,10 +582,9 @@ cmark reading of a document holding a production cmark does not decode would
 print a per-byte ratio for something that is not a comparison. Its growth row
 stands, with a dash where the reference would be.
 
-What the split does not do is gate. The stage benchmark gates nothing, and the
-spread between hosts is evidence that names a host, not a threshold — it is
-comparable only across reports whose identity tables match, like every other
-number here.
+The split remainder and spread between hosts remain diagnostic evidence.
+The separate source-stage gate compares each whole input against the event base
+within one job; it does not assign a performance budget to a split remainder.
 
 ## The attribute grammar, against lexbor
 
@@ -760,3 +759,21 @@ toolchain tables differ are not comparable at all** — not their counts, not
 their ratios — and a difference between them cannot be read as a code change.
 What holds inside one report is that both engines met the same compiler, so the
 ratio there is a fact about the two parsers rather than about the build.
+
+## Source-stage regression gate
+
+CI calls this workflow as a dependency of `Required gates`. With
+`--baseline-ref COMMIT`, the driver rebuilds the base engine using the current
+harness, preset and pinned references, generates the current corpus once, and
+measures both cores on those exact bytes in the same isolated environment.
+Effective flags, compiler provenance and loaded runtime libraries must agree.
+Both complete reports and Callgrind dumps are retained; the base report reuses
+this run's measured reference results and identifies their actual binaries.
+
+Every case/scale must have `source_to_buffer` Ir at most 1.02 times its base.
+The 2% allowance is an explicit review budget, not a claim of measurement noise
+or elapsed-time equivalence. There is no median/total-stage offset, dropped
+regression row, or missing-input fallback. An intentional increase beyond the
+budget requires review of the algorithm and requirement; the driver writes
+both reports before failing. This guard does not replace allocation bounds,
+semantic proofs, or adversarial complexity tests.

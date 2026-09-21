@@ -11,14 +11,20 @@
 
 static void S_node_unlink(markdown_core_node *node);
 
-bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
+bool markdown_core_node_can_contain_builtin(const markdown_core_node *node, markdown_core_node_type child_type) {
     if (child_type == MARKDOWN_CORE_NODE_DOCUMENT || child_type == MARKDOWN_CORE_NODE_TABLE_CAPTION ||
         child_type == MARKDOWN_CORE_NODE_METADATA) {
         return false;
     }
 
-    if (node->element && node->element->can_contain_func) {
-        return node->element->can_contain_func(node->element, node, child_type) != 0;
+    if (node->element && node->element->containment_kinds) {
+        const markdown_core_node_type *kind = node->element->containment_kinds;
+        while (*kind && *kind != node->kind) {
+            kind++;
+        }
+        if (!*kind) {
+            return false;
+        }
     }
 
     switch (node->kind) {
@@ -42,6 +48,22 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     case MARKDOWN_CORE_NODE_LIST:
         return child_type == MARKDOWN_CORE_NODE_LIST_ITEM;
 
+    case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
+        return node->element && node->element->containment_kinds && MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) &&
+               child_type != MARKDOWN_CORE_NODE_LIST_ITEM && child_type != MARKDOWN_CORE_NODE_DEFINITION &&
+               child_type != MARKDOWN_CORE_NODE_DEFINITION_BODY;
+    case MARKDOWN_CORE_NODE_TABLE:
+        return node->element && node->element->containment_kinds && child_type == MARKDOWN_CORE_NODE_TABLE_ROW;
+    case MARKDOWN_CORE_NODE_TABLE_ROW:
+        return node->element && node->element->containment_kinds && child_type == MARKDOWN_CORE_NODE_TABLE_CELL;
+    case MARKDOWN_CORE_NODE_TABLE_CELL:
+        return node->element && node->element->containment_kinds &&
+               (MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type) || MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type));
+    case MARKDOWN_CORE_NODE_DIRECTIVE_LABEL:
+        return node->element && node->element->containment_kinds && MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type) &&
+               child_type != MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
+    case MARKDOWN_CORE_NODE_STRIKETHROUGH:
+        return node->element && node->element->containment_kinds && MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
     case MARKDOWN_CORE_NODE_PARAGRAPH:
     case MARKDOWN_CORE_NODE_TABLE_CAPTION:
     case MARKDOWN_CORE_NODE_HEADING:
@@ -61,6 +83,17 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     }
 
     return false;
+}
+
+bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
+    if (node->element && node->element->can_contain_func) {
+        if (child_type == MARKDOWN_CORE_NODE_DOCUMENT || child_type == MARKDOWN_CORE_NODE_TABLE_CAPTION ||
+            child_type == MARKDOWN_CORE_NODE_METADATA) {
+            return false;
+        }
+        return node->element->can_contain_func(node->element, node, child_type) != 0;
+    }
+    return markdown_core_node_can_contain_builtin(node, child_type);
 }
 
 static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
@@ -1085,6 +1118,10 @@ void markdown_core_node_attach_validated(markdown_core_node *parent, markdown_co
     assert(parent && child && parent != child);
     assert(!child->parent && !child->prev && !child->next);
     assert(!before || before->parent == parent);
+    /* Built-in containment is pure and shares its rules with checked mutation.
+     * Dynamic policies were decided before ownership moved; never replay them. */
+    assert((parent->element && parent->element->can_contain_func) ||
+           markdown_core_node_can_contain_builtin(parent, (markdown_core_node_type)child->kind));
     markdown_core_node *previous = before ? before->prev : parent->last_child;
     child->parent = parent;
     child->prev = previous;

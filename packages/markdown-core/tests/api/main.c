@@ -15,6 +15,11 @@
 #include "directive.h"
 #include <stdlib.h>
 #include <string.h>
+#if !defined(NDEBUG) && !defined(_WIN32)
+#include <signal.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 #include "alloc.h"
 #include "markdown-core.h"
@@ -82,7 +87,7 @@ typedef union {
     void *pointer;
 } properties_allocation;
 static size_t properties_live_bytes, properties_peak_bytes;
-static int properties_counting;
+static int properties_counting, properties_force_moves;
 
 static void properties_account(size_t old_size, size_t new_size) {
     properties_live_bytes = properties_live_bytes - old_size + new_size;
@@ -190,7 +195,19 @@ void *markdown_core_realloc(void *pointer, size_t size) {
         }
         allocation = pointer ? (properties_allocation *)pointer - 1 : NULL;
         old_size = allocation ? allocation->size : 0;
-        allocation = realloc(allocation, sizeof(*allocation) + size);
+        if (properties_force_moves) {
+            properties_allocation *grown = malloc(sizeof(*grown) + size);
+            if (!grown) {
+                return NULL;
+            }
+            if (allocation) {
+                memcpy(grown + 1, allocation + 1, old_size < size ? old_size : size);
+                free(allocation);
+            }
+            allocation = grown;
+        } else {
+            allocation = realloc(allocation, sizeof(*allocation) + size);
+        }
         if (!allocation) {
             return NULL;
         }
@@ -3753,6 +3770,7 @@ typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
     size_t registered_definitions, definition_lists, citation_brace_bytes, tables, table_frontier;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
+    size_t physical_lines, physical_capacity, physical_facts;
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
@@ -3801,6 +3819,9 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
     work->inline_hooks = parser->inline_hook_work;
     work->properties_lines = parser->properties_line_work;
     work->physical_line_bytes = parser->input_line_work;
+    work->physical_lines = parser->input_line_count;
+    work->physical_capacity = parser->input_line_capacity;
+    work->physical_facts = parser->input_fact_count;
     work->metadata_key_bytes = parser->metadata_key_work;
     work->metadata_value_bytes = parser->metadata_decoded_bytes;
     work->table_scratch_growth = parser->table_scratch_growth;
@@ -4291,7 +4312,7 @@ static int strip_comments(const markdown_core_element *element, markdown_core_pa
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type event;
     if (!iter) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return 0;
     }
     /* At EXIT the iterator already holds the parent or following sibling, so
@@ -4320,7 +4341,7 @@ static int html_to_placeholder(const markdown_core_element *element, markdown_co
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type event;
     if (!iter) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return 0;
     }
     while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
@@ -4347,7 +4368,7 @@ static int html_to_placeholder(const markdown_core_element *element, markdown_co
             !markdown_core_node_append_child(para, text)) {
             markdown_core_node_free(para);
             markdown_core_node_free(text);
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             markdown_core_iter_free(iter);
             return 0;
         }
@@ -6085,7 +6106,7 @@ static markdown_core_node *seed_anchor(const markdown_core_element *element, int
             owner = owner->parent;
         }
         if (!markdown_core_chunk_set_cstr(&owner->attributes.anchor, "existing")) {
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
     }
     return NULL;
@@ -7070,15 +7091,18 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
     for (int pass = 0; pass < 3; pass++) {
         for (int i = 3; i >= 0; i--) {
             markdown_core_input_line *line = markdown_core_parser_source_line(&parser, i + 7);
-            OK(runner, line && line->start == starts[i] && line->end == ends[i] && line->next == next[i],
+            OK(runner,
+               line && line->start == starts[i] && line->end == ends[i] &&
+                   markdown_core_input_line_next(&parser, line) == next[i],
                "physical line geometry is stable across lookahead and replay: %d/%d", pass, i);
-            OK(runner, line && (line->nul_count != 0) == (i == 0), "NUL normalization is a line fact");
+            OK(runner, line && (line->facts && parser.input_facts[line->facts - 1].nul_count != 0) == (i == 0),
+               "NUL normalization is a line fact");
         }
         INT_EQ(runner, parser.input_line_work, sizeof(source) - 1, "replay never scans source geometry again");
     }
     OK(runner, !markdown_core_parser_source_line(&parser, 6) && !markdown_core_parser_source_line(&parser, 11),
        "the active input has an explicit line range");
-    INT_EQ(runner, parser.input_fact_count, 0, "geometry consumers create no speculative grammar state");
+    INT_EQ(runner, parser.input_fact_count, 1, "only the NUL-bearing line needs optional geometry state");
     markdown_core_line_facts *first = markdown_core_parser_get_line_facts(&parser, 7);
     OK(runner, first != NULL, "a grammar query attaches facts to its physical line");
     if (first) {
@@ -7091,6 +7115,135 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
     INT_EQ(runner, parser.input_line_work, sizeof(source) - 1, "facts do not rediscover geometry");
     markdown_core_free(parser.input_facts);
     markdown_core_free(parser.input_lines);
+}
+
+static void short_line_storage_is_bounded(test_batch_runner *runner) {
+    INT_EQ(runner, sizeof(markdown_core_input_line), 12, "ordinary physical geometry occupies twelve bytes");
+    for (size_t count = 8; count <= 65537; count = count == 8 ? 1025 : count * 64 - 63) {
+        for (int text = 0; text < 2; text++) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, text ? "x\n" : "\n");
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
+            OK(runner, root != NULL, "adversarial short lines parse");
+            INT_EQ(runner, work.physical_lines, count, "one geometry record per physical line");
+            INT_EQ(runner, work.physical_line_bytes, source.size, "the source frontier scans each byte once");
+            INT_EQ(runner, work.physical_facts, 0, "ordinary short lines allocate no optional facts");
+            OK(runner, work.physical_capacity >= count && work.physical_capacity < 2 * count,
+               "retained geometry capacity is bounded by twice the number of lines");
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+static void growth_preserves_input_views(test_batch_runner *runner) {
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+    markdown_core_strbuf_puts(&source, "---\nname: title\nabstract: |\n");
+    for (int i = 0; i < 257; i++) {
+        markdown_core_strbuf_puts(&source, "  prose\n");
+    }
+    markdown_core_strbuf_puts(&source, "---\n\n");
+    for (int i = 0; i < 65; i++) {
+        markdown_core_strbuf_puts(&source, "a   b\n--- ---\nc   d\n--- ---\n\n");
+    }
+    markdown_core_document *reference = markdown_core_document_parse(source.ptr, source.size, NULL);
+    uint8_t *expected = NULL, *actual = NULL;
+    size_t expected_length = 0, actual_length = 0;
+    OK(runner, reference && markdown_core_document_dump(reference, &expected, &expected_length, NULL),
+       "reference metadata and tables have a complete canonical dump");
+    properties_probe_arm();
+    properties_force_moves = 1;
+    markdown_core_document *moved = markdown_core_document_parse(source.ptr, source.size, NULL);
+    OK(runner, moved && markdown_core_document_dump(moved, &actual, &actual_length, NULL),
+       "metadata and separator views survive every growth moving storage");
+    OK(runner, expected && actual && expected_length == actual_length && !memcmp(expected, actual, expected_length),
+       "moving shared workspaces preserves every value, child and source position");
+    markdown_core_dump_free(actual);
+    markdown_core_document_free(moved);
+    INT_EQ(runner, properties_live_bytes, 0, "moving storage retains no allocations after disposal");
+    properties_force_moves = 0;
+    properties_probe_disarm();
+    markdown_core_dump_free(expected);
+    markdown_core_document_free(reference);
+    markdown_core_strbuf_free(&source);
+}
+
+static void construction_checks_containment(test_batch_runner *runner) {
+#if !defined(NDEBUG) && !defined(_WIN32)
+    pid_t child = fork();
+    if (child == 0) {
+        (void)freopen("/dev/null", "w", stderr);
+        markdown_core_node *parent = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *block = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node_attach_validated(parent, block, NULL);
+        _exit(0);
+    }
+    int status = 0;
+    OK(runner, child > 0 && waitpid(child, &status, 0) == child && WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT,
+       "an unproven built-in attachment triggers the Debug/ASan containment assertion");
+#else
+    (void)runner;
+#endif
+}
+
+static markdown_core_parse_error observed_token_error;
+static void observe_token_error(markdown_core_inline_state *state) {
+    if (state->error) {
+        observed_token_error = state->error;
+    }
+}
+static const markdown_core_element ERROR_OBSERVER = {.name = "error-observer", .dispose_inline = observe_token_error};
+static bool configure_error_observer(markdown_core_parser *parser, void *context) {
+    return configure_conversion_policy(parser, context) && markdown_core_parser_attach_element(parser, &ERROR_OBSERVER);
+}
+static int reject_additional_paragraph(const markdown_core_element *element, markdown_core_node *node,
+                                       markdown_core_node_type kind) {
+    (void)element;
+    if (kind == MARKDOWN_CORE_NODE_PARAGRAPH && node->first_child) {
+        (*(size_t *)node->user_data)++;
+        return 0;
+    }
+    return markdown_core_node_can_contain_builtin(node, kind);
+}
+static const markdown_core_element LEAD_POLICY = {.name = "lead-policy",
+                                                  .can_contain_func = reject_additional_paragraph};
+static bool configure_lead_policy(markdown_core_parser *parser, void *context) {
+    parser->root->element = &LEAD_POLICY;
+    parser->root->user_data = context;
+    return true;
+}
+static void semantic_rejection_preserves_its_cause(test_batch_runner *runner) {
+    conversion_policy policy = {MARKDOWN_CORE_NODE_CODE, 0, 0};
+    const char *source = "! `code`\n";
+    observed_token_error = MARKDOWN_CORE_PARSE_OK;
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup(source, strlen(source), configure_error_observer, &policy);
+    OK(runner, !root, "a consumed rejected token fails the transaction");
+    INT_EQ(runner, observed_token_error, MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED,
+           "semantic rejection is distinct from allocation failure");
+    if (root) {
+        markdown_core_node_free(root);
+    }
+    markdown_core_parser parser = {0};
+    markdown_core_parser_fail(&parser, MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED);
+    markdown_core_parser_fail(&parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    INT_EQ(runner, parser.error, MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED, "cleanup cannot overwrite the first cause");
+
+    size_t rejections = 0;
+    source = "lead\n| h |\n| - |\n";
+    root = markdown_core_parse_document_with_setup(source, strlen(source), configure_lead_policy, &rejections);
+    OK(runner, root && rejections, "refused table lead leaves the original parse available");
+    if (!root) {
+        return;
+    }
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "a refused split never changes the paragraph kind");
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_PARAGRAPH), 1,
+           "a refused split preserves one complete paragraph");
+    markdown_core_node_free(root);
 }
 
 static void table_candidates_reuse_scratch(test_batch_runner *runner) {
@@ -7335,7 +7488,7 @@ static int postprocess_deletes_cites(const markdown_core_element *element, markd
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type event;
     if (!iter) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return 0;
     }
     while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
@@ -8191,6 +8344,10 @@ int main(void) {
     properties_envelope_derives_each_line_once(runner);
     properties_rejected_members_borrow_source(runner);
     source_line_geometry_is_shared(runner);
+    short_line_storage_is_bounded(runner);
+    growth_preserves_input_views(runner);
+    construction_checks_containment(runner);
+    semantic_rejection_preserves_its_cause(runner);
     table_candidates_reuse_scratch(runner);
     parser_attachment_commits_one_decision(runner);
     formula_containment_follows_recognition(runner);

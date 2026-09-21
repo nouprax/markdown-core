@@ -107,7 +107,7 @@ static void finalize_code(markdown_core_parser *parser, markdown_core_node *b) {
              * NOT an absent info string -- it is an info string the parse
              * lost. The strict OOM sweep requires that loss to terminate
              * the parse. */
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             markdown_core_strbuf_free(&tmp);
             b->as.code->info = markdown_core_optional_chunk_absent();
         } else if (tmp.size == 0) {
@@ -116,7 +116,7 @@ static void finalize_code(markdown_core_parser *parser, markdown_core_node *b) {
         } else {
             markdown_core_chunk info = markdown_core_chunk_buf_detach(&tmp);
             if (!info.data) {
-                parser->oom = true;
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             }
             b->as.code->info = markdown_core_optional_chunk_present(info);
         }
@@ -131,7 +131,7 @@ static void finalize_code(markdown_core_parser *parser, markdown_core_node *b) {
     }
     b->as.code->literal = markdown_core_chunk_buf_detach(node_content);
     if (!b->as.code->literal.data) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
 static bool open_fenced(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,

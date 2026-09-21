@@ -32,7 +32,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
         chunk.len -= pos;
     }
     if (attributes.oom) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     parser->attribute_work += attributes.work;
     markdown_core_attribute_parser_free(&attributes);
@@ -356,7 +356,7 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_chunk *input, markd
     } else {
         markdown_core_attributes_free(&value);
     }
-    if ((inline_state.oom || lost) && refmap) {
+    if ((inline_state.error || lost) && refmap) {
         refmap->oom = 1;
     }
     return inline_state.pos;
@@ -406,7 +406,7 @@ markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_state
                 url = markdown_core_clean_url(&url_chunk, &lost);
                 title = markdown_core_clean_title(&title_chunk, &lost);
                 if (lost) {
-                    inline_state->oom = 1;
+                    inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
                 }
             }
             markdown_core_chunk_free(&url_chunk);
@@ -488,7 +488,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
         }
     }
     if (!inl) {
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         if (!record) {
             markdown_core_chunk_free(&url);
             markdown_core_optional_chunk_free(&title);
@@ -587,7 +587,7 @@ void markdown_core_inline_push_bracket(markdown_core_inline_state *inline_state,
                                        markdown_core_node *inl_text) {
     bracket *b = (bracket *)markdown_core_alloc(1, sizeof(bracket));
     if (!b) {
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return;
     }
     if (inline_state->last_bracket != NULL) {

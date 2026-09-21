@@ -69,7 +69,7 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *par
         parser->callout_scan_work++;
     }
     if (!markdown_core_chunk_to_cstr(&variant)) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return true;
     }
     node->as.callout->variant = markdown_core_optional_chunk_present(variant);
@@ -77,7 +77,7 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *par
     if (end > pos) {
         markdown_core_node *title = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
         if (!title) {
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return true;
         }
         node->as.callout->title = title;
@@ -87,7 +87,7 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *par
         markdown_core_strbuf_put(&title->content, input->data + pos, end - pos);
         if (title->content.oom || !markdown_core_parser_append_source_marks(parser, title, parser->line_number, pos + 1,
                                                                             title->content.size, 0)) {
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
     }
     markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
