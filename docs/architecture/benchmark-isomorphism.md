@@ -46,6 +46,7 @@ has exactly one contract:
 Registering a proof requires reviewing its derivation and executable checker
 together. A prose string or a boolean in the manifest cannot certify a pair.
 Unknown proofs, missing contracts and legacy registries fail validation.
+Changing a proof's domain or structural mapping requires a new proof identifier.
 
 ## First proof: insertion-strong-v1
 
@@ -141,3 +142,7 @@ counts remain historical measurements; the old 30-pair median must not be
 compared with the new proved-domain median as a performance change. The new
 insertion pair also changes the corpus digest. Remeasure both parser revisions
 on the same corpus and toolchain for a performance comparison.
+Schema 4 also records a pairing-identity digest over the registry, proof document
+and executable contract checker. This identity must match when comparing
+summaries: a changed proof status or mapping can change their membership even
+when every measured document's bytes are unchanged.

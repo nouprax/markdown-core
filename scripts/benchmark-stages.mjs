@@ -56,7 +56,7 @@ import { fileURLToPath } from "node:url";
 import { baseName, costRecord, edgesBetween, foldNames, nodesEnteredFrom, parseCallgrind } from "./lib/callgrind.mjs";
 import { compiledFlags as readCompiledFlags, discardTree, effectiveFlags, markTree } from "./lib/compile-identity.mjs";
 import { caseClosure, splitWithCases } from "./lib/corpus-splits.mjs";
-import { pairRatios, proofWorkload, provenPair, validatePairs } from "./lib/corpus-pairs.mjs";
+import { pairingIdentity, pairRatios, proofWorkload, provenPair, validatePairs } from "./lib/corpus-pairs.mjs";
 import {
     BUILD_FLAG_VARIABLES,
     buildEnvironment,
@@ -1723,6 +1723,7 @@ export function markdownReport(report) {
         `| cmark-gfm only | \`${report.toolchain.compiled["cmark-gfm only"] || "(nothing)"}\` |`,
         `| C library dispatch | \`${report.toolchain.dispatch.slice(0, 16)}\` |`,
         `| Corpus | \`${report.corpus.digest.slice(0, 16)}\` (${report.corpus.cases} documents) |`,
+        `| Pairing contracts | \`${report.pairingDigest.slice(0, 16)}\` |`,
         "",
         "The measurement runs in an environment built rather than inherited: a path," +
             " a home, a temporary directory and the C locale, and nothing else. An" +
@@ -2548,6 +2549,11 @@ function main() {
          * report saying so. */
         cmarkGfm: { version: gfm.version, commit: gfm.commit },
         corpus: { targetBytes: corpus.targetBytes, cases: corpus.documents.length, digest: corpus.digest },
+        pairingDigest: pairingIdentity(
+            manifest.pairs,
+            fs.readFileSync(path.join(root, "docs/architecture/benchmark-isomorphism.md"), "utf8"),
+            fs.readFileSync(path.join(root, "scripts/lib/corpus-pairs.mjs"), "utf8")
+        ),
         // Record the exact contracts beside the raw measurements.
         pairs: manifest.pairs,
         /* And the splits, which are neither: a remainder proved unpairable,

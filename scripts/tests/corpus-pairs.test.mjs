@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
-import { provenPair, pairRatios, proofTree, proofWorkload, spanLanguage, validatePairs } from "../lib/corpus-pairs.mjs";
+import {
+    pairingIdentity,
+    provenPair,
+    pairRatios,
+    proofTree,
+    proofWorkload,
+    spanLanguage,
+    validatePairs
+} from "../lib/corpus-pairs.mjs";
 import { parseCanonicalDump, parseUpstreamXml } from "../lib/upstream-cmark.mjs";
 import { markdownReport } from "../benchmark-stages.mjs";
 import { publishesRatio } from "../lib/corpus-splits.mjs";
@@ -13,6 +21,14 @@ const manifest = () =>
 const pair = { case: "dialect", isomorph: "common", contract: { proof: "insertion-strong-v1" } };
 const candidate = { case: "candidate", isomorph: "twin", contract: { pending: "No structural mapping." } };
 const document = (body) => `probe ++${body}++\n\n`;
+
+test("changing the pairing interpretation changes identity even with identical measured bytes", () => {
+    const digest = pairingIdentity([pair], "proof", "checker");
+    assert.equal(pairingIdentity([pair], "proof", "checker"), digest);
+    assert.notEqual(pairingIdentity([candidate], "proof", "checker"), digest);
+    assert.notEqual(pairingIdentity([pair], "revised proof", "checker"), digest);
+    assert.notEqual(pairingIdentity([pair], "proof", "revised checker"), digest);
+});
 
 test("every workload has one explicit contract and candidates cannot enter equivalent-work results", () => {
     const declared = manifest();
@@ -159,6 +175,7 @@ function reportFixture(pairs) {
     const engine = { stages: { source_to_buffer: stage, buffer_to_ast: stage }, total: { ir: 250 } };
     return {
         schemaVersion: 4,
+        pairingDigest: "fixture-identity",
         cmark: { version: "test", commit: "123456789abc" },
         cmarkGfm: { version: "test", commit: "123456789abc" },
         toolchain: {
@@ -205,6 +222,7 @@ test("reports keep candidates out of formal medians, including filtered candidat
     assert.match(report, /\| Dialect, proved domain \|[^\n]+\| 1 \|/);
     assert.match(report, /Candidate pair diagnostics \(equivalence unproved\)/);
     assert.match(report, /No structural mapping/);
+    assert.match(report, /\| Pairing contracts \| `fixture-identity` \|/);
     assert.doesNotMatch(report, /\| GFM extensions \|/);
     assert.match(report, /\| Dialect, proved domain \|[^\n]+\| 1 \| 1.00x \|/);
     assert.throws(() => markdownReport({ ...fixture, schemaVersion: 3 }), /schema 4/);

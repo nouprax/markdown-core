@@ -4,7 +4,14 @@
  * proof about a language. Only a registered, executable domain proof enables
  * an equivalent-work comparison. See the benchmark isomorphism contract.
  */
+import { createHash } from "node:crypto";
+
 const SPAN_PROOF = "insertion-strong-v1";
+
+/** Interpretation is part of measurement identity even when corpus bytes stay unchanged. */
+export function pairingIdentity(pairs, proofText, checkerSource) {
+    return createHash("sha256").update(JSON.stringify({ pairs, proofText, checkerSource })).digest("hex");
+}
 
 export function equalProofTrees(left, right) {
     const pending = [[left, right]];
