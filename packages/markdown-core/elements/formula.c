@@ -564,10 +564,6 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
     bufsize_t body_len = body_end - body_start;
     markdown_core_strbuf unescaped;
 
-    if (!opener_node->parent || !markdown_core_node_can_contain_type(opener_node->parent, MARKDOWN_CORE_NODE_FORMULA)) {
-        goto done;
-    }
-
     if (rule != markdown_core_delimiter_rule_of(closer)) {
         goto done;
     }
@@ -583,6 +579,12 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
         }
         body++;
         body_len -= 2;
+    }
+
+    /* Only recognized syntax asks the parent for a containment decision;
+     * that decision authorizes the attachment after allocation. */
+    if (!opener_node->parent || !markdown_core_node_can_contain_type(opener_node->parent, MARKDOWN_CORE_NODE_FORMULA)) {
+        goto done;
     }
 
     markdown_core_strbuf_init(&unescaped, 0);

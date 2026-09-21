@@ -7147,6 +7147,50 @@ static void parser_attachment_commits_one_decision(test_batch_runner *runner) {
     payload_probe_disarm();
 }
 
+/* Invalid syntax must not consume a stateful parent's acceptance. Once a
+ * formula is recognized, that one decision authorizes its attachment. */
+static void formula_containment_follows_recognition(test_batch_runner *runner) {
+    static const struct {
+        const char *source, *prefix;
+    } cases[] = {
+        {"! $`$ $good$ $later$\n", "! $`$ "},
+        {"! $`bad$ $good$ $later$\n", "! $`bad$ "},
+        {"! $`good`$ $later$\n", "! "},
+    };
+    payload_probe_arm();
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        conversion_policy policy = {MARKDOWN_CORE_NODE_FORMULA, 0, 1};
+        markdown_core_node *root = markdown_core_parse_document_with_setup(cases[i].source, strlen(cases[i].source),
+                                                                           configure_conversion_policy, &policy);
+        OK(runner, root != NULL, "formula policy preserves the parse transaction");
+        INT_EQ(runner, policy.allowed, 0, "the first valid formula consumes the acceptance");
+        INT_EQ(runner, policy.rejections, 1, "only the later valid formula is rejected");
+        if (root) {
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_FORMULA), 1,
+                   "invalid candidates never prevent the first valid formula from attaching");
+            markdown_core_node *prefix = root->first_child ? root->first_child->first_child : NULL;
+            markdown_core_node *formula = prefix ? prefix->next : NULL;
+            markdown_core_node *suffix = formula ? formula->next : NULL;
+            bool expected_shape = prefix && prefix->kind == MARKDOWN_CORE_NODE_TEXT && formula &&
+                                  formula->kind == MARKDOWN_CORE_NODE_FORMULA && suffix &&
+                                  suffix->kind == MARKDOWN_CORE_NODE_TEXT && !suffix->next;
+            OK(runner, expected_shape, "only the accepted formula replaces its source span");
+            if (expected_shape) {
+                STR_EQ(runner, markdown_core_node_get_literal(prefix), cases[i].prefix,
+                       "invalid formula syntax remains literal text");
+                STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "good",
+                       "the first valid formula owns the recognized body");
+                STR_EQ(runner, markdown_core_node_get_literal(suffix), " $later$",
+                       "the rejected formula retains its original text");
+            }
+            INT_EQ(runner, markdown_core_node_check(root, NULL), 0, "formula attachment keeps the tree consistent");
+            markdown_core_node_free(root);
+        }
+        INT_EQ(runner, payload_live, 0, "accepted and rejected formula candidates release all allocations");
+    }
+    payload_probe_disarm();
+}
+
 /* NUL is one scalar represented as U+FFFD before grammar sees a line. Driver,
  * lookahead, inline cells and queued block cells must see identical bytes and
  * the same native byte-column convention. Views remain stable while another
@@ -8149,6 +8193,7 @@ int main(void) {
     source_line_geometry_is_shared(runner);
     table_candidates_reuse_scratch(runner);
     parser_attachment_commits_one_decision(runner);
+    formula_containment_follows_recognition(runner);
     lookahead_and_driver_share_normalized_lines(runner);
     definition_open_gate_admits_only_possible_terms(runner);
     a_pass_may_free_the_roots_a_later_pass_reads(runner);
