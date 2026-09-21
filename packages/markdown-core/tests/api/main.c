@@ -7150,12 +7150,12 @@ static void growth_preserves_input_views(test_batch_runner *runner) {
     for (int i = 0; i < 65; i++) {
         markdown_core_strbuf_puts(&source, "a   b\n--- ---\nc   d\n--- ---\n\n");
     }
+    properties_probe_arm();
     markdown_core_document *reference = markdown_core_document_parse(source.ptr, source.size, NULL);
     uint8_t *expected = NULL, *actual = NULL;
     size_t expected_length = 0, actual_length = 0;
     OK(runner, reference && markdown_core_document_dump(reference, &expected, &expected_length, NULL),
        "reference metadata and tables have a complete canonical dump");
-    properties_probe_arm();
     properties_force_moves = 1;
     markdown_core_document *moved = markdown_core_document_parse(source.ptr, source.size, NULL);
     OK(runner, moved && markdown_core_document_dump(moved, &actual, &actual_length, NULL),
@@ -7164,11 +7164,11 @@ static void growth_preserves_input_views(test_batch_runner *runner) {
        "moving shared workspaces preserves every value, child and source position");
     markdown_core_dump_free(actual);
     markdown_core_document_free(moved);
+    markdown_core_dump_free(expected);
+    markdown_core_document_free(reference);
     INT_EQ(runner, properties_live_bytes, 0, "moving storage retains no allocations after disposal");
     properties_force_moves = 0;
     properties_probe_disarm();
-    markdown_core_dump_free(expected);
-    markdown_core_document_free(reference);
     markdown_core_strbuf_free(&source);
 }
 
