@@ -245,3 +245,9 @@ copy it with the rest of the immutable result. JNI uses the shared optional
 node-field continuation, and Wasm's fixed node record uses its owner-typed
 `fieldIndex` for either a directive label or a table caption. The row chain and
 its head/body/foot counts continue to describe rows alone.
+
+Allocation failure and semantic refusal can occur in one token construction.
+The transaction retains the first cause: a constructor may return an owned
+node after its literal allocation failed, and a later policy refusal releases
+that node without replacing the allocation error. Setup callbacks run only
+after the initial parser structures have been created successfully.

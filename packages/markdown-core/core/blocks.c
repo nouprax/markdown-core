@@ -1281,7 +1281,8 @@ markdown_core_node *markdown_core_parse_document_with_setup(const char *source, 
     for (size_t i = 0; i < parser->element_count; i++) {
         S_register_element(parser, parser->elements[i]);
     }
-    if (setup && !setup(parser, context)) {
+    /* Setup borrows a fully initialized root, never a failed transaction. */
+    if (parser->error || (setup && !setup(parser, context))) {
         S_parser_free(parser);
         return NULL;
     }

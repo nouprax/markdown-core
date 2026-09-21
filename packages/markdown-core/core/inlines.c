@@ -833,7 +833,9 @@ append:
             /* A token constructor has consumed input. Refusing its result is
              * a failed parse, but the detached token is still ours to release. */
             markdown_core_parser_release_node(parser, new_inl);
-            inline_state->error = MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED;
+            if (!inline_state->error) {
+                inline_state->error = MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED;
+            }
             return 0;
         }
         markdown_core_node_attach_validated(parent, new_inl, NULL);

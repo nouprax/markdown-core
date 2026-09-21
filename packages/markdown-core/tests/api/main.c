@@ -7216,6 +7216,33 @@ static bool configure_lead_policy(markdown_core_parser *parser, void *context) {
     parser->root->user_data = context;
     return true;
 }
+static void rejected_token_allocation_failures(test_batch_runner *runner) {
+    const char *source = "! `code`\n";
+    /* A constructor can return its owned token after a literal/attribute
+     * allocation failed. Its later policy refusal must preserve that cause. */
+    for (size_t fail_at = 1;; fail_at++) {
+        conversion_policy policy = {MARKDOWN_CORE_NODE_CODE, 0, 0};
+        payload_probe_arm();
+        payload_fail_at = fail_at;
+        observed_token_error = MARKDOWN_CORE_PARSE_OK;
+        markdown_core_node *root =
+            markdown_core_parse_document_with_setup(source, strlen(source), configure_error_observer, &policy);
+        if (root) {
+            markdown_core_node_free(root);
+        }
+        bool refused = payload_allocations >= fail_at;
+        if (refused && observed_token_error) {
+            INT_EQ(runner, observed_token_error, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED,
+                   "a later policy rejection preserves the constructor's allocation failure: %zu", fail_at);
+        }
+        INT_EQ(runner, payload_live, 0, "allocation refusal plus semantic refusal leaks nothing: %zu", fail_at);
+        payload_probe_disarm();
+        if (!refused) {
+            break;
+        }
+    }
+}
+
 static void semantic_rejection_preserves_its_cause(test_batch_runner *runner) {
     conversion_policy policy = {MARKDOWN_CORE_NODE_CODE, 0, 0};
     const char *source = "! `code`\n";
@@ -8348,6 +8375,7 @@ int main(void) {
     growth_preserves_input_views(runner);
     construction_checks_containment(runner);
     semantic_rejection_preserves_its_cause(runner);
+    rejected_token_allocation_failures(runner);
     table_candidates_reuse_scratch(runner);
     parser_attachment_commits_one_decision(runner);
     formula_containment_follows_recognition(runner);
