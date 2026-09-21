@@ -79,8 +79,10 @@ The original record shares the node's cell and is reclaimed with the
 node, unless it did not fit the cell; that record, and every replacement
 record, is freed when replaced or when the node dies.
 The typed view and allocation ownership are explicit: `as` points to the
-current record, while `node_data_allocation` owns a replacement allocation, if
-any. Ownership is never inferred by comparing potentially adjacent addresses.
+current record, while `node_data_allocation` owns whichever record is not in
+the cell, if any: a replacement, or an initial record too large for the cell's
+record space. Ownership is never inferred by comparing potentially adjacent
+addresses.
 `markdown_core_node_set_kind` distinguishes containment rejection from allocation
 failure. Parser callers decline rejected conversions and set the OOM flag only
 for allocation failure. Either failure leaves the original kind and all owned
