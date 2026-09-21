@@ -296,16 +296,18 @@ static void S_parser_free(markdown_core_parser *parser) {
  * are the ones whose last line IS the line in hand; every other block ended on
  * the line before. An element container closing on its own fence is a fourth,
  * and `markdown_core_block_finalize` cannot know that from the type alone. */
+static inline bufsize_t S_current_line_length(const markdown_core_parser *parser) {
+    /* The input owner builds content + one LF; grammar borrows that line.
+     * Its byte extent is invariant while the cursor and chunks advance. */
+    assert(parser->curline.size > 0);
+    assert(parser->curline.ptr[parser->curline.size - 1] == '\n');
+    assert(parser->curline.size < 2 || parser->curline.ptr[parser->curline.size - 2] != '\r');
+    return parser->curline.size - 1;
+}
+
 void markdown_core_block_set_end_to_current_line(markdown_core_parser *parser, markdown_core_node *b) {
     b->end_line = parser->line_number;
-    b->end_column = parser->curline.size;
-    if (b->end_column && parser->curline.ptr[b->end_column - 1] == '\n') {
-        b->end_column -= 1;
-    }
-    if (b->end_column && parser->curline.ptr[b->end_column - 1] == '\r') {
-        b->end_column -= 1;
-    }
-    b->end_column = markdown_core_parser_source_column(parser, b->end_line, b->end_column);
+    b->end_column = markdown_core_parser_source_column(parser, b->end_line, S_current_line_length(parser));
 }
 
 // Returns true if line has only space characters, else false.
@@ -2786,15 +2788,8 @@ finished:
     /* Block scopes cover the complete physical line, including closing
      * delimiters and attribute containers. Inline content trimming never
      * changes this source boundary. */
-    parser->last_line_length = parser->curline.size;
-    if (parser->last_line_length && parser->curline.ptr[parser->last_line_length - 1] == '\n') {
-        parser->last_line_length -= 1;
-    }
-    if (parser->last_line_length && parser->curline.ptr[parser->last_line_length - 1] == '\r') {
-        parser->last_line_length -= 1;
-    }
     parser->last_line_length =
-        markdown_core_parser_source_column(parser, parser->line_number, parser->last_line_length);
+        markdown_core_parser_source_column(parser, parser->line_number, S_current_line_length(parser));
 
     markdown_core_strbuf_clear(&parser->curline);
 }

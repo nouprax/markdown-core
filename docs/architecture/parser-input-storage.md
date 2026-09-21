@@ -48,6 +48,10 @@ with one reservation and copy, without testing and appending the terminator
 as a second buffer operation. All 256 byte values at every position across
 three machine words are checked against the physical-line and normalization
 contracts, including the scalar tail after a split.
+The active grammar line always has exactly one terminal LF. Advancing grammar
+cursors does not change its extent, so both block-end and last-line columns
+derive the content length from that shared invariant instead of inspecting
+and stripping line endings again. Debug/ASan asserts the invariant.
 Initial workspace allocation is outside `source_to_buffer`, while growth
 remains inside it. Comparisons must
 therefore include the report's `parsePathIr` and `outsideStagesIr` as well as
