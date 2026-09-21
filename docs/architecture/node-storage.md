@@ -59,15 +59,22 @@ retains its own dimensions even when its destination and title come from a
 resource shared with other resolved references. Cross references own their raw
 destination fields directly and do not share a resource with a definition.
 
-Parser construction transfers a detached, independently owned subtree through
-`markdown_core_node_attach_owned`. The caller establishes disjoint ownership
-by creating the subtree or detaching it from a known separate owner; merely
-having no parent is not proof of disjointness. The operation checks local
-containment and allocator invariants, then splices once in constant time.
-The arbitrary mutation API checks ancestry, allocator and containment once
-before unlinking, then commits through the same non-failing splice. In
-particular, a custom containment predicate observes the original tree and is
-never called again after detachment. Rejection leaves both trees unchanged.
+Parser construction transfers a detached, independently owned subtree. The
+caller establishes disjoint ownership by creating the subtree or detaching it
+from a known separate owner; merely having no parent is not proof of
+disjointness. `markdown_core_node_attach_owned` validates local links and
+containment when the construction point has not already made that decision.
+`markdown_core_node_attach_validated` is the one non-failing splice used by
+both that operation and callers with an established containment decision.
+It asserts local link invariants without invoking a containment callback.
+The arbitrary mutation API checks ancestry and containment once before
+unlinking, then commits through the same splice. A custom predicate therefore
+observes the original tree and is never called again after detachment.
+Rejection leaves both trees unchanged. Optional rewrites, including formula
+promotion and email splitting, validate before allocating or consuming the
+old node; rejection preserves the authored content. A constructed inline
+token rejected by its destination remains owned by the parser and is released
+before the parse fails. There is no per-node allocator identity to check.
 Kind conversion changes no edges and checks only containment.
 There is no safety mode, ancestry cache, or separate inline splice algorithm.
 A source-boundary audit keeps arbitrary reparenting out of parser construction;

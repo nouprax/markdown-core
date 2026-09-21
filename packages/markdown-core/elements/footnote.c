@@ -20,7 +20,8 @@ void markdown_core_block_finalize_footnotes(markdown_core_parser *parser) {
     if (!collection->count) {
         goto done;
     }
-    if (!markdown_core_block_order_definitions(collection) || !markdown_core_key_index_init(&ids, collection->count)) {
+    if (!markdown_core_block_order_definitions(parser, collection) ||
+        !markdown_core_key_index_init(&ids, collection->count)) {
         goto failed;
     }
     for (index = 0; index < collection->count; index++) {
@@ -126,7 +127,7 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(markdown_core_par
     markdown_core_inline_finish_citation_tokens(inline_state, &opener->citations);
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
     markdown_core_inline_take_bracket_content(parser, opener, footnote);
-    markdown_core_node_attach_owned(opener->inl_text->parent, cite, opener->inl_text);
+    markdown_core_node_attach_validated(opener->inl_text->parent, cite, opener->inl_text);
     if (!markdown_core_parser_register_definition(parser, &parser->footnotes, footnote, cite->as.cite->citations,
                                                   &parser->root->as.document->footnotes)) {
         markdown_core_parser_release_node(parser, footnote);

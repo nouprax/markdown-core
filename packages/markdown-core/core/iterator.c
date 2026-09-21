@@ -85,22 +85,22 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
          * is appended. A decoded operand (its own run, at offset zero, a
          * literal shorter than its scope) or an operand with no map breaks
          * the chain, and the union is materialized run by run as before. */
-        markdown_core_node combined_map = {0};
-        bool view = parser && cur->content_mark_count > 0;
-        int view_end = cur->content_mark + cur->content_mark_count;
-        bufsize_t view_offset = cur->content_mark_offset + cur->as.literal->len;
+        markdown_core_content_map combined_map = {0};
+        bool view = parser && cur->content_map.count > 0;
+        int view_end = cur->content_map.first + cur->content_map.count;
+        bufsize_t view_offset = cur->content_map.offset + cur->as.literal->len;
         for (tmp = cur->next; view && tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT; tmp = tmp->next) {
-            view = tmp->content_mark_count > 0 && tmp->content_mark_offset == view_offset &&
-                   tmp->content_mark >= view_end - 1 && tmp->content_mark <= view_end;
-            view_end = tmp->content_mark + tmp->content_mark_count;
+            view = tmp->content_map.count > 0 && tmp->content_map.offset == view_offset &&
+                   tmp->content_map.first >= view_end - 1 && tmp->content_map.first <= view_end;
+            view_end = tmp->content_map.first + tmp->content_map.count;
             view_offset += tmp->as.literal->len;
         }
         if (view) {
-            combined_map.content_mark = cur->content_mark;
-            combined_map.content_mark_count = view_end - cur->content_mark;
-            combined_map.content_mark_offset = cur->content_mark_offset;
-        } else if (parser &&
-                   !markdown_core_parser_append_content_marks(parser, cur, &combined_map, 0, cur->as.literal->len, 0)) {
+            combined_map.first = cur->content_map.first;
+            combined_map.count = view_end - cur->content_map.first;
+            combined_map.offset = cur->content_map.offset;
+        } else if (parser && !markdown_core_parser_append_content_marks(parser, &cur->content_map, &combined_map, 0,
+                                                                        cur->as.literal->len, 0)) {
             return MARKDOWN_CORE_FINISH_FAILED;
         }
         markdown_core_strbuf_clear(buf);
@@ -120,8 +120,8 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
                 complete(parser, tmp, depth);
             }
             if (parser && !view &&
-                !markdown_core_parser_append_content_marks(parser, tmp, &combined_map, 0, tmp->as.literal->len,
-                                                           buf->size)) {
+                !markdown_core_parser_append_content_marks(parser, &tmp->content_map, &combined_map, 0,
+                                                           tmp->as.literal->len, buf->size)) {
                 return MARKDOWN_CORE_FINISH_FAILED;
             }
             markdown_core_strbuf_put(buf, tmp->as.literal->data, tmp->as.literal->len);
@@ -151,9 +151,7 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
          * rule rather than merely safe. It is not a step of the walk -- the
          * event it re-delivers was delivered already -- so it is not counted. */
         if (parser) {
-            cur->content_mark = combined_map.content_mark;
-            cur->content_mark_count = combined_map.content_mark_count;
-            cur->content_mark_offset = combined_map.content_mark_offset;
+            cur->content_map = combined_map;
         }
         markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
         markdown_core_chunk_free(cur->as.literal);

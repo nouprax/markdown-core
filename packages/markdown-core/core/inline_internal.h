@@ -106,12 +106,12 @@ struct markdown_core_inline_state {
 static inline void markdown_core_inline_seat_cursor(markdown_core_inline_state *inline_state) {
     markdown_core_parser *parser = inline_state->owner_parser;
     markdown_core_node *owner = inline_state->owner;
-    inline_state->mapped = parser && owner && owner->content_mark_count > 0;
+    inline_state->mapped = parser && owner && owner->content_map.count > 0;
     if (!inline_state->mapped) {
         return;
     }
-    int cursor = inline_state->mark_cursor, last = owner->content_mark + owner->content_mark_count - 1;
-    assert(cursor >= owner->content_mark && cursor <= last);
+    int cursor = inline_state->mark_cursor, last = owner->content_map.first + owner->content_map.count - 1;
+    assert(cursor >= owner->content_map.first && cursor <= last);
     const markdown_core_line_mark *mark = &parser->line_marks[cursor];
     inline_state->mark_run_start = mark->content_offset;
     inline_state->mark_run_end = cursor < last ? parser->line_marks[cursor + 1].content_offset : INT32_MAX;
@@ -128,7 +128,7 @@ static inline void markdown_core_inline_seat_cursor(markdown_core_inline_state *
  * `input` at `from`, which is that fact by identity; an element that placed
  * a copy it made (a citation prefix moved into its own buffer) is asked byte
  * for byte. The writes stay inside the gate: a node that is not a verbatim
- * copy of its source must keep `content_mark_count` at zero, because that
+ * copy of its source must keep `content_map.count` at zero, because that
  * count is read elsewhere as "is there a mapping at all". */
 static inline void markdown_core_inline_map_text(markdown_core_inline_state *inline_state, markdown_core_node *node,
                                                  int from, int to, int first, int last) {
@@ -136,12 +136,12 @@ static inline void markdown_core_inline_map_text(markdown_core_inline_state *inl
     if (literal->len == to - from + 1 &&
         (literal->data == inline_state->input.data + from ||
          memcmp(literal->data, inline_state->input.data + from, (size_t)literal->len) == 0)) {
-        node->content_mark = first;
-        node->content_mark_count = last - first + 1;
-        node->content_mark_offset = from + inline_state->owner->content_mark_offset;
+        node->content_map.first = first;
+        node->content_map.count = last - first + 1;
+        node->content_map.offset = from + inline_state->owner->content_map.offset;
     } else {
-        node->content_mark_count = 0;
-        node->content_mark_offset = 0;
+        node->content_map.count = 0;
+        node->content_map.offset = 0;
         markdown_core_parser_append_content_mark(inline_state->owner_parser, node, 0, node->start_line,
                                                  node->start_column, node->end_column - node->start_column + 1, 0);
     }
@@ -169,7 +169,7 @@ static inline void markdown_core_inline_place(markdown_core_inline_state *inline
     if (!inline_state->mapped) {
         return;
     }
-    bufsize_t base = inline_state->owner->content_mark_offset;
+    bufsize_t base = inline_state->owner->content_map.offset;
     bufsize_t from_offset = from + base, to_offset = to + base;
     inline_state->owner_parser->content_mark_queries++;
     if (from < 0 || to < 0 || from_offset < inline_state->mark_run_start || to_offset < inline_state->mark_run_start ||

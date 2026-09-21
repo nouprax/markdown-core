@@ -81,7 +81,7 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
     markdown_core_inline_state_place(inline_state, link, start_column, end_column);
     text = make_str_with_entities(inline_state, start_column + 1, end_column - 1, &url);
     if (text) {
-        markdown_core_node_attach_owned(link, text, NULL);
+        markdown_core_node_attach_validated(link, text, NULL);
     }
     markdown_core_inline_attach_inline_attributes(inline_state, link, start_column);
     /* The pointy braces are the syntax; what they enclose is the text. */
@@ -277,8 +277,8 @@ static void clear_sourcepos(markdown_core_node *node) {
     node->end_column = 0;
 }
 
-static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *source,
-                                     size_t start, size_t len) {
+static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core_node *node,
+                                     const markdown_core_content_map *source, size_t start, size_t len) {
     clear_sourcepos(node);
     if (!len) {
         return;
@@ -287,7 +287,7 @@ static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core
     markdown_core_parser_content_end_place(parser, source, (bufsize_t)(start + len - 1), &node->end_line,
                                            &node->end_column);
     if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
-        markdown_core_parser_adopt_content_marks(parser, source, node, (bufsize_t)start, (bufsize_t)len);
+        markdown_core_parser_adopt_content_marks(parser, source, &node->content_map, (bufsize_t)start, (bufsize_t)len);
     }
 }
 
@@ -370,7 +370,7 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
         return NULL;
     }
     *text->as.literal = markdown_core_chunk_dup(chunk, (bufsize_t)max_rewind, (bufsize_t)link_end);
-    markdown_core_node_attach_owned(node, text, NULL);
+    markdown_core_node_attach_validated(node, text, NULL);
 
     markdown_core_inline_state_place(inline_state, node, (int)max_rewind, (int)(max_rewind + link_end - 1));
     markdown_core_inline_state_place(inline_state, text, (int)max_rewind, (int)(max_rewind + link_end - 1));
@@ -439,7 +439,7 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
         return NULL;
     }
     *text->as.literal = url;
-    markdown_core_node_attach_owned(node, text, NULL);
+    markdown_core_node_attach_validated(node, text, NULL);
 
     markdown_core_inline_state_place(inline_state, node, max_rewind - rewind, (int)(max_rewind + link_end - 1));
     markdown_core_inline_state_place(inline_state, text, max_rewind - rewind, (int)(max_rewind + link_end - 1));
@@ -557,7 +557,8 @@ static bool validate_protocol(const char protocol[], uint8_t *data, size_t rewin
 }
 
 /* Construct only a nonempty fragment of an already recognized split. */
-static markdown_core_node *email_text_fragment(markdown_core_parser *parser, markdown_core_node *source_map,
+static markdown_core_node *email_text_fragment(markdown_core_parser *parser,
+                                               const markdown_core_content_map *source_map,
                                                const markdown_core_chunk *source, size_t start, size_t length) {
     assert(length);
     markdown_core_node *text = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_TEXT);
@@ -584,10 +585,7 @@ static markdown_core_node *email_text_fragment(markdown_core_parser *parser, mar
 static markdown_core_finish_result postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
     size_t start = 0;
     size_t offset = 0;
-    markdown_core_node source_map = {0};
-    source_map.content_mark = text->content_mark;
-    source_map.content_mark_count = text->content_mark_count;
-    source_map.content_mark_offset = text->content_mark_offset;
+    markdown_core_content_map source_map = text->content_map;
     /* The original Text owns the immutable source until every split is
      * committed. A failed search neither detaches nor copies its buffer. */
     markdown_core_chunk source = *text->as.literal;
@@ -685,13 +683,19 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
             continue;
         }
 
+        /* Recognition alone cannot authorize a rewrite in an extension-owned
+         * parent. Decide before allocating or splitting the original text. */
+        size_t prefix_len = offset + max_rewind - rewind;
+        if (!text->parent || !markdown_core_node_can_contain_type(text->parent, MARKDOWN_CORE_NODE_LINK) ||
+            (prefix_len && !markdown_core_node_can_contain_type(text->parent, MARKDOWN_CORE_NODE_TEXT))) {
+            break;
+        }
         markdown_core_node *link_node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_LINK);
         if (!link_node) {
             parser->oom = true;
             break;
         }
         size_t prefix_start = start;
-        size_t prefix_len = offset + max_rewind - rewind;
         size_t link_start = start + offset + max_rewind - rewind;
         size_t link_len = link_end + rewind;
         size_t post_start = start + offset + max_rewind + link_end;
@@ -719,16 +723,16 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
             markdown_core_parser_release_node(parser, link_node);
             break;
         }
-        markdown_core_node_attach_owned(link_node, link_text, NULL);
+        markdown_core_node_attach_validated(link_node, link_text, NULL);
         if (prefix_len) {
             markdown_core_node *prefix = email_text_fragment(parser, &source_map, &source, prefix_start, prefix_len);
             if (!prefix) {
                 markdown_core_parser_release_node(parser, link_node);
                 break;
             }
-            markdown_core_node_attach_owned(text->parent, prefix, text);
+            markdown_core_node_attach_validated(text->parent, prefix, text);
         }
-        markdown_core_node_attach_owned(text->parent, link_node, text);
+        markdown_core_node_attach_validated(text->parent, link_node, text);
         start = post_start;
         remaining = source.len - start;
         offset = 0;

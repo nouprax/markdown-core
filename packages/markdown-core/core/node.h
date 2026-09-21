@@ -219,10 +219,14 @@ enum markdown_core_node__internal_flags {
     // Deferred contextual escape token, decoded when inline ownership is final.
     MARKDOWN_CORE_NODE__ESCAPED_SPACE = (1 << 6),
 
+    /* Reference definitions have advanced this block's semantic beginning.
+     * A later arrival may supply its first surviving content line. */
+    MARKDOWN_CORE_NODE__REFERENCE_PREFIX = (1 << 7),
+
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 7),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 8),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -285,10 +289,7 @@ struct markdown_core_node {
     int internal_offset;
     /* This node's slice of parser-owned content-to-source runs. Zero count
      * means there is no mapped content (for example, an empty cell). */
-    int content_mark;
-    int content_mark_count;
-    /* A slice reads immutable parser-owned marks at this content origin. */
-    int content_mark_offset;
+    markdown_core_content_map content_map;
     uint16_t kind;
     markdown_core_node_internal_flags flags;
 
@@ -364,6 +365,13 @@ int markdown_core_visit_block_subtrees_since(markdown_core_node *node,
                                              markdown_core_owned_subtree_visitor visitor, void *context, bool *found);
 int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
                                        void *context);
+
+/* Commit an exclusively owned, detached subtree after the caller has proved
+ * containment and disjointness. No callbacks, allocation, or rejection occurs
+ * after ownership starts to move. Pointer-link assertions do not re-evaluate
+ * containment predicates, which may have side effects. */
+void markdown_core_node_attach_validated(markdown_core_node *parent, markdown_core_node *child,
+                                         markdown_core_node *before);
 
 /* Attach an exclusively owned, detached subtree before a child of parent,
  * or at the end when before is NULL. The caller must establish that the

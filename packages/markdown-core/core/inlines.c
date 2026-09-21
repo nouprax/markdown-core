@@ -47,7 +47,8 @@ void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, 
 void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline_state, markdown_core_node *node,
                                               int from, int to) {
     markdown_core_content_span span;
-    markdown_core_parser_content_span(inline_state->owner_parser, inline_state->owner, from, to, &span,
+    markdown_core_parser_content_span(inline_state->owner_parser,
+                                      inline_state->owner ? &inline_state->owner->content_map : NULL, from, to, &span,
                                       &inline_state->mark_cursor);
     markdown_core_inline_seat_cursor(inline_state);
     if (span.has_start) {
@@ -69,8 +70,8 @@ void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline
             if (!(literal->len == to - from + 1 &&
                   (literal->data == inline_state->input.data + from ||
                    memcmp(literal->data, inline_state->input.data + from, (size_t)literal->len) == 0))) {
-                node->content_mark_count = 0;
-                node->content_mark_offset = 0;
+                node->content_map.count = 0;
+                node->content_map.offset = 0;
                 markdown_core_parser_append_content_mark(inline_state->owner_parser, node, 0, node->start_line,
                                                          node->start_column, node->end_column - node->start_column + 1,
                                                          0);
@@ -682,7 +683,7 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
         opener_inl->end_column = opener_inl->start_column + (int)opener_num_chars - 1;
     }
     if (closer_num_chars > 0) {
-        closer_inl->content_mark_offset += (int)use_delims;
+        closer_inl->content_map.offset += (int)use_delims;
         closer_inl->start_column = closer_inl->end_column - (int)closer_num_chars + 1;
     }
 
@@ -825,7 +826,13 @@ append:
         }
     }
     if (new_inl != NULL) {
-        markdown_core_node_attach_owned(parent, new_inl, NULL);
+        if (!markdown_core_node_attach_owned(parent, new_inl, NULL)) {
+            /* A token constructor has consumed input. Refusing its result is
+             * a failed parse, but the detached token is still ours to release. */
+            markdown_core_parser_release_node(parser, new_inl);
+            inline_state->oom = 1;
+            return 0;
+        }
         bool has_fields = false;
         markdown_core_visit_inline_subtrees(new_inl, has_inline_field, &has_fields);
         if (has_fields) {
@@ -849,14 +856,14 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
      * replaces: `start_column - 1 + internal_offset` was the block offset every
      * inline position used to be measured from, and stating it once as a mark
      * is what lets the term itself go. */
-    if (parent->content_mark_count == 0) {
+    if (parent->content_map.count == 0) {
         markdown_core_parser_mark_content(parser, parent, parent->start_line,
                                           parent->start_column + parent->internal_offset);
     }
     markdown_core_inline_state_from_buf(parser, parent->start_line, inline_state, &content, refmap);
     inline_state->owner = parent;
     inline_state->owner_structure = markdown_core_node_structure(parent);
-    inline_state->mark_cursor = parent->content_mark;
+    inline_state->mark_cursor = parent->content_map.first;
     markdown_core_inline_seat_cursor(inline_state);
     /* Block buffers include their terminating line ending. An inline field
      * ends at its owner's delimiter: its trailing spaces are body content. */
@@ -1071,8 +1078,9 @@ markdown_core_node *markdown_core_inline_state_make_delimiter_text(markdown_core
 /* The cursor's position, asked of the map from the cursor's run. */
 static int S_cursor_place(markdown_core_inline_state *inline_state, int *line, int *column) {
     markdown_core_content_span span;
-    int placed = markdown_core_parser_content_span(inline_state->owner_parser, inline_state->owner, inline_state->pos,
-                                                   -1, &span, &inline_state->mark_cursor);
+    int placed = markdown_core_parser_content_span(inline_state->owner_parser,
+                                                   inline_state->owner ? &inline_state->owner->content_map : NULL,
+                                                   inline_state->pos, -1, &span, &inline_state->mark_cursor);
     markdown_core_inline_seat_cursor(inline_state);
     if (!placed || !span.has_start) {
         return 0;
@@ -1099,7 +1107,8 @@ static void S_update_text_sourcepos(markdown_core_parser *parser, markdown_core_
         node->start_line = node->start_column = node->end_line = node->end_column = 0;
         return;
     }
-    markdown_core_parser_content_end_place(parser, node, node->as.literal->len - 1, &node->end_line, &node->end_column);
+    markdown_core_parser_content_end_place(parser, &node->content_map, node->as.literal->len - 1, &node->end_line,
+                                           &node->end_column);
 }
 
 void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n) {

@@ -2,6 +2,8 @@
 #define MARKDOWN_CORE_ALLOC_H
 
 #include <stddef.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,6 +58,33 @@ extern "C" {
 void *markdown_core_alloc(size_t count, size_t size);
 void *markdown_core_realloc(void *pointer, size_t size);
 void markdown_core_free(void *pointer);
+
+/* A grow-only typed vector's storage. Refusal leaves both its pointer and
+ * capacity intact; ownership stays with the caller until disposal. Assign
+ * the returned pointer only on success. Returning a value avoids aliasing a
+ * typed pointer object through void **. Requests here are nonempty. */
+static inline void *markdown_core_reserve(void *values, size_t *capacity, size_t count, size_t width) {
+    if (count <= *capacity) {
+        return values;
+    }
+    if (!width || count > SIZE_MAX / width) {
+        return NULL;
+    }
+    size_t limit = SIZE_MAX / width;
+    size_t next = *capacity ? *capacity : 8;
+    if (next > limit) {
+        next = limit;
+    }
+    while (next < count) {
+        next = next > limit / 2 ? limit : next * 2;
+    }
+    void *grown = markdown_core_realloc(values, next * width);
+    if (!grown) {
+        return NULL;
+    }
+    *capacity = next;
+    return grown;
+}
 
 #ifdef __cplusplus
 }

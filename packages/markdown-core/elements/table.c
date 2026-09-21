@@ -71,8 +71,8 @@ static void set_cell_content(markdown_core_parser *parser, markdown_core_node *n
         if (escaped) {
             int line = parser->line_number, first, last;
             if (source) {
-                markdown_core_parser_content_place(parser, source, offset + from, &line, &first);
-                markdown_core_parser_content_end_place(parser, source, offset + from + 1, &line, &last);
+                markdown_core_parser_content_place(parser, &source->content_map, offset + from, &line, &first);
+                markdown_core_parser_content_end_place(parser, &source->content_map, offset + from + 1, &line, &last);
             } else {
                 first = markdown_core_parser_source_column(parser, line, offset + from + 1);
                 last = markdown_core_parser_source_column(parser, line, offset + from + 2);
@@ -87,8 +87,8 @@ static void set_cell_content(markdown_core_parser *parser, markdown_core_node *n
             } while (to < cell->content.len && !(cell->content.data[to] == '\\' && to + 1 < cell->content.len &&
                                                  cell->content.data[to + 1] == '|'));
             if (source) {
-                markdown_core_parser_append_content_marks(parser, source, node, offset + from, to - from,
-                                                          node->content.size);
+                markdown_core_parser_append_content_marks(parser, &source->content_map, &node->content_map,
+                                                          offset + from, to - from, node->content.size);
             } else {
                 markdown_core_parser_append_source_marks(parser, node, parser->line_number, offset + from + 1,
                                                          to - from, node->content.size);
@@ -188,11 +188,11 @@ static void S_place_content_span(markdown_core_parser *parser, markdown_core_nod
                                  bufsize_t start_offset, bufsize_t end_offset) {
     int line, column;
 
-    if (markdown_core_parser_content_place(parser, owner, start_offset, &line, &column)) {
+    if (markdown_core_parser_content_place(parser, &owner->content_map, start_offset, &line, &column)) {
         node->start_line = line;
         node->start_column = column;
     }
-    if (markdown_core_parser_content_place(parser, owner, end_offset, &line, &column)) {
+    if (markdown_core_parser_content_place(parser, &owner->content_map, end_offset, &line, &column)) {
         node->end_line = line;
         node->end_column = column;
     }
@@ -244,19 +244,20 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     /* The lead is synthesized from a content offset and so has no position of
      * its own; before requirement 10 it kept the 0:0..0:0 sentinel, and every
      * inline in it inherited line zero. The map answers both ends. */
-    if (markdown_core_parser_content_place(parser, parent_container, first, &line, &column)) {
+    if (markdown_core_parser_content_place(parser, &parent_container->content_map, first, &line, &column)) {
         paragraph->start_line = line;
         paragraph->start_column = column;
     }
     if (scope_end > first &&
-        markdown_core_parser_content_place(parser, parent_container, scope_end - 1, &line, &column)) {
+        markdown_core_parser_content_place(parser, &parent_container->content_map, scope_end - 1, &line, &column)) {
         paragraph->end_line = line;
         paragraph->end_column = column;
     }
     /* The lead's content is a SLICE of the paragraph's, and it can be several
      * lines long, so it takes the marks for those lines rather than one mark
      * for the first of them. */
-    markdown_core_parser_adopt_content_marks(parser, parent_container, paragraph, first, content_end - first);
+    markdown_core_parser_adopt_content_marks(parser, &parent_container->content_map, &paragraph->content_map, first,
+                                             content_end - first);
 
     if (!markdown_core_node_attach_owned(parent_container->parent, paragraph, parent_container)) {
         // markdown_core_node_free, not markdown_core_free: the node owns a content
@@ -320,8 +321,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
         /* The table starts where its HEADER ROW was written, not where the
          * paragraph it was split out of did. Taken before the row and cells
          * below read start_column, because they are placed against it. */
-        if (markdown_core_parser_content_place(parser, parent_container, header_row.paragraph_offset, &header_line,
-                                               &header_column)) {
+        if (markdown_core_parser_content_place(parser, &parent_container->content_map, header_row.paragraph_offset,
+                                               &header_line, &header_column)) {
             parent_container->start_line = header_line;
             parent_container->start_column = header_column;
         }
@@ -592,8 +593,8 @@ typedef struct markdown_core_table_source_line {
     int length, input_length, offset, first, first_column, indent, line, blanks;
     bool dashes_scanned, full_boundary;
     size_t dash_count;
-    table_interval *dashes;
-    int *bytes;
+    size_t dash_offset, byte_offset;
+    bool dashes_ready, columns_ready;
     int columns;
 } table_source_line;
 
@@ -617,7 +618,7 @@ typedef struct {
 } table_source_row;
 typedef struct {
     markdown_core_table_column *columns;
-    size_t column_count;
+    size_t column_count, column_capacity;
     table_source_row *rows;
     size_t row_count, row_capacity, head_count, foot_count;
     table_source_cell *cells;
@@ -627,41 +628,106 @@ typedef struct {
     int padding_limit;
 } table_candidate;
 
-static bool table_reserve(markdown_core_parser *parser, void **values, size_t *capacity, size_t count, size_t size) {
-    if (count <= *capacity) {
-        return true;
-    }
-    size_t next = *capacity ? *capacity : 8;
-    while (next < count) {
-        if (next > SIZE_MAX / 2) {
-            parser->oom = true;
-            return false;
-        }
-        next *= 2;
-    }
-    if (next > SIZE_MAX / size) {
-        parser->oom = true;
-        return false;
-    }
-    void *grown = markdown_core_realloc(*values, next * size);
+typedef struct {
+    size_t runs, count, line;
+} table_separator_key;
+typedef struct {
+    size_t first, count, digit;
+} table_separator_group;
+typedef struct {
+    size_t top, bottom, left, right, area;
+} table_grid_region;
+
+/* A query borrows this workspace. Only its used ranges are reset; committed
+ * AST values own copies. All references into growing line geometry are
+ * offsets, so growth cannot invalidate a previously captured line or key. */
+typedef struct markdown_core_table_workspace {
+    table_source_line *lines;
+    size_t lines_capacity;
+    int *bytes;
+    size_t bytes_count, bytes_capacity;
+    table_interval *dashes;
+    size_t dashes_count, dashes_capacity;
+    table_candidate candidate;
+    table_separator_key *separator_keys;
+    size_t separator_keys_capacity;
+    table_separator_key *separator_scratch;
+    size_t separator_scratch_capacity;
+    table_separator_group *separator_groups;
+    size_t separator_groups_capacity;
+    int *grid_parents;
+    size_t grid_parents_capacity;
+    int *grid_sizes;
+    size_t grid_sizes_capacity;
+    int *grid_positions;
+    size_t grid_positions_capacity;
+    size_t *boundaries;
+    size_t boundaries_capacity;
+    size_t *row_indices;
+    size_t row_indices_capacity;
+    int *region_parents;
+    size_t region_parents_capacity;
+    int *region_sizes;
+    size_t region_sizes_capacity;
+    int *region_next;
+    size_t region_next_capacity;
+    int *region_previous;
+    size_t region_previous_capacity;
+    table_grid_region *regions;
+    size_t regions_capacity;
+    table_grid_region *region_scratch;
+    size_t region_scratch_capacity;
+    table_grid_region *closed;
+    size_t closed_capacity;
+} table_workspace;
+
+static void *table_reserve(markdown_core_parser *parser, void *values, size_t *capacity, size_t count, size_t size) {
+    size_t previous = *capacity;
+    void *grown = markdown_core_reserve(values, capacity, count, size);
     if (!grown) {
         parser->oom = true;
-        return false;
+        return NULL;
     }
-    *values = grown;
-    *capacity = next;
+    parser->table_scratch_growth += *capacity != previous;
+    return grown;
+}
+
+static table_workspace *table_workspace_get(markdown_core_parser *parser) {
+    if (!parser->table_workspace) {
+        parser->table_workspace = markdown_core_alloc(1, sizeof(*parser->table_workspace));
+        if (!parser->table_workspace) {
+            parser->oom = true;
+        }
+    }
+    return parser->table_workspace;
+}
+
+static bool table_candidate_columns(table_source *source, table_candidate *candidate, size_t count) {
+    {
+        void *grown = table_reserve(source->parser, candidate->columns, &candidate->column_capacity, count,
+                                    sizeof(*candidate->columns));
+        if (!grown) {
+            return false;
+        }
+        candidate->columns = grown;
+    }
+    memset(candidate->columns, 0, count * sizeof(*candidate->columns));
     return true;
 }
 
 static bool table_source_push(table_source *source, table_source_line line) {
     markdown_core_parser *parser = source->parser;
-    size_t capacity = parser->table_lines_capacity;
-    if (!table_reserve(parser, (void **)&parser->table_lines, &parser->table_lines_capacity, source->count + 1,
-                       sizeof(*source->lines))) {
-        return false;
+    size_t capacity = parser->table_workspace->lines_capacity;
+    {
+        void *grown = table_reserve(parser, parser->table_workspace->lines, &parser->table_workspace->lines_capacity,
+                                    source->count + 1, sizeof(*source->lines));
+        if (!grown) {
+            return false;
+        }
+        parser->table_workspace->lines = grown;
     }
-    source->lines = parser->table_lines;
-    parser->table_workspace_growth += parser->table_lines_capacity != capacity;
+    source->lines = parser->table_workspace->lines;
+    parser->table_workspace_growth += parser->table_workspace->lines_capacity != capacity;
     line.input_length = line.length;
     while (line.length && (line.data[line.length - 1] == '\n' || line.data[line.length - 1] == '\r')) {
         line.length--;
@@ -696,19 +762,17 @@ static bool table_source_get(table_source *source, size_t index) {
     return index < source->count && !source->parser->oom;
 }
 
-static void table_source_free(table_source *source) {
+static void table_source_end(table_source *source) {
     markdown_core_parser_lookahead_end(&source->lookahead);
-    for (size_t i = 0; i < source->count; i++) {
-        markdown_core_free(source->lines[i].bytes);
-        markdown_core_free(source->lines[i].dashes);
-    }
+    table_workspace *workspace = source->parser->table_workspace;
+    workspace->bytes_count = workspace->dashes_count = 0;
 }
 
-static void table_candidate_free(markdown_core_parser *parser, table_candidate *candidate) {
-    markdown_core_free(candidate->columns);
-    markdown_core_free(candidate->rows);
-    markdown_core_free(candidate->cells);
-    *candidate = (table_candidate){0};
+static void table_candidate_reset(table_candidate *candidate) {
+    candidate->column_count = candidate->row_count = candidate->cell_count = 0;
+    candidate->head_count = candidate->foot_count = candidate->first = candidate->last = 0;
+    candidate->block_content = candidate->open = false;
+    candidate->padding_limit = 0;
 }
 
 /* Grid columns count scalars, with tabs expanded at four-column stops. Each
@@ -719,34 +783,56 @@ static bool table_source_columns(table_source *source, size_t index) {
         return false;
     }
     table_source_line *line = &source->lines[index];
-    if (line->bytes) {
+    if (line->columns_ready) {
         return true;
     }
-    source->parser->table_geometry_lines++;
-    size_t capacity = 0;
-    for (int byte = line->offset, column = 0;;) {
-        if (!table_reserve(source->parser, (void **)&line->bytes, &capacity, (size_t)column + 5,
-                           sizeof(*line->bytes))) {
+    table_workspace *workspace = source->parser->table_workspace;
+    size_t length = (size_t)(line->length - line->offset);
+    if (length > (SIZE_MAX - workspace->bytes_count - 1) / 4) {
+        source->parser->oom = true;
+        return false;
+    }
+    {
+        void *grown = table_reserve(source->parser, workspace->bytes, &workspace->bytes_capacity,
+                                    workspace->bytes_count + 4 * length + 1, sizeof(*workspace->bytes));
+        if (!grown) {
+            source->parser->oom = true;
             return false;
         }
+        workspace->bytes = grown;
+    }
+    source->parser->table_geometry_lines++;
+    line->byte_offset = workspace->bytes_count;
+    int *bytes = workspace->bytes + line->byte_offset;
+    for (int byte = line->offset, column = 0;;) {
         if (byte == line->length) {
-            line->bytes[column] = byte;
+            bytes[column] = byte;
             line->columns = column;
+            line->columns_ready = true;
+            workspace->bytes_count += (size_t)column + 1;
             return true;
+        }
+        if (column > INT_MAX - 4) {
+            source->parser->oom = true;
+            return false;
         }
         if (line->data[byte] == '\t') {
             int spaces = 4 - column % 4;
             while (spaces--) {
-                line->bytes[column++] = byte;
+                bytes[column++] = byte;
             }
             byte++;
         } else {
             int32_t scalar;
             int width = markdown_core_utf8proc_step(line->data + byte, line->length - byte, &scalar);
-            line->bytes[column++] = byte;
+            bytes[column++] = byte;
             byte += width;
         }
     }
+}
+
+static const int *table_line_bytes(const table_source_line *line) {
+    return line->parser->table_workspace->bytes + line->byte_offset;
 }
 
 static int table_character(const table_source_line *line, int column) {
@@ -754,19 +840,19 @@ static int table_character(const table_source_line *line, int column) {
     if (column < 0 || column >= line->columns) {
         return 0;
     }
-    int c = line->data[line->bytes[column]];
+    int c = line->data[table_line_bytes(line)[column]];
     return c == '\t' ? ' ' : c;
 }
 
 static int table_byte(const table_source_line *line, int column) {
-    return column >= line->columns ? line->length : line->bytes[column < 0 ? 0 : column];
+    return column >= line->columns ? line->length : table_line_bytes(line)[column < 0 ? 0 : column];
 }
 
 static int table_column(const table_source_line *line, int byte) {
     int low = 0, high = line->columns;
     while (low < high) {
         int middle = low + (high - low) / 2;
-        if (line->bytes[middle] < byte) {
+        if (table_line_bytes(line)[middle] < byte) {
             low = middle + 1;
         } else {
             high = middle;
@@ -813,12 +899,24 @@ static const table_interval *table_dashes(table_source *source, size_t index) {
         return NULL;
     }
     table_source_line *line = &source->lines[index];
-    if (!line->dashes) {
-        line->dashes = markdown_core_alloc(count, sizeof(*line->dashes));
-        if (!line->dashes) {
+    table_workspace *workspace = source->parser->table_workspace;
+    if (!line->dashes_ready) {
+        if (count > SIZE_MAX - workspace->dashes_count) {
             source->parser->oom = true;
             return NULL;
         }
+        {
+            void *grown = table_reserve(source->parser, workspace->dashes, &workspace->dashes_capacity,
+                                        workspace->dashes_count + count, sizeof(*workspace->dashes));
+            if (!grown) {
+                source->parser->oom = true;
+                return NULL;
+            }
+            workspace->dashes = grown;
+        }
+        line->dash_offset = workspace->dashes_count;
+        workspace->dashes_count += count;
+        line->dashes_ready = true;
         const unsigned char *p = line->data + line->offset, *from, *before = p;
         int column = 0;
         for (size_t i = 0; i < count; i++) {
@@ -829,11 +927,11 @@ static const table_interval *table_dashes(table_source *source, size_t index) {
             }
             int start = column;
             column += (int)(p - from);
-            line->dashes[i] = (table_interval){start, column};
+            workspace->dashes[line->dash_offset + i] = (table_interval){start, column};
             before = p;
         }
     }
-    return line->dashes;
+    return workspace->dashes + line->dash_offset;
 }
 
 static bool table_full_boundary(table_source *source, size_t index) {
@@ -841,9 +939,13 @@ static bool table_full_boundary(table_source *source, size_t index) {
 }
 
 static bool table_add_row(table_source *source, table_candidate *candidate, size_t first, size_t last) {
-    if (!table_reserve(source->parser, (void **)&candidate->rows, &candidate->row_capacity, candidate->row_count + 1,
-                       sizeof(*candidate->rows))) {
-        return false;
+    {
+        void *grown = table_reserve(source->parser, candidate->rows, &candidate->row_capacity, candidate->row_count + 1,
+                                    sizeof(*candidate->rows));
+        if (!grown) {
+            return false;
+        }
+        candidate->rows = grown;
     }
     candidate->rows[candidate->row_count++] = (table_source_row){first, last, candidate->cell_count, 0};
     return true;
@@ -851,9 +953,13 @@ static bool table_add_row(table_source *source, table_candidate *candidate, size
 
 static bool table_add_cell(table_source *source, table_candidate *candidate, size_t first, size_t last, int left,
                            int right, int start, int end) {
-    if (!table_reserve(source->parser, (void **)&candidate->cells, &candidate->cell_capacity, candidate->cell_count + 1,
-                       sizeof(*candidate->cells))) {
-        return false;
+    {
+        void *grown = table_reserve(source->parser, candidate->cells, &candidate->cell_capacity,
+                                    candidate->cell_count + 1, sizeof(*candidate->cells));
+        if (!grown) {
+            return false;
+        }
+        candidate->cells = grown;
     }
     candidate->cells[candidate->cell_count++] =
         (table_source_cell){first, last, left, right, candidate->row_count - 1, 1, 1, start, end};
@@ -916,8 +1022,7 @@ static bool table_set_columns(table_source *source, table_candidate *candidate, 
         return false;
     }
     candidate->column_count = count;
-    candidate->columns = markdown_core_alloc(count, sizeof(*candidate->columns));
-    if (!candidate->columns) {
+    if (!table_candidate_columns(source, candidate, count)) {
         source->parser->oom = true;
         return false;
     }
@@ -987,9 +1092,9 @@ enum {
     TABLE_NO_GRID = 8u
 };
 
-static markdown_core_lookahead_entry *table_search_fact(table_source *source, size_t index) {
+static markdown_core_line_facts *table_search_fact(table_source *source, size_t index) {
     table_source_line *line = &source->lines[index];
-    markdown_core_lookahead_entry *fact = markdown_core_parser_lookahead_entry(source->parser, line->line);
+    markdown_core_line_facts *fact = markdown_core_parser_get_line_facts(source->parser, line->line);
     if (fact && (fact->table_container != source->lookahead.parent || fact->table_offset != line->offset)) {
         fact->table_container = source->lookahead.parent;
         fact->table_offset = line->offset;
@@ -999,7 +1104,7 @@ static markdown_core_lookahead_entry *table_search_fact(table_source *source, si
 }
 
 static bool table_search_absent(table_source *source, size_t index, unsigned grammar) {
-    markdown_core_lookahead_entry *fact = table_search_fact(source, index);
+    markdown_core_line_facts *fact = table_search_fact(source, index);
     return fact && (fact->table_absent & grammar);
 }
 
@@ -1007,7 +1112,7 @@ static bool table_search_absent(table_source *source, size_t index, unsigned gra
  * that grammatical fact once, so another opener cannot rescan the same run. */
 static void table_search_finish(table_source *source, size_t first, size_t after, unsigned grammar) {
     for (size_t i = first; i < after; i++) {
-        markdown_core_lookahead_entry *fact = table_search_fact(source, i);
+        markdown_core_line_facts *fact = table_search_fact(source, i);
         if (fact) {
             fact->table_absent |= grammar;
         }
@@ -1021,10 +1126,10 @@ static bool table_same_dashes(table_source *source, size_t left, size_t right) {
     if (count < 2 || table_dash_count(source, right) != count) {
         return false;
     }
-    const table_interval *a = table_dashes(source, left), *b = table_dashes(source, right);
-    if (!a || !b) {
+    if (!table_dashes(source, left) || !table_dashes(source, right)) {
         return false;
     }
+    const table_interval *a = table_dashes(source, left), *b = table_dashes(source, right);
     for (size_t i = 0; i < count; i++) {
         source->parser->table_scan_work++;
         if (a[i].start != b[i].start || a[i].end != b[i].end) {
@@ -1033,15 +1138,6 @@ static bool table_same_dashes(table_source *source, size_t left, size_t right) {
     }
     return true;
 }
-
-typedef struct {
-    const table_interval *runs;
-    size_t count, line;
-} table_separator_key;
-
-typedef struct {
-    size_t first, count, digit;
-} table_separator_group;
 
 /* Exact interval keys use sixteen radix digits per start/end pair and a
  * terminator. A variable-length radix traversal visits only existing key
@@ -1052,7 +1148,7 @@ static unsigned table_separator_digit(table_source *source, table_separator_key 
     if (digit / 16 >= key.count) {
         return 0;
     }
-    table_interval run = key.runs[digit / 16];
+    table_interval run = source->parser->table_workspace->dashes[key.runs + digit / 16];
     uint32_t position = (uint32_t)(digit % 16 < 8 ? run.start : run.end);
     return 1 + ((position >> (28 - 4 * (digit % 8))) & 15);
 }
@@ -1063,13 +1159,34 @@ static unsigned table_separator_digit(table_source *source, table_separator_key 
  * tables. Facts retain the shared container/offset ownership. */
 static void table_simple_search_finish(table_source *source, size_t first, size_t last) {
     size_t capacity = last - first + 1, count = 0;
-    table_separator_key *keys = markdown_core_alloc(capacity, sizeof(*keys));
-    table_separator_key *scratch = markdown_core_alloc(capacity, sizeof(*scratch));
-    table_separator_group *groups = markdown_core_alloc(capacity, sizeof(*groups));
-    if (!keys || !scratch || !groups) {
-        source->parser->oom = true;
-        goto done;
+    table_workspace *workspace = source->parser->table_workspace;
+    {
+        void *grown = table_reserve(source->parser, workspace->separator_keys, &workspace->separator_keys_capacity,
+                                    capacity, sizeof(*workspace->separator_keys));
+        if (!grown) {
+            return;
+        }
+        workspace->separator_keys = grown;
     }
+    {
+        void *grown =
+            table_reserve(source->parser, workspace->separator_scratch, &workspace->separator_scratch_capacity,
+                          capacity, sizeof(*workspace->separator_scratch));
+        if (!grown) {
+            return;
+        }
+        workspace->separator_scratch = grown;
+    }
+    {
+        void *grown = table_reserve(source->parser, workspace->separator_groups, &workspace->separator_groups_capacity,
+                                    capacity, sizeof(*workspace->separator_groups));
+        if (!grown) {
+            return;
+        }
+        workspace->separator_groups = grown;
+    }
+    table_separator_key *keys = workspace->separator_keys, *scratch = workspace->separator_scratch;
+    table_separator_group *groups = workspace->separator_groups;
     for (size_t i = first; i <= last; i++) {
         size_t columns = table_dash_count(source, i);
         if (columns > 1) {
@@ -1077,7 +1194,7 @@ static void table_simple_search_finish(table_source *source, size_t first, size_
             if (!runs) {
                 goto done;
             }
-            keys[count++] = (table_separator_key){runs, columns, i};
+            keys[count++] = (table_separator_key){source->lines[i].dash_offset, columns, i};
         }
     }
     size_t pending = 1;
@@ -1085,7 +1202,7 @@ static void table_simple_search_finish(table_source *source, size_t first, size_
     while (pending) {
         table_separator_group group = groups[--pending];
         if (group.count == 1) {
-            markdown_core_lookahead_entry *fact = table_search_fact(source, keys[group.first].line);
+            markdown_core_line_facts *fact = table_search_fact(source, keys[group.first].line);
             if (fact) {
                 fact->table_absent |= TABLE_NO_SIMPLE_FOOTER;
             }
@@ -1112,7 +1229,7 @@ static void table_simple_search_finish(table_source *source, size_t first, size_
                     final = keys[i].line;
                 }
             }
-            markdown_core_lookahead_entry *fact = table_search_fact(source, final);
+            markdown_core_line_facts *fact = table_search_fact(source, final);
             if (fact) {
                 fact->table_absent |= TABLE_NO_SIMPLE_FOOTER;
             }
@@ -1124,9 +1241,7 @@ static void table_simple_search_finish(table_source *source, size_t first, size_
         }
     }
 done:
-    markdown_core_free(keys);
-    markdown_core_free(scratch);
-    markdown_core_free(groups);
+    return;
 }
 
 static bool table_parse_simple(table_source *source, size_t start, table_candidate *candidate) {
@@ -1170,6 +1285,7 @@ static bool table_parse_simple(table_source *source, size_t start, table_candida
     if (!table_source_columns(source, start) || !table_source_columns(source, body)) {
         goto failed;
     }
+    runs = table_dashes(source, delimiter);
     if (!table_set_columns(source, candidate, runs, count, headerless ? body : start, false)) {
         goto failed;
     }
@@ -1186,7 +1302,7 @@ static bool table_parse_simple(table_source *source, size_t start, table_candida
     }
     return true;
 failed:
-    table_candidate_free(source->parser, candidate);
+    table_candidate_reset(candidate);
     return false;
 }
 
@@ -1269,7 +1385,7 @@ static bool table_parse_multiline(table_source *source, size_t start, table_cand
     }
     return true;
 failed:
-    table_candidate_free(source->parser, candidate);
+    table_candidate_reset(candidate);
     return false;
 }
 
@@ -1316,10 +1432,6 @@ static void table_grid_join(table_source *source, int *parents, int *sizes, int 
     sizes[a] += sizes[b];
 }
 
-typedef struct {
-    size_t top, bottom, left, right, area;
-} table_grid_region;
-
 static void table_region_join(table_source *source, int *parents, int *sizes, table_grid_region *regions, int a,
                               int b) {
     a = table_grid_root(source, parents, a);
@@ -1347,15 +1459,22 @@ static void table_region_join(table_source *source, int *parents, int *sizes, ta
 }
 
 static bool table_region_complete(table_source *source, table_candidate *candidate, table_grid_region region,
-                                  size_t rows, table_grid_region **closed, size_t *count, size_t *capacity) {
+                                  size_t rows, table_grid_region **closed, size_t *count) {
     if (region.area != (region.bottom - region.top + 1) * (region.right - region.left + 1) ||
         (region.top < candidate->head_count && region.bottom >= candidate->head_count) ||
         (region.top < rows - candidate->foot_count && region.bottom >= rows - candidate->foot_count)) {
         return false;
     }
-    if (!table_reserve(source->parser, (void **)closed, capacity, *count + 1, sizeof(**closed))) {
-        return false;
+    table_workspace *workspace = source->parser->table_workspace;
+    {
+        void *grown = table_reserve(source->parser, workspace->closed, &workspace->closed_capacity, *count + 1,
+                                    sizeof(*workspace->closed));
+        if (!grown) {
+            return false;
+        }
+        workspace->closed = grown;
     }
+    *closed = workspace->closed;
     (*closed)[(*count)++] = region;
     return true;
 }
@@ -1371,11 +1490,17 @@ static uint64_t table_region_source_key(const void *entry) {
  * Disjoint regions bound the total perimeter work by the source grid area. */
 static bool table_grid_rows(table_source *source, table_candidate *candidate, const int *columns, size_t *boundaries,
                             size_t row_count, table_grid_region *regions, size_t count) {
-    size_t *indices = markdown_core_alloc(row_count + 1, sizeof(*indices));
-    if (!indices) {
-        source->parser->oom = true;
-        return false;
+    table_workspace *workspace = source->parser->table_workspace;
+    {
+        void *grown = table_reserve(source->parser, workspace->row_indices, &workspace->row_indices_capacity,
+                                    row_count + 1, sizeof(*workspace->row_indices));
+        if (!grown) {
+            return false;
+        }
+        workspace->row_indices = grown;
     }
+    size_t *indices = workspace->row_indices;
+    memset(indices, 0, (row_count + 1) * sizeof(*indices));
     for (size_t i = 0; i < count; i++) {
         table_grid_region *region = &regions[i];
         indices[region->top] = 1;
@@ -1402,7 +1527,6 @@ static bool table_grid_rows(table_source *source, table_candidate *candidate, co
         regions[i].top = indices[regions[i].top];
         regions[i].bottom = indices[regions[i].bottom + 1] - 1;
     }
-    markdown_core_free(indices);
     size_t cell_index = 0, width = candidate->column_count;
     for (size_t r = 0; r + 1 < boundary_count; r++) {
         size_t first = boundaries[r] + 1, next_line = boundaries[r + 1];
@@ -1440,18 +1564,60 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         source->parser->oom = true;
         return false;
     }
-    size_t capacity = 2 * width, active_count = 0, closed_count = 0, closed_capacity = 0;
-    int *parents = markdown_core_alloc(capacity, sizeof(*parents));
-    int *sizes = markdown_core_alloc(capacity, sizeof(*sizes));
-    int *next = markdown_core_alloc(capacity, sizeof(*next));
-    int *previous = markdown_core_alloc(width, sizeof(*previous));
-    table_grid_region *regions = markdown_core_alloc(capacity, sizeof(*regions));
-    table_grid_region *scratch = markdown_core_alloc(width, sizeof(*scratch)), *closed = NULL;
-    bool valid = false;
-    if (!parents || !sizes || !next || !previous || !regions || !scratch) {
-        source->parser->oom = true;
-        goto done;
+    size_t capacity = 2 * width, active_count = 0, closed_count = 0;
+    table_workspace *workspace = source->parser->table_workspace;
+    {
+        void *grown = table_reserve(source->parser, workspace->region_parents, &workspace->region_parents_capacity,
+                                    capacity, sizeof(*workspace->region_parents));
+        if (!grown) {
+            return false;
+        }
+        workspace->region_parents = grown;
     }
+    {
+        void *grown = table_reserve(source->parser, workspace->region_sizes, &workspace->region_sizes_capacity,
+                                    capacity, sizeof(*workspace->region_sizes));
+        if (!grown) {
+            return false;
+        }
+        workspace->region_sizes = grown;
+    }
+    {
+        void *grown = table_reserve(source->parser, workspace->region_next, &workspace->region_next_capacity, capacity,
+                                    sizeof(*workspace->region_next));
+        if (!grown) {
+            return false;
+        }
+        workspace->region_next = grown;
+    }
+    {
+        void *grown = table_reserve(source->parser, workspace->region_previous, &workspace->region_previous_capacity,
+                                    width, sizeof(*workspace->region_previous));
+        if (!grown) {
+            return false;
+        }
+        workspace->region_previous = grown;
+    }
+    {
+        void *grown = table_reserve(source->parser, workspace->regions, &workspace->regions_capacity, capacity,
+                                    sizeof(*workspace->regions));
+        if (!grown) {
+            return false;
+        }
+        workspace->regions = grown;
+    }
+    {
+        void *grown = table_reserve(source->parser, workspace->region_scratch, &workspace->region_scratch_capacity,
+                                    width, sizeof(*workspace->region_scratch));
+        if (!grown) {
+            return false;
+        }
+        workspace->region_scratch = grown;
+    }
+    int *parents = workspace->region_parents, *sizes = workspace->region_sizes;
+    int *next = workspace->region_next, *previous = workspace->region_previous;
+    table_grid_region *regions = workspace->regions, *scratch = workspace->region_scratch, *closed = workspace->closed;
+    bool valid = false;
     if (capacity > source->parser->table_frontier_peak) {
         source->parser->table_frontier_peak = capacity;
     }
@@ -1502,8 +1668,7 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         }
         for (size_t i = 0; i < used; i++) {
             if (parents[i] == (int)i && next[i] < 0 && regions[i].area &&
-                !table_region_complete(source, candidate, regions[i], row_count, &closed, &closed_count,
-                                       &closed_capacity)) {
+                !table_region_complete(source, candidate, regions[i], row_count, &closed, &closed_count)) {
                 goto done;
             }
         }
@@ -1511,25 +1676,18 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         active_count = survivors;
     }
     for (size_t i = 0; i < active_count; i++) {
-        if (!table_region_complete(source, candidate, regions[i], row_count, &closed, &closed_count,
-                                   &closed_capacity)) {
+        if (!table_region_complete(source, candidate, regions[i], row_count, &closed, &closed_count)) {
             goto done;
         }
     }
-    if (!markdown_core_order_source_entries(closed, closed_count, sizeof(*closed), table_region_source_key)) {
+    if (!markdown_core_order_source_entries(&source->parser->source_order, closed, closed_count, sizeof(*closed),
+                                            table_region_source_key)) {
         source->parser->oom = true;
         goto done;
     }
     source->parser->table_scan_work += 16 * closed_count;
     valid = table_grid_rows(source, candidate, columns, boundaries, row_count, closed, closed_count);
 done:
-    markdown_core_free(parents);
-    markdown_core_free(sizes);
-    markdown_core_free(next);
-    markdown_core_free(previous);
-    markdown_core_free(regions);
-    markdown_core_free(scratch);
-    markdown_core_free(closed);
     return valid;
 }
 
@@ -1572,7 +1730,7 @@ static bool table_grid_search_finish(table_source *source, size_t first, size_t 
         valid = i < last && closing && (closing == '=' ? equals >= 2 && equals <= 3 : equals <= 1);
         int a, b;
         if (!valid && table_grid_opening(source, i, &a, &b) && a == left && b == right) {
-            markdown_core_lookahead_entry *fact = table_search_fact(source, i);
+            markdown_core_line_facts *fact = table_search_fact(source, i);
             if (fact) {
                 fact->table_absent |= TABLE_NO_GRID;
             }
@@ -1587,19 +1745,41 @@ static bool table_grid_search_finish(table_source *source, size_t first, size_t 
 static bool table_parse_grid(table_source *source, size_t start, table_candidate *candidate) {
     int *parents = NULL, *positions = NULL, *sizes = NULL;
     size_t *boundaries = NULL;
-    size_t boundary_count = 0, boundary_capacity = 0;
+    size_t boundary_count = 0;
     int left, right;
     if (!table_source_get(source, start) || table_search_absent(source, start, TABLE_NO_GRID) ||
         !table_grid_opening(source, start, &left, &right)) {
         return false;
     }
-    parents = markdown_core_alloc((size_t)right + 1, sizeof(*parents));
-    positions = markdown_core_alloc((size_t)right + 1, sizeof(*positions));
-    sizes = markdown_core_alloc((size_t)right + 1, sizeof(*sizes));
-    if (!parents || !positions || !sizes) {
-        source->parser->oom = true;
-        goto failed;
+    table_workspace *workspace = source->parser->table_workspace;
+    {
+        void *grown = table_reserve(source->parser, workspace->grid_parents, &workspace->grid_parents_capacity,
+                                    (size_t)right + 1, sizeof(*workspace->grid_parents));
+        if (!grown) {
+            goto failed;
+        }
+        workspace->grid_parents = grown;
     }
+    {
+        void *grown = table_reserve(source->parser, workspace->grid_positions, &workspace->grid_positions_capacity,
+                                    (size_t)right + 1, sizeof(*workspace->grid_positions));
+        if (!grown) {
+            goto failed;
+        }
+        workspace->grid_positions = grown;
+    }
+    {
+        void *grown = table_reserve(source->parser, workspace->grid_sizes, &workspace->grid_sizes_capacity,
+                                    (size_t)right + 1, sizeof(*workspace->grid_sizes));
+        if (!grown) {
+            goto failed;
+        }
+        workspace->grid_sizes = grown;
+    }
+    parents = workspace->grid_parents;
+    positions = workspace->grid_positions;
+    sizes = workspace->grid_sizes;
+    boundaries = workspace->boundaries;
     for (int i = 0; i <= right; i++) {
         parents[i] = i;
         sizes[i] = 1;
@@ -1661,8 +1841,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         }
     }
     candidate->column_count = count - 1;
-    candidate->columns = markdown_core_alloc(count - 1, sizeof(*candidate->columns));
-    if (!candidate->columns) {
+    if (!table_candidate_columns(source, candidate, count - 1)) {
         source->parser->oom = true;
         goto failed;
     }
@@ -1672,10 +1851,15 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
             boundary |= table_character(&source->lines[i], positions[c]) == '+';
         }
         if (boundary) {
-            if (!table_reserve(source->parser, (void **)&boundaries, &boundary_capacity, boundary_count + 1,
-                               sizeof(*boundaries))) {
-                goto failed;
+            {
+                void *grown = table_reserve(source->parser, workspace->boundaries, &workspace->boundaries_capacity,
+                                            boundary_count + 1, sizeof(*boundaries));
+                if (!grown) {
+                    goto failed;
+                }
+                workspace->boundaries = grown;
             }
+            boundaries = workspace->boundaries;
             boundaries[boundary_count++] = i;
         }
     }
@@ -1721,17 +1905,9 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         candidate->columns[c].relative =
             (markdown_core_optional_double){true, (positions[c + 1] - positions[c] - 1) / total};
     }
-    markdown_core_free(sizes);
-    markdown_core_free(parents);
-    markdown_core_free(positions);
-    markdown_core_free(boundaries);
     return true;
 failed:
-    markdown_core_free(sizes);
-    markdown_core_free(parents);
-    markdown_core_free(positions);
-    markdown_core_free(boundaries);
-    table_candidate_free(source->parser, candidate);
+    table_candidate_reset(candidate);
     return false;
 }
 
@@ -1756,8 +1932,7 @@ static bool table_parse_pipe_header(table_source *source, size_t start, table_ca
         goto done;
     }
     candidate->column_count = header.n_columns;
-    candidate->columns = markdown_core_alloc(candidate->column_count, sizeof(*candidate->columns));
-    if (!candidate->columns) {
+    if (!table_candidate_columns(source, candidate, candidate->column_count)) {
         source->parser->oom = true;
         matches = false;
         goto done;
@@ -1788,7 +1963,7 @@ static bool table_parse_pipe_header(table_source *source, size_t start, table_ca
 done:
 
     if (!matches) {
-        table_candidate_free(source->parser, candidate);
+        table_candidate_reset(candidate);
     }
     return matches;
 }
@@ -1930,8 +2105,12 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
         return node;
     }
     markdown_core_table *table = node->opaque;
-    table->columns = candidate->columns;
-    candidate->columns = NULL;
+    table->columns = markdown_core_alloc(candidate->column_count, sizeof(*table->columns));
+    if (!table->columns) {
+        parser->oom = true;
+        return node;
+    }
+    memcpy(table->columns, candidate->columns, candidate->column_count * sizeof(*table->columns));
     table->column_count = candidate->column_count;
     table->head_count = candidate->head_count;
     table->foot_count = candidate->foot_count;
@@ -2019,9 +2198,13 @@ static bool table_after_caption(table_source *source, size_t *caption_last, tabl
 bool markdown_core_table_caption_probe(markdown_core_block_lookahead *lookahead, markdown_core_chunk *input, int first,
                                        int indent) {
     markdown_core_parser *parser = lookahead->parser;
-    table_source source = {.parser = parser, .lookahead = *lookahead, .lines = parser->table_lines};
+    table_workspace *workspace = table_workspace_get(parser);
+    if (!workspace) {
+        return false;
+    }
+    table_source source = {.parser = parser, .lookahead = *lookahead, .lines = parser->table_workspace->lines};
     lookahead->active = false; /* Transfer the transaction; source_free ends it. */
-    table_candidate candidate = {0};
+    table_candidate *candidate = &workspace->candidate;
     size_t last = 0;
     bool matched = false;
     if (table_caption_start(input->data, input->len, first, indent) >= 0 &&
@@ -2033,10 +2216,10 @@ bool markdown_core_table_caption_probe(markdown_core_block_lookahead *lookahead,
                                                        .indent = indent,
                                                        .line = source.lookahead.line - 1,
                                                        .after = source.lookahead.cursor})) {
-        matched = table_after_caption(&source, &last, &candidate, true);
+        matched = table_after_caption(&source, &last, candidate, true);
     }
-    table_candidate_free(parser, &candidate);
-    table_source_free(&source);
+    table_candidate_reset(candidate);
+    table_source_end(&source);
     return matched;
 }
 
@@ -2118,7 +2301,7 @@ static bool table_open_admits(markdown_core_parser *parser, const unsigned char 
     if (runs >= 2) {
         return true;
     }
-    const unsigned char *cursor = parser->lookahead_cursor, *end = parser->lookahead_end, *eol = cursor;
+    const unsigned char *cursor = parser->lookahead_cursor, *end = parser->lookahead_end;
     if (!cursor || cursor >= end) {
         return false;
     }
@@ -2130,10 +2313,8 @@ static bool table_open_admits(markdown_core_parser *parser, const unsigned char 
     }
     /* Only a simple table with a header remains, and only its delimiter row,
      * the next physical line, can still admit one. */
-    while (eol < end && !markdown_core_is_line_end((char)*eol)) {
-        eol++;
-    }
-    return table_dash_runs_anywhere(cursor, eol, 2) >= 2;
+    markdown_core_input_line *line = markdown_core_parser_source_line(parser, parser->line_number + 1);
+    return line && table_dash_runs_anywhere(cursor, parser->input_source + line->end, 2) >= 2;
 }
 
 markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, markdown_core_node *parent,
@@ -2151,8 +2332,12 @@ markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, m
     if (!table_open_admits(parser, input, length)) {
         return NULL;
     }
-    table_source source = {.parser = parser, .lines = parser->table_lines};
-    table_candidate candidate = {0};
+    table_workspace *workspace = table_workspace_get(parser);
+    if (!workspace) {
+        return NULL;
+    }
+    table_source source = {.parser = parser, .lines = parser->table_workspace->lines};
+    table_candidate *candidate = &workspace->candidate;
     markdown_core_node *result = NULL;
     if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_TABLE, &source.lookahead)) {
         return NULL;
@@ -2175,9 +2360,9 @@ markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, m
                     !((markdown_core_table *)preceding->opaque)->caption;
     bool matched = false;
     if (caption >= 0) {
-        matched = table_after_caption(&source, &caption_last, &candidate, !trailing);
+        matched = table_after_caption(&source, &caption_last, candidate, !trailing);
     } else {
-        matched = table_parse_candidate(&source, 0, &candidate, false);
+        matched = table_parse_candidate(&source, 0, candidate, false);
     }
     markdown_core_parser_lookahead_end(&source.lookahead);
     if (parser->oom || (!matched && !trailing)) {
@@ -2189,7 +2374,7 @@ markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, m
     }
     if (trailing) {
         result = preceding;
-        table_candidate_free(parser, &candidate);
+        table_candidate_reset(candidate);
         ((markdown_core_table *)result->opaque)->caption = table_caption_build(&source, caption_last, caption);
         result->end_line = source.lines[caption_last].line;
         result->end_column =
@@ -2198,7 +2383,7 @@ markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, m
         parser->claimed_line = result->end_line;
         parser->claimed_last_column = result->end_column;
     } else {
-        result = table_build(&source, parent, &candidate);
+        result = table_build(&source, parent, candidate);
         if (result && result->opaque && caption >= 0) {
             ((markdown_core_table *)result->opaque)->caption = table_caption_build(&source, caption_last, caption);
             result->start_line = source.lines[0].line;
@@ -2206,15 +2391,15 @@ markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, m
                 markdown_core_parser_source_column(parser, result->start_line, source.lines[0].first + 1);
         }
         if (result) {
-            parser->claimed_cursor = source.lines[candidate.last].after;
-            parser->claimed_line = source.lines[candidate.last].line;
+            parser->claimed_cursor = source.lines[candidate->last].after;
+            parser->claimed_line = source.lines[candidate->last].line;
             parser->claimed_last_column =
-                markdown_core_parser_source_column(parser, parser->claimed_line, source.lines[candidate.last].length);
+                markdown_core_parser_source_column(parser, parser->claimed_line, source.lines[candidate->last].length);
         }
     }
 done:
-    table_candidate_free(parser, &candidate);
-    table_source_free(&source);
+    table_candidate_reset(candidate);
+    table_source_end(&source);
     return result;
 }
 
@@ -2230,8 +2415,33 @@ static markdown_core_node *try_interrupting_block(markdown_core_parser *parser, 
 }
 
 static void dispose_parser(markdown_core_parser *parser) {
-    markdown_core_free(parser->table_lines);
-    parser->table_lines = NULL;
+    table_workspace *workspace = parser->table_workspace;
+    if (!workspace) {
+        return;
+    }
+    markdown_core_free(workspace->lines);
+    markdown_core_free(workspace->bytes);
+    markdown_core_free(workspace->dashes);
+    markdown_core_free(workspace->candidate.columns);
+    markdown_core_free(workspace->candidate.rows);
+    markdown_core_free(workspace->candidate.cells);
+    markdown_core_free(workspace->separator_keys);
+    markdown_core_free(workspace->separator_scratch);
+    markdown_core_free(workspace->separator_groups);
+    markdown_core_free(workspace->grid_parents);
+    markdown_core_free(workspace->grid_sizes);
+    markdown_core_free(workspace->grid_positions);
+    markdown_core_free(workspace->boundaries);
+    markdown_core_free(workspace->row_indices);
+    markdown_core_free(workspace->region_parents);
+    markdown_core_free(workspace->region_sizes);
+    markdown_core_free(workspace->region_next);
+    markdown_core_free(workspace->region_previous);
+    markdown_core_free(workspace->regions);
+    markdown_core_free(workspace->region_scratch);
+    markdown_core_free(workspace->closed);
+    markdown_core_free(workspace);
+    parser->table_workspace = NULL;
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {

@@ -10,6 +10,12 @@ extern "C" {
 
 struct markdown_core_chunk;
 
+/* A borrowed slice of immutable parser-owned source runs. It owns no AST node
+ * or allocation and may be copied while a node is split or consolidated. */
+typedef struct {
+    int first, count, offset;
+} markdown_core_content_map;
+
 /** Internal element parsing API.
  *
  * Every parse attaches the complete immutable element table. Elements own
@@ -399,8 +405,8 @@ int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser);
  * every line of it on the first line's row.
  */
 MARKDOWN_CORE_EXPORT
-int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, markdown_core_node *owner,
-                                             markdown_core_node *node, bufsize_t from, bufsize_t length);
+int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, const markdown_core_content_map *owner,
+                                             markdown_core_content_map *map, bufsize_t from, bufsize_t length);
 
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_core_node *node, int line, int column);
@@ -420,8 +426,8 @@ int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_cor
  * the parse transaction releases it with the rest of the parse state.
  */
 MARKDOWN_CORE_EXPORT
-int markdown_core_parser_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t content_offset,
-                                       int *line, int *column);
+int markdown_core_parser_content_place(markdown_core_parser *parser, const markdown_core_content_map *map,
+                                       bufsize_t content_offset, int *line, int *column);
 
 /** Append a source run for content already assembled by a producer. Runs
  * must be contiguous in the parser vector and have increasing content offsets.
@@ -432,16 +438,16 @@ int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markd
 /** Append the source runs covering a literal slice to a growing result map.
  * Each source run is copied once; producers use adopt_content_marks for a
  * read-only slice that needs no allocation. */
-int markdown_core_parser_append_content_marks(markdown_core_parser *parser, markdown_core_node *owner,
-                                              markdown_core_node *node, bufsize_t from, bufsize_t length,
+int markdown_core_parser_append_content_marks(markdown_core_parser *parser, const markdown_core_content_map *owner,
+                                              markdown_core_content_map *map, bufsize_t from, bufsize_t length,
                                               bufsize_t offset);
 /** Project a logical inline range, including its Text literal mapping. */
 void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
                                       int to);
 /** The inclusive end of the authored bytes represented by a content byte.
  * Uses the same run lookup as content_place, which returns its start. */
-int markdown_core_parser_content_end_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
-                                           int *line, int *column);
+int markdown_core_parser_content_end_place(markdown_core_parser *parser, const markdown_core_content_map *map,
+                                           bufsize_t offset, int *line, int *column);
 
 /** Return the absolute index of the first nonspace column coming after 'offset'
  * in the line currently being processed, counting tabs as multiple

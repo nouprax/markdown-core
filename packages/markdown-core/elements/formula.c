@@ -564,6 +564,10 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
     bufsize_t body_len = body_end - body_start;
     markdown_core_strbuf unescaped;
 
+    if (!opener_node->parent || !markdown_core_node_can_contain_type(opener_node->parent, MARKDOWN_CORE_NODE_FORMULA)) {
+        goto done;
+    }
+
     if (rule != markdown_core_delimiter_rule_of(closer)) {
         goto done;
     }
@@ -614,15 +618,12 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
     formula->start_column = opener_node->start_column;
     formula->end_column = closer_node->end_column;
 
-    if (markdown_core_node_attach_owned(opener_node->parent, formula, opener_node)) {
-        /* REQUIREMENT 11b: the two delimiter runs are the formula's markers and
-         * the bytes between them are its content. `free_nodes_through` below
-         * frees EVERY node the span was built from, so without these claims the
-         * whole construct would fall back to the block. */
-        free_nodes_through(parser, opener_node, closer_node);
-    } else {
-        markdown_core_parser_release_node(parser, formula);
-    }
+    markdown_core_node_attach_validated(opener_node->parent, formula, opener_node);
+    /* REQUIREMENT 11b: the two delimiter runs are the formula's markers and
+     * the bytes between them are its content. `free_nodes_through` below
+     * frees EVERY node the span was built from, so without these claims the
+     * whole construct would fall back to the block. */
+    free_nodes_through(parser, opener_node, closer_node);
 
 done:
     return;
@@ -683,22 +684,22 @@ static markdown_core_node *new_formula_block_from_literal(const markdown_core_el
     return formula;
 }
 
-static markdown_core_node *replace_with_formula_block(const markdown_core_element *element,
-                                                      markdown_core_parser *parser, markdown_core_node *oldnode,
-                                                      const unsigned char *literal, bufsize_t literal_len) {
+static markdown_core_finish_result replace_with_formula_block(const markdown_core_element *element,
+                                                              markdown_core_parser *parser, markdown_core_node *oldnode,
+                                                              const unsigned char *literal, bufsize_t literal_len) {
+    /* Rewriting a valid block is optional. A parent's semantic rejection is
+     * not an allocation failure and leaves the original block intact. */
+    if (!oldnode->parent || !markdown_core_node_can_contain_type(oldnode->parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
+        return MARKDOWN_CORE_FINISH_CONTINUE;
+    }
     markdown_core_node *formula = new_formula_block_from_literal(element, parser, oldnode, literal, literal_len);
     if (!formula) {
-        return NULL;
+        parser->oom = true;
+        return MARKDOWN_CORE_FINISH_FAILED;
     }
-
-    if (markdown_core_node_attach_owned(oldnode->parent, formula, oldnode)) {
-        /* The bytes did not change hands, the node did. Said before the free,
-         * because after it there is nothing left to name. */
-        markdown_core_parser_release_node(parser, oldnode);
-        return formula;
-    }
-    markdown_core_parser_release_node(parser, formula);
-    return NULL;
+    markdown_core_node_attach_validated(oldnode->parent, formula, oldnode);
+    markdown_core_parser_release_node(parser, oldnode);
+    return MARKDOWN_CORE_FINISH_CONSUMED;
 }
 
 /* The formula element's finish STEP: one node at its EXIT, from inside the one
@@ -737,12 +738,8 @@ static markdown_core_finish_result finish_step(const markdown_core_element *elem
     }
 
     if (may_replace && node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code->info)) {
-        if (!replace_with_formula_block(element, parser, node, node->as.code->literal.data,
-                                        node->as.code->literal.len)) {
-            parser->oom = true;
-            return MARKDOWN_CORE_FINISH_FAILED;
-        }
-        return MARKDOWN_CORE_FINISH_CONSUMED;
+        return replace_with_formula_block(element, parser, node, node->as.code->literal.data,
+                                          node->as.code->literal.len);
     }
 
     /* Only an anonymous paragraph is a removable wrapper. A declared anchor
@@ -756,11 +753,7 @@ static markdown_core_finish_result finish_step(const markdown_core_element *elem
         if (!formula) {
             return MARKDOWN_CORE_FINISH_CONTINUE;
         }
-        if (!replace_with_formula_block(element, parser, node, formula->literal.data, formula->literal.len)) {
-            parser->oom = true;
-            return MARKDOWN_CORE_FINISH_FAILED;
-        }
-        return MARKDOWN_CORE_FINISH_CONSUMED;
+        return replace_with_formula_block(element, parser, node, formula->literal.data, formula->literal.len);
     }
 
     return MARKDOWN_CORE_FINISH_CONTINUE;

@@ -61,7 +61,7 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_parser 
 void markdown_core_block_prepare_specimens(markdown_core_parser *parser) {
     markdown_core_definition_collection *collection = &parser->specimens;
     if (!markdown_core_key_index_init(&parser->specimen_ids, collection->count) ||
-        (collection->count && !markdown_core_block_order_definitions(collection))) {
+        (collection->count && !markdown_core_block_order_definitions(parser, collection))) {
         parser->oom = true;
         return;
     }

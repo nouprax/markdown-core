@@ -372,10 +372,10 @@ static bool trim_affix_node(markdown_core_inline_state *inline_state, markdown_c
     if (start == end) {
         return false;
     }
-    markdown_core_parser_content_place(inline_state->owner_parser, inline_state->owner, start, &start_line,
-                                       &start_column);
-    markdown_core_parser_content_end_place(inline_state->owner_parser, inline_state->owner, end - 1, &end_line,
-                                           &end_column);
+    markdown_core_parser_content_place(inline_state->owner_parser, &inline_state->owner->content_map, start,
+                                       &start_line, &start_column);
+    markdown_core_parser_content_end_place(inline_state->owner_parser, &inline_state->owner->content_map, end - 1,
+                                           &end_line, &end_column);
     if (source_compare(node->end_line, node->end_column, start_line, start_column) < 0 ||
         source_compare(node->start_line, node->start_column, end_line, end_column) > 0) {
         return false;
@@ -384,7 +384,7 @@ static bool trim_affix_node(markdown_core_inline_state *inline_state, markdown_c
     bool trim_end = source_compare(node->end_line, node->end_column, end_line, end_column) > 0;
     if ((trim_start || trim_end) && node->kind == MARKDOWN_CORE_NODE_TEXT) {
         markdown_core_chunk *text = node->as.literal;
-        bufsize_t from = node->content_mark_offset - inline_state->owner->content_mark_offset;
+        bufsize_t from = node->content_map.offset - inline_state->owner->content_map.offset;
         bufsize_t first = trim_start ? start - from : 0;
         bufsize_t length = trim_end && end - from < text->len ? end - from : text->len;
         if (length <= first) {
@@ -417,7 +417,7 @@ static void take_citation_affix(markdown_core_inline_state *inline_state, markdo
                 markdown_core_inline_state_place(inline_state, *slot, start, end - 1);
             }
             markdown_core_node_unlink(first);
-            markdown_core_node_attach_owned(*slot, first, NULL);
+            markdown_core_node_attach_validated(*slot, first, NULL);
         } else {
             markdown_core_parser_release_node(inline_state->owner_parser, first);
         }
@@ -434,16 +434,18 @@ static void remove_specimen_parenthesis(markdown_core_inline_state *inline_state
         return;
     }
     if (first) {
-        markdown_core_parser_content_place(inline_state->owner_parser, text, 1, &text->start_line, &text->start_column);
-        markdown_core_parser_adopt_content_marks(inline_state->owner_parser, text, text, 1, literal->len - 1);
+        markdown_core_parser_content_place(inline_state->owner_parser, &text->content_map, 1, &text->start_line,
+                                           &text->start_column);
+        markdown_core_parser_adopt_content_marks(inline_state->owner_parser, &text->content_map, &text->content_map, 1,
+                                                 literal->len - 1);
         if (literal->alloc) {
             memmove(literal->data, literal->data + 1, (size_t)literal->len - 1);
         } else {
             literal->data++;
         }
     } else {
-        markdown_core_parser_content_end_place(inline_state->owner_parser, text, literal->len - 2, &text->end_line,
-                                               &text->end_column);
+        markdown_core_parser_content_end_place(inline_state->owner_parser, &text->content_map, literal->len - 2,
+                                               &text->end_line, &text->end_column);
     }
     literal->len--;
 }
@@ -482,7 +484,7 @@ static void materialize_citation_key(markdown_core_inline_state *inline_state, c
         }
     }
     markdown_core_inline_state_place(inline_state, cite, start, end - 1);
-    markdown_core_node_attach_owned(token->node->parent, cite, token->node);
+    markdown_core_node_attach_validated(token->node->parent, cite, token->node);
     markdown_core_parser_release_node(inline_state->owner_parser, token->node);
     token->node = cite;
 }
@@ -549,7 +551,7 @@ bool markdown_core_inline_close_bibliography(markdown_core_parser *parser, markd
     markdown_core_node *content = opener->inl_text->next;
     if (tail) {
         markdown_core_node *old = opener->author->node;
-        markdown_core_node_attach_owned(old->parent, cite, old);
+        markdown_core_node_attach_validated(old->parent, cite, old);
         while (old != content) {
             markdown_core_node *next = old->next;
             markdown_core_parser_release_node(parser, old);

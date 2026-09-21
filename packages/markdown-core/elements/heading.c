@@ -72,8 +72,8 @@ void markdown_core_block_reserve_node_anchor(markdown_core_parser *parser, ancho
 }
 
 void markdown_core_block_prepare_headings(markdown_core_parser *parser, markdown_core_heading_collection *headings) {
-    if (!markdown_core_order_source_entries(headings->values, headings->count, sizeof(*headings->values),
-                                            markdown_core_source_key)) {
+    if (!markdown_core_order_source_entries(&parser->source_order, headings->values, headings->count,
+                                            sizeof(*headings->values), markdown_core_source_key)) {
         parser->oom = true;
         return;
     }

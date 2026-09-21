@@ -116,8 +116,8 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
         markdown_core_parser_release_node(parser, node);
         return NULL;
     }
-    markdown_core_parser_content_place(parser, parent, start, &node->start_line, &node->start_column);
-    markdown_core_parser_content_end_place(parser, parent, i + 1, &node->end_line, &node->end_column);
+    markdown_core_parser_content_place(parser, &parent->content_map, start, &node->start_line, &node->start_column);
+    markdown_core_parser_content_end_place(parser, &parent->content_map, i + 1, &node->end_line, &node->end_column);
     markdown_core_inline_state_set_offset(inline_state, i + 2);
     return node;
 }

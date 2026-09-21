@@ -45,7 +45,10 @@ static MARKDOWN_CORE_INLINE void S_strbuf_grow_by(markdown_core_strbuf *buf, buf
         buf->oom = 1;
         return;
     }
-    markdown_core_strbuf_grow(buf, buf->size + add);
+    bufsize_t target = buf->size + add;
+    if (target >= buf->asize) {
+        markdown_core_strbuf_grow(buf, target);
+    }
 }
 
 void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size) {

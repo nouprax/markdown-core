@@ -506,7 +506,8 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
         directive->label = label_node;
         /* The field is a view of these source bytes, including line breaks
          * and stripped block prefixes. Do not rebuild its map from one column. */
-        markdown_core_parser_adopt_content_marks(parser, parent, label_node, label_start, label_len);
+        markdown_core_parser_adopt_content_marks(parser, &parent->content_map, &label_node->content_map, label_start,
+                                                 label_len);
     }
 
     markdown_core_inline_state_set_offset(inline_state, (int)pos);
