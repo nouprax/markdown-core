@@ -835,6 +835,19 @@ misclassified; and second-order effects — an allocation the list makes that
 every later allocation meets, a line the list makes longer — are *in* the
 difference rather than hidden by it, which is the point of measuring in place.
 
+Two things a difference does not show, stated so a row is read for what it is.
+A cost both halves pay cancels in every difference column: a host that got
+dearer on its own, with and without the list alike, shows in that host's own
+ratio in the tables above and not here, and `With/without` moves toward 1.00x
+on it, which reads as a small improvement of the list — so a row is read beside
+its host's own number, never instead of it. And a row is the remainder's cost
+at the corpus's unit shape: work a host does per extent rather than per list —
+the attribute parser's memo is sized to the line or paragraph it scans — lands
+in the row in proportion to the extent's length over the lists it holds, which
+`each` and the unit fix. Rows are compared across runs at one corpus digest,
+where that shape is constant, and `In place / alone` is a factor to watch move,
+not a verdict on the host.
+
 ### What is held, and where
 
 `corpus.json` declares a split once, under `splits`: the `remainder`, which

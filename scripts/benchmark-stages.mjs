@@ -2268,7 +2268,11 @@ function markdownReport(report) {
                           " should not move: a list costs what it costs however many there are."
                         : "") +
                     " Each row names the site production the grammar gives its host, and the spread" +
-                    " between rows is that production first and this implementation's seam second.",
+                    " between rows is that production first and this implementation's seam second." +
+                    " A cost both halves pay cancels here and shows in the host's own ratio above; and a" +
+                    " row is the remainder's cost at the corpus's unit shape -- per-extent work lands in" +
+                    " it in proportion to extent length over lists per extent -- so rows are compared" +
+                    " across runs at one corpus digest, not read as verdicts.",
                 "",
                 "| Host | Site | Without | With | Lists | Ir per list | Whole path | In place / alone |" +
                     ` Lands in | With/without |${scaledRows ? " x2 / x1 |" : ""}`,
