@@ -7085,23 +7085,30 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
     /* Physical geometry classifies bytes before any UTF-8 interpretation.
      * Every byte other than CR/LF is content; NUL requests normalization. */
     for (unsigned value = 0; value <= 255; value++) {
-        unsigned char bytes[] = {'a', (unsigned char)value, 'b', '\n'};
-        markdown_core_parser input = {0};
-        input.input_source = bytes;
-        input.input_length = sizeof(bytes);
-        input.input_first_line = 1;
-        markdown_core_input_line *first = markdown_core_parser_source_line(&input, 1);
-        bool split = value == '\r' || value == '\n';
-        OK(runner, first && first->start == 0 && first->end == (split ? 1 : 3),
-           "only CR and LF end a physical line: byte %u", value);
-        OK(runner, first && ((first->facts && input.input_facts[first->facts - 1].nul_count == 1) == (value == 0)),
-           "only NUL requests normalization: byte %u", value);
-        markdown_core_input_line *second = markdown_core_parser_source_line(&input, 2);
-        OK(runner, split ? second && second->start == 2 && second->end == 3 : !second,
-           "content after a boundary belongs to exactly one line: byte %u", value);
-        INT_EQ(runner, input.input_line_work, sizeof(bytes), "byte classification consumes the input exactly once");
-        markdown_core_free(input.input_facts);
-        markdown_core_free(input.input_lines);
+        for (size_t position = 0; position < 3 * sizeof(uint64_t); position++) {
+            unsigned char bytes[3 * sizeof(uint64_t) + 1];
+            memset(bytes, 'a', sizeof(bytes));
+            bytes[position] = (unsigned char)value;
+            bytes[sizeof(bytes) - 1] = '\n';
+            markdown_core_parser input = {0};
+            input.input_source = bytes;
+            input.input_length = sizeof(bytes);
+            input.input_first_line = 1;
+            markdown_core_input_line *first = markdown_core_parser_source_line(&input, 1);
+            bool split = value == '\r' || value == '\n';
+            OK(runner, first && first->start == 0 && first->end == (split ? position : sizeof(bytes) - 1),
+               "only CR and LF end a physical line: byte %u at %zu", value, position);
+            OK(runner, first && ((first->facts && input.input_facts[first->facts - 1].nul_count == 1) == (value == 0)),
+               "only NUL requests normalization: byte %u", value);
+            markdown_core_input_line *second = markdown_core_parser_source_line(&input, 2);
+            bool remaining = split && !(value == '\r' && position == sizeof(bytes) - 2);
+            OK(runner,
+               remaining ? second && second->start == position + 1 && second->end == sizeof(bytes) - 1 : !second,
+               "content after a word or tail boundary belongs to exactly one line: byte %u at %zu", value, position);
+            INT_EQ(runner, input.input_line_work, sizeof(bytes), "span search advances the frontier exactly once");
+            markdown_core_free(input.input_facts);
+            markdown_core_free(input.input_lines);
+        }
     }
     static const unsigned char source[] = "a\0b\r\nc\rd\nlast";
     markdown_core_parser parser = {0};
@@ -7151,7 +7158,7 @@ static void short_line_storage_is_bounded(test_batch_runner *runner) {
                 markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "adversarial short lines parse");
             INT_EQ(runner, work.physical_lines, count, "one geometry record per physical line");
-            INT_EQ(runner, work.physical_line_bytes, source.size, "the source frontier scans each byte once");
+            INT_EQ(runner, work.physical_line_bytes, source.size, "the source frontier consumes each byte once");
             INT_EQ(runner, work.physical_facts, 0, "ordinary short lines allocate no optional facts");
             OK(runner, work.physical_capacity >= count && work.physical_capacity < 2 * count,
                "retained geometry capacity is bounded by twice the number of lines");

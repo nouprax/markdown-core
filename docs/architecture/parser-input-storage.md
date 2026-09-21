@@ -31,26 +31,34 @@ or NUL-bearing lines; its vector has the same doubling bound. Capacity survives
 input changes, so the bound uses the maximum visited-line and fact counts of
 any active input during the parse, not just the final input's length.
 Tests use empty and one-character lines across capacity boundaries and assert
-record size, capacity, absence of optional facts, and one scan per source byte.
+record size, capacity, absence of optional facts, and one frontier advance per
+source byte.
 
 The source driver advances through the static inline scanner in `blocks.c`.
 External lookahead calls a wrapper around that same scanner; there is one
 physical scanning algorithm, not separate driver and speculative scanners.
 The inner span walk uses bounded pointers and stops at CR, LF or NUL; only a
-NUL boundary updates the normalization count. The span alphabet is a single
-byte-classification table. Geometry excludes
+NUL boundary updates the normalization count. One bounded span scanner probes
+whole machine words for these three bytes and resolves a matching word or tail
+bytewise. Unsigned zero-byte tests are endian-independent, and fixed-width
+`memcpy` avoids alignment and aliasing assumptions. Every probe stays within
+the input; no padding or sentinel is required. Geometry excludes
 physical terminators, so the grammar's mutable content/LF/NUL line is built
 with one reservation and copy, without testing and appending the terminator
-as a second buffer operation. All 256 byte values are checked against the
-physical-line and normalization contracts.
+as a second buffer operation. All 256 byte values at every position across
+three machine words are checked against the physical-line and normalization
+contracts, including the scalar tail after a split.
 Initial workspace allocation is outside `source_to_buffer`, while growth
 remains inside it. Comparisons must
 therefore include the report's `parsePathIr` and `outsideStagesIr` as well as
 the two stages: moving the first reservation to initialization is not a
 whole-parse saving.
 
-Index lookups are constant time once a line exists. Extension scans each raw
-byte once for geometry; CR, LF, and CRLF each terminate one physical line.
+Index lookups are constant time once a line exists. Extension advances each
+raw byte once; a span boundary may add one word probe before byte resolution.
+Thus span-search byte inspections stay bounded by nine times the input length even
+for delimiter/NUL-only inputs, without an input-size or grammar-specific
+algorithm. CR, LF, and CRLF each terminate one physical line.
 Pointers into the vector expire on growth, so consumers carry indices or
 geometry values across calls that can extend it. Properties stores the envelope
 start index and loads geometry by value. Lookahead reacquires its fact record
@@ -73,7 +81,8 @@ mapped cell inputs. Passing raw NUL into those cells previously let their
 driver expand bytes a second time, invalidating the content-to-source map.
 Both paths now construct cells from the same normalized lines.
 
-`input_line_work` counts bytes scanned for physical geometry. The independent
+`input_line_work` counts bytes consumed by the physical geometry frontier,
+excluding bounded word lookahead. The independent
 properties closing-fence search is counted by `properties_line_work`; it does
 not derive line geometry. Metadata's one-token classification cache retains
 the boundary line's key classification for the next field. Plain keys borrow
