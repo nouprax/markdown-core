@@ -198,13 +198,33 @@ test("--case builds the closure of what it names, in the direction the corpus de
         assert.deepEqual(named.names, [
             "pair-ldirective-common",
             "pair-ldirective-dialect",
+            "proof-leaf-directive-common",
+            "proof-leaf-directive-dialect",
             "split-attributes-heading"
         ]);
         /* Both halves of the split to the same count, which is what makes
          * their difference the remainder's. */
         assert.equal(named.units["split-attributes-heading"], named.units["pair-ldirective-common"]);
         const without = documents(["--case", "pair-ldirective-common"]);
-        assert.deepEqual(without.names, ["pair-ldirective-common", "pair-ldirective-dialect"]);
+        assert.deepEqual(without.names, [
+            "pair-ldirective-common",
+            "pair-ldirective-dialect",
+            "proof-leaf-directive-common",
+            "proof-leaf-directive-dialect"
+        ]);
+        const boundary = documents(["--case", "boundary-caption-without"]);
+        assert.deepEqual(boundary.names, [
+            "boundary-caption-without",
+            "pair-caption-common",
+            "pair-caption-dialect",
+            "proof-simple-matrix-common",
+            "proof-simple-matrix-dialect"
+        ]);
+        assert.equal(boundary.units["boundary-caption-without"], boundary.units["pair-caption-dialect"]);
+        const input = fs.readFileSync(path.join(out, "corpus/pair-caption-dialect.x1.md"), "utf8");
+        const cut = fs.readFileSync(path.join(out, "corpus/boundary-caption-without.x1.md"), "utf8");
+        assert.equal(cut, input.replace(/^Table: Caption \d+\n/gmu, ""));
+        assert.ok(cut.includes("| h |\n| --- |\n| v |"));
     } finally {
         fs.rmSync(out, { recursive: true, force: true });
     }

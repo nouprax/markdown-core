@@ -53,19 +53,30 @@ test("a case named alone drags its comparison in, and only in the direction it i
     /* A `with` drags its `without`, which is a pair half and drags its twin. */
     assert.deepEqual(
         [...caseClosure(declared, [heading.with])].sort(),
-        [heading.with, "pair-ldirective-common", "pair-ldirective-dialect"].sort()
+        [
+            heading.with,
+            "pair-ldirective-common",
+            "pair-ldirective-dialect",
+            "proof-leaf-directive-common",
+            "proof-leaf-directive-dialect"
+        ].sort()
     );
     /* The `without` is a comparison on its own and drags no `with`. */
     assert.deepEqual(
         [...caseClosure(declared, [heading.without])].sort(),
-        ["pair-ldirective-common", "pair-ldirective-dialect"].sort()
+        [
+            "pair-ldirective-common",
+            "pair-ldirective-dialect",
+            "proof-leaf-directive-common",
+            "proof-leaf-directive-dialect"
+        ].sort()
     );
     /* A `without` that is a plain generated case drags nothing. */
     const autolink = split.hosts.find((host) => host.host === "angle autolink");
     assert.deepEqual([...caseClosure(declared, [autolink.without])], [autolink.without]);
     assert.deepEqual([...caseClosure(declared, [autolink.with])].sort(), [autolink.with, autolink.without].sort());
     /* Either half of a pair drags the other. */
-    for (const pair of [...declared.isomorphs, ...declared.logicalIsomorphs]) {
+    for (const pair of declared.pairs.filter((pair) => !pair.contract.review)) {
         assert.deepEqual([...caseClosure(declared, [pair.case])].sort(), [pair.case, pair.isomorph].sort());
         assert.deepEqual([...caseClosure(declared, [pair.isomorph])].sort(), [pair.case, pair.isomorph].sort());
     }
@@ -121,7 +132,7 @@ const MUTATIONS = [
     {
         rule: "a with half publishes no ratio of its own",
         mutate: (declared) =>
-            declared.logicalIsomorphs.push({ case: "split-attributes-code", isomorph: "pair-formulablock-common" }),
+            declared.pairs.push({ case: "split-attributes-code", isomorph: "pair-formulablock-common" }),
         expect: /would be published with a ratio of its own/u,
         host: "split-attributes-code"
     },
