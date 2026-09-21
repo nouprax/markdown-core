@@ -64,6 +64,12 @@ MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size);
 
 MARKDOWN_CORE_EXPORT
+/* Whether the buffer owns storage: a buffer still on the shared initial
+ * storage owns nothing. The first test a release makes, shared with the
+ * node release that makes it in place before calling. */
+static MARKDOWN_CORE_INLINE bool markdown_core_strbuf_owns(const markdown_core_strbuf *buf) {
+    return buf->ptr != markdown_core_strbuf__initbuf;
+}
 void markdown_core_strbuf_free(markdown_core_strbuf *buf);
 
 MARKDOWN_CORE_EXPORT

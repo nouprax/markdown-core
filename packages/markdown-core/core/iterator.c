@@ -16,60 +16,19 @@ markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
     if (!iter) {
         return NULL;
     }
-    iter->root = root;
-    iter->cur.ev_type = MARKDOWN_CORE_EVENT_NONE;
-    iter->cur.node = NULL;
-    iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-    iter->next.node = root;
+    markdown_core_iter_init(iter, root);
     return iter;
 }
 
 void markdown_core_iter_free(markdown_core_iter *iter) { markdown_core_free(iter); }
 
-markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
-    markdown_core_event_type ev_type = iter->next.ev_type;
-    markdown_core_node *node = iter->next.node;
-
-    iter->cur.ev_type = ev_type;
-    iter->cur.node = node;
-
-    if (ev_type == MARKDOWN_CORE_EVENT_DONE) {
-        return ev_type;
-    }
-
-    /* roll forward to next item, setting both fields */
-    if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-        if (node->first_child == NULL) {
-            /* stay on this node but exit */
-            iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
-        } else {
-            iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-            iter->next.node = node->first_child;
-        }
-    } else if (node == iter->root) {
-        /* don't move past root */
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
-        iter->next.node = NULL;
-    } else if (node->next) {
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-        iter->next.node = node->next;
-    } else if (node->parent) {
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
-        iter->next.node = node->parent;
-    } else {
-        assert(false);
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
-        iter->next.node = NULL;
-    }
-
-    return ev_type;
-}
+markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) { return markdown_core_iter_step(iter); }
 
 void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *current,
                               markdown_core_event_type event_type) {
     iter->next.ev_type = event_type;
     iter->next.node = current;
-    markdown_core_iter_next(iter);
+    markdown_core_iter_step(iter);
 }
 
 markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter) { return iter->cur.node; }
@@ -114,9 +73,34 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
     assert(cur->kind == MARKDOWN_CORE_NODE_TEXT);
 
     if (cur->next && cur->next->kind == MARKDOWN_CORE_NODE_TEXT) {
+        /* THE MERGED TEXT'S MAP IS A VIEW WHEN ITS OPERANDS ARE. A Text that
+         * is a verbatim copy of its source holds a slice of its container's
+         * runs (markdown_core_inline_map_text), and the siblings absorbed
+         * here were placed left to right in that container, so while each
+         * operand's bytes begin where the previous one's ended and its first
+         * run is the previous one's last or the one after, the union is the
+         * slice from the first operand's first run to the last operand's
+         * last, at the first operand's offset -- the same runs the copy below
+         * would append, answering every position the same way, and nothing
+         * is appended. A decoded operand (its own run, at offset zero, a
+         * literal shorter than its scope) or an operand with no map breaks
+         * the chain, and the union is materialized run by run as before. */
         markdown_core_node combined_map = {0};
-        if (parser &&
-            !markdown_core_parser_append_content_marks(parser, cur, &combined_map, 0, cur->as.literal->len, 0)) {
+        bool view = parser && cur->content_mark_count > 0;
+        int view_end = cur->content_mark + cur->content_mark_count;
+        bufsize_t view_offset = cur->content_mark_offset + cur->as.literal->len;
+        for (tmp = cur->next; view && tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT; tmp = tmp->next) {
+            view = tmp->content_mark_count > 0 && tmp->content_mark_offset == view_offset &&
+                   tmp->content_mark >= view_end - 1 && tmp->content_mark <= view_end;
+            view_end = tmp->content_mark + tmp->content_mark_count;
+            view_offset += tmp->as.literal->len;
+        }
+        if (view) {
+            combined_map.content_mark = cur->content_mark;
+            combined_map.content_mark_count = view_end - cur->content_mark;
+            combined_map.content_mark_offset = cur->content_mark_offset;
+        } else if (parser &&
+                   !markdown_core_parser_append_content_marks(parser, cur, &combined_map, 0, cur->as.literal->len, 0)) {
             return MARKDOWN_CORE_FINISH_FAILED;
         }
         markdown_core_strbuf_clear(buf);
@@ -135,8 +119,9 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
             if (complete) {
                 complete(parser, tmp, depth);
             }
-            if (parser && !markdown_core_parser_append_content_marks(parser, tmp, &combined_map, 0,
-                                                                     tmp->as.literal->len, buf->size)) {
+            if (parser && !view &&
+                !markdown_core_parser_append_content_marks(parser, tmp, &combined_map, 0, tmp->as.literal->len,
+                                                           buf->size)) {
                 return MARKDOWN_CORE_FINISH_FAILED;
             }
             markdown_core_strbuf_put(buf, tmp->as.literal->data, tmp->as.literal->len);
@@ -168,7 +153,7 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
         if (parser) {
             cur->content_mark = combined_map.content_mark;
             cur->content_mark_count = combined_map.content_mark_count;
-            cur->content_mark_offset = 0;
+            cur->content_mark_offset = combined_map.content_mark_offset;
         }
         markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
         markdown_core_chunk_free(cur->as.literal);

@@ -1799,6 +1799,46 @@ static void finish_step_skips_absent_kinds(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
+/* THE GATE IS READ AT THE EVENT. The walk parses each container's inline
+ * content at that container's ENTER, so a kind the step acts on may first be
+ * made after the walk began; the gate opens when it is. A step asked at a
+ * Paragraph's EXIT that acts on inline Code is asked at the paragraph that
+ * holds the first Code and at every paragraph after it, and not at the
+ * paragraphs before it -- where no Code existed and the step could have
+ * found none. A scope kind's ENTER and EXIT are delivered whatever the gate
+ * says, so the extent the step tracks is always in step with the tree. */
+static const markdown_core_node_type OBSERVER_LATE_KINDS[] = {MARKDOWN_CORE_NODE_CODE, MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_node_type SCOPE_AT_LINK[] = {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_NONE};
+
+static bool attach_late_step_observers(markdown_core_parser *parser, void *context) {
+    static const markdown_core_element late = {.name = "step-late-observer",
+                                               .finish_step = count_step_absent,
+                                               .finish_acts_on_kinds = OBSERVER_LATE_KINDS,
+                                               .finish_exit_kinds = STEP_AT_PARAGRAPH};
+    static const markdown_core_element scoped = {.name = "step-scoped-observer",
+                                                 .finish_step = count_step_present,
+                                                 .finish_acts_on_kinds = OBSERVER_ABSENT_KINDS,
+                                                 .finish_scope_kinds = SCOPE_AT_LINK};
+    (void)context;
+    return markdown_core_parser_attach_element(parser, &late) && markdown_core_parser_attach_element(parser, &scoped);
+}
+
+static void finish_step_gate_opens_when_its_kind_is_made(test_batch_runner *runner) {
+    static const char source[] = "prose first\n\nthen `code` in [a link](u)\n\nand prose again\n";
+    markdown_core_node *doc;
+
+    step_asked[0] = 0;
+    step_asked[1] = 0;
+    doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_late_step_observers, NULL);
+    OK(runner, doc != NULL, "a document whose acted-on kind appears in its second paragraph parses");
+    INT_EQ(runner, step_asked[0], 2,
+           "a step acting on a kind first made by the walk is asked from that paragraph's EXIT on: not at the "
+           "first paragraph, at the second and the third");
+    INT_EQ(runner, step_asked[1], 2,
+           "a step tracking a Link's extent receives the Link's ENTER and EXIT whatever its gate says");
+    markdown_core_node_free(doc);
+}
+
 /* A declared kind set is written with a macro, because a descriptor cannot call
  * a function, and the macro cannot tell a block kind from an inline one -- the
  * field it fills says which. So check every set the dialect declares against
@@ -1819,38 +1859,74 @@ static bool sweep_block_gates(markdown_core_parser *parser, void *context) {
     const markdown_core_element *const *elements = parser->elements;
     size_t element_count = parser->element_count;
 
+    /* A byte the gate does not admit must be one the hook rejects, whatever
+     * container it is asked in and whether or not a paragraph is open: a scan
+     * hook is asked from inside a definition too (definition_list's), and a
+     * setext underline is a heading only under a paragraph. A blank line, which
+     * no gate can name, is asked of no gated scan hook, so each must reject it
+     * as well. Line endings are left out of the byte sweep -- a line made of
+     * them is not a line -- and covered by the blank probe. */
+    static const markdown_core_node_type containers[] = {MARKDOWN_CORE_NODE_DOCUMENT, MARKDOWN_CORE_NODE_DEFINITION};
     for (size_t i = 0; i < element_count; i++) {
         const markdown_core_element *element = elements[i];
-        if (!element->try_opening_block || !element->open_block_gate.bytes) {
-            continue;
-        }
-        sweep->gated++;
-        for (int byte = 1; byte < 256; byte++) {
-            unsigned char line[8];
-            markdown_core_parser probe = {0};
-            markdown_core_node *parent;
-            markdown_core_node *opened;
-
-            if (byte == '\n' || byte == '\r' || strchr(element->open_block_gate.bytes, byte)) {
+        const struct {
+            const char *family;
+            const char *bytes;
+        } gates[] = {{"open", element->try_opening_block ? element->open_block_gate.bytes : NULL},
+                     {"scan", element->scan_block_start ? element->scan_block_gate.bytes : NULL},
+                     {"interrupt", element->try_interrupting_block ? element->interrupt_block_gate.bytes : NULL}};
+        for (size_t g = 0; g < sizeof(gates) / sizeof(*gates); g++) {
+            if (!gates[g].bytes) {
                 continue;
             }
-            parent = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
-            if (!parent) {
-                continue;
-            }
-            line[0] = (unsigned char)byte;
-            line[1] = (unsigned char)byte;
-            line[2] = (unsigned char)byte;
-            line[3] = '\n';
-            opened = element->try_opening_block(element, 0, &probe, parent, line, 4);
-            if (opened) {
-                sweep->violations++;
-                if (sweep->first_bad_byte < 0) {
-                    sweep->first_bad_byte = byte;
-                    sweep->first_bad_element = element->name;
+            sweep->gated++;
+            for (int byte = 0; byte < 256; byte++) {
+                unsigned char line[8];
+                bool blank = byte == '\n';
+                if (byte == '\r' || byte == 0 || (!blank && strchr(gates[g].bytes, byte))) {
+                    continue;
+                }
+                line[0] = (unsigned char)byte;
+                line[1] = blank ? 0 : (unsigned char)byte;
+                line[2] = blank ? 0 : (unsigned char)byte;
+                line[3] = '\n';
+                for (size_t c = 0; c < sizeof(containers) / sizeof(*containers); c++) {
+                    for (int paragraph = 0; paragraph < 2; paragraph++) {
+                        markdown_core_parser probe = {0};
+                        markdown_core_node *parent = markdown_core_node_new(containers[c]);
+                        markdown_core_chunk input = {line, blank ? 1 : 4, 0};
+                        bool claimed = false;
+                        if (!parent) {
+                            continue;
+                        }
+                        if (gates[g].family[0] == 'o') {
+                            claimed = element->try_opening_block(element, 0, &probe, parent, line, input.len) != NULL;
+                        } else if (gates[g].family[0] == 's') {
+                            block_start_context context = {.container = parent,
+                                                           .input = &input,
+                                                           .first = 0,
+                                                           .column = 1,
+                                                           .indent = 0,
+                                                           .paragraph = paragraph != 0,
+                                                           .lazy = false,
+                                                           .all_matched = true,
+                                                           .depth = 1};
+                            block_start start = {0};
+                            claimed = element->scan_block_start(&probe, &context, &start);
+                        } else {
+                            claimed = element->try_interrupting_block(&probe, parent, &input, false) != NULL;
+                        }
+                        if (claimed) {
+                            sweep->violations++;
+                            if (sweep->first_bad_byte < 0) {
+                                sweep->first_bad_byte = byte;
+                                sweep->first_bad_element = element->name;
+                            }
+                        }
+                        markdown_core_node_free(parent);
+                    }
                 }
             }
-            markdown_core_node_free(parent);
         }
     }
     return true;
@@ -1937,7 +2013,7 @@ static void block_gate_admits_every_opener(test_batch_runner *runner) {
     const char *first_bad_element = sweep.first_bad_element;
     markdown_core_node_free(probe_doc);
 
-    OK(runner, gated > 0, "at least one element declares a block-start gate for this law to bind");
+    OK(runner, gated >= 13, "every scan and interrupt hook, and the gated openers, declare a gate: gated=%zu", gated);
     OK(runner, violations == 0, "no gated opener claims a line its gate excludes");
     if (violations) {
         fprintf(stderr, "element %s opened a block on byte 0x%02x, which its gate excludes\n",
@@ -3547,12 +3623,14 @@ typedef struct {
     /* The finish stage's traversal count and its denominator (parser.h):
      * recorded by a global pass at the document root, which is the last root
      * the finish walk completes, so these are the stage's totals. */
-    size_t finish_events, finish_entered, finish_roots;
+    size_t finish_events, finish_entered, finish_roots, finish_parsed;
     size_t nodes_created, nodes_created_before_finish, nodes_freed, nodes_freed_before_finish;
     size_t delimiter_pushes;
     size_t pooled_delimiters;
     size_t content_mark_queries;
     size_t content_mark_probes;
+    /* The runs the content-to-source map holds when the parse ends. */
+    size_t line_marks;
 } inline_work;
 static int record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                               markdown_core_node *root) {
@@ -3564,6 +3642,7 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
     work->finish_events = parser->finish_walk_events;
     work->finish_entered = parser->finish_nodes_entered;
     work->finish_roots = parser->finish_walk_roots;
+    work->finish_parsed = parser->finish_nodes_parsed;
     work->nodes_created = parser->nodes_created;
     work->nodes_created_before_finish = parser->nodes_created_before_finish;
     work->nodes_freed = parser->nodes_freed;
@@ -3575,6 +3654,7 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
     work->delimiter_pushes = parser->delimiter_pushes;
     work->content_mark_queries = parser->content_mark_queries;
     work->content_mark_probes = parser->content_mark_probes;
+    work->line_marks = (size_t)parser->line_marks_size;
     work->pooled_delimiters = 0;
     for (const delimiter *entry = parser->free_delimiters; entry; entry = entry->next) {
         work->pooled_delimiters++;
@@ -5279,6 +5359,42 @@ static void inline_placement_probes_the_map_a_bounded_number_of_times(test_batch
     }
 }
 
+/* CONSOLIDATION APPENDS NO RUN WHEN ITS OPERANDS ARE VIEWS. A Text that is a
+ * verbatim copy of its source holds a slice of its container's runs, and the
+ * siblings consolidation absorbs were placed left to right in that container,
+ * so the merged Text is the slice from the first operand's first run to the
+ * last operand's last: a paragraph whose literal asterisks and brackets split
+ * it into several Texts ends the parse with exactly the runs its lines gave
+ * the map, as a paragraph of the same lines with one Text does. An operand
+ * that is not a view -- a decoded entity, whose literal is shorter than its
+ * scope -- breaks the chain, and the merged map is materialized run by run.
+ * The positions are the same either way; the api test's own dumps and the
+ * corpus hold that, and this holds the mechanism. */
+static void consolidation_keeps_a_view_when_its_operands_are_views(test_batch_runner *runner) {
+    static const char split[] = "a_b_c[d]e\nf_g\n";
+    static const char whole[] = "aaaaaaaaa\nfff\n";
+    static const char decoded[] = "a&amp;b_c\nfff\n";
+    inline_work split_work = {0}, whole_work = {0}, decoded_work = {0};
+    markdown_core_node *split_root =
+        markdown_core_parse_document_with_setup(split, sizeof(split) - 1, measure_inline_work, &split_work);
+    markdown_core_node *whole_root =
+        markdown_core_parse_document_with_setup(whole, sizeof(whole) - 1, measure_inline_work, &whole_work);
+    markdown_core_node *decoded_root =
+        markdown_core_parse_document_with_setup(decoded, sizeof(decoded) - 1, measure_inline_work, &decoded_work);
+    OK(runner, split_root && whole_root && decoded_root, "the three paragraphs parse");
+    INT_EQ(runner, count_kind(split_root, MARKDOWN_CORE_NODE_TEXT), 2,
+           "the literal asterisks and brackets were merged into one Text per line");
+    INT_EQ(runner, split_work.line_marks, whole_work.line_marks,
+           "and merging views appended no run: %zu runs, as the one-Text paragraph's %zu", split_work.line_marks,
+           whole_work.line_marks);
+    OK(runner, decoded_work.line_marks > whole_work.line_marks,
+       "a decoded operand materializes the merged map: %zu runs against %zu", decoded_work.line_marks,
+       whole_work.line_marks);
+    markdown_core_node_free(split_root);
+    markdown_core_node_free(whole_root);
+    markdown_core_node_free(decoded_root);
+}
+
 /* THE CURSOR'S FAST PATH AGREES WITH THE SPAN ON EVERY PLACEMENT. A node is
  * placed from the run the cursor names when both of its ends lie on that run;
  * otherwise the span resolves each end on its own. The two must give the same
@@ -5301,6 +5417,7 @@ static void probe_placements(markdown_core_inline_state *inline_state) {
                 markdown_core_node placed = {.kind = MARKDOWN_CORE_NODE_SOFT_BREAK};
                 markdown_core_content_span span = {0};
                 inline_state->mark_cursor = cursor;
+                markdown_core_inline_seat_cursor(inline_state);
                 markdown_core_inline_state_place(inline_state, &placed, from, to);
                 markdown_core_parser_content_span(parser, owner, from, to, &span, NULL);
                 placements_checked++;
@@ -5324,6 +5441,76 @@ static void placement_from_the_cursor_agrees_with_the_span(test_batch_runner *ru
     INT_EQ(runner, placement_disagreements, 0,
            "every placement from every cursor, reversed pairs across runs included, matches the span");
     markdown_core_node_free(root);
+}
+
+/* A LINE WHOSE FIRST BYTE NO SCAN OWNER DECLARED REACHES NONE OF THEM. The
+ * projection reads the line's key and asks only the owners listed under it;
+ * `!` leads nothing, so the list and specimen scanners, whose work counters
+ * count every byte they look at and which nothing else drives on this
+ * document, never see the line. */
+static void an_undeclared_first_byte_reaches_no_gated_scanner(test_batch_runner *runner) {
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+    for (int i = 0; i < 512; i++) {
+        markdown_core_strbuf_puts(&source, "! prose that no block grammar starts on\n\n");
+    }
+    inline_work work = {0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup((const char *)source.ptr, source.size, measure_inline_work, &work);
+    OK(runner, root != NULL, "the document parses");
+    INT_EQ(runner, (int)work.list_markers, 0, "the list scanner is not asked about a line it cannot start");
+    INT_EQ(runner, (int)work.specimens, 0, "nor the specimen scanner");
+    markdown_core_node_free(root);
+    markdown_core_strbuf_free(&source);
+}
+
+/* THE LIST SCANNER READS A NUMERAL BY THE CLASS ITS FIRST BYTE NAMES. The
+ * scan gate must admit letters and digits -- fancy lists start on them -- so
+ * every prose line that begins with a word reaches the numeral scan, and a
+ * scan that read the whole alphanumeric run paid the word's length on every
+ * such line. The grammar accepts one letter, roman letters of one case, or
+ * decimal digits (at most nine), so the scan reads that class and stops at
+ * its boundary: a prose word ends the probe on its second byte, a long digit
+ * string on its eleventh, and every marker the grammar accepted or refused is
+ * accepted or refused as before. */
+static void the_list_scanner_reads_a_numeral_by_its_first_bytes_class(test_batch_runner *runner) {
+    static const size_t lines = 256;
+    static const struct {
+        const char *lead;
+        size_t ceiling;
+    } shapes[] = {{"Supercalifragilisticexpialidocious", 4}, {"mississippi", 4}, {"1234567890123456789012345678", 14}};
+    for (size_t s = 0; s < sizeof(shapes) / sizeof(*shapes); s++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        for (size_t i = 0; i < lines; i++) {
+            markdown_core_strbuf_puts(&source, shapes[s].lead);
+            markdown_core_strbuf_puts(&source, " is not a list marker\n\n");
+        }
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_setup((const char *)source.ptr, source.size, measure_inline_work, &work);
+        OK(runner, root != NULL, "shape %zu parses", s);
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LIST), 0, "and opens no list: shape %zu", s);
+        OK(runner, work.list_markers <= shapes[s].ceiling * lines,
+           "the scan reads the first byte's class, not the word: %zu units for %zu lines of shape %zu",
+           work.list_markers, lines, s);
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+
+    /* The accepted set, and the refused set, are the grammar's. */
+    static const struct {
+        const char *source;
+        int lists;
+    } markers[] = {{"a. x\n", 1},          {"iv. x\n", 1},          {"MMXX. x\n", 1}, {"(c) x\n", 1},
+                   {"123456789. x\n", 1},  {"i. x\nii. x\n", 1},    {"mix. x\n", 1},  {"#. x\n", 1},
+                   {"x) y\n", 1},          {"3rd. x\n", 0},         {"ab. x\n", 0},   {"Iv. x\n", 0},
+                   {"1234567890. x\n", 0}, {"12345678901. x\n", 0}, {"H. x\n", 0},    {"cat. x\n", 0}};
+    for (size_t m = 0; m < sizeof(markers) / sizeof(*markers); m++) {
+        markdown_core_node *root = markdown_core_parse_document(markers[m].source, strlen(markers[m].source));
+        OK(runner, root != NULL, "marker %zu parses", m);
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LIST), markers[m].lists,
+               "the class scan keeps the grammar's answer for marker %zu", m);
+        markdown_core_node_free(root);
+    }
 }
 
 static void attribute_attachment_linear_work(test_batch_runner *runner) {
@@ -6251,6 +6438,185 @@ static void multiline_boundary_search_builds_no_geometry(test_batch_runner *runn
        "a 16x longer boundary search builds no more column geometry: %zu then %zu", geometry[0], geometry[1]);
 }
 
+/* THE DEFINITION GATE READS A PREFIX, NEVER A LINE. The transaction that
+ * decides a definition term reads the next line stripped of its container
+ * prefix and asks whether it begins with a marker; the raw-source key that
+ * spares the transaction asks the same question of the same byte, past the
+ * quote markers and whitespace a prefix can be made of. So prose that merely
+ * contains ": " opens no transaction at all, and the key's cost is the
+ * container depth whatever the prose length: on lines of 4,096 bytes with a
+ * ": " in the middle of each, the lookahead visits no line and the gate's
+ * work is a constant per line. The gate must still admit what the grammar
+ * accepts: a marker after the blank the grammar allows, and one behind a
+ * quote marker. */
+static void definition_gate_reads_the_prefix_not_the_line(test_batch_runner *runner) {
+    static const size_t lines = 64;
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+    for (size_t i = 0; i < lines; i++) {
+        for (size_t j = 0; j < 2048; j++) {
+            markdown_core_strbuf_putc(&source, 'a' + (char)(j % 26));
+        }
+        markdown_core_strbuf_puts(&source, ": ");
+        for (size_t j = 0; j < 2048; j++) {
+            markdown_core_strbuf_putc(&source, 'a' + (char)(j % 26));
+        }
+        markdown_core_strbuf_puts(&source, "\n\n");
+    }
+    inline_work work = {0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
+    OK(runner, root != NULL, "prose with a colon-space in every line parses");
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 0, "and holds no definition list");
+    INT_EQ(runner, work.lookahead, 0, "the definition gate opened no lookahead transaction for it");
+    OK(runner, work.definition_lists <= 2 * lines,
+       "and the gate's own work is a constant per paragraph-opening line, not the line: %zu for %zu lines",
+       work.definition_lists, lines);
+    markdown_core_node_free(root);
+    markdown_core_strbuf_free(&source);
+
+    /* Every container on the child spine, alone and nested (a footnote's
+     * body is owned off it and strips indentation like a list item), so the
+     * prefix bytes the key walks are checked against each continuation
+     * grammar rather than against the one the key was written for. */
+    static const char *const admitted[] = {"Term\n: body\n",
+                                           "Term\n\n: body\n",
+                                           "> Term\n> : body\n",
+                                           "> Term\n>\n> : body\n",
+                                           "Term\n~ body\n",
+                                           "Term\n:\n",
+                                           "- Term\n  : body\n",
+                                           "1. Term\n   : body\n",
+                                           "* Term\n\n  : body\n",
+                                           "- > Term\n  > : body\n",
+                                           "> - Term\n>   : body\n",
+                                           "> > Term\n> > : body\n",
+                                           "::: note\nTerm\n: body\n:::\n"};
+    for (size_t i = 0; i < sizeof(admitted) / sizeof(*admitted); i++) {
+        root = markdown_core_parse_document(admitted[i], strlen(admitted[i]));
+        OK(runner, root != NULL, "definition shape %zu parses", i);
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 1,
+               "the key admits the definition the grammar accepts: shape %zu", i);
+        markdown_core_node_free(root);
+    }
+}
+
+typedef struct {
+    size_t declared, missing, extra;
+    bool indentation;
+} container_prefix_sweep;
+
+/* The table is projected after setup, with the hooks, so it is read at the
+ * finish, from a pass, like the work counters. */
+static int record_container_prefix(const markdown_core_element *element, markdown_core_parser *parser,
+                                   markdown_core_node *root) {
+    (void)element;
+    container_prefix_sweep *sweep = root->user_data;
+    bool expected[256] = {false};
+    if (!sweep) {
+        return 1;
+    }
+    root->user_data = NULL;
+    expected[' '] = expected['\t'] = true;
+    for (size_t i = 0; i < parser->element_count; i++) {
+        const char *bytes = parser->elements[i]->container_prefix_bytes;
+        if (!bytes) {
+            continue;
+        }
+        sweep->declared++;
+        for (const unsigned char *c = (const unsigned char *)bytes; *c; c++) {
+            expected[*c] = true;
+            sweep->missing += !parser->container_prefix[*c];
+        }
+    }
+    sweep->indentation = parser->container_prefix[' '] && parser->container_prefix['\t'];
+    for (int byte = 0; byte < 256; byte++) {
+        sweep->extra += parser->container_prefix[byte] && !expected[byte];
+    }
+    return 1;
+}
+static const markdown_core_element CONTAINER_PREFIX_RECORDER = {.name = "container-prefix-recorder",
+                                                                .postprocess_func = record_container_prefix};
+static bool sweep_container_prefix(markdown_core_parser *parser, void *context) {
+    parser->root->user_data = context;
+    return markdown_core_parser_attach_element(parser, &CONTAINER_PREFIX_RECORDER);
+}
+
+/* The bytes the definition key walks over are not the key's own list: they
+ * are projected from what each container element declares its continuation
+ * strips, plus indentation, so a container added with a new prefix byte is
+ * declared beside its grammar and the key follows. The projection is checked
+ * here; the declarations are checked above, by the grammar. */
+static void container_prefix_is_projected_from_the_elements(test_batch_runner *runner) {
+    container_prefix_sweep sweep = {0, 0, 0, false};
+    static const char probe_source[] = "probe\n";
+    markdown_core_node *probe_doc =
+        markdown_core_parse_document_with_setup(probe_source, sizeof(probe_source) - 1, sweep_container_prefix, &sweep);
+    OK(runner, sweep.declared >= 1, "at least one container declares a prefix byte: declared=%zu", sweep.declared);
+    OK(runner, sweep.indentation, "indentation is a container prefix without any declaration");
+    INT_EQ(runner, (int)sweep.missing, 0, "every declared prefix byte is in the projected table");
+    INT_EQ(runner, (int)sweep.extra, 0, "and nothing else is");
+    markdown_core_node_free(probe_doc);
+}
+
+/* A container may declare a prefix byte that is also the definition marker
+ * byte. Raw source cannot tell the two apart, so the key must hand such a
+ * line to the transaction rather than walk over the marker and refuse the
+ * definition: a key that walked it would make a definition nested in that
+ * container silently parse as prose. */
+static const markdown_core_element COLON_PREFIX_CONTAINER = {.name = "colon-prefix", .container_prefix_bytes = ":"};
+static const markdown_core_element TILDE_PREFIX_CONTAINER = {.name = "tilde-prefix", .container_prefix_bytes = "~"};
+static bool attach_marker_prefix_containers(markdown_core_parser *parser, void *context) {
+    parser->root->user_data = context;
+    return markdown_core_parser_attach_element(parser, &COLON_PREFIX_CONTAINER) &&
+           markdown_core_parser_attach_element(parser, &TILDE_PREFIX_CONTAINER) &&
+           markdown_core_parser_attach_element(parser, &WORK_RECORDER);
+}
+static void a_prefix_byte_that_is_a_marker_byte_hands_the_line_to_the_transaction(test_batch_runner *runner) {
+    static const char *const sources[] = {"Term\n: body\n", "Term\n~ body\n", "> Term\n> : body\n"};
+    for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); i++) {
+        inline_work work = {0};
+        markdown_core_node *root = markdown_core_parse_document_with_setup(sources[i], strlen(sources[i]),
+                                                                           attach_marker_prefix_containers, &work);
+        OK(runner, root != NULL, "shape %zu parses with marker bytes declared as prefix bytes", i);
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 1,
+               "and the definition is still recognised: shape %zu", i);
+        OK(runner, work.lookahead >= 1, "because the key handed the line to the transaction: shape %zu", i);
+        markdown_core_node_free(root);
+    }
+}
+
+/* THE REGISTRY IS BOUNDED WHERE THE PROJECTION NEEDS IT TO BE. The block-start
+ * projection lists a family's owners by byte, so the attachment API refuses
+ * the element that would make an owner index or a count not fit, leaving the
+ * registry as it was; without that bound a release build would wrap the byte
+ * and dispatch to the wrong owner. */
+static const markdown_core_element REGISTRY_FILLER = {.name = "registry-filler"};
+typedef struct {
+    size_t attached, count, refused_again;
+} registry_fill;
+static bool fill_the_registry(markdown_core_parser *parser, void *context) {
+    registry_fill *fill = context;
+    while (markdown_core_parser_attach_element(parser, &REGISTRY_FILLER)) {
+        fill->attached++;
+    }
+    fill->count = parser->element_count;
+    fill->refused_again = !markdown_core_parser_attach_element(parser, &REGISTRY_FILLER);
+    return true;
+}
+static void the_registry_refuses_the_element_the_projection_could_not_index(test_batch_runner *runner) {
+    registry_fill fill = {0, 0, 0};
+    static const char probe_source[] = "- item\n\nTerm\n: body\n";
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup(probe_source, sizeof(probe_source) - 1, fill_the_registry, &fill);
+    OK(runner, root != NULL, "the document parses with the registry full");
+    OK(runner, fill.attached >= 1, "attachment succeeded up to the bound: %zu attached", fill.attached);
+    INT_EQ(runner, (int)fill.count, MARKDOWN_CORE_ELEMENT_LIMIT, "and stopped exactly at the bound");
+    OK(runner, fill.refused_again, "every attachment past it is refused");
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LIST), 1, "the projection still dispatches to the list owner");
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 1, "and to the definition owner");
+    markdown_core_node_free(root);
+}
+
 /* Table is the one element whose opening grammar spans two lines: a Pandoc
  * simple table WITH a header has an arbitrary-prose first line, so no
  * first-byte gate can exclude it, and the opener used to open a full lookahead
@@ -6315,6 +6681,67 @@ static void table_open_gate_admits_only_possible_tables(test_batch_runner *runne
         markdown_core_node_free(built);
         markdown_core_strbuf_free(&table);
     }
+
+    /* A BOUNDARY ALONE OPENS NOTHING. The two grammars that start on a single
+     * dash run -- a multiline table with a header, a simple table with a
+     * header -- both refuse when the line below it is blank, so a thematic
+     * break followed by a blank line is asked of neither: no line captured,
+     * no column geometry built. The same boundary with a row below it is a
+     * table, which is what the gate must keep admitting. */
+    markdown_core_strbuf breaks = MARKDOWN_CORE_BUF_INIT();
+    /* Opened by prose: a document that begins with `---` begins frontmatter. */
+    markdown_core_strbuf_puts(&breaks, "prose\n\n");
+    for (size_t i = 0; i < 256; i++) {
+        markdown_core_strbuf_puts(&breaks, "---\n\n- item\n\n");
+    }
+    inline_work break_work = {0};
+    markdown_core_node *break_root =
+        markdown_core_parse_document_with_setup((char *)breaks.ptr, breaks.size, measure_inline_work, &break_work);
+    OK(runner, break_root != NULL, "thematic breaks and empty items followed by blanks parse");
+    INT_EQ(runner, count_kind(break_root, MARKDOWN_CORE_NODE_THEMATIC_BREAK), 256, "as thematic breaks");
+    INT_EQ(runner, count_kind(break_root, MARKDOWN_CORE_NODE_TABLE), 0, "and no table");
+    INT_EQ(runner, break_work.table_separator_scans, 0, "a boundary with a blank below it captures no line");
+    INT_EQ(runner, break_work.table_geometry_lines, 0, "and builds no column geometry");
+    markdown_core_node_free(break_root);
+    markdown_core_strbuf_free(&breaks);
+
+    static const char multiline[] = "-------------\n"
+                                    "Right  Left\n"
+                                    "-----  ----\n"
+                                    "12     12\n"
+                                    "-------------\n";
+    markdown_core_node *bounded = markdown_core_parse_document(multiline, sizeof(multiline) - 1);
+    OK(runner, bounded != NULL, "a multiline table with a header parses");
+    INT_EQ(runner, count_kind(bounded, MARKDOWN_CORE_NODE_TABLE), 1, "the gate admits the boundary a row follows");
+    markdown_core_node_free(bounded);
+
+    /* A CAPTION ENDS AT A BLANK LINE. The table after a trailing caption's
+     * blank is the next construct, parsed once by its own opener; it used to
+     * be parsed inside the caption's transaction as well and thrown away. The
+     * column geometry the two documents build on their own is exactly what
+     * the one document builds. */
+    static const char first[] = "Right  Left\n-----  ----\n12     12\n\nTable: caption\n";
+    static const char second[] = "Up  Down\n--  ----\n1   2\n";
+    inline_work first_work = {0}, second_work = {0}, both_work = {0};
+    markdown_core_node *first_root =
+        markdown_core_parse_document_with_setup(first, sizeof(first) - 1, measure_inline_work, &first_work);
+    markdown_core_node *second_root =
+        markdown_core_parse_document_with_setup(second, sizeof(second) - 1, measure_inline_work, &second_work);
+    markdown_core_strbuf both = MARKDOWN_CORE_BUF_INIT();
+    markdown_core_strbuf_puts(&both, first);
+    markdown_core_strbuf_puts(&both, "\n");
+    markdown_core_strbuf_puts(&both, second);
+    markdown_core_node *both_root =
+        markdown_core_parse_document_with_setup((char *)both.ptr, both.size, measure_inline_work, &both_work);
+    OK(runner, first_root && second_root && both_root, "a captioned table, a table, and the two together parse");
+    INT_EQ(runner, count_kind(both_root, MARKDOWN_CORE_NODE_TABLE), 2, "the two together are two tables");
+    INT_EQ(runner, both_work.table_geometry_lines, first_work.table_geometry_lines + second_work.table_geometry_lines,
+           "the table after the trailing caption's blank is parsed once: %zu lines of geometry, %zu + %zu apart",
+           both_work.table_geometry_lines, first_work.table_geometry_lines, second_work.table_geometry_lines);
+    markdown_core_node_free(first_root);
+    markdown_core_node_free(second_root);
+    markdown_core_node_free(both_root);
+    markdown_core_strbuf_free(&both);
 }
 
 /* THE INLINE-HOOK PROJECTION'S WORK INVARIANT.
@@ -6750,10 +7177,12 @@ static size_t owned_node_census(markdown_core_node *root) {
 
 /* The one-traversal identity (parser.h): the finish stage entered each node
  * it was handed exactly once, and the finished tree is those nodes less the
- * ones the stage freed plus the ones its steps made. */
+ * ones the stage freed plus the ones its steps made. The nodes the walk's own
+ * inline parsing made are handed to it -- made at a container's ENTER, they
+ * are the next events -- so they come out of the "made" term. */
 static size_t nodes_handed_to_finish(const inline_work *work, size_t finished_tree) {
     return finished_tree + (work->nodes_freed - work->nodes_freed_before_finish) -
-           (work->nodes_created - work->nodes_created_before_finish);
+           (work->nodes_created - work->nodes_created_before_finish - work->finish_parsed);
 }
 
 /* ONE TRAVERSAL PER ROOT, AND EVERY FINISH HOOK INSIDE IT.
@@ -6761,18 +7190,21 @@ static size_t nodes_handed_to_finish(const inline_work *work, size_t finished_tr
  * The finish stage used to walk each root once to find the owned roots, once
  * more for consolidation, once more for autolink and once more for formula --
  * three or four private iterators over every node -- and the inline stage
- * walked every root once more before it to complete the nodes. It walks each
- * root ONCE now: completion is the walk's ENTER, and consolidation, autolink
- * and formula are steps of that walk.
+ * walked every root once more before it to complete the nodes, and once more
+ * before that to find the containers whose inline content to parse, and the
+ * block stage once more to lay out the lists. It walks each root ONCE now:
+ * inline parsing and completion are the walk's ENTER, and consolidation, the
+ * list layout, autolink and formula are steps of that walk.
  *
- * Nothing in the output can tell the shapes apart: five walks build the same
- * tree as one. So the invariant is asserted on the parser's own counters
+ * Nothing in the output can tell the shapes apart: seven walks build the
+ * same tree as one. So the invariant is asserted on the parser's own counters
  * (parser.h) against a census the test takes itself. The nodes the finish
  * stage ENTERED must equal the nodes it was handed: the finished tree, plus
- * the nodes the stage freed, less the nodes its steps made --
- * one traversal enters each of them exactly once, a step never enters the
- * nodes it inserts, and a stage that walked each root k times enters k times
- * as many. Then every iterator step the stage took must be one of those
+ * the nodes the stage freed, less the nodes its steps made, plus the nodes
+ * its own inline parsing made (which it enters: they are the next events
+ * after the ENTER that made them) -- one traversal enters each of them
+ * exactly once, a step never enters the nodes it inserts, and a stage that
+ * walked each root k times enters k times as many. Then every iterator step the stage took must be one of those
  * events, `events == 2 * entered + roots`, which is what says consolidation's
  * advances over the siblings it absorbs are the only steps beyond the walk's
  * own. The identity alone would not do: a second whole-root walk that counted
@@ -6843,6 +7275,12 @@ static void finish_stage_walks_each_root_once(test_batch_runner *runner) {
     OK(runner, work.finish_events < 2 * (2 * finished + work.finish_roots),
        "so it took fewer steps than two traversals of the finished tree: %zu events for %zu nodes", work.finish_events,
        finished);
+    /* The inline content was parsed by the walk, not before it: the nodes
+     * that parsing made were made after the walk noted its starting point,
+     * and every one of them is a node the walk entered. */
+    OK(runner, work.finish_parsed > 0 && work.finish_parsed <= work.nodes_created - work.nodes_created_before_finish,
+       "the walk parsed the inline content itself: %zu nodes made by its parsing of the %zu made inside it",
+       work.finish_parsed, work.nodes_created - work.nodes_created_before_finish);
 
     /* Every address became a link -- seven of them, four on field roots the
      * public iterator does not descend into -- including the one
@@ -7316,7 +7754,10 @@ int main(void) {
     delimiter_entries_are_pooled_across_inline_containers(runner);
     releasing_an_empty_attribute_value_makes_no_allocator_call(runner);
     inline_placement_probes_the_map_a_bounded_number_of_times(runner);
+    consolidation_keeps_a_view_when_its_operands_are_views(runner);
     placement_from_the_cursor_agrees_with_the_span(runner);
+    an_undeclared_first_byte_reaches_no_gated_scanner(runner);
+    the_list_scanner_reads_a_numeral_by_its_first_bytes_class(runner);
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
     heading_registry_invariants(runner);
@@ -7327,6 +7768,10 @@ int main(void) {
     ordered_numeral_ceiling(runner);
     citation_sparse_brace_storage(runner);
     definition_list_linear_work(runner);
+    definition_gate_reads_the_prefix_not_the_line(runner);
+    container_prefix_is_projected_from_the_elements(runner);
+    a_prefix_byte_that_is_a_marker_byte_hands_the_line_to_the_transaction(runner);
+    the_registry_refuses_the_element_the_projection_could_not_index(runner);
     citation_linear_work(runner);
     cross_link_linear_work(runner);
     inline_footnote_linear_work(runner);
@@ -7409,6 +7854,7 @@ int main(void) {
     stray_delimiter(runner);
     postprocess_skips_absent_kinds(runner);
     finish_step_skips_absent_kinds(runner);
+    finish_step_gate_opens_when_its_kind_is_made(runner);
     postprocess_kind_sets_are_well_formed(runner);
     block_gate_admits_every_opener(runner);
     inline_dispatch_ownership(runner);

@@ -476,7 +476,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
     } else if (inl) {
         inl->as.link->resource = markdown_core_resource_new(url, title);
         if (!inl->as.link->resource) {
-            markdown_core_node_free(inl);
+            markdown_core_parser_release_node(parser, inl);
             inl = NULL;
         }
     }
@@ -524,7 +524,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
     }
 
     // Free the bracket [:
-    markdown_core_node_free(opener->inl_text);
+    markdown_core_parser_release_node(parser, opener->inl_text);
 
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
     markdown_core_inline_pop_bracket(inline_state);
@@ -618,7 +618,7 @@ void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inl
         markdown_core_node_attach_owned(opener->inl_text->parent, replacement, opener->inl_text->next);
     } else {
         markdown_core_node_attach_owned(opener->inl_text->parent, replacement, opener->inl_text);
-        markdown_core_node_free(opener->inl_text);
+        markdown_core_parser_release_node(inline_state->owner_parser, opener->inl_text);
     }
 }
 
@@ -629,7 +629,8 @@ markdown_core_node *markdown_core_inline_handle_close_bracket(markdown_core_pars
     bufsize_t initial_pos = inline_state->pos;
     bracket *opener = inline_state->last_bracket;
     if (!opener) {
-        return make_str(inline_state, initial_pos - 1, initial_pos - 1, markdown_core_chunk_literal("]"));
+        return make_str(inline_state, initial_pos - 1, initial_pos - 1,
+                        markdown_core_chunk_dup(&inline_state->input, initial_pos - 1, 1));
     }
     if (opener->kind == BRACKET_FOOTNOTE) {
         return markdown_core_inline_close_inline_footnote(parser, inline_state, opener);
@@ -674,7 +675,8 @@ no_match:
     markdown_core_inline_finish_citation_tokens(inline_state, &opener->citations);
     markdown_core_inline_pop_bracket(inline_state);
     inline_state->pos = initial_pos;
-    return make_str(inline_state, initial_pos - 1, initial_pos - 1, markdown_core_chunk_literal("]"));
+    return make_str(inline_state, initial_pos - 1, initial_pos - 1,
+                    markdown_core_chunk_dup(&inline_state->input, initial_pos - 1, 1));
 }
 
 static markdown_core_node *match_bracket(const markdown_core_element *self, markdown_core_parser *parser,
@@ -685,8 +687,8 @@ static markdown_core_node *match_bracket(const markdown_core_element *self, mark
     }
     if (character == '[') {
         advance(inline_state);
-        markdown_core_node *text =
-            make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("["));
+        markdown_core_node *text = make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
+                                            markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
         if (text) {
             markdown_core_inline_push_bracket(inline_state, BRACKET_LINK, text);
         }

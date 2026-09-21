@@ -43,52 +43,45 @@ static bool markdown_core_block_definition_marker(markdown_core_chunk *input, in
  * lookahead transaction -- chain walk, reserve, snapshot, then a line pulled
  * at 548 Ir -- on every line of every document, because a definition TERM is
  * arbitrary prose and nothing about the term's own line can rule the grammar
- * out. This is that question answered from raw source first.
+ * out. This is that question answered from raw source first, as the
+ * grammar's own necessary condition.
  *
- * Container continuation strips a PREFIX from the line the transaction would
- * read, and stripping a prefix can neither create such a pair nor move one,
- * so finding none in the raw bytes means the transaction cannot match.
- *
- * `memchr` does the searching, not a byte loop: prose lines run to hundreds
- * of bytes (269 on average in `lorem1`, 881 at the longest) and a per-byte
- * scan of them costs more than the transaction it replaces -- measured, as a
- * 11.9% REGRESSION on that document before this was written this way.
- *
- * The line end is the parser's own: a bare CR terminates a line here, and
- * `memchr` for '\n' alone would run past one and search the wrong bytes. */
-static bool definition_line_admits(const unsigned char *from, const unsigned char *to) {
-    for (const unsigned char *p = from; p < to;) {
-        const unsigned char *colon = memchr(p, ':', (size_t)(to - p));
-        const unsigned char *tilde = memchr(p, '~', (size_t)(to - p));
-        const unsigned char *hit = !colon ? tilde : (!tilde || colon < tilde ? colon : tilde);
-        if (!hit) {
-            return false;
-        }
-        if (hit + 1 == to || markdown_core_block_is_space_or_tab(hit[1])) {
-            return true;
-        }
-        p = hit + 1;
-    }
-    return false;
-}
-
+ * The transaction accepts only when the next line -- one blank line skipped
+ * at most -- begins, once its container prefix is stripped, with a marker.
+ * A container continuation strips nothing but indentation and the bytes its
+ * element declares (`container_prefix_bytes`, projected to one table in
+ * `parser->container_prefix`: quote markers, today), so when a marker is
+ * there the raw bytes before it are all in that table: walking over them
+ * lands on the byte the stripped line would show first, and a raw line made
+ * of nothing else is blank once stripped (or a bare quote opener, which the
+ * transaction refuses; yielding to the line after it only over-admits). So
+ * the key reads a prefix, never a line: its cost is the container depth,
+ * whatever the prose's length, where the `memchr` search it replaces read
+ * both lines end to end (97% of this hook's own cost on long prose) and
+ * admitted any line with ': ' in it. Every answer of false is a line the
+ * transaction would refuse too. */
 static bool definition_next_lines_admit(markdown_core_parser *parser) {
     const unsigned char *cursor = parser->lookahead_cursor, *end = parser->lookahead_end;
-    /* The transaction skips at most one BLANK line (`blanks <= 1` below), so
-     * two physical lines are read. BOTH, always: a line that is only a
-     * container marker -- a bare '>' -- is not blank in raw source but is
-     * blank once the chain strips it, and stopping at it would miss the
-     * marker on the line after. Reading one line more than a given case needs
-     * only over-admits. */
     for (int line = 0; line < 2 && cursor && cursor < end; line++) {
-        const unsigned char *eol = cursor;
-        while (eol < end && !markdown_core_is_line_end((char)*eol)) {
-            eol++;
+        const unsigned char *at = cursor;
+        while (at < end && parser->container_prefix[*at]) {
+            /* A declared prefix byte that is also a marker byte -- a
+             * container whose continuation strips ':' or '~' -- cannot be
+             * told from the marker here; only the transaction can, so the
+             * key admits. No element declares one today; the rule is what
+             * lets one do so without this key silently refusing the
+             * definitions inside it. */
+            if (*at == ':' || *at == '~') {
+                return true;
+            }
+            at++;
         }
-        if (definition_line_admits(cursor, eol)) {
-            return true;
+        if (at < end && !markdown_core_is_line_end((char)*at)) {
+            return (*at == ':' || *at == '~') && (at + 1 == end || markdown_core_block_is_space_or_tab(at[1]) ||
+                                                  markdown_core_is_line_end((char)at[1]));
         }
-        cursor = eol;
+        /* Blank once stripped: the transaction skips one such line. */
+        cursor = at;
         if (cursor < end && *cursor == '\r') {
             cursor++;
         }
@@ -106,6 +99,12 @@ static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, 
         markdown_core_block_definition_marker(input, parser->first_nonspace, parser->indent)) {
         return false;
     }
+    /* The next line first: it refuses almost every line, and it costs the
+     * container depth where the reference re-parse below costs the line. Both
+     * are conjuncts of one decision, so the order changes nothing else. */
+    if (!definition_next_lines_admit(parser)) {
+        return false;
+    }
     markdown_core_chunk term = {input->data + parser->first_nonspace, input->len - parser->first_nonspace, 0};
     if (term.data[0] == '[') {
         parser->definition_list_work += term.len;
@@ -117,9 +116,6 @@ static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, 
         if (reference || parser->oom) {
             return false;
         }
-    }
-    if (!definition_next_lines_admit(parser)) {
-        return false;
     }
     markdown_core_block_lookahead lookahead;
     if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST, &lookahead)) {
@@ -230,9 +226,24 @@ static bool continue_container(markdown_core_parser *parser, markdown_core_node 
     return node->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY ||
            markdown_core_definition_list_continue(parser, node, input);
 }
-static void complete_block(markdown_core_parser *parser, markdown_core_node *node) {
+/* A definition list, a definition and a body end where their last child
+ * ends: taken at each one's EXIT, from inside the one finish walk, where the
+ * children are complete. */
+static markdown_core_finish_result finish_step(const markdown_core_element *element, markdown_core_parser *parser,
+                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
+                                               void **state) {
+    (void)element;
+    (void)parser;
+    (void)event;
+    (void)is_root;
+    (void)state;
+    assert(event == MARKDOWN_CORE_EVENT_EXIT);
     markdown_core_definition_list_complete(node);
+    return MARKDOWN_CORE_FINISH_CONTINUE;
 }
+static const markdown_core_node_type DEFINITION_LIST_EXIT_KINDS[] = {
+    MARKDOWN_CORE_NODE_DEFINITION_LIST, MARKDOWN_CORE_NODE_DEFINITION, MARKDOWN_CORE_NODE_DEFINITION_BODY,
+    MARKDOWN_CORE_NODE_NONE};
 static void finalize_block(markdown_core_parser *parser, markdown_core_node *node) {
     if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
         markdown_core_definition_list_close_body(node);
@@ -240,7 +251,8 @@ static void finalize_block(markdown_core_parser *parser, markdown_core_node *nod
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
-    .complete_block = complete_block,
+    .finish_step = finish_step,
+    .finish_exit_kinds = DEFINITION_LIST_EXIT_KINDS,
     .finalize_block = finalize_block,
 
     .accepts_blank = markdown_core_block_definition_body_blank_continues,
@@ -249,6 +261,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .continue_container = continue_container,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_definition_list_scan,
+    .scan_block_gate = {.bytes = ":~"},
     .try_opening_paragraph = try_paragraph,
 };
 

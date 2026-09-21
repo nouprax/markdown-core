@@ -159,7 +159,7 @@ static void S_register_element(markdown_core_parser *parser, const markdown_core
  * rule refuses, leave the previous registry intact. */
 int markdown_core_parser_attach_element(markdown_core_parser *parser, const markdown_core_element *element) {
     size_t count = parser->element_count;
-    if (S_element_rejection(element)) {
+    if (S_element_rejection(element) || count >= MARKDOWN_CORE_ELEMENT_LIMIT) {
         return 0;
     }
     const markdown_core_element **entries = markdown_core_alloc(count + 1, sizeof(*entries));
@@ -194,8 +194,6 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     parser->inline_dispatch = NULL;
     markdown_core_free(parser->block_hook_allocation);
     parser->block_hook_allocation = NULL;
-    markdown_core_free(parser->block_gate_allocation);
-    parser->block_gate_allocation = NULL;
     if (parser->root) {
         markdown_core_node_free(parser->root);
     }
@@ -690,7 +688,7 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
     if (!child || child->content.oom) {
         parser->oom = true;
         if (child) {
-            markdown_core_node_free(child);
+            markdown_core_parser_release_node(parser, child);
         }
         /* The loop above may have finalized blocks; keep the parser anchored
          * at a still-open ancestor so the finish path stays consistent. */
@@ -698,7 +696,7 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
         return NULL;
     }
     if (!markdown_core_node_attach_owned(parent, child, NULL)) {
-        markdown_core_node_free(child);
+        markdown_core_parser_release_node(parser, child);
         parser->oom = true;
         return NULL;
     }
@@ -800,8 +798,16 @@ void markdown_core_manage_elements_special_characters(markdown_core_parser *pars
     }
 }
 
-/* Parse each source buffer once. Inline parsing completes fields at their
- * owning token; the structural walk therefore skips the emitted inline tree. */
+/* THE INLINE PARSER'S OWN FIELD PARSE. A token that owns fields -- a
+ * citation's affixes, a directive's label -- has them parsed by the parse
+ * that made it, before it scans on (complete_inline_token in inlines.c), so
+ * that the token can be closed on what the fields turned out to hold. That
+ * parse walks the field's small tree with an iterator of its own; the
+ * document's content tree is not parsed this way but at each container's
+ * ENTER of the one finish walk (walk_owned_trees), which is why the walk does
+ * not parse below a node it reached inside an inline tree. Inline parsing
+ * completes fields at their owning token; the structural walk here therefore
+ * skips the emitted inline tree. */
 static bool process_inline_tree(markdown_core_parser *parser, markdown_core_node *root, markdown_core_map *refmap) {
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_node *cur;
@@ -857,24 +863,28 @@ bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_
 }
 
 typedef int (*tree_phase_func)(markdown_core_parser *parser, markdown_core_node *root, void *context);
-typedef void (*tree_node_func)(markdown_core_parser *parser, markdown_core_node *node, int script_depth, void *context);
 
+/* ONE FRAME PER ROOT THE WALK IS INSIDE. The iterator is the frame's own, not
+ * an allocation: the walk steps it in place (iterator.h).
+ *
+ * `parses` and `parsed` are the inline parser's reach in this frame. The
+ * content tree's nodes are the walk's to parse, and so are the fields of its
+ * block nodes (a definition's term, a callout's title, a table's caption, a
+ * block directive's label); a field of an inline node is not -- the inline
+ * parser completed it when it made the token (process_inline_tree above) --
+ * and nor is a definition the document owns as a root of its own, whose
+ * content was made as inline content. `parsed` is the container whose inline
+ * tree the walk is inside, or NULL: nothing below a parsed container is
+ * parsed again, since an inline node's content is its container's, already
+ * parsed, and the walk is where the old inline traversal skipped to the
+ * container's EXIT. */
 typedef struct {
     markdown_core_node *root;
-    markdown_core_iter *iter;
+    markdown_core_iter iter;
+    markdown_core_node *parsed;
     int script_depth;
+    bool parses, started;
 } owned_tree_frame;
-
-/* THE FINISH DISPATCH OF A WALK, or NULL for a walk that runs no finish step.
- *
- * A walk that carries this dispatches, at every event its iterator delivers,
- * the engine's own consolidation (at a Text's EXIT, first) and then the steps
- * the parser projected for that (event, kind), in descriptor order, until one
- * of them consumes the node. The scratch buffer is consolidation's, allocated
- * once for the walk rather than once per merged run. */
-typedef struct {
-    markdown_core_strbuf scratch;
-} finish_dispatch;
 
 typedef struct {
     markdown_core_parser *parser;
@@ -884,8 +894,13 @@ typedef struct {
     void **states;
     size_t slots;
     size_t count, capacity;
+    /* What a root pushed now starts with: the pushing node's word depth and
+     * whether its fields are the walk's to parse. */
     int script_depth;
-    finish_dispatch *steps;
+    bool parses;
+    /* Consolidation's buffer, allocated once for the walk rather than once
+     * per merged run. */
+    markdown_core_strbuf scratch;
 } owned_tree_walk;
 
 static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
@@ -918,7 +933,8 @@ static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
     if (walk->slots) {
         memset(walk->states + walk->count * walk->slots, 0, walk->slots * sizeof(*walk->states));
     }
-    walk->frames[walk->count++] = (owned_tree_frame){root, NULL, walk->script_depth};
+    walk->frames[walk->count++] = (owned_tree_frame){
+        .root = root, .parsed = NULL, .script_depth = walk->script_depth, .parses = walk->parses, .started = false};
     return 1;
 }
 
@@ -927,10 +943,11 @@ static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
  * (text.c turns an escaped space into NBSP inside a word) and the document's
  * `observe_inline` (a node's explicit anchor is reserved before the headings
  * are given theirs). Both read the node and its ancestors' word depth and
- * nothing else, so the ENTER of the one walk is where they belong; the walk
- * that used to do this on its own was one whole traversal more. A sibling
- * consolidation absorbs at a Text's EXIT has its ENTER stepped over, so
- * consolidation completes it first (iterator.h). */
+ * nothing else, so the ENTER of the one walk is where they belong. The walk
+ * reads the two hooks through its per-kind record and the document's hook
+ * it holds in a register; this form is for the sibling consolidation absorbs
+ * at a Text's EXIT, whose ENTER is stepped over, so consolidation completes
+ * it first (iterator.h). */
 static void complete_inline_node(markdown_core_parser *parser, markdown_core_node *node, int script_depth) {
     const markdown_core_element *structure = markdown_core_node_structure(node);
     if (structure && structure->complete_inline) {
@@ -941,42 +958,21 @@ static void complete_inline_node(markdown_core_parser *parser, markdown_core_nod
     }
 }
 
-static void enter_inline_node(markdown_core_parser *parser, markdown_core_node *node, int script_depth, void *context) {
-    (void)context;
-    complete_inline_node(parser, node, script_depth);
-}
-
-/* One event of the finish walk, delivered to every step that acts on it.
- *
- * Consolidation goes first at a Text's EXIT and takes the walk's own iterator
- * over the siblings it absorbs, so by the time an element step sees this
- * event the Text holds its whole run and the absorbed nodes are gone -- they
- * were never delivered to anything else, which is what makes freeing them
- * safe. A step that consumes the node ends the event: the node it named is
- * gone and there is nothing left to hand on.
+/* The steps projected for one event, in descriptor order, each behind its
+ * gate, until one of them consumes the node. A step that consumes the node
+ * ends the event: the node it named is gone and there is nothing left to
+ * hand on.
  *
  * Returns CONSUMED when the node is gone, and FAILED with parser->oom set. */
-static markdown_core_finish_result dispatch_finish_event(owned_tree_walk *walk, owned_tree_frame *frame,
-                                                         markdown_core_event_type event, markdown_core_node *node) {
-    markdown_core_parser *parser = walk->parser;
+static markdown_core_finish_result run_finish_steps(markdown_core_parser *parser,
+                                                    const markdown_core_finish_step_entry *entry,
+                                                    markdown_core_node *node, markdown_core_event_type event,
+                                                    int is_root, void **states) {
     markdown_core_finish_result result = MARKDOWN_CORE_FINISH_CONTINUE;
-    size_t key = markdown_core_finish_key(event, (markdown_core_node_type)node->kind);
-
-    if (key == MARKDOWN_CORE_FINISH_TEXT_EXIT_KEY) {
-        result = markdown_core_consolidate_text_step(parser, frame->iter, node, &walk->steps->scratch,
-                                                     complete_inline_node, frame->script_depth);
-        if (result != MARKDOWN_CORE_FINISH_CONTINUE) {
-            return result;
-        }
-    }
-    const markdown_core_finish_step_entry *entry = parser->finish_dispatch[key];
-    if (!entry) {
-        return result;
-    }
-    /* `frame` is the top of the stack, so its state words are the last row. */
-    void **states = walk->states + (walk->count - 1) * walk->slots;
-    int is_root = node == frame->root;
     for (; entry->element; entry++) {
+        if (!markdown_core_finish_step_admitted(entry, parser)) {
+            continue;
+        }
         result = entry->element->finish_step(entry->element, parser, node, event, is_root, &states[entry->slot]);
         if (result != MARKDOWN_CORE_FINISH_CONTINUE) {
             /* A node is consumed only at its EXIT: at ENTER the lookahead
@@ -1018,17 +1014,8 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
     return push_owned_root(slot ? *slot : NULL, context);
 }
 
-/* Every independent inline tree uses the same explicit continuation stack.
- * A field root stays the node its owner put there -- no phase may substitute
- * one -- so a frame carries the root itself and never the slot holding it.
- * Depth never uses C frames.
- *
- * A walk runs `enter` at each node's ENTER, `steps` at every event (the
- * finish stage's consolidation and element steps, on this walk's iterator),
- * and `finish` on each root once its iteration completes. With `steps` the
- * walk also keeps the finish stage's traversal count on the parser. */
 /* THE ROOTS THE FINISH WALK COMPLETED, in completion order, kept only while a
- * global pass is selected. A pass runs after the document's finalization, on
+ * global pass is declared. A pass runs after the document's finalization, on
  * the finalized roots, and a root the walk found is not found again by
  * walking: the field roots and the document root are recorded here as they
  * complete, and the definition chains -- which finalization rebuilds, moving
@@ -1058,127 +1045,165 @@ static int record_finish_root(finish_roots *record, markdown_core_node *root) {
     return 1;
 }
 
-static inline int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *root, tree_node_func enter,
-                                   finish_dispatch *steps, tree_phase_func finish, void *context, int script_depth,
-                                   finish_roots *record, int record_initial) {
-    owned_tree_walk walk = {
-        .parser = parser, .script_depth = script_depth, .steps = steps, .slots = steps ? parser->finish_step_slots : 0};
+/* THE FINISH WALK: one traversal of `root` and of every field root found
+ * under it, on one explicit continuation stack -- a field root stays the node
+ * its owner put there, no phase may substitute one, so a frame carries the
+ * root itself and never the slot holding it, and depth never uses C frames.
+ *
+ * Every event of every node is delivered here and answered from the walk's
+ * own registers and the parser's per-kind record: at a node's ENTER the walk
+ * parses the node's inline content when it is the node's to parse (`parses`,
+ * see owned_tree_frame; the content of a kind the record marks PARSES, not
+ * DEFERRED, that the structure says holds inlines), runs the steps projected
+ * for the ENTER, completes the node (the element's `complete_inline` the
+ * record carries, the document's `observe_inline`) and pushes the node's
+ * field roots; at a Text's EXIT it consolidates the run
+ * when there is one to merge or a Text with no bytes to drop, and then runs
+ * the steps projected for the EXIT, in descriptor order, each behind its
+ * gate. `finish` runs on each root once its iteration completes, and the
+ * roots it completes are recorded for the passes when `record` is given.
+ * Parsing at ENTER gives the walk the container's children as the next
+ * events: the lookahead is re-established over them, which re-delivers
+ * nothing and is not counted. */
+static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *root, bool parses, tree_phase_func finish,
+                            void *context, finish_roots *record, int record_initial) {
+    owned_tree_walk walk = {.parser = parser,
+                            .slots = parser->finish_step_slots,
+                            .script_depth = 0,
+                            .parses = parses,
+                            .scratch = MARKDOWN_CORE_BUF_INIT()};
     finish_count count = {0, 0, 0};
+    void (*const observe)(markdown_core_parser *, markdown_core_node *) = parser->document_structure->observe_inline;
+    const markdown_core_finish_kind *const kinds = parser->finish_kinds;
+    markdown_core_finish_step_entry *const *const dispatch = parser->finish_dispatch;
+
     push_owned_root(root, &walk);
     while (walk.count && !parser->oom) {
         owned_tree_frame *frame = &walk.frames[walk.count - 1];
-        if (!frame->iter) {
-            frame->iter = markdown_core_iter_new(frame->root);
-            if (!frame->iter) {
-                parser->oom = true;
-                break;
-            }
+        /* `frame` is the top of the stack, so its state words are the last row. */
+        void **states = walk.states + (walk.count - 1) * walk.slots;
+        markdown_core_iter *iter = &frame->iter;
+        if (!frame->started) {
+            markdown_core_iter_init(iter, frame->root);
+            frame->started = true;
         }
-        markdown_core_event_type event = markdown_core_iter_next(frame->iter);
-        if (steps) {
+        for (;;) {
+            markdown_core_event_type event = markdown_core_iter_step(iter);
+            markdown_core_finish_result result;
             count.events++;
-        }
-        if (event == MARKDOWN_CORE_EVENT_DONE) {
-            markdown_core_node *completed = frame->root;
-            markdown_core_iter_free(frame->iter);
-            walk.count--;
-            if (steps) {
+            if (event == MARKDOWN_CORE_EVENT_DONE) {
+                markdown_core_node *completed = frame->root;
+                walk.count--;
                 count.roots++;
                 flush_finish_count(parser, &count);
+                if (finish && !finish(parser, completed, context)) {
+                    parser->oom = true;
+                }
+                /* A field root, or the initial root when asked: the chain roots
+                 * are enumerated again after finalization, their fields are not. */
+                if (record && (walk.count || record_initial) && !record_finish_root(record, completed)) {
+                    parser->oom = true;
+                }
+                break;
             }
-            if (finish && !finish(parser, completed, context)) {
-                parser->oom = true;
+            markdown_core_node *node = iter->cur.node;
+            size_t index = markdown_core_finish_kind_index((markdown_core_node_type)node->kind);
+            if (node->element && node->element->delimiter.body == DELIMITER_WORD_BODY) {
+                frame->script_depth += event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
             }
-            /* A field root, or the initial root when asked: the chain roots
-             * are enumerated again after finalization, their fields are not. */
-            if (record && (walk.count || record_initial) && !record_finish_root(record, completed)) {
-                parser->oom = true;
+            if (event == MARKDOWN_CORE_EVENT_EXIT) {
+                if (node == frame->parsed) {
+                    frame->parsed = NULL;
+                }
+                /* Consolidation goes first at a Text's EXIT and takes the
+                 * walk's own iterator over the siblings it absorbs, so by the
+                 * time an element step sees this event the Text holds its
+                 * whole run and the absorbed nodes are gone -- they were never
+                 * delivered to anything else, which is what makes freeing
+                 * them safe. */
+                result = MARKDOWN_CORE_FINISH_CONTINUE;
+                if (index == MARKDOWN_CORE_FINISH_TEXT_INDEX && markdown_core_text_needs_consolidation(node)) {
+                    result = markdown_core_consolidate_text_step(parser, iter, node, &walk.scratch,
+                                                                 complete_inline_node, frame->script_depth);
+                }
+                if (result == MARKDOWN_CORE_FINISH_CONTINUE && dispatch[2 * index + 1]) {
+                    result =
+                        run_finish_steps(parser, dispatch[2 * index + 1], node, event, node == frame->root, states);
+                }
+                if (result == MARKDOWN_CORE_FINISH_FAILED) {
+                    parser->oom = true;
+                    break;
+                }
+                continue;
             }
-            continue;
-        }
-        markdown_core_node *node = markdown_core_iter_get_node(frame->iter);
-        if (node->element && node->element->delimiter.body == DELIMITER_WORD_BODY) {
-            frame->script_depth += event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
-        }
-        if (steps) {
-            markdown_core_finish_result result = dispatch_finish_event(&walk, frame, event, node);
-            if (result == MARKDOWN_CORE_FINISH_FAILED) {
+            /* A node is consumed only at its EXIT, so every ENTER reaches here. */
+            count.entered++;
+            const markdown_core_finish_kind *facts = &kinds[index];
+            uint8_t flags = facts->flags;
+            bool reach = frame->parses && !frame->parsed;
+            if ((flags & MARKDOWN_CORE_FINISH_KIND_PARSES) && reach && contains_inlines(node)) {
+                if (!(flags & MARKDOWN_CORE_FINISH_KIND_DEFERRED)) {
+                    /* What the parse made less what it discarded on the way
+                     * -- a bracket's opener text, a token that failed -- is
+                     * what it handed the walk (parser.h). */
+                    size_t made = parser->nodes_created, discarded = parser->nodes_freed;
+                    markdown_core_parse_inlines(parser, node, parser->refmap);
+                    parser->finish_nodes_parsed += (parser->nodes_created - made) - (parser->nodes_freed - discarded);
+                    if (parser->oom) {
+                        break;
+                    }
+                    markdown_core_iter_reset(iter, node, MARKDOWN_CORE_EVENT_ENTER);
+                }
+                frame->parsed = node;
+            }
+            if (dispatch[2 * index]) {
+                result = run_finish_steps(parser, dispatch[2 * index], node, event, node == frame->root, states);
+                if (result == MARKDOWN_CORE_FINISH_FAILED) {
+                    parser->oom = true;
+                    break;
+                }
+            }
+            if (facts->complete) {
+                facts->complete(parser, node, frame->script_depth);
+            }
+            if (observe) {
+                observe(parser, node);
+            }
+            /* The field roots, of a kind that owns them through its record
+             * or of an element that owns them through its hook: the answer is
+             * no for almost every node, and it is one flag and one load. */
+            if (!(flags & MARKDOWN_CORE_FINISH_KIND_FIELDS) && !node->element) {
+                continue;
+            }
+            walk.script_depth = frame->script_depth;
+            walk.parses = reach;
+            size_t first = walk.count;
+            if (!markdown_core_visit_inline_subtrees(node, push_owned_tree, &walk)) {
                 parser->oom = true;
                 break;
             }
-            if (result == MARKDOWN_CORE_FINISH_CONSUMED) {
+            if (walk.count == first) {
                 continue;
             }
-        }
-        if (event != MARKDOWN_CORE_EVENT_ENTER) {
-            continue;
-        }
-        /* A node is consumed only at its EXIT, so every ENTER reaches here. */
-        if (steps) {
-            count.entered++;
-        }
-        walk.script_depth = frame->script_depth;
-        if (enter) {
-            enter(parser, node, frame->script_depth, context);
-        }
-        size_t first = walk.count;
-        if (!markdown_core_visit_inline_subtrees(node, push_owned_tree, &walk)) {
-            parser->oom = true;
-        }
-        /* The visitor reports fields in source order; a stack consumes their
-         * reversed registration order. No field is visited or scanned twice.
-         * The frames carry no state yet -- a pushed root's words are zero
-         * until its walk starts -- so swapping frames leaves nothing behind. */
-        for (size_t left = first, right = walk.count; left < right && left < --right; left++) {
-            owned_tree_frame swap = walk.frames[left];
-            walk.frames[left] = walk.frames[right];
-            walk.frames[right] = swap;
+            /* The visitor reports fields in source order; a stack consumes their
+             * reversed registration order. No field is visited or scanned twice.
+             * The frames carry no state yet -- a pushed root's words are zero
+             * until its walk starts -- so swapping frames leaves nothing behind.
+             * The push may have moved the frames, so the top is taken afresh:
+             * it is the first field root, walked before this node's children. */
+            for (size_t left = first, right = walk.count; left < right && left < --right; left++) {
+                owned_tree_frame swap = walk.frames[left];
+                walk.frames[left] = walk.frames[right];
+                walk.frames[right] = swap;
+            }
+            break;
         }
     }
-    for (size_t i = 0; i < walk.count; i++) {
-        if (walk.frames[i].iter) {
-            markdown_core_iter_free(walk.frames[i].iter);
-        }
-    }
-    if (steps) {
-        flush_finish_count(parser, &count);
-    }
+    flush_finish_count(parser, &count);
+    markdown_core_strbuf_free(&walk.scratch);
     markdown_core_free(walk.frames);
     markdown_core_free(walk.states);
     return !parser->oom;
-}
-
-/* Parse each source buffer with its owned fields. Completing the nodes --
- * the element's `complete_inline`, the document's `observe_inline` -- is the
- * finish walk's ENTER, not a walk of its own. */
-static void process_inlines(markdown_core_parser *parser, markdown_core_map *refmap) {
-    process_inline_tree(parser, parser->root, refmap);
-    markdown_core_manage_elements_special_characters(parser, false);
-}
-
-/* Block syntax and all anchor decisions finish before definitions disappear.
- * Walk in postorder so list layout sees the cleaned children. Each tree edge
- * is followed at most once in each direction, with no recursion or extra allocation;
- * the document owns every pending definition even if parsing fails earlier. */
-static void S_complete_block_tree(markdown_core_parser *parser, markdown_core_node *root) {
-    markdown_core_node *node = root;
-    while (node->first_child) {
-        node = node->first_child;
-    }
-    while (node) {
-        markdown_core_node *parent = node->parent;
-        markdown_core_node *next = node->next;
-        const markdown_core_element *structure = markdown_core_node_structure(node);
-        if (structure && structure->complete_block) {
-            structure->complete_block(parser, node);
-        }
-        node = next ? next : parent;
-        if (next) {
-            while (node->first_child) {
-                node = node->first_child;
-            }
-        }
-    }
 }
 
 static markdown_core_node *finalize_document(markdown_core_parser *parser) {
@@ -1988,10 +2013,12 @@ static markdown_core_block_gate S_element_gate(const markdown_core_element *elem
     markdown_core_block_gate ungated = {NULL};
 
     switch (hook) {
+    case MARKDOWN_CORE_BLOCK_HOOK_SCAN:
+        return element->scan_block_gate;
+    case MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT:
+        return element->interrupt_block_gate;
     case MARKDOWN_CORE_BLOCK_HOOK_OPEN:
         return element->open_block_gate;
-    case MARKDOWN_CORE_BLOCK_HOOK_SCAN:
-    case MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT:
     case MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH:
     case MARKDOWN_CORE_BLOCK_HOOK_PROBE:
     case MARKDOWN_CORE_BLOCK_HOOK_COUNT:
@@ -2000,22 +2027,44 @@ static markdown_core_block_gate S_element_gate(const markdown_core_element *elem
     return ungated;
 }
 
-#define BLOCK_GATE_MAP_BYTES 32
+/* THE LINE NAMES ITS CANDIDATES; THE DISPATCHER DOES NOT ASK EVERY OWNER.
+ *
+ * A family's gates are projected into one list of owners per KEY, in the
+ * family's own order: a key for each first non-space byte, one for a line
+ * with no such byte, and one for an indented line. Reading the list for the
+ * line's key is the whole admission test, so a line meets only the owners
+ * whose grammar can start on it -- cmark's one if-chain keyed on the byte,
+ * as a table built once from what the elements declared. An ungated owner is
+ * on every list; a family in which no owner declares a gate has no table and
+ * every owner is asked, which is the behaviour a gate replaces.
+ *
+ * Each list is a count followed by owner indices, `count + 1` bytes, so a
+ * family's table is `BLOCK_GATE_KEYS * (owners + 1)` bytes. */
+#define BLOCK_GATE_KEY_NONE 256
+#define BLOCK_GATE_KEY_INDENTED 257
+#define BLOCK_GATE_KEYS 258
 
-/* Whether the owner at `index` in `hook`'s family can claim a line whose first
- * non-space byte is `byte`. `byte` is negative for a line with no non-space
- * byte at all, which no declared set can name, so a gated owner is not asked
- * about it. */
-static bool S_gate_admits(const markdown_core_parser *parser, markdown_core_block_hook hook, size_t index, int byte) {
-    const uint8_t *map = parser->block_gate_bytes[hook];
+/* The owners of `hook`'s family a line with key `key` is asked, and how many;
+ * NULL with `count` = the whole family when the family has no table. */
+static const uint8_t *S_gate_candidates(const markdown_core_parser *parser, markdown_core_block_hook hook, int key,
+                                        size_t *count) {
+    const uint8_t *table = parser->block_gate_lists[hook];
+    if (!table) {
+        *count = parser->block_hook_counts[hook];
+        return NULL;
+    }
+    const uint8_t *list = table + (size_t)key * (parser->block_hook_counts[hook] + 1);
+    *count = *list;
+    return list + 1;
+}
 
-    if (!map) {
-        return true;
+/* The key of the line at `first` for a family that asks an indented line by
+ * indent bound rather than by byte (scan and interrupt). */
+static int S_gate_key(const markdown_core_chunk *input, int first, int indent) {
+    if (indent >= CODE_INDENT) {
+        return BLOCK_GATE_KEY_INDENTED;
     }
-    if (byte < 0) {
-        return false;
-    }
-    return (map[index * BLOCK_GATE_MAP_BYTES + ((unsigned)byte >> 3)] & (1u << ((unsigned)byte & 7))) != 0;
+    return first < input->len ? (int)(unsigned char)input->data[first] : BLOCK_GATE_KEY_NONE;
 }
 
 /* Project the registry into one list per block-start hook family, in
@@ -2065,13 +2114,46 @@ static size_t S_count_finish_keys(const markdown_core_element *element, size_t *
 }
 
 /* Append `element` under `key`, once: a kind written twice in one list is
- * one declaration, and the step is asked once per event. */
+ * one declaration, and the step is asked once per event. `acts_on` is the
+ * element's declared acted-on kinds as a set and `gated` whether this entry
+ * reads it (markdown_core_finish_step_entry). */
 static void S_append_finish_step(markdown_core_parser *parser, markdown_core_finish_step_entry **next, size_t key,
-                                 const markdown_core_element *element, size_t slot) {
+                                 const markdown_core_element *element, size_t slot, markdown_core_node_kind_set acts_on,
+                                 bool gated) {
     if (next[key] != parser->finish_dispatch[key] && next[key][-1].element == element) {
         return;
     }
-    *next[key]++ = (markdown_core_finish_step_entry){element, slot};
+    *next[key]++ = (markdown_core_finish_step_entry){element, slot, acts_on, gated};
+}
+
+/* THE WALK'S PER-KIND RECORD (parser.h, markdown_core_finish_kind): one
+ * record per kind index, each fact a constant of the kind's structure
+ * element (element.h). Projected here beside the step lists so that the walk
+ * reads one record where it asked three descriptor fields per event. */
+static void S_project_finish_kinds(markdown_core_parser *parser) {
+    for (size_t index = 0; index <= MARKDOWN_CORE_FINISH_KIND_COUNT; index++) {
+        markdown_core_finish_kind record = {NULL, 0};
+        if (index < MARKDOWN_CORE_FINISH_KIND_COUNT) {
+            markdown_core_node_type kind = index < MARKDOWN_CORE_NODE_KIND_COUNT
+                                               ? (markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_BLOCK | index)
+                                               : (markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_INLINE |
+                                                                           (index - MARKDOWN_CORE_NODE_KIND_COUNT));
+            const markdown_core_element *structure = markdown_core_structure_for_kind(kind);
+            if (structure) {
+                if (structure->inline_content || structure->contains_inlines_func) {
+                    record.flags |= MARKDOWN_CORE_FINISH_KIND_PARSES;
+                }
+                if (structure->deferred_inlines) {
+                    record.flags |= MARKDOWN_CORE_FINISH_KIND_DEFERRED;
+                }
+                record.complete = structure->complete_inline;
+            }
+            if (markdown_core_kind_owns_fields(kind)) {
+                record.flags |= MARKDOWN_CORE_FINISH_KIND_FIELDS;
+            }
+        }
+        parser->finish_kinds[index] = record;
+    }
 }
 
 static void S_project_block_hooks(markdown_core_parser *parser) {
@@ -2081,15 +2163,25 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
 
     markdown_core_free(parser->block_hook_allocation);
     parser->block_hook_allocation = NULL;
-    markdown_core_free(parser->block_gate_allocation);
-    parser->block_gate_allocation = NULL;
     memset(parser->block_hooks, 0, sizeof(parser->block_hooks));
     memset(parser->block_hook_counts, 0, sizeof(parser->block_hook_counts));
-    memset(parser->block_gate_bytes, 0, sizeof(parser->block_gate_bytes));
+    memset(parser->block_gate_lists, 0, sizeof(parser->block_gate_lists));
     memset(parser->inline_hooks, 0, sizeof(parser->inline_hooks));
     memset(parser->inline_hook_counts, 0, sizeof(parser->inline_hook_counts));
     memset(parser->finish_dispatch, 0, sizeof(parser->finish_dispatch));
     parser->finish_step_slots = 0;
+    S_project_finish_kinds(parser);
+    /* What a container continuation may strip, as one table over the byte:
+     * indentation, which every continuation strips, and the bytes each
+     * container element declares for its own. */
+    memset(parser->container_prefix, 0, sizeof(parser->container_prefix));
+    parser->container_prefix[' '] = parser->container_prefix['\t'] = true;
+    for (size_t i = 0; i < parser->element_count; i++) {
+        const char *bytes = parser->elements[i]->container_prefix_bytes;
+        for (const unsigned char *c = (const unsigned char *)bytes; bytes && *c; c++) {
+            parser->container_prefix[*c] = true;
+        }
+    }
 
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
         for (size_t i = 0; i < parser->element_count; i++) {
@@ -2122,19 +2214,43 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
     for (size_t key = 0; key < MARKDOWN_CORE_FINISH_KEY_COUNT; key++) {
         step_total += key_counts[key] != 0; /* the terminator */
     }
+    /* The gate tables share the allocation too (see below): a family with no
+     * declared gate keeps no table and every owner is asked, so adding the
+     * first declaration to a family is what turns gating on for it -- an
+     * element that declares nothing is never skipped. The count is taken
+     * here, before the lists exist, from the same membership test. */
+    size_t table_bytes = 0;
+    for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
+        bool declared = false;
+        for (size_t i = 0; i < parser->element_count; i++) {
+            const markdown_core_element *element = parser->elements[i];
+            if (S_element_implements(element, (markdown_core_block_hook)hook) &&
+                S_element_gate(element, (markdown_core_block_hook)hook).bytes) {
+                declared = true;
+            }
+        }
+        if (declared) {
+            table_bytes += BLOCK_GATE_KEYS * (totals[hook] + 1);
+        }
+    }
     if (!total && !step_total) {
         return;
     }
 
-    /* The element-pointer lists first, then the step entries: both are
-     * pointer-aligned, so the second region starts where the first ends. */
+    /* The element-pointer lists first, then the step entries, then the gate
+     * tables: the first two are pointer-aligned, so the second region starts
+     * where the first ends, and the tables are bytes with no alignment of
+     * their own. One block rather than three: the projection has one
+     * lifecycle, and one allocation is that lifecycle made literal. */
     size_t pointer_bytes = total * sizeof(const markdown_core_element *);
-    void *block = markdown_core_alloc(1, pointer_bytes + step_total * sizeof(markdown_core_finish_step_entry));
+    size_t step_bytes = step_total * sizeof(markdown_core_finish_step_entry);
+    void *block = markdown_core_alloc(1, pointer_bytes + step_bytes + table_bytes);
     if (!block) {
         parser->oom = true;
         return;
     }
     parser->block_hook_allocation = block;
+    uint8_t *tables = (uint8_t *)block + pointer_bytes + step_bytes;
     const markdown_core_element **entries = block;
     markdown_core_finish_step_entry *steps = (markdown_core_finish_step_entry *)((char *)block + pointer_bytes);
 
@@ -2147,7 +2263,7 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
         }
         parser->finish_dispatch[key] = next[key] = steps + step_at;
         step_at += key_counts[key] + 1;
-        steps[step_at - 1] = (markdown_core_finish_step_entry){NULL, 0};
+        steps[step_at - 1] = (markdown_core_finish_step_entry){NULL, 0, {0, 0}, false};
     }
     assert(step_at == step_total);
     for (size_t i = 0; i < parser->element_count; i++) {
@@ -2157,16 +2273,26 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
         if (!element->finish_step) {
             continue;
         }
+        /* The gate: the acted-on kinds as a set, read at an entry whose
+         * asked-at kind is not one of them -- at one that is, the node being
+         * exited is the proof the parse produced one. */
+        markdown_core_node_kind_set acts_on = {0, 0};
+        for (const markdown_core_node_type *kind = element->finish_acts_on_kinds; kind && *kind; kind++) {
+            markdown_core_node_kind_set_add(&acts_on, *kind);
+        }
         for (const markdown_core_node_type *kind = element->finish_exit_kinds; kind && *kind; kind++) {
-            S_append_finish_step(parser, next, markdown_core_finish_key(MARKDOWN_CORE_EVENT_EXIT, *kind), element,
-                                 slot);
+            markdown_core_node_kind_set asked = {0, 0};
+            markdown_core_node_kind_set_add(&asked, *kind);
+            bool gated = element->finish_acts_on_kinds && !markdown_core_node_kind_set_intersects(&acts_on, &asked);
+            S_append_finish_step(parser, next, markdown_core_finish_key(MARKDOWN_CORE_EVENT_EXIT, *kind), element, slot,
+                                 acts_on, gated);
             projected = true;
         }
         for (const markdown_core_node_type *kind = element->finish_scope_kinds; kind && *kind; kind++) {
             S_append_finish_step(parser, next, markdown_core_finish_key(MARKDOWN_CORE_EVENT_ENTER, *kind), element,
-                                 slot);
-            S_append_finish_step(parser, next, markdown_core_finish_key(MARKDOWN_CORE_EVENT_EXIT, *kind), element,
-                                 slot);
+                                 slot, acts_on, false);
+            S_append_finish_step(parser, next, markdown_core_finish_key(MARKDOWN_CORE_EVENT_EXIT, *kind), element, slot,
+                                 acts_on, false);
             projected = true;
         }
         /* A state word per element that projected anything, so the slot an
@@ -2177,7 +2303,7 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
         /* A kind written twice in one list was counted twice and appended
          * once; the terminator moves up to close the list where it ends. */
         if (next[key]) {
-            *next[key] = (markdown_core_finish_step_entry){NULL, 0};
+            *next[key] = (markdown_core_finish_step_entry){NULL, 0, {0, 0}, false};
         }
     }
 
@@ -2201,33 +2327,11 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
         }
     }
 
-    /* A family with no declared gate keeps a NULL map and every owner is asked,
-     * so adding the first declaration to a family is what turns gating on for
-     * it -- an element that declares nothing is never skipped. */
-    size_t gate_bytes = 0;
-    for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
-        bool declared = false;
-        for (size_t i = 0; i < totals[hook]; i++) {
-            if (S_element_gate(parser->block_hooks[hook][i], (markdown_core_block_hook)hook).bytes) {
-                declared = true;
-            }
-        }
-        if (declared) {
-            gate_bytes += totals[hook] * BLOCK_GATE_MAP_BYTES;
-        }
-    }
-    if (!gate_bytes) {
+    if (!table_bytes) {
         return;
     }
 
-    uint8_t *maps = markdown_core_alloc(gate_bytes, 1);
-    if (!maps) {
-        parser->oom = true;
-        return;
-    }
-    parser->block_gate_allocation = maps;
-
-    size_t map_at = 0;
+    size_t table_at = 0;
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
         bool declared = false;
         for (size_t i = 0; i < totals[hook]; i++) {
@@ -2238,29 +2342,54 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
         if (!declared) {
             continue;
         }
-        parser->block_gate_bytes[hook] = maps + map_at;
+        size_t stride = totals[hook] + 1;
+        uint8_t *table = tables + table_at;
+        parser->block_gate_lists[hook] = table;
+        /* Counts and indices are bytes: the attachment API bounds the
+         * registry so that they fit (MARKDOWN_CORE_ELEMENT_LIMIT). */
+        assert(totals[hook] <= MARKDOWN_CORE_ELEMENT_LIMIT);
+        /* Owners are appended in family order, so each list keeps it. */
         for (size_t i = 0; i < totals[hook]; i++) {
-            markdown_core_block_gate gate =
-                S_element_gate(parser->block_hooks[hook][i], (markdown_core_block_hook)hook);
-            uint8_t *map = maps + map_at + i * BLOCK_GATE_MAP_BYTES;
+            const markdown_core_element *element = parser->block_hooks[hook][i];
+            markdown_core_block_gate gate = S_element_gate(element, (markdown_core_block_hook)hook);
             if (!gate.bytes) {
-                memset(map, 0xff, BLOCK_GATE_MAP_BYTES);
-                continue;
+                for (size_t key = 0; key <= BLOCK_GATE_KEY_NONE; key++) {
+                    uint8_t *list = table + key * stride;
+                    list[1 + list[0]++] = (uint8_t)i;
+                }
+            } else {
+                for (const unsigned char *c = (const unsigned char *)gate.bytes; *c; c++) {
+                    uint8_t *list = table + *c * stride;
+                    if (!list[0] || list[list[0]] != (uint8_t)i) {
+                        list[1 + list[0]++] = (uint8_t)i;
+                    }
+                }
             }
-            for (const unsigned char *c = (const unsigned char *)gate.bytes; *c; c++) {
-                map[*c >> 3] |= (uint8_t)(1u << (*c & 7));
+            /* An indented line is decided by the indent bound alone. */
+            if (element->maximum_block_indent >= CODE_INDENT) {
+                uint8_t *list = table + BLOCK_GATE_KEY_INDENTED * stride;
+                list[1 + list[0]++] = (uint8_t)i;
             }
         }
-        map_at += totals[hook] * BLOCK_GATE_MAP_BYTES;
+        table_at += BLOCK_GATE_KEYS * stride;
     }
 }
 
+/* Ask the scan family about the line, in family order, and leave what the
+ * claiming owner wrote in `start`; `start->open` is NULL when none claimed.
+ * The payload fields are the claiming owner's to write before its `open` reads
+ * them, so nothing is cleared per line beyond the three the dispatcher reads. */
 static bool scan_element_start(markdown_core_parser *parser, block_start_context *context, block_start *start) {
     const markdown_core_element *const *owners = parser->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_SCAN];
-    size_t count = parser->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_SCAN];
+    size_t count;
+    const uint8_t *candidates = S_gate_candidates(parser, MARKDOWN_CORE_BLOCK_HOOK_SCAN,
+                                                  S_gate_key(context->input, context->first, context->indent), &count);
 
+    start->open = NULL;
+    start->kind = MARKDOWN_CORE_NODE_NONE;
+    start->matched = 0;
     for (size_t i = 0; i < count; i++) {
-        const markdown_core_element *element = owners[i];
+        const markdown_core_element *element = owners[candidates ? candidates[i] : i];
         /* The indent bound stays a runtime test rather than part of the
          * projection: `context->indent` is a property of the line, not of the
          * element set, so it cannot be folded into a table built once. */
@@ -2272,12 +2401,6 @@ static bool scan_element_start(markdown_core_parser *parser, block_start_context
         }
     }
     return false;
-}
-
-static block_start scan_block_start(markdown_core_parser *parser, block_start_context *context) {
-    block_start start = {0};
-    scan_element_start(parser, context, &start);
-    return start;
 }
 
 bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown_core_node *parent,
@@ -2292,12 +2415,12 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
                                    .lazy = paragraph,
                                    .all_matched = true,
                                    .depth = 1};
-    block_start start = scan_block_start(parser, &context);
+    block_start start;
+    if (scan_element_start(parser, &context, &start)) {
+        return true;
+    }
     if (parser->oom) {
         return false;
-    }
-    if (start.kind != MARKDOWN_CORE_NODE_NONE) {
-        return true;
     }
     const markdown_core_element *const *probes = parser->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_PROBE];
     size_t probe_count = parser->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_PROBE];
@@ -2313,12 +2436,28 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
     return false;
 }
 
+/* The container's structure, resolved once per turn of the loop below and
+ * read for the three facts the turn needs; the node-taking forms above serve
+ * the callers that ask one question of one node. */
+static bool S_structure_accepts_lines(const markdown_core_element *structure, markdown_core_node *node) {
+    return structure && (structure->content_mode == MARKDOWN_CORE_CONTENT_LITERAL ||
+                         (structure->accepts_lines_func && structure->accepts_lines_func(structure, node)));
+}
+
 static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,
                             bool all_matched) {
     bool maybe_lazy = is_paragraph(parser->current);
     size_t depth = 0;
+    const markdown_core_element *structure = markdown_core_node_structure(*container);
 
-    while (!element_accepts_lines(*container)) {
+    while (!S_structure_accepts_lines(structure, *container)) {
+        bool paragraph = structure && structure->paragraph;
+        /* Not cleared: the dispatcher writes the three fields it reads, and
+         * the payload is the claiming owner's, written before its `open`
+         * reads it (scan_element_start). Clearing the 120 bytes here was
+         * paid by every line, the ones a code block or a properties block
+         * takes without a round of this loop included. */
+        block_start start;
         depth++;
         markdown_core_block_find_first_nonspace(parser, input);
         /* Indentation ahead of whatever opens here is the CONTAINER's, not the
@@ -2331,12 +2470,12 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
                                        .first = parser->first_nonspace,
                                        .column = parser->first_nonspace_column,
                                        .indent = parser->indent,
-                                       .paragraph = is_paragraph(*container),
+                                       .paragraph = paragraph,
                                        .lazy = maybe_lazy,
                                        .all_matched = all_matched,
                                        .depth = depth,
                                        .thematic_kill = parser->thematic_break_kill_pos};
-        block_start start = scan_block_start(parser, &context);
+        scan_element_start(parser, &context, &start);
         if (parser->oom) {
             return;
         }
@@ -2346,9 +2485,13 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
          * close the old path before an allocation fails; OOM is terminal,
          * never a grammar miss that can try another owner on that path. */
         const markdown_core_element *const *interrupters = parser->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT];
-        size_t interrupter_count = parser->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT];
+        size_t interrupter_count;
+        const uint8_t *interrupter_candidates =
+            S_gate_candidates(parser, MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT,
+                              S_gate_key(input, parser->first_nonspace, parser->indent), &interrupter_count);
         for (size_t element_index = 0; element_index < interrupter_count; element_index++) {
-            const markdown_core_element *owner = interrupters[element_index];
+            const markdown_core_element *owner =
+                interrupters[interrupter_candidates ? interrupter_candidates[element_index] : element_index];
             markdown_core_node *opened = owner->try_interrupting_block(parser, *container, input, maybe_lazy);
             if (parser->oom) {
                 return;
@@ -2366,16 +2509,15 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
         } else {
             markdown_core_node *new_container = NULL;
             const markdown_core_element *const *openers = parser->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_OPEN];
-            size_t opener_count = parser->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_OPEN];
-            int opener_byte =
-                parser->first_nonspace < input->len ? (int)(unsigned char)input->data[parser->first_nonspace] : -1;
+            size_t opener_count;
+            /* An opener is asked about an indented line too, and told so: its
+             * key is the byte alone. */
+            const uint8_t *opener_candidates = S_gate_candidates(
+                parser, MARKDOWN_CORE_BLOCK_HOOK_OPEN, S_gate_key(input, parser->first_nonspace, 0), &opener_count);
 
             for (size_t element_index = 0; element_index < opener_count; element_index++) {
-                const markdown_core_element *element = openers[element_index];
-
-                if (!S_gate_admits(parser, MARKDOWN_CORE_BLOCK_HOOK_OPEN, element_index, opener_byte)) {
-                    continue;
-                }
+                const markdown_core_element *element =
+                    openers[opener_candidates ? opener_candidates[element_index] : element_index];
 
                 new_container = element->try_opening_block(element, parser->indent > element->maximum_block_indent,
                                                            parser, *container, input->data, input->len);
@@ -2393,7 +2535,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
             }
 
             if (!new_container) {
-                if (!maybe_lazy && !is_paragraph(*container)) {
+                if (!maybe_lazy && !paragraph) {
                     const markdown_core_element *const *last_chance =
                         parser->block_hooks[MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH];
                     size_t last_chance_count = parser->block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH];
@@ -2420,7 +2562,9 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
          * `[^label]:`. Claimed once per turn of the loop -- once per block
          * opened -- and before `markdown_core_block_accepts_lines` breaks out. */
 
-        if (markdown_core_block_accepts_lines(*container)) {
+        structure = markdown_core_node_structure(*container);
+        if (S_structure_accepts_lines(structure, *container) ||
+            (structure && structure->content_mode == MARKDOWN_CORE_CONTENT_PROSE)) {
             // if it's a line container, it can't contain other containers
             break;
         }
@@ -2588,40 +2732,61 @@ finished:
 
 typedef struct {
     markdown_core_parser *parser;
-    finish_dispatch *steps;
     tree_phase_func phase;
     void *context;
     finish_roots *record;
 } tree_phase_context;
-static int apply_independent_phase(markdown_core_node **slot, void *context) {
-    tree_phase_context *phase = context;
-    return walk_owned_trees(phase->parser, *slot, enter_inline_node, phase->steps, phase->phase, phase->context, 0,
-                            phase->record, 0);
+
+static int walk_owned_definition(markdown_core_node **slot, void *context) {
+    const tree_phase_context *phase = context;
+    return walk_owned_trees(phase->parser, *slot, false, phase->phase, phase->context, phase->record, 0);
+}
+
+/* THE DEFINITIONS THE DOCUMENT OWNS AS ROOTS OF THEIR OWN -- the inline
+ * footnote bodies, which have no parent -- walked from where the previous
+ * call left off (node.h, markdown_core_visit_block_subtrees_since). A body
+ * is registered at the end of the document's chain by the inline parse that
+ * declares it, and the finish walk parses inline content as it goes, so
+ * bodies appear while the content tree is walked: this runs before the tree,
+ * for the bodies a heading's inlines declared during the document's
+ * preparation, and again after it, until a call finds nothing new. A body's
+ * own content is made by the parse that made the body, so a walk of a body
+ * finds no body it did not already know; the loop is what makes that a fact
+ * the caller need not rely on. */
+static int S_walk_owned_definitions(markdown_core_parser *parser, tree_phase_context *phase,
+                                    markdown_core_node *last[MARKDOWN_CORE_DOCUMENT_CHAINS]) {
+    bool found;
+    do {
+        if (!markdown_core_visit_block_subtrees_since(parser->root, last, walk_owned_definition, phase, &found)) {
+            return 0;
+        }
+    } while (found && !parser->oom);
+    return !parser->oom;
 }
 
 /* THE FINISH STAGE'S ONE WALK. The definitions the document already owns as
- * independent roots -- the inline footnote bodies, which have no parent --
- * come first, then the content tree, which still holds the block definitions
- * as children: the document's finalization moves them into their chains
- * after this walk, and moves nothing else. Every root is walked once, with
- * inline completion at each ENTER, the finish steps at the events they
- * declared, and `phase` run on each root as its walk completes -- the
- * structural check. The global passes come later, after finalization, on
- * the roots `record` collects (finish_roots). A root is rewritten in place
- * throughout; none of them is ever substituted. */
+ * independent roots come first, then the content tree, which still holds the
+ * block definitions as children -- the document's finalization moves them
+ * into their chains after this walk, and moves nothing else -- and then the
+ * definitions the tree's own inline parsing declared. Every root is walked
+ * once, with inline parsing and completion at each ENTER, the finish steps
+ * at the events they declared, and `phase` run on each root as its walk
+ * completes -- the structural check. The global passes come later, after
+ * finalization, on the roots `record` collects (finish_roots). A root is
+ * rewritten in place throughout; none of them is ever substituted. */
 static int S_apply_tree_phase(markdown_core_parser *parser, markdown_core_node *root, tree_phase_func phase,
                               void *context, finish_roots *record) {
     if (!root || parser->oom) {
         return !parser->oom;
     }
+    assert(root == parser->root && root->kind == MARKDOWN_CORE_NODE_DOCUMENT);
     parser->nodes_created_before_finish = parser->nodes_created;
     parser->nodes_freed_before_finish = parser->nodes_freed;
-    finish_dispatch steps = {MARKDOWN_CORE_BUF_INIT()};
-    tree_phase_context phase_context = {parser, &steps, phase, context, record};
-    int ok = markdown_core_visit_block_subtrees(root, apply_independent_phase, &phase_context) &&
-             walk_owned_trees(parser, root, enter_inline_node, &steps, phase, context, 0, record, 1);
-    markdown_core_strbuf_free(&steps.scratch);
-    return ok;
+    tree_phase_context phase_context = {parser, phase, context, record};
+    markdown_core_node *last[MARKDOWN_CORE_DOCUMENT_CHAINS] = {NULL, NULL};
+    return S_walk_owned_definitions(parser, &phase_context, last) &&
+           walk_owned_trees(parser, root, true, phase, context, record, 1) &&
+           S_walk_owned_definitions(parser, &phase_context, last);
 }
 
 /* Register at syntax commitment; no completed-tree discovery pass is needed.
@@ -2821,28 +2986,6 @@ static bool S_finish_hook_selected(const markdown_core_parser *parser, const mar
     return markdown_core_node_kind_set_intersects(&declared, &parser->kinds_created);
 }
 
-/* The gate applied to the projected steps: every (event, kind) list keeps, in
- * order, the steps the gate selects, and a list left empty becomes the NULL
- * that costs an event one load. The lists are this parse's own memory, so
- * the compaction is in place and allocates nothing. */
-static void S_gate_finish_steps(markdown_core_parser *parser) {
-    for (size_t key = 0; key < MARKDOWN_CORE_FINISH_KEY_COUNT; key++) {
-        markdown_core_finish_step_entry *list = parser->finish_dispatch[key], *kept = list;
-        if (!list) {
-            continue;
-        }
-        for (markdown_core_finish_step_entry *entry = list; entry->element; entry++) {
-            if (S_finish_hook_selected(parser, entry->element)) {
-                *kept++ = *entry;
-            }
-        }
-        *kept = (markdown_core_finish_step_entry){NULL, 0};
-        if (kept == list) {
-            parser->finish_dispatch[key] = NULL;
-        }
-    }
-}
-
 /* Every writer of this tree is checked.
  *
  * `markdown_core_node_check` is the one structural self-check this tree has.
@@ -2899,59 +3042,67 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
 
     finalize_document(parser);
     S_parse_block_inputs(parser);
-    S_complete_block_tree(parser, parser->root);
     if (!parser->oom) {
         markdown_core_manage_elements_special_characters(parser, true);
         if (!parser->oom) {
             parser->document_structure->prepare_document(parser);
         }
     }
-    if (!parser->oom) {
-        process_inlines(parser, parser->refmap);
-    }
     if (parser->oom) {
         goto failed;
     }
 
-    /* Choose the finish hooks first, then walk once.
+    /* THE ONE WALK, then the passes it may have earned.
+     *
+     * The walk parses each container's inline content at that container's
+     * ENTER, completes every node, consolidates every Text run and runs the
+     * element steps at the events they declared (S_apply_tree_phase). A
+     * step's gate is read at each event it is asked at, since a kind the
+     * step acts on may first be made by the walk itself; a pass's gate is
+     * read once the walk is done, when the record is complete.
      *
      * ONE GATE FOR BOTH SHAPES. An empty declaration means the hook always
      * runs, so an element that says nothing keeps the behaviour it had. One
-     * that declares the kinds it acts on is skipped for a document that
+     * that declares the kinds it acts on is skipped for a parse that has
      * produced none of them: a pass is left out of the list below, and
      * skipping saves the whole pass, its walk over every root; a step is
-     * dropped from every (event, kind) list it was projected to, in place --
-     * the lists are this parse's -- and skipping saves every event it would
-     * have been asked at, which for formula is every paragraph's EXIT of a
+     * skipped at the event, which for formula is every paragraph's EXIT of a
      * document with no formula in it.
      *
      * `kinds_created` OVER-APPROXIMATES: a node the parse creates and then
      * discards -- the text a formula consumes -- leaves its bit set although
      * the finished tree holds no such node. It can only make the gate skip
-     * FEWER passes, never miss one, because a kind in the finished tree was
-     * necessarily created; and a pass that runs over a tree holding none of
+     * FEWER hooks, never miss one, because a kind in the finished tree was
+     * necessarily created; and a hook that runs over a tree holding none of
      * its declared kinds finds nothing to do. Exactness is not available here:
      * it would need the parse to observe removal too, and `node_free` takes a
-     * node and no parser precisely because a node outlives the parse. */
+     * node and no parser precisely because a node outlives the parse.
+     *
+     * The roots the walk completes are recorded while any pass is declared
+     * at all: which of them the gate selects is known only afterwards, and
+     * the record is a pointer per root. */
+    bool passes_declared = false;
+    for (size_t i = 0; i < parser->element_count; i++) {
+        passes_declared |= parser->elements[i]->postprocess_func != NULL;
+    }
+    finish_roots record = {NULL, 0, 0};
+    if (!S_apply_tree_phase(parser, parser->root, S_check_root, NULL, passes_declared ? &record : NULL)) {
+        parser->oom = true;
+    }
+    markdown_core_manage_elements_special_characters(parser, false);
+
     finish_phases phases = {NULL, 0};
-    if (parser->element_count) {
+    if (!parser->oom && parser->element_count) {
         phases.passes = markdown_core_alloc(parser->element_count, sizeof(*phases.passes));
         if (!phases.passes) {
             parser->oom = true;
-            goto failed;
         }
     }
-    for (size_t i = 0; i < parser->element_count; i++) {
+    for (size_t i = 0; !parser->oom && i < parser->element_count; i++) {
         const markdown_core_element *element = parser->elements[i];
         if (element->postprocess_func && S_finish_hook_selected(parser, element)) {
             phases.passes[phases.pass_count++] = element;
         }
-    }
-    S_gate_finish_steps(parser);
-
-    finish_roots record = {NULL, 0, 0};
-    if (!S_apply_tree_phase(parser, parser->root, S_check_root, NULL, phases.pass_count ? &record : NULL)) {
-        parser->oom = true;
     }
 
     /* The document's finalization reads the finished tree: the headings take
@@ -2966,7 +3117,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
      * as the walk took them, then the field roots and the document in the
      * order the walk completed them. */
     if (!parser->oom && phases.pass_count) {
-        tree_phase_context pass_context = {parser, NULL, NULL, &phases, NULL};
+        tree_phase_context pass_context = {parser, NULL, &phases, NULL};
         int ok = markdown_core_visit_block_subtrees(parser->root, S_run_passes_on_slot, &pass_context);
         for (size_t i = 0; ok && i < record.count; i++) {
             ok = S_run_passes(parser, record.roots[i], &phases);
@@ -2987,7 +3138,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
 
 failed:
     parser->document_structure->dispose_document(parser);
-    markdown_core_node_free(parser->root);
+    markdown_core_parser_release_node(parser, parser->root);
     parser->root = NULL;
     return NULL;
 }

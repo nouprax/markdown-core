@@ -274,7 +274,7 @@ static markdown_core_node *make_label_node(const markdown_core_element *element,
 
     markdown_core_strbuf_put(&label_node->content, label, label_len);
     if (label_node->content.oom) {
-        markdown_core_node_free(label_node);
+        markdown_core_parser_release_node(parser, label_node);
         return NULL;
     }
     label_node->start_line = label_node->end_line = start_line;
@@ -300,7 +300,7 @@ static int attach_label_node(const markdown_core_element *element, markdown_core
 
     node_directive *directive = get_directive(directive_node);
     if (!directive || directive->label) {
-        markdown_core_node_free(label_node);
+        markdown_core_parser_release_node(parser, label_node);
         return 0;
     }
 
@@ -377,12 +377,12 @@ static markdown_core_node *make_directive_node(const markdown_core_element *elem
     directive = get_directive(node);
     if (!directive) {
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_parser_release_node(parser, node);
         return NULL;
     }
     if (!set_chunk_bytes(&directive->name, name, name_len)) {
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_parser_release_node(parser, node);
         return NULL;
     }
     node->start_line = start_line;
@@ -492,14 +492,14 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
         label_node = make_label_node(element, parser, chunk->data + label_start, label_len, label_line, label_column,
                                      markdown_core_inline_state_get_column(inline_state) - 1);
         if (!label_node) {
-            markdown_core_node_free(node);
+            markdown_core_parser_release_node(parser, node);
             parser->oom = true;
             return NULL;
         }
         label_node->end_line = markdown_core_inline_state_get_line(inline_state);
         if (directive->label) {
-            markdown_core_node_free(label_node);
-            markdown_core_node_free(node);
+            markdown_core_parser_release_node(parser, label_node);
+            markdown_core_parser_release_node(parser, node);
             parser->oom = true;
             return NULL;
         }
@@ -626,7 +626,7 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
     node->opaque = markdown_core_alloc(1, sizeof(node_directive));
     if (!node->opaque) {
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_parser_release_node(parser, node);
 
         return NULL;
     }
@@ -635,7 +635,7 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
                                 (int)first_nonspace)) {
         /* The suffix already validated; failure here is allocation loss. */
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_parser_release_node(parser, node);
 
         return NULL;
     }

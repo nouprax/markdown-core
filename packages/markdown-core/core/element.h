@@ -88,10 +88,24 @@ static inline const markdown_core_element *markdown_core_node_structure(const ma
  *
  * A gate is a statement about ONE LINE. A grammar decided by a later line --
  * a Pandoc simple table, whose prose header is only a table because the NEXT
- * line is dashes -- cannot be expressed here and must not be gated. */
+ * line is dashes -- cannot be expressed here and must not be gated.
+ *
+ * A gate speaks about a line that is NOT indented code. Four columns of
+ * indentation are a block start of their own, decided by no byte, so the scan
+ * and interrupt families ask an indented line only of the owners whose
+ * `maximum_block_indent` reaches it, whatever their gate says, and ask a
+ * non-indented line only of the owners whose gate admits its first byte. The
+ * two descriptor facts compose; neither is a branch on the input. */
 typedef struct markdown_core_block_gate {
     const char *bytes;
 } markdown_core_block_gate;
+
+/* How many elements one registry holds at most. The block-start projection
+ * lists a family's owners by byte -- a count and then owner indices -- so a
+ * family may have at most 255 owners and an owner index at most 254; the
+ * attachment API refuses the element that would break that, leaving the
+ * registry as it was, rather than the projection wrapping a byte. */
+#define MARKDOWN_CORE_ELEMENT_LIMIT 255
 
 struct markdown_core_element {
     /* Negative/zero/positive precedence separates protected tokens, ordinary
@@ -124,14 +138,28 @@ struct markdown_core_element {
 
     bool (*continue_container)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *,
                                const markdown_core_node *, bool *);
+    /* The bytes `continue_container` can strip from a line besides
+     * indentation: the COMPLETE set, as a gate's is, and NULL when it strips
+     * indentation only. A block-start question asked of a LATER line from raw
+     * source (the definition gate) reaches that line's first stripped byte by
+     * walking over indentation and these, so a byte left out here does not
+     * make the parser slower, it makes it WRONG: the construct inside this
+     * container is silently never recognised. Projected with the hooks into
+     * `parser->container_prefix`. A declared byte that is also the marker
+     * byte of the grammar asking (':' or '~' for a definition) cannot be told
+     * from that marker in raw source, so the key hands such a line to the
+     * lookahead rather than walking over it. */
+    const char *container_prefix_bytes;
     bool (*accepts_blank)(markdown_core_parser *, markdown_core_node *);
     bool (*blank_line)(markdown_core_parser *, markdown_core_node *);
     bool (*ends_block)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *);
     void (*finalize_block)(markdown_core_parser *, markdown_core_node *);
-    void (*complete_block)(markdown_core_parser *, markdown_core_node *);
 
     bool (*scan_block_start)(markdown_core_parser *, struct markdown_core_block_start_context *,
                              struct markdown_core_block_start *);
+    /* What `scan_block_start` needs on a non-indented line before it is worth
+     * entering; an indented line reaches it through `maximum_block_indent`. */
+    markdown_core_block_gate scan_block_gate;
     /* Last refusal before an ordinary paragraph, after opaque blocks/tables. */
     markdown_core_open_block_func try_opening_paragraph;
     markdown_core_match_block_func last_block_matches;
@@ -141,6 +169,8 @@ struct markdown_core_element {
     markdown_core_open_block_func try_opening_block;
     /* What `try_opening_block` needs on the line before it is worth entering. */
     markdown_core_block_gate open_block_gate;
+    /* What `try_interrupting_block` needs on a non-indented line. */
+    markdown_core_block_gate interrupt_block_gate;
     /* Non-consuming recognition before this element's block-opening slot.
      * Shares the producer's grammar; may report allocation failure, but never
      * opens a node or claims source. */
@@ -257,21 +287,34 @@ struct markdown_core_element {
  * Kept as ONE definition rather than a cheap predicate placed beside the real
  * one: a second copy of "which kinds can own a subtree" drifts from the list
  * below the first time a kind is added to it. */
+/* WHICH KINDS CAN OWN A SUBTREE THROUGH THEIR OWN RECORD: the one predicate,
+ * read by the visitor below and projected into the finish walk's per-kind
+ * record (parser.h, MARKDOWN_CORE_FINISH_KIND_FIELDS), so the walk asks it
+ * once per parse per kind rather than three compares per node. An element
+ * that owns subtrees through `visit_owned_subtrees_func` is found through
+ * the node's `element`, which the walk tests beside the flag. */
+static inline bool markdown_core_kind_owns_fields(markdown_core_node_type kind) {
+    return kind == MARKDOWN_CORE_NODE_DEFINITION || kind == MARKDOWN_CORE_NODE_CALLOUT ||
+           kind == MARKDOWN_CORE_NODE_CITE;
+}
+
 static inline int markdown_core_visit_inline_subtrees(markdown_core_node *node,
                                                       markdown_core_owned_subtree_visitor visitor, void *context) {
-    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION && node->as.definition->term &&
-        !visitor(&node->as.definition->term, context)) {
-        return 0;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->title &&
-        !visitor(&node->as.callout->title, context)) {
-        return 0;
-    }
-    if (node->kind == MARKDOWN_CORE_NODE_CITE) {
-        for (markdown_core_node *item = node->as.cite->citations; item; item = item->next) {
-            if ((item->as.citation->prefix && !visitor(&item->as.citation->prefix, context)) ||
-                (item->as.citation->suffix && !visitor(&item->as.citation->suffix, context))) {
-                return 0;
+    if (markdown_core_kind_owns_fields((markdown_core_node_type)node->kind)) {
+        if (node->kind == MARKDOWN_CORE_NODE_DEFINITION && node->as.definition->term &&
+            !visitor(&node->as.definition->term, context)) {
+            return 0;
+        }
+        if (node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->title &&
+            !visitor(&node->as.callout->title, context)) {
+            return 0;
+        }
+        if (node->kind == MARKDOWN_CORE_NODE_CITE) {
+            for (markdown_core_node *item = node->as.cite->citations; item; item = item->next) {
+                if ((item->as.citation->prefix && !visitor(&item->as.citation->prefix, context)) ||
+                    (item->as.citation->suffix && !visitor(&item->as.citation->suffix, context))) {
+                    return 0;
+                }
             }
         }
     }

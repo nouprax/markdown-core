@@ -90,6 +90,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML_BLOCK = {
     .name = "html_block",
     .maximum_block_indent = 3,
     .scan_block_start = scan_html,
+    .scan_block_gate = {.bytes = "<"},
     .last_block_matches = continue_html,
     .content_mode = MARKDOWN_CORE_CONTENT_LITERAL,
     .finalize_block = finalize_html,

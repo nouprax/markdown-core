@@ -113,7 +113,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
         (cross->anchor.has_value && !markdown_core_chunk_to_cstr(&cross->anchor.value)) ||
         (cross->label.has_value && !markdown_core_chunk_to_cstr(&cross->label.value))) {
         parser->oom = true;
-        markdown_core_node_free(node);
+        markdown_core_parser_release_node(parser, node);
         return NULL;
     }
     markdown_core_parser_content_place(parser, parent, start, &node->start_line, &node->start_column);

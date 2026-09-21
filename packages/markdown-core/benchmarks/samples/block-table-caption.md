@@ -12,3 +12,10 @@ Table: Stage totals over the concatenated corpus
 
 Table: What each case was measured on, with a caption long enough to run
 past the width of the table it belongs to
+
+Table: A caption that leads the table it belongs to, separated by a blank line
+
+| Engine | Ir per byte |
+|:---|---:|
+| core | 118.4 |
+| reference | 21.6 |

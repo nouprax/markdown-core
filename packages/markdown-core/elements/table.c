@@ -237,7 +237,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     markdown_core_strbuf_put(&paragraph->content, parent_string + first, content_end - first);
     if (paragraph->content.oom) {
         parser->oom = true;
-        markdown_core_node_free(paragraph);
+        markdown_core_parser_release_node(parser, paragraph);
         return;
     }
 
@@ -262,7 +262,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
         // markdown_core_node_free, not markdown_core_free: the node owns a content
         // buffer by now, and freeing the struct alone leaks it.
         parser->oom = true;
-        markdown_core_node_free(paragraph);
+        markdown_core_parser_release_node(parser, paragraph);
         return;
     }
     /* A table split completes this paragraph just as a later block start
@@ -1908,7 +1908,7 @@ static markdown_core_node *table_child(markdown_core_parser *parser, markdown_co
     node->start_column = markdown_core_parser_source_column(parser, first_line, first_column);
     node->end_column = markdown_core_parser_source_column(parser, last_line, last_column);
     if (parent && !markdown_core_node_attach_owned(parent, node, NULL)) {
-        markdown_core_node_free(node);
+        markdown_core_parser_release_node(parser, node);
         parser->oom = true;
         return NULL;
     }
@@ -1989,15 +1989,25 @@ static markdown_core_node *table_caption_build(table_source *source, size_t last
 
 /* The producer and definition-term precedence query share this grammar. A
  * query owns one lookahead transaction, and never opens a node or claims input. */
+/* A CAPTION ENDS AT A BLANK LINE, so the line after the blank is never a
+ * caption line, and it is a candidate only for a leading caption
+ * (`after_blank`): a trailing caption belongs to the table above, and what
+ * follows the blank is the next construct, parsed when its own line comes.
+ * The blank is tested before the candidate is parsed at that line, so the
+ * table after a trailing caption is parsed once, by its own opener, and the
+ * candidate after a leading caption's blank is parsed once, in the tail
+ * below -- it used to be parsed in the loop, thrown away, and parsed again. */
 static bool table_after_caption(table_source *source, size_t *caption_last, table_candidate *candidate,
                                 bool after_blank) {
     size_t next = 1;
     for (; table_source_get(source, next); next++) {
+        if (source->lines[next].blanks) {
+            break;
+        }
         if (table_parse_candidate(source, next, candidate, true)) {
             return true;
         }
-        table_source_line *line = &source->lines[next];
-        if (line->blanks || table_has_block_start(source, next, true) || source->parser->oom) {
+        if (table_has_block_start(source, next, true) || source->parser->oom) {
             break;
         }
         *caption_last = next;
@@ -2095,16 +2105,31 @@ static bool table_open_admits(markdown_core_parser *parser, const unsigned char 
         return true;
     }
     /* Both multiline forms and a headerless simple table need this line to be
-     * a separator: one run for a full boundary, two or more otherwise. */
-    if (table_dash_count_raw(input, parser->offset, trimmed) > 0) {
+     * a separator: one run for a full boundary, two or more otherwise. A
+     * boundary alone opens nothing: the two grammars that start on one -- a
+     * multiline table with a header, a simple table with a header -- both
+     * refuse when the line below it is blank (table_parse_multiline,
+     * table_parse_simple), so a thematic break with a blank after it is asked
+     * of neither. Blank is read from the raw line: a line blank once its
+     * container prefix is stripped has nothing but that prefix in it, so a raw
+     * line with any byte past spaces and tabs may be a row and is admitted,
+     * and a raw blank is blank in every container. */
+    size_t runs = table_dash_count_raw(input, parser->offset, trimmed);
+    if (runs >= 2) {
         return true;
     }
-    /* Only a simple table with a header remains, and only its delimiter row,
-     * the next physical line, can still admit one. */
     const unsigned char *cursor = parser->lookahead_cursor, *end = parser->lookahead_end, *eol = cursor;
     if (!cursor || cursor >= end) {
         return false;
     }
+    if (runs == 1) {
+        while (cursor < end && (*cursor == ' ' || *cursor == '\t')) {
+            cursor++;
+        }
+        return cursor < end && !markdown_core_is_line_end((char)*cursor);
+    }
+    /* Only a simple table with a header remains, and only its delimiter row,
+     * the next physical line, can still admit one. */
     while (eol < end && !markdown_core_is_line_end((char)*eol)) {
         eol++;
     }
@@ -2213,6 +2238,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .dispose_parser = dispose_parser,
 
     .try_interrupting_block = try_interrupting_block,
+    /* A delimiter row leading a dash-led table. */
+    .interrupt_block_gate = {.bytes = "-"},
 
     .name = "table",
     .last_block_matches = matches,

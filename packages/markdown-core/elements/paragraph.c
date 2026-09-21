@@ -15,25 +15,47 @@ static int continue_paragraph(const markdown_core_element *self, markdown_core_p
                               int length, markdown_core_node *container) {
     return !parser->blank;
 }
-static void complete_block(markdown_core_parser *parser, markdown_core_node *node) {
-    if (node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY) {
-        markdown_core_node_free(node);
-    }
+/* A PARAGRAPH THAT HELD ONLY REFERENCE DEFINITIONS IS NOT A PARAGRAPH. Its
+ * finalization consumed the definitions and left nothing, so it has no
+ * inline content to parse and no place in the tree: it is released at its
+ * EXIT, from inside the one finish walk, which is postorder -- the list it
+ * sits in lays itself out at its own EXIT, after this, and sees the cleaned
+ * children. A root is never released: it belongs to whoever holds it, and a
+ * definition's term that was only definitions stays the empty term it is. */
+static int contains_inlines(const markdown_core_element *element, markdown_core_node *node) {
+    (void)element;
+    return !(node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY);
 }
+static markdown_core_finish_result finish_step(const markdown_core_element *element, markdown_core_parser *parser,
+                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
+                                               void **state) {
+    (void)element;
+    (void)event;
+    (void)state;
+    assert(event == MARKDOWN_CORE_EVENT_EXIT);
+    if (is_root || !(node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY)) {
+        return MARKDOWN_CORE_FINISH_CONTINUE;
+    }
+    markdown_core_parser_release_node(parser, node);
+    return MARKDOWN_CORE_FINISH_CONSUMED;
+}
+static const markdown_core_node_type PARAGRAPH_EXIT_KINDS[] = {MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_NONE};
 static bool accepts_lazy(markdown_core_parser *parser, markdown_core_node *node) { return true; }
 static markdown_core_node *open_lazy(markdown_core_parser *parser, markdown_core_node *node) { return node; }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
-    .complete_block = complete_block,
     .accepts_lazy = accepts_lazy,
     .open_lazy = open_lazy,
 
     .name = "paragraph",
     .last_block_matches = continue_paragraph,
     .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
-    .inline_content = true,
+    /* Inline content, unless the paragraph was only definitions. */
+    .contains_inlines_func = contains_inlines,
     .paragraph = true,
     .finalize_block = markdown_core_parser_finalize_paragraph,
+    .finish_step = finish_step,
+    .finish_exit_kinds = PARAGRAPH_EXIT_KINDS,
 };
 
 markdown_core_node *markdown_core_paragraph_open_text(markdown_core_parser *parser, markdown_core_node *container,

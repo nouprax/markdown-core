@@ -119,11 +119,15 @@ Each populated affix owns a private inline root, exposed through the public
 Citation's prefix/suffix collections. Source trimming only changes raw edge
 whitespace; nested markup keeps its authored scope. The finish stage
 traverses all owned inline roots using one explicit stack, and walks each root
-exactly once: inline completion (the element's `complete_inline`, the
-document's anchor reservation) runs at each node's ENTER, text consolidation
-and every element finish step (autolink's email scan, formula's block
-promotion) run at the events of that one walk, and a global postprocess pass
-receives the root after its walk completes. A Text sibling that consolidation
+exactly once: a container's inline content is parsed at the container's ENTER
+(the walk then continues into the children that parse produced), inline
+completion (the element's `complete_inline`, the document's anchor
+reservation) runs at each node's ENTER, text consolidation and every element
+finish step (a reference-only paragraph's removal, a list's layout, autolink's
+email scan, formula's block promotion) run at the events of that one walk, and
+a global postprocess pass receives the root after its walk completes. A step
+that declares the kinds it acts on reads that gate at each event it is asked
+at, since a kind's first node may be made by the walk itself. A Text sibling that consolidation
 absorbs is completed by consolidation before it is read, since its ENTER is
 stepped over. The document's finalization -- footnote and specimen ownership,
 heading anchors -- follows the walk and reads the finished tree. Field order and inherited script depth are retained,

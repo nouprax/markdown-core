@@ -54,6 +54,18 @@ struct markdown_core_inline_state {
      * that leaves it is resolved by probing from here (see
      * `markdown_core_inline_state_place`). Seeded on the owner's first run. */
     int mark_cursor;
+    /* THE FRAME THE CURSOR'S RUN GIVES A PLACEMENT, written with the cursor
+     * (markdown_core_inline_seat_cursor) and read by every placement: the
+     * run's first content offset, the offset the next run starts at (past
+     * every offset when the cursor is the owner's last run), and the run's
+     * line, column, step and width. A node whose two ends lie in the frame
+     * is placed by arithmetic on these six values and reads nothing from the
+     * map; `mapped` is whether there is a map at all -- a state built
+     * straight out of a chunk, the reference-definition parser's, has none,
+     * and neither has a block that came with no content. */
+    bufsize_t mark_run_start, mark_run_end;
+    int mark_line, mark_column, mark_step, mark_width;
+    bool mapped;
     markdown_core_map *refmap;
     delimiter *last_delim;
     delimiter_run cached_run;
@@ -84,6 +96,99 @@ struct markdown_core_inline_state {
 
 #define make_str(inline_state, sc, ec, s)                                                                              \
     markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_TEXT, sc, ec, s)
+
+/* Read the cursor's run into the frame (inline_internal.h, `mark_run_start`
+ * and the fields after it). Called wherever the cursor is written: seeded on
+ * the owner's first run when a parse starts, and moved by the span when a
+ * placement leaves the frame. The cursor is always a run of the owner -- the
+ * seed and the span both name one -- which is the invariant the frame rests
+ * on; it is asserted here rather than tested per placement. */
+static inline void markdown_core_inline_seat_cursor(markdown_core_inline_state *inline_state) {
+    markdown_core_parser *parser = inline_state->owner_parser;
+    markdown_core_node *owner = inline_state->owner;
+    inline_state->mapped = parser && owner && owner->content_mark_count > 0;
+    if (!inline_state->mapped) {
+        return;
+    }
+    int cursor = inline_state->mark_cursor, last = owner->content_mark + owner->content_mark_count - 1;
+    assert(cursor >= owner->content_mark && cursor <= last);
+    const markdown_core_line_mark *mark = &parser->line_marks[cursor];
+    inline_state->mark_run_start = mark->content_offset;
+    inline_state->mark_run_end = cursor < last ? parser->line_marks[cursor + 1].content_offset : INT32_MAX;
+    inline_state->mark_line = mark->line;
+    inline_state->mark_column = mark->column;
+    inline_state->mark_step = mark->source_step;
+    inline_state->mark_width = mark->source_width;
+}
+
+/* A Text's map, once its extent is placed on the runs [first, last]. A Text
+ * whose bytes ARE the source bytes of its scope takes a view of the source
+ * map; a decoded token, or a literal shorter than its scope, maps each of
+ * its bytes to the whole authored extent. The common Text is a view of
+ * `input` at `from`, which is that fact by identity; an element that placed
+ * a copy it made (a citation prefix moved into its own buffer) is asked byte
+ * for byte. The writes stay inside the gate: a node that is not a verbatim
+ * copy of its source must keep `content_mark_count` at zero, because that
+ * count is read elsewhere as "is there a mapping at all". */
+static inline void markdown_core_inline_map_text(markdown_core_inline_state *inline_state, markdown_core_node *node,
+                                                 int from, int to, int first, int last) {
+    const markdown_core_chunk *literal = node->as.literal;
+    if (literal->len == to - from + 1 &&
+        (literal->data == inline_state->input.data + from ||
+         memcmp(literal->data, inline_state->input.data + from, (size_t)literal->len) == 0)) {
+        node->content_mark = first;
+        node->content_mark_count = last - first + 1;
+        node->content_mark_offset = from + inline_state->owner->content_mark_offset;
+    } else {
+        node->content_mark_count = 0;
+        node->content_mark_offset = 0;
+        markdown_core_parser_append_content_mark(inline_state->owner_parser, node, 0, node->start_line,
+                                                 node->start_column, node->end_column - node->start_column + 1, 0);
+    }
+}
+
+/* A placement that leaves the frame: resolved by the span, which moves the
+ * cursor to where the node ends (inlines.c). */
+void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline_state, markdown_core_node *node,
+                                              int from, int to);
+
+/* GIVE `node` THE SOURCE EXTENT OF THE CONTENT BYTES [from, to]. This is the
+ * whole of the inline position model: a position is a PROJECTION of the byte
+ * range a node covers, asked of requirement 10's content-to-source map, and
+ * not a counter each handler keeps in step. The parser reads `input` left to
+ * right and a Text never crosses a line ending, so the node being placed
+ * almost always lies whole on the run the previous placement ended in: both
+ * of its ends are then the frame's line and column plus a distance. Each end
+ * is tested on its own: a span's ends are resolved independently (an empty
+ * field is placed as [x, x - 1], and when x is a run's first byte its two
+ * ends are on two runs), so a test that bounded `from` from below and `to`
+ * from above alone would measure such a span in one run with a distance the
+ * run does not contain. A leaf: the path that leaves the frame is a call. */
+static inline void markdown_core_inline_place(markdown_core_inline_state *inline_state, markdown_core_node *node,
+                                              int from, int to) {
+    if (!inline_state->mapped) {
+        return;
+    }
+    bufsize_t base = inline_state->owner->content_mark_offset;
+    bufsize_t from_offset = from + base, to_offset = to + base;
+    inline_state->owner_parser->content_mark_queries++;
+    if (from < 0 || to < 0 || from_offset < inline_state->mark_run_start || to_offset < inline_state->mark_run_start ||
+        from_offset >= inline_state->mark_run_end || to_offset >= inline_state->mark_run_end) {
+        markdown_core_inline_place_outside_frame(inline_state, node, from, to);
+        return;
+    }
+    node->start_line = inline_state->mark_line;
+    node->end_line = inline_state->mark_line;
+    node->start_column =
+        inline_state->mark_column + (int)(from_offset - inline_state->mark_run_start) * inline_state->mark_step;
+    node->end_column = inline_state->mark_column +
+                       (int)(to_offset - inline_state->mark_run_start) * inline_state->mark_step +
+                       inline_state->mark_width - 1;
+    if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0) {
+        markdown_core_inline_map_text(inline_state, node, from, to, inline_state->mark_cursor,
+                                      inline_state->mark_cursor);
+    }
+}
 
 markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state *inline_state,
                                                       markdown_core_node_type t, int start_column, int end_column,

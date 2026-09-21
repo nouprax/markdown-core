@@ -351,6 +351,17 @@ MARKDOWN_CORE_EXPORT bool markdown_core_node_can_contain_type(markdown_core_node
                                                               markdown_core_node_type child_type);
 
 typedef int (*markdown_core_owned_subtree_visitor)(markdown_core_node **root_slot, void *context);
+/* The chains a document owns as roots of their own, in the order the visitor
+ * below takes them. */
+#define MARKDOWN_CORE_DOCUMENT_CHAINS 2
+/* Visit the roots of each chain appended since `last`, one entry per chain
+ * naming the last root visited there (NULL for none yet), and advance `last`
+ * over each root visited. Registration appends to a chain, so this finds
+ * exactly what came after the previous visit. Returns 0 when the visitor
+ * refuses, and sets `*found` when it visited anything. */
+int markdown_core_visit_block_subtrees_since(markdown_core_node *node,
+                                             markdown_core_node *last[MARKDOWN_CORE_DOCUMENT_CHAINS],
+                                             markdown_core_owned_subtree_visitor visitor, void *context, bool *found);
 int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
                                        void *context);
 
@@ -369,11 +380,31 @@ int markdown_core_node_attach_owned(markdown_core_node *parent, markdown_core_no
  * It lives with the node type rather than with the code that builds such a set
  * so that the block driver can intersect two sets without naming a kind or
  * knowing how a kind is encoded. */
-uint32_t markdown_core_node_block_kind_bit(markdown_core_node_type kind);
+static MARKDOWN_CORE_INLINE uint32_t markdown_core_node_block_kind_bit(markdown_core_node_type kind) {
+    if ((kind & MARKDOWN_CORE_NODE_TYPE_MASK) != MARKDOWN_CORE_NODE_TYPE_BLOCK) {
+        return 0;
+    }
+    unsigned value = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+    /* Every block kind too large for a bit of its own shares the last one.
+     * Sharing can only make two different kinds look alike, never make one
+     * disappear, so a set built this way OVER-approximates: the cost of an
+     * extension kind beyond the word is a hook entered once too often, not a
+     * construct silently never recognised. A private bit per kind would be the
+     * other way round, and that is the direction that loses documents. */
+    return value >= 31 ? 1u << 31 : 1u << value;
+}
 
 /* The same for an INLINE kind. Block and inline values overlap once masked, so
- * a set that must tell a List from a LineBreak keeps the two apart. */
-uint32_t markdown_core_node_inline_kind_bit(markdown_core_node_type kind);
+ * a set that must tell a List from a LineBreak keeps the two apart. Both are
+ * in the header: every node a parse makes records its kind through them, and
+ * a call across a translation unit for four instructions was 18 Ir per node. */
+static MARKDOWN_CORE_INLINE uint32_t markdown_core_node_inline_kind_bit(markdown_core_node_type kind) {
+    if ((kind & MARKDOWN_CORE_NODE_TYPE_MASK) != MARKDOWN_CORE_NODE_TYPE_INLINE) {
+        return 0;
+    }
+    unsigned value = (unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+    return value >= 31 ? 1u << 31 : 1u << value;
+}
 
 /* A set of node kinds, used both for what an element's phase acts on and for
  * what a parse actually produced. Intersecting the two is how a phase that
@@ -384,7 +415,11 @@ typedef struct markdown_core_node_kind_set {
 } markdown_core_node_kind_set;
 
 /* Add `kind` to `set`. */
-void markdown_core_node_kind_set_add(markdown_core_node_kind_set *set, markdown_core_node_type kind);
+static MARKDOWN_CORE_INLINE void markdown_core_node_kind_set_add(markdown_core_node_kind_set *set,
+                                                                 markdown_core_node_type kind) {
+    set->blocks |= markdown_core_node_block_kind_bit(kind);
+    set->inlines |= markdown_core_node_inline_kind_bit(kind);
+}
 
 /* Whether the two sets name any kind in common. */
 bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a, const markdown_core_node_kind_set *b);

@@ -86,7 +86,7 @@ static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core
     markdown_core_node *citation = cite ? markdown_core_inline_new_citation(inline_state, cite, NULL) : NULL;
     if (!citation) {
         if (cite) {
-            markdown_core_node_free(cite);
+            markdown_core_parser_release_node(inline_state->owner_parser, cite);
         }
         inline_state->oom = 1;
         return NULL;
@@ -109,13 +109,14 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(markdown_core_par
         !markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_CITE)) {
         inline_state->no_link_openers = opener->outer_no_link_openers;
         markdown_core_inline_pop_bracket(inline_state);
-        return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1, markdown_core_chunk_literal("]"));
+        return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
+                        markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
     }
     cite = markdown_core_inline_make_footnote_cite(inline_state, opener, inline_state->pos);
     footnote = cite ? markdown_core_inline_make_simple(inline_state, MARKDOWN_CORE_NODE_FOOTNOTE) : NULL;
     if (!footnote) {
         if (cite) {
-            markdown_core_node_free(cite);
+            markdown_core_parser_release_node(parser, cite);
         }
         inline_state->oom = 1;
         markdown_core_inline_pop_bracket(inline_state);
@@ -128,10 +129,10 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(markdown_core_par
     markdown_core_node_attach_owned(opener->inl_text->parent, cite, opener->inl_text);
     if (!markdown_core_parser_register_definition(parser, &parser->footnotes, footnote, cite->as.cite->citations,
                                                   &parser->root->as.document->footnotes)) {
-        markdown_core_node_free(footnote);
+        markdown_core_parser_release_node(parser, footnote);
         inline_state->oom = 1;
     }
-    markdown_core_node_free(opener->inl_text);
+    markdown_core_parser_release_node(parser, opener->inl_text);
     inline_state->no_link_openers = opener->outer_no_link_openers;
     markdown_core_inline_pop_bracket(inline_state);
     return NULL;
@@ -144,8 +145,8 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
         return NULL;
     }
     inline_state->pos += 2;
-    markdown_core_node *node =
-        make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1, markdown_core_chunk_literal("^["));
+    markdown_core_node *node = make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
+                                        markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 2, 2));
     if (node) {
         markdown_core_inline_push_bracket(inline_state, BRACKET_FOOTNOTE, node);
     }
@@ -160,6 +161,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .continue_container = continue_container,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_footnote_scan,
+    .scan_block_gate = {.bytes = "["},
 
     .match_inline = match,
     .terminates_text = "^",
@@ -238,7 +240,7 @@ bool markdown_core_footnote_close_reference(markdown_core_parser *parser, markdo
             unsigned char *id = normalize_map_label(&label, &lost);
             if (!id) {
                 inline_state->oom = 1;
-                markdown_core_node_free(fnref);
+                markdown_core_parser_release_node(parser, fnref);
                 markdown_core_inline_pop_bracket(inline_state);
                 return true;
             }
@@ -268,7 +270,7 @@ bool markdown_core_footnote_close_reference(markdown_core_parser *parser, markdo
             markdown_core_node *current_node = opener->inl_text->next;
             while (current_node) {
                 next_node = current_node->next;
-                markdown_core_node_free(current_node);
+                markdown_core_parser_release_node(parser, current_node);
                 current_node = next_node;
             }
 
