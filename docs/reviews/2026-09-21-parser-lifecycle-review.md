@@ -145,6 +145,10 @@ Geometry shrinks from 20 to 12 bytes per visited line; optional NUL counts use
 space in the existing 64-byte fact record. The exact capacity formula and
 12–24x LF-only / 6–12x one-character-line amplification are documented in
 `parser-input-storage.md`; short-line tests check space and scan work.
+The bounded span walk classifies NUL/CR/LF through one fixed byte alphabet.
+Its geometry excludes physical terminators, allowing the mutable grammar
+line to be copied and LF-terminated in one reservation. There is no separate
+scan algorithm selected by input size or corpus case.
 
 Properties carries an envelope index and reads geometry values. Table dash
 slices are offsets with value access. Lookahead reacquires its fact record

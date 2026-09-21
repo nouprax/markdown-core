@@ -37,8 +37,14 @@ The source driver advances through the static inline scanner in `blocks.c`.
 External lookahead calls a wrapper around that same scanner; there is one
 physical scanning algorithm, not separate driver and speculative scanners.
 The inner span walk uses bounded pointers and stops at CR, LF or NUL; only a
-NUL boundary updates the normalization count. Initial workspace allocation is
-outside `source_to_buffer`, while growth remains inside it. Comparisons must
+NUL boundary updates the normalization count. The span alphabet is a single
+byte-classification table. Geometry excludes
+physical terminators, so the grammar's mutable content/LF/NUL line is built
+with one reservation and copy, without testing and appending the terminator
+as a second buffer operation. All 256 byte values are checked against the
+physical-line and normalization contracts.
+Initial workspace allocation is outside `source_to_buffer`, while growth
+remains inside it. Comparisons must
 therefore include the report's `parsePathIr` and `outsideStagesIr` as well as
 the two stages: moving the first reservation to initialization is not a
 whole-parse saving.

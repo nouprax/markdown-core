@@ -1357,6 +1357,10 @@ static inline const unsigned char *S_input_line_content(markdown_core_parser *pa
     return facts->normalized ? facts->normalized->bytes : S_normalize_input_line(parser, line, facts, *length);
 }
 
+/* The physical input alphabet has three span boundaries: NUL normalization,
+ * CR and LF. One byte classification replaces three independent predicates. */
+static const unsigned char SOURCE_SPAN_END[256] = {[0] = 1, ['\r'] = 1, ['\n'] = 1};
+
 /* The sole physical-line scanner for root and mapped inputs. Grammar facts
  * live beside their line, so changing inputs drops them together. Inlining
  * is explicit: both GCC and Clang may otherwise outline this per-line step. */
@@ -1382,7 +1386,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
          * The NUL count changes only at the latter, not on every source byte. */
         for (;;) {
             for (; cursor < end; cursor++) {
-                if (markdown_core_is_line_end(*cursor) || *cursor == 0) {
+                if (SOURCE_SPAN_END[*cursor]) {
                     break;
                 }
             }
@@ -2696,20 +2700,26 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     }
 
     assert(parser->curline.size == 0);
-
-    markdown_core_strbuf_put(&parser->curline, buffer, bytes);
-
-    bytes = parser->curline.size;
-
-    // ensure line ends with a newline:
-    if (bytes == 0 || !markdown_core_is_line_end(parser->curline.ptr[bytes - 1])) {
-        markdown_core_strbuf_putc(&parser->curline, '\n');
+    assert(bytes >= 0);
+    /* The shared input view excludes its physical terminator. Construct the
+     * mutable grammar line (content + LF + NUL) with one reservation, rather
+     * than appending content and then rediscovering/adding its terminator. */
+    if (bytes >= INT32_MAX / 2) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    if (bytes + 1 >= parser->curline.asize) {
+        markdown_core_strbuf_grow(&parser->curline, bytes + 1);
     }
 
     if (parser->curline.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
+    memcpy(parser->curline.ptr, buffer, (size_t)bytes);
+    parser->curline.ptr[bytes] = '\n';
+    parser->curline.ptr[bytes + 1] = 0;
+    parser->curline.size = bytes + 1;
 
     parser->offset = 0;
     parser->column = 0;

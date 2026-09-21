@@ -7082,6 +7082,27 @@ static void properties_rejected_members_borrow_source(test_batch_runner *runner)
 }
 
 static void source_line_geometry_is_shared(test_batch_runner *runner) {
+    /* Physical geometry classifies bytes before any UTF-8 interpretation.
+     * Every byte other than CR/LF is content; NUL requests normalization. */
+    for (unsigned value = 0; value <= 255; value++) {
+        unsigned char bytes[] = {'a', (unsigned char)value, 'b', '\n'};
+        markdown_core_parser input = {0};
+        input.input_source = bytes;
+        input.input_length = sizeof(bytes);
+        input.input_first_line = 1;
+        markdown_core_input_line *first = markdown_core_parser_source_line(&input, 1);
+        bool split = value == '\r' || value == '\n';
+        OK(runner, first && first->start == 0 && first->end == (split ? 1 : 3),
+           "only CR and LF end a physical line: byte %u", value);
+        OK(runner, first && ((first->facts && input.input_facts[first->facts - 1].nul_count == 1) == (value == 0)),
+           "only NUL requests normalization: byte %u", value);
+        markdown_core_input_line *second = markdown_core_parser_source_line(&input, 2);
+        OK(runner, split ? second && second->start == 2 && second->end == 3 : !second,
+           "content after a boundary belongs to exactly one line: byte %u", value);
+        INT_EQ(runner, input.input_line_work, sizeof(bytes), "byte classification consumes the input exactly once");
+        markdown_core_free(input.input_facts);
+        markdown_core_free(input.input_lines);
+    }
     static const unsigned char source[] = "a\0b\r\nc\rd\nlast";
     markdown_core_parser parser = {0};
     parser.input_source = source;
