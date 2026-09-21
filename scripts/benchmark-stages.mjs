@@ -55,6 +55,7 @@ import { fileURLToPath } from "node:url";
 
 import { baseName, costRecord, edgesBetween, foldNames, nodesEnteredFrom, parseCallgrind } from "./lib/callgrind.mjs";
 import { compiledFlags as readCompiledFlags, discardTree, effectiveFlags, markTree } from "./lib/compile-identity.mjs";
+import { caseClosure, splitWithCases } from "./lib/corpus-splits.mjs";
 import {
     BUILD_FLAG_VARIABLES,
     buildEnvironment,
@@ -109,6 +110,28 @@ const STAGES = ["source_to_buffer", "buffer_to_ast"];
 /* The harness entry both runners publish, and so the whole parse path a stage
  * is a part of: parser creation, the two stages, and releasing the tree. */
 const ENGINE_ENTRY = "bench_parse_document";
+
+/* The remainder of a split, ALONE: the attribute runner `benchmark-attributes.mjs`
+ * measures against lexbor, built in the same tree by the same flags as the
+ * parser the split measures the remainder inside, read on the edge that
+ * driver reads. The edge covers the scan, the decode and the release of each
+ * list, so it is compared with the split's WHOLE-PATH marginal, which covers
+ * release too, and not with the stages. */
+const ATTRIBUTE_RUNNER = {
+    runner: "packages/markdown-core/benchmarks/markdown_core_attribute_runner",
+    target: "markdown_core_attribute_runner",
+    caller: "main",
+    callee: "bench_parse_attributes"
+};
+/* Every binary a number in the report is read from, by the name the identity
+ * table gives it. */
+const MEASURED_BINARIES = {
+    ...Object.fromEntries(Object.entries(ENGINES).map(([engine, definition]) => [engine, definition.runner])),
+    "attribute runner": ATTRIBUTE_RUNNER.runner
+};
+/* How many copies of the remainder the alone measurement decodes: enough that
+ * the runner's own setup and the receipt are noise against the lists. */
+const ALONE_LISTS = 4096;
 
 function fail(message) {
     console.error(`benchmark-stages: ${message}`);
@@ -774,11 +797,11 @@ function verifyBuildProvenance(profile, versions) {
     /* `gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0` -> the part .comment also
      * carries, so the two spellings are compared on what they share. */
     const identity = versions.compiler.replace(/^\S+\s+/u, "").trim();
-    for (const [engine, definition] of Object.entries(ENGINES)) {
-        const binary = path.join(profile.binaryDir, definition.runner);
+    for (const [engine, runner] of Object.entries(MEASURED_BINARIES)) {
+        const binary = path.join(profile.binaryDir, runner);
         const readelf = spawnSync("readelf", ["-p", ".comment", binary], { encoding: "utf8" });
         if (readelf.status !== 0) {
-            fail(`${engine}: cannot read the build provenance of ${definition.runner}; readelf is required`);
+            fail(`${engine}: cannot read the build provenance of ${runner}; readelf is required`);
         }
         /* `  [     0]  GCC: (Ubuntu 13.3.0-...) 13.3.0` -> the string itself. */
         const producers = [
@@ -786,14 +809,14 @@ function verifyBuildProvenance(profile, versions) {
         ];
         if (producers.length !== 1) {
             fail(
-                `${engine}: ${definition.runner} records ${producers.length} compiler identities ` +
+                `${engine}: ${runner} records ${producers.length} compiler identities ` +
                     `(${producers.join(" | ") || "none"}), so the report cannot name one; ` +
                     `delete ${path.relative(root, profile.binaryDir)} and re-run`
             );
         }
         if (!producers[0].includes(identity)) {
             fail(
-                `${engine}: ${definition.runner} was built by "${producers[0]}" but the report would name ` +
+                `${engine}: ${runner} was built by "${producers[0]}" but the report would name ` +
                     `"${identity}"; delete ${path.relative(root, profile.binaryDir)} and re-run`
             );
         }
@@ -806,15 +829,18 @@ function verifyBuildProvenance(profile, versions) {
  * is where that contract is checked instead of discovered as a zero.
  */
 function verifyStageSymbols(profile) {
-    for (const [engine, definition] of Object.entries(ENGINES)) {
-        const binary = path.join(profile.binaryDir, definition.runner);
-        if (!fs.existsSync(binary)) fail(`${engine}: ${definition.runner} was not built`);
-        const symbols = new Set(
+    const symbolsOf = (engine, runner) => {
+        const binary = path.join(profile.binaryDir, runner);
+        if (!fs.existsSync(binary)) fail(`${engine}: ${runner} was not built`);
+        return new Set(
             run("nm", ["-a", binary])
                 .split("\n")
                 .map((line) => line.trim().split(/\s+/u).pop() ?? "")
                 .map((name) => name.replace(CLONE_SUFFIX, ""))
         );
+    };
+    for (const [engine, definition] of Object.entries(ENGINES)) {
+        const symbols = symbolsOf(engine, definition.runner);
         for (const boundary of Object.values(definition.stages)) {
             for (const name of [boundary.caller, boundary.callee]) {
                 if (!symbols.has(name)) {
@@ -824,6 +850,16 @@ function verifyStageSymbols(profile) {
                     );
                 }
             }
+        }
+    }
+    /* The edge the remainder alone is read on, held the same way: a boundary
+     * folded into its caller is a missing number, not a smaller one. */
+    const symbols = symbolsOf("attribute runner", ATTRIBUTE_RUNNER.runner);
+    for (const name of [ATTRIBUTE_RUNNER.caller, ATTRIBUTE_RUNNER.callee]) {
+        if (!symbols.has(name)) {
+            fail(
+                `attribute runner: ${name} is absent from ${ATTRIBUTE_RUNNER.runner}, so the remainder alone cannot be read`
+            );
         }
     }
 }
@@ -1070,36 +1106,13 @@ function refuseUnknownCases(options, manifest) {
 function buildCorpus(options, manifest) {
     const directory = path.join(options.out, "corpus");
     fs.mkdirSync(directory, { recursive: true });
-    /* A named case drags in what it is DEFINED AGAINST, and keeps dragging
-     * until nothing new arrives. A paired case drags its other half: naming
-     * one alone would measure a case whose comparison lives on a document the
-     * run never built. The pair is not optional context; it IS the comparison.
-     * A split's `with` half drags its `without`, for the same reason, and only
-     * in that direction: a pair half is a comparison on its own and a `with`
-     * document is not, so naming the `without` measures the pair it belongs
-     * to and no split. A counted case drags the generated case it is sized
-     * by, because a count taken from a partner that was never generated is no
-     * count at all. The closure is iterated rather than applied once because
-     * each step can name a case the next rule has to see -- a `with` names a
-     * `without` that names a pair that names a generated match. */
-    const wanted = new Set(options.cases);
-    const byName = new Map(manifest.cases.map((entry) => [entry.name, entry]));
-    for (let before = -1; before !== wanted.size;) {
-        before = wanted.size;
-        for (const pair of [...(manifest.isomorphs ?? []), ...(manifest.logicalIsomorphs ?? [])]) {
-            if (wanted.has(pair.case)) wanted.add(pair.isomorph);
-            if (wanted.has(pair.isomorph)) wanted.add(pair.case);
-        }
-        for (const split of manifest.splits ?? []) {
-            for (const host of split.hosts) {
-                if (wanted.has(host.with)) wanted.add(host.without);
-            }
-        }
-        for (const name of [...wanted]) {
-            const match = byName.get(name)?.counted?.match;
-            if (match) wanted.add(match);
-        }
-    }
+    /* A named case drags in what it is DEFINED AGAINST -- its pair, a split
+     * `with` its `without`, a counted case its generated match -- to a
+     * fixpoint. The rule is `caseClosure` in `lib/corpus-splits.mjs`, where
+     * the reach audit reads the same declarations, and its tests hold the
+     * direction: a pair half drags its other half, a `with` drags its
+     * `without`, and a `without` drags no `with`. */
+    const wanted = caseClosure(manifest, options.cases);
     const selected = options.cases.length ? manifest.cases.filter((entry) => wanted.has(entry.name)) : manifest.cases;
 
     const documents = [];
@@ -1198,8 +1211,8 @@ function corpusDigest(documents) {
 /** The exact bytes measured, so a report's numbers can be traced to a binary. */
 function runnerIdentity(profile) {
     const identity = {};
-    for (const [engine, definition] of Object.entries(ENGINES)) {
-        const binary = path.join(profile.binaryDir, definition.runner);
+    for (const [engine, runner] of Object.entries(MEASURED_BINARIES)) {
+        const binary = path.join(profile.binaryDir, runner);
         identity[engine] = {
             sha256: crypto.createHash("sha256").update(fs.readFileSync(binary)).digest("hex"),
             builtAt: new Date(fs.statSync(binary).mtimeMs).toISOString()
@@ -1417,6 +1430,153 @@ function measure(profile, engine, document, out) {
     };
 }
 
+/**
+ * The remainder of a split with no host around it.
+ *
+ * The reference for a remainder measured in place is the same grammar
+ * decoding the same bytes alone: what a host adds to that is the composition,
+ * the seam between the host's scan and the list's, which is the number a
+ * split exists to print. Alone is read through the attribute runner the lexbor
+ * comparison uses, from the same build tree as the stage runner, on the edge
+ * `scripts/benchmark-attributes.mjs` reads -- so the two drivers' numbers for
+ * the list alone are one measurement, not two that happen to agree.
+ */
+function measureAlone(profile, split, index, out) {
+    const input = path.join(out, "corpus", `split-${index}.alone.txt`);
+    fs.writeFileSync(input, `${split.bytes}\n`.repeat(ALONE_LISTS));
+    const dump = path.join(out, "callgrind", `attribute-runner.split-${index}.alone.out`);
+    fs.mkdirSync(path.dirname(dump), { recursive: true });
+    const isolated = measurementRoot(out, fail);
+    const stdout = run(
+        "valgrind",
+        [
+            "--tool=callgrind",
+            "--cache-sim=yes",
+            "--dump-instr=no",
+            ...CACHE,
+            `--callgrind-out-file=${dump}`,
+            "--quiet",
+            path.join(profile.binaryDir, ATTRIBUTE_RUNNER.runner),
+            "--input",
+            input
+        ],
+        { env: measurementEnvironment(isolated), cwd: isolated }
+    );
+    const receipt = /lists=(\d+) values=(\d+)/u.exec(stdout);
+    if (!receipt) fail(`the attribute runner produced no receipt for the remainder of split ${index} alone`);
+    const lists = Number(receipt[1]);
+    /* One list per copy, or the bytes are not one list and the number per
+     * list divides by the wrong count. */
+    if (lists !== ALONE_LISTS) {
+        fail(
+            `the attribute runner recovered ${lists} lists from ${ALONE_LISTS} copies of ${JSON.stringify(split.bytes)}, ` +
+                `so the remainder is not one attribute list`
+        );
+    }
+    const parsed = foldNames(parseCallgrind(fs.readFileSync(dump, "utf8")), (name) => name.replace(CLONE_SUFFIX, ""));
+    const edges = edgesBetween(parsed, ATTRIBUTE_RUNNER.caller, ATTRIBUTE_RUNNER.callee);
+    if (!edges.length) {
+        fail(
+            `attribute runner: no call edge ${ATTRIBUTE_RUNNER.caller} -> ${ATTRIBUTE_RUNNER.callee} in ${path.basename(dump)}`
+        );
+    }
+    const ir = edges.reduce((total, edge) => total + (costRecord(parsed, edge.cost).Ir ?? 0), 0);
+    return {
+        runner: ATTRIBUTE_RUNNER.runner,
+        entry: `${ATTRIBUTE_RUNNER.caller} -> ${ATTRIBUTE_RUNNER.callee}`,
+        lists,
+        values: Number(receipt[2]),
+        ir,
+        perList: ir / lists,
+        input: path.relative(out, input),
+        dump: path.relative(out, dump)
+    };
+}
+
+/**
+ * Every split's rows, computed once and recorded in `stages.json` beside the
+ * cases, so the markdown prints what the JSON holds and a number tracked
+ * across runs is read from data rather than parsed back out of prose.
+ *
+ * A row is the remainder's cost IN one host, read as the difference between
+ * two whole documents that differ by the remainder's bytes and nothing else
+ * (`scripts/audit-corpus-reach.mjs` holds them to that), per list: over the
+ * two stages, and over the whole parse path, which includes releasing what
+ * the list built and the stages do not. Beside it: which stage the difference
+ * fell in, read off the measurement rather than asserted from the grammar; the
+ * whole document's cost with the list over without; the same marginal at the
+ * next size over this one, which should not move, because a list costs what
+ * it costs however many there are; and, once the remainder alone is measured,
+ * the whole-path marginal over the alone cost -- what the host adds to
+ * decoding the list, which is the composition.
+ */
+function measureSplits(manifest, cases, profile, out) {
+    const engineOf = (document) => document.engines["markdown-core"];
+    const coreIr = (document) => STAGES.reduce((sum, stage) => sum + engineOf(document).stages[stage].ir, 0);
+    const at = (name, scale) =>
+        cases.find((item) => item.case === name && item.scale === scale && item.engines["markdown-core"]);
+    return (manifest.splits ?? []).map((split, index) => {
+        const hosts = (split.hosts ?? []).map((host) => {
+            const without = at(host.without, 1);
+            const carrier = at(host.with, 1);
+            /* Only where both halves were measured: a `--case` run that named
+             * the `without` alone has that document's own comparison to report
+             * and no split, and naming the `with` alone cannot happen, because
+             * the closure drags the `without` in. */
+            if (!without || !carrier) return { ...host, measured: null };
+            if (carrier.units !== without.units) {
+                fail(
+                    `${host.with} and ${host.without} are the two halves of a split but carry ${carrier.units} ` +
+                        `and ${without.units} units. The difference between them is the remainder only ` +
+                        `while both documents hold the same number of everything else`
+                );
+            }
+            const lists = carrier.units * host.each;
+            const perList = (coreIr(carrier) - coreIr(without)) / lists;
+            const byStage = Object.fromEntries(
+                STAGES.map((stage) => [
+                    stage,
+                    (engineOf(carrier).stages[stage].ir - engineOf(without).stages[stage].ir) / lists
+                ])
+            );
+            const landing = STAGES.reduce((best, stage) => (byStage[stage] > byStage[best] ? stage : best));
+            const without2 = at(host.without, 2);
+            const carrier2 = at(host.with, 2);
+            const growth =
+                without2 && carrier2 && carrier2.units === without2.units && perList > 0
+                    ? (coreIr(carrier2) - coreIr(without2)) / (carrier2.units * host.each) / perList
+                    : null;
+            return {
+                ...host,
+                measured: {
+                    lists,
+                    perList,
+                    wholePerList: (engineOf(carrier).parsePathIr - engineOf(without).parsePathIr) / lists,
+                    byStage,
+                    landing,
+                    ratio: coreIr(carrier) / coreIr(without),
+                    growth,
+                    inPlaceOverAlone: null
+                }
+            };
+        });
+        if (!hosts.some((host) => host.measured)) return { ...split, alone: null, hosts };
+        const alone = measureAlone(profile, split, index, out);
+        return {
+            ...split,
+            alone,
+            hosts: hosts.map((host) =>
+                host.measured
+                    ? {
+                          ...host,
+                          measured: { ...host.measured, inPlaceOverAlone: host.measured.wholePerList / alone.perList }
+                      }
+                    : host
+            )
+        };
+    });
+}
+
 /* The functions this document spent the most instructions IN, as opposed to
  * through.
  *
@@ -1630,7 +1790,21 @@ function markdownReport(report) {
      * unpairable production into the bound table as if that were its
      * measurement, and into the median of a group it was never part of. */
     const splits = report.splits ?? [];
-    const isSplitWith = new Set(splits.flatMap((split) => split.hosts.map((host) => host.with)));
+    const isSplitWith = splitWithCases(report);
+    /* What each ranked case IS to the report, decided once. The groups, the
+     * bound prose and the hot-path table all used to test the same flags in
+     * their own order, and the order is the meaning: a paired case is a pair
+     * whatever its `gfm` flag says, a split's `with` half is in no group, and
+     * a twin whose dialect half was not measured is in no group either. */
+    const roleOf = (item) => {
+        if (item.isomorph) return "pair";
+        if (isSplitWith.has(item.case)) return "split-with";
+        if (item.gfm) return item.carries.length ? "unranked" : isIsomorph.has(item.case) ? "twin" : "gfm";
+        if (item.dialect === "commonmark" && !item.carries.length) {
+            return isIsomorph.has(item.case) ? "twin" : "commonmark";
+        }
+        return "bound";
+    };
 
     const atScaleOne = new Map(report.cases.filter((item) => item.scale === 1).map((item) => [item.case, item]));
     const ranked = report.cases
@@ -1779,13 +1953,7 @@ function markdownReport(report) {
          * were still measured as a bound. */
         const paired = ranked.filter((item) => item.isomorph);
         const substituted = paired.filter((item) => item.isomorph.by === "substitution");
-        const bounded = ranked.filter(
-            (item) =>
-                (item.dialect !== "commonmark" || item.carries.length) &&
-                !item.gfm &&
-                !item.isomorph &&
-                !isSplitWith.has(item.case)
-        );
+        const bounded = ranked.filter((item) => roleOf(item) === "bound");
         lines.push(
             "A ratio compares only where both parsers did the same job, so the cases are" +
                 " grouped by which reference implements what they contain, and the groups are" +
@@ -1851,19 +2019,7 @@ function markdownReport(report) {
         }
         lines.push("| Group | Reference | Cases | Median | Worst |", "| --- | --- | ---: | ---: | --- |");
         const groups = [
-            [
-                "CommonMark",
-                "cmark",
-                ranked.filter(
-                    (item) =>
-                        !item.isomorph &&
-                        item.dialect === "commonmark" &&
-                        !item.gfm &&
-                        !item.carries.length &&
-                        !isIsomorph.has(item.case) &&
-                        !isSplitWith.has(item.case)
-                )
-            ],
+            ["CommonMark", "cmark", ranked.filter((item) => roleOf(item) === "commonmark")],
             [
                 /* A PAIRED case belongs to its pair's group whatever its own
                  * `gfm` flag says, and the flag is tested after the pair rather
@@ -1873,14 +2029,7 @@ function markdownReport(report) {
                  * and let a cmark-derived ratio into the cmark-gfm median. */
                 "GFM extensions",
                 "cmark-gfm",
-                ranked.filter(
-                    (item) =>
-                        !item.isomorph &&
-                        item.gfm &&
-                        !item.carries.length &&
-                        !isIsomorph.has(item.case) &&
-                        !isSplitWith.has(item.case)
-                )
+                ranked.filter((item) => roleOf(item) === "gfm")
             ],
             ["Dialect, via an isomorph", "the isomorph's own reference", ranked.filter((item) => item.isomorph)],
             ["Dialect-only (no reference)", "cmark, as a bound", bounded]
@@ -2056,159 +2205,106 @@ function markdownReport(report) {
          * the node its host built and no node itself, so there is no document
          * that IS the list to pair or to bound -- the bound on `inline-span`
          * was mostly the inline parser around it. The corpus splits it: the
-         * host without the list is a pair half, the list without a host is
-         * measured against lexbor by `scripts/benchmark-attributes.mjs`, and
-         * this measures the list IN PLACE, as the difference between two whole
+         * host without the list is a document with a comparison of its own,
+         * the list without a host is the attribute runner's job (against
+         * lexbor in `scripts/benchmark-attributes.mjs`, and alone here), and
+         * this prints the list IN PLACE, as the difference between two whole
          * documents that differ by exactly the remainder's bytes.
          *
          * What makes the rows one comparison is that the remainder is the
-         * same bytes on every row and one grammar decodes them, so the cost
-         * per list is the same job in every host and the reference for one
-         * host is the others. What a split of pair + lexbor would hide is the
-         * COMPOSITION -- an optimisation that makes the host cheaper alone and
-         * the list cheaper alone while the seam between them gets dearer --
-         * and that is exactly what a host's excess over the median is. The
-         * last column recomputes the pair's own number with the `with`
-         * document in the numerator, so a change that improves the pair and
-         * worsens that column is visible in one row.
+         * same bytes on every row and one grammar decodes them; the reference
+         * for a row is that grammar decoding the same bytes ALONE, and what a
+         * host adds to that is the composition -- the seam between the host's
+         * scan and the list's, which measuring the host alone (its pair) and
+         * the list alone (lexbor) each miss, and which a corpus split into a
+         * paired part and a bound part would never print. The numbers are
+         * computed in `measureSplits` and recorded in stages.json; this only
+         * renders them.
          *
          * Not the subtraction the README rejects. That drew a boundary INSIDE
          * one measurement, through a call graph that does not carry it; this
          * boundary is in the corpus, every instruction of both documents is
          * counted, and `scripts/audit-corpus-reach.mjs` holds the two trees
          * equal modulo the fields the remainder populates. */
+        const count = (value) => Math.round(value).toLocaleString("en-US");
         for (const split of splits) {
-            const rows = [];
-            for (const host of split.hosts) {
-                const without = atScaleOne.get(host.without);
-                const carrier = atScaleOne.get(host.with);
-                /* Only where both halves were measured: a `--case` run that
-                 * named the `without` alone has a pair to report and no
-                 * split, and naming the `with` alone cannot happen, because
-                 * the driver drags the `without` in. */
-                if (!without?.engines["markdown-core"] || !carrier?.engines["markdown-core"]) continue;
-                if (carrier.units !== without.units) {
-                    fail(
-                        `${host.with} and ${host.without} are the two halves of a split but carry ${carrier.units} ` +
-                            `and ${without.units} units. The difference between them is the remainder only ` +
-                            `while both documents hold the same number of everything else`
-                    );
-                }
-                const withoutIr = stageIr(without.engines, "markdown-core");
-                const carrierIr = stageIr(carrier.engines, "markdown-core");
-                const lists = carrier.units * host.each;
-                /* Where the remainder's cost landed, by stage. A block host
-                 * reads its list while the line is scanned and an inline host
-                 * while the paragraph's inlines are parsed, so the per-stage
-                 * difference says which parser the list is inside without
-                 * anyone having to know that from the grammar. */
-                const byStage = Object.fromEntries(
-                    STAGES.map((stage) => [
-                        stage,
-                        (carrier.engines["markdown-core"].stages[stage].ir -
-                            without.engines["markdown-core"].stages[stage].ir) /
-                            lists
-                    ])
-                );
-                const landing = STAGES.reduce((best, stage) => (byStage[stage] > byStage[best] ? stage : best));
-                /* The pair's number, recomputed with the remainder present.
-                 * The `without` is a pair half by construction (the audit
-                 * refuses one that is not), on one side or the other: as the
-                 * DIALECT half its number is Same-job, this parser over the
-                 * reference on the twin, and the twin's reference cost is the
-                 * denominator here too; as the COMMONMARK half its number is
-                 * Shape, this parser over the reference on the same bytes.
-                 * A twin that carries a referenceless field has no Shape to
-                 * recompute, and the dash here is the same suppression as in
-                 * the pair table. */
-                const dialectSide = ranked.find((item) => item.case === host.without && item.isomorph);
-                const commonSide = declarations.find((declaration) => declaration.isomorph === host.without);
-                let alone = null;
-                let composed = null;
-                let column = null;
-                if (dialectSide) {
-                    column = "Same-job";
-                    alone = dialectSide.sameJob;
-                    composed = dialectSide.isomorph.cmarkIr ? carrierIr / dialectSide.isomorph.cmarkIr : null;
-                } else if (commonSide) {
-                    column = "Shape";
-                    const owner = ranked.find((item) => item.case === commonSide.case);
-                    alone = owner?.isomorph?.shape ?? null;
-                    const reference = stageIr(without.engines, without.gfm ? "cmark-gfm" : "cmark");
-                    composed = reference && !without.carries.length ? carrierIr / reference : null;
-                }
-                rows.push({
-                    host,
-                    without,
-                    carrier,
-                    lists,
-                    perList: (carrierIr - withoutIr) / lists,
-                    byStage,
-                    landing,
-                    composition: carrierIr / withoutIr,
-                    column,
-                    alone,
-                    composed
-                });
-            }
+            const rows = split.hosts.filter((host) => host.measured);
             if (!rows.length) continue;
-            const perLists = rows.map((row) => row.perList);
-            const middle = median(perLists);
-            const most = rows.reduce((best, row) => (row.perList > best.perList ? row : best));
-            const least = rows.reduce((best, row) => (row.perList < best.perList ? row : best));
+            const alone = split.alone;
+            const complete = rows.length === split.hosts.length;
+            const scaledRows = rows.some((host) => host.measured.growth !== null);
             lines.push(
                 "### The remainder inside its hosts",
                 "",
                 `A production proved unpairable is not always a construct of its own. **${split.remainder}**` +
                     " adds fields to the node its host built and no node itself, so there is no document" +
                     " that IS the remainder to pair or to bound. The corpus splits it three ways: the host" +
-                    " without it is a pair half in the table above, the remainder without a host is" +
-                    " measured against lexbor by `scripts/benchmark-attributes.mjs`, and this table" +
-                    ` measures it IN PLACE -- the same bytes, \`${split.bytes}\`, on every node of` +
-                    ` ${rows.length} host${rows.length === 1 ? "" : "s"} -- as the difference between two` +
-                    " whole documents that `scripts/audit-corpus-reach.mjs` holds to the same tree modulo" +
-                    ` the ${split.varies.map((field) => `\`${field}\``).join(", ")} field${
-                        split.varies.length === 1 ? "" : "s"
-                    } it populates.`,
+                    " without it is a document with a comparison of its own in the tables above, the" +
+                    " remainder without a host is the attribute runner's job -- against lexbor in" +
+                    " `scripts/benchmark-attributes.mjs`, and alone below -- and this table measures it" +
+                    ` IN PLACE: the same bytes, \`${split.bytes}\`, on every node of ${rows.length} host` +
+                    `${rows.length === 1 ? "" : "s"}${complete ? "" : ` (of ${split.hosts.length}; this run named a subset)`},` +
+                    " as the difference between two whole documents that `scripts/audit-corpus-reach.mjs`" +
+                    ` holds to the same tree modulo the ${split.varies.map((field) => `\`${field}\``).join(", ")}` +
+                    ` field${split.varies.length === 1 ? "" : "s"} it populates.`,
                 "",
-                "One grammar decodes the same bytes in every row, so the cost per list is the same job" +
-                    " in every host and should not depend on which host it is in. Where it does, the" +
-                    " excess is the COMPOSITION -- the seam between the host's own scan and the" +
-                    " remainder's -- which is the one thing that measuring the host alone and the" +
-                    " remainder alone cannot see, and the reason a corpus is not split without this" +
-                    " table. `vs median` is each host's cost per list over the median host's. The last" +
-                    " column is the pair's own number for the host, alone and then with the remainder in" +
-                    " the numerator: a change that lowers the first and raises the second has moved cost" +
-                    " into the composition rather than removed it. `Lands in` names the stage the" +
-                    " difference fell in, which is which parser the remainder is read by.",
+                `**Alone: ${count(alone.perList)} Ir per list** -- the same bytes decoded by the same grammar` +
+                    ` with no host around them, through \`${path.basename(alone.runner)}\` from the same build` +
+                    ` tree on ${alone.lists.toLocaleString("en-US")} copies, read on the edge` +
+                    ` \`${alone.entry}\`, which covers the scan, the decode and the release of each list.`,
                 "",
-                "| Host | Without | With | Lists | Ir per list | vs median | Lands in | With/without |" +
-                    " Pair number, alone -> with the remainder |",
-                "| --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: |"
+                "`Ir per list` is the marginal over the two stages and `Whole path` the same marginal over" +
+                    " the whole parse path, which includes releasing what the list built; a change that" +
+                    " defers the list's work past a stage boundary widens the gap between the two." +
+                    " `In place / alone` is the whole-path marginal over the alone cost: what the host" +
+                    " adds to decoding the list, which is the composition, and the number a corpus split" +
+                    " into a paired part and a bound part would never print -- a host that gets cheaper" +
+                    " on its own while this rises has moved cost into the seam rather than removed it." +
+                    " `Lands in` is the stage the difference fell in, read off the measurement: which" +
+                    " parser this implementation reads the list with, not which the grammar assigns it" +
+                    " to. `With/without` is the whole document's stage cost with the list over without." +
+                    (scaledRows
+                        ? " `x2 / x1` is the marginal per list at the next size over this one, which" +
+                          " should not move: a list costs what it costs however many there are."
+                        : "") +
+                    " Each row names the site production the grammar gives its host, and the spread" +
+                    " between rows is that production first and this implementation's seam second.",
+                "",
+                "| Host | Site | Without | With | Lists | Ir per list | Whole path | In place / alone |" +
+                    ` Lands in | With/without |${scaledRows ? " x2 / x1 |" : ""}`,
+                `| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: |${scaledRows ? " ---: |" : ""}`
             );
-            for (const row of rows) {
-                const composed =
-                    row.column === null
-                        ? "(not a pair half)"
-                        : `${row.column} ${row.alone === null ? "-" : `${row.alone.toFixed(2)}x`} -> ${
-                              row.composed === null ? "-" : `${row.composed.toFixed(2)}x`
-                          }`;
+            for (const host of rows) {
+                const m = host.measured;
                 lines.push(
-                    `| ${row.host.host} | ${row.without.case} | ${row.carrier.case} |` +
-                        ` ${row.lists.toLocaleString("en-US")} | ${Math.round(row.perList).toLocaleString("en-US")} |` +
-                        ` ${(row.perList / middle).toFixed(2)}x | \`${row.landing}\` |` +
-                        ` ${row.composition.toFixed(2)}x | ${composed} |`
+                    `| ${host.host} | ${host.site} | ${host.without} | ${host.with} |` +
+                        ` ${m.lists.toLocaleString("en-US")} | ${count(m.perList)} | ${count(m.wholePerList)} |` +
+                        ` ${m.inPlaceOverAlone.toFixed(2)}x | \`${m.landing}\` | ${m.ratio.toFixed(2)}x |` +
+                        (scaledRows ? ` ${m.growth === null ? "-" : `${m.growth.toFixed(3)}x`} |` : "")
+                );
+            }
+            lines.push("");
+            /* The spread is a statement about the whole host set, so a run
+             * that named a subset does not print one: the dearest of three
+             * hosts is not the dearest host. */
+            if (complete && rows.length > 1) {
+                const most = rows.reduce((best, host) =>
+                    host.measured.wholePerList > best.measured.wholePerList ? host : best
+                );
+                const least = rows.reduce((best, host) =>
+                    host.measured.wholePerList < best.measured.wholePerList ? host : best
+                );
+                lines.push(
+                    `Spread, over the whole path: the dearest host (${most.host}, ${count(most.measured.wholePerList)} Ir` +
+                        ` per list, ${most.measured.inPlaceOverAlone.toFixed(2)}x alone) over the cheapest` +
+                        ` (${least.host}, ${count(least.measured.wholePerList)}, ${least.measured.inPlaceOverAlone.toFixed(2)}x)` +
+                        ` is **${(most.measured.wholePerList / least.measured.wholePerList).toFixed(2)}x**. The spread` +
+                        " is evidence, not a threshold: it names the host to open when it moves, and it is" +
+                        " comparable only against a report whose identity table above is identical.",
+                    ""
                 );
             }
             lines.push(
-                "",
-                `Spread: the dearest host (${most.host.host}, ${Math.round(most.perList).toLocaleString("en-US")} Ir` +
-                    ` per list) over the cheapest (${least.host.host},` +
-                    ` ${Math.round(least.perList).toLocaleString("en-US")}) is` +
-                    ` **${(most.perList / least.perList).toFixed(2)}x**. The spread is evidence, not a` +
-                    " threshold: it names the host to open when it moves, and it is comparable only" +
-                    " against a report whose identity table above is identical.",
-                "",
                 "What the split claims to hold constant, from `corpus.json`:",
                 "",
                 `- **${split.remainder}** -- ${split.claim}`,
@@ -2231,7 +2327,7 @@ function markdownReport(report) {
             "| Case | Reference | Ratio | Core Ir/B | Dominant self cost |",
             "| --- | --- | ---: | ---: | --- |"
         );
-        for (const item of ranked.filter((entry) => !isSplitWith.has(entry.case)).slice(0, 16)) {
+        for (const item of ranked.filter((entry) => roleOf(entry) !== "split-with").slice(0, 16)) {
             const hot = (item.engines["markdown-core"].hotPaths ?? [])
                 .slice(0, 3)
                 .map((entry) => `\`${entry.name}\` ${(entry.share * 100).toFixed(1)}%`)
@@ -2353,10 +2449,14 @@ function markdownReport(report) {
                 const coreBase = base.engines["markdown-core"]?.stages[stage];
                 const cmark = entry.engines.cmark?.stages[stage];
                 const cmarkBase = base.engines.cmark?.stages[stage];
-                if (!core || !coreBase || !cmark || !cmarkBase) continue;
+                if (!core || !coreBase) continue;
+                /* A split's `with` half is read by no reference, and its growth
+                 * is still a question -- the list's cost per list should not
+                 * depend on how many there are -- so the row stands with a dash
+                 * where the reference column would be. */
                 lines.push(
                     `| ${entry.case} | ${entry.growth} | ${label} |` +
-                        ` ${stage} | ${ratio(core.ir, coreBase.ir)} | ${ratio(cmark.ir, cmarkBase.ir)} |`
+                        ` ${stage} | ${ratio(core.ir, coreBase.ir)} | ${cmark && cmarkBase ? ratio(cmark.ir, cmarkBase.ir) : "-"} |`
                 );
             }
         }
@@ -2476,7 +2576,14 @@ function main() {
             path.join(options.out, "cmark-gfm"),
             "libcmark-gfm-extensions_static",
             fail
-        )
+        ),
+        /* The attribute runner's own objects, because the remainder alone is
+         * read on an edge INTO the runner -- `bench_parse_attributes` is
+         * compiled into the executable, not into the archive -- so its
+         * translation units are measured ones and must carry the pinned flags
+         * like every other. The stage runners are not in that position: their
+         * edges are internal to the parse transaction. */
+        "attribute runner": readCompiledFlags(root, profile.binaryDir, ATTRIBUTE_RUNNER.target, fail)
     };
     /* Checked against EVERY measured object rather than their union: a pinned
      * flag missing from one translation unit is a hole a union would paper. */
@@ -2531,6 +2638,7 @@ function main() {
     const binaries = runnerIdentity(profile);
 
     const corpus = buildCorpus(options, manifest);
+    const splitWith = splitWithCases(manifest);
     const cases = [];
     for (const document of corpus.documents) {
         const engines = {};
@@ -2538,8 +2646,13 @@ function main() {
          * is measured only where it implements the case's constructs, because a
          * reference that reads the document as paragraphs is not a second
          * opinion, and paying callgrind for one would buy a number nobody can
-         * read. */
-        const applicable = Object.keys(ENGINES).filter((engine) => engine !== "cmark-gfm" || document.gfm === true);
+         * read. A split's `with` half gets no reference at all, by the same
+         * rule: its bytes hold a production no reference decodes, its number is
+         * the difference against its `without`, and a cmark reading of it
+         * would print a per-byte ratio for a document that is not a comparison. */
+        const applicable = splitWith.has(document.case)
+            ? ["markdown-core"]
+            : Object.keys(ENGINES).filter((engine) => engine !== "cmark-gfm" || document.gfm === true);
         for (const engine of applicable) {
             const measured = measure(profile, engine, document, options.out);
             if (measured.receiptBytes !== document.bytes) {
@@ -2563,7 +2676,7 @@ function main() {
     }
 
     const report = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         toolchain: versions,
         /* The exact bytes measured, so a report's numbers trace to a binary. */
         binaries,
@@ -2587,8 +2700,9 @@ function main() {
         logicalIsomorphs: manifest.logicalIsomorphs ?? [],
         /* And the splits, which are neither: a remainder proved unpairable,
          * measured inside every host that admits it as the difference between
-         * two whole documents. The report reads the hosts off this. */
-        splits: manifest.splits ?? [],
+         * two whole documents -- with each host's numbers, and the remainder
+         * alone, recorded beside the declaration they came from. */
+        splits: measureSplits(manifest, cases, profile, options.out),
         artifacts: path.relative(root, options.out),
         cases
     };

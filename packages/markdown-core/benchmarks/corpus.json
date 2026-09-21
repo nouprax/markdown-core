@@ -4,7 +4,7 @@
     "statesBoundByProof": {
         "footnote.content.inline": "inline footnote `^[body]`",
         "specimen.id.null": "anonymous specimen definition `(@) body`",
-        "markup.attributes.records": "attribute list with keyed records `{key=value}`"
+        "markup.attributes.records": "attribute list, the repeated `name=value` member form"
     },
     "requiredGrammars": {
         "S_attach_block_identifier": "block-identifier",
@@ -860,7 +860,7 @@
             "name": "split-attributes-heading",
             "dialect": "extended",
             "counted": {
-                "unit": "## Label {n}{key=value .cls}\n\n",
+                "unit": "## Label {n} {key=value .cls}\n\n",
                 "match": "pair-ldirective-dialect",
                 "scales": "ATX headings carrying an attribute list"
             },
@@ -880,11 +880,108 @@
             "name": "split-attributes-cdirective",
             "dialect": "extended",
             "counted": {
-                "unit": ":::note{key=value .cls}\nBody paragraph {n}.\n:::\n\n::: {key=value .cls}\nBody paragraph {n}.\n:::\n\n",
+                "unit": ":::note{key=value .cls}\nBody paragraph {n}.\n:::\n\n::: {}\nBody paragraph {n}.\n:::\n\n",
                 "match": "pair-cdirective-dialect",
                 "scales": "container directives carrying an attribute list"
             },
             "builds": ["DirectiveBlock"]
+        },
+        {
+            "name": "host-codespan",
+            "dialect": "commonmark",
+            "generated": {
+                "unit": "Use `code {n}` and `code {n}` here.\n\n",
+                "scales": "code spans"
+            },
+            "builds": ["Code"]
+        },
+        {
+            "name": "split-attributes-codespan",
+            "dialect": "extended",
+            "counted": {
+                "unit": "Use `code {n}`{key=value .cls} and `code {n}`{key=value .cls} here.\n\n",
+                "match": "host-codespan",
+                "scales": "code spans carrying an attribute list"
+            },
+            "builds": ["Code"]
+        },
+        {
+            "name": "host-setext",
+            "dialect": "commonmark",
+            "generated": {
+                "unit": "Label {n}\n=======\n\n",
+                "scales": "setext headings"
+            },
+            "carries": ["anchor"],
+            "builds": ["Heading"]
+        },
+        {
+            "name": "split-attributes-setext",
+            "dialect": "extended",
+            "counted": {
+                "unit": "Label {n}{key=value .cls}\n=======\n\n",
+                "match": "host-setext",
+                "scales": "setext headings carrying an attribute list"
+            },
+            "carries": ["anchor"],
+            "builds": ["Heading"]
+        },
+        {
+            "name": "host-reflink",
+            "dialect": "commonmark",
+            "generated": {
+                "unit": "See [body {n}][ref-{n}] and [ref-{n}][] here.\n\n[ref-{n}]: /target-{n}\n\n",
+                "scales": "resolving reference links"
+            },
+            "builds": ["Link"]
+        },
+        {
+            "name": "split-attributes-reflink",
+            "dialect": "extended",
+            "counted": {
+                "unit": "See [body {n}][ref-{n}]{key=value .cls} and [ref-{n}][]{key=value .cls} here.\n\n[ref-{n}]: /target-{n}\n\n",
+                "match": "host-reflink",
+                "scales": "resolving reference links carrying an attribute list"
+            },
+            "builds": ["Link"]
+        },
+        {
+            "name": "host-refdef",
+            "dialect": "commonmark",
+            "generated": {
+                "unit": "See [body {n}][def-{n}] here.\n\n[def-{n}]: /target-{n}\n\n",
+                "scales": "link reference definitions"
+            },
+            "builds": ["Link"]
+        },
+        {
+            "name": "split-attributes-refdef",
+            "dialect": "extended",
+            "counted": {
+                "unit": "See [body {n}][def-{n}] here.\n\n[def-{n}]: /target-{n} {key=value .cls}\n\n",
+                "match": "host-refdef",
+                "scales": "link reference definitions carrying an attribute list"
+            },
+            "builds": ["Link"]
+        },
+        {
+            "name": "host-autolink",
+            "dialect": "commonmark",
+            "generated": {
+                "unit": "Visit <https://example.com/{n}> now.\n\n",
+                "scales": "angle autolinks"
+            },
+            "builds": ["Link"]
+        },
+        {
+            "name": "split-attributes-autolink",
+            "dialect": "extended",
+            "counted": {
+                "unit": "Visit <https://example.com/{n}>{key=value .cls} now.\n\n",
+                "match": "host-autolink",
+                "scales": "angle autolinks carrying an attribute list"
+            },
+            "builds": ["Link"]
         },
         {
             "name": "pair-cdirective-common",
@@ -2258,52 +2355,108 @@
     ],
     "splits": [
         {
-            "remainder": "attribute list with keyed records `{key=value}`",
+            "remainder": "attribute list, the repeated `name=value` member form",
             "bytes": "{key=value .cls}",
             "varies": ["attributes"],
             "states": ["markup.attributes.records", "markup.attributes.classes"],
-            "claim": "An attribute list is a DECORATION: it adds fields to the node its host built and no node of its own, so a document with the list and the same document without it parse to the same tree modulo those fields, and the difference between what this parser spends on the two is what the list costs IN THAT HOST. The remainder's bytes are identical in every host and one grammar decodes them, so the cost per list is the same job in every row: the reference for one host is the other hosts. A host whose cost per list sits far above the median is not the list being slow, it is the COMPOSITION of that host with the list -- the boundary between the host's own scan and the list's -- and it is exactly what measuring the host without the list (its pair) and the list without a host (lexbor, in scripts/benchmark-attributes.mjs) would each miss. That is what the split is for: the pair says what the host costs, lexbor says what the list costs, and this says whether putting them together costs more than the sum. Every `without` is a pair half, so each row also recomputes the pair's own number with the `with` document in the numerator; an optimisation that improves the pair and worsens that column has moved cost into the composition rather than removed it. Why it is not the subtraction the README rejects: subtraction drew a boundary INSIDE one measurement, through a call graph that does not carry it. Here the boundary is in the corpus, between two whole documents that differ by exactly the remainder's bytes, every instruction of both is counted, and the audit holds the two trees equal modulo the fields the remainder populates. Second-order effects are in the number rather than hidden by it. The nameless container directive is the one host whose `without` keeps an EMPTY list, because `::: {}` is the least the grammar admits where there is no name; an empty list is the remainder with nothing in it, and the audit's textual check deletes both before comparing the two units.",
+            "claim": "An attribute list is a DECORATION: it adds fields to the node its host built and no node of its own, so a document with the list and the same document without it parse to the same tree modulo those fields, and the difference between what this parser spends on the two is what the list costs IN THAT HOST. The remainder's bytes are identical in every host, so the job is the same in every row -- decode these bytes -- and the reference for it is this parser decoding the same bytes ALONE, through the attribute runner the lexbor comparison uses: `In place / alone` is what the host adds to the list, and it is the composition. What measuring the host without the list (its pair, or its own document) and the list without a host (lexbor) each miss is exactly that seam, and a split of one corpus into a paired part and a bound part would report the local optimum and never the global loss. This table is what stops that: the cost per list is read from two whole documents, over the two stages and over the whole parse path (the second includes releasing what the list built, which the stages do not), so a change that defers the list's work past a stage boundary shows as the gap between the two columns widening, and a change that makes a host cheaper alone while its seam with the list gets dearer shows as the host's `In place / alone` rising while its pair improves. The hosts are the attachment table of docs/specs/dialect/attributes.md, one row per site production, less two the table names and this cannot hold: the bracketed span, whose list is mandatory, so there is no span without one to subtract; and the nameless container, whose opening fence IS the list, so it is the host and not a decoration. Its named form is the container host, and both halves keep the nameless `::: {}` unchanged. Where the grammar admits whitespace before the list -- an ATX heading, which removes the suffix and the whitespace before it; a link reference definition, which requires it -- the host declares that separator and it belongs to the site, not to the list: the audit inserts separator plus bytes, and the marginal contains the separator's scan, which is part of what that site costs. Everywhere else the bytes follow the host with nothing between, because a space before the list is what stops it attaching. Each row names the site production the grammar gives it; the spread between rows is that production first and this implementation's seam second, and the `Lands in` column says which parser this implementation reads the list with, not which the grammar assigns it to. Why this is not the subtraction the README rejects: subtraction drew a boundary INSIDE one measurement, through a call graph that does not carry it. Here the boundary is in the corpus, between two whole documents that differ by exactly the remainder's bytes, every instruction of both is counted, and the audit holds the two trees equal modulo the fields the remainder populates. Second-order effects are in the number rather than hidden by it.",
             "hosts": [
                 {
-                    "host": "inline directive",
+                    "host": "named inline directive",
+                    "site": "immediately after its label",
+                    "kind": "Directive",
                     "without": "pair-idirective-dialect",
                     "with": "split-attributes-idirective",
                     "each": 3
                 },
                 {
-                    "host": "leaf directive",
+                    "host": "named leaf directive",
+                    "site": "immediately after its label",
+                    "kind": "DirectiveBlock",
                     "without": "pair-ldirective-dialect",
                     "with": "split-attributes-ldirective",
                     "each": 1
                 },
                 {
                     "host": "ATX heading",
+                    "site": "at the end of the heading-content line, after a space",
+                    "kind": "Heading",
                     "without": "pair-ldirective-common",
                     "with": "split-attributes-heading",
-                    "each": 1
+                    "each": 1,
+                    "separator": " "
                 },
                 {
-                    "host": "inline link",
+                    "host": "direct link",
+                    "site": "immediately after the complete occurrence",
+                    "kind": "Link",
                     "without": "pair-span-common",
                     "with": "split-attributes-link",
                     "each": 2
                 },
                 {
-                    "host": "container directive",
+                    "host": "named container directive",
+                    "site": "immediately after its name",
+                    "kind": "DirectiveBlock",
                     "without": "pair-cdirective-dialect",
                     "with": "split-attributes-cdirective",
-                    "each": 2
+                    "each": 1
                 },
                 {
                     "host": "image",
+                    "site": "immediately after the complete occurrence",
+                    "kind": "Embedded",
                     "without": "pair-embed-common",
                     "with": "split-attributes-image",
                     "each": 5
                 },
                 {
                     "host": "fenced code block",
+                    "site": "at the end of the opening fence's info region",
+                    "kind": "CodeBlock",
                     "without": "pair-formulablock-common",
                     "with": "split-attributes-code",
+                    "each": 1
+                },
+                {
+                    "host": "inline code",
+                    "site": "immediately after the closing backtick run",
+                    "kind": "Code",
+                    "without": "host-codespan",
+                    "with": "split-attributes-codespan",
+                    "each": 2
+                },
+                {
+                    "host": "setext heading",
+                    "site": "at the end of the final heading-content line",
+                    "kind": "Heading",
+                    "without": "host-setext",
+                    "with": "split-attributes-setext",
+                    "each": 1
+                },
+                {
+                    "host": "reference link, full and collapsed",
+                    "site": "immediately after the complete occurrence",
+                    "kind": "Link",
+                    "without": "host-reflink",
+                    "with": "split-attributes-reflink",
+                    "each": 2
+                },
+                {
+                    "host": "link reference definition, inherited by the link that resolves it",
+                    "site": "after its destination and optional title",
+                    "kind": "Link",
+                    "without": "host-refdef",
+                    "with": "split-attributes-refdef",
+                    "each": 1,
+                    "separator": " "
+                },
+                {
+                    "host": "angle autolink",
+                    "site": "immediately after the complete occurrence",
+                    "kind": "Link",
+                    "without": "host-autolink",
+                    "with": "split-attributes-autolink",
                     "each": 1
                 }
             ]
@@ -2327,8 +2480,8 @@
             "proof": "An exhaustive enumeration over the LINE-CUTTING productions of both reference grammars, and it is narrow on purpose: everything else about this table is paired. A multiline row cuts ONE line into K parallel pieces at positions established by one earlier boundary line, appends each piece to its own cell buffer, and parses each buffer as BLOCKS -- checked on the parser, where `- item` in a cell becomes a List and `# Head` becomes a Heading, so it is block parsing and not a joined paragraph. Enumerate every reference production that cuts a line. Every CONTAINER cuts a PREFIX and yields exactly ONE remainder: a block quote strips its marker, a list item strips its content indent, and nesting them cuts the same line repeatedly rather than into parallel pieces. Exactly one reference production cuts a line into K>=2 parallel pieces, GFM's pipe table row, and it parses its pieces as INLINES. So a K-way cut whose pieces are block-parsed exists in neither grammar, and the criterion's second clause -- the subsequent operation must match -- is what the pipe row fails. The one-column reduction that saved the grid table is not available either: a multiline table takes its columns from a SEGMENTED dash line, and a single unbroken dash run is a thematic break or a setext underline. What must NOT be read into this: both FACTORS of the production are separately paired and both have same-job numbers. pair-simpletable-dialect is the K-way POSITIONAL cut with inline cells against the GFM pipe row, and pair-gridcell-dialect is the positional cut with BLOCK cells at K=1 against a list item's content indent. It is only their composition that has no reference production. NOTE the honest caveat, the same one the other enumerations carry: this proof has not been attacked by anyone but its author."
         },
         {
-            "production": "attribute list with keyed records `{key=value}`",
-            "proof": "An exhaustive enumeration over the productions of both reference grammars that take a DELIMITED RAW RUN and decode it into fields of the node they build, which is the shape an attribute list has: a brace-delimited run following a construct, decoded into a MAP from names the grammar does not know in advance to values, stored on that construct's node. Enumerate every reference production that decodes a delimited raw run. The inline link and the image decode `(dest \"title\")` into a destination and a title, two fixed scalar fields. The link reference definition decodes a label, a destination and a title, three fixed fields, one of them a NAME registered in a table. The autolink decodes `<dest>` into one destination. The fenced code block takes its info string as one field. A character reference decodes into one code point. GFM's delimiter row decodes into a POSITIONAL list of alignments, one per column, indexed by position and never by name. GFM's footnote reference and definition decode a label into one name. That is the complete list, and every entry decodes into a fixed set of scalar fields or a positional list; no reference production decodes a run into a keyed map. The one production that comes closest is raw HTML, and it is named here so the next prover does not have to find it: to decide that `<x k=\"v\">` is a tag, the reference SCANS an attribute list -- a name, an optional `=`, a quoted or an unquoted value -- by the same sub-grammar this dialect's records use, and then stores the whole run as one literal, decoding nothing. The reference has the RECOGNISER half of the production and not the DECODING half, so the criterion's second clause, that the subsequent operation must match, is what raw HTML fails: recognise-then-keep-as-text is not recognise-then-build-a-map, and a twin spelled with a raw HTML tag would also add an inline node the dialect side never builds. So the record form is measured two ways and neither is a pair: alone, against lexbor's HTML attribute tokenizer, which does build the map (`scripts/benchmark-attributes.mjs`); and IN PLACE, inside every host that admits a list, as a `splits` entry, where the same bytes must cost the same in every host. What must NOT be read into this: the CLASS form pairs. `{.c}` is the suffix of `pair-span-dialect` against an inline link's `(/c)`, a delimited suffix decoded into a positional field of the node it follows, which is exactly the link's own shape -- so `markup.attributes.classes` has a same-job number and `markup.attributes.records` does not. NOTE the honest caveat, the same one the other enumerations carry: this proof has not been attacked by anyone but its author."
+            "production": "attribute list, the repeated `name=value` member form",
+            "proof": "An exhaustive enumeration over every production of both reference grammars that reads a DELIMITED MEMBER LIST after or around a construct and decodes it into fields of what that construct builds, which is the shape an attribute list has: a brace-delimited run of REPEATED `name[=value]` members, unbounded in number, each with a name the grammar does not know in advance and a value in one of three forms (absent, bare, quoted), decoded into per-member fields. Enumerate. The inline link and the image read `(destination \"title\")`: two members of FIXED ARITY, selected by position, never named. The link reference definition reads a label, a destination and a title: fixed arity, positional. The autolink reads `<destination>`: one member. The fenced code block reads its info string: one member. GFM's delimiter row reads `| :-- | --: |`: one member per column, selected by position, its value one of four alignments. GFM's footnote reference and definition read a label: one member. A character reference decodes one code point. The ordered-list marker, the ATX marker run and GFM's task marker each decode one typed field (a start, a level, a checked state). Every one of these is fixed in arity or positional in selection; none repeats a `name[=value]` member. The one production in either reference grammar that DOES read repeated name=value members is the HTML open tag, and it has two sites: inline raw HTML, and HTML block start condition 7, which requires a complete open tag on the line. At both sites the reference scans the attribute list -- name, optional `=`, bare or quoted value -- to decide that the run is a tag, and then stores the run as text, decoding no member: the criterion's second clause, that the subsequent operation must match, is what both sites fail, and a pair written on either would put a member list that is decoded against one that is scanned and kept. So the member form is measured two ways and neither is a pair: alone, against lexbor's HTML attribute tokenizer, which does decode the members (`scripts/benchmark-attributes.mjs`); and IN PLACE, inside every site the attachment table admits it at, as a `splits` entry whose reference is this parser decoding the same bytes alone, so that the number contains the recogniser half raw HTML shares and the decoding half it does not. What must NOT be read into this: the CLASS form pairs. `{.c}` is the suffix of `pair-span-dialect` against an inline link's `(/c)`, a delimited suffix of fixed shape decoded into a field of the node it follows, which is the link's own production -- so `markup.attributes.classes` has a same-job number and `markup.attributes.records` does not. NOTE the honest caveat, the same one the other enumerations carry: this proof has not been attacked by anyone but its author."
         }
     ],
     "suppressions": [

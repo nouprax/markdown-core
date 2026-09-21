@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -170,4 +172,40 @@ test("an unknown flag is refused rather than ignored", () => {
     const { status, message } = refuse(["--jobs", "4"]);
     assert.notEqual(status, 0);
     assert.match(message, /unknown argument: --jobs/u);
+});
+
+/**
+ * The corpus a `--case` run builds is the closure of what it names, and the
+ * direction of that closure is the meaning: a split's `with` half is measured
+ * only against its `without`, so naming it builds both, and naming the
+ * `without` builds the comparison it already has and no split. Written
+ * without a compiler: `--corpus-only` is the corpus and nothing else.
+ */
+test("--case builds the closure of what it names, in the direction the corpus defines it", () => {
+    const out = fs.mkdtempSync(path.join(os.tmpdir(), "stages-closure-"));
+    try {
+        const documents = (args) => {
+            const result = spawnSync(
+                process.execPath,
+                [driver, "--corpus-only", "--quiet", "--scale", "1", "--out", out, ...args],
+                { encoding: "utf8", cwd: root }
+            );
+            assert.equal(result.status, 0, result.stderr);
+            const units = JSON.parse(fs.readFileSync(path.join(out, "units.json"), "utf8"));
+            return { names: Object.keys(units).sort(), units };
+        };
+        const named = documents(["--case", "split-attributes-heading"]);
+        assert.deepEqual(named.names, [
+            "pair-ldirective-common",
+            "pair-ldirective-dialect",
+            "split-attributes-heading"
+        ]);
+        /* Both halves of the split to the same count, which is what makes
+         * their difference the remainder's. */
+        assert.equal(named.units["split-attributes-heading"], named.units["pair-ldirective-common"]);
+        const without = documents(["--case", "pair-ldirective-common"]);
+        assert.deepEqual(without.names, ["pair-ldirective-common", "pair-ldirective-dialect"]);
+    } finally {
+        fs.rmSync(out, { recursive: true, force: true });
+    }
 });

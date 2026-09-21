@@ -13,8 +13,9 @@ comparison by giving it the same workload in a grammar it has. A case with no
 pair is reported as a **bound**, and a bound is never ranked against a
 comparison. A production that decorates a host rather than standing on its own
 — an attribute list — is measured as a [split](#splitting-a-corpus-the-remainder-inside-its-hosts): its host is
-paired without it, and its own cost is read in place, as the difference between
-two whole documents.
+compared without it, and its own cost is read in place, in every host the
+grammar gives it, as the difference between two whole documents, against the
+same grammar decoding it alone.
 
 ```sh
 scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm   # once
@@ -368,6 +369,10 @@ The reference is whichever engine implements the isomorph's production, which is
 not always cmark: pairing a GFM production against cmark would divide by an
 engine that read the paired document as prose.
 
+The `:note[body]` row carries no attribute list. The list is a
+[split](#splitting-a-corpus-the-remainder-inside-its-hosts), measured inside
+that host and eleven others, not paired against a title.
+
 Because the two halves of a declaration pair are different lengths, they cannot
 be sized to a byte target — that would hand one side more of the construct than
 the other and produce a comparison of one document's size with another's. The
@@ -509,7 +514,8 @@ For a **declaration** pair, where there is no identical tree to compare:
 
 Each of those fails when broken, which was verified by mutating the corpus
 rather than by reading the code. A split's two halves are held to their own
-invariants the same way; [*Splitting a corpus*](#splitting-a-corpus-the-remainder-inside-its-hosts) lists them.
+invariants, the manifest's by a checked-in test and the parser's the same way;
+[*Splitting a corpus*](#splitting-a-corpus-the-remainder-inside-its-hosts) lists them.
 
 All of it is this parser's opinion of the two documents, which is necessary and
 is **not sufficient**. A logical pair's whole claim is that the *reference* did
@@ -744,12 +750,15 @@ productions in one row, and the number it published said nothing about either.
 So the corpus **splits** it, and a split has three parts, because two would
 hide a regression:
 
-- the **host without the remainder** is a pair half, with the three numbers
-  above;
-- the **remainder without a host** is measured against lexbor's attribute
-  tokenizer by `scripts/benchmark-attributes.mjs`, the one implementation that
-  does the same job on it;
-- the **remainder inside every host** that admits it, which is this section.
+- the **host without the remainder** is a document with a comparison of its
+  own — a pair half with the three numbers above, or a CommonMark case with a
+  ratio of its own;
+- the **remainder without a host** is the attribute runner's job: against
+  lexbor's attribute tokenizer in `scripts/benchmark-attributes.mjs`, the one
+  implementation that does the same job on it, and *alone*, through the same
+  runner from the stage benchmark's own build tree, in the stage report;
+- the **remainder inside every host** the grammar gives it, which is this
+  section.
 
 Measuring the first two alone is the failure the third exists to catch. An
 optimisation can make the host cheaper on its own and the list cheaper on its
@@ -759,28 +768,63 @@ is the one with both. A corpus split into a paired part and a bound part
 reports the local optimum and never the global loss. The split's `with` half is
 the `without` half with the remainder's bytes on every host node, and the
 driver reports the remainder's cost **in place**, as the difference between the
-two whole documents, per list:
+two whole documents, per list — twice:
 
 ```
-Ir per list = (Ir(with) − Ir(without)) / (units × each)
+Ir per list = (Ir(with) − Ir(without)) / (units × each)          over the two stages
+Whole path  = (path(with) − path(without)) / (units × each)      over the whole parse path
 ```
 
-That is a same-job number of the kind the pairs give, with the job being the
-remainder: the same bytes, decoded by one grammar, in seven hosts — four block
-hosts (an ATX heading, a leaf directive, a container directive, a fenced code
-block) and three inline ones (an inline directive, a link, an image). Because
-one grammar decodes the same bytes in every row, the cost per list should not
-depend on the host, and the reference for one host is the others: `vs median`
-is each host's cost per list over the median host's, and the spread names the
-host to open. Beside it the report recomputes the pair's own number for the
-host with the `with` document in the numerator — Same-job where the host is a
-dialect half, Shape where it is a CommonMark half — so a change that lowers the
-pair's number and raises that one has moved cost into the composition rather
-than removed it. Every `without` is a pair half for exactly this reason, and
-the audit refuses one that is not. The `Lands in` column names the stage the
-difference fell in, which is which parser read the list: a block host reads it
-while the line is scanned, an inline host while the paragraph's inlines are
-parsed.
+The second includes releasing what the list built, which the stages do not, so
+a change that defers the list's work past a stage boundary shows as the gap
+between the two widening rather than as a saving.
+
+The reference for a row is the remainder **alone**: the same bytes, decoded by
+the same grammar with no host around them, through
+`markdown_core_attribute_runner` built in the same tree with the same pinned
+flags, read on the edge `scripts/benchmark-attributes.mjs` reads — which covers
+the scan, the decode and the release of each list, so it is compared with the
+whole-path marginal. `In place / alone` is that quotient, and it is the
+composition: what the host adds to decoding the list. A host that gets cheaper
+in its pair while this rises has moved cost into the seam rather than removed
+it, and that is the row a corpus split into a paired part and a bound part
+would never print. The runner's objects are in the identity table for the same
+reason the attribute benchmark puts them there: the measured edge is *into* the
+runner, so its translation units are measured ones.
+
+### The hosts
+
+The hosts are the attachment table of `docs/specs/dialect/attributes.md`, one
+row per site production, less two the table names and a split cannot hold: the
+bracketed span, whose list is mandatory, so there is no span without one to
+subtract; and the nameless container directive, whose opening fence *is* the
+list, so it is the host and not a decoration. Its named form is the container
+host, and both halves keep the nameless `::: {}` unchanged. That gives twelve:
+seven whose `without` is a pair half, and five — a code span, a setext heading,
+a resolving reference link, a link reference definition, an angle autolink —
+whose `without` is a CommonMark case written for the purpose, with a ratio of
+its own.
+
+Where the grammar admits whitespace before the list — an ATX heading, which
+removes the suffix together with the whitespace before it; a link reference
+definition, which requires it — the host declares that `separator`, and it
+belongs to the site, not to the list: the audit inserts separator plus bytes,
+and the marginal contains the separator's scan, which is part of what that site
+costs. Everywhere else the bytes follow the host with nothing between, because
+a space before the list is what stops it attaching. The remainder's bytes are
+declared once and are identical in every host; only the site varies.
+
+The rows are one job, and the spread between them is the site production first
+— an ATX heading removes a suffix from a line it has already scanned, an inline
+directive reads the list where its label ends — and this implementation's seam
+second. `Lands in` names the stage the difference fell in, *read off the
+measurement*: which parser this implementation reads the list with, not which
+the grammar assigns it to, and it is not the same for every block host. The
+report also prints the marginal at the next size over this one (`x2 / x1`),
+which should not move: a list costs what it costs however many there are.
+Every number the report prints is recorded in `stages.json` under `splits`,
+host by host with the alone measurement beside them, so a spread tracked across
+runs is read from data rather than parsed back out of prose.
 
 This is not the subtraction rejected above. Subtraction drew a boundary
 *inside* one measurement, through a call graph that does not carry it, and the
@@ -791,41 +835,54 @@ misclassified; and second-order effects — an allocation the list makes that
 every later allocation meets, a line the list makes longer — are *in* the
 difference rather than hidden by it, which is the point of measuring in place.
 
+### What is held, and where
+
 `corpus.json` declares a split once, under `splits`: the `remainder`, which
 must name an `unpairable` proof, because a split exists where a pair cannot;
-its `bytes`; the fields it `varies`; the grammar `states` only it reaches; and
-its `hosts`, each naming a `without` case, a `with` case and how many host
-nodes one unit holds. `scripts/audit-corpus-reach.mjs` holds each host to what
-that claims, against the manifest and against the parser:
+its `bytes`; the fields it `varies`; the grammar `states` it demonstrates in
+every host; and its `hosts`, each naming the site, the `kind` of node the
+remainder decorates, a `without` case, a `with` case, how many host nodes one
+unit holds and, where the site takes one, the `separator`. The rules that need
+only the manifest live in `scripts/lib/corpus-splits.mjs` — where
+`benchmark-stages.mjs` reads the same declarations to decide what a `--case`
+run builds, so the two cannot drift — and `scripts/tests/corpus-splits.test.mjs`
+breaks each one in turn and checks it fails for the stated reason:
 
-- the `with` unit holds the remainder's bytes exactly `each` times and the
-  `without` unit never, and with every copy of the remainder deleted the two
-  units are byte for byte the same. One allowance, and it is the grammar's
-  rather than a host's: an empty list `{}` is deleted on both sides first,
-  because a nameless container directive is not a fence without a list and
-  `::: {}` is the least the grammar admits there. An empty list is the
-  remainder with nothing in it;
+- the `with` unit holds the remainder's bytes exactly `each` times, every copy
+  after the host's separator, and the `without` unit never; with every copy
+  deleted, separator and all, the two units are byte for byte the same;
 - both halves were generated to the same count of units, which is why the
-  `with` case is `counted` against the pair's generated case;
+  `with` case is `counted` against the case its `without` is sized by, and both
+  declare they build the kind the host names;
+- the `with` half is `extended`, is not a pair half and publishes no ratio of
+  its own — or the states it reaches would count as measured while
+  `statesBoundByProof` says they cannot be — and the `without` half is never
+  another host's `with`, or the difference would be one remainder over another.
+
+`scripts/audit-corpus-reach.mjs` holds the rest against the parser, from the
+one dump it takes of each document:
+
 - the two documents parse to the **same tree** modulo the fields the remainder
   populates and the source spans, kind names included — unlike a substitution
   pair, a split's halves must build the same nodes, or the remainder did more
   than decorate;
 - every `with` reaches every state the split names and no `without` reaches
-  any, so the states the remainder is the only route to stay bounds; and the
-  number of nodes carrying a populated field is `each` per unit on the `with`
-  side and zero on the other, which is what says the remainder landed on every
-  host node and on nothing else;
-- the `with` half publishes no ratio of its own — it is not a pair half and its
-  syntax is the dialect's — or the states it reaches would count as measured
-  while `statesBoundByProof` says they cannot be; and the `without` half is a
-  pair half, so there is a pair number to recompute.
+  any: the states are what the remainder demonstrates in every host, and a host
+  reaching one on its own would make the difference something other than that
+  state's price. Whether a state is a bound is the ratchet's question, not this
+  one — `markup.attributes.classes` is demonstrated here and keeps its same-job
+  number through the span pair;
+- the nodes carrying a populated field are exactly `each` per unit on the
+  `with` side, every one of them of the kind the host names, and none on the
+  `without` side, which is what says the remainder landed on every host node,
+  on nothing else, and on the node the host claims.
 
 Each of those fails when broken, verified by mutating the corpus rather than by
-reading the code. A `with` half is in no group of the ratio table and in no
-median: its comparison is the difference, and ranking it as a bound would
-publish a document written to carry an unpairable production as though the
-bound were its measurement.
+reading the code. A `with` half is in no group of the ratio table, in no
+median, and is read by no reference: its comparison is the difference, and a
+cmark reading of a document holding a production cmark does not decode would
+print a per-byte ratio for something that is not a comparison. Its growth row
+stands, with a dash where the reference would be.
 
 What the split does not do is gate. The stage benchmark gates nothing, and the
 spread between hosts is evidence that names a host, not a threshold — it is
@@ -840,10 +897,11 @@ builds a map, and no reference production decodes a delimited run into a map —
 in cmark or cmark-gfm to pair it with. The stage benchmark bounds it, and the
 bound it reports on `inline-span` is mostly the inline parser around the
 attributes rather than the attributes; it also measures the list *in place*,
-as the [split](#splitting-a-corpus-the-remainder-inside-its-hosts) above, which says what the list costs inside
-each host and not what the list costs. This driver is the other half of that
-split: the list alone, against the one implementation that does the same job on
-it.
+as the [split](#splitting-a-corpus-the-remainder-inside-its-hosts) above, which
+says what each host adds to the list by dividing the list in place by the list
+alone — read through this driver's own runner, from the stage benchmark's build
+tree. This driver is the other half of that split: the list alone, against the
+one implementation that does the same job on it.
 
 An HTML start tag's attribute list *is* the same job: a bracketed run split into
 an identifier, a class run and key/value records, with quoting and character
