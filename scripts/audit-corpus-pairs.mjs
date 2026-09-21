@@ -1,35 +1,15 @@
-/**
- * EVERY PAIR, CHECKED AGAINST THE REFERENCE ENGINE'S OWN OUTPUT.
- *
- * `scripts/audit-corpus-reach.mjs` holds each pair against THIS parser: both
- * sides build the same number of the construct, each side counted by the kind
- * it builds. That is necessary and it is not sufficient. The whole claim of a
- * logical pair is that the reference did the SAME JOB on the paired document,
- * and this parser's opinion of the paired document is not evidence of that: a
- * twin that cmark reads as ordinary prose dumps perfectly well through our
- * CLI, and the ratio that comes out divides by an engine that built nothing.
- *
- * That defect is not hypothetical. `pair-specimen-common` measured a document
- * in which cmark-gfm DISCARDED all 1,961 footnote definitions because none was
- * referenced, and the pair reported a shape ratio of 2.27x that was a division
- * by an engine throwing text away.
- *
- * So each pair declares, in `corpus.json`, how the reference COUNTS its half --
- * an XML element name, or an HTML marker where cmark-gfm's XML renderer prints
- * `<unknown>` for an extension node it has no name for, as it does for the
- * footnote definition. The count from the reference's own output must equal the
- * count from ours. A pair that declares nothing fails: a pair nobody checks
- * against the reference is exactly the pair that needs checking.
- *
- * This lives beside the parity oracles rather than in the reach audit because
- * it needs the pinned reference BINARIES, which that job already builds, and
- * because the reach audit must stay runnable without them.
- */
+/** Reference audit: full proof-domain trees and retained candidate witnesses.
+ * Counts and sample agreement detect workload drift but do not certify a
+ * grammar isomorphism. Only the domain contracts authorize that claim. */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { equalProofTrees, proofTree, proofWorkload, provenPair, validatePairs } from "./lib/corpus-pairs.mjs";
+import { productionProofs } from "./lib/pair-productions.mjs";
+import { boundarySource, pairReview } from "./lib/pair-review.mjs";
+import { parseCanonicalDump, parseUpstreamXml } from "./lib/upstream-cmark.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const BENCHMARKS = path.join(root, "packages/markdown-core/benchmarks");
@@ -88,6 +68,7 @@ function main() {
     const gfm = oracle("cmark-gfm", "cmark-gfm", "CMARK_GFM_VERSION", "CMARK_GFM_COMMIT");
     const GFM_EXTENSIONS = ["table", "strikethrough", "autolink", "tasklist", "footnotes"];
     const manifest = JSON.parse(fs.readFileSync(path.join(BENCHMARKS, "corpus.json"), "utf8"));
+    validatePairs(manifest);
     const cases = new Map((manifest.cases ?? []).map((entry) => [entry.name, entry]));
 
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "corpus-pairs-"));
@@ -131,10 +112,7 @@ function main() {
             ? (Array.isArray(reference.xml) ? reference.xml : [reference.xml]).map((e) => `<${e}>`).join("+")
             : reference.html;
 
-    /* Our whole kind census of a document, not one kind at a time. A
-     * SUBSTITUTION pair's claim is not about one construct: the two halves are
-     * the same bytes under a change of marker and parse to the same tree, so
-     * what has to hold on the reference side is the whole tree. */
+    // A candidate's kind census detects workload drift, not structural equivalence.
     const census = (name) => {
         const tree = execFileSync(DUMP, [document(name)], { encoding: "utf8", maxBuffer: 1 << 30 });
         const counts = new Map();
@@ -145,20 +123,93 @@ function main() {
     };
 
     const failures = [];
+    // A proof is checked against all three executions, not two censuses.
+    for (const pair of manifest.pairs.filter(provenPair)) {
+        const scales = fs.readdirSync(corpus).filter((file) => file.startsWith(`${pair.case}.x`));
+        if (!scales.length) fail(`${pair.case}: no generated proof workloads`);
+        const trials = [...scales];
+        const production = productionProofs.get(pair.contract.proof);
+        if (production) {
+            const values = production.unique
+                ? ["999999", "000000", "123456"]
+                : ["999999", "000000", "123456", "000000"];
+            for (const [name, template] of [
+                [pair.case, production.dialect],
+                [pair.isomorph, production.common]
+            ]) {
+                fs.writeFileSync(
+                    path.join(corpus, `${name}.domain.md`),
+                    values.map((n) => template.replaceAll("{n:6}", n)).join("")
+                );
+            }
+            trials.push(`${pair.case}.domain.md`);
+        }
+        for (const file of trials) {
+            const suffix = file.slice(pair.case.length);
+            const input = (name) => path.join(corpus, name + suffix);
+            const expected = proofWorkload(
+                pair,
+                fs.readFileSync(input(pair.case), "utf8"),
+                fs.readFileSync(input(pair.isomorph), "utf8")
+            );
+            for (const [side, name] of [
+                ["dialect", pair.case],
+                ["common", pair.isomorph],
+                ["reference", pair.isomorph]
+            ]) {
+                const output =
+                    side === "reference"
+                        ? execFileSync(
+                              cases.get(name).gfm ? gfm : cmark,
+                              [
+                                  ...(cases.get(name).gfm ? GFM_EXTENSIONS.flatMap((e) => ["-e", e]) : []),
+                                  "-t",
+                                  "xml",
+                                  input(name)
+                              ],
+                              { encoding: "utf8", maxBuffer: 1 << 30 }
+                          )
+                        : execFileSync(DUMP, [input(name)], { encoding: "utf8", maxBuffer: 1 << 30 });
+                const tree = side === "reference" ? parseUpstreamXml(output) : parseCanonicalDump(output);
+                const referenceHtml =
+                    side === "reference" && productionProofs.get(pair.contract.proof)?.referenceHtml
+                        ? execFileSync(gfm, [...GFM_EXTENSIONS.flatMap((e) => ["-e", e]), "-t", "html", input(name)], {
+                              encoding: "utf8",
+                              maxBuffer: 1 << 30
+                          })
+                        : undefined;
+                if (!equalProofTrees(proofTree(pair, side, tree, expected, referenceHtml), expected)) {
+                    failures.push(`${file}: ${side} output violates ${pair.contract.proof}`);
+                }
+            }
+        }
+        process.stdout.write(
+            `  ${pair.case}: ${pair.contract.proof} (complete ordered trees, ${scales.length} scales${production ? ", domain extremes" : ""})\n`
+        );
+    }
+    for (const pair of manifest.pairs.filter((pair) => pair.contract.review)) {
+        const review = pairReview(pair);
+        if (review.baseline) {
+            for (const file of fs.readdirSync(corpus).filter((file) => file.startsWith(`${pair.case}.x`))) {
+                const suffix = file.slice(pair.case.length);
+                const source = fs.readFileSync(path.join(corpus, file), "utf8");
+                const baseline = fs.readFileSync(path.join(corpus, review.baseline + suffix), "utf8");
+                if (boundarySource(review.id, source) !== baseline) failures.push(`${file}: boundary source mismatch`);
+                // Parse both complete documents: cuts must remain valid parser workloads.
+                execFileSync(DUMP, [path.join(corpus, file)], { maxBuffer: 1 << 30 });
+                execFileSync(DUMP, [path.join(corpus, review.baseline + suffix)], { maxBuffer: 1 << 30 });
+            }
+        }
+        process.stdout.write(
+            `  reviewed ${review.id}: ${review.outcome}; ${review.proofs.length} proof domains${review.baseline ? `; ${review.baseline}` : ""}\n`
+        );
+    }
     const brokenSubstitutions = new Set();
-    /* SUBSTITUTION pairs, which were not checked here at all. Their invariant
-     * -- the two halves parse to the same tree -- was established through THIS
-     * parser only, and the same-job ratio they feed is `core / cmark` on the
-     * CommonMark half. So if our CommonMark behaviour regressed, or a paired
-     * sample moved into a context cmark reads differently, both documents
-     * would still agree with each other and the report would publish a ratio
-     * against an engine doing a different job.
-     *
-     * The whole census is compared rather than the substituted construct
-     * alone: the claim is about the tree, so a kind that has no declared
-     * reference element is a failure rather than something skipped. */
+    // Keep the old sample witnesses after their individual adjudications.
+    // Unlike the proved-domain checks above, these counts do not observe order,
+    // parentage or payload values and cannot authorize a same-job comparison.
     const elements = manifest.substitutionReference ?? {};
-    const substitutions = manifest.isomorphs ?? [];
+    const substitutions = manifest.pairs.filter((pair) => pair.substitution);
     const reached = new Set();
     for (const pair of substitutions) {
         const mine = census(pair.isomorph);
@@ -215,7 +266,7 @@ function main() {
      * once a pair breaks on more kinds than there are pairs. Every message is
      * still printed; only the tally reads this. */
     const broken = new Set();
-    const declarations = manifest.logicalIsomorphs ?? [];
+    const declarations = manifest.pairs.filter((pair) => pair.counts);
     for (const pair of declarations) {
         /* EVERY construct the pair's claim counts, not only the primary one. A
          * pair that also counts items and paragraphs is claiming the reference
@@ -295,7 +346,7 @@ function main() {
     }
 
     process.stdout.write(
-        `\n  pairs checked against the reference ${declarations.length - broken.size + substitutions.length - brokenSubstitutions.size}/${declarations.length + substitutions.length}\n`
+        `\n  legacy witnesses checked against the reference ${declarations.length - broken.size + substitutions.length - brokenSubstitutions.size}/${declarations.length + substitutions.length}\n`
     );
     if (failures.length) {
         process.stderr.write(`corpus pair audit FAILED\n    ${failures.join("\n    ")}\n`);
