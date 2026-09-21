@@ -4,15 +4,45 @@ The engine node contains its tree links, source mapping, attributes, element
 state, and a union of typed node data pointers. Every union arm is a pointer;
 adding fields to one kind cannot enlarge the common node. A kind with no
 kind-specific fields has no data record. Field-bearing kinds own a
-record containing their ordinary typed fields. Construction allocates the node
-and its record together, with the typed pointer referring directly to that
-record. A C99 allocation header provides scalar alignment for both objects;
-allocation-header padding is included in measured memory costs.
+record containing their ordinary typed fields. Construction places the node
+and its record together in one cell, with the typed pointer referring directly
+to that record; a record larger than the cell's record space is owned apart
+from the cell through `node_data_allocation`, exactly as a replacement record
+is, so release has one rule for both. A C99 union provides scalar alignment
+for the node and the record; the cell's header before them is padded to the
+same alignment, and that padding is included in measured memory costs.
+
+## Cells, slabs and the pool
+
+A node's storage is a fixed-size cell: a header naming the slab it came from,
+the node, and room for its kind's record. A parse takes cells from slabs --
+one allocation holding many cells -- through a pool the parser owns, and a
+caller with no parse takes one cell from the allocator; the header says which,
+and nothing else about the storage is visible through the node.
+
+A slab lives while anything holds it: every cell taken from it, and the pool
+while that slab is the one it takes cells from. A cell released during the
+parse goes back to the pool and is handed out again, zeroed, before another
+cell is taken from a slab, so the storage a parse holds is bounded by its peak
+live node count rather than by how many nodes it made. A cell released with no
+pool drops its hold, and the slab is freed with its last one -- by whichever
+release that turns out to be. Disposing the pool drops the holds the pool
+itself has (its released cells, its current slab) and nothing else, so the
+finished tree keeps its slabs, and a subtree unlinked from a parsed document
+outlives the document like a hand-built one: `markdown_core_node_free` releases
+either. What a retained subtree keeps alive is its slabs, not its nodes. The
+nodes of one slab are released from one thread at a time; two parses never
+share a slab.
+
+Why: a node's chunk was larger than the C library's fast-path size classes, so
+every release of one walked the allocator's merge path, and releasing the
+finished tree cost more than a third of parsing it.
 
 All block, inline, and manual construction uses the same node constructor.
-It makes one allocation for the node and its kind's record, establishes
-defaults, and only then exposes the node. Failure releases all acquired storage.
-Node data and its strings use the node's allocator.
+It takes one cell for the node and its kind's record, establishes defaults,
+and only then exposes the node. Failure releases all acquired storage; a slab
+that cannot be allocated refuses the node and leaves the pool usable.
+Node data and its strings use the library's allocator.
 
 `CrossLink` stores a `markdown_core_cross_reference` record containing its raw
 path, optional anchor, and optional label. `CrossEmbedded` stores a
@@ -45,8 +75,9 @@ regression inputs vary nesting depth and autolink count independently.
 
 Kind conversion preserves node identity and tree links. After containment
 validation, it allocates a replacement record before releasing the old fields.
-The original record shares the node's allocation and is reclaimed with the
-node; replacement records are freed when replaced or when the node dies.
+The original record shares the node's cell and is reclaimed with the
+node, unless it did not fit the cell; that record, and every replacement
+record, is freed when replaced or when the node dies.
 The typed view and allocation ownership are explicit: `as` points to the
 current record, while `node_data_allocation` owns a replacement allocation, if
 any. Ownership is never inferred by comparing potentially adjacent addresses.
@@ -64,7 +95,7 @@ to Comment transfers its owned literal only after the new record can be
 created. Setext headings also use the shared kind conversion operation.
 
 Construction and kind conversion have different ownership constraints: an
-unpublished node and its initial record can share an allocation, while a
+unpublished node and its initial record can share a cell, while a
 replacement record must preserve the existing node's address. All kinds use
 these same lifecycle rules. No per-kind pools, packed field offsets, or
 cardinality-dependent storage paths are needed. Benchmarks measure parse time,
@@ -72,7 +103,10 @@ allocation work, and memory independently of the deterministic layout tests.
 
 Tests protect the pointer-sized union, constructor allocation failures,
 transactional kind conversion, containment rejection in parser conversions,
-owned subtree release, and whole-parse OOM propagation. Platform builds verify
+owned subtree release, whole-parse OOM propagation, and the pool's claims in
+allocator counts: one allocation per slab of many cells, a released cell
+reused before a slab is touched, a refused slab refusing only the node, and a
+slab freed by the last of its cells after the pool is gone. Platform builds verify
 native alignment, and sanitizer suites exercise the same ownership paths.
 
 Link reference definitions are recognized during block parsing so paragraph

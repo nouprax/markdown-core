@@ -2411,6 +2411,123 @@ typedef struct {
     int64_t value;
 } payload_integer_alignment;
 
+/* THE POOL'S CLAIMS, in numbers the tree cannot show. A parse's nodes come
+ * from slabs of many cells, so a run of constructions is one allocation; a
+ * cell released into the pool is handed out again before another is taken
+ * from a slab, so the storage a parse holds is bounded by its peak, not by
+ * how many nodes it made; and a slab is freed by the last cell that leaves
+ * it, whichever release does that, so a node outlives the pool that made it. */
+static void node_cells_come_from_slabs_and_go_back_to_the_pool(test_batch_runner *runner) {
+    enum { LIMIT = 4096 };
+    static markdown_core_node *taken[LIMIT];
+    markdown_core_node_pool pool = {0};
+    payload_probe_arm();
+
+    /* Take cells until the third slab arrives: the first two slabs say how
+     * many cells one holds, and that the count is the slab's, not the run's. */
+    size_t count = 0, per_slab = 0, second_slab_at = 0;
+    while (count < LIMIT) {
+        size_t before = payload_allocations;
+        markdown_core_node *node = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_TEXT, NULL);
+        OK(runner, node != NULL, "a cell is taken");
+        if (!node) {
+            break;
+        }
+        taken[count++] = node;
+        if (payload_allocations != before) {
+            if (before == 0) {
+                continue;
+            }
+            if (!per_slab) {
+                per_slab = count - 1;
+                second_slab_at = count;
+            } else {
+                break;
+            }
+        }
+    }
+    OK(runner, per_slab > 100, "a slab holds many cells: %zu", per_slab);
+    INT_EQ(runner, count - second_slab_at, per_slab, "every slab holds the same number of cells");
+    INT_EQ(runner, payload_allocations, 3, "taking %zu nodes made three allocations", count);
+    for (size_t i = 1; i < count; i++) {
+        OK(runner, taken[i]->as.literal && taken[i]->kind == MARKDOWN_CORE_NODE_TEXT,
+           "each cell carries a zeroed node with its record");
+    }
+
+    /* Released into the pool, cells are reused before a slab is touched, and
+     * the reused cell is the zeroed one a constructor expects. */
+    size_t allocations = payload_allocations;
+    markdown_core_node *reused[8];
+    for (size_t i = 0; i < 8; i++) {
+        reused[i] = taken[count - 1 - i];
+        OK(runner, markdown_core_node_set_literal(reused[i], "bytes"), "a node owns a literal before release");
+        markdown_core_node_pool_release(&pool, reused[i]);
+    }
+    count -= 8;
+    INT_EQ(runner, payload_allocations, allocations + 8, "the literals were the only allocations");
+    allocations = payload_allocations;
+    for (size_t i = 0; i < 8; i++) {
+        markdown_core_node *node = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_PARAGRAPH, NULL);
+        OK(runner, node != NULL, "a released cell is taken again");
+        size_t j = 0;
+        while (j < 8 && reused[j] != node) {
+            j++;
+        }
+        OK(runner, j < 8, "the cell taken is one released into the pool");
+        OK(runner,
+           node && node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && !node->as.data && !node->next && !node->first_child &&
+               node->content.size == 0,
+           "a reused cell is zeroed before it is a node again");
+        taken[count++] = node;
+    }
+    INT_EQ(runner, payload_allocations, allocations, "reusing released cells makes no allocator call");
+
+    /* A record too large for the cell is owned apart from it, like a
+     * replacement record, and released with the node. */
+    markdown_core_node *large = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_METADATA, NULL);
+    OK(runner, large && large->node_data_allocation && large->as.data == large->node_data_allocation,
+       "a record that does not fit the cell is owned through node_data_allocation");
+    INT_EQ(runner, payload_allocations, allocations + 1, "the out-of-cell record is one allocation");
+    size_t releases = payload_releases;
+    markdown_core_node_pool_release(&pool, large);
+    INT_EQ(runner, payload_releases, releases + 1, "releasing it frees the record and returns the cell to the pool");
+
+    /* Refusing the slab refuses the node and leaves the pool usable. */
+    while (count < LIMIT) {
+        size_t before = payload_allocations;
+        payload_fail_at = before + 1;
+        markdown_core_node *node = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_TEXT, NULL);
+        payload_fail_at = 0;
+        if (!node) {
+            INT_EQ(runner, payload_allocations, before + 1, "the refused allocation was the slab's");
+            node = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_TEXT, NULL);
+            OK(runner, node != NULL, "the pool takes a slab once the allocator allows one");
+            taken[count++] = node;
+            break;
+        }
+        taken[count++] = node;
+    }
+
+    /* The pool disposed, the nodes stand: each slab is freed by the last
+     * cell to leave it, and not before. */
+    releases = payload_releases;
+    markdown_core_node_pool_dispose(&pool);
+    INT_EQ(runner, payload_releases, releases, "disposing the pool frees no slab that still has a node in it");
+    size_t freed_slabs = 0;
+    for (size_t i = 0; i < count; i++) {
+        releases = payload_releases;
+        markdown_core_node_free(taken[i]);
+        if (payload_releases != releases) {
+            freed_slabs++;
+            OK(runner, (i + 1) % per_slab == 0 || i + 1 == count,
+               "a slab is freed by the last of its cells: node %zu of %zu per slab", i + 1, per_slab);
+        }
+    }
+    OK(runner, freed_slabs >= 3, "every slab was freed by a node's release: %zu", freed_slabs);
+    INT_EQ(runner, payload_live, 0, "cells, slabs and records are all released");
+    payload_probe_disarm();
+}
+
 static void node_payload_lifecycle(test_batch_runner *runner) {
     payload_probe_arm();
     INT_EQ(runner, sizeof(markdown_core_node_data), sizeof(void *),
@@ -2430,7 +2547,12 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
         markdown_core_node *node = markdown_core_node_new(type);
         OK(runner, node != NULL, "type %u constructs with its default fields", (unsigned)type);
         size_t total = payload_allocations;
-        INT_EQ(runner, total, 1, "node and initial typed record have one allocation for every kind");
+        /* One cell holds the node and its record, or the record is owned
+         * apart from the cell as a replacement would be: the release path
+         * has one rule for both, and the second allocation is the proof
+         * that the rule is being exercised for the kinds that need it. */
+        INT_EQ(runner, total, node->node_data_allocation ? 2 : 1,
+               "node and initial typed record are one allocation, or two when the record does not fit the cell");
         if (node->as.data) {
             OK(runner,
                (uintptr_t)node->as.data % offsetof(payload_float_alignment, value) == 0 &&
@@ -7738,6 +7860,7 @@ int main(void) {
     test_batch_runner *runner = test_batch_runner_new();
 
     universal_values(runner);
+    node_cells_come_from_slabs_and_go_back_to_the_pool(runner);
     properties_values(runner);
     properties_source_boundaries(runner);
     properties_member_work(runner);

@@ -222,6 +222,11 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     parser->lookahead_chain_alloc = 0;
     parser->lookahead_entries = NULL;
     parser->lookahead_entries_alloc = 0;
+
+    /* Last, after every release above: the cells the parse gave back, and the
+     * slab it was taking from. The finished tree, returned before this, holds
+     * its own slabs. */
+    markdown_core_node_pool_dispose(&parser->nodes);
 }
 
 static markdown_core_parser *S_parser_new(void) {
