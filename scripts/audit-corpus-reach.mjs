@@ -222,19 +222,27 @@ function isomorphPairs() {
     return pairs;
 }
 
+/* A dump with the named fields erased from every node. A field's value is a
+ * quoted string, a braced map -- `attributes={.cls key="value"}` holds a space,
+ * so it is not one run of non-blanks -- or a bare token, and the field is
+ * removed whichever shape it has. This is the one place a dump is compared
+ * modulo fields: the substitution pairs erase a kind's bookkeeping field the
+ * manifest names, and the splits erase the fields a remainder populates. */
+function withoutFields(text, ignore) {
+    let stripped = text;
+    for (const key of ignore) {
+        stripped = stripped.replace(new RegExp(`\\s${key}=(?:"(?:[^"\\\\]|\\\\.)*"|\\{[^}]*\\}|\\S+)`, "gu"), "");
+    }
+    return stripped;
+}
+
 /* The kind name is what the pair is allowed to differ in, so it is what the
  * comparison erases; a kind's own bookkeeping field is erased only where the
  * manifest names it, and only if it is really there. */
 function canonicalDump(text, ignore) {
-    return text
+    return withoutFields(text, ignore)
         .split("\n")
-        .map((line) => {
-            let canonical = line.replace(/^([\s│├└─]*)[A-Za-z]+\b/u, "$1KIND");
-            for (const key of ignore) {
-                canonical = canonical.replace(new RegExp(`\\s${key}=(?:"(?:[^"\\\\]|\\\\.)*"|\\S+)`, "gu"), "");
-            }
-            return canonical;
-        })
+        .map((line) => line.replace(/^([\s│├└─]*)[A-Za-z]+\b/u, "$1KIND"))
         .join("\n");
 }
 
@@ -867,23 +875,240 @@ function corpusCases() {
     );
 }
 
-function stateReach(census, manifestCases, pairs, logical) {
+/**
+ * A SPLIT: a production proved unpairable, measured inside every host that
+ * admits it.
+ *
+ * An attribute list adds fields to the node its host built and no node of its
+ * own, so no document IS the list: it cannot be paired, and a bound on a
+ * document that carries it is mostly the host. The corpus splits it -- the host
+ * without the list is a pair half, the list alone is measured against lexbor
+ * by `scripts/benchmark-attributes.mjs` -- and what closes the gap the split
+ * opens is the `with` half: the same document with the remainder's bytes on
+ * every host node, so the driver reads the remainder's cost IN PLACE as the
+ * difference between two whole documents. That difference is the remainder
+ * only while everything else about the two documents is the same, and this is
+ * what holds it to that, against the parser and against the manifest:
+ *
+ *   The remainder names an `unpairable` proof. A split exists because a pair
+ *   cannot, and a remainder nobody has proved unpairable is a pair somebody has
+ *   not written.
+ *
+ *   The two units are the same text but for the remainder: the `with` unit
+ *   holds the remainder's bytes exactly `each` times and the `without` unit
+ *   never, and with every copy of the remainder deleted the two are byte for
+ *   byte the same. One allowance, and it is the grammar's rather than a
+ *   host's: an EMPTY list `{}` is deleted on both sides before the comparison,
+ *   because a nameless container directive is not a fence without a list and
+ *   `::: {}` is the least the grammar admits there. An empty list is the
+ *   remainder with nothing in it.
+ *
+ *   The two documents parse to the same tree modulo the fields the remainder
+ *   populates and the source spans, KIND NAMES INCLUDED -- unlike a
+ *   substitution pair, which is allowed to differ in kind, a split's two halves
+ *   build the same nodes or the remainder did more than decorate.
+ *
+ *   Both were generated to the same count of units; every `with` reaches every
+ *   grammar state the split names and no `without` reaches any, so the states
+ *   the remainder is the only route to stay bounds; and the number of nodes
+ *   carrying a populated field is `each` per unit on the `with` side and zero
+ *   on the other, which is what says the remainder landed on every host node
+ *   and on nothing else.
+ *
+ *   The `with` half publishes no ratio of its own -- it is not a pair half and
+ *   its syntax is the dialect's -- or the states it reaches would count as
+ *   measured while the exemption says they cannot be. The `without` half IS a
+ *   pair half, so the report has a pair number to recompute with the remainder
+ *   present, which is the column that shows a local optimum degrading the
+ *   composition.
+ */
+function splitFailures(cli, corpusDir, census, units, manifestCases, pairs, logical) {
+    const manifest = JSON.parse(
+        fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/corpus.json"), "utf8")
+    );
+    const proofs = new Set((manifest.unpairable ?? []).map((entry) => entry.production));
+    const cases = new Map(manifestCases.map((entry) => [entry.name, entry]));
+    const paired = pairHalves(pairs, logical);
+    /* The messages, and the HOSTS they came from: one host can fail several
+     * checks, and a split-level failure -- a remainder with no proof -- breaks
+     * every host of that split, so the summary counts hosts and not messages. */
+    const messages = [];
+    const broken = new Set();
+    let hosts = 0;
+    const unitOf = (entry) => (entry.generated ?? entry.counted)?.unit;
+    const occurrences = (text, needle) => text.split(needle).length - 1;
+    const dumpOf = (name) => {
+        const result = spawnSync(cli, [path.join(corpusDir, "corpus", `${name}.x1.md`)], {
+            encoding: "utf8",
+            maxBuffer: 1 << 30,
+            timeout: 600_000
+        });
+        requireClean(result, "the dump CLI", `${name}.x1.md`);
+        return result.stdout;
+    };
+    /* A field is populated when its value is not the empty form of its shape:
+     * `attributes={}` and `title=null` and `literal=""` are the absence of the
+     * field, whatever the field. */
+    const populated = (dump, fields) =>
+        fields.reduce(
+            (total, field) => total + (dump.match(new RegExp(`\\s${field}=(?!null\\b|\\{\\}|"")`, "gu")) ?? []).length,
+            0
+        );
+    for (const split of manifest.splits ?? []) {
+        let current = null;
+        const fail_ = (message) => {
+            messages.push(message);
+            if (current === null) for (const host of split.hosts ?? []) broken.add(host.with);
+            else broken.add(current);
+        };
+        if (!proofs.has(split.remainder)) {
+            fail_(
+                `the split for "${split.remainder}" names no unpairable entry of that name. A split exists ` +
+                    `because a pair cannot, and a remainder nobody has proved unpairable is a pair nobody has written`
+            );
+        }
+        if (typeof split.bytes !== "string" || !split.bytes.length) {
+            fail_(`the split for "${split.remainder}" declares no remainder bytes`);
+        }
+        for (const state of split.states ?? []) {
+            if (!(state in stateValidators)) fail_(`the split names ${state}, which is not a declared grammar state`);
+        }
+        for (const host of split.hosts ?? []) {
+            hosts += 1;
+            current = host.with;
+            const carrier = cases.get(host.with);
+            const without = cases.get(host.without);
+            if (!carrier || !without) {
+                fail_(
+                    `the ${host.host} host names ${host.with} and ${host.without}, and the corpus holds no such case`
+                );
+                continue;
+            }
+            if (paired.has(host.with) || publishesRatio(carrier, paired)) {
+                fail_(
+                    `${host.with} would be published with a ratio of its own, so the states only the remainder ` +
+                        `reaches would count as measured while the split says they are bounds`
+                );
+            }
+            if (!paired.has(host.without)) {
+                fail_(
+                    `${host.without} is not a pair half, so there is no pair number to recompute with the ` +
+                        `remainder present, which is the column the split exists to print`
+                );
+            }
+            const carrierUnit = unitOf(carrier);
+            const withoutUnit = unitOf(without);
+            if (carrierUnit === undefined || withoutUnit === undefined) {
+                fail_(`${host.with} and ${host.without} must both be generated from a unit for their units to compare`);
+                continue;
+            }
+            if (!(host.each >= 1)) {
+                fail_(`the ${host.host} host declares no count of host nodes per unit`);
+                continue;
+            }
+            if (occurrences(carrierUnit, split.bytes) !== host.each) {
+                fail_(
+                    `${host.with} holds the remainder ${occurrences(carrierUnit, split.bytes)} times per unit and ` +
+                        `declares ${host.each} host nodes. Every host node carries the remainder, or the ` +
+                        `difference is not the remainder's cost per list`
+                );
+            }
+            if (occurrences(withoutUnit, split.bytes) !== 0) {
+                fail_(`${host.without} holds the remainder, and the difference against it would then be nothing`);
+            }
+            const bare = (text) => text.replaceAll(split.bytes, "").replaceAll("{}", "");
+            if (bare(carrierUnit) !== bare(withoutUnit)) {
+                fail_(
+                    `${host.with} is not ${host.without} with the remainder inserted: with every copy of the ` +
+                        `remainder and every empty list deleted, the two units still differ`
+                );
+            }
+            if (units[host.with] === undefined || units[host.with] !== units[host.without]) {
+                fail_(
+                    `${host.with} and ${host.without} were generated to ${units[host.with]} and ` +
+                        `${units[host.without]} units, and the difference between them is the remainder only ` +
+                        `while both hold the same number of everything else`
+                );
+                continue;
+            }
+            const [withoutDump, carrierDump] = [host.without, host.with].map(dumpOf);
+            const ignore = ["scope", ...(split.varies ?? [])];
+            const left = withoutFields(withoutDump, ignore).split("\n");
+            const right = withoutFields(carrierDump, ignore).split("\n");
+            const at = left.findIndex((line, index) => line !== right[index]);
+            if (at !== -1 || left.length !== right.length) {
+                const where = at === -1 ? Math.min(left.length, right.length) : at;
+                fail_(
+                    `${host.with} and ${host.without} do not parse to the same tree modulo ` +
+                        `${ignore.join(", ")}, first at line ${where + 1}:\n      ${left[where] ?? "(end)"}` +
+                        `\n      ${right[where] ?? "(end)"}`
+                );
+            }
+            for (const state of split.states ?? []) {
+                if (!(state in stateValidators)) continue;
+                if (!census.perCaseStates.get(host.with)?.has(state)) {
+                    fail_(
+                        `${host.with} does not reach ${state}, which the split says the remainder reaches in every host`
+                    );
+                }
+                if (census.perCaseStates.get(host.without)?.has(state)) {
+                    fail_(
+                        `${host.without} reaches ${state} without the remainder, so the remainder is not the only ` +
+                            `route to it and the split's states are wrong`
+                    );
+                }
+            }
+            const fields = split.varies ?? [];
+            const want = host.each * units[host.with];
+            const found = populated(carrierDump, fields);
+            if (found !== want) {
+                fail_(
+                    `${host.with} was generated with ${units[host.with]} units and declares ${host.each} host nodes ` +
+                        `each, which is ${want} nodes carrying ${fields.join(", ")}, but the parser built ${found}`
+                );
+            }
+            const stray = populated(withoutDump, fields);
+            if (stray !== 0) {
+                fail_(
+                    `${host.without} builds ${stray} nodes carrying ${fields.join(", ")}, and the without half carries none`
+                );
+            }
+        }
+    }
+    return { messages, broken, hosts };
+}
+
+/* Every case that is one half of a pair, of either kind. A substitution pair
+ * is parsed into `{ name, isomorph }` and a declaration pair keeps the
+ * manifest's `{ case, isomorph }`, so both spellings of the dialect side are
+ * read. Taking only one of them silently dropped the three substitution pairs
+ * and reported their states as bounds. */
+function pairHalves(pairs, logical) {
     const paired = new Set();
-    /* A substitution pair is parsed into `{ name, isomorph }` and a declaration
-     * pair keeps the manifest's `{ case, isomorph }`, so both spellings of the
-     * dialect side are read. Taking only one of them silently dropped the three
-     * substitution pairs and reported their states as bounds. */
     for (const declaration of [...pairs, ...logical]) {
         paired.add(declaration.case ?? declaration.name);
         paired.add(declaration.isomorph);
     }
+    return paired;
+}
+
+/* Whether the driver will publish a same-job ratio for a case: either half of
+ * a pair, or a case whose syntax a reference reads the same way and whose tree
+ * carries no referenceless field. The same test the driver applies, written
+ * once here so that the state census, the split check and the report cannot
+ * disagree about which cases are comparisons. */
+function publishesRatio(entry, paired) {
+    return (
+        paired.has(entry.name) ||
+        ((entry.dialect === "commonmark" || entry.gfm === true) && !(entry.carries ?? []).length)
+    );
+}
+
+function stateReach(census, manifestCases, pairs, logical) {
+    const paired = pairHalves(pairs, logical);
     const publishes = new Map();
     for (const entry of manifestCases) {
-        publishes.set(
-            entry.name,
-            paired.has(entry.name) ||
-                ((entry.dialect === "commonmark" || entry.gfm === true) && !(entry.carries ?? []).length)
-        );
+        publishes.set(entry.name, publishesRatio(entry, paired));
     }
     const measured = [];
     const boundOnly = [];
@@ -1044,6 +1269,7 @@ let unequalPairs;
 let unbuilt;
 let states;
 let exempt;
+let splits;
 {
     const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), "corpus-coverage-"));
     try {
@@ -1062,6 +1288,15 @@ let exempt;
         miscarried = carriedFailures(binaries.dump, census, path.dirname(documents[0]), referenceless);
         states = stateReach(census, corpusCases(), pairs, logical);
         exempt = statesBoundByProof();
+        splits = splitFailures(
+            binaries.dump,
+            corpusDir,
+            census,
+            generatedUnits(corpusDir),
+            corpusCases(),
+            pairs,
+            logical
+        );
         for (const [name, expected] of declaredBuilds()) {
             const built = census.perCase.get(name);
             if (!built) {
@@ -1123,6 +1358,7 @@ process.stdout.write(
         `  cases still building ${declaredBuilds().size - drifted.length}/${declaredBuilds().size}\n` +
         `  isomorph pairs held  ${pairs.length - notIsomorphic.length}/${pairs.length}\n` +
         `  logical pairs held   ${logical.length - unequalPairs.broken.size}/${logical.length}\n` +
+        `  split hosts held     ${splits.hosts - splits.broken.size}/${splits.hosts}\n` +
         `  referenceless fields ${referenceless.length}, declared by every case that carries one` +
         `${miscarried.length ? ` -- ${miscarried.length} do not` : ""}\n` +
         `  grammar states measured ${states.measured.length}/${Object.keys(stateValidators).length}` +
@@ -1216,6 +1452,12 @@ if (unequalPairs.messages.length) {
     failures.push(
         `a logical pair compares two spellings of one declaration, and these no longer hold ` +
             `what that claims:\n    ${unequalPairs.messages.join("\n    ")}`
+    );
+}
+if (splits.messages.length) {
+    failures.push(
+        `a split measures a remainder inside its hosts as the difference between two documents that differ ` +
+            `by the remainder alone, and these no longer hold what that claims:\n    ${splits.messages.join("\n    ")}`
     );
 }
 if (drifted.length) {

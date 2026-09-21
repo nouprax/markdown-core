@@ -3,7 +3,8 @@
     "targetBytes": 65536,
     "statesBoundByProof": {
         "footnote.content.inline": "inline footnote `^[body]`",
-        "specimen.id.null": "anonymous specimen definition `(@) body`"
+        "specimen.id.null": "anonymous specimen definition `(@) body`",
+        "markup.attributes.records": "attribute list with keyed records `{key=value}`"
     },
     "requiredGrammars": {
         "S_attach_block_identifier": "block-identifier",
@@ -489,6 +490,16 @@
             "builds": ["Link"]
         },
         {
+            "name": "split-attributes-link",
+            "dialect": "extended",
+            "counted": {
+                "unit": "A [body {n}](/c){key=value .cls} and [](/c){key=value .cls} in prose.\n\n",
+                "match": "pair-span-dialect",
+                "scales": "inline links carrying an attribute list"
+            },
+            "builds": ["Link"]
+        },
+        {
             "name": "pair-xlink-dialect",
             "dialect": "extended",
             "generated": {
@@ -566,6 +577,16 @@
             "builds": ["CodeBlock"]
         },
         {
+            "name": "split-attributes-code",
+            "dialect": "extended",
+            "counted": {
+                "unit": "```{key=value .cls}\nE = mc^2 + {n}\n```\n\n",
+                "match": "pair-formulablock-dialect",
+                "scales": "fenced code blocks carrying an attribute list"
+            },
+            "builds": ["CodeBlock"]
+        },
+        {
             "name": "pair-embed-dialect",
             "dialect": "extended",
             "generated": {
@@ -581,6 +602,16 @@
                 "unit": "See ![](/diagram-{n}.png) and ![](/diagram-{n}.png \"Alt {n}\") and ![](/diagram-{n}.png \"\") and ![](/diagram-{n}.png) and ![](/diagram-{n}.png) here.\n\n",
                 "match": "pair-embed-dialect",
                 "scales": "images"
+            },
+            "builds": ["Embedded"]
+        },
+        {
+            "name": "split-attributes-image",
+            "dialect": "extended",
+            "counted": {
+                "unit": "See ![](/diagram-{n}.png){key=value .cls} and ![](/diagram-{n}.png \"Alt {n}\"){key=value .cls} and ![](/diagram-{n}.png \"\"){key=value .cls} and ![](/diagram-{n}.png){key=value .cls} and ![](/diagram-{n}.png){key=value .cls} here.\n\n",
+                "match": "pair-embed-dialect",
+                "scales": "images carrying an attribute list"
             },
             "builds": ["Embedded"]
         },
@@ -712,8 +743,18 @@
             "name": "pair-idirective-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": "A :note[body {n}] and :note[body {n}]{key=value .cls} and :note[] here.\n\n",
+                "unit": "A :note[body {n}] and :note[body {n}] and :note[] here.\n\n",
                 "scales": "inline directives"
+            },
+            "builds": ["Directive", "DirectiveLabel"]
+        },
+        {
+            "name": "split-attributes-idirective",
+            "dialect": "extended",
+            "counted": {
+                "unit": "A :note[body {n}]{key=value .cls} and :note[body {n}]{key=value .cls} and :note[]{key=value .cls} here.\n\n",
+                "match": "pair-idirective-dialect",
+                "scales": "inline directives carrying an attribute list"
             },
             "builds": ["Directive", "DirectiveLabel"]
         },
@@ -721,7 +762,7 @@
             "name": "pair-idirective-common",
             "dialect": "commonmark",
             "counted": {
-                "unit": "A ![body {n}](/note-{n}) and ![body {n}](/note-{n} \"t\") and ![](/note-{n}) here.\n\n",
+                "unit": "A ![body {n}](/note-{n}) and ![body {n}](/note-{n}) and ![](/note-{n}) here.\n\n",
                 "match": "pair-idirective-dialect",
                 "scales": "images"
             },
@@ -795,6 +836,16 @@
             "builds": ["DirectiveBlock", "DirectiveLabel"]
         },
         {
+            "name": "split-attributes-ldirective",
+            "dialect": "extended",
+            "counted": {
+                "unit": "::note[Label {n}]{key=value .cls}\n\n",
+                "match": "pair-ldirective-dialect",
+                "scales": "leaf directives carrying an attribute list"
+            },
+            "builds": ["DirectiveBlock", "DirectiveLabel"]
+        },
+        {
             "name": "pair-ldirective-common",
             "dialect": "commonmark",
             "counted": {
@@ -806,11 +857,32 @@
             "builds": ["Heading"]
         },
         {
+            "name": "split-attributes-heading",
+            "dialect": "extended",
+            "counted": {
+                "unit": "## Label {n}{key=value .cls}\n\n",
+                "match": "pair-ldirective-dialect",
+                "scales": "ATX headings carrying an attribute list"
+            },
+            "carries": ["anchor"],
+            "builds": ["Heading"]
+        },
+        {
             "name": "pair-cdirective-dialect",
             "dialect": "extended",
             "generated": {
-                "unit": ":::note\nBody paragraph {n}.\n:::\n\n::: {.cls}\nBody paragraph {n}.\n:::\n\n",
+                "unit": ":::note\nBody paragraph {n}.\n:::\n\n::: {}\nBody paragraph {n}.\n:::\n\n",
                 "scales": "container directives"
+            },
+            "builds": ["DirectiveBlock"]
+        },
+        {
+            "name": "split-attributes-cdirective",
+            "dialect": "extended",
+            "counted": {
+                "unit": ":::note{key=value .cls}\nBody paragraph {n}.\n:::\n\n::: {key=value .cls}\nBody paragraph {n}.\n:::\n\n",
+                "match": "pair-cdirective-dialect",
+                "scales": "container directives carrying an attribute list"
             },
             "builds": ["DirectiveBlock"]
         },
@@ -1615,14 +1687,9 @@
                     "isomorph": "Paragraph"
                 }
             ],
-            "claim": "An inline directive and an image are the same production: a SIGIL-introduced inline leaf carrying one RAW run and one BRACKETED run that is parsed as inlines, recognised mid-line and left where it was found. `:note[body]` is the sigil `:`, the raw name `note` and the bracketed body; `![body](/note)` is the sigil `!`, the bracketed body and the raw destination. Same parts, same count of them, and the pair counts Text as well so the inline parsing of the bracketed run is checked on both sides rather than assumed -- 150 against 150 per 50 units. What differs is the ORDER: this dialect must read a name before it knows it has a directive at all, where the reference reads the bracket first and the destination after. That is the thing being measured. That the directive hangs its body under a DirectiveLabel group where the image holds the same inlines directly and carries a destination instead is node materialisation, which is never grounds to refuse. Directive was the last kind in the manifest's coverage list with neither a pair nor a document a reference reads the same way.",
+            "claim": "An inline directive and an image are the same production: a SIGIL-introduced inline leaf carrying one RAW run and one BRACKETED run that is parsed as inlines, recognised mid-line and left where it was found. `:note[body]` is the sigil `:`, the raw name `note` and the bracketed body; `![body](/note)` is the sigil `!`, the bracketed body and the raw destination. Same parts, same count of them, and the pair counts Text as well so the inline parsing of the bracketed run is checked on both sides rather than assumed. What differs is the ORDER: this dialect must read a name before it knows it has a directive at all, where the reference reads the bracket first and the destination after. That is the thing being measured. That the directive hangs its body under a DirectiveLabel group where the image holds the same inlines directly and carries a destination instead is node materialisation, which is never grounds to refuse. An earlier unit put an attribute list `{key=value .cls}` on one of the three directives and a title `\"t\"` on the matching image, and that was two productions wearing one row: a keyed map against a raw title string is not the same job, and it was the only place `markup.attributes.records` got a same-job number. The attribute list is proved unpairable under `unpairable` and is measured where it can be -- against lexbor's attribute tokenizer alone, and INSIDE this host and six others as a `splits` entry, whose `without` half is this very case. So the three directives here carry no list, the three images carry no title, and the pair is the directive production and nothing else.",
             "demonstrates": {
-                "case": [
-                    "directive.label.populated",
-                    "directive.label.empty",
-                    "markup.attributes.records",
-                    "markup.attributes.classes"
-                ]
+                "case": ["directive.label.populated", "directive.label.empty"]
             },
             "perUnit": {
                 "case": {
@@ -1851,9 +1918,9 @@
                     "isomorph": "Paragraph"
                 }
             ],
-            "claim": "A container directive and a block quote are the same production: a CONTAINER BLOCK -- a start condition, a per-line continuation condition, and contents parsed as BLOCKS. CommonMark defines that category itself and puts the block quote and the list item in it; the container directive is a third member of it. What differs is which continuation condition: a block quote continues while its lines carry the marker, a directive continues until its closing fence. That is the thing being measured. The pair counts Paragraph alongside the container because block parsing of the contents is the second half of the criterion and 50 against 50 per 50 units is what shows it matches. The earlier refusal said CommonMark's only FENCE opens a leaf, which compares the fence construct rather than the container production -- the reference here is not the fenced code block, it is the block quote. A fenced container spends an opening line and a closing line that carry no content; the twin spends the same two lines as marker-only lines of the quote, `>` alone before and after the body, which the block quote grammar admits as lines of the container that hold a blank line and build nothing. So each container is three lines on both sides, one of them content, and the same tree comes out: an earlier twin spelled the quote as its body line alone, which put one line of block parsing against three and let the fence lines read as grammar cost when they are the container's lines like any other. The pair is still sized by count, since the units are not the same bytes.",
+            "claim": "A container directive and a block quote are the same production: a CONTAINER BLOCK -- a start condition, a per-line continuation condition, and contents parsed as BLOCKS. CommonMark defines that category itself and puts the block quote and the list item in it; the container directive is a third member of it. What differs is which continuation condition: a block quote continues while its lines carry the marker, a directive continues until its closing fence. That is the thing being measured. The pair counts Paragraph alongside the container because block parsing of the contents is the second half of the criterion and 50 against 50 per 50 units is what shows it matches. The earlier refusal said CommonMark's only FENCE opens a leaf, which compares the fence construct rather than the container production -- the reference here is not the fenced code block, it is the block quote. A fenced container spends an opening line and a closing line that carry no content; the twin spends the same two lines as marker-only lines of the quote, `>` alone before and after the body, which the block quote grammar admits as lines of the container that hold a blank line and build nothing. So each container is three lines on both sides, one of them content, and the same tree comes out: an earlier twin spelled the quote as its body line alone, which put one line of block parsing against three and let the fence lines read as grammar cost when they are the container's lines like any other. The pair is still sized by count, since the units are not the same bytes. The nameless form is spelled `::: {}`: a container directive with no name must carry an attribute list for the line to be a fence at all, and an EMPTY list is the least the grammar admits. An earlier unit spelled it `::: {.cls}`, which put a class list on one of the two containers where the block quote has nothing of the kind, and let `markup.attributes.classes` claim a same-job number from a pair whose reference never read a list. Attributes are proved unpairable under `unpairable` and measured as a `splits` entry, whose `without` half for the container host is this case.",
             "demonstrates": {
-                "case": ["directiveBlock.name.null", "markup.attributes.classes"]
+                "case": ["directiveBlock.name.null"]
             },
             "perUnit": {
                 "case": {
@@ -2189,6 +2256,59 @@
             }
         }
     ],
+    "splits": [
+        {
+            "remainder": "attribute list with keyed records `{key=value}`",
+            "bytes": "{key=value .cls}",
+            "varies": ["attributes"],
+            "states": ["markup.attributes.records", "markup.attributes.classes"],
+            "claim": "An attribute list is a DECORATION: it adds fields to the node its host built and no node of its own, so a document with the list and the same document without it parse to the same tree modulo those fields, and the difference between what this parser spends on the two is what the list costs IN THAT HOST. The remainder's bytes are identical in every host and one grammar decodes them, so the cost per list is the same job in every row: the reference for one host is the other hosts. A host whose cost per list sits far above the median is not the list being slow, it is the COMPOSITION of that host with the list -- the boundary between the host's own scan and the list's -- and it is exactly what measuring the host without the list (its pair) and the list without a host (lexbor, in scripts/benchmark-attributes.mjs) would each miss. That is what the split is for: the pair says what the host costs, lexbor says what the list costs, and this says whether putting them together costs more than the sum. Every `without` is a pair half, so each row also recomputes the pair's own number with the `with` document in the numerator; an optimisation that improves the pair and worsens that column has moved cost into the composition rather than removed it. Why it is not the subtraction the README rejects: subtraction drew a boundary INSIDE one measurement, through a call graph that does not carry it. Here the boundary is in the corpus, between two whole documents that differ by exactly the remainder's bytes, every instruction of both is counted, and the audit holds the two trees equal modulo the fields the remainder populates. Second-order effects are in the number rather than hidden by it. The nameless container directive is the one host whose `without` keeps an EMPTY list, because `::: {}` is the least the grammar admits where there is no name; an empty list is the remainder with nothing in it, and the audit's textual check deletes both before comparing the two units.",
+            "hosts": [
+                {
+                    "host": "inline directive",
+                    "without": "pair-idirective-dialect",
+                    "with": "split-attributes-idirective",
+                    "each": 3
+                },
+                {
+                    "host": "leaf directive",
+                    "without": "pair-ldirective-dialect",
+                    "with": "split-attributes-ldirective",
+                    "each": 1
+                },
+                {
+                    "host": "ATX heading",
+                    "without": "pair-ldirective-common",
+                    "with": "split-attributes-heading",
+                    "each": 1
+                },
+                {
+                    "host": "inline link",
+                    "without": "pair-span-common",
+                    "with": "split-attributes-link",
+                    "each": 2
+                },
+                {
+                    "host": "container directive",
+                    "without": "pair-cdirective-dialect",
+                    "with": "split-attributes-cdirective",
+                    "each": 2
+                },
+                {
+                    "host": "image",
+                    "without": "pair-embed-common",
+                    "with": "split-attributes-image",
+                    "each": 5
+                },
+                {
+                    "host": "fenced code block",
+                    "without": "pair-formulablock-common",
+                    "with": "split-attributes-code",
+                    "each": 1
+                }
+            ]
+        }
+    ],
     "unpairable": [
         {
             "production": "derived heading anchor",
@@ -2205,6 +2325,10 @@
         {
             "production": "multiline table, the ROW production at two columns or more",
             "proof": "An exhaustive enumeration over the LINE-CUTTING productions of both reference grammars, and it is narrow on purpose: everything else about this table is paired. A multiline row cuts ONE line into K parallel pieces at positions established by one earlier boundary line, appends each piece to its own cell buffer, and parses each buffer as BLOCKS -- checked on the parser, where `- item` in a cell becomes a List and `# Head` becomes a Heading, so it is block parsing and not a joined paragraph. Enumerate every reference production that cuts a line. Every CONTAINER cuts a PREFIX and yields exactly ONE remainder: a block quote strips its marker, a list item strips its content indent, and nesting them cuts the same line repeatedly rather than into parallel pieces. Exactly one reference production cuts a line into K>=2 parallel pieces, GFM's pipe table row, and it parses its pieces as INLINES. So a K-way cut whose pieces are block-parsed exists in neither grammar, and the criterion's second clause -- the subsequent operation must match -- is what the pipe row fails. The one-column reduction that saved the grid table is not available either: a multiline table takes its columns from a SEGMENTED dash line, and a single unbroken dash run is a thematic break or a setext underline. What must NOT be read into this: both FACTORS of the production are separately paired and both have same-job numbers. pair-simpletable-dialect is the K-way POSITIONAL cut with inline cells against the GFM pipe row, and pair-gridcell-dialect is the positional cut with BLOCK cells at K=1 against a list item's content indent. It is only their composition that has no reference production. NOTE the honest caveat, the same one the other enumerations carry: this proof has not been attacked by anyone but its author."
+        },
+        {
+            "production": "attribute list with keyed records `{key=value}`",
+            "proof": "An exhaustive enumeration over the productions of both reference grammars that take a DELIMITED RAW RUN and decode it into fields of the node they build, which is the shape an attribute list has: a brace-delimited run following a construct, decoded into a MAP from names the grammar does not know in advance to values, stored on that construct's node. Enumerate every reference production that decodes a delimited raw run. The inline link and the image decode `(dest \"title\")` into a destination and a title, two fixed scalar fields. The link reference definition decodes a label, a destination and a title, three fixed fields, one of them a NAME registered in a table. The autolink decodes `<dest>` into one destination. The fenced code block takes its info string as one field. A character reference decodes into one code point. GFM's delimiter row decodes into a POSITIONAL list of alignments, one per column, indexed by position and never by name. GFM's footnote reference and definition decode a label into one name. That is the complete list, and every entry decodes into a fixed set of scalar fields or a positional list; no reference production decodes a run into a keyed map. The one production that comes closest is raw HTML, and it is named here so the next prover does not have to find it: to decide that `<x k=\"v\">` is a tag, the reference SCANS an attribute list -- a name, an optional `=`, a quoted or an unquoted value -- by the same sub-grammar this dialect's records use, and then stores the whole run as one literal, decoding nothing. The reference has the RECOGNISER half of the production and not the DECODING half, so the criterion's second clause, that the subsequent operation must match, is what raw HTML fails: recognise-then-keep-as-text is not recognise-then-build-a-map, and a twin spelled with a raw HTML tag would also add an inline node the dialect side never builds. So the record form is measured two ways and neither is a pair: alone, against lexbor's HTML attribute tokenizer, which does build the map (`scripts/benchmark-attributes.mjs`); and IN PLACE, inside every host that admits a list, as a `splits` entry, where the same bytes must cost the same in every host. What must NOT be read into this: the CLASS form pairs. `{.c}` is the suffix of `pair-span-dialect` against an inline link's `(/c)`, a delimited suffix decoded into a positional field of the node it follows, which is exactly the link's own shape -- so `markup.attributes.classes` has a same-job number and `markup.attributes.records` does not. NOTE the honest caveat, the same one the other enumerations carry: this proof has not been attacked by anyone but its author."
         }
     ],
     "suppressions": [

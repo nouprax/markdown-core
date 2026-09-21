@@ -1070,15 +1070,35 @@ function refuseUnknownCases(options, manifest) {
 function buildCorpus(options, manifest) {
     const directory = path.join(options.out, "corpus");
     fs.mkdirSync(directory, { recursive: true });
-    /* A paired case drags its other half in. Naming one alone would measure a
-     * case whose comparison lives on a document the run never built, and a
-     * counted case sized against a generated partner that was never generated
-     * has no count to match at all. The pair is not optional context; it IS the
-     * comparison. */
+    /* A named case drags in what it is DEFINED AGAINST, and keeps dragging
+     * until nothing new arrives. A paired case drags its other half: naming
+     * one alone would measure a case whose comparison lives on a document the
+     * run never built. The pair is not optional context; it IS the comparison.
+     * A split's `with` half drags its `without`, for the same reason, and only
+     * in that direction: a pair half is a comparison on its own and a `with`
+     * document is not, so naming the `without` measures the pair it belongs
+     * to and no split. A counted case drags the generated case it is sized
+     * by, because a count taken from a partner that was never generated is no
+     * count at all. The closure is iterated rather than applied once because
+     * each step can name a case the next rule has to see -- a `with` names a
+     * `without` that names a pair that names a generated match. */
     const wanted = new Set(options.cases);
-    for (const pair of [...(manifest.isomorphs ?? []), ...(manifest.logicalIsomorphs ?? [])]) {
-        if (wanted.has(pair.case)) wanted.add(pair.isomorph);
-        if (wanted.has(pair.isomorph)) wanted.add(pair.case);
+    const byName = new Map(manifest.cases.map((entry) => [entry.name, entry]));
+    for (let before = -1; before !== wanted.size;) {
+        before = wanted.size;
+        for (const pair of [...(manifest.isomorphs ?? []), ...(manifest.logicalIsomorphs ?? [])]) {
+            if (wanted.has(pair.case)) wanted.add(pair.isomorph);
+            if (wanted.has(pair.isomorph)) wanted.add(pair.case);
+        }
+        for (const split of manifest.splits ?? []) {
+            for (const host of split.hosts) {
+                if (wanted.has(host.with)) wanted.add(host.without);
+            }
+        }
+        for (const name of [...wanted]) {
+            const match = byName.get(name)?.counted?.match;
+            if (match) wanted.add(match);
+        }
     }
     const selected = options.cases.length ? manifest.cases.filter((entry) => wanted.has(entry.name)) : manifest.cases;
 
@@ -1602,6 +1622,15 @@ function markdownReport(report) {
     const paired = new Map(declarations.map((declaration) => [declaration.case, declaration]));
     const isIsomorph = new Set(declarations.map((declaration) => declaration.isomorph));
     const bySubstitution = new Set((report.isomorphs ?? []).map((declaration) => declaration.case));
+    /* And which cases exist only to be the `with` half of a split. Such a
+     * document is a host that already has a comparison, carrying a remainder
+     * that has none, so it is neither a comparison nor a bound: its number is
+     * the difference against its `without`, in "The remainder inside its
+     * hosts" below. Ranking it would put a document written to carry an
+     * unpairable production into the bound table as if that were its
+     * measurement, and into the median of a group it was never part of. */
+    const splits = report.splits ?? [];
+    const isSplitWith = new Set(splits.flatMap((split) => split.hosts.map((host) => host.with)));
 
     const atScaleOne = new Map(report.cases.filter((item) => item.scale === 1).map((item) => [item.case, item]));
     const ranked = report.cases
@@ -1751,7 +1780,11 @@ function markdownReport(report) {
         const paired = ranked.filter((item) => item.isomorph);
         const substituted = paired.filter((item) => item.isomorph.by === "substitution");
         const bounded = ranked.filter(
-            (item) => (item.dialect !== "commonmark" || item.carries.length) && !item.gfm && !item.isomorph
+            (item) =>
+                (item.dialect !== "commonmark" || item.carries.length) &&
+                !item.gfm &&
+                !item.isomorph &&
+                !isSplitWith.has(item.case)
         );
         lines.push(
             "A ratio compares only where both parsers did the same job, so the cases are" +
@@ -1827,7 +1860,8 @@ function markdownReport(report) {
                         item.dialect === "commonmark" &&
                         !item.gfm &&
                         !item.carries.length &&
-                        !isIsomorph.has(item.case)
+                        !isIsomorph.has(item.case) &&
+                        !isSplitWith.has(item.case)
                 )
             ],
             [
@@ -1840,17 +1874,16 @@ function markdownReport(report) {
                 "GFM extensions",
                 "cmark-gfm",
                 ranked.filter(
-                    (item) => !item.isomorph && item.gfm && !item.carries.length && !isIsomorph.has(item.case)
+                    (item) =>
+                        !item.isomorph &&
+                        item.gfm &&
+                        !item.carries.length &&
+                        !isIsomorph.has(item.case) &&
+                        !isSplitWith.has(item.case)
                 )
             ],
             ["Dialect, via an isomorph", "the isomorph's own reference", ranked.filter((item) => item.isomorph)],
-            [
-                "Dialect-only (no reference)",
-                "cmark, as a bound",
-                ranked.filter(
-                    (item) => (item.dialect !== "commonmark" || item.carries.length) && !item.gfm && !item.isomorph
-                )
-            ]
+            ["Dialect-only (no reference)", "cmark, as a bound", bounded]
         ];
         for (const [label, reference, group] of groups) {
             if (!group.length) continue;
@@ -2018,6 +2051,171 @@ function markdownReport(report) {
             );
         }
 
+        /* THE REMAINDER INSIDE ITS HOSTS. A production proved unpairable is
+         * not always a construct of its own: an attribute list adds fields to
+         * the node its host built and no node itself, so there is no document
+         * that IS the list to pair or to bound -- the bound on `inline-span`
+         * was mostly the inline parser around it. The corpus splits it: the
+         * host without the list is a pair half, the list without a host is
+         * measured against lexbor by `scripts/benchmark-attributes.mjs`, and
+         * this measures the list IN PLACE, as the difference between two whole
+         * documents that differ by exactly the remainder's bytes.
+         *
+         * What makes the rows one comparison is that the remainder is the
+         * same bytes on every row and one grammar decodes them, so the cost
+         * per list is the same job in every host and the reference for one
+         * host is the others. What a split of pair + lexbor would hide is the
+         * COMPOSITION -- an optimisation that makes the host cheaper alone and
+         * the list cheaper alone while the seam between them gets dearer --
+         * and that is exactly what a host's excess over the median is. The
+         * last column recomputes the pair's own number with the `with`
+         * document in the numerator, so a change that improves the pair and
+         * worsens that column is visible in one row.
+         *
+         * Not the subtraction the README rejects. That drew a boundary INSIDE
+         * one measurement, through a call graph that does not carry it; this
+         * boundary is in the corpus, every instruction of both documents is
+         * counted, and `scripts/audit-corpus-reach.mjs` holds the two trees
+         * equal modulo the fields the remainder populates. */
+        for (const split of splits) {
+            const rows = [];
+            for (const host of split.hosts) {
+                const without = atScaleOne.get(host.without);
+                const carrier = atScaleOne.get(host.with);
+                /* Only where both halves were measured: a `--case` run that
+                 * named the `without` alone has a pair to report and no
+                 * split, and naming the `with` alone cannot happen, because
+                 * the driver drags the `without` in. */
+                if (!without?.engines["markdown-core"] || !carrier?.engines["markdown-core"]) continue;
+                if (carrier.units !== without.units) {
+                    fail(
+                        `${host.with} and ${host.without} are the two halves of a split but carry ${carrier.units} ` +
+                            `and ${without.units} units. The difference between them is the remainder only ` +
+                            `while both documents hold the same number of everything else`
+                    );
+                }
+                const withoutIr = stageIr(without.engines, "markdown-core");
+                const carrierIr = stageIr(carrier.engines, "markdown-core");
+                const lists = carrier.units * host.each;
+                /* Where the remainder's cost landed, by stage. A block host
+                 * reads its list while the line is scanned and an inline host
+                 * while the paragraph's inlines are parsed, so the per-stage
+                 * difference says which parser the list is inside without
+                 * anyone having to know that from the grammar. */
+                const byStage = Object.fromEntries(
+                    STAGES.map((stage) => [
+                        stage,
+                        (carrier.engines["markdown-core"].stages[stage].ir -
+                            without.engines["markdown-core"].stages[stage].ir) /
+                            lists
+                    ])
+                );
+                const landing = STAGES.reduce((best, stage) => (byStage[stage] > byStage[best] ? stage : best));
+                /* The pair's number, recomputed with the remainder present.
+                 * The `without` is a pair half by construction (the audit
+                 * refuses one that is not), on one side or the other: as the
+                 * DIALECT half its number is Same-job, this parser over the
+                 * reference on the twin, and the twin's reference cost is the
+                 * denominator here too; as the COMMONMARK half its number is
+                 * Shape, this parser over the reference on the same bytes.
+                 * A twin that carries a referenceless field has no Shape to
+                 * recompute, and the dash here is the same suppression as in
+                 * the pair table. */
+                const dialectSide = ranked.find((item) => item.case === host.without && item.isomorph);
+                const commonSide = declarations.find((declaration) => declaration.isomorph === host.without);
+                let alone = null;
+                let composed = null;
+                let column = null;
+                if (dialectSide) {
+                    column = "Same-job";
+                    alone = dialectSide.sameJob;
+                    composed = dialectSide.isomorph.cmarkIr ? carrierIr / dialectSide.isomorph.cmarkIr : null;
+                } else if (commonSide) {
+                    column = "Shape";
+                    const owner = ranked.find((item) => item.case === commonSide.case);
+                    alone = owner?.isomorph?.shape ?? null;
+                    const reference = stageIr(without.engines, without.gfm ? "cmark-gfm" : "cmark");
+                    composed = reference && !without.carries.length ? carrierIr / reference : null;
+                }
+                rows.push({
+                    host,
+                    without,
+                    carrier,
+                    lists,
+                    perList: (carrierIr - withoutIr) / lists,
+                    byStage,
+                    landing,
+                    composition: carrierIr / withoutIr,
+                    column,
+                    alone,
+                    composed
+                });
+            }
+            if (!rows.length) continue;
+            const perLists = rows.map((row) => row.perList);
+            const middle = median(perLists);
+            const most = rows.reduce((best, row) => (row.perList > best.perList ? row : best));
+            const least = rows.reduce((best, row) => (row.perList < best.perList ? row : best));
+            lines.push(
+                "### The remainder inside its hosts",
+                "",
+                `A production proved unpairable is not always a construct of its own. **${split.remainder}**` +
+                    " adds fields to the node its host built and no node itself, so there is no document" +
+                    " that IS the remainder to pair or to bound. The corpus splits it three ways: the host" +
+                    " without it is a pair half in the table above, the remainder without a host is" +
+                    " measured against lexbor by `scripts/benchmark-attributes.mjs`, and this table" +
+                    ` measures it IN PLACE -- the same bytes, \`${split.bytes}\`, on every node of` +
+                    ` ${rows.length} host${rows.length === 1 ? "" : "s"} -- as the difference between two` +
+                    " whole documents that `scripts/audit-corpus-reach.mjs` holds to the same tree modulo" +
+                    ` the ${split.varies.map((field) => `\`${field}\``).join(", ")} field${
+                        split.varies.length === 1 ? "" : "s"
+                    } it populates.`,
+                "",
+                "One grammar decodes the same bytes in every row, so the cost per list is the same job" +
+                    " in every host and should not depend on which host it is in. Where it does, the" +
+                    " excess is the COMPOSITION -- the seam between the host's own scan and the" +
+                    " remainder's -- which is the one thing that measuring the host alone and the" +
+                    " remainder alone cannot see, and the reason a corpus is not split without this" +
+                    " table. `vs median` is each host's cost per list over the median host's. The last" +
+                    " column is the pair's own number for the host, alone and then with the remainder in" +
+                    " the numerator: a change that lowers the first and raises the second has moved cost" +
+                    " into the composition rather than removed it. `Lands in` names the stage the" +
+                    " difference fell in, which is which parser the remainder is read by.",
+                "",
+                "| Host | Without | With | Lists | Ir per list | vs median | Lands in | With/without |" +
+                    " Pair number, alone -> with the remainder |",
+                "| --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: |"
+            );
+            for (const row of rows) {
+                const composed =
+                    row.column === null
+                        ? "(not a pair half)"
+                        : `${row.column} ${row.alone === null ? "-" : `${row.alone.toFixed(2)}x`} -> ${
+                              row.composed === null ? "-" : `${row.composed.toFixed(2)}x`
+                          }`;
+                lines.push(
+                    `| ${row.host.host} | ${row.without.case} | ${row.carrier.case} |` +
+                        ` ${row.lists.toLocaleString("en-US")} | ${Math.round(row.perList).toLocaleString("en-US")} |` +
+                        ` ${(row.perList / middle).toFixed(2)}x | \`${row.landing}\` |` +
+                        ` ${row.composition.toFixed(2)}x | ${composed} |`
+                );
+            }
+            lines.push(
+                "",
+                `Spread: the dearest host (${most.host.host}, ${Math.round(most.perList).toLocaleString("en-US")} Ir` +
+                    ` per list) over the cheapest (${least.host.host},` +
+                    ` ${Math.round(least.perList).toLocaleString("en-US")}) is` +
+                    ` **${(most.perList / least.perList).toFixed(2)}x**. The spread is evidence, not a` +
+                    " threshold: it names the host to open when it moves, and it is comparable only" +
+                    " against a report whose identity table above is identical.",
+                "",
+                "What the split claims to hold constant, from `corpus.json`:",
+                "",
+                `- **${split.remainder}** -- ${split.claim}`,
+                ""
+            );
+        }
+
         lines.push("### Where the cost is", "");
         lines.push(
             "The ratio says which case to look at. This says what to look at inside it:" +
@@ -2033,7 +2231,7 @@ function markdownReport(report) {
             "| Case | Reference | Ratio | Core Ir/B | Dominant self cost |",
             "| --- | --- | ---: | ---: | --- |"
         );
-        for (const item of ranked.slice(0, 16)) {
+        for (const item of ranked.filter((entry) => !isSplitWith.has(entry.case)).slice(0, 16)) {
             const hot = (item.engines["markdown-core"].hotPaths ?? [])
                 .slice(0, 3)
                 .map((entry) => `\`${entry.name}\` ${(entry.share * 100).toFixed(1)}%`)
@@ -2387,6 +2585,10 @@ function main() {
          * isomorph is the same COUNT of declarations in two spellings that are
          * not the same length and were never meant to be. */
         logicalIsomorphs: manifest.logicalIsomorphs ?? [],
+        /* And the splits, which are neither: a remainder proved unpairable,
+         * measured inside every host that admits it as the difference between
+         * two whole documents. The report reads the hosts off this. */
+        splits: manifest.splits ?? [],
         artifacts: path.relative(root, options.out),
         cases
     };
