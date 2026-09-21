@@ -18,7 +18,9 @@ readers, properties envelope, and mapped cell driver extend and consult one
 index. There is no eager mapped-input scan followed by a second driver scan.
 
 Geometry is **12 bytes per visited line** on the supported ABIs, down from
-20. For L > 0 lines its vector reserves C = max(8, next_power_of_two(L))
+20. Parser initialization reserves eight entries (96 bytes), including for an
+empty document, alongside the current-line buffer. For L > 0 lines its vector
+reserves C = max(8, next_power_of_two(L))
 entries, or 12C resident bytes. Thus for L >= 8 the geometry alone occupies
 [12L, 24L) bytes: for one-byte LF-only lines it is 12–24 times input size;
 for two-byte `x\n` lines it is 6–12 times input size. This excludes the source,
@@ -34,6 +36,12 @@ record size, capacity, absence of optional facts, and one scan per source byte.
 The source driver advances through the static inline scanner in `blocks.c`.
 External lookahead calls a wrapper around that same scanner; there is one
 physical scanning algorithm, not separate driver and speculative scanners.
+The inner span walk uses bounded pointers and stops at CR, LF or NUL; only a
+NUL boundary updates the normalization count. Initial workspace allocation is
+outside `source_to_buffer`, while growth remains inside it. Comparisons must
+therefore include the report's `parsePathIr` and `outsideStagesIr` as well as
+the two stages: moving the first reservation to initialization is not a
+whole-parse saving.
 
 Index lookups are constant time once a line exists. Extension scans each raw
 byte once for geometry; CR, LF, and CRLF each terminate one physical line.

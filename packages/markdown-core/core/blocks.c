@@ -257,6 +257,9 @@ static markdown_core_parser *S_parser_new(void) {
     }
     markdown_core_strbuf_init(&parser->curline, 256);
     markdown_core_strbuf_init(&parser->lookahead_last_line, 0);
+    /* The line index is a parse-owned workspace, like curline. Establish its
+     * initial capacity before setup; inputs reset length, never ownership. */
+    parser->input_lines = markdown_core_reserve(NULL, &parser->input_line_capacity, 1, sizeof(*parser->input_lines));
 
     document = make_document(parser);
     parser->document_structure = markdown_core_structure_for_kind(MARKDOWN_CORE_NODE_DOCUMENT);
@@ -267,7 +270,8 @@ static markdown_core_parser *S_parser_new(void) {
 
     /* A transaction that could not build its initial structures is poisoned:
      * source processing becomes a no-op and the parse reports failure. */
-    if (!parser->root || parser->curline.oom || parser->lookahead_last_line.oom || parser->root->content.oom) {
+    if (!parser->root || !parser->input_lines || parser->curline.oom || parser->lookahead_last_line.oom ||
+        parser->root->content.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 
@@ -1360,27 +1364,30 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
             parser->input_lines = lines;
         }
         markdown_core_input_line entry = {.start = (uint32_t)parser->input_scanned};
-        size_t at = entry.start;
         uint32_t nul_count = 0;
         const unsigned char *source = parser->input_source;
+        const unsigned char *cursor = source + entry.start;
+        const unsigned char *end = source + parser->input_length;
         /* Scan spans ending at a line boundary or a normalization boundary.
          * The NUL count changes only at the latter, not on every source byte. */
         for (;;) {
-            while (at < parser->input_length && source[at] && !markdown_core_is_line_end(source[at])) {
-                at++;
+            for (; cursor < end; cursor++) {
+                if (markdown_core_is_line_end(*cursor) || *cursor == 0) {
+                    break;
+                }
             }
-            if (at == parser->input_length || source[at]) {
+            if (cursor == end || *cursor) {
                 break;
             }
             nul_count++;
-            at++;
+            cursor++;
         }
-        entry.end = (uint32_t)at;
-        if (at < parser->input_length && source[at] == '\r') {
-            at++;
+        entry.end = (uint32_t)(cursor - source);
+        if (cursor < end && *cursor == '\r') {
+            cursor++;
         }
-        if (at < parser->input_length && source[at] == '\n') {
-            at++;
+        if (cursor < end && *cursor == '\n') {
+            cursor++;
         }
         if (nul_count) {
             markdown_core_line_facts *facts = markdown_core_parser_extend_line_facts(parser, &entry);
@@ -1389,8 +1396,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
             }
             facts->nul_count = nul_count;
         }
-        parser->input_line_work += at - entry.start;
-        parser->input_scanned = at;
+        parser->input_scanned = (size_t)(cursor - source);
+        parser->input_line_work += parser->input_scanned - entry.start;
         parser->input_lines[parser->input_line_count++] = entry;
     }
     return index < parser->input_line_count ? &parser->input_lines[index] : NULL;
