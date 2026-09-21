@@ -1328,14 +1328,17 @@ static inline const unsigned char *S_input_line_content(markdown_core_parser *pa
     size_t size = line->end - line->start;
     markdown_core_line_facts *facts = line->facts ? &parser->input_facts[line->facts - 1] : NULL;
     uint32_t nul_count = facts ? facts->nul_count : 0;
-    if (size > (size_t)(INT32_MAX / 2) || nul_count > ((size_t)(INT32_MAX / 2) - size) / 2) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return NULL;
-    }
-    *length = (bufsize_t)(size + 2 * nul_count);
+    /* Raw geometry is bounded when its input is installed. Only expansion
+     * needs an additional bound at this allocation boundary. */
+    *length = (bufsize_t)size;
     if (!nul_count) {
         return parser->input_source + line->start;
     }
+    if (nul_count > ((size_t)(INT32_MAX / 2) - size) / 2) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return NULL;
+    }
+    *length += (bufsize_t)(2 * nul_count);
     return facts->normalized ? facts->normalized->bytes : S_normalize_input_line(parser, line, facts, *length);
 }
 
@@ -1344,10 +1347,7 @@ static inline const unsigned char *S_input_line_content(markdown_core_parser *pa
  * is explicit: both GCC and Clang may otherwise outline this per-line step. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
     markdown_core_input_line *S_extend_source_lines(markdown_core_parser *parser, size_t index) {
-    if (parser->input_length > (size_t)(INT32_MAX / 2)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return NULL;
-    }
+    assert(parser->input_length <= (size_t)(INT32_MAX / 2));
     while (index >= parser->input_line_count && parser->input_scanned < parser->input_length) {
         if (parser->input_line_count == parser->input_line_capacity) {
             void *lines = markdown_core_reserve(parser->input_lines, &parser->input_line_capacity,
@@ -1362,8 +1362,16 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
         size_t at = entry.start;
         uint32_t nul_count = 0;
         const unsigned char *source = parser->input_source;
-        while (at < parser->input_length && !markdown_core_is_line_end(source[at])) {
-            nul_count += source[at] == 0;
+        /* Scan spans ending at a line boundary or a normalization boundary.
+         * The NUL count changes only at the latter, not on every source byte. */
+        for (;;) {
+            while (at < parser->input_length && source[at] && !markdown_core_is_line_end(source[at])) {
+                at++;
+            }
+            if (at == parser->input_length || source[at]) {
+                break;
+            }
+            nul_count++;
             at++;
         }
         entry.end = (uint32_t)at;
@@ -1409,6 +1417,10 @@ markdown_core_line_facts *markdown_core_parser_extend_line_facts(markdown_core_p
 }
 
 static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length) {
+    if (length > (size_t)(INT32_MAX / 2)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
     S_clear_normalized_lines(parser);
     parser->input_source = source;
     parser->input_length = length;

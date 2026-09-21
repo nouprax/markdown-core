@@ -753,18 +753,13 @@ typedef struct markdown_core_line_facts {
     uint32_t nul_count;
     const unsigned char *run_end_cursor;
 } markdown_core_line_facts;
-/* A terminator is at most CRLF. Derive its end from immutable source bytes,
- * rather than retain a third offset on every line. */
+/* The index is a contiguous prefix. Its next record already owns this line's
+ * continuation; at the frontier the scanner owns it. No newline bytes need
+ * rereading and no third offset needs retaining on every physical line. */
 static inline size_t markdown_core_input_line_next(const markdown_core_parser *parser,
                                                    const markdown_core_input_line *line) {
-    size_t at = line->end;
-    if (at < parser->input_length && parser->input_source[at] == '\r') {
-        at++;
-    }
-    if (at < parser->input_length && parser->input_source[at] == '\n') {
-        at++;
-    }
-    return at;
+    const markdown_core_input_line *next = line + 1;
+    return next < parser->input_lines + parser->input_line_count ? next->start : parser->input_scanned;
 }
 
 /* Returned pointers are borrowed until the next request that grows the

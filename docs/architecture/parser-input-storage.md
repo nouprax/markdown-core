@@ -7,8 +7,8 @@ and node storage. Scratch never becomes an AST field.
 ## One physical input index
 
 `markdown_core_input_line` records the raw start, content end, and optional-fact
-index of one physical line. The next-line offset is derived from the immutable
-CR/LF terminator; NUL counts live only in the optional record. Container-prefix lookahead and
+index of one physical line. The next-line offset is derived from the following record or the scan
+frontier; NUL counts live only in the optional record. Container-prefix lookahead and
 table-search facts are addressed through that same entry. Compact geometry
 is stored for each line; a separate grow-only vector holds optional facts only
 for lines needing grammar state or a normalized view. The facts contain no copy
