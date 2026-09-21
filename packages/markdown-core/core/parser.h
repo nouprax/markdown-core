@@ -339,6 +339,10 @@ struct markdown_core_parser {
      * declares a finish step and opens an iterator. */
     size_t nodes_created, nodes_created_before_finish;
     size_t nodes_freed, nodes_freed_before_finish;
+    /* The parse's node storage (node.h): every node it makes is a cell of
+     * this pool's slabs, and every node it releases goes back here. The
+     * finished tree keeps its slabs; the pool is disposed with the parser. */
+    markdown_core_node_pool nodes;
     /* The nodes the walk's own inline parsing handed it, at the ENTER of each
      * container it parsed: what the parse made less what it discarded before
      * returning (a bracket's opener text, a token that failed to close), which
@@ -665,7 +669,7 @@ static inline void markdown_core_parser_note_node(markdown_core_parser *parser, 
 /* A release counts what it freed, for the same denominator; a caller with no
  * parse frees as the public function does. */
 static inline void markdown_core_parser_release_node(markdown_core_parser *parser, markdown_core_node *node) {
-    size_t released = markdown_core_node_release(node);
+    size_t released = markdown_core_node_pool_release(parser ? &parser->nodes : NULL, node);
     if (parser) {
         parser->nodes_freed += released;
     }
@@ -682,14 +686,14 @@ static inline bool markdown_core_finish_step_admitted(const markdown_core_finish
 static inline markdown_core_node *markdown_core_parser_make_node(markdown_core_parser *parser,
                                                                  markdown_core_node_type type) {
     markdown_core_parser_note_node(parser, type);
-    return markdown_core_node_new(type);
+    return markdown_core_node_pool_new(parser ? &parser->nodes : NULL, type, NULL);
 }
 
 static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdown_core_parser *parser,
                                                                           markdown_core_node_type type,
                                                                           const markdown_core_element *element) {
     markdown_core_parser_note_node(parser, type);
-    return markdown_core_node_new_with_ext(type, element);
+    return markdown_core_node_pool_new(parser ? &parser->nodes : NULL, type, element);
 }
 
 static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
