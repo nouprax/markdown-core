@@ -64,7 +64,14 @@ import {
 import { sourceBudget, SOURCE_IR_LIMIT } from "./lib/source-budget.mjs";
 import { caseClosure, splitWithCases } from "./lib/corpus-splits.mjs";
 import { boundarySource, pairReview } from "./lib/pair-review.mjs";
-import { pairingIdentity, pairRatios, proofWorkload, provenPair, validatePairs } from "./lib/corpus-pairs.mjs";
+import {
+    currentPairingIdentity,
+    pairRatios,
+    proofWorkload,
+    structuralPair,
+    validatePairs
+} from "./lib/corpus-pairs.mjs";
+import { effortModel } from "./lib/pair-effort.mjs";
 import {
     BUILD_FLAG_VARIABLES,
     buildEnvironment,
@@ -1261,7 +1268,7 @@ function buildCorpus(options, manifest) {
             });
         }
     }
-    for (const pair of manifest.pairs.filter(provenPair)) {
+    for (const pair of manifest.pairs.filter(structuralPair)) {
         for (const dialect of documents.filter((entry) => entry.case === pair.case)) {
             const common = documents.find((entry) => entry.case === pair.isomorph && entry.scale === dialect.scale);
             if (!common) fail(`${pair.case}: proved pair is missing its other half`);
@@ -1798,6 +1805,10 @@ export function markdownReport(report) {
         `| C library dispatch | \`${report.toolchain.dispatch.slice(0, 16)}\` |`,
         `| Corpus | \`${report.corpus.digest.slice(0, 16)}\` (${report.corpus.cases} documents) |`,
         `| Pairing contracts | \`${report.pairingDigest.slice(0, 16)}\` |`,
+        `| Report interpretation | ${effortModel}: \`${currentPairingIdentity(report.pairs)}\` |`,
+        "",
+        "The pairing-contract identity belongs to the original measurement; the report interpretation is recorded separately. " +
+            "A changed interpretation does not remeasure the parser or change its instruction counts.",
         "",
         "The measurement runs in an environment built rather than inherited: a path," +
             " a home, a temporary directory and the C locale, and nothing else. An" +
@@ -1883,7 +1894,7 @@ export function markdownReport(report) {
      * a twin whose dialect half was not measured is in no group either. */
     const roleOf = (item) => {
         if (item.isomorph)
-            return item.isomorph.proven ? "pair" : item.isomorph.contract.review ? "reviewed" : "candidate";
+            return item.isomorph.structural ? "pair" : item.isomorph.contract.review ? "reviewed" : "candidate";
         if (item.boundary) return "boundary-base";
         if (isSplitWith.has(item.case)) return "split-with";
         if (item.gfm) return item.carries.length ? "unranked" : isIsomorph.has(item.case) ? "twin" : "gfm";
@@ -1900,17 +1911,15 @@ export function markdownReport(report) {
             const core = stageIr(item.engines, "markdown-core");
             const cmarkIr = stageIr(item.engines, "cmark");
             const gfmIr = stageIr(item.engines, "cmark-gfm");
-            /* A dialect construct cmark does not implement still gets a
-             * same-job ratio, through the document that IS the same tree: what
-             * this parser spent on the dialect spelling, over what cmark spent
-             * building the same tree from the CommonMark spelling. */
+            /* Structural correspondence permits a diagnostic quotient, not an
+             * equal-effort claim. Recognition and full contracts may differ. */
             const declaration = paired.get(item.case);
             const twin = declaration ? atScaleOne.get(declaration.isomorph) : null;
             /* The isomorph's OWN reference, not always cmark. A dialect
              * construct can pair with a GFM production -- a task marker with a
              * GFM task list item, a specimen with a GFM footnote definition --
-             * and the engine that implements the isomorph is the one that did
-             * the same job on it. Reading cmark there would divide by an engine
+             * and use the engine that implements that reference production.
+             * Reading cmark there would divide by an engine
              * that parsed the paired document as ordinary prose. */
             const twinReference = twin?.gfm ? "cmark-gfm" : "cmark";
             const twinCore = twin ? stageIr(twin.engines, "markdown-core") : null;
@@ -1969,31 +1978,19 @@ export function markdownReport(report) {
                           units: twin.units,
                           coreIr: twinCore,
                           cmarkIr: twinCmark,
-                          /* The fields the ISOMORPH's tree carries that no
-                           * reference builds. They decide which of the three
-                           * numbers below survives, and the corpus records the
-                           * derivation under `unpairable`: the three are
-                           * grammar = core/twinCore, shape = twinCore/twinCmark
-                           * and sameJob = core/twinCmark, and twinCore CANCELS
-                           * out of the last one. So a twin that costs this
-                           * parser something the reference never spent -- an
-                           * ATX heading, where this dialect derives an anchor
-                           * and cmark does not -- inflates the denominator of
-                           * Grammar and the numerator of Shape while leaving
-                           * Same-job clean. Those two are suppressed rather
-                           * than printed low and high. */
+                          /* Unmatched reference fields suppress A/B and B/R.
+                           * A/R remains arithmetic and gains no effort proof
+                           * from cancellation of the shared denominator. */
                           contaminates: twin.carries,
-                          /* What this grammar costs over a CommonMark grammar
-                           * building the same tree, inside one parser. */
+                          /* Cross-syntax total stage quotient inside Core. */
                           grammar: comparison.grammar,
-                          /* What this parser costs on the shape itself, where
-                           * the reference did the same job. */
+                          /* Same-input implementation quotient on B. */
                           shape: comparison.shape
                       }
                     : null,
-                // A candidate never falls back to its syntax flag for a same-job claim.
-                sameJob: declaration
-                    ? (comparison?.sameJob ?? null)
+                // Descriptive quotient only; no theoretical-optimum assertion.
+                comparisonRatio: declaration
+                    ? (comparison?.quotient ?? null)
                     : item.carries.length
                       ? null
                       : gfmIr
@@ -2005,8 +2002,7 @@ export function markdownReport(report) {
         })
         .sort(
             (left, right) =>
-                (right.sameJob ?? right.isomorph?.quotient ?? right.cmarkRatio ?? 0) -
-                (left.sameJob ?? left.isomorph?.quotient ?? left.cmarkRatio ?? 0)
+                (right.comparisonRatio ?? right.cmarkRatio ?? 0) - (left.comparisonRatio ?? left.cmarkRatio ?? 0)
         );
 
     if (ranked.length) {
@@ -2026,21 +2022,20 @@ export function markdownReport(report) {
         const diagnostics = [...candidates, ...reviewedWorkloads];
         const bounded = ranked.filter((item) => roleOf(item) === "bound");
         lines.push(
-            "Equivalent-work ratios require a domain, reversible source transformation and a structural proof.",
-            "CommonMark and GFM cases use their own references. Only pairs with a registered proof enter the",
-            "formal-pair summary. Candidate substitutions and count witnesses remain diagnostic measurements;",
-            "they do not establish grammar isomorphism and are not averaged into equivalent-work results.",
+            "Structural proofs establish output correspondence, not equal optimal parse effort.",
+            `Cost model: ${effortModel}. There are 0 certified equal-optimal-effort pairs; no equivalent-work median is published.`,
+            "CommonMark and GFM rows are empirical same-input comparisons. Cross-syntax pairs remain descriptive controls.",
             "",
-            `This run contains ${paired.length} proved-domain pair(s) and ${candidates.length} candidate pair(s) and ${reviewedWorkloads.length} reviewed workload(s).`,
+            `This run contains ${paired.length} structural control(s) and ${candidates.length} candidate pair(s) and ${reviewedWorkloads.length} reviewed workload(s).`,
             ""
         );
         if (bounded.length) {
             lines.push(
                 "",
-                `Nothing implements what is left. cmark reads the document in` +
+                `The reference does not implement the remaining dialect features. cmark reads the document in` +
                     ` \`${bounded[0].case}\` as ordinary prose, so its number there is the cost of` +
-                    " NOT having the feature. That" +
-                    " bounds what a construct costs and does not say it is slow."
+                    " NOT having the feature. This is a feature-absent diagnostic," +
+                    " not a lower bound or evidence of removable overhead."
             );
         }
         lines.push("", "");
@@ -2064,28 +2059,25 @@ export function markdownReport(report) {
                 /* A PAIRED case belongs to its pair's group whatever its own
                  * `gfm` flag says, and the flag is tested after the pair rather
                  * than before it. `pair-tcaption-dialect` is a pipe table, so it
-                 * carries the flag, and its same-job denominator is cmark on the
+                 * carries the flag, and its quotient denominator is cmark on the
                  * CommonMark half -- classifying it by the flag counted it twice
                  * and let a cmark-derived ratio into the cmark-gfm median. */
                 "GFM extensions",
                 "cmark-gfm",
                 ranked.filter((item) => roleOf(item) === "gfm")
             ],
-            ...["cmark", "cmark-gfm"].map((reference) => [
-                "Dialect, proved domain",
-                reference,
-                paired.filter((item) => item.isomorph.reference === reference)
-            ]),
-            ["Dialect-only (no reference)", "cmark, as a bound", bounded]
+            ["Dialect-only (no reference)", "cmark, feature absent", bounded]
         ];
         for (const [label, reference, group] of groups) {
             if (!group.length) continue;
-            const values = group.map((item) => item.sameJob ?? item.cmarkRatio).filter((value) => value !== null);
+            const values = group
+                .map((item) => item.comparisonRatio ?? item.cmarkRatio)
+                .filter((value) => value !== null);
             if (!values.length) continue;
             const worst = group[0];
             lines.push(
                 `| ${label} | \`${reference}\` | ${group.length} | ${median(values).toFixed(2)}x |` +
-                    ` ${(worst.sameJob ?? worst.cmarkRatio).toFixed(2)}x \`${worst.case}\` |`
+                    ` ${(worst.comparisonRatio ?? worst.cmarkRatio).toFixed(2)}x \`${worst.case}\` |`
             );
         }
         lines.push("");
@@ -2149,18 +2141,18 @@ export function markdownReport(report) {
         const pairs = paired;
         if (pairs.length) {
             lines.push(
-                "### Proved-domain comparisons",
+                "### Structural controls (effort unproved)",
                 "",
                 "The proof applies to its declared sublanguage, not the entire dialect. The independent domain",
                 "recognizer checks the generated bytes; the pair audit compares complete ordered trees from",
                 "Core on both spellings and from the reference. Kind renaming is explicit, never universal erasure.",
                 "",
                 "Let A = Core(dialect), B = Core(paired), R = reference(paired), using total stage Ir.",
-                "Grammar = A/B, Shape = B/R and Same-job = A/R. These factors share B: lowering B alone",
-                "raises Grammar while lowering Shape and leaving A unchanged. Grammar includes recognition",
-                "and construction, not just lexical scanning. Read both absolute costs and the product.",
+                "A/B, B/R and A/R are descriptive quotients. Lowering B alone raises A/B and lowers B/R,",
+                "leaving A unchanged. A/B includes recognition and construction, not just lexical scanning.",
+                "A/R minus one is not the proportion of removable overhead. The effort gaps are listed below.",
                 "",
-                "| Dialect case | Paired input | Proof | Reference | A Ir | B Ir | R Ir | Grammar | Shape | Same-job |",
+                "| Dialect case | Paired input | Structural proof | Reference | A Ir | B Ir | R Ir | A/B | B/R | A/R |",
                 "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
             );
             for (const item of pairs) {
@@ -2170,6 +2162,17 @@ export function markdownReport(report) {
                         ` ${item.coreIr} | ${pair.coreIr} | ${pair.cmarkIr} |` +
                         ` ${ratio(item.coreIr, pair.coreIr)} | ${ratio(pair.coreIr, pair.cmarkIr)} | ${ratio(item.coreIr, pair.cmarkIr)} |`
                 );
+            }
+            lines.push("");
+            lines.push(
+                "### Parse-effort adjudication",
+                "",
+                "| Structural proof | Status | Missing cost obligation |",
+                "| --- | --- | --- |"
+            );
+            for (const item of pairs) {
+                const pair = item.isomorph;
+                lines.push(`| ${pair.contract.proof} | ${pair.effort.status} | ${pair.effort.reason} |`);
             }
             lines.push("");
         }
@@ -2298,7 +2301,7 @@ export function markdownReport(report) {
                 " -- on a grid table it reads `S_process_line`, which every line goes" +
                 " through -- so it cannot answer that question.",
             "",
-            "Ranked by the displayed quotient. Candidate quotients and bounds are diagnostics, not equivalent-work ratios.",
+            "Ranked by the displayed quotient. All cross-syntax quotients are diagnostics, not equal-effort ratios.",
             ""
         );
         lines.push(
@@ -2312,18 +2315,18 @@ export function markdownReport(report) {
                 .slice(0, 3)
                 .map((entry) => `\`${entry.name}\` ${(entry.share * 100).toFixed(1)}%`)
                 .join(", ");
-            const ratio = item.sameJob ?? item.isomorph?.quotient ?? item.cmarkRatio;
+            const ratio = item.comparisonRatio ?? item.cmarkRatio;
             /* Same precedence as the group table: the reference that produced
              * the ratio, not the flag on the case. */
             const reference = item.isomorph
-                ? `${item.isomorph.reference}, ${item.isomorph.proven ? "proved domain" : "candidate quotient"}`
+                ? `${item.isomorph.reference}, ${item.isomorph.structural ? "structural control" : "candidate quotient"}`
                 : item.gfm
                   ? "cmark-gfm"
                   : item.carries.length
-                    ? `(bound; tree carries ${item.carries.join(", ")})`
+                    ? `(unmatched; tree carries ${item.carries.join(", ")})`
                     : item.dialect === "commonmark"
                       ? "cmark"
-                      : "(bound)";
+                      : "(feature absent)";
             lines.push(
                 `| ${item.case} | ${reference} | ${ratio === null ? "-" : `${ratio.toFixed(2)}x`} |` +
                     ` ${(item.coreIr / item.bytes).toFixed(1)} | ${hot || "(not recorded)"} |`
@@ -2687,15 +2690,7 @@ function main() {
          * report saying so. */
         cmarkGfm: { version: gfm.version, commit: gfm.commit },
         corpus: { targetBytes: corpus.targetBytes, cases: corpus.documents.length, digest: corpus.digest },
-        pairingDigest: pairingIdentity(
-            manifest.pairs,
-            ["benchmark-isomorphism.md", "benchmark-pair-review.md"].map((name) =>
-                fs.readFileSync(path.join(root, "docs/architecture", name), "utf8")
-            ),
-            ["corpus-pairs.mjs", "pair-productions.mjs", "pair-review.mjs", "upstream-cmark.mjs"].map((name) =>
-                fs.readFileSync(path.join(root, "scripts/lib", name), "utf8")
-            )
-        ),
+        pairingDigest: currentPairingIdentity(manifest.pairs),
         // Record the exact contracts beside the raw measurements.
         pairs: manifest.pairs,
         /* And the splits, which are neither: a remainder proved unpairable,

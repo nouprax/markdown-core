@@ -1,5 +1,11 @@
 # Ownership-preserving performance rerun
 
+**Interpretation correction (#384):** the structural proofs used below do not
+prove equal optimal parser effort. Historical "Grammar / Shape / Same" columns
+are descriptive A/B / B/R / A/R only; the cross-syntax medians and `Same-job`
+interpretation are withdrawn. See the [cost model and re-audit](../architecture/benchmark-parser-effort.md).
+The raw measurements and same-input before/after savings remain valid.
+
 The six fixes reduce complete-parse Ir by **1.04%** on the 224-document
 same-input cohort and **1.85%** across all 464 Core inputs. Corrected grid-cell
 x1 improves **2.693× → 2.634×**, and loose-definition **1.666× → 1.538×**

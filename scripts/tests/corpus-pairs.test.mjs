@@ -4,7 +4,7 @@ import test from "node:test";
 import {
     equalProofTrees,
     pairingIdentity,
-    provenPair,
+    structuralPair,
     pairRatios,
     proofTree,
     proofWorkload,
@@ -17,6 +17,7 @@ import { productionProofs, productionWorkload, productionTree } from "../lib/pai
 import { boundarySource, pairReviews } from "../lib/pair-review.mjs";
 import { caseClosure } from "../lib/corpus-splits.mjs";
 import { publishesRatio } from "../lib/corpus-splits.mjs";
+import { effortModel, effortReview, validateEffortReviews } from "../lib/pair-effort.mjs";
 
 const manifest = () =>
     JSON.parse(
@@ -34,26 +35,59 @@ test("changing the pairing interpretation changes identity even with identical m
     assert.notEqual(pairingIdentity([pair], "proof", "revised checker"), digest);
 });
 
-test("every workload has one explicit contract and candidates cannot enter equivalent-work results", () => {
+test("neither structural proofs nor candidates imply equal parser effort", () => {
     const declared = manifest();
     assert.equal(validatePairs(declared).length, 73);
-    assert.equal(declared.pairs.filter(provenPair).length, 43);
+    assert.equal(declared.pairs.filter(structuralPair).length, 43);
     assert.equal(declared.pairs.filter((pair) => pair.contract.review).length, 30);
     assert.equal(declared.pairs.filter((pair) => pair.contract.pending).length, 0);
     const costs = { dialect: 240, common: 160, reference: 100 };
     assert.deepEqual(pairRatios(candidate, costs), {
-        proven: false,
+        structural: false,
+        effort: effortReview(candidate),
         grammar: 1.5,
         shape: 1.6,
-        quotient: 2.4,
-        sameJob: null
+        quotient: 2.4
     });
-    assert.equal(pairRatios(pair, costs).sameJob, 2.4);
+    const proved = pairRatios(pair, costs);
+    assert.equal(proved.structural, true);
+    assert.equal(proved.quotient, 2.4);
+    assert.equal(proved.effort.status, "unproved");
+    assert.equal("sameJob" in proved, false);
     const contaminated = pairRatios(candidate, { ...costs, carries: ["anchor"] });
     assert.equal(contaminated.grammar, null);
     assert.equal(contaminated.shape, null);
     assert.equal(contaminated.quotient, 2.4);
-    assert.equal(contaminated.sameJob, null);
+    assert.equal("sameJob" in contaminated, false);
+});
+
+test("every structural proof has an explicit effort review and unknown proofs fail closed", () => {
+    const proofs = ["insertion-strong-v1", ...productionProofs.keys()];
+    validateEffortReviews(proofs);
+    assert.throws(() => validateEffortReviews(proofs.slice(1)), /exactly/);
+    assert.throws(() => validateEffortReviews([...proofs, "new-proof"]), /exactly/);
+    for (const p of manifest().pairs.filter(structuralPair)) {
+        const review = effortReview(p);
+        assert.equal(review.model, effortModel);
+        assert.equal(review.scope, "full-parser-optimum");
+        assert.equal(review.status, "unproved");
+        assert.ok(review.reason.length > 50);
+    }
+    assert.throws(() => effortReview({ case: "new", contract: { proof: "new-proof" } }), /missing parse-effort/);
+});
+
+test("equal bytes/trees, a chosen trace and manifest assertions cannot self-certify optimal effort", () => {
+    const source = document("a ++b++ c");
+    const common = source.replaceAll("++", "**");
+    assert.equal(source.length, common.length);
+    proofWorkload(pair, source, common);
+    const claimed = { ...pair, effort: { status: "certified", equalTrace: true, equalOptimalCost: true } };
+    const result = pairRatios(claimed, { dialect: 100, common: 100, reference: 100 });
+    assert.equal(result.effort.status, "unproved");
+    assert.equal("sameJob" in result, false);
+    const identical = manifest().pairs.find((p) => p.contract.proof === "decimal-list-v2");
+    assert.equal(effortReview(identical).category, "identical-input-control");
+    assert.equal(effortReview(identical).status, "unproved");
 });
 
 test("manifest edits cannot self-certify by inventing proofs or omitting obligations", () => {
@@ -216,18 +250,19 @@ function reportFixture(pairs) {
     };
 }
 
-test("reports keep candidates out of formal medians, including filtered candidate-only runs", () => {
+test("reports publish structural quotients but no equal-effort median, including filtered runs", () => {
     const fixture = reportFixture([pair, candidate]);
     fixture.cases[2].gfm = true;
     fixture.cases[2].engines["markdown-core"].stages.source_to_buffer.ir = 99999;
     const report = markdownReport(fixture);
-    assert.match(report, /1 proved-domain pair\(s\) and 1 candidate pair\(s\)/);
-    assert.match(report, /\| Dialect, proved domain \|[^\n]+\| 1 \|/);
+    assert.match(report, /1 structural control\(s\) and 1 candidate pair\(s\)/);
+    assert.match(report, /0 certified equal-optimal-effort pairs/);
+    assert.match(report, /\| insertion-strong-v1 \| unproved \|/);
     assert.match(report, /Candidate pair diagnostics \(equivalence unproved\)/);
     assert.match(report, /No structural mapping/);
     assert.match(report, /\| Pairing contracts \| `fixture-identity` \|/);
     assert.doesNotMatch(report, /\| GFM extensions \|/);
-    assert.match(report, /\| Dialect, proved domain \|[^\n]+\| 1 \| 1.00x \|/);
+    assert.doesNotMatch(report, /\| Dialect, proved domain \||Median Same-job|\| Same-job \|/);
     assert.throws(() => markdownReport({ ...fixture, schemaVersion: 3 }), /schema 4/);
     const candidateOnly = markdownReport(reportFixture([candidate]));
     assert.doesNotMatch(candidateOnly, /\| Dialect, proved domain \|/);
@@ -245,7 +280,7 @@ test("every reviewed pair resolves to measured proof domains and/or a concrete b
         for (const proof of review.proofs)
             assert.ok(closure.has(declared.pairs.find((other) => other.contract.proof === proof).case));
         if (review.baseline) assert.ok(closure.has(review.baseline));
-        assert.equal(provenPair(pair), false);
+        assert.equal(structuralPair(pair), false);
     }
     const broken = manifest();
     broken.cases = broken.cases.filter((entry) => entry.name !== "boundary-anchor-without");

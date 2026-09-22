@@ -105,7 +105,12 @@ test("a selected proof pair ignores unmeasured contracts in the full manifest", 
     const summary = summarizeSubset(cases);
     assert.equal(summary.pairs.length, 1);
     assert.equal(summary.pairs[0].case, pair.case);
-    assert.equal(summary.pairs[0].sameJob, 1);
+    assert.equal(summary.pairs[0].quotient, 1);
+    assert.equal(summary.pairs[0].effort.status, "unproved");
+    assert.equal("sameJob" in summary.pairs[0], false);
+    assert.match(render(summary), /0 certified equal-optimal-effort pairs/);
+    assert.match(render(summary), /\| insertion-strong-v1 \| unproved \|/);
+    assert.doesNotMatch(render(summary), /Median Grammar|Median Shape|Median Same-job/);
     assert.deepEqual(summary.boundaries, []);
     const oneSide = summarizeSubset(cases.slice(0, 1));
     assert.deepEqual(oneSide.pairs, []);

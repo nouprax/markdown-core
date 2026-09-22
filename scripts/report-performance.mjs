@@ -6,7 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { baseName, parseCallgrind } from "./lib/callgrind.mjs";
-import { pairRatios, provenPair } from "./lib/corpus-pairs.mjs";
+import { currentPairingIdentity, pairRatios, structuralPair } from "./lib/corpus-pairs.mjs";
+import { effortModel } from "./lib/pair-effort.mjs";
 import { pairReview } from "./lib/pair-review.mjs";
 
 export function referenceFor(entry) {
@@ -87,7 +88,7 @@ export function summarize(report, readProfile) {
     }
     const atOne = new Map(report.cases.filter((c) => c.scale === 1).map((c) => [c.case, c]));
     const measuredPairs = report.pairs.filter((pair) => atOne.has(pair.case) && atOne.has(pair.isomorph));
-    const pairs = measuredPairs.filter(provenPair).map((pair) => {
+    const pairs = measuredPairs.filter(structuralPair).map((pair) => {
         const a = atOne.get(pair.case),
             b = atOne.get(pair.isomorph);
         const ref = referenceFor(b);
@@ -133,9 +134,10 @@ export function summarize(report, readProfile) {
             ];
         });
     return {
-        schemaVersion: 1,
+        schemaVersion: 2,
         corpus: report.corpus,
         pairingDigest: report.pairingDigest,
+        interpretation: { model: effortModel, pairingDigest: currentPairingIdentity(report.pairs) },
         toolchain: report.toolchain,
         members,
         excluded,
@@ -149,22 +151,18 @@ export function summarize(report, readProfile) {
 
 const number = (n) => n.toLocaleString("en-US");
 const ratio = (a, b) => (b > 0 ? `${(a / b).toFixed(3)}×` : "—");
-const median = (values) => {
-    const sorted = [...values].sort((a, b) => a - b),
-        mid = Math.floor(sorted.length / 2);
-    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-};
-
 export function render(summary) {
     const { core, reference, full, pairs } = summary;
     const rows = [
         "# Performance census",
         "",
         `Corpus: \`${summary.corpus.digest}\`; pairing: \`${summary.pairingDigest}\`.`,
+        `Interpretation: \`${summary.interpretation.model}\`, pairing identity \`${summary.interpretation.pairingDigest}\`. ` +
+            "The original measurement identity above is preserved; this interpretation does not remeasure instructions.",
         "",
         `${full.documents} measured documents. Same-input reference cohort: **${core.documents} documents**; ` +
             "CommonMark uses cmark, GFM uses cmark-gfm, and every nonempty carries declaration is excluded. " +
-            "The JSON lists every included and excluded document. Proof pairs use scale 1 and are a separate cohort.",
+            "The JSON lists every included and excluded document. Structural controls use scale 1 and are a separate cohort.",
         "",
         "Ir is Callgrind's instruction-read count, not elapsed time. Parse-path costs come from the harness call edge. " +
             "Complete parse means the bench_parse_document lifecycle: parsing, the root receipt and document teardown; " +
@@ -198,25 +196,16 @@ export function render(summary) {
         "| ---: | ---: | ---: | ---: |",
         `| ${number(full.source)} | ${number(full.ast)} | ${number(full.parse)} | ${number(full.outside)} |`,
         "",
-        "## Proved domains",
+        "## Parse-effort eligibility",
         "",
-        "| Reference | Pairs | Median Grammar | Median Shape | Median Same-job |",
-        "| --- | ---: | ---: | ---: | ---: |"
+        `**0 certified equal-optimal-effort pairs.** The ${pairs.length} measured structural controls prove output correspondence only.`,
+        "No equivalent-work median is published. A/B, B/R and A/R are descriptive quotients, not removable overhead or a theoretical lower bound."
     );
-    for (const ref of ["cmark", "cmark-gfm"]) {
-        const group = pairs.filter((p) => p.reference === ref);
-        if (!group.length) continue;
-        rows.push(
-            `| ${ref} | ${group.length} | ` +
-                ["grammar", "shape", "sameJob"].map((k) => ratio(median(group.map((p) => p[k])), 1)).join(" | ") +
-                " |"
-        );
-    }
     rows.push(
         "",
-        "Grammar = A/B; Shape = B/R; Same-job = A/R. Grammar includes recognition and construction; " +
-            "Shape includes the complete two-stage implementation on B. Factor medians need not multiply. " +
-            "Boundary interventions and unproved historical substitutions are absent from this table.",
+        "A = Core(dialect), B = Core(alternative), R = reference(alternative), each including Source + AST. " +
+            "A/B includes both recognition and construction; B/R is a same-input implementation comparison. " +
+            "Neither the structural proof nor these numbers establishes equal full-parser optima.",
         "",
         "## Source-attributed program self",
         "",
@@ -255,17 +244,25 @@ export function render(summary) {
         rows.push(`| \`${name}\` | ${number(cost)} |`);
     rows.push(
         "",
-        "## All proved pairs",
+        "## Structural controls (effort unproved)",
         "",
-        "| Case | Reference | A Ir | B Ir | R Ir | Grammar | Shape | Same-job |",
+        "| Case | Reference | A Ir | B Ir | R Ir | A/B | B/R | A/R |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
     );
-    for (const p of [...pairs].sort((a, b) => b.sameJob - a.sameJob))
+    for (const p of [...pairs].sort((a, b) => b.quotient - a.quotient))
         rows.push(
             `| \`${p.case}\` | ${p.reference} | ${number(p.a)} | ${number(p.b)} | ${number(p.r)} | ` +
-                [p.grammar, p.shape, p.sameJob].map((n) => ratio(n, 1)).join(" | ") +
+                [p.grammar, p.shape, p.quotient].map((n) => ratio(n, 1)).join(" | ") +
                 " |"
         );
+    rows.push(
+        "",
+        "## Per-pair effort adjudication",
+        "",
+        "| Proof | Status | Missing cost obligation |",
+        "| --- | --- | --- |"
+    );
+    for (const p of pairs) rows.push(`| ${p.proof} | ${p.effort.status} | ${p.effort.reason} |`);
     rows.push(
         "",
         "## Reviewed boundaries",
@@ -350,6 +347,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     fs.writeFileSync(`${output}.json`, JSON.stringify(summary, null, 2) + "\n");
     fs.writeFileSync(`${output}.md`, render(summary));
     console.log(
-        `Reported ${summary.full.documents} documents, ${summary.members.length} same-input documents, ${summary.pairs.length} proved pairs`
+        `Reported ${summary.full.documents} documents, ${summary.members.length} same-input documents, ${summary.pairs.length} structural controls, 0 equal-optimal-effort certificates`
     );
 }
