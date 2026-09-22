@@ -75,8 +75,8 @@ function syntax(side) {
 }
 
 function register(id, dialect, common, action, options = {}) {
-    registry.set(`${id}-v1`, {
-        id: `${id}-v1`,
+    registry.set(`${id}-v2`, {
+        id: `${id}-v2`,
         dialect: dialect + separator,
         common: common + separator,
         action,
@@ -166,7 +166,7 @@ for (const [id, prefix, block] of [
     register(
         id,
         `${block ? "" : "probe "}${prefix}note[body ${marker}]${block ? "" : " end"}\n\n`,
-        `${block ? "" : "probe "}![body ${marker}](/note)${block ? "" : " end"}\n\n`,
+        `${block ? `![body ${marker}](/note)` : `probe [![body ${marker}](/label)](/note) end`}\n\n`,
         (s, n, side) => {
             const content = [s.text(`body ${n}`)];
             const result =
@@ -174,7 +174,9 @@ for (const [id, prefix, block] of [
                     ? s.node(block ? "DirectiveBlock" : "Directive", { name: "note" }, [
                           s.node("DirectiveLabel", {}, content)
                       ])
-                    : s.link("Embedded", "/note", null, content);
+                    : block
+                      ? s.link("Embedded", "/note", null, content)
+                      : s.link("Link", "/note", null, [s.link("Embedded", "/label", null, content)]);
             return [block ? (side === "dialect" ? result : s.paragraph(result)) : s.inline(result)];
         }
     );
@@ -201,7 +203,7 @@ register(
 register(
     "loose-definition",
     `term ${marker}\n\n: body ${marker}\n\n`,
-    `- term ${marker}\n\n  body ${marker}\n\n`,
+    `- term ${marker}\n\n  > body ${marker}\n\n`,
     (s, n, side) => [
         side === "dialect"
             ? s.node("DefinitionList", {}, [
@@ -210,13 +212,21 @@ register(
                       s.virtual("DefinitionBody", [s.prose(`body ${n}`)])
                   ])
               ])
-            : s.list([s.item([s.prose(`term ${n}`), s.prose(`body ${n}`)])], { tight: false })
+            : s.list(
+                  [
+                      s.item([
+                          s.prose(`term ${n}`),
+                          s.node("Callout", { variant: "null", collapsed: "null" }, [s.prose(`body ${n}`)])
+                      ])
+                  ],
+                  { tight: false }
+              )
     ]
 );
 register(
     "grid-cell",
     `+----------------+\n| body ${marker}    |\n|                |\n| tail ${marker}    |\n+----------------+\n\n`,
-    `- body ${marker}\n\n  tail ${marker}\n\n`,
+    `- > body ${marker}\n  >\n  > tail ${marker}\n\n`,
     (s, n, side) => {
         const children = [s.prose(`body ${n}`), s.prose(`tail ${n}`)];
         return [
@@ -228,7 +238,7 @@ register(
                       ]),
                       s.virtual("TableFoot")
                   ])
-                : s.list([s.item(children)], { tight: false })
+                : s.list([s.item([s.node("Callout", { variant: "null", collapsed: "null" }, children)])])
         ];
     }
 );
@@ -361,15 +371,20 @@ for (const [id, first, second, variant, delimiter, start] of [
         ]
     );
 
-register("empty-directive", `probe${marker} :note[] end\n\n`, `probe${marker} ![](/note) end\n\n`, (s, n, side) => [
-    s.paragraph(
-        s.text(`probe${n} `),
-        side === "dialect"
-            ? s.node("Directive", { name: "note" }, [s.node("DirectiveLabel")])
-            : s.link("Embedded", "/note", null),
-        s.text(" end")
-    )
-]);
+register(
+    "empty-directive",
+    `probe${marker} :note[] end\n\n`,
+    `probe${marker} [![](/label)](/note) end\n\n`,
+    (s, n, side) => [
+        s.paragraph(
+            s.text(`probe${n} `),
+            side === "dialect"
+                ? s.node("Directive", { name: "note" }, [s.node("DirectiveLabel")])
+                : s.link("Link", "/note", null, [s.link("Embedded", "/label", null)]),
+            s.text(" end")
+        )
+    ]
+);
 
 // Named definitions have document ownership rather than unit-local ownership.
 // XML proves content/order; the HTML witness additionally proves labels/edges.
@@ -455,24 +470,56 @@ export function productionWorkload(id, dialect, common) {
         at = inverse.lastIndex;
     }
     if (at !== common.length) throw new Error(`${id}: trailing reference input`);
-    return { kind: "Document", children: values.map((literal) => ({ kind: id, literal, children: [] })) };
+    const canonical = ownership(concrete(proof, "common", values));
+    // A reversible template substitution is insufficient: every semantic owner
+    // must also correspond node-for-node, in order, across all three actions.
+    for (const side of ["dialect", "reference"]) projectOwners(ownership(concrete(proof, side, values)), canonical, id);
+    return { ...canonical, values };
+}
+
+function concrete(proof, side, values) {
+    const s = syntax(side);
+    const children = values.flatMap((n) => [...proof.action(s, n, side), s.node("ThematicBreak")]);
+    if (proof.sideList) for (const n of values) children.push(proof.sideList(s, n, side));
+    return s.node("Document", {}, children);
+}
+
+// These groups are AST-printer fields, not independent node owners. Their
+// complete contents/partition remain checked by the concrete semantic action.
+// In particular, DefinitionTerm/Body and DirectiveLabel are REAL owners.
+function ownership(tree) {
+    const children = tree.children.flatMap((child) => {
+        if (["TableHead", "TableBody", "TableFoot"].includes(child.kind)) return child.children.map(ownership);
+        if (["CitationPrefix", "CitationSuffix"].includes(child.kind)) {
+            if (child.children.length) throw new Error("unmapped nonempty citation affix");
+            return [];
+        }
+        return [ownership(child)];
+    });
+    return { kind: tree.kind, fields: tree.fields, children };
+}
+
+// Constructor/field encodings come from the handwritten actions, after exact
+// checking of every concrete field. Only a pointwise map is allowed: this walk
+// cannot introduce/delete an owner or repair a different parent/child relation.
+function projectOwners(source, canonical, id, path = "Document") {
+    if (source.children.length !== canonical.children.length)
+        throw new Error(
+            `${id}: ownership mismatch at ${path}: ${source.kind}[${source.children.length}] / ${canonical.kind}[${canonical.children.length}]`
+        );
+    return {
+        kind: canonical.kind,
+        fields: canonical.fields,
+        children: source.children.map((child, i) => projectOwners(child, canonical.children[i], id, `${path}/${i}`))
+    };
 }
 
 export function productionTree(id, side, tree, expected, referenceHtml) {
     const proof = registry.get(id);
-    const s = syntax(side);
-    const children = expected.children.flatMap(({ literal }) => [
-        ...proof.action(s, literal, side),
-        s.node("ThematicBreak")
-    ]);
-    if (proof.sideList) for (const { literal } of expected.children) children.push(proof.sideList(s, literal, side));
-    if (
-        side === "reference" &&
-        proof.referenceHtml &&
-        referenceHtml !== proof.referenceHtml(expected.children.map(({ literal }) => literal))
-    )
+    if (!proof || !["dialect", "common", "reference"].includes(side)) throw new Error("unknown production or side");
+    if (side === "reference" && proof.referenceHtml && referenceHtml !== proof.referenceHtml(expected.values))
         throw new Error(`${id}: reference binding graph mismatch`);
-    const wanted = s.node("Document", {}, children);
+    const wanted = concrete(proof, side, expected.values);
     // Drop printer coordinates only. Default fields are checked, not discarded.
     const clean = (root) => {
         const target = { kind: root.kind, fields: {}, children: [] };
@@ -500,5 +547,5 @@ export function productionTree(id, side, tree, expected, referenceHtml) {
         };
         throw new Error(`${id}: ${side} semantic tree mismatch: ${mismatch(actual, wanted)}`);
     }
-    return expected;
+    return { ...projectOwners(ownership(actual), expected, id), values: expected.values };
 }
