@@ -5,6 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
     boundaryFixtures,
+    encodeParents,
     boundaryModel,
     boundaryOperations,
     boundaryPairAudit,
@@ -32,9 +33,12 @@ export function boundaryIdentity(root) {
         "docs/architecture/benchmark-parser-effort.md",
         "scripts/lib/effort-boundaries.mjs",
         "scripts/lib/measure-effort.mjs",
+        "scripts/lib/pair-productions.mjs",
+        "scripts/lib/corpus-pairs.mjs",
+        "scripts/lib/pair-effort.mjs",
         "packages/markdown-core/benchmarks/effort_runner.h",
         "packages/markdown-core/benchmarks/effort_runner.c",
-        "packages/markdown-core/benchmarks/effort_adapter.inc",
+        "packages/markdown-core/benchmarks/effort_adapter.h",
         "packages/markdown-core/benchmarks/markdown_core_effort.c",
         "packages/markdown-core/benchmarks/cmark_effort.c",
         "packages/markdown-core/benchmarks/CMakeLists.txt"
@@ -93,6 +97,15 @@ export function measureEffortBoundaries({ root, binaryDir, out, pairs, toolchain
             rejected++;
         }
     }
+    for (const [index, parents] of [[0], [0xffffffff, 1], [0xffffffff, 0xffffffff], [0xffffffff, 2, 0]].entries()) {
+        const file = path.join(directory, "input", `rejected-owners-${index}.bin`);
+        fs.writeFileSync(file, encodeParents(parents));
+        for (const binary of Object.values(binaries)) {
+            const result = spawnSync(binary.file, ["owners", file, "1", "0", "1"], { ...options, encoding: "utf8" });
+            if (result.status !== 2 || result.stdout) fail("native admission accepted invalid ownership");
+        }
+        rejected++;
+    }
     const cases = [];
     for (const fixture of fixtures) {
         const input = path.join(directory, "input", `${fixture.id}.bin`);
@@ -132,6 +145,7 @@ export function measureEffortBoundaries({ root, binaryDir, out, pairs, toolchain
                 start: fixture.start,
                 ticks: fixture.ticks,
                 ...(fixture.split ? { split: fixture.split, extent: fixture.extent } : {}),
+                ...(fixture.proof ? { proof: fixture.proof, scale: fixture.scale } : {}),
                 engines
             });
     }
@@ -171,7 +185,7 @@ export function boundaryMarkdown(report) {
         "",
         `Contract identity: ${report.identity}. ${report.checkedFixtures} fixtures checked against an independent byte/state oracle in both engines.`,
         "",
-        "Six identical local problems have equal optimal effort under the declared model. Measured Ir compares production code plus native adapters, NOT either implementation with that optimum. Full-parser certificates: 0.",
+        "Seven identical local problems have equal optimal effort under the declared model. Measured Ir compares production code plus native adapters, NOT either implementation with that optimum. Full-parser certificates: 0.",
         "",
         "Preparation and release are measured separately. Their sum with operation is a harness lifecycle, not a decomposed whole-document parse. Existing A/R ratios remain descriptive.",
         "",
@@ -190,7 +204,7 @@ export function boundaryMarkdown(report) {
         "",
         "## Exhaustive disposition of existing structural proofs",
         "",
-        "All rows retain unproved full-parser effort status. The six local contracts above are separate admitted problems, not coverage claims for these parses.",
+        "All rows retain unproved full-parser effort status. The seven local contracts above are separate admitted problems, not coverage claims for these parses.",
         "",
         "| Structural proof | Unmatched recognition/construction work |",
         "| --- | --- |"

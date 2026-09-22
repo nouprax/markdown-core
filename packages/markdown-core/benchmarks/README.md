@@ -25,7 +25,7 @@ node scripts/benchmark-stages.mjs
 The driver builds all three engines, runs them under callgrind, and writes
 `build/benchmark-stages/stages.md`, `stages.json`, and the raw dumps.
 
-It also measures six [certified local operation contracts](../../../docs/architecture/benchmark-effort-boundaries.md)
+It also measures seven [certified local operation contracts](../../../docs/architecture/benchmark-effort-boundaries.md)
 and writes `build/benchmark-stages/effort/effort.{md,json}`, exact input bytes and
 raw dumps. Both native implementations receive the same canonical entry state;
 descriptor adapters count inside the operation, and preparation/release are

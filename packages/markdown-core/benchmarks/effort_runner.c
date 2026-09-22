@@ -15,7 +15,7 @@ EFFORT_NOINLINE effort_state *bench_effort_prepare(const unsigned char *input, i
         effort_state *s = states + i;
         s->input = input;
         s->length = length;
-        s->capacity = length + 1;
+        s->capacity = (operation == EFFORT_OWNERS ? length * 5 : length) + 1;
         s->start = start;
         s->ticks = ticks;
         s->data = malloc((size_t)s->capacity);
@@ -38,33 +38,34 @@ EFFORT_NOINLINE effort_state *bench_effort_prepare(const unsigned char *input, i
 EFFORT_NOINLINE void bench_effort_release(effort_state *states, int count) {
     for (int i = 0; i < count; i++) {
         free(states[i].data);
+        free(states[i].native_nodes);
     }
     free(states);
 }
 
 int main(int argc, char **argv) {
-    const char *names[] = {"copy", "trim", "unescape", "whitespace", "code", "closer"};
+    const char *names[] = {"copy", "trim", "unescape", "whitespace", "code", "closer", "owners"};
     long count, start, ticks;
     char *end;
     int operation;
     if (argc != 6) {
         return 2;
     }
-    for (operation = 0; operation < 6 && strcmp(names[operation], argv[1]); operation++) {
+    for (operation = 0; operation < 7 && strcmp(names[operation], argv[1]); operation++) {
     }
-    if (operation == 6) {
+    if (operation == 7) {
         return 2;
     }
     count = strtol(argv[3], &end, 10);
-    if (*end || count < 1 || count > 128) {
+    if (end == argv[3] || *end || count < 1 || count > 128) {
         return 2;
     }
     start = strtol(argv[4], &end, 10);
-    if (*end || start < 0 || start > INT32_MAX / 2) {
+    if (end == argv[4] || *end || start < 0 || start > INT32_MAX / 2) {
         return 2;
     }
     ticks = strtol(argv[5], &end, 10);
-    if (*end || ticks < 1 || ticks > 80) {
+    if (end == argv[5] || *end || ticks < 1 || ticks > 80) {
         return 2;
     }
     FILE *file = fopen(argv[2], "rb");
@@ -84,7 +85,23 @@ int main(int argc, char **argv) {
     size_t got = fread(input, 1, (size_t)length, file);
     fclose(file);
     input[length] = 0;
-    if (got != (size_t)length || start > length ||
+    if (got != (size_t)length) {
+        free(input);
+        return 1;
+    }
+    if (operation == EFFORT_OWNERS) {
+        if (length < 4 || length % 4 || length >= INT32_MAX / 10 || effort_read_index(input) != UINT32_MAX) {
+            free(input);
+            return 2;
+        }
+        for (long i = 1; i < length / 4; i++) {
+            if (effort_read_index(input + i * 4) >= (uint32_t)i) {
+                free(input);
+                return 2;
+            }
+        }
+    }
+    if (start > length ||
         ((operation == EFFORT_TRIM || operation == EFFORT_WHITESPACE) &&
          (memchr(input, 11, (size_t)length) || memchr(input, 12, (size_t)length))) ||
         ((operation == EFFORT_CODE || operation == EFFORT_CLOSER) &&
@@ -105,7 +122,10 @@ int main(int argc, char **argv) {
     /* Inspect EVERY invocation, including its terminator. Outside measurement. */
     for (int i = 0; i < count; i++) {
         effort_state *s = states + i;
-        if (s->size < 0 || s->size >= s->capacity || s->data[s->size]) {
+        if (operation == EFFORT_OWNERS && !s->failed) {
+            bench_effort_observe_owners(s);
+        }
+        if (s->failed || s->size < 0 || s->size >= s->capacity || s->data[s->size]) {
             bench_effort_release(states, (int)count);
             free(input);
             return 1;

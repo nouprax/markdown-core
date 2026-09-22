@@ -142,7 +142,7 @@ Publish three clearly distinguished forms of evidence:
    nor lower bounds on unavoidable effort.
 
 The full-parser equal-effort cohort is empty until a certificate meets the theorem.
-The [local boundary suite](benchmark-effort-boundaries.md) supplies six separate
+The [local boundary suite](benchmark-effort-boundaries.md) supplies seven separate
 identical-contract certificates and measured production implementations. Their
 entry promises, adapters, preparation, residuals and failure domain are explicit;
 they do not upgrade any of the 43 full-parser claims.

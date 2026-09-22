@@ -4,6 +4,8 @@ import fs from "node:fs";
 import test from "node:test";
 import {
     admitBoundary,
+    encodeParents,
+    ownershipFixtures,
     splitWhitespaceBoundary,
     boundaryFixtures,
     boundaryOperations,
@@ -101,4 +103,19 @@ test("boundary split is lossless and keeps every incompatible byte as residual",
             offset = segment.end;
         }
     }
+});
+
+test("ownership boundary covers every proof at two scales and rejects cycles or extra roots", () => {
+    const rows = ownershipFixtures();
+    assert.equal(rows.length, 86);
+    assert.equal(new Set(rows.map((r) => r.proof)).size, 43);
+    for (const parents of [[0], [0xffffffff, 1], [0xffffffff, 0xffffffff], [0xffffffff, 2, 0]])
+        assert.throws(() => admitBoundary({ operation: "owners", input: encodeParents(parents) }));
+    const result = boundaryOracle({ operation: "owners", input: encodeParents([0xffffffff, 0, 0, 1]) });
+    const words = Buffer.from(result.hex, "hex");
+    assert.equal(words.readUInt32LE(12), 1); // root first
+    assert.equal(words.readUInt32LE(16), 2); // root last
+    assert.equal(words.readUInt32LE(28), 2); // owner 1 next
+    assert.equal(words.readUInt32LE(32), 3); // owner 1 first
+    assert.equal(words.readUInt32LE(44), 1); // owner 2 previous
 });

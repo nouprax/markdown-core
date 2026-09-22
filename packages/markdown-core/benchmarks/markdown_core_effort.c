@@ -22,4 +22,7 @@ static void effort_scan(effort_state *state) {
 #define EFFORT_TRIM_BUFFER markdown_core_strbuf_trim
 #define EFFORT_UNESCAPE_BUFFER markdown_core_strbuf_unescape
 #define EFFORT_NORMALIZE markdown_core_strbuf_normalize_whitespace
-#include "effort_adapter.inc"
+#define EFFORT_NODE markdown_core_node
+#define EFFORT_INIT_NODE(n) ((n)->kind = MARKDOWN_CORE_NODE_CALLOUT)
+#define EFFORT_ATTACH(parent, child) markdown_core_node_attach_validated(parent, child, NULL)
+#include "effort_adapter.h"

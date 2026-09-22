@@ -43,8 +43,10 @@ the call; no output may borrow input. Output is bytes, length and trailing NUL;
 bytes beyond the logical terminator are unspecified. Input must remain unchanged.
 All fresh-search result fields and the 81-word memo are initially zero.
 
-There is sufficient writable capacity on both sides. No boundary operation may
-allocate, fail semantically, or report OOM. This is a complete local contract
+There is sufficient writable capacity on both sides. The six byte operations may not
+allocate, fail semantically, or report OOM. The ownership operation below charges
+its native array allocation inside the measured edge and reports a checked
+resource failure if calloc fails; neither native attach primitive allocates. This is a complete local contract
 with explicit preconditions, not a claim that the full parsers share failure
 behavior. Core sticky OOM and cmark's allocator/abort behavior are deliberately
 outside this domain. Admission rejects invalid lengths, cursor/run parameters,
@@ -58,7 +60,7 @@ work outside these edges. The input buffer remains alive until all calls and
 receipts finish. Each of 16 measured invocations gets an independent fresh state;
 repeated calls do not accidentally benchmark an already normalized buffer.
 
-## Six complete local domains and output relations
+## Seven complete local domains and output relations
 
 | Operation | Domain beyond common entry | Exact output |
 | --- | --- | --- |
@@ -71,8 +73,60 @@ repeated calls do not accidentally benchmark an already normalized buffer.
 
 These domains include empty input, malformed/unclosed delimiters, arbitrary
 high bytes and adversarial long runs. They are infinite up to the fixed-word
-machine bound, not the old six-digit template languages. The finite test corpus
+machine bound, not the old seven-digit template languages. The finite test corpus
 is regression evidence; it is not a proof over every string.
+
+### Ownership construction for all 43 structural pairs
+
+The seventh operation consumes a nonempty array of little-endian uint32 parent
+indices. Entry zero is the unique root with parent UINT32_MAX; every other
+parent index must be less than its child index. The byte length is divisible by
+four and below INT32_MAX/10, leaving room for the observation buffer. This is
+the complete admitted domain: arbitrary depth, branching, insertion order and
+size within that bound, not only the 43 fixture shapes. By induction on creation
+index every node belongs to exactly one acyclic tree rooted at zero.
+
+The output is an ordered **intrusive ownership graph** with the input parent
+relation and siblings in creation order. Every node's parent, previous/next
+sibling and first/last child is observed, not just the number of nodes. It is
+not a complete typed AST. The observer serializes these five links as indices
+only for checking, outside the operation edge, just as the byte observer prints
+buffer contents outside it. Native pointers and layout are algorithm choices;
+no source coordinates, semantic fields or bindings are in this local output.
+
+Both adapters allocate one zeroed native-node array INSIDE operation, initialize
+container tags, and append each fresh child using real production primitives:
+Core's validated attach and cmark's checked append. Their different guards are
+implementation costs of the same admitted task. Each child is initially empty
+and detached; its parent is an earlier live node. Both use block containers
+(Core Callout / cmark BlockQuote) so all these edges are admissible without
+inventing a parser kind or bypassing a semantic rejection. Tag initialization,
+native record size/zeroing, allocation and pointer linking are charged. The
+array is caller-owned scratch for the ownership primitive; it is never passed
+to a full-AST destructor or advertised as a fully initialized semantic AST.
+Release frees the array once. Allocation failure sets the common explicit
+failure field and fails the run; it is not a zero-work success.
+
+Correctness follows by induction: before append i, all previous owners have the
+required ordered child chains and node i is detached. Each native primitive
+sets i.parent, i.prev, the previous last sibling's next (or parent's first),
+and parent's last. The remaining links retain their induction invariant. The
+fresh node's next/children remain null. Both therefore meet the same graph
+relation on the entire admitted domain, so the identical-problem optimum theorem
+applies. Native layout and allocation costs can differ substantially without
+changing this equality of *problem* optima.
+
+For each of the 42 production proofs the independent semantic action constructs
+the canonical ownership tree at 16 and 32 distinct unit values; the recursive
+span proof supplies nested-owner trees at those two scales. An iterative walk
+encodes all owners, retaining order, depth and branching. This supplies **86
+local ownership comparisons tied to all 43 proofs**, plus independent deep and
+wide adversarial trees and the singleton boundary. The production proof is used
+to derive topology, not to confer grammar-effort equivalence. Deciding those
+owners, initializing their real kinds/fields, copying literals, allocating
+parser-specific payloads, source mapping and bindings remain residual work.
+The boundary table lists those obligations for every original pair. No ratio
+of this isolated ownership graph is a replacement for whole-document A/R.
 
 ### Proven mismatch and boundary split: VT/FF
 
@@ -135,8 +189,8 @@ whole code-span parsing, source coordinates, or formula/comment closing rules.
 
 The full-pair audit remains in `pair-effort.mjs`; the generated boundary report
 lists every proof and its unmatched obligations. Boundary certificates are
-registered once for the six tasks, not duplicated 43 times and miscounted as
-43 newly proved grammar equivalences. A local operand must pass its own domain
+registered once for the seven tasks. The 43 ownership shapes are instances of
+one local theorem, not 43 newly proved grammar equivalences. A local operand must pass its own domain
 admission. Availability of a copy/normalization kernel does not prove a given
 whole parse executed that kernel, nor that it copied the same number of bytes.
 

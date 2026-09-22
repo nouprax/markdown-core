@@ -19,4 +19,13 @@ static void effort_scan(effort_state *state) {
 #define EFFORT_TRIM_BUFFER cmark_strbuf_trim
 #define EFFORT_UNESCAPE_BUFFER cmark_strbuf_unescape
 #define EFFORT_NORMALIZE cmark_strbuf_normalize_whitespace
-#include "effort_adapter.inc"
+#define EFFORT_NODE cmark_node
+#define EFFORT_INIT_NODE(n) ((n)->type = CMARK_NODE_BLOCK_QUOTE)
+#define EFFORT_ATTACH(parent, child)                                                                                   \
+    do {                                                                                                               \
+        if (!cmark_node_append_child(parent, child)) {                                                                 \
+            state->failed = 1;                                                                                         \
+            return;                                                                                                    \
+        }                                                                                                              \
+    } while (0)
+#include "effort_adapter.h"

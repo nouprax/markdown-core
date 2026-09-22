@@ -2,9 +2,57 @@
 import { Buffer } from "node:buffer";
 import { isDeepStrictEqual } from "node:util";
 import { effortReview } from "./pair-effort.mjs";
+import { productionProofs, productionWorkload } from "./pair-productions.mjs";
+import { spanLanguage } from "./corpus-pairs.mjs";
 
-export const boundaryModel = "canonical-byte-boundaries-v1";
-export const boundaryOperations = Object.freeze(["copy", "trim", "unescape", "whitespace", "code", "closer"]);
+export const boundaryModel = "canonical-parser-boundaries-v1";
+export const boundaryOperations = Object.freeze(["copy", "trim", "unescape", "whitespace", "code", "closer", "owners"]);
+
+export function encodeParents(parents) {
+    const bytes = Buffer.alloc(parents.length * 4);
+    parents.forEach((parent, i) => bytes.writeUInt32LE(parent, i * 4));
+    return bytes;
+}
+
+export function ownershipTopology(tree) {
+    const parents = [];
+    const stack = [[tree, 0xffffffff]];
+    while (stack.length) {
+        const [node, parent] = stack.pop();
+        const index = parents.length;
+        parents.push(parent);
+        for (let i = node.children.length - 1; i >= 0; i--) stack.push([node.children[i], index]);
+    }
+    return encodeParents(parents);
+}
+
+export function ownershipFixtures() {
+    const fixtures = [];
+    for (const scale of [1, 2]) {
+        const values = Array.from({ length: 16 * scale }, (_, i) => String(i + 1).padStart(6, "0"));
+        const trees = [...productionProofs].map(([proof, p]) => [
+            proof,
+            productionWorkload(
+                proof,
+                values.map((n) => p.dialect.replaceAll("{n:6}", n)).join(""),
+                values.map((n) => p.common.replaceAll("{n:6}", n)).join("")
+            )
+        ]);
+        trees.push(["insertion-strong-v1", spanLanguage("probe ++a ++b++ c++\n\n".repeat(16 * scale), "++")]);
+        for (const [proof, tree] of trees)
+            fixtures.push({
+                id: `owners-${proof}-x${scale}`,
+                operation: "owners",
+                proof,
+                scale,
+                input: ownershipTopology(tree),
+                start: 0,
+                ticks: 1,
+                measure: true
+            });
+    }
+    return fixtures;
+}
 
 /** Lossless SOURCE partition. Recombining transformed chunks is a distinct,
  * uncertified operation; this never claims a compositional parsing theorem. */
@@ -32,8 +80,6 @@ export function boundarySplits() {
     }));
 }
 const space = (b) => b === 32 || b === 9 || b === 10 || b === 13;
-const punctuation = (b) =>
-    (b >= 33 && b <= 47) || (b >= 58 && b <= 64) || (b >= 91 && b <= 96) || (b >= 123 && b <= 126);
 
 export function admitBoundary({ operation, input, start = 0, ticks = 1 }) {
     if (
@@ -48,6 +94,17 @@ export function admitBoundary({ operation, input, start = 0, ticks = 1 }) {
         ticks > 80
     )
         throw new Error("outside boundary domain");
+    if (operation === "owners") {
+        if (
+            input.length < 4 ||
+            input.length % 4 ||
+            input.length >= Math.floor(0x7fffffff / 10) ||
+            input.readUInt32LE() !== 0xffffffff
+        )
+            throw new Error("invalid ownership stream");
+        for (let i = 1; i < input.length / 4; i++)
+            if (input.readUInt32LE(i * 4) >= i) throw new Error("ownership parent is not an earlier owner");
+    }
     if (["trim", "whitespace"].includes(operation) && (input.includes(11) || input.includes(12)))
         throw new Error("VT/FF classification is a semantic boundary");
     if (["code", "closer"].includes(operation) && (input.includes(0) || input.includes(13)))
@@ -69,7 +126,26 @@ export function boundaryOracle(fixture) {
         scanned: 0,
         cache: Array(81).fill(0)
     };
-    if (operation === "trim") {
+    if (operation === "owners") {
+        const parents = Array.from({ length: input.length / 4 }, (_, i) => input.readUInt32LE(i * 4));
+        const children = parents.map(() => []);
+        parents.forEach((parent, i) => {
+            if (i) children[parent].push(i);
+        });
+        const links = parents.map((parent, i) => [
+            parent,
+            0xffffffff,
+            0xffffffff,
+            children[i][0] ?? 0xffffffff,
+            children[i].at(-1) ?? 0xffffffff
+        ]);
+        for (const siblings of children)
+            siblings.forEach((id, at) => {
+                links[id][1] = siblings[at - 1] ?? 0xffffffff;
+                links[id][2] = siblings[at + 1] ?? 0xffffffff;
+            });
+        bytes = [...encodeParents(links.flat())];
+    } else if (operation === "trim") {
         const first = bytes.findIndex((b) => !space(b));
         const last = bytes.findLastIndex((b) => !space(b));
         bytes = first < 0 ? [] : bytes.slice(first, last + 1);
@@ -110,7 +186,7 @@ export function verifyBoundaryReceipt(fixture, stdout, count) {
 }
 
 export function boundaryFixtures() {
-    const result = [];
+    const result = ownershipFixtures();
     const add = (id, operation, input, options = {}) =>
         result.push({ id, operation, input: Buffer.from(input), start: 0, ticks: 1, ...options });
     for (const split of boundarySplits())
@@ -123,6 +199,7 @@ export function boundaryFixtures() {
                 });
         }
     for (const operation of boundaryOperations) {
+        if (operation === "owners") continue;
         add(`${operation}-empty`, operation, "");
         for (const size of [1024, 2048]) {
             const unit = operation === "closer" ? "a``` b`` c " : " a\\*b\t\n c ";
@@ -130,6 +207,18 @@ export function boundaryFixtures() {
             add(`${operation}-mixed-${size}`, operation, body, { ticks: 2, measure: true });
         }
     }
+    add("owners-singleton", "owners", encodeParents([0xffffffff]));
+    for (const count of [256, 512])
+        for (const shape of ["deep", "wide"]) {
+            add(
+                `owners-${shape}-${count}`,
+                "owners",
+                encodeParents(
+                    Array.from({ length: count }, (_, i) => (i === 0 ? 0xffffffff : shape === "deep" ? i - 1 : 0))
+                ),
+                { measure: true }
+            );
+        }
     const alphabet = Buffer.from(Array.from({ length: 256 }, (_, n) => n));
     for (const operation of ["copy", "trim", "unescape", "whitespace"]) {
         add(
@@ -173,11 +262,9 @@ export function boundaryPairAudit(pairs) {
             local: {
                 status: "separate-contracted-problems",
                 certificates: [...boundaryOperations],
+                ownershipCases: [1, 2].map((scale) => `owners-${pair.contract.proof}-x${scale}`),
                 coverage: "No end-to-end cost fraction claimed; boundary inputs must independently pass admission.",
                 residual: effortReview(pair).reason
             }
         }));
 }
-
-// Export predicates for the exhaustive independent specification checks.
-export const byteClasses = { space, punctuation };
