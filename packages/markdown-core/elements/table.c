@@ -583,9 +583,11 @@ typedef struct {
 typedef struct markdown_core_table_source_line {
     const unsigned char *data, *after;
     markdown_core_parser *parser;
-    int length, input_length, offset, first, first_column, indent, line, blanks;
+    int length, input_length, offset, first, first_column, indent, line, blanks, horizontal_end;
+    /* Horizontal grammar returns only zero, '-' or '='. Group the byte facts
+     * with the final offset so the cache fits the former LP64 padding. */
     bool dashes_scanned, full_boundary, horizontal_scanned;
-    int horizontal_end, horizontal_kind;
+    unsigned char horizontal_kind;
     size_t dash_count;
     size_t dash_offset, byte_offset;
     bool dashes_ready, columns_ready;
