@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { inputVersion, sameInputs, validationSource } from "./lib/ci-inputs.mjs";
 import { sourceBudget, SOURCE_IR_LIMIT } from "./lib/source-budget.mjs";
 
 const marker = "<!-- markdown-core-benchmark -->";
@@ -193,81 +194,114 @@ export async function publish({ github, context, core, read = readArchive }) {
     const candidates = associated.filter(matchesRun);
     if (!candidates.length) return;
 
-    const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
-        ...repo,
-        run_id: run.id,
-        per_page: 100
-    });
-    // Failed-job reruns retain successful jobs from earlier attempts. Select
-    // each job's own attempt so a retained result survives, but an unsuccessful
-    // new measurement cannot fall back to its earlier artifact.
-    const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
-        ...repo,
-        run_id: run.id,
-        filter: "latest",
-        per_page: 100
-    });
-    if (
-        run.conclusion === "success" &&
-        (jobs.some((job) => job.name === "Benchmark" && job.conclusion === "skipped") ||
-            measurements.every((measurement) =>
-                jobs.some((job) => job.name === measurement.job && job.conclusion === "skipped")
-            ))
-    )
-        return;
-
-    const readArtifact = async (name, members, limits = {}) => {
-        const matches = artifacts.filter((item) => item.name === name);
-        if (
-            matches.length !== 1 ||
-            matches[0].expired ||
-            !count(matches[0].size_in_bytes) ||
-            matches[0].size_in_bytes > (limits.archiveBytes ?? archiveLimit)
-        )
-            throw new Error("Missing, expired or oversized benchmark artifact");
-        const archive = await github.rest.actions.downloadArtifact({
+    // Both the current preflight and its original validation use the same
+    // bounded artifact reader and snapshot checks. A comment is never evidence.
+    const load = async (measurementRun) => {
+        const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
             ...repo,
-            artifact_id: matches[0].id,
-            archive_format: "zip"
+            run_id: measurementRun.id,
+            per_page: 100
         });
-        return read(Buffer.from(archive.data), members, limits);
-    };
-    let inputs;
-    try {
-        [inputs] = await readArtifact("ci-inputs", ["inputs.json"], { archiveBytes: 65536, memberBytes: 16384 });
+        const readArtifact = async (name, members, limits = {}) => {
+            const matches = artifacts.filter((item) => item.name === name);
+            if (
+                matches.length !== 1 ||
+                matches[0].expired ||
+                !count(matches[0].size_in_bytes) ||
+                matches[0].size_in_bytes > (limits.archiveBytes ?? archiveLimit)
+            )
+                throw new Error("Missing, expired or oversized benchmark artifact");
+            const archive = await github.rest.actions.downloadArtifact({
+                ...repo,
+                artifact_id: matches[0].id,
+                archive_format: "zip"
+            });
+            return read(Buffer.from(archive.data), members, limits);
+        };
+        const [inputs] = await readArtifact("ci-inputs", ["inputs.json"], { archiveBytes: 65536, memberBytes: 16384 });
         if (
-            inputs?.version !== 1 ||
+            inputs?.version !== inputVersion ||
             inputs.repository !== `${repo.owner}/${repo.repo}` ||
             inputs.event !== "pull_request" ||
-            inputs.head !== run.head_sha ||
+            inputs.head !== measurementRun.head_sha ||
             !count(inputs.pullRequest) ||
             inputs.ref !== `refs/pull/${inputs.pullRequest}/merge`
         )
             throw new Error("CI inputs do not identify the triggering PR snapshot");
+        digest(inputs.head, 40);
         digest(inputs.base, 40);
+        digest(inputs.fingerprint);
+        const source = validationSource(inputs, run.path, measurementRun);
+        return { run: measurementRun, inputs, source, artifacts, readArtifact };
+    };
+    let target;
+    try {
+        target = await load(run);
     } catch (error) {
         core.warning(`Cannot bind benchmark results to a PR: ${error.message}`);
         return;
     }
+    const { inputs, source } = target;
     // Historical workflow API responses can contain the PR's current base.
     // The existing input evidence records the actual tested merge's parent.
     const matches = (pr) => matchesRun(pr) && pr.number === inputs.pullRequest && pr.base.sha === inputs.base;
     const pulls = candidates.filter(matches);
     if (!pulls.length) return;
 
+    // A wholly documentation-only PR has no measurement. A follow-up that
+    // reused validation points directly to the full run, even across many skips.
+    if (!source) return;
+    const reused = source.runId !== run.id;
+    let measured = target;
+    try {
+        if (reused) {
+            const { data: original } = await github.rest.actions.getWorkflowRun({ ...repo, run_id: source.runId });
+            if (
+                original.id !== source.runId ||
+                original.run_attempt !== source.runAttempt ||
+                original.status !== "completed" ||
+                original.conclusion !== "success" ||
+                original.path !== run.path ||
+                original.event !== run.event ||
+                original.head_repository?.id !== run.head_repository.id ||
+                original.head_branch !== run.head_branch ||
+                !(Date.parse(original.created_at) <= Date.parse(run.created_at)) ||
+                !(Date.parse(original.created_at) >= Date.parse(pulls[0].created_at)) ||
+                (original.pull_requests?.length &&
+                    !original.pull_requests.some((pr) => pr.number === inputs.pullRequest))
+            )
+                throw new Error("Original validation run no longer matches the recorded source");
+            measured = await load(original);
+            if (!measured.inputs.validation.required || !sameInputs(measured.inputs, inputs)) {
+                throw new Error("Original validation does not prove identical execution inputs and base");
+            }
+        }
+        // Failed-job reruns retain successful jobs from earlier attempts. Use
+        // each job's own attempt, never an earlier artifact of a failed retry.
+        measured.jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+            ...repo,
+            run_id: measured.run.id,
+            filter: "latest",
+            per_page: 100
+        });
+    } catch (error) {
+        core.warning(`Cannot recover benchmark measurement: ${error.message}`);
+        measured = null;
+    }
     const sections = [];
     for (const { kind, title, job: jobName, members, render } of measurements) {
-        const job = jobs.find((item) => item.name === jobName);
-        const artifactName = `benchmark-report-${kind}-${job?.run_attempt}`;
-        if (job?.conclusion === "skipped" && !artifacts.some((item) => item.name === artifactName)) {
-            sections.push(`### ${title}\n\nMeasurement skipped. See the run logs for the preflight decision.`);
-            continue;
-        }
         try {
-            if (job?.status !== "completed" || !count(job.run_attempt) || job.run_attempt > run.run_attempt) {
+            if (!measured) throw new Error("Original measurement is unavailable");
+            const job = measured.jobs.find((item) => item.name === jobName);
+            const artifactName = `benchmark-report-${kind}-${job?.run_attempt}`;
+            if (job?.conclusion === "skipped" && !measured.artifacts.some((item) => item.name === artifactName)) {
+                sections.push(`### ${title}\n\nMeasurement skipped. See the run logs for the preflight decision.`);
+                continue;
+            }
+            if (job?.status !== "completed" || !count(job.run_attempt) || job.run_attempt > measured.run.run_attempt) {
                 throw new Error("Measurement job is missing or belongs to another attempt");
             }
-            const reports = await readArtifact(artifactName, members);
+            const reports = await measured.readArtifact(artifactName, members);
             if (kind === "stages" && reports[1]?.revision !== inputs.base) {
                 throw new Error("Stage baseline differs from the tested PR base");
             }
@@ -281,7 +315,13 @@ export async function publish({ github, context, core, read = readArchive }) {
         ? run.conclusion
         : "unknown";
     const runUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${run.id}/attempts/${run.run_attempt}`;
-    const body = `${marker}\n<!-- run:${run.id}:${run.run_attempt} -->\n## Benchmark\n\nCommit: \`${run.head_sha}\` · [Run and full reports](${runUrl}) · CI status: **${status}**\n\nBenchmark is required when CI inputs require execution. This ordinary PR comment does not create a review thread to resolve.\n\n${sections.join("\n\n")}`;
+    const measurementUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${source.runId}/attempts/${source.runAttempt}`;
+    const provenance = reused
+        ? measured
+            ? `Reused validation of identical execution inputs and integration base. Measured commit: \`${measured.run.head_sha}\` · [Original run and full reports](${measurementUrl}).`
+            : `Reused validation's [original measurement](${measurementUrl}) is unavailable.`
+        : `[Run and full reports](${measurementUrl}).`;
+    const body = `${marker}\n<!-- run:${run.id}:${run.run_attempt} -->\n## Benchmark\n\nCommit: \`${run.head_sha}\` · [CI run](${runUrl}) · CI status: **${status}**\n\n${provenance}\n\nBenchmark is required when CI inputs require execution. This ordinary PR comment does not create a review thread to resolve.\n\n${sections.join("\n\n")}`;
 
     for (const pr of pulls) {
         const comments = await github.paginate(github.rest.issues.listComments, {
@@ -306,6 +346,15 @@ export async function publish({ github, context, core, read = readArchive }) {
         const { data: latest } = await github.rest.actions.getWorkflowRun({ ...repo, run_id: run.id });
         const { data: current } = await github.rest.pulls.get({ ...repo, pull_number: pr.number });
         if (!matches(current) || latest.run_attempt !== run.run_attempt || latest.status !== "completed") continue;
+        if (reused && measured) {
+            const { data: original } = await github.rest.actions.getWorkflowRun({ ...repo, run_id: source.runId });
+            if (
+                original.run_attempt !== source.runAttempt ||
+                original.status !== "completed" ||
+                original.conclusion !== "success"
+            )
+                continue;
+        }
         if (existing) {
             await github.rest.issues.updateComment({ ...repo, comment_id: existing.id, body });
         } else {

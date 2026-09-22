@@ -147,15 +147,18 @@ function fixture() {
         comments: [],
         writes: [],
         warnings: [],
+        reads: [],
         associated: [pr],
         inputs: {
-            version: 1,
+            version: 2,
             repository: "nouprax/markdown-core",
             event: "pull_request",
             ref: "refs/pull/9/merge",
             pullRequest: 9,
             head,
-            base
+            base,
+            fingerprint: "f".repeat(64),
+            validation: { required: true, sources: {} }
         },
         artifacts: ["benchmark-report-stages-1", "benchmark-report-attributes-1", "ci-inputs"].map((name, id) => ({
             id,
@@ -168,13 +171,19 @@ function fixture() {
             "Benchmark / Measure - the attribute grammar against lexbor"
         ].map((name) => ({ name, status: "completed", conclusion: "success", run_attempt: 1 }))
     };
+    const snapshot = (run_id) => {
+        state.reads.push(run_id);
+        if (run_id === state.run.id) return state;
+        assert.equal(run_id, state.original?.run.id, "only the recorded source may be read");
+        return state.original;
+    };
     const api = {
         repos: { listPullRequestsAssociatedWithCommit: () => state.associated },
         pulls: { get: async () => ({ data: state.current }) },
         actions: {
-            listWorkflowRunArtifacts: () => state.artifacts,
-            listJobsForWorkflowRun: () => state.jobs,
-            getWorkflowRun: async () => ({ data: state.latest }),
+            listWorkflowRunArtifacts: ({ run_id }) => snapshot(run_id).artifacts,
+            listJobsForWorkflowRun: ({ run_id }) => snapshot(run_id).jobs,
+            getWorkflowRun: async ({ run_id }) => ({ data: snapshot(run_id).latest }),
             downloadArtifact: async ({ artifact_id }) => ({ data: Buffer.from(String(artifact_id)) })
         },
         issues: {
@@ -183,6 +192,7 @@ function fixture() {
             updateComment: async (args) => state.writes.push({ method: "update", ...args })
         }
     };
+    state.api = api;
     state.publish = () =>
         publish({
             github: { rest: api, paginate: async (method, args) => method(args) },
@@ -193,7 +203,8 @@ function fixture() {
             },
             core: { warning: (message) => state.warnings.push(message) },
             read: (bytes) => {
-                if (bytes.toString() === "2") return [state.inputs];
+                if (bytes.toString() === "102") return [state.inputs];
+                if (bytes.toString() === "2") return [state.original?.inputs ?? state.inputs];
                 return bytes.toString() === "0" ? [stageReport(103), stageReport(100)] : [attributes()];
             }
         });
@@ -284,7 +295,7 @@ test("unavailable or inconsistent input evidence fails closed without publishing
             s.artifacts.push(s.artifacts[2]);
         },
         (s) => {
-            s.inputs.version = 2;
+            s.inputs.version = 1;
         },
         (s) => {
             s.inputs.repository = "someone/else";
@@ -423,14 +434,214 @@ test("missing, corrupt or expired artifacts produce an explicit partial result",
     }
 });
 
-test("a docs-only skip preserves the last measured comment and posts no empty report", async () => {
+function reusedFixture() {
     const state = fixture();
-    state.artifacts = [];
-    state.jobs.forEach((job) => {
-        job.conclusion = "skipped";
-    });
+    state.original = Object.fromEntries(
+        ["run", "latest", "inputs", "artifacts", "jobs"].map((key) => [key, globalThis.structuredClone(state[key])])
+    );
+    Object.assign(state.run, { id: 60, head_sha: "c".repeat(40), created_at: "2026-09-22T12:01:00Z" });
+    state.latest = globalThis.structuredClone(state.run);
+    state.pr.head.sha = state.current.head.sha = state.inputs.head = state.run.head_sha;
+    state.inputs.validation = {
+        required: false,
+        sources: Object.fromEntries(
+            ["ci.yml", "codeql.yml", "release-dry-run.yml"].map((name, index) => [
+                `.github/workflows/${name}`,
+                { runId: 42 + index, runAttempt: 1 }
+            ])
+        )
+    };
+    state.artifacts = [{ id: 102, name: "ci-inputs", expired: false, size_in_bytes: 100 }];
+    state.jobs = [{ name: "Benchmark", status: "completed", conclusion: "skipped", run_attempt: 1 }];
+    return state;
+}
+
+test("a documentation push recovers a measurement whose old publisher lost the PR-head race", async () => {
+    const old = fixture();
+    old.current.head.sha = "c".repeat(40);
+    await old.publish();
+    assert.equal(old.writes.length, 0, "obsolete publisher cannot write to the new head");
+    for (const fork of [false, true]) {
+        const state = reusedFixture();
+        if (fork) {
+            state.run.pull_requests = [];
+            state.original.latest.pull_requests = [];
+        }
+        await state.publish();
+        assert.equal(state.writes.length, 1, "no existing comment is needed");
+        assert.equal(state.writes[0].method, "create");
+        const { body } = state.writes[0];
+        assert.match(body, /<!-- run:60:1 -->/);
+        assert.ok(body.includes(`Commit: \`${state.run.head_sha}\``));
+        assert.ok(body.includes(`Measured commit: \`${head}\``));
+        assert.match(body, /Reused validation of identical execution inputs and integration base/);
+        assert.match(body, /runs\/42\/attempts\/1/);
+        assert.match(body, /0\/1 passed/);
+        assert.match(body, /2.0000×/);
+        assert.equal(state.warnings.length, 0);
+    }
+});
+
+test("successive skips publish the direct original measurement and update the same comment", async () => {
+    const state = reusedFixture();
+    await state.publish();
+    state.comments = [{ id: 10, user: { login: "github-actions[bot]", type: "Bot" }, body: state.writes[0].body }];
+    state.writes.length = 0;
+    state.run.id = state.latest.id = 80;
+    state.run.head_sha =
+        state.latest.head_sha =
+        state.inputs.head =
+        state.pr.head.sha =
+        state.current.head.sha =
+            "d".repeat(40);
+    await state.publish();
+    assert.equal(state.writes.length, 1);
+    assert.equal(state.writes[0].method, "update");
+    assert.equal(state.writes[0].comment_id, 10);
+    assert.match(state.writes[0].body, /<!-- run:80:1 -->/);
+    assert.match(state.writes[0].body, /0\/1 passed/);
+    assert.ok(state.reads.every((id) => [42, 60, 80].includes(id)));
+});
+
+test("a wholly documentation-only PR has no original measurement and posts no empty report", async () => {
+    const state = reusedFixture();
+    state.inputs.validation.sources = {};
     await state.publish();
     assert.equal(state.writes.length, 0);
+    assert.deepEqual(state.reads, [60]);
+});
+
+test("invalid reuse provenance cannot nominate a measurement or overwrite a comment", async () => {
+    for (const validation of [
+        undefined,
+        { required: true, sources: { ".github/workflows/ci.yml": { runId: 42, runAttempt: 1 } } },
+        { required: false, sources: { ".github/workflows/ci.yml": { runId: 42, runAttempt: 1 } } },
+        ...[0, -1, "42", 60, 70].map((runId) => {
+            const { sources } = reusedFixture().inputs.validation;
+            sources[".github/workflows/ci.yml"].runId = runId;
+            return { required: false, sources };
+        })
+    ]) {
+        const state = reusedFixture();
+        state.inputs.validation = validation;
+        await state.publish();
+        assert.equal(state.writes.length, 0);
+        assert.deepEqual(state.reads, [60]);
+    }
+});
+
+test("unavailable, superseded or mismatched original validation is explicit and never falls back", async () => {
+    for (const mutate of [
+        (s) => {
+            s.original.latest.conclusion = "failure";
+        },
+        (s) => {
+            s.original.latest.status = "in_progress";
+        },
+        (s) => {
+            s.original.latest.run_attempt = 2;
+        },
+        (s) => {
+            s.original.latest.path = ".github/workflows/other.yml";
+        },
+        (s) => {
+            s.original.latest.event = "push";
+        },
+        (s) => {
+            s.original.latest.head_repository.id = 200;
+        },
+        (s) => {
+            s.original.latest.head_branch = "other";
+        },
+        (s) => {
+            s.original.latest.created_at = "2026-09-22T12:02:00Z";
+        },
+        (s) => {
+            s.original.latest.created_at = "2026-09-22T10:00:00Z";
+        },
+        (s) => {
+            s.original.latest.pull_requests = [{ number: 10 }];
+        },
+        (s) => {
+            s.original.inputs.pullRequest = 10;
+            s.original.inputs.ref = "refs/pull/10/merge";
+        },
+        (s) => {
+            s.original.inputs.base = head;
+        },
+        (s) => {
+            s.original.inputs.fingerprint = "a".repeat(64);
+        },
+        (s) => {
+            s.original.inputs.head = "c".repeat(40);
+        },
+        (s) => {
+            s.original.inputs.validation.required = false;
+        },
+        (s) => {
+            s.original.artifacts.pop();
+        },
+        (s) => {
+            s.original.artifacts[2].expired = true;
+        }
+    ]) {
+        const state = reusedFixture();
+        mutate(state);
+        await state.publish();
+        assert.equal(state.writes.length, 1);
+        assert.match(state.writes[0].body, /original measurement.*is unavailable/);
+        assert.match(state.writes[0].body, /Result unavailable/);
+        assert.doesNotMatch(state.writes[0].body, /0\/1 passed|2.0000×/);
+    }
+});
+
+test("reused measurements still check the current PR and original attempt immediately before writing", async () => {
+    for (const mutate of [
+        (s) => {
+            s.current.head.sha = head;
+        },
+        (s) => {
+            s.current.base.sha = head;
+        },
+        (s) => {
+            s.latest.run_attempt = 2;
+        },
+        (s) => {
+            s.original.latest.run_attempt = 2;
+        },
+        (s) => {
+            s.original.latest.status = "in_progress";
+        },
+        (s) => {
+            s.original.latest.conclusion = "failure";
+        }
+    ]) {
+        const state = reusedFixture();
+        state.api.issues.listComments = () => {
+            mutate(state);
+            return [];
+        };
+        await state.publish();
+        assert.equal(state.writes.length, 0);
+    }
+});
+
+test("reuse reads each retained job's attempt and exposes missing original reports", async () => {
+    const state = reusedFixture();
+    state.inputs.validation.sources[".github/workflows/ci.yml"].runAttempt = 2;
+    state.original.latest.run_attempt = 2;
+    state.original.jobs[0].run_attempt = 2;
+    state.original.artifacts[0].name = "benchmark-report-stages-2";
+    await state.publish();
+    assert.match(state.writes[0].body, /0\/1 passed/);
+    assert.match(state.writes[0].body, /2.0000×/);
+    assert.match(state.writes[0].body, /runs\/42\/attempts\/2/);
+    state.writes.length = 0;
+    state.original.artifacts[0].expired = true;
+    await state.publish();
+    assert.match(state.writes[0].body, /Result unavailable/);
+    assert.doesNotMatch(state.writes[0].body, /0\/1 passed/);
+    assert.match(state.writes[0].body, /2.0000×/);
 });
 
 test("failed-job retries retain successful measurements but cannot reuse a failed retry's old artifact", async () => {
@@ -452,11 +663,13 @@ test("failed-job retries retain successful measurements but cannot reuse a faile
     assert.match(state.writes[0].body, /2.0000×/);
 });
 
-test("a skipped reusable Benchmark call preserves the comment", async () => {
+test("skipped job names cannot substitute for the preflight's reuse evidence", async () => {
     const state = fixture();
     state.jobs = [{ name: "Benchmark", conclusion: "skipped" }];
     await state.publish();
-    assert.equal(state.writes.length, 0);
+    assert.equal(state.writes.length, 1);
+    assert.match(state.writes[0].body, /Result unavailable/);
+    assert.doesNotMatch(state.writes[0].body, /0\/1 passed|2.0000×/);
 });
 
 test("producer and publisher keep PR execution separate from write permissions", () => {

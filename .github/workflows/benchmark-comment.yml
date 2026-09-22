@@ -29,6 +29,7 @@ jobs:
                   persist-credentials: false
                   sparse-checkout: |
                       scripts/benchmark-comment.mjs
+                      scripts/lib/ci-inputs.mjs
                       scripts/lib/source-budget.mjs
                   sparse-checkout-cone-mode: false
             - name: Update the PR benchmark comment

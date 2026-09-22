@@ -235,8 +235,11 @@ review thread to resolve. The comment includes base/current source, AST and
 complete-parse counts, the source budget, attribute results and a link to all
 reports and raw profiles. Missing or invalid reports are explicitly unavailable;
 failed measurements do not silently retain an older result as current. A
-successful documentation-only skip preserves the last measured comment, with
-its original commit and run link.
+documentation-only follow-up that reuses validation publishes the original
+measurement for the current commit, identifying both the measured commit and
+its run. Publication does not depend on whether the original run's comment
+arrived before the follow-up push. A wholly documentation-only PR has no
+measurement to publish.
 
 Measurement runs have read-only permissions, including on fork PRs. The
 `workflow_run` publisher checks out only its default-branch commit, reads
@@ -251,8 +254,17 @@ prevents publication. This snapshot is necessary because historical run API
 responses can contain a PR's updated base rather than the base actually tested.
 The stage report's baseline must also equal that recorded base.
 
+For reused validation, the publisher follows the original CI run and attempt
+recorded by preflight. That run must still be successful, belong to the same
+PR, head repository and branch, and contain a full-validation snapshot with
+identical execution inputs and tested base. It never searches for an older
+green measurement. Missing, expired or inconsistent source evidence produces
+an explicitly unavailable result. The comment's ordering belongs to the current
+run, so an old publisher cannot overwrite a newer reused result.
+
 Immediately before writing, the publisher rechecks the PR identity, current
-head and base, head repository, branch, open state and run attempt, and will
+head and base, head repository, branch, open state and run attempt, plus the
+original run's attempt and successful completion when reusing validation. It will
 not overwrite a newer run's bot-owned comment. The publisher must first exist
 on the default branch before GitHub can trigger it.
 
@@ -317,8 +329,15 @@ execution inputs and the same tested merge base. Main-branch pushes apply the
 same rule to CI and CodeQL. Older successes cannot bypass a newer failure or
 unfinished run. Code-changing merge groups always run fully.
 
-Each preflight records its actual inputs in a small `ci-inputs` artifact retained
-for 30 days. PR bases come from the tested merge's parents, because historical
+Each preflight records its actual inputs and execution decision in a small
+version-2 `ci-inputs` artifact retained for 30 days. Reused validation records
+each required workflow's original full-validation run and attempt. Successive
+documentation pushes carry these direct references forward, keeping provenance
+bounded without walking a chain of skipped runs. A wholly documentation-only
+snapshot has no validation source. Missing or invalid provenance, including
+older schema versions, requires full validation before reuse.
+
+PR bases come from the tested merge's parents, because historical
 run API responses can contain updated PR metadata. Evidence is accepted only
 from a successful run for the same repository, event, ref, and PR. Re-running a
 workflow replaces its record; failed-job retries can retain the original record
