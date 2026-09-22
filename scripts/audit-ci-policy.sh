@@ -9,8 +9,8 @@ changes=.github/workflows/changes.yml
 codeql=.github/workflows/codeql.yml
 release=.github/workflows/release.yml
 release_dry_run=.github/workflows/release-dry-run.yml
-stage_benchmark=.github/workflows/stage-benchmark.yml
-attribute_benchmark=.github/workflows/attribute-benchmark.yml
+benchmark=.github/workflows/benchmark.yml
+benchmark_comment=.github/workflows/benchmark-comment.yml
 ruleset=.github/rulesets/main.json
 owner_review_ruleset=.github/rulesets/owner-review.json
 release_ruleset=.github/rulesets/release-tags.json
@@ -65,8 +65,8 @@ for required in \
     "$codeql" \
     "$release" \
     "$release_dry_run" \
-    "$stage_benchmark" \
-    "$attribute_benchmark" \
+    "$benchmark" \
+    "$benchmark_comment" \
     "$ruleset" \
     "$owner_review_ruleset" \
     "$release_ruleset" \
@@ -81,7 +81,8 @@ done
 node --test scripts/tests/ci-changes.test.mjs scripts/tests/callgrind.test.mjs \
     scripts/tests/corpus-splits.test.mjs scripts/tests/corpus-pairs.test.mjs \
     scripts/tests/benchmark-stages-cli.test.mjs scripts/tests/compile-identity.test.mjs \
-    scripts/tests/source-budget.test.mjs scripts/tests/report-performance.test.mjs
+    scripts/tests/source-budget.test.mjs scripts/tests/report-performance.test.mjs \
+    scripts/tests/benchmark-comment.test.mjs
 
 # THE PERFORMANCE PIPELINE MEASURES WORK, NOT TIME. Every hosted-runner
 # wall-clock pipeline this repository has had was retired for the same reason:
@@ -91,7 +92,8 @@ node --test scripts/tests/ci-changes.test.mjs scripts/tests/callgrind.test.mjs \
 # compares references against pinned engines. Source regressions additionally
 # compare the event base and current source within the same measurement job.
 for retired in \
-    .github/workflows/benchmark.yml \
+    .github/workflows/stage-benchmark.yml \
+    .github/workflows/attribute-benchmark.yml \
     .github/workflows/pr-benchmark.yml \
     .github/workflows/pr-benchmark-comment.yml \
     .github/workflows/pr-metrics.yml \
@@ -121,20 +123,14 @@ fi
 # an engine built with flags the other was not, a corpus only one side sees, or
 # a report that reaches a privileged context as text.
 test -x scripts/benchmark-stages.mjs
-grep -Fq 'name: Stage Benchmark' "$stage_benchmark"
-grep -Fq 'node scripts/benchmark-stages.mjs' "$stage_benchmark"
-grep -Fq 'install --no-install-recommends --yes valgrind' "$stage_benchmark"
-grep -Fq 'scripts/init-environment.sh --install oracle-cmark' "$stage_benchmark"
-grep -Fq 'GITHUB_STEP_SUMMARY' "$stage_benchmark"
-# The report is a job summary and an artifact, never a comment: a workflow that
-# both runs pull-request code and holds a write token is the shape that made the
-# previous pipeline need two workflows and an artifact-validation protocol.
-if grep -Eq '^[[:space:]]+(pull-requests|issues|contents):[[:space:]]+write$' "$stage_benchmark" "$attribute_benchmark"; then
+grep -Fq 'name: Benchmark' "$benchmark"
+grep -Fq 'node scripts/benchmark-stages.mjs' "$benchmark"
+grep -Fq 'install --no-install-recommends --yes valgrind' "$benchmark"
+grep -Fq 'scripts/init-environment.sh --install oracle-cmark' "$benchmark"
+# Measurement executes PR code with read-only permissions; only the independent
+# default-branch publisher can write comments. Behavioral tests cover that split.
+if grep -Eq '^[[:space:]]+(pull-requests|issues|contents):[[:space:]]+write$' "$benchmark"; then
     echo "a benchmark holds a write token while executing pull-request code" >&2
-    exit 1
-fi
-if grep -Eq 'createComment|updateComment|issues\.create' "$stage_benchmark" "$attribute_benchmark"; then
-    echo "a benchmark writes untrusted measurement text back to a pull request" >&2
     exit 1
 fi
 # One harness, one corpus: both runners are the same driver source over the same
@@ -154,9 +150,7 @@ for boundary in \
     }
 done
 # A source regression cannot be hidden by total-stage or median improvements.
-grep -Fq -- '--baseline-ref "$BASE_REVISION"' "$stage_benchmark"
-job_body required-gates "$ci" | grep -Fq -- '- stage-benchmark'
-job_body required-gates "$ci" | grep -Fq '"$SOURCE_BUDGET"'
+grep -Fq -- '--baseline-ref "$BASE_REVISION"' "$benchmark"
 grep -Fq 'sourceBudget(cases, baseline.cases)' scripts/benchmark-stages.mjs
 
 # Both engines must be compiled from one pinned description, and the flags must
@@ -327,7 +321,7 @@ grep -Fq 'corpusDigest' scripts/benchmark-stages.mjs || {
     echo "the stage benchmark does not identify the corpus it measured" >&2
     exit 1
 }
-grep -Fq 'build/benchmark-stages/corpus' "$stage_benchmark" || {
+grep -Fq 'build/benchmark-stages/corpus' "$benchmark" || {
     echo "the stage benchmark does not publish the corpus its digest names" >&2
     exit 1
 }
@@ -634,7 +628,7 @@ fi
 required_gate_job=$(job_body required-gates "$ci")
 grep -Fq '            - tests-ready' <<<"$required_gate_job"
 grep -Fq '            - upstream-parity' <<<"$required_gate_job"
-grep -Fq '            - stage-benchmark' <<<"$required_gate_job"
+grep -Fq '            - benchmark' <<<"$required_gate_job"
 if grep -Eq 'pr-metrics|collect-pr-metrics|binary\.size|coverage' <<<"$required_gate_job"; then
     echo "measurement-only work leaked into the required gate" >&2
     exit 1
@@ -770,19 +764,6 @@ done
 # skips and classification failures are covered by the behavioral tests above.
 dry_run_gate=$(job_body dry-run-gate "$release_dry_run")
 grep -Fq '        needs: [changes, validate, c-artifacts, swift-source, npm-package, maven-linux, maven-macos, maven-aggregate]' <<<"$dry_run_gate"
-for result in \
-    'needs.changes.result' \
-    'needs.validate.result' \
-    "needs['c-artifacts'].result" \
-    "needs['swift-source'].result" \
-    "needs['npm-package'].result" \
-    "needs['maven-linux'].result" \
-    "needs['maven-macos'].result" \
-    "needs['maven-aggregate'].result"; do
-    grep -Fq "$result" <<<"$dry_run_gate"
-done
-grep -Fq 'test "$result" = success' <<<"$dry_run_gate"
-
 maven_aggregate=$(job_body maven-aggregate "$release_dry_run")
 grep -Fq '        needs: [maven-linux, maven-macos]' <<<"$maven_aggregate"
 search '^    workflow_call:$' "$ci"

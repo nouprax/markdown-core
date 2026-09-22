@@ -1,0 +1,40 @@
+name: Benchmark Comment
+
+on:
+    workflow_run:
+        workflows: [CI]
+        types: [completed]
+
+permissions:
+    actions: read
+    contents: read
+    pull-requests: write
+
+# Serialize publishers for the same PR branch, including reruns. The script
+# also checks the current PR head and run attempt immediately before writing.
+concurrency:
+    group: benchmark-comment-${{ github.event.workflow_run.head_repository.id }}-${{ github.event.workflow_run.head_branch }}
+    cancel-in-progress: false
+
+jobs:
+    comment:
+        if: ${{ github.event.workflow_run.event == 'pull_request' }}
+        runs-on: ubuntu-latest
+        steps:
+            # workflow_run's github.sha is a trusted default-branch commit.
+            # Never checkout the producer's head or execute downloaded content.
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  ref: ${{ github.sha }}
+                  persist-credentials: false
+                  sparse-checkout: |
+                      scripts/benchmark-comment.mjs
+                      scripts/lib/ci-inputs.mjs
+                      scripts/lib/source-budget.mjs
+                  sparse-checkout-cone-mode: false
+            - name: Update the PR benchmark comment
+              uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+              with:
+                  script: |
+                      const { publish } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/benchmark-comment.mjs`);
+                      await publish({ github, context, core });

@@ -82,19 +82,20 @@ jobs:
 
     codeql-gate:
         name: CodeQL gate
-        if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.required != 'false') }}
+        if: ${{ always() }}
         needs: [changes, analyze]
         runs-on: ubuntu-latest
         permissions:
             contents: read
         steps:
-            - name: Require every CodeQL language
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - name: Report required validation result
+              uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
               env:
-                  CHANGES: ${{ needs.changes.result }}
-                  RESULT: ${{ needs.analyze.result }}
-              run: |
-                  test "$CHANGES" = success
-                  if [ "$RESULT" != success ]; then
-                      echo "CodeQL matrix concluded: $RESULT" >&2
-                      exit 1
-                  fi
+                  NEEDS: ${{ toJSON(needs) }}
+              with:
+                  script: |
+                      const { requireGate } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/ci-gate.mjs`);
+                      core.info(requireGate(JSON.parse(process.env.NEEDS)));

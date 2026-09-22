@@ -223,11 +223,56 @@ for each document/scale. A cheaper AST stage cannot offset a source regression.
 Both reports and raw dumps are published even when that budget fails.
 
 The runners exist only with `MARKDOWN_CORE_BENCHMARKS=ON`; CTest owns
-correctness, while the reusable stage workflow supplies the source budget to
-`Required gates`. The informational attribute/lexbor benchmark runs in a separate
-workflow, outside CI and release dependencies. Its setup, measurement and upload
-failures stay visible without blocking a passing source budget. Both workflows
-honor the shared documentation-only preflight and retain their reports.
+correctness, while the reusable `Benchmark` workflow supplies the source budget
+and attribute/lexbor measurement to `Required gates`. CI invokes it only when
+its shared preflight requires execution, so Benchmark does not repeat preflight
+or overwrite CI's input evidence. Manual Benchmark runs always measure. A
+required run must finish both measurements and artifact uploads successfully.
+
+After a PR's CI run completes, `Benchmark Comment` publishes validated numeric
+results to one ordinary PR comment and updates it on later runs. It creates no
+review thread to resolve. The comment includes base/current source, AST and
+complete-parse counts, the source budget, attribute results and a link to all
+reports and raw profiles. Missing or invalid reports are explicitly unavailable;
+failed measurements do not silently retain an older result as current. A
+documentation-only follow-up that reuses validation publishes the original
+measurement for the current commit, identifying both the measured commit and
+its run. Publication does not depend on whether the original run's comment
+arrived before the follow-up push. A wholly documentation-only PR has no
+measurement to publish.
+
+Measurement runs have read-only permissions, including on fork PRs. The
+`workflow_run` publisher checks out only its default-branch commit, reads
+bounded JSON members without extracting or executing PR artifacts, and renders
+only validated counts and identifiers. Candidate PRs come from GitHub's commit
+association API, restricted to the triggering run's PR identities when present.
+A PR created after the run cannot receive its results, including for fork runs
+whose PR list is empty. The existing `ci-inputs` snapshot then narrows these
+candidates to the recorded PR number, merge ref, head and tested base; an
+artifact cannot nominate an unrelated PR. Missing or invalid input evidence
+prevents publication. This snapshot is necessary because historical run API
+responses can contain a PR's updated base rather than the base actually tested.
+The stage report's baseline must also equal that recorded base.
+
+For reused validation, the publisher follows the original CI run and attempt
+recorded by preflight. That run must still be successful, belong to the same
+PR, head repository and branch, and contain a full-validation snapshot with
+identical execution inputs and tested base. It never searches for an older
+green measurement. Missing, expired or inconsistent source evidence produces
+an explicitly unavailable result. The comment's ordering belongs to the current
+run, so an old publisher cannot overwrite a newer reused result.
+
+Immediately before writing, the publisher rechecks the PR identity, current
+head and base, head repository, branch, open state and run attempt, plus the
+original run's attempt and successful completion when reusing validation. It will
+not overwrite a newer run's bot-owned comment. The publisher must first exist
+on the default branch before GitHub can trigger it.
+
+Artifacts are scoped to each measurement's run attempt. On failed-job retries,
+the publisher uses GitHub's latest job records to retain earlier successful
+measurements. A new failed measurement without a report cannot fall back to its
+previous attempt's artifact.
+
 The engine has no measurement mode: it keeps one
 parse entry with no feed/finish lifecycle, and the stage split is read out of
 the recorded call graph afterwards. The profiling flavour differs from Release by
@@ -257,13 +302,16 @@ cross-host Maven artifact producers. When full validation is required, a
 failed, cancelled, skipped, or missing producer blocks readiness; a manual
 dry run has a different context.
 
-Every CI, CodeQL, release dry-run, and stage benchmark run first uses the
-shared `changes.yml` preflight. Repository integrity, documentation contracts, test
+Every CI, CodeQL, and release dry-run run first uses the
+shared `changes.yml` preflight; CI's Benchmark call uses that same decision.
+Repository integrity, documentation contracts, test
 topology, and documented release coordinates are checked even for
-documentation-only changes. Required workflows always start; their gates may
-skip only after a successful preflight explicitly permits it. A failed preflight
-or missing decision fails the gates rather than leaving
-required contexts pending or treating an unexpected skip as success.
+documentation-only changes. Required workflows and their final gates always
+run. The gates share `scripts/ci-gate.mjs`: a successful preflight with an
+explicit `false` accepts successful or skipped dependencies and reports success.
+An explicit `true` requires every dependency to succeed. Failed or cancelled
+dependencies, failed preflight, and missing or invalid decisions always fail;
+an unexpected skip is never treated as successful full validation.
 
 `scripts/ci-changes.mjs` identifies prose through a conservative path allowlist.
 Markdown fixtures, machine-readable specifications, source, build configuration,
@@ -281,8 +329,15 @@ execution inputs and the same tested merge base. Main-branch pushes apply the
 same rule to CI and CodeQL. Older successes cannot bypass a newer failure or
 unfinished run. Code-changing merge groups always run fully.
 
-Each workflow records its actual inputs in a small `ci-inputs` artifact retained
-for 30 days. PR bases come from the tested merge's parents, because historical
+Each preflight records its actual inputs and execution decision in a small
+version-2 `ci-inputs` artifact retained for 30 days. Reused validation records
+each required workflow's original full-validation run and attempt. Successive
+documentation pushes carry these direct references forward, keeping provenance
+bounded without walking a chain of skipped runs. A wholly documentation-only
+snapshot has no validation source. Missing or invalid provenance, including
+older schema versions, requires full validation before reuse.
+
+PR bases come from the tested merge's parents, because historical
 run API responses can contain updated PR metadata. Evidence is accepted only
 from a successful run for the same repository, event, ref, and PR. Re-running a
 workflow replaces its record; failed-job retries can retain the original record
