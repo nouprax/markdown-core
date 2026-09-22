@@ -58,7 +58,7 @@ The follow-up review closes the originally omitted construction boundaries:
 | `table.c:table_child` | The only attached pairs are fixed-element Table/Row and Row/Cell; caption construction has no parent. Both kind pairs and the element owner are asserted. |
 | Table lead paragraph | The destination is the converted table's parent, not the table. Acceptance for a new paragraph sibling is decided before conversion/allocation. Refusal leaves the original paragraph intact. |
 | Link/citation/footnote/formula/autolink rewrites | The existing recognition-time decision authorizes the commit; fresh built-in inline containers admit their transferred children. |
-| `node.c:attach_owned` and arbitrary mutation | Retain checked ownership/containment for unproven detached or arbitrary trees. Parser construction no longer calls `attach_owned`; arbitrary mutation additionally checks ancestry before unlinking. |
+| Arbitrary mutation | Retains ancestry and containment validation before unlinking. The unused `attach_owned` wrapper has been removed; proven construction uses the shared validated splice. |
 
 The shared splice checks pure built-in containment in Debug/ASan without
 replaying dynamic callbacks. A subprocess regression deliberately attempts an
@@ -163,6 +163,43 @@ stage improvements. Raw base/current reports and failing rows are published
 before the gate fails. `Required gates` depends on this reusable benchmark
 workflow. Reference ratios, formal pairs, workload diagnostics and boundary
 splits keep the interpretation established by merged PR #366.
+
+## Re-review of `3119c35b` (2026-09-22)
+
+[Claude's re-review](https://github.com/nouprax/markdown-core/pull/365#issuecomment-5763970631)
+confirmed the seven earlier repairs and identified the following follow-ups:
+
+- Table character access is now pure; loops charge scan spans, union-find
+  charges visits on return, and source ordering records actual key/pass visits
+  instead of a flat `16 * closed_count`. Existing adversarial complexity bounds
+  remain in force.
+- A real allocator-seam test warms and replays the existing non-committing
+  caption/table query for pipe, simple, multiline and grid grammars plus a
+  rejected grid. Replays allocate and release nothing while successful queries
+  still rebuild geometry. Initial growth and AST construction legitimately
+  allocate; the requirement applies to reusable query scratch.
+- Source-column identity is checked in a shared inline wrapper. Only mapped
+  input enters the mapping function, including from per-line finalization.
+- The three remaining `parser->error |= attributes.oom` writes now use the
+  first-cause helper. They were latent violations, not a reproduced live failure.
+- The claimed public element-extension regression is based on an incorrect
+  installation premise: `core/CMakeLists.txt` lists private build headers, but
+  installs only `include/markdown_core.h`. The element API already describes
+  itself as internal; it now explicitly requires returned inline tokens to
+  satisfy built-in containment. Debug/ASan verifies that proof, and a dynamic
+  policy is still evaluated once for each token. Release does not replay a
+  proven built-in decision.
+- Removed the unused checked-detached attachment wrapper and corrected the
+  assertion/ownership comments. The three owned-root kind exclusions share one
+  definition across built-in and dynamic decisions.
+- NUL-bearing short lines now exercise fact capacity and normalized-view
+  counts. The documentation already included NUL-bearing facts and explicitly
+  excluded AST/allocator memory from its geometry bound. It now gives the full
+  input-workspace formula for repeated NUL lines; the reported whole-process
+  RSS is a different quantity and does not contradict that bound.
+- The source-budget module now explicitly states that moving work outside the
+  stage can evade this gate. Complete parse and outside-stage counts remain
+  required report context, including the six-byte boundary document.
 
 ## Commit review ledger
 

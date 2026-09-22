@@ -372,18 +372,10 @@ int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_o
 
 /* Commit an exclusively owned, detached subtree after the caller has proved
  * containment and disjointness. No callbacks, allocation, or rejection occurs
- * after ownership starts to move. Pointer-link assertions do not re-evaluate
- * containment predicates, which may have side effects. */
+ * after ownership starts to move. Debug/ASan checks the pointer links and
+ * pure built-in containment; stateful callbacks are never re-evaluated. */
 void markdown_core_node_attach_validated(markdown_core_node *parent, markdown_core_node *child,
                                          markdown_core_node *before);
-
-/* Attach an exclusively owned, detached subtree before a child of parent,
- * or at the end when before is NULL. The caller must establish that the
- * subtree is disjoint from parent, by construction or an earlier cycle check.
- * No ancestor walk, allocation, or transfer occurs on rejection. This private
- * operation validates construction and shares its non-failing splice with
- * the checked mutation API. */
-int markdown_core_node_attach_owned(markdown_core_node *parent, markdown_core_node *child, markdown_core_node *before);
 
 /* The bit a BLOCK kind occupies in a container-kind set, or zero for an inline
  * kind or none at all. Block kind values are small and dense, so a set of the

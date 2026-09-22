@@ -30,9 +30,16 @@ The optional record is 64 bytes on LP64/LLP64 and is reserved only for queried
 or NUL-bearing lines; its vector has the same doubling bound. Capacity survives
 input changes, so the bound uses the maximum visited-line and fact counts of
 any active input during the parse, not just the final input's length.
-Tests use empty and one-character lines across capacity boundaries and assert
-record size, capacity, absence of optional facts, and one frontier advance per
-source byte.
+For N NUL-bearing lines, normalized views additionally retain one pointer-sized
+header per line plus its raw content length, two extra bytes per NUL, and LF/NUL
+terminators. On LP64/LLP64, repeated `\0\n` therefore requests
+12C + 64C + 13L input-workspace bytes: for L >= 8, [89L, 165L), or
+44.5–82.5 times that two-byte-per-line input. This still excludes the AST and
+allocator overhead; neither this bound nor the LF-only geometry bound is a
+bound on total parse memory or process RSS.
+Tests use empty, one-character and NUL-bearing lines across capacity boundaries
+and assert record size, independent geometry/fact capacity bounds, one normalized
+view per NUL-bearing line, and one frontier advance per source byte.
 
 The source driver advances through the static inline scanner in `blocks.c`.
 External lookahead calls a wrapper around that same scanner; there is one
@@ -52,6 +59,9 @@ The active grammar line always has exactly one terminal LF. Advancing grammar
 cursors does not change its extent, so both block-end and last-line columns
 derive the content length from that shared invariant instead of inspecting
 and stripping line endings again. Debug/ASan asserts the invariant.
+Source-column projection checks the root-input identity in a header inline;
+only mapped cell input enters the out-of-line mapping operation. The same
+wrapper serves all producers, including the driver's per-line finalization.
 Initial workspace allocation is outside `source_to_buffer`, while growth
 remains inside it. Comparisons must
 therefore include the report's `parsePathIr` and `outsideStagesIr` as well as
@@ -121,6 +131,20 @@ workspace across table regions, headings, footnotes, and specimens. Its space
 depends on entries, not the coordinate range, and at most eight byte passes
 order any input. Repeating bounded-size candidates does not allocate more
 scratch after the high-water capacity has been reached.
+Allocator-seam tests repeat the existing non-committing caption/table query
+after warming it: every successful grammar and a failed candidate make zero
+allocation/reallocation/free calls on replay, while successful queries still
+rebuild candidate geometry and the later producer builds the expected AST.
+Initial workspace growth and committed AST storage are not zero-allocation
+operations.
+
+Table scan accounting charges scalar/byte probe spans once at their owning
+loop, instead of mutating a counter in the character accessor. Short-circuited
+ranges can be conservatively overcounted; the count remains an upper bound for
+the complexity gates, not an exact instruction count. Union-find walks charge
+their actual visits on return. Source ordering records its key scan and the two
+entry visits per radix pass actually performed; tables no longer charge a flat
+sixteen visits for every closed region, including an already ordered sequence.
 
 Reservations check overflow, retain the old pointer and capacity on failure,
 and return the new pointer for typed assignment. They never access a typed

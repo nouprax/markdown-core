@@ -829,12 +829,32 @@ static const int *table_line_bytes(const table_source_line *line) {
 }
 
 static int table_character(const table_source_line *line, int column) {
-    line->parser->table_scan_work++;
     if (column < 0 || column >= line->columns) {
         return 0;
     }
     int c = line->data[table_line_bytes(line)[column]];
     return c == '\t' ? ' ' : c;
+}
+
+/* Accessors are pure. Charge a scan once for its visited span, including
+ * the non-space probe that terminates it, instead of writing the counter
+ * for each character. Other loops charge their bounded probe range. */
+static int table_skip_spaces(const table_source_line *line, int first, int end) {
+    int start = first;
+    while (first < end && table_character(line, first) == ' ') {
+        first++;
+    }
+    line->parser->table_scan_work += (size_t)(first - start) + (first < end);
+    return first;
+}
+
+static int table_trim_spaces(const table_source_line *line, int first, int end) {
+    int last = end;
+    while (end > first && table_character(line, end - 1) == ' ') {
+        end--;
+    }
+    line->parser->table_scan_work += (size_t)(last - end) + (end > first);
+    return end;
 }
 
 static int table_byte(const table_source_line *line, int column) {
@@ -1037,9 +1057,7 @@ static bool table_set_columns(table_source *source, table_candidate *candidate, 
         if (right > line->columns) {
             right = line->columns;
         }
-        while (right > left && table_character(line, right - 1) == ' ') {
-            right--;
-        }
+        right = table_trim_spaces(line, left, right);
         bool occupied = right > left;
         bool left_space = table_character(line, left) == ' ';
         bool right_space = right - table_dash(source, runs, i).start <
@@ -1055,6 +1073,7 @@ static bool table_set_columns(table_source *source, table_candidate *candidate, 
                 total;
         }
     }
+    source->parser->table_scan_work += count; /* One left-edge probe per column. */
     return true;
 }
 
@@ -1134,12 +1153,13 @@ static bool table_same_dashes(table_source *source, size_t left, size_t right) {
     }
     size_t a = source->lines[left].dash_offset, b = source->lines[right].dash_offset;
     for (size_t i = 0; i < count; i++) {
-        source->parser->table_scan_work++;
         if (table_dash(source, a, i).start != table_dash(source, b, i).start ||
             table_dash(source, a, i).end != table_dash(source, b, i).end) {
+            source->parser->table_scan_work += i + 1;
             return false;
         }
     }
+    source->parser->table_scan_work += count;
     return true;
 }
 
@@ -1148,7 +1168,6 @@ static bool table_same_dashes(table_source *source, size_t left, size_t right) {
  * digits, so distinct widths, offsets and column counts cost source-linear
  * work without hashing or repeatedly comparing long shared prefixes. */
 static unsigned table_separator_digit(table_source *source, table_separator_key key, size_t digit) {
-    source->parser->table_scan_work++;
     if (digit / 16 >= key.count) {
         return 0;
     }
@@ -1212,6 +1231,7 @@ static void table_simple_search_finish(table_source *source, size_t first, size_
             continue;
         }
         size_t lengths[17] = {0}, offsets[17], cursors[17];
+        source->parser->table_scan_work += 2 * group.count;
         for (size_t i = group.first; i < group.first + group.count; i++) {
             lengths[table_separator_digit(source, keys[i], group.digit)]++;
         }
@@ -1391,17 +1411,18 @@ failed:
 
 static int table_grid_root(table_source *source, int *parents, int column) {
     int root = column;
-    source->parser->table_scan_work++;
+    size_t work = 1;
     while (parents[root] != root) {
-        source->parser->table_scan_work++;
+        work++;
         root = parents[root];
     }
     while (parents[column] != column) {
-        source->parser->table_scan_work++;
+        work++;
         int next = parents[column];
         parents[column] = root;
         column = next;
     }
+    source->parser->table_scan_work += work;
     return root;
 }
 
@@ -1505,6 +1526,7 @@ static bool table_grid_rows(table_source *source, table_candidate *candidate, co
         table_grid_region *region = &regions[i];
         indices[region->top] = 1;
         indices[region->bottom + 1] = 1;
+        source->parser->table_scan_work += 2 * (region->bottom - region->top);
         for (size_t b = region->top + 1; b <= region->bottom; b++) {
             table_source_line *line = &source->lines[boundaries[b]];
             if (table_character(line, columns[region->left]) == '+' ||
@@ -1631,6 +1653,7 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         for (size_t c = 0; c < width; c++) {
             regions[active_count + c] = (table_grid_region){r, r, c, c, 1};
         }
+        source->parser->table_scan_work += (width - 1) * (boundaries[r + 1] - boundaries[r] + 1);
         for (size_t c = 1; c < width; c++) {
             bool wall = true;
             for (size_t line = boundaries[r]; line <= boundaries[r + 1]; line++) {
@@ -1680,12 +1703,13 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
             goto done;
         }
     }
+    size_t order_work = source->parser->source_order.work;
     if (!markdown_core_order_source_entries(&source->parser->source_order, closed, closed_count, sizeof(*closed),
                                             table_region_source_key)) {
         markdown_core_parser_fail(source->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         goto done;
     }
-    source->parser->table_scan_work += 16 * closed_count;
+    source->parser->table_scan_work += source->parser->source_order.work - order_work;
     valid = table_grid_rows(source, candidate, columns, boundaries, row_count, closed, closed_count);
 done:
     return valid;
@@ -1703,9 +1727,9 @@ static bool table_grid_opening(table_source *source, size_t index, int *left, in
     table_source_line *line = &source->lines[index];
     int last = line->length;
     while (last > line->first && (line->data[last - 1] == ' ' || line->data[last - 1] == '\t')) {
-        line->parser->table_scan_work++;
         last--;
     }
+    line->parser->table_scan_work += (size_t)(line->length - last) + (last > line->first);
     if (!table_horizontal_bytes(line, line->first, last) || !table_source_columns(source, index)) {
         return false;
     }
@@ -1793,20 +1817,21 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
             goto failed;
         }
         table_source_line *line = &source->lines[i];
+        source->parser->table_scan_work++;
         int first = table_character(line, left);
         if (first != '+' && first != '|') {
             break;
         }
-        int last = line->columns - 1;
-        while (last > left && table_character(line, last) == ' ') {
-            last--;
-        }
-        if (last != right || (table_character(line, right) != '+' && table_character(line, right) != '|')) {
+        int last = table_trim_spaces(line, left + 1, line->columns) - 1;
+        source->parser->table_scan_work++;
+        int edge = table_character(line, right);
+        if (last != right || (edge != '+' && edge != '|')) {
             table_grid_search_finish(source, start, end, left, right, false);
             goto failed;
         }
         int previous = -1;
         bool horizontal = true;
+        source->parser->table_scan_work += (size_t)(right - left) + 1;
         for (int c = left; c <= right; c++) {
             int ch = table_character(line, c);
             if (ch == '+') {
@@ -1847,6 +1872,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
     }
     for (size_t i = start; i <= end; i++) {
         bool boundary = false;
+        source->parser->table_scan_work += count;
         for (size_t c = 0; c < count; c++) {
             boundary |= table_character(&source->lines[i], positions[c]) == '+';
         }
@@ -1897,6 +1923,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
     for (size_t c = 0; c + 1 < count; c++) {
         total += positions[c + 1] - positions[c] - 1;
     }
+    source->parser->table_scan_work += 2 * (count - 1);
     for (size_t c = 0; c + 1 < count; c++) {
         bool l = table_character(alignment, positions[c] + 1) == ':',
              r = table_character(alignment, positions[c + 1] - 1) == ':';
@@ -1991,6 +2018,10 @@ static void table_append_range(table_source *source, markdown_core_node *node, s
     if (left > right) {
         left = right;
     }
+    /* A scan position has one tab probe and at most two escape probes. A
+     * run-ending position can be inspected again by the outer loop, so allow
+     * two visits per position. Charge once, even if allocation stops copying. */
+    parser->table_scan_work += (escapes ? 6u : 2u) * (size_t)(right - left);
     for (int column = left; column < right && !parser->error;) {
         int byte = table_byte(line, column);
         if (line->data[byte] == '\t') {
@@ -2038,10 +2069,7 @@ static void table_fill_cell(table_source *source, markdown_core_node *node, cons
     for (size_t i = cell->first; i <= cell->last; i++) {
         table_source_line *line = &source->lines[i];
         int end = cell->right < line->columns ? cell->right : line->columns;
-        int first = cell->left;
-        while (first < end && table_character(line, first) == ' ') {
-            first++;
-        }
+        int first = table_skip_spaces(line, cell->left, end);
         if (first < end && first - cell->left < padding) {
             padding = first - cell->left;
         }
@@ -2049,15 +2077,11 @@ static void table_fill_cell(table_source *source, markdown_core_node *node, cons
     for (size_t i = cell->first; i <= cell->last && !source->parser->error; i++) {
         table_source_line *line = &source->lines[i];
         int first = cell->left, end = cell->right < line->columns ? cell->right : line->columns;
-        while (end > first && table_character(line, end - 1) == ' ') {
-            end--;
-        }
+        end = table_trim_spaces(line, first, end);
         if (blocks) {
             first += padding < end - first ? padding : end - first;
         } else {
-            while (first < end && table_character(line, first) == ' ') {
-                first++;
-            }
+            first = table_skip_spaces(line, first, end);
         }
         table_append_range(source, node, i, first, end, !blocks);
         table_append_newline(source, node, i);

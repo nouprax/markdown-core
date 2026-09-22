@@ -111,7 +111,9 @@ static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, 
         markdown_core_attribute_parser attributes = {.data = term.data, .length = term.len};
         bool reference = markdown_core_parse_reference_inline(&term, NULL, &attributes, 0) != 0;
         parser->attribute_work += attributes.work;
-        parser->error |= attributes.oom;
+        if (attributes.oom) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
         markdown_core_attribute_parser_free(&attributes);
         if (reference || parser->error) {
             return false;

@@ -213,6 +213,8 @@ typedef struct {
     uint64_t *keys;
     unsigned char *entries;
     size_t key_capacity, entry_capacity;
+    /* Key entries inspected by ordering, accumulated once per scan/pass. */
+    size_t work;
 } markdown_core_source_order;
 
 struct markdown_core_parser {
@@ -383,6 +385,8 @@ struct markdown_core_parser {
      * the linearity gates of both. */
     size_t comment_scan_work;
     size_t block_lookahead_work;
+    /* Scalar/byte probe ranges plus union-find and ordering visits. Scans
+     * charge a span once; short-circuited ranges may conservatively overcount. */
     size_t table_scan_work, table_frontier_peak;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
     size_t table_scratch_growth;
@@ -842,7 +846,13 @@ bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdo
 /* Project a byte column in the active input to its original source column.
  * Line numbers already name physical source lines. Column zero stays a
  * line-ending sentinel. Producers call this when assigning node scopes. */
-int markdown_core_parser_source_column(markdown_core_parser *parser, int line, int column);
+int markdown_core_parser_mapped_source_column(markdown_core_parser *parser, int line, int column);
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int markdown_core_parser_source_column(
+    markdown_core_parser *parser, int line, int column) {
+    return column < 0 || parser->block_root == parser->root
+               ? column
+               : markdown_core_parser_mapped_source_column(parser, line, column);
+}
 int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                              int column, bufsize_t length, bufsize_t offset);
 

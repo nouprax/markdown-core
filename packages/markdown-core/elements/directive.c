@@ -226,7 +226,9 @@ static int scan_directive_attributes(markdown_core_parser *parser, unsigned char
                                      parsed_directive *parsed) {
     markdown_core_attribute_parser attributes = {.data = data, .length = len};
     bufsize_t end = markdown_core_attributes_end(&attributes, *pos);
-    parser->error |= attributes.oom;
+    if (attributes.oom) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
     parser->attribute_work += attributes.work;
     markdown_core_attribute_parser_free(&attributes);
     if (!end) {
@@ -328,7 +330,9 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
             bufsize_t end;
             int matched = markdown_core_attributes_parse(&attributes, 0, &node->attributes, &end);
             parser->attribute_work += attributes.work;
-            parser->error |= attributes.oom;
+            if (attributes.oom) {
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            }
             markdown_core_attribute_parser_free(&attributes);
             if (!matched) {
                 return 0;

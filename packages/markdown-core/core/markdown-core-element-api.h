@@ -33,6 +33,13 @@ typedef struct {
  * opaque-body elements provide only their construction and decoding hook.
  * A callback may consume an internal token without returning a node. A decline
  * leaves both the cursor and the tree unchanged.
+ * A returned token is exclusively owned and detached. Its constructor must
+ * guarantee the fixed grammar's built-in containment for the receiving
+ * parent; the dispatcher commits that proof and checks it in Debug/ASan.
+ * An optional dynamic parent policy is a separate decision made by the
+ * dispatcher for each returned token, with refusal releasing the token.
+ * Private test descriptors have the same constructor obligations. Registering
+ * a descriptor does not turn this internal API into a supported extension API.
  *
  * Element state follows the descriptor's parser, inline and node lifecycle
  * callbacks. Owned subtree roots participate in the shared iterative walks.

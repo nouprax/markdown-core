@@ -506,10 +506,8 @@ int markdown_core_parser_append_content_marks(markdown_core_parser *parser, cons
     return 1;
 }
 
-int markdown_core_parser_source_column(markdown_core_parser *parser, int line, int column) {
-    if (column < 0 || parser->block_root == parser->root) {
-        return column;
-    }
+int markdown_core_parser_mapped_source_column(markdown_core_parser *parser, int line, int column) {
+    assert(column >= 0 && parser->block_root != parser->root);
     size_t index = (size_t)(line - parser->input_first_line);
     assert(line >= parser->input_first_line && index < parser->input_line_count);
     int source_line, source_column;
@@ -2933,6 +2931,7 @@ int markdown_core_order_source_entries(markdown_core_source_order *workspace, vo
         return 0;
     }
     workspace->keys = keys;
+    workspace->work += count;
     uint64_t *key_source = keys;
     uint64_t *key_target = keys + count;
     uint64_t differing = 0;
@@ -2957,6 +2956,7 @@ int markdown_core_order_source_entries(markdown_core_source_order *workspace, vo
         }
         size_t offsets[256] = {0};
         size_t offset = 0;
+        workspace->work += 2 * count;
         for (size_t i = 0; i < count; i++) {
             offsets[(key_source[i] >> shift) & 255]++;
         }

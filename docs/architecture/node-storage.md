@@ -62,15 +62,17 @@ destination fields directly and do not share a resource with a definition.
 Parser construction transfers a detached, independently owned subtree. The
 caller establishes disjoint ownership by creating the subtree or detaching it
 from a known separate owner; merely having no parent is not proof of
-disjointness. `markdown_core_node_attach_owned` validates local links and
-containment when the construction point has not already made that decision.
-`markdown_core_node_attach_validated` is the one non-failing splice used by
-both that operation and callers with an established containment decision.
+disjointness. `markdown_core_node_attach_validated` is the one non-failing
+splice for callers with an established containment decision. The unused
+checked-detached wrapper has been removed; unproven trees use checked mutation.
 It asserts local links and the pure built-in containment rule in Debug/ASan.
 Checked mutation and assertions share that rule. Built-in elements declare the
 parent-kind domain retained by their payload across conversion; an unrelated
 kind cannot silently inherit a different containment policy. Dynamic callbacks
 remain decision operations and are never replayed by an assertion.
+Internal inline constructors must return a detached token admitted by their
+fixed grammar owner. The private element API states this obligation; arbitrary
+third-party descriptors are not an installed or supported extension surface.
 The arbitrary mutation API checks ancestry and containment once before
 unlinking, then commits through the same splice. A custom predicate therefore
 observes the original tree and is never called again after detachment.

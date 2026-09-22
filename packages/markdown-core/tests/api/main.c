@@ -3770,7 +3770,7 @@ typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
     size_t registered_definitions, definition_lists, citation_brace_bytes, tables, table_frontier;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
-    size_t physical_lines, physical_capacity, physical_facts;
+    size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
@@ -3822,6 +3822,11 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
     work->physical_lines = parser->input_line_count;
     work->physical_capacity = parser->input_line_capacity;
     work->physical_facts = parser->input_fact_count;
+    work->physical_fact_capacity = parser->input_fact_capacity;
+    work->normalized_lines = 0;
+    for (size_t i = 0; i < parser->input_fact_count; i++) {
+        work->normalized_lines += parser->input_facts[i].normalized != NULL;
+    }
     work->metadata_key_bytes = parser->metadata_key_work;
     work->metadata_value_bytes = parser->metadata_decoded_bytes;
     work->table_scratch_growth = parser->table_scratch_growth;
@@ -4571,8 +4576,8 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         source[length - 1] = '@'; /* A failed candidate, as well as ordinary text. */
         source[length] = 0;
         markdown_core_node_set_literal(text, source);
-        markdown_core_node_attach_owned(root, paragraph, NULL);
-        markdown_core_node_attach_owned(paragraph, text, NULL);
+        markdown_core_node_attach_validated(root, paragraph, NULL);
+        markdown_core_node_attach_validated(paragraph, text, NULL);
         const unsigned char *original = text->as.literal->data;
         void *state = NULL;
         text_allocation_calls = 0;
@@ -5372,11 +5377,12 @@ static void source_entries_order_by_the_key_bytes_that_differ(test_batch_runner 
     static const struct {
         const char *name;
         int allocations;
+        size_t passes;
     } shapes[] = {
-        {"already ordered", 1},
-        {"top byte only", 2},
-        {"every byte", 2},
-        {"ties", 2},
+        {"already ordered", 1, 0},
+        {"top byte only", 2, 1},
+        {"every byte", 2, 8},
+        {"ties", 2, 1},
     };
     for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
         uint32_t state = 0x9E3779B9u;
@@ -5412,11 +5418,15 @@ static void source_entries_order_by_the_key_bytes_that_differ(test_batch_runner 
         payload_probe_arm();
         int ok =
             markdown_core_order_source_entries(&workspace, entries, COUNT, sizeof(*entries), markdown_core_source_key);
+        INT_EQ(runner, workspace.work, COUNT * (1 + 2 * shapes[shape].passes),
+               "ordering charges the key scan and only the radix passes performed");
         size_t allocations = payload_allocations;
         OK(runner,
            markdown_core_order_source_entries(&workspace, entries, COUNT, sizeof(*entries), markdown_core_source_key),
            "a second ordering reuses scratch");
         INT_EQ(runner, payload_allocations, allocations, "ordering allocates only on capacity growth");
+        INT_EQ(runner, workspace.work, COUNT * (2 + 2 * shapes[shape].passes),
+               "already ordered replay adds one key scan");
         markdown_core_source_order_dispose(&workspace);
         size_t live = payload_live;
         payload_probe_disarm();
@@ -7148,10 +7158,13 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
 static void short_line_storage_is_bounded(test_batch_runner *runner) {
     INT_EQ(runner, sizeof(markdown_core_input_line), 12, "ordinary physical geometry occupies twelve bytes");
     for (size_t count = 8; count <= 65537; count = count == 8 ? 1025 : count * 64 - 63) {
-        for (int text = 0; text < 2; text++) {
+        for (int shape = 0; shape < 3; shape++) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
             for (size_t i = 0; i < count; i++) {
-                markdown_core_strbuf_puts(&source, text ? "x\n" : "\n");
+                if (shape) {
+                    markdown_core_strbuf_putc(&source, shape == 1 ? 'x' : 0);
+                }
+                markdown_core_strbuf_putc(&source, '\n');
             }
             inline_work work = {0};
             markdown_core_node *root =
@@ -7159,7 +7172,14 @@ static void short_line_storage_is_bounded(test_batch_runner *runner) {
             OK(runner, root != NULL, "adversarial short lines parse");
             INT_EQ(runner, work.physical_lines, count, "one geometry record per physical line");
             INT_EQ(runner, work.physical_line_bytes, source.size, "the source frontier consumes each byte once");
-            INT_EQ(runner, work.physical_facts, 0, "ordinary short lines allocate no optional facts");
+            INT_EQ(runner, work.physical_facts, shape == 2 ? count : 0,
+                   "every NUL-bearing line, and no ordinary short line, needs one fact record");
+            INT_EQ(runner, work.normalized_lines, shape == 2 ? count : 0,
+                   "each NUL-bearing line owns exactly one replacement view");
+            OK(runner,
+               shape == 2 ? work.physical_fact_capacity >= count && work.physical_fact_capacity < 2 * count
+                          : work.physical_fact_capacity == 0,
+               "optional facts obey their own doubling bound");
             OK(runner, work.physical_capacity >= count && work.physical_capacity < 2 * count,
                "retained geometry capacity is bounded by twice the number of lines");
             markdown_core_node_free(root);
@@ -7301,7 +7321,84 @@ static void semantic_rejection_preserves_its_cause(test_batch_runner *runner) {
     markdown_core_node_free(root);
 }
 
+typedef struct {
+    test_batch_runner *runner;
+    bool entered, matches;
+} table_transaction_probe;
+
+/* Exercise the existing non-committing caption query while the real source
+ * driver owns the current line. A scan hook only observes; the normal table
+ * producer still parses and constructs the document afterwards. */
+static bool probe_table_transactions(markdown_core_parser *parser, block_start_context *context, block_start *start) {
+    (void)start;
+    table_transaction_probe *probe = parser->root->user_data;
+    if (probe->entered) {
+        return false;
+    }
+    probe->entered = true;
+    for (int pass = 0; pass < 4; pass++) {
+        size_t allocations = payload_allocations, releases = payload_releases;
+        size_t geometry = parser->table_geometry_lines, nodes = parser->nodes_created;
+        markdown_core_block_lookahead lookahead;
+        bool begun =
+            markdown_core_parser_lookahead_begin(parser, context->container, MARKDOWN_CORE_NODE_TABLE, &lookahead);
+        bool matched =
+            begun && markdown_core_table_caption_probe(&lookahead, context->input, context->first, context->indent);
+        OK(probe->runner, begun && !parser->error && matched == probe->matches,
+           "cold and warm table transactions agree on recognition");
+        INT_EQ(probe->runner, parser->nodes_created, nodes, "a table query constructs no AST nodes");
+        if (probe->matches) {
+            OK(probe->runner, parser->table_geometry_lines > geometry,
+               "a warm query still rebuilds candidate geometry in retained storage");
+        }
+        if (pass == 0) {
+            OK(probe->runner, payload_allocations > allocations, "the cold query observes real workspace allocation");
+        } else {
+            INT_EQ(probe->runner, payload_allocations, allocations,
+                   "a warm table transaction makes zero allocator calls");
+            INT_EQ(probe->runner, payload_releases, releases, "a warm table transaction makes zero release calls");
+        }
+    }
+    return false;
+}
+
+static const markdown_core_element TABLE_TRANSACTION_PROBE = {
+    .name = "table-transaction-probe", .scan_block_start = probe_table_transactions, .scan_block_gate = {.bytes = "T"}};
+
+static bool configure_table_transaction_probe(markdown_core_parser *parser, void *context) {
+    parser->root->user_data = context;
+    return markdown_core_parser_attach_element(parser, &TABLE_TRANSACTION_PROBE);
+}
+
 static void table_candidates_reuse_scratch(test_batch_runner *runner) {
+    static const struct {
+        const char *body;
+        bool matches;
+    } queries[] = {
+        {"| h | q |\n| - | - |\n| a | b |\n", true},
+        {"h   j\n--- ---\nv   w\n--- ---\n", true},
+        {"-------\nh   j\n--- ---\nv   w\n\nx   y\n-------\n", true},
+        {"+---+---+\n| a | b |\n+   +   +\n| c | d |\n+---+---+\n", true},
+        {"+---+---+\n| a | b |\n", false},
+    };
+    for (size_t i = 0; i < sizeof(queries) / sizeof(*queries); i++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        markdown_core_strbuf_puts(&source, "Table: caption\n\n");
+        markdown_core_strbuf_puts(&source, queries[i].body);
+        table_transaction_probe probe = {.runner = runner, .matches = queries[i].matches};
+        payload_probe_arm();
+        markdown_core_node *root = markdown_core_parse_document_with_setup((char *)source.ptr, source.size,
+                                                                           configure_table_transaction_probe, &probe);
+        OK(runner, root && probe.entered, "the source driver entered the allocator-observed table query");
+        if (root) {
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), queries[i].matches ? 1 : 0,
+                   "speculation preserves subsequent table construction");
+        }
+        markdown_core_node_free(root);
+        INT_EQ(runner, payload_live, 0, "the table transaction owner releases every workspace and AST allocation");
+        payload_probe_disarm();
+        markdown_core_strbuf_free(&source);
+    }
     static const char tables[] = "| h | q |\n| - | - |\n| a | b |\n\n"
                                  "h   j\n--- ---\nv   w\n--- ---\n\n"
                                  "-------\nh   j\n--- ---\nv   w\n\nx   y\n-------\n\n"

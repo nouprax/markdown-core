@@ -11,9 +11,15 @@
 
 static void S_node_unlink(markdown_core_node *node);
 
+/* These kinds are owned roots/fields, never ordinary child edges, even under
+ * a dynamic policy. Both decision paths share this structural boundary. */
+static inline bool S_child_kind_allowed(markdown_core_node_type kind) {
+    return kind != MARKDOWN_CORE_NODE_DOCUMENT && kind != MARKDOWN_CORE_NODE_TABLE_CAPTION &&
+           kind != MARKDOWN_CORE_NODE_METADATA;
+}
+
 bool markdown_core_node_can_contain_builtin(const markdown_core_node *node, markdown_core_node_type child_type) {
-    if (child_type == MARKDOWN_CORE_NODE_DOCUMENT || child_type == MARKDOWN_CORE_NODE_TABLE_CAPTION ||
-        child_type == MARKDOWN_CORE_NODE_METADATA) {
+    if (!S_child_kind_allowed(child_type)) {
         return false;
     }
 
@@ -87,8 +93,7 @@ bool markdown_core_node_can_contain_builtin(const markdown_core_node *node, mark
 
 bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
     if (node->element && node->element->can_contain_func) {
-        if (child_type == MARKDOWN_CORE_NODE_DOCUMENT || child_type == MARKDOWN_CORE_NODE_TABLE_CAPTION ||
-            child_type == MARKDOWN_CORE_NODE_METADATA) {
+        if (!S_child_kind_allowed(child_type)) {
             return false;
         }
         return node->element->can_contain_func(node->element, node, child_type) != 0;
@@ -101,7 +106,8 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
         return false;
     }
     /* Arbitrary reparenting must reject cycles. Parser construction instead
-     * transfers an independently owned subtree through attach_owned. */
+     * proves containment and transfers a disjoint subtree through
+     * attach_validated. */
     {
         markdown_core_node *cur = node;
         do {
@@ -1136,17 +1142,6 @@ void markdown_core_node_attach_validated(markdown_core_node *parent, markdown_co
     } else {
         parent->last_child = child;
     }
-}
-
-/* The caller owns a detached subtree, disjoint from the destination tree. */
-int markdown_core_node_attach_owned(markdown_core_node *parent, markdown_core_node *child, markdown_core_node *before) {
-    if (!parent || !child || parent == child || child->parent || child->prev || child->next ||
-        (before && before->parent != parent) ||
-        !markdown_core_node_can_contain_type(parent, (markdown_core_node_type)child->kind)) {
-        return 0;
-    }
-    markdown_core_node_attach_validated(parent, child, before);
-    return 1;
 }
 
 int markdown_core_node_insert_before(markdown_core_node *node, markdown_core_node *sibling) {
