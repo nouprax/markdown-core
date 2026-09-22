@@ -8,6 +8,57 @@ The old documents and their 30 drift witnesses remain unchanged. They never ente
 the formal median. Forty-two new production domains and the existing recursive
 insertion domain enter it under separate contracts.
 
+## Ownership correction (v2)
+
+The v1 checker checked each full concrete action, then returned a single flat
+`domain(N)` node per unit. That proves an invertible template/tree transduction;
+it does **not** establish an ownership-tree isomorphism. Auditing all 42 actions
+found four missing reference owners: `grid-cell`, `loose-definition`,
+`inline-directive` and `empty-directive`. Their v1 Same-job interpretation is
+withdrawn. All production contracts use v2 for the new structural projection;
+the independently recursive `insertion-strong-v1` proof is unchanged.
+
+The four corrected reference units, before the common thematic-break terminator:
+
+```markdown
+- > body N
+  >
+  > tail N
+
+- term N
+
+  > body N
+
+probe [![body N](/label)](/note) end
+
+probeN [![](/label)](/note) end
+```
+
+The first two add Callout owners; the last two use Link → Embedded to preserve
+Directive → DirectiveLabel. The nonempty label owns the same Text, and the empty
+label remains a node. Each replacement still has unique six-digit recognition,
+an inverse, fixed fields, and a terminator preventing cross-unit continuation.
+No boundary split is needed for these restricted domains. Their former ratios
+cannot be treated as performance baselines: the reference work has changed.
+
+The v2 common action is the canonical structured tree, including its fields.
+After exact concrete checking, a pointwise walk maps every source node to the
+corresponding common constructor/field encoding, asserting equal child arity
+at every position. It builds the result from that walk rather than returning a
+unit index. An independent comparison checks ordered edges and structured
+payloads. The source-derived values are recognition metadata, not a substitute
+for the tree. All three handwritten actions must satisfy this topology check
+before a workload can be admitted, even if every implementation would agree
+with its own mismatched action.
+
+Only TableHead/Body/Foot printer groups are flattened, after checking their full
+partition against the concrete action. Empty CitationPrefix/Suffix printer
+fields are checked and omitted; nonempty affixes fail closed. DefinitionTerm,
+DefinitionBody and DirectiveLabel are real owners and are never flattened.
+For a table's admitted fixed partition the inverse recovers the row groups;
+this does not authorize dropping an arbitrary header/body distinction. The
+named graph still requires its additional edge/identity witness.
+
 ## The languages and the theorem
 
 The executable specification is `scripts/lib/pair-productions.mjs`. A registration
@@ -57,7 +108,7 @@ constructors with separate inverses; two different values are never folded into
 one mixed-domain mapping. Named/default syntax choices in one domain must not be
 used to justify an inverse on their union. Their costs remain separate report rows.
 
-| Domains (all suffixed `-v1`) | Abstract constructor and full correspondence |
+| Domains (all suffixed `-v2`) | Abstract constructor and full correspondence |
 | --- | --- |
 | run-insertion, run-mark, run-strike | One span owns `bodyN`; Insertion, Mark or Strikethrough corresponds to Strong, in separate languages. Document/Paragraph/Text and order are fixed. |
 | run-super, run-sub | One span owns `bodyN`; Superscript or Subscript corresponds to Emphasis. No whitespace in the span, intraword delimiters or adjacent runs. |
@@ -73,13 +124,13 @@ used to justify an inverse on their union. Their costs remain separate report ro
 | cross-link-empty, cross-embed-empty | Same path map with explicit empty label/title. The source grammar and exact Core/XML fields distinguish these from absence. |
 | cross-anchor, cross-local | Cross (path, anchor) maps to a URL with a unique `#` separator; the path is respectively `targetN` or empty and the anchor `sectionN`. Label/title is absent. The prefix grammar excludes any second `#`. |
 | cite-author, cite-suppress, cite-normal | A singleton unresolved bibliography key `keyN`, with the named fixed mode and empty prefix/suffix groups, maps to an explicit URI autolink `https://keyN`. The link's text is a deterministic copy of the same key encoding, not an additional input field. No definition, resolution or citation affix is admitted. |
-| inline-directive | Directive name `note` maps to image destination `/note`; DirectiveLabel owns the same Text `body N` as the image. The slot wrapper adds no semantic operation. |
-| empty-directive | The inline directive/image label is empty; N occurs in identical surrounding prose. Empty label ownership and absent fields are checked. |
+| inline-directive | Directive → Link(`/note`), DirectiveLabel → Embedded(`/label`), Text → Text. Both owners survive; the fixed inner URL encodes the label role, not another variable input. |
+| empty-directive | Directive → Link(`/note`) owns empty DirectiveLabel → empty Embedded(`/label`). No empty semantic owner is erased. |
 | leaf-directive | The same name/label map at block scope. DirectiveBlock owns its inline label; the twin's single-image Paragraph is its block wrapper. No heading or derived anchor is involved. |
 | anonymous-container, named-container | DirectiveBlock owns one Paragraph with Text `body N`, as does an ordinary quote. Name is respectively null or the fixed constructor tag `note`, in separate languages. No label or nonempty attributes. The empty `{}` spelling is an opener disambiguator, not a member list. |
 | alpha-list, upper-list, roman-list, upper-roman-list, default-list, enclosed-default-list, decimal-list | Each domain maps its two-item marker spelling to decimal markers while preserving start (1, 4, or 3), body order and tightness. Alphabet/case/delimiter are fixed constructor tags per domain. The default sequence has two implicit increments; no arbitrary mixed marker language is claimed. |
-| loose-definition | One loose Definition has term Text `term N` and one body Paragraph `body N`. A loose one-item list has those two ordered roles as its first and second paragraphs. DefinitionTerm/DefinitionBody versus paragraph/item wrappers are specified, not universally erased. Compact=false is fixed and checked. |
-| grid-cell | A single 1x1 grid cell owns two ordered Paragraphs `body N`, `tail N`, corresponding to one loose list item. Exact column positions, relative width 1, empty head/foot, rowspan=colspan=1 and two block boundaries are checked. No K-way cut, span, caption or empty row is admitted. |
+| loose-definition | DefinitionList → List, Definition → ListItem, DefinitionTerm → Paragraph, DefinitionBody → Callout. The loose item owns the term paragraph and a quote owning the body paragraph; compact=false/tight=false are fixed. |
+| grid-cell | Table → List, TableRow → ListItem, TableCell → Callout. The tight item owns a quote with the same two ordered paragraphs. One column, one row, colspan=rowspan=1, absent head/foot and none alignment are fixed. |
 | specimen-graph | One unique named Specimen/Footnote definition and one call per unit. Definitions are hoisted in document order; calls remain in their paragraphs. ID `spec-N`, body `Example N.`, absent reset, empty affixes and each edge are preserved. XML checks all ordered content, and exact pinned HTML additionally checks IDs, call/back-reference edges and first-reference ordinals. HTML rendering is an audit oracle, not timed work. |
 | simple-matrix | Both tables contain ordered header cells Name/Count and one body row body/N. The positional split maps to pipe delimiters. All columns are explicitly left aligned, no widths, spans 1x1, empty foot. GFM XML emits alignment on the header only; the domain's delimiter row determines it for the column. |
 
@@ -88,7 +139,9 @@ space/right letter at opening, left digit/right space at closing. The run length
 are exactly the required widths; neither side invokes rule-of-three ambiguity.
 Opaque bodies contain no delimiter or whitespace normalization boundary. Literal
 blocks are closed, unindented and contain a single nonempty line. Bracket/name/
-attribute fields use safe ASCII and have no nested bracket or escaped delimiter.
+attribute fields use safe ASCII and have no escaped delimiter. The inline directive
+reference has one explicitly nested image inside a link; its two distinct
+destinations and non-link image label prevent link deactivation or ambiguity.
 URI autolinks have an explicit scheme and cannot use the GFM heuristic fallback.
 List markers are at column one and followed by a space; subsequent items are in
 the same declared category and are terminated before the next unit. Containers
@@ -113,7 +166,7 @@ whether the implementations obey it. It does not follow from matching counts.
 
 ## Pair-by-pair decisions
 
-`proof-X-*` identifies the newly measured documents for X-v1. The table names
+`proof-X-*` identifies the newly measured documents for X-v2. The table names
 all original pairs without the common `pair-` prefix and `-dialect/common` suffix.
 “Reconstruct” certifies the newly specified language, not every byte pattern in
 the original mixed sample. Original raw data remain diagnostic. “Boundary” also
@@ -121,36 +174,36 @@ retains an unmatched operation, with a counterfactual baseline described below.
 
 | Original | Decision | New proof domains | Reason / remaining operation |
 | --- | --- | --- | --- |
-| runs | Reconstruct | `run-insertion-v1`, `run-mark-v1`, `run-strike-v1`, `run-super-v1`, `run-sub-v1` | Split the many-to-one substitution into five marker languages; never pool their inverses. |
-| comment | Reconstruct | `opaque-comment-v1` | Reconstruct a nonempty, single-line opaque body without padding or delimiter runs. |
-| formula | Reconstruct | `opaque-formula-v1`, `opaque-display-v1` | Separate embedded and standalone modes; each has an explicit constructor mapping. |
+| runs | Reconstruct | `run-insertion-v2`, `run-mark-v2`, `run-strike-v2`, `run-super-v2`, `run-sub-v2` | Split the many-to-one substitution into five marker languages; never pool their inverses. |
+| comment | Reconstruct | `opaque-comment-v2` | Reconstruct a nonempty, single-line opaque body without padding or delimiter runs. |
+| formula | Reconstruct | `opaque-formula-v2`, `opaque-display-v2` | Separate embedded and standalone modes; each has an explicit constructor mapping. |
 | anchor | Boundary | — | A block-owned identity is not a free name-to-URL definition; cut the explicit declaration, retaining its host. |
-| specimen | Reconstruct | `specimen-graph-v1` | Reconstruct unique labelled definitions/calls; verify full XML structure plus HTML IDs, forward/back edges and first-reference numbering. |
-| task | Reconstruct | `task-value-v1` | Map the singleton marker constructors ~ and x and preserve the ordered item body. |
-| span | Reconstruct | `record-span-v1`, `class-span-v1` | Use separate one-record and one-class domains; preserve key/value and class fields rather than replacing their keys by c. |
-| xlink | Reconstruct | `cross-link-v1`, `cross-link-absent-v1`, `cross-link-empty-v1`, `cross-anchor-v1`, `cross-local-v1` | Split null, empty, populated and anchor forms; preserve target and label through explicit field mappings. |
-| citegroup | Boundary | `cite-normal-v1` | The former merged link label loses the prefix/suffix boundary; cut affixes and prove the singleton empty-affix citation. |
-| cite | Reconstruct | `cite-author-v1`, `cite-suppress-v1` | Separate citation modes and reconstruct explicit URI autolinks with a reversible key encoding. |
-| formulablock | Reconstruct | `leaf-formula-v1` | Make the mandatory code-body terminal newline an explicit reversible representation map. |
-| embed | Boundary | `cross-embed-v1`, `cross-embed-absent-v1`, `cross-embed-empty-v1` | Preserve label states; image has no numeric dimension field, so cut dimensions at their suffix boundary. |
-| simpletable | Reconstruct | `simple-matrix-v1` | Repair none versus left alignment with explicit :---; preserve ordered header/body cells. |
-| blockcomment | Reconstruct | `leaf-comment-v1` | A fenced literal leaf with its final newline maps to the same literal payload in a code block. |
-| formulafence | Reconstruct | `leaf-fence-v1` | Use an empty code info field and map the fixed formula fence tag to the leaf constructor. |
+| specimen | Reconstruct | `specimen-graph-v2` | Reconstruct unique labelled definitions/calls; verify full XML structure plus HTML IDs, forward/back edges and first-reference numbering. |
+| task | Reconstruct | `task-value-v2` | Map the singleton marker constructors ~ and x and preserve the ordered item body. |
+| span | Reconstruct | `record-span-v2`, `class-span-v2` | Use separate one-record and one-class domains; preserve key/value and class fields rather than replacing their keys by c. |
+| xlink | Reconstruct | `cross-link-v2`, `cross-link-absent-v2`, `cross-link-empty-v2`, `cross-anchor-v2`, `cross-local-v2` | Split null, empty, populated and anchor forms; preserve target and label through explicit field mappings. |
+| citegroup | Boundary | `cite-normal-v2` | The former merged link label loses the prefix/suffix boundary; cut affixes and prove the singleton empty-affix citation. |
+| cite | Reconstruct | `cite-author-v2`, `cite-suppress-v2` | Separate citation modes and reconstruct explicit URI autolinks with a reversible key encoding. |
+| formulablock | Reconstruct | `leaf-formula-v2` | Make the mandatory code-body terminal newline an explicit reversible representation map. |
+| embed | Boundary | `cross-embed-v2`, `cross-embed-absent-v2`, `cross-embed-empty-v2` | Preserve label states; image has no numeric dimension field, so cut dimensions at their suffix boundary. |
+| simpletable | Reconstruct | `simple-matrix-v2` | Repair none versus left alignment with explicit :---; preserve ordered header/body cells. |
+| blockcomment | Reconstruct | `leaf-comment-v2` | A fenced literal leaf with its final newline maps to the same literal payload in a code block. |
+| formulafence | Reconstruct | `leaf-fence-v2` | Use an empty code info field and map the fixed formula fence tag to the leaf constructor. |
 | metadataempty | Boundary | — | Discarded unknown members cannot be recovered from an empty field map; remove the envelope and retain the following document. |
 | metadata | Boundary | — | Typed scalars, lists and duplicate-key overwrite are absent from a code literal; cut the envelope from the body. |
-| tcaption | Boundary | `simple-matrix-v1` | A loose continuation has no table/caption ownership; retain the table and cut only its trailing caption. |
-| idirective | Reconstruct | `inline-directive-v1`, `empty-directive-v1` | Repair the spurious destination index: the fixed directive name maps to /note and label inlines remain children. |
-| fancylist | Reconstruct | `alpha-list-v1`, `upper-list-v1`, `roman-list-v1`, `upper-roman-list-v1`, `default-list-v1`, `enclosed-default-list-v1`, `decimal-list-v1` | Separate marker alphabets/delimiters and preserve start values (including 3 and 4). |
-| formulapromo | Reconstruct | `leaf-promotion-v1` | Replace the annihilated reference definition with a literal code block; both sides now construct the corresponding leaf. |
-| specimenstart | Boundary | `specimen-graph-v1` | The explicit sequence reset has no footnote counterpart; remove only the reset digit, retaining the proved definition/call graph. |
-| ldirective | Reconstruct | `leaf-directive-v1` | Replace headings and their derived anchors with a one-image paragraph; the block and label wrappers have explicit roles. |
-| cdirective | Reconstruct | `anonymous-container-v1`, `named-container-v1` | Split fixed named and anonymous container languages; preserve the owned block sequence. |
+| tcaption | Boundary | `simple-matrix-v2` | A loose continuation has no table/caption ownership; retain the table and cut only its trailing caption. |
+| idirective | Reconstruct | `inline-directive-v2`, `empty-directive-v2` | Preserve separate Directive and DirectiveLabel owners through Link and Embedded; the name maps to /note and the fixed label role to /label. |
+| fancylist | Reconstruct | `alpha-list-v2`, `upper-list-v2`, `roman-list-v2`, `upper-roman-list-v2`, `default-list-v2`, `enclosed-default-list-v2`, `decimal-list-v2` | Separate marker alphabets/delimiters and preserve start values (including 3 and 4). |
+| formulapromo | Reconstruct | `leaf-promotion-v2` | Replace the annihilated reference definition with a literal code block; both sides now construct the corresponding leaf. |
+| specimenstart | Boundary | `specimen-graph-v2` | The explicit sequence reset has no footnote counterpart; remove only the reset digit, retaining the proved definition/call graph. |
+| ldirective | Reconstruct | `leaf-directive-v2` | Replace headings and their derived anchors with a one-image paragraph; the block and label wrappers have explicit roles. |
+| cdirective | Reconstruct | `anonymous-container-v2`, `named-container-v2` | Split fixed named and anonymous container languages; preserve the owned block sequence. |
 | callout | Boundary | — | Three collapsed states and title ownership collapse to one completed task value; remove the callout header metadata within the quote. |
-| headless | Boundary | `simple-matrix-v1` | The former first-row text and header role both differ; compare a reconstructed headed matrix and isolate headless syntax by removing table borders. |
-| sparsegrid | Boundary | `grid-cell-v1` | The old list reordered h/a/b/c and lost spans, empty rows, caption and foot; isolate geometry with border/cell-marker ablation and prove the one-cell restriction. |
-| gridcell | Reconstruct | `grid-cell-v1` | Reconstruct complete fixed-width cells, preserve the two ordered paragraphs, and delimit independent units. |
-| caption | Boundary | `simple-matrix-v1` | A caption role is not a header cell role; cut the leading caption while retaining the table's h/v matrix. |
-| deflist | Boundary | `loose-definition-v1` | The old list loses per-definition compactness and empty-body identity; prove one loose term/body domain and cut definition ownership for the full mixed workload. |
+| headless | Boundary | `simple-matrix-v2` | The former first-row text and header role both differ; compare a reconstructed headed matrix and isolate headless syntax by removing table borders. |
+| sparsegrid | Boundary | `grid-cell-v2` | The old list reordered h/a/b/c and lost spans, empty rows, caption and foot; isolate geometry with border/cell-marker ablation and prove the one-cell restriction. |
+| gridcell | Reconstruct | `grid-cell-v2` | Preserve Table/Row/Cell through List/Item/Callout, then both ordered paragraphs; delimit independent units. |
+| caption | Boundary | `simple-matrix-v2` | A caption role is not a header cell role; cut the leading caption while retaining the table's h/v matrix. |
+| deflist | Boundary | `loose-definition-v2` | The old list loses per-definition compactness and empty-body identity; prove one loose term/body domain and cut definition ownership for the full mixed workload. |
 
 ## Boundaries and what their measurements mean
 

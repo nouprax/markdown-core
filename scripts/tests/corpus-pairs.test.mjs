@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 import {
+    equalProofTrees,
     pairingIdentity,
     provenPair,
     pairRatios,
@@ -250,7 +251,7 @@ test("every reviewed pair resolves to measured proof domains and/or a concrete b
     broken.cases = broken.cases.filter((entry) => entry.name !== "boundary-anchor-without");
     assert.throws(() => validatePairs(broken), /boundary baseline/);
     const noProof = manifest();
-    noProof.pairs = noProof.pairs.filter((pair) => pair.contract.proof !== "simple-matrix-v1");
+    noProof.pairs = noProof.pairs.filter((pair) => pair.contract.proof !== "simple-matrix-v2");
     assert.throws(() => validatePairs(noProof), /missing reconstructed proof/);
 });
 
@@ -263,9 +264,10 @@ test("every production admits varying ordered units and rejects noninvertible or
         const dialect = render(proof.dialect);
         const common = render(proof.common);
         const result = productionWorkload(id, dialect, common);
-        assert.deepEqual(
-            result.children.map((node) => node.literal),
-            values,
+        assert.deepEqual(result.values, values, id);
+        assert.ok(result.children.length > values.length, id);
+        assert.ok(
+            result.children.some((node) => node.kind === "ThematicBreak"),
             id
         );
         assert.throws(() => productionWorkload(id, dialect, common.replace("999999", "999998")), /commute/);
@@ -277,7 +279,7 @@ test("every production admits varying ordered units and rejects noninvertible or
 });
 
 test("semantic actions reject payload, order, default-field and ownership changes with unchanged censuses", () => {
-    const id = "opaque-formula-v1";
+    const id = "opaque-formula-v2";
     const proof = productionProofs.get(id);
     const expected = productionWorkload(
         id,
@@ -335,7 +337,7 @@ test("boundary reports keep signed interaction costs separate from formal median
 });
 
 test("named graph domains reject duplicate definitions and require reference graph evidence", () => {
-    const id = "specimen-graph-v1";
+    const id = "specimen-graph-v2";
     const proof = productionProofs.get(id);
     const dialect = proof.dialect.replaceAll("{n:6}", "000007");
     const common = proof.common.replaceAll("{n:6}", "000007");
@@ -359,4 +361,57 @@ test("named graph domains reject duplicate definitions and require reference gra
         boundarySource("specimenstart", "As (@spec-7) shows.\n\n(5@spec-7) Body.\n"),
         "As (@spec-7) shows.\n\n(@spec-7) Body.\n"
     );
+});
+
+test("production contracts reject owner erasure even when both concrete actions are otherwise exact", () => {
+    for (const [id, erased] of [
+        ["grid-cell-v2", "Callout"],
+        ["loose-definition-v2", "Callout"],
+        ["inline-directive-v2", "Embedded"],
+        ["empty-directive-v2", "Embedded"]
+    ]) {
+        const proof = productionProofs.get(id);
+        const action = proof.action;
+        const erase = (tree) => ({
+            ...tree,
+            children: tree.children.flatMap((child) =>
+                child.kind === erased ? child.children.map(erase) : [erase(child)]
+            )
+        });
+        try {
+            // The former checker accepted ANY independently exact action here,
+            // returning the same flat unit number despite the missing owner.
+            proof.action = (s, n, side) => action(s, n, side).map((tree) => (side === "common" ? erase(tree) : tree));
+            assert.throws(
+                () =>
+                    productionWorkload(
+                        id,
+                        proof.dialect.replaceAll("{n:6}", "000007"),
+                        proof.common.replaceAll("{n:6}", "000007")
+                    ),
+                /ownership mismatch/,
+                id
+            );
+        } finally {
+            proof.action = action;
+        }
+    }
+});
+
+test("projected production trees retain structured payloads rather than only a unit index", () => {
+    const proof = productionProofs.get("grid-cell-v2");
+    const tree = productionWorkload(
+        proof.id,
+        proof.dialect.replaceAll("{n:6}", "000007"),
+        proof.common.replaceAll("{n:6}", "000007")
+    );
+    const owner = tree.children[0].children[0].children[0];
+    assert.equal(owner.kind, "Callout");
+    assert.deepEqual(
+        owner.children.map((p) => p.children[0].fields.literal),
+        ["body 000007", "tail 000007"]
+    );
+    const changed = globalThis.structuredClone(tree);
+    changed.children[0].children[0].children[0].children[0].children[0].fields.literal = "body 000008";
+    assert.equal(equalProofTrees(tree, changed), false);
 });

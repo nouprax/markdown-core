@@ -92,7 +92,7 @@ const entries = [
     [
         "idirective",
         ["inline-directive", "empty-directive"],
-        "Repair the spurious destination index: the fixed directive name maps to /note and label inlines remain children."
+        "Preserve Directive/DirectiveLabel as Link/Embedded, with fixed /note and /label roles."
     ],
     [
         "fancylist",
@@ -145,7 +145,7 @@ const entries = [
     [
         "gridcell",
         ["grid-cell"],
-        "Reconstruct complete fixed-width cells, preserve the two ordered paragraphs, and delimit independent units."
+        "Preserve Table/Row/Cell as List/Item/Callout, the two ordered paragraphs, and independent units."
     ],
     [
         "caption",
@@ -183,7 +183,7 @@ export const pairReviews = new Map(
         id,
         {
             id,
-            proofs: proofs.map((name) => `${name}-v1`),
+            proofs: proofs.map((name) => `${name}-v2`),
             reason,
             outcome: cuts[id] ? "boundary" : "reconstructed",
             ...(cuts[id] ? { baseline: `boundary-${id}-without` } : {})

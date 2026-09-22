@@ -5,6 +5,7 @@
  * an equivalent-work comparison. See the benchmark isomorphism contract.
  */
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 
 import { productionProofs, productionTree, productionWorkload } from "./pair-productions.mjs";
 import { pairReview } from "./pair-review.mjs";
@@ -20,7 +21,13 @@ export function equalProofTrees(left, right) {
     const pending = [[left, right]];
     while (pending.length) {
         const [a, b] = pending.pop();
-        if (a.kind !== b.kind || a.literal !== b.literal || a.children.length !== b.children.length) return false;
+        if (
+            a.kind !== b.kind ||
+            a.literal !== b.literal ||
+            !isDeepStrictEqual(a.fields, b.fields) ||
+            a.children.length !== b.children.length
+        )
+            return false;
         a.children.forEach((child, index) => pending.push([child, b.children[index]]));
     }
     return true;

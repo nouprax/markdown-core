@@ -143,3 +143,10 @@ Schema 4 also records a pairing-identity digest over the registry, proof documen
 and executable contract checkers, review/boundary definitions and XML adapter. This identity must match when comparing
 summaries: a changed proof status or mapping can change their membership even
 when every measured document's bytes are unchanged.
+
+Production v2 contracts additionally assert a node-for-node ordered ownership
+bijection across the handwritten actions and return the full structured
+projection, including fields. Invertible source templates alone are insufficient.
+The [ownership correction](benchmark-pair-review.md#ownership-correction-v2)
+withdraws the four v1 mappings that lacked an owner and specifies their repaired
+reference inputs. Do not compare v1/v2 ratios as parser speedups.
