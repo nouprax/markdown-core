@@ -20,7 +20,8 @@ void markdown_core_block_finalize_footnotes(markdown_core_parser *parser) {
     if (!collection->count) {
         goto done;
     }
-    if (!markdown_core_block_order_definitions(collection) || !markdown_core_key_index_init(&ids, collection->count)) {
+    if (!markdown_core_block_order_definitions(parser, collection) ||
+        !markdown_core_key_index_init(&ids, collection->count)) {
         goto failed;
     }
     for (index = 0; index < collection->count; index++) {
@@ -56,7 +57,7 @@ void markdown_core_block_finalize_footnotes(markdown_core_parser *parser) {
     markdown_core_block_own_definitions(collection, &parser->root->as.document->footnotes);
     goto done;
 failed:
-    parser->oom = true;
+    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
 done:
     markdown_core_key_index_free(&ids);
     markdown_core_free(collection->values);
@@ -88,7 +89,7 @@ static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core
         if (cite) {
             markdown_core_parser_release_node(inline_state->owner_parser, cite);
         }
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return NULL;
     }
     cite->as.cite->citations = citation;
@@ -118,7 +119,7 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(markdown_core_par
         if (cite) {
             markdown_core_parser_release_node(parser, cite);
         }
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         markdown_core_inline_pop_bracket(inline_state);
         return NULL;
     }
@@ -126,11 +127,11 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(markdown_core_par
     markdown_core_inline_finish_citation_tokens(inline_state, &opener->citations);
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
     markdown_core_inline_take_bracket_content(parser, opener, footnote);
-    markdown_core_node_attach_owned(opener->inl_text->parent, cite, opener->inl_text);
+    markdown_core_node_attach_validated(opener->inl_text->parent, cite, opener->inl_text);
     if (!markdown_core_parser_register_definition(parser, &parser->footnotes, footnote, cite->as.cite->citations,
                                                   &parser->root->as.document->footnotes)) {
         markdown_core_parser_release_node(parser, footnote);
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
     markdown_core_parser_release_node(parser, opener->inl_text);
     inline_state->no_link_openers = opener->outer_no_link_openers;
@@ -239,7 +240,7 @@ bool markdown_core_footnote_close_reference(markdown_core_parser *parser, markdo
             int lost = 0;
             unsigned char *id = normalize_map_label(&label, &lost);
             if (!id) {
-                inline_state->oom = 1;
+                inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
                 markdown_core_parser_release_node(parser, fnref);
                 markdown_core_inline_pop_bracket(inline_state);
                 return true;
@@ -297,7 +298,7 @@ static bool markdown_core_footnote_open(markdown_core_parser *parser, markdown_c
 
     if (!markdown_core_chunk_to_cstr(&c)) {
         /* The label would keep borrowing the transient line buffer. */
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
 
@@ -322,7 +323,7 @@ static bool markdown_core_footnote_open(markdown_core_parser *parser, markdown_c
      * `Footnote` and a resolved `Link` are different values now. */
     id = normalize_map_label(&c, &lost);
     if (!id) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_chunk_free(&c);
         return false;
     }

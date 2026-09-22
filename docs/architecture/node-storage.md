@@ -59,15 +59,33 @@ retains its own dimensions even when its destination and title come from a
 resource shared with other resolved references. Cross references own their raw
 destination fields directly and do not share a resource with a definition.
 
-Parser construction transfers a detached, independently owned subtree through
-`markdown_core_node_attach_owned`. The caller establishes disjoint ownership
-by creating the subtree or detaching it from a known separate owner; merely
-having no parent is not proof of disjointness. The operation checks local
-containment and allocator invariants, then splices once in constant time.
-The arbitrary mutation API checks ancestry, allocator and containment once
-before unlinking, then commits through the same non-failing splice. In
-particular, a custom containment predicate observes the original tree and is
-never called again after detachment. Rejection leaves both trees unchanged.
+Parser construction transfers a detached, independently owned subtree. The
+caller establishes disjoint ownership by creating the subtree or detaching it
+from a known separate owner; merely having no parent is not proof of
+disjointness. `markdown_core_node_attach_validated` is the one non-failing
+splice for callers with an established containment decision. The unused
+checked-detached wrapper has been removed; unproven trees use checked mutation.
+It asserts local links and the pure built-in containment rule in Debug/ASan.
+Checked mutation and assertions share that rule. Built-in elements declare the
+parent-kind domain retained by their payload across conversion; an unrelated
+kind cannot silently inherit a different containment policy. Dynamic callbacks
+remain decision operations and are never replayed by an assertion.
+Internal inline constructors must return a detached token admitted by their
+fixed grammar owner. The private element API states this obligation; arbitrary
+third-party descriptors are not an installed or supported extension surface.
+The arbitrary mutation API checks ancestry and containment once before
+unlinking, then commits through the same splice. A custom predicate therefore
+observes the original tree and is never called again after detachment.
+Rejection leaves both trees unchanged. Optional rewrites, including formula
+promotion and email splitting, validate before allocating or consuming the
+old node; rejection preserves the authored content. A constructed inline
+token rejected by its destination remains owned by the parser and is released
+before the parse fails with `MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED`.
+Parser and inline transactions use the same error enum; allocation failures use
+`MARKDOWN_CORE_PARSE_ALLOCATION_FAILED`, and propagation preserves the first
+cause. Buffer allocation flags remain allocation-only. Table lead splitting
+checks acceptance before conversion, so a refused optional split preserves the
+complete original paragraph. There is no per-node allocator identity to check.
 Kind conversion changes no edges and checks only containment.
 There is no safety mode, ancestry cache, or separate inline splice algorithm.
 A source-boundary audit keeps arbitrary reparenting out of parser construction;
@@ -229,3 +247,9 @@ copy it with the rest of the immutable result. JNI uses the shared optional
 node-field continuation, and Wasm's fixed node record uses its owner-typed
 `fieldIndex` for either a directive label or a table caption. The row chain and
 its head/body/foot counts continue to describe rows alone.
+
+Allocation failure and semantic refusal can occur in one token construction.
+The transaction retains the first cause: a constructor may return an owned
+node after its literal allocation failed, and a later policy refusal releases
+that node without replacing the allocation error. Setup callbacks run only
+after the initial parser structures have been created successfully.

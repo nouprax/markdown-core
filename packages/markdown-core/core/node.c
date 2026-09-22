@@ -11,14 +11,26 @@
 
 static void S_node_unlink(markdown_core_node *node);
 
-bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
-    if (child_type == MARKDOWN_CORE_NODE_DOCUMENT || child_type == MARKDOWN_CORE_NODE_TABLE_CAPTION ||
-        child_type == MARKDOWN_CORE_NODE_METADATA) {
+/* These kinds are owned roots/fields, never ordinary child edges, even under
+ * a dynamic policy. Both decision paths share this structural boundary. */
+static inline bool S_child_kind_allowed(markdown_core_node_type kind) {
+    return kind != MARKDOWN_CORE_NODE_DOCUMENT && kind != MARKDOWN_CORE_NODE_TABLE_CAPTION &&
+           kind != MARKDOWN_CORE_NODE_METADATA;
+}
+
+bool markdown_core_node_can_contain_builtin(const markdown_core_node *node, markdown_core_node_type child_type) {
+    if (!S_child_kind_allowed(child_type)) {
         return false;
     }
 
-    if (node->element && node->element->can_contain_func) {
-        return node->element->can_contain_func(node->element, node, child_type) != 0;
+    if (node->element && node->element->containment_kinds) {
+        const markdown_core_node_type *kind = node->element->containment_kinds;
+        while (*kind && *kind != node->kind) {
+            kind++;
+        }
+        if (!*kind) {
+            return false;
+        }
     }
 
     switch (node->kind) {
@@ -42,6 +54,22 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     case MARKDOWN_CORE_NODE_LIST:
         return child_type == MARKDOWN_CORE_NODE_LIST_ITEM;
 
+    case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
+        return node->element && node->element->containment_kinds && MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) &&
+               child_type != MARKDOWN_CORE_NODE_LIST_ITEM && child_type != MARKDOWN_CORE_NODE_DEFINITION &&
+               child_type != MARKDOWN_CORE_NODE_DEFINITION_BODY;
+    case MARKDOWN_CORE_NODE_TABLE:
+        return node->element && node->element->containment_kinds && child_type == MARKDOWN_CORE_NODE_TABLE_ROW;
+    case MARKDOWN_CORE_NODE_TABLE_ROW:
+        return node->element && node->element->containment_kinds && child_type == MARKDOWN_CORE_NODE_TABLE_CELL;
+    case MARKDOWN_CORE_NODE_TABLE_CELL:
+        return node->element && node->element->containment_kinds &&
+               (MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type) || MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type));
+    case MARKDOWN_CORE_NODE_DIRECTIVE_LABEL:
+        return node->element && node->element->containment_kinds && MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type) &&
+               child_type != MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
+    case MARKDOWN_CORE_NODE_STRIKETHROUGH:
+        return node->element && node->element->containment_kinds && MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
     case MARKDOWN_CORE_NODE_PARAGRAPH:
     case MARKDOWN_CORE_NODE_TABLE_CAPTION:
     case MARKDOWN_CORE_NODE_HEADING:
@@ -63,12 +91,23 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     return false;
 }
 
+bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
+    if (node->element && node->element->can_contain_func) {
+        if (!S_child_kind_allowed(child_type)) {
+            return false;
+        }
+        return node->element->can_contain_func(node->element, node, child_type) != 0;
+    }
+    return markdown_core_node_can_contain_builtin(node, child_type);
+}
+
 static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
     if (node == NULL || child == NULL) {
         return false;
     }
     /* Arbitrary reparenting must reject cycles. Parser construction instead
-     * transfers an independently owned subtree through attach_owned. */
+     * proves containment and transfers a disjoint subtree through
+     * attach_validated. */
     {
         markdown_core_node *cur = node;
         do {
@@ -1080,7 +1119,15 @@ void markdown_core_node_unlink(markdown_core_node *node) {
 
 /* Commit a validated, detached subtree. No callbacks or rejecting checks may
  * run here: public mutations have already detached the child from its owner. */
-static void S_node_attach(markdown_core_node *parent, markdown_core_node *child, markdown_core_node *before) {
+void markdown_core_node_attach_validated(markdown_core_node *parent, markdown_core_node *child,
+                                         markdown_core_node *before) {
+    assert(parent && child && parent != child);
+    assert(!child->parent && !child->prev && !child->next);
+    assert(!before || before->parent == parent);
+    /* Built-in containment is pure and shares its rules with checked mutation.
+     * Dynamic policies were decided before ownership moved; never replay them. */
+    assert((parent->element && parent->element->can_contain_func) ||
+           markdown_core_node_can_contain_builtin(parent, (markdown_core_node_type)child->kind));
     markdown_core_node *previous = before ? before->prev : parent->last_child;
     child->parent = parent;
     child->prev = previous;
@@ -1097,23 +1144,12 @@ static void S_node_attach(markdown_core_node *parent, markdown_core_node *child,
     }
 }
 
-/* The caller owns a detached subtree, disjoint from the destination tree. */
-int markdown_core_node_attach_owned(markdown_core_node *parent, markdown_core_node *child, markdown_core_node *before) {
-    if (!parent || !child || parent == child || child->parent || child->prev || child->next ||
-        (before && before->parent != parent) ||
-        !markdown_core_node_can_contain_type(parent, (markdown_core_node_type)child->kind)) {
-        return 0;
-    }
-    S_node_attach(parent, child, before);
-    return 1;
-}
-
 int markdown_core_node_insert_before(markdown_core_node *node, markdown_core_node *sibling) {
     if (!node || node == sibling || !S_can_contain(node->parent, sibling)) {
         return 0;
     }
     markdown_core_node_unlink(sibling);
-    S_node_attach(node->parent, sibling, node);
+    markdown_core_node_attach_validated(node->parent, sibling, node);
     return 1;
 }
 
@@ -1122,7 +1158,7 @@ int markdown_core_node_insert_after(markdown_core_node *node, markdown_core_node
         return 0;
     }
     markdown_core_node_unlink(sibling);
-    S_node_attach(node->parent, sibling, node->next);
+    markdown_core_node_attach_validated(node->parent, sibling, node->next);
     return 1;
 }
 
@@ -1139,7 +1175,7 @@ int markdown_core_node_prepend_child(markdown_core_node *node, markdown_core_nod
         return 0;
     }
     markdown_core_node_unlink(child);
-    S_node_attach(node, child, node->first_child);
+    markdown_core_node_attach_validated(node, child, node->first_child);
     return 1;
 }
 
@@ -1148,7 +1184,7 @@ int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node
         return 0;
     }
     markdown_core_node_unlink(child);
-    S_node_attach(node, child, NULL);
+    markdown_core_node_attach_validated(node, child, NULL);
     return 1;
 }
 

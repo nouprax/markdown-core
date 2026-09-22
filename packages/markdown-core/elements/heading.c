@@ -21,12 +21,12 @@ void markdown_core_block_register_heading(markdown_core_parser *parser, markdown
     if (headings->count == headings->capacity) {
         size_t capacity = headings->capacity ? headings->capacity * 2 : 8;
         if (capacity > SIZE_MAX / sizeof(*headings->values)) {
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return;
         }
         void *values = markdown_core_realloc(headings->values, capacity * sizeof(*headings->values));
         if (!values) {
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return;
         }
         headings->values = values;
@@ -40,7 +40,7 @@ static markdown_core_key_index_slot *anchor_slot(markdown_core_parser *parser, a
     parser->anchor_work += (size_t)key.len + 1;
     markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&registry->index, key.data, key.len);
     if (!slot) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     return slot;
 }
@@ -57,7 +57,7 @@ void markdown_core_block_reserve_node_anchor(markdown_core_parser *parser, ancho
         void *existing = NULL;
         if (!markdown_core_key_index_insert(&registry->resources, identity, sizeof(node->as.link->resource),
                                             node->as.link->resource, 0, &existing)) {
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return;
         }
         if (existing) {
@@ -72,20 +72,20 @@ void markdown_core_block_reserve_node_anchor(markdown_core_parser *parser, ancho
 }
 
 void markdown_core_block_prepare_headings(markdown_core_parser *parser, markdown_core_heading_collection *headings) {
-    if (!markdown_core_order_source_entries(headings->values, headings->count, sizeof(*headings->values),
-                                            markdown_core_source_key)) {
-        parser->oom = true;
+    if (!markdown_core_order_source_entries(&parser->source_order, headings->values, headings->count,
+                                            sizeof(*headings->values), markdown_core_source_key)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
     /* The reference map compares explicitness and original source positions,
      * independently of mapped-input scheduling and declaration closure order. */
-    for (size_t i = 0; i < headings->count && !parser->oom; i++) {
+    for (size_t i = 0; i < headings->count && !parser->error; i++) {
         markdown_core_prepare_heading(parser, &headings->values[i]);
         if (parser->refmap->oom) {
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
     }
-    for (size_t i = 0; i < headings->count && !parser->oom; i++) {
+    for (size_t i = 0; i < headings->count && !parser->error; i++) {
         markdown_core_finish_heading(parser, &headings->values[i]);
     }
 }
@@ -112,12 +112,12 @@ static bool push_anchor_projection(markdown_core_parser *parser, anchor_projecti
     if (stack->count == stack->capacity) {
         size_t capacity = stack->capacity ? stack->capacity * 2 : 8;
         if (capacity > SIZE_MAX / sizeof(*stack->values)) {
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return false;
         }
         void *values = markdown_core_realloc(stack->values, capacity * sizeof(*stack->values));
         if (!values) {
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return false;
         }
         stack->values = values;
@@ -130,7 +130,7 @@ static bool push_anchor_projection(markdown_core_parser *parser, anchor_projecti
 static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node *heading, markdown_core_strbuf *base) {
     anchor_projection_stack stack = {0};
     push_anchor_projection(parser, &stack, heading->first_child, ANCHOR_CONTENT);
-    while (stack.count && !parser->oom && !base->oom) {
+    while (stack.count && !parser->error && !base->oom) {
         anchor_projection projection = stack.values[--stack.count];
         markdown_core_node *node = projection.node;
         parser->anchor_work++;
@@ -209,7 +209,7 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node
         markdown_core_strbuf_puts(base, "section");
     }
     if (base->oom) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
 
@@ -228,13 +228,13 @@ void markdown_core_block_finalize_heading_anchors(markdown_core_parser *parser,
                                                   markdown_core_heading_collection *headings,
                                                   anchor_registry *registry) {
     markdown_core_strbuf base = MARKDOWN_CORE_BUF_INIT();
-    for (size_t i = 0; i < headings->count && !parser->oom; i++) {
+    for (size_t i = 0; i < headings->count && !parser->error; i++) {
         markdown_core_heading_parse *heading = &headings->values[i];
         markdown_core_chunk *anchor = &heading->node->attributes.anchor;
         if (!anchor->len) {
             markdown_core_strbuf_clear(&base);
             heading_anchor_base(parser, heading->node, &base);
-            if (parser->oom) {
+            if (parser->error) {
                 break;
             }
             bufsize_t base_length = base.size;
@@ -246,7 +246,7 @@ void markdown_core_block_finalize_heading_anchors(markdown_core_parser *parser,
                     markdown_core_strbuf_truncate(&base, base_length);
                     append_anchor_suffix(&base, entry->value.counter++);
                     if (base.oom) {
-                        parser->oom = true;
+                        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                         break;
                     }
                     /* Only a vacant candidate can grow the index. The base
@@ -255,31 +255,31 @@ void markdown_core_block_finalize_heading_anchors(markdown_core_parser *parser,
                     candidate = anchor_slot(parser, registry, (markdown_core_chunk){base.ptr, base.size, 0});
                 } while (candidate && candidate->key);
             }
-            if (parser->oom) {
+            if (parser->error) {
                 break;
             }
             markdown_core_chunk_free(anchor);
             *anchor = (markdown_core_chunk){base.ptr, base.size, 0};
             if (!markdown_core_chunk_to_cstr(anchor)) {
-                parser->oom = true;
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                 break;
             }
             markdown_core_key_index_commit(&registry->index, candidate, anchor->data);
             candidate->value.counter = 1;
         }
         markdown_core_resource *resource = heading->resource;
-        if (resource && !parser->oom) {
+        if (resource && !parser->error) {
             markdown_core_strbuf_clear(&base);
             markdown_core_strbuf_putc(&base, '#');
             markdown_core_strbuf_put(&base, anchor->data, anchor->len);
             if (base.oom) {
-                parser->oom = true;
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                 break;
             }
             markdown_core_chunk_free(&resource->url);
             resource->url = (markdown_core_chunk){base.ptr, base.size, 0};
             if (!markdown_core_chunk_to_cstr(&resource->url)) {
-                parser->oom = true;
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             }
         }
     }
@@ -289,7 +289,7 @@ void markdown_core_block_finalize_heading_anchors(markdown_core_parser *parser,
 void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_heading_parse *heading) {
     markdown_core_inline_state inline_state;
     markdown_core_inline_start_inlines(parser, heading->node, parser->refmap, &inline_state);
-    while (!parser->oom && !inline_state.oom) {
+    while (!parser->error && !inline_state.error) {
         unsigned char c = markdown_core_inline_peek_char(&inline_state);
         /* Attribute ownership and opaque tokens are decided by the same
          * cursor as every inline. A live bracket makes this declaration
@@ -304,14 +304,14 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
                 *heading->pending = inline_state;
                 return;
             }
-            inline_state.oom = 1;
+            inline_state.error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
             break;
         }
         if (markdown_core_inline_is_eof(&inline_state) || !markdown_core_inline_parse_inline(parser, &inline_state)) {
             break;
         }
     }
-    if (!parser->oom && !inline_state.oom) {
+    if (!parser->error && !inline_state.error) {
         markdown_core_inline_finish_citation_tokens(&inline_state, &inline_state.citations);
         markdown_core_inline_process_delimiters(parser, &inline_state, 0, NULL);
         markdown_core_chunk label = {inline_state.input.data, inline_state.heading_label_end, 0};
@@ -320,7 +320,7 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
             markdown_core_resource *resource =
                 markdown_core_resource_new(markdown_core_chunk_literal(""), markdown_core_optional_chunk_absent());
             if (!resource) {
-                inline_state.oom = 1;
+                inline_state.error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
             } else {
                 markdown_core_map_record *record = markdown_core_reference_create(parser->refmap, &label, resource);
                 if (record) {
@@ -395,7 +395,7 @@ void markdown_core_heading_begin_inlines(markdown_core_parser *parser, markdown_
             }
         }
         if (inline_state->attributes.oom) {
-            inline_state->oom = 1;
+            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         }
     }
 
@@ -411,7 +411,7 @@ bool markdown_core_heading_claim_tail(markdown_core_inline_state *inline_state, 
             inline_state->pos = inline_state->input.len;
         }
         if (inline_state->attributes.oom) {
-            inline_state->oom = 1;
+            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         }
         return true;
     }
@@ -459,7 +459,7 @@ static bool open_setext(markdown_core_parser *parser, markdown_core_node **conta
             markdown_core_parser_set_node_kind(parser, *container, MARKDOWN_CORE_NODE_HEADING);
         if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
             if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
-                parser->oom = true;
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             }
             return false;
         }

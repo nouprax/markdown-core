@@ -229,3 +229,8 @@ test("--case builds the closure of what it names, in the direction the corpus de
         fs.rmSync(out, { recursive: true, force: true });
     }
 });
+
+test("baseline selection requires an exact revision and a real measurement", () => {
+    assert.match(refuse(["--baseline-ref", "main"]).message, /full commit SHA/u);
+    assert.match(refuse(["--baseline-ref", "a".repeat(40), "--corpus-only"]).message, /requires measurement/u);
+});

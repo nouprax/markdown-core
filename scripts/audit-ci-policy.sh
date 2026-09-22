@@ -10,6 +10,7 @@ codeql=.github/workflows/codeql.yml
 release=.github/workflows/release.yml
 release_dry_run=.github/workflows/release-dry-run.yml
 stage_benchmark=.github/workflows/stage-benchmark.yml
+attribute_benchmark=.github/workflows/attribute-benchmark.yml
 ruleset=.github/rulesets/main.json
 owner_review_ruleset=.github/rulesets/owner-review.json
 release_ruleset=.github/rulesets/release-tags.json
@@ -65,6 +66,7 @@ for required in \
     "$release" \
     "$release_dry_run" \
     "$stage_benchmark" \
+    "$attribute_benchmark" \
     "$ruleset" \
     "$owner_review_ruleset" \
     "$release_ruleset" \
@@ -78,15 +80,16 @@ done
 
 node --test scripts/tests/ci-changes.test.mjs scripts/tests/callgrind.test.mjs \
     scripts/tests/corpus-splits.test.mjs scripts/tests/corpus-pairs.test.mjs \
-    scripts/tests/benchmark-stages-cli.test.mjs
+    scripts/tests/benchmark-stages-cli.test.mjs scripts/tests/compile-identity.test.mjs \
+    scripts/tests/source-budget.test.mjs
 
 # THE PERFORMANCE PIPELINE MEASURES WORK, NOT TIME. Every hosted-runner
 # wall-clock pipeline this repository has had was retired for the same reason:
 # a number a neighbouring build can move is not evidence, and a comparison
 # against a moving baseline needs a trust protocol to be safe at all. The
 # replacement counts instructions and data references under callgrind and
-# compares against a pinned cmark, so neither the runner nor a base build is
-# part of the result.
+# compares references against pinned engines. Source regressions additionally
+# compare the event base and current source within the same measurement job.
 for retired in \
     .github/workflows/benchmark.yml \
     .github/workflows/pr-benchmark.yml \
@@ -126,12 +129,12 @@ grep -Fq 'GITHUB_STEP_SUMMARY' "$stage_benchmark"
 # The report is a job summary and an artifact, never a comment: a workflow that
 # both runs pull-request code and holds a write token is the shape that made the
 # previous pipeline need two workflows and an artifact-validation protocol.
-if grep -Eq '^[[:space:]]+(pull-requests|issues|contents):[[:space:]]+write$' "$stage_benchmark"; then
-    echo "the stage benchmark holds a write token while executing pull-request code" >&2
+if grep -Eq '^[[:space:]]+(pull-requests|issues|contents):[[:space:]]+write$' "$stage_benchmark" "$attribute_benchmark"; then
+    echo "a benchmark holds a write token while executing pull-request code" >&2
     exit 1
 fi
-if grep -Eq 'createComment|updateComment|issues\.create' "$stage_benchmark"; then
-    echo "the stage benchmark writes untrusted measurement text back to a pull request" >&2
+if grep -Eq 'createComment|updateComment|issues\.create' "$stage_benchmark" "$attribute_benchmark"; then
+    echo "a benchmark writes untrusted measurement text back to a pull request" >&2
     exit 1
 fi
 # One harness, one corpus: both runners are the same driver source over the same
@@ -150,6 +153,12 @@ for boundary in \
         exit 1
     }
 done
+# A source regression cannot be hidden by total-stage or median improvements.
+grep -Fq -- '--baseline-ref "$BASE_REVISION"' "$stage_benchmark"
+job_body required-gates "$ci" | grep -Fq -- '- stage-benchmark'
+job_body required-gates "$ci" | grep -Fq '"$SOURCE_BUDGET"'
+grep -Fq 'sourceBudget(cases, baseline.cases)' scripts/benchmark-stages.mjs
+
 # Both engines must be compiled from one pinned description, and the flags must
 # keep the boundaries out of line: -O3 alone folds S_finish_parse into its
 # caller, which reports the AST stage as absent rather than as cheap.
@@ -625,7 +634,8 @@ fi
 required_gate_job=$(job_body required-gates "$ci")
 grep -Fq '            - tests-ready' <<<"$required_gate_job"
 grep -Fq '            - upstream-parity' <<<"$required_gate_job"
-if grep -Eq 'benchmark|pr-metrics|collect-pr-metrics|binary\.size|coverage' <<<"$required_gate_job"; then
+grep -Fq '            - stage-benchmark' <<<"$required_gate_job"
+if grep -Eq 'pr-metrics|collect-pr-metrics|binary\.size|coverage' <<<"$required_gate_job"; then
     echo "measurement-only work leaked into the required gate" >&2
     exit 1
 fi

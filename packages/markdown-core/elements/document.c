@@ -12,7 +12,7 @@ static void init_document(markdown_core_parser *parser) {
     parser->refmap = markdown_core_reference_map_new();
     parser->footnote_defs = markdown_core_footnote_definition_map_new();
     if (!parser->refmap || !parser->footnote_defs) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
 static void dispose_document(markdown_core_parser *parser) {
@@ -35,16 +35,16 @@ static void dispose_document(markdown_core_parser *parser) {
 }
 static void prepare_document(markdown_core_parser *parser) {
     markdown_core_block_prepare_specimens(parser);
-    if (parser->oom) {
+    if (parser->error) {
         return;
     }
     markdown_core_block_prepare_headings(parser, &parser->headings);
-    if (parser->oom) {
+    if (parser->error) {
         return;
     }
     if (!markdown_core_key_index_init(&parser->anchors.index, parser->headings.count) ||
         !markdown_core_key_index_init(&parser->anchors.resources, 0)) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
 static void observe_inline(markdown_core_parser *parser, markdown_core_node *node) {
@@ -54,15 +54,15 @@ static void observe_inline(markdown_core_parser *parser, markdown_core_node *nod
 }
 static void finish_document(markdown_core_parser *parser) {
     if ((parser->refmap && parser->refmap->oom) || (parser->footnote_defs && parser->footnote_defs->oom)) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
-    if (!parser->oom) {
+    if (!parser->error) {
         markdown_core_block_finalize_footnotes(parser);
     }
-    if (!parser->oom) {
+    if (!parser->error) {
         markdown_core_specimen_finish(parser);
     }
-    if (!parser->oom) {
+    if (!parser->error) {
         markdown_core_block_finalize_heading_anchors(parser, &parser->headings, &parser->anchors);
     }
     markdown_core_key_index_free(&parser->anchors.index);

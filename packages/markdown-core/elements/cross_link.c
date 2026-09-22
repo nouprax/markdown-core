@@ -89,7 +89,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     node = markdown_core_parser_make_node_with_ext(
         parser, embedded ? MARKDOWN_CORE_NODE_CROSS_EMBEDDED : MARKDOWN_CORE_NODE_CROSS_LINK, element);
     if (!node) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
     cross = markdown_core_node_cross_reference(node);
@@ -112,12 +112,12 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     if (!markdown_core_chunk_to_cstr(&cross->path) ||
         (cross->anchor.has_value && !markdown_core_chunk_to_cstr(&cross->anchor.value)) ||
         (cross->label.has_value && !markdown_core_chunk_to_cstr(&cross->label.value))) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_parser_release_node(parser, node);
         return NULL;
     }
-    markdown_core_parser_content_place(parser, parent, start, &node->start_line, &node->start_column);
-    markdown_core_parser_content_end_place(parser, parent, i + 1, &node->end_line, &node->end_column);
+    markdown_core_parser_content_place(parser, &parent->content_map, start, &node->start_line, &node->start_column);
+    markdown_core_parser_content_end_place(parser, &parent->content_map, i + 1, &node->end_line, &node->end_column);
     markdown_core_inline_state_set_offset(inline_state, i + 2);
     return node;
 }

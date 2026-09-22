@@ -242,7 +242,7 @@ static bool markdown_core_list_open(markdown_core_parser *parser, markdown_core_
     memcpy((*container)->as.list, data, sizeof(*data));
     markdown_core_block_find_first_nonspace(parser, input);
     markdown_core_parse_task_prefix(parser, *container, input->data, input->len);
-    if (parser->oom) {
+    if (parser->error) {
         return false;
     }
     return true;

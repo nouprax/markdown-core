@@ -2,8 +2,8 @@
 #
 # Both are built from one driver source and one engine source so that neither
 # parser can be handed a different harness. They are never registered with
-# CTest: a callgrind measurement is evidence for a reviewer, and a test graph
-# that can report it is a test graph that can eventually gate on it.
+# CTest: the benchmark driver owns its comparison protocol and the source
+# instruction budget, while CTest owns correctness.
 #
 # The cmark runner needs the pinned oracle checkout, which is a local tool and
 # not part of the repository. It is built only when the driver points at one,

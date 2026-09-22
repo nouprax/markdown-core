@@ -91,6 +91,7 @@ export function compiledFlags(root, buildDir, target, fail) {
     return {
         units: units.length,
         distinct,
+        bySource: Object.fromEntries(units.map((unit) => [unit.file, unit.flags])),
         /* Union across the units: every option any measured object received. */
         flags: [...new Set(distinct.flatMap((line) => line.split(" ")))].join(" "),
         digest: crypto
@@ -98,6 +99,19 @@ export function compiledFlags(root, buildDir, target, fail) {
             .update(units.map((unit) => `${unit.file}\u0000${unit.flags}`).join("\n"))
             .digest("hex")
     };
+}
+
+/* Inventory is provenance, not a compiler option. Refactors may add, remove
+ * or rename units while preserving the option sets. For surviving paths also
+ * check each unit, so swapping existing option sets cannot hide a flag change.
+ * Preserve option order: -O0 -O3 and -O3 -O0 do not mean the same thing. */
+export function sameCompileOptions(left, right) {
+    return (
+        JSON.stringify(left.distinct) === JSON.stringify(right.distinct) &&
+        Object.entries(left.bySource).every(([file, flags]) =>
+            Object.hasOwn(right.bySource, file) ? right.bySource[file] === flags : true
+        )
+    );
 }
 
 /**

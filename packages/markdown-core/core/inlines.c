@@ -47,7 +47,8 @@ void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, 
 void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline_state, markdown_core_node *node,
                                               int from, int to) {
     markdown_core_content_span span;
-    markdown_core_parser_content_span(inline_state->owner_parser, inline_state->owner, from, to, &span,
+    markdown_core_parser_content_span(inline_state->owner_parser,
+                                      inline_state->owner ? &inline_state->owner->content_map : NULL, from, to, &span,
                                       &inline_state->mark_cursor);
     markdown_core_inline_seat_cursor(inline_state);
     if (span.has_start) {
@@ -69,8 +70,8 @@ void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline
             if (!(literal->len == to - from + 1 &&
                   (literal->data == inline_state->input.data + from ||
                    memcmp(literal->data, inline_state->input.data + from, (size_t)literal->len) == 0))) {
-                node->content_mark_count = 0;
-                node->content_mark_offset = 0;
+                node->content_map.count = 0;
+                node->content_map.offset = 0;
                 markdown_core_parser_append_content_mark(inline_state->owner_parser, node, 0, node->start_line,
                                                          node->start_column, node->end_column - node->start_column + 1,
                                                          0);
@@ -87,7 +88,7 @@ markdown_core_node *markdown_core_inline_make_literal(markdown_core_inline_state
     if (!e) {
         /* Frees an owned literal; borrowed chunks only reset fields. */
         markdown_core_chunk_free(&s);
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return NULL;
     }
     *e->as.literal = s;
@@ -109,7 +110,7 @@ markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_in
                                                                 markdown_core_node_type t) {
     markdown_core_node *e = markdown_core_inline_make_simple(inline_state, t);
     if (!e) {
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
     return e;
 }
@@ -362,7 +363,7 @@ delimiter *markdown_core_inline_push_delimiter_entry(markdown_core_inline_state 
     } else {
         entry = (delimiter *)markdown_core_alloc(1, sizeof(delimiter));
         if (!entry) {
-            inline_state->oom = 1;
+            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
             return NULL;
         }
     }
@@ -432,7 +433,7 @@ static void push_delimiter(markdown_core_inline_state *inline_state, const markd
     delimiter *delim;
     /* Elements may pass NULL after their own allocation failures. */
     if (!inl_text) {
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return;
     }
     /* `openers_bottom` is sized by MARKDOWN_CORE_DELIM_RULE_COUNT, so a rule
@@ -623,7 +624,7 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     // aborts the shared parse transaction.
     inline_node = markdown_core_inline_make_simple(inline_state, kind);
     if (!inline_node) {
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return closer->next;
     }
 
@@ -682,7 +683,7 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
         opener_inl->end_column = opener_inl->start_column + (int)opener_num_chars - 1;
     }
     if (closer_num_chars > 0) {
-        closer_inl->content_mark_offset += (int)use_delims;
+        closer_inl->content_map.offset += (int)use_delims;
         closer_inl->start_column = closer_inl->end_column - (int)closer_num_chars + 1;
     }
 
@@ -764,7 +765,7 @@ static markdown_core_node *try_elements(markdown_core_parser *parser, markdown_c
         const markdown_core_element *element = parser->inline_dispatch[i];
         res = element->match_inline(element, parser, parent, c, inline_state);
 
-        if (res || inline_state->pos != start || parser->oom || inline_state->oom) {
+        if (res || inline_state->pos != start || parser->error || inline_state->error) {
             break;
         }
     }
@@ -807,7 +808,7 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
         return 0;
     }
     new_inl = try_elements(parser, parent, c, inline_state);
-    if (inline_state->pos == token_start && !new_inl && !parser->oom && !inline_state->oom) {
+    if (inline_state->pos == token_start && !new_inl && !parser->error && !inline_state->error) {
         endpos = inline_state_find_special_char(inline_state);
         if (inline_state->pos < inline_state->text_end && endpos > inline_state->text_end) {
             endpos = inline_state->text_end;
@@ -825,7 +826,19 @@ append:
         }
     }
     if (new_inl != NULL) {
-        markdown_core_node_attach_owned(parent, new_inl, NULL);
+        /* Fixed inline owners admit every token their grammar constructs. Only
+         * a dynamic policy needs a decision here; it may change during a hook. */
+        if (parent->element && parent->element->can_contain_func &&
+            !markdown_core_node_can_contain_type(parent, (markdown_core_node_type)new_inl->kind)) {
+            /* A token constructor has consumed input. Refusing its result is
+             * a failed parse, but the detached token is still ours to release. */
+            markdown_core_parser_release_node(parser, new_inl);
+            if (!inline_state->error) {
+                inline_state->error = MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED;
+            }
+            return 0;
+        }
+        markdown_core_node_attach_validated(parent, new_inl, NULL);
         bool has_fields = false;
         markdown_core_visit_inline_subtrees(new_inl, has_inline_field, &has_fields);
         if (has_fields) {
@@ -849,14 +862,14 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
      * replaces: `start_column - 1 + internal_offset` was the block offset every
      * inline position used to be measured from, and stating it once as a mark
      * is what lets the term itself go. */
-    if (parent->content_mark_count == 0) {
+    if (parent->content_map.count == 0) {
         markdown_core_parser_mark_content(parser, parent, parent->start_line,
                                           parent->start_column + parent->internal_offset);
     }
     markdown_core_inline_state_from_buf(parser, parent->start_line, inline_state, &content, refmap);
     inline_state->owner = parent;
     inline_state->owner_structure = markdown_core_node_structure(parent);
-    inline_state->mark_cursor = parent->content_mark;
+    inline_state->mark_cursor = parent->content_map.first;
     markdown_core_inline_seat_cursor(inline_state);
     /* Block buffers include their terminating line ending. An inline field
      * ends at its owner's delimiter: its trailing spaces are body content. */
@@ -881,20 +894,20 @@ void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state
     while (inline_state->last_delim) {
         markdown_core_inline_remove_delimiter(inline_state, inline_state->last_delim);
     }
-    if (inline_state->oom) {
-        parser->oom = true;
+    if (inline_state->error) {
+        markdown_core_parser_fail(parser, inline_state->error);
     }
 }
 
 bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
-    while (!parser->oom && !inline_state->oom) {
+    while (!parser->error && !inline_state->error) {
         complete_inline_token(parser, inline_state);
-        if (parser->oom || inline_state->oom || markdown_core_inline_is_eof(inline_state) ||
+        if (parser->error || inline_state->error || markdown_core_inline_is_eof(inline_state) ||
             !markdown_core_inline_parse_inline(parser, inline_state)) {
             break;
         }
     }
-    if (!parser->oom && !inline_state->oom) {
+    if (!parser->error && !inline_state->error) {
         const markdown_core_element **owners = parser->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_FINISH];
         size_t count = parser->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_FINISH];
         for (size_t i = 0; i < count; i++) {
@@ -1071,8 +1084,9 @@ markdown_core_node *markdown_core_inline_state_make_delimiter_text(markdown_core
 /* The cursor's position, asked of the map from the cursor's run. */
 static int S_cursor_place(markdown_core_inline_state *inline_state, int *line, int *column) {
     markdown_core_content_span span;
-    int placed = markdown_core_parser_content_span(inline_state->owner_parser, inline_state->owner, inline_state->pos,
-                                                   -1, &span, &inline_state->mark_cursor);
+    int placed = markdown_core_parser_content_span(inline_state->owner_parser,
+                                                   inline_state->owner ? &inline_state->owner->content_map : NULL,
+                                                   inline_state->pos, -1, &span, &inline_state->mark_cursor);
     markdown_core_inline_seat_cursor(inline_state);
     if (!placed || !span.has_start) {
         return 0;
@@ -1099,7 +1113,8 @@ static void S_update_text_sourcepos(markdown_core_parser *parser, markdown_core_
         node->start_line = node->start_column = node->end_line = node->end_column = 0;
         return;
     }
-    markdown_core_parser_content_end_place(parser, node, node->as.literal->len - 1, &node->end_line, &node->end_column);
+    markdown_core_parser_content_end_place(parser, &node->content_map, node->as.literal->len - 1, &node->end_line,
+                                           &node->end_column);
 }
 
 void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n) {

@@ -40,7 +40,7 @@ bufsize_t markdown_core_inline_scan_to_closing_backticks(markdown_core_inline_st
         inline_state->backticks =
             markdown_core_alloc((size_t)inline_state->backtick_capacity + 1, sizeof(*inline_state->backticks));
         if (!inline_state->backticks) {
-            inline_state->oom = 1;
+            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
             return 0;
         }
     }
@@ -131,7 +131,7 @@ static markdown_core_node *handle_backticks(markdown_core_inline_state *inline_s
         markdown_core_strbuf_set(&buf, inline_state->input.data + startpos, endpos - startpos - openticks.len);
         S_normalize_code(&buf);
         if (buf.oom) {
-            inline_state->oom = 1;
+            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         }
 
         /* A CODE SPAN COVERS ITS BACKTICKS (Q45, answered 2026-08-23). Every

@@ -47,7 +47,7 @@ void markdown_core_inline_apply_image_dimensions(markdown_core_inline_state *inl
                                                  markdown_core_node *image, bufsize_t end) {
     /* Earlier inline allocation failure may have omitted the final text run.
      * The transaction is already failed; do not consume its incomplete tree. */
-    if (inline_state->oom || inline_state->owner_parser->oom) {
+    if (inline_state->error || inline_state->owner_parser->error) {
         return;
     }
     bufsize_t suffix = opener->image_pipe >= 0 ? opener->image_pipe : opener->position;

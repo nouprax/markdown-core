@@ -11,6 +11,15 @@
 extern "C" {
 #endif
 
+/* A fatal parse transaction preserves its first cause. Optional grammar
+ * rejection is a normal no-match; rejection after consuming a token is fatal
+ * but is not an allocation failure. Buffers retain their own allocation flag. */
+typedef enum {
+    MARKDOWN_CORE_PARSE_OK,
+    MARKDOWN_CORE_PARSE_ALLOCATION_FAILED,
+    MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED
+} markdown_core_parse_error;
+
 #define MAX_LINK_LABEL_LENGTH 1000
 
 /* The block-start hook families, in the order a line consults them.
@@ -197,6 +206,17 @@ typedef struct {
     struct markdown_core_node *last_inline;
 } markdown_core_definition_collection;
 
+/* Sequential source-order operations share scratch, including table regions,
+ * headings and document definitions. Space depends on entries, never on the
+ * area of a sparse table or the numeric range of source coordinates. */
+typedef struct {
+    uint64_t *keys;
+    unsigned char *entries;
+    size_t key_capacity, entry_capacity;
+    /* Key entries inspected by ordering, accumulated once per scan/pass. */
+    size_t work;
+} markdown_core_source_order;
+
 struct markdown_core_parser {
     /* A hashtable of urls in the current document for cross-references */
     struct markdown_core_map *refmap;
@@ -208,6 +228,7 @@ struct markdown_core_parser {
     markdown_core_definition_collection specimens;
     markdown_core_key_index specimen_ids;
     markdown_core_heading_collection headings;
+    markdown_core_source_order source_order;
     anchor_registry anchors;
     const markdown_core_element *document_structure, *text_structure;
     /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
@@ -219,9 +240,18 @@ struct markdown_core_parser {
     struct markdown_core_node *matched_container;
     struct markdown_core_node **block_inputs;
     size_t block_input_count, block_input_capacity, block_input_cursor;
-    bufsize_t *input_line_offsets;
+    /* Geometry and grammar facts for the active immutable input. The driver
+     * and lookahead extend one index; a source byte is scanned for line
+     * geometry once, whether the input is the document or a mapped cell. */
+    const unsigned char *input_source;
+    size_t input_length, input_scanned;
+    struct markdown_core_input_line *input_lines;
+    struct markdown_core_normalized_line *normalized_lines;
+    struct markdown_core_line_facts *input_facts;
+    size_t input_fact_count, input_fact_capacity;
     size_t input_line_count, input_line_capacity;
     int input_first_line;
+    size_t input_line_work;
     /* A complete candidate may consume through a later source boundary. The
      * source driver advances to it after the current line has finished. */
     const unsigned char *claimed_cursor;
@@ -252,14 +282,11 @@ struct markdown_core_parser {
     markdown_core_strbuf curline;
     /* See the documentation for markdown_core_parser_get_last_line_length() in markdown_core.h */
     bufsize_t last_line_length;
-    /* Scratch for a source line containing NUL bytes; curline holds the
-     * normalized line currently being parsed. */
-    markdown_core_strbuf line_scratch;
     /* Options set by the user, see the Options section in markdown_core.h */
     /* Sticky allocation-failure flag: once any parse structure is lost, the
      * one-shot transaction reports the whole parse as failed (NULL) instead of
      * returning a silently truncated document. */
-    bool oom;
+    markdown_core_parse_error error;
     /* Bytes inspected by the cross-link scanner, for deterministic complexity gates. */
     size_t cross_link_scan_work;
     size_t autolink_domain_work;
@@ -358,19 +385,16 @@ struct markdown_core_parser {
      * the linearity gates of both. */
     size_t comment_scan_work;
     size_t block_lookahead_work;
+    /* Scalar/byte probe ranges plus union-find and ordering visits. Scans
+     * charge a span once; short-circuited ranges may conservatively overcount. */
     size_t table_scan_work, table_frontier_peak;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
+    size_t table_scratch_growth;
     /* Properties work: source ranges decoded once at their owning boundary. */
     size_t metadata_decoded_bytes;
-    /* Bytes the properties envelope's two search passes examine: the fence
-     * pass hands each byte to `memchr` once, and the index pass hands each
-     * envelope byte to the LF search and the CR search once each, so the
-     * total is bounded by three times the document. Nothing about the output
-     * can see how many times a line's geometry was derived, so that bound is
-     * asserted on this counter. What the counter proves is exactly that: the
-     * searches' bound and, through the bare-CR case, that the LF memo holds.
-     * A consumer that re-derived a line with a byte loop of its own would not
-     * be counted here; it is kept out by there being no such loop to call. */
+    size_t metadata_key_work;
+    /* Bytes examined by the allocation-free closing-fence search. Physical
+     * line geometry is counted by input_line_work for every input consumer. */
     size_t properties_line_work;
     /* Bytes examined by the shared block-identifier suffix scanner. */
     size_t block_identifier_work;
@@ -407,14 +431,8 @@ struct markdown_core_parser {
     struct markdown_core_node **lookahead_chain;
     markdown_core_node_internal_flags *lookahead_chain_flags;
     int lookahead_chain_alloc;
-    struct markdown_core_lookahead_entry *lookahead_entries;
-    int lookahead_entries_alloc;
-    int lookahead_entries_used;
-    int lookahead_base_line;
-    /* One active table query borrows this reusable line workspace. Per-line
-     * geometry is released by the query; the allocation dies with the parser. */
-    struct markdown_core_table_source_line *table_lines;
-    size_t table_lines_capacity;
+    /* Element-owned scratch for sequential table recognition transactions. */
+    struct markdown_core_table_workspace *table_workspace;
     /* Borrow the fixed immutable dialect registry. Private setup callers may
      * extend it before parsing; only that replacement buffer is owned here. */
     const markdown_core_element *const *elements;
@@ -527,10 +545,10 @@ struct markdown_core_parser {
  * bounds the placement (the api test) is the placement's and a block-phase
  * caller inlines the search alone. */
 static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_near(const markdown_core_parser *parser,
-                                                                      const markdown_core_node *node, bufsize_t offset,
-                                                                      int hint, size_t *probes) {
+                                                                      const markdown_core_content_map *map,
+                                                                      bufsize_t offset, int hint, size_t *probes) {
     const markdown_core_line_mark *marks = parser->line_marks;
-    int lo = node->content_mark, hi = lo + node->content_mark_count - 1;
+    int lo = map->first, hi = lo + map->count - 1;
     int at = hint >= lo && hint <= hi ? hint : lo;
     size_t probed = 1;
     if (marks[at].content_offset <= offset) {
@@ -564,9 +582,10 @@ static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_near(const mark
 
 /* The same question from a caller that keeps no cursor and counts nothing. */
 static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_at(const markdown_core_parser *parser,
-                                                                    const markdown_core_node *node, bufsize_t offset) {
+                                                                    const markdown_core_content_map *map,
+                                                                    bufsize_t offset) {
     size_t probes = 0;
-    return markdown_core_block_content_mark_near(parser, node, offset, node->content_mark, &probes);
+    return markdown_core_block_content_mark_near(parser, map, offset, map->first, &probes);
 }
 
 /* Resolve both ends of [from, to] against `node`'s map, each found from the
@@ -577,24 +596,24 @@ static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_at(const markdo
  * resolved. The caller owns what it does with the answer: the run indices are
  * handed back rather than written onto a node, because whether a slice is
  * taken at all is a decision only the caller can make -- writing
- * `content_mark_count` on a node that is not a verbatim copy of its source
+ * `content_map.count` on a node that is not a verbatim copy of its source
  * would give every SPAN, LINK and EMPHASIS node a map it does not have, and
  * three places read that count as the question "is there a mapping". */
 static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_parser *parser,
-                                                                  markdown_core_node *node, bufsize_t from,
+                                                                  const markdown_core_content_map *map, bufsize_t from,
                                                                   bufsize_t to, markdown_core_content_span *span,
                                                                   int *cursor) {
     span->has_start = false;
     span->has_end = false;
     span->first = span->last = 0;
-    if (!parser || !node || node->content_mark_count <= 0) {
+    if (!parser || !map || map->count <= 0) {
         return 0;
     }
-    int hint = cursor ? *cursor : node->content_mark;
+    int hint = cursor ? *cursor : map->first;
     size_t probes = 0;
     if (from >= 0) {
-        bufsize_t offset = from + node->content_mark_offset;
-        span->first = markdown_core_block_content_mark_near(parser, node, offset, hint, &probes);
+        bufsize_t offset = from + map->offset;
+        span->first = markdown_core_block_content_mark_near(parser, map, offset, hint, &probes);
         const markdown_core_line_mark *mark = &parser->line_marks[span->first];
         span->start_line = mark->line;
         span->start_column = mark->column + (int)(offset - mark->content_offset) * mark->source_step;
@@ -602,8 +621,8 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
         hint = span->first;
     }
     if (to >= 0) {
-        bufsize_t offset = to + node->content_mark_offset;
-        span->last = markdown_core_block_content_mark_near(parser, node, offset, hint, &probes);
+        bufsize_t offset = to + map->offset;
+        span->last = markdown_core_block_content_mark_near(parser, map, offset, hint, &probes);
         hint = span->last;
         const markdown_core_line_mark *mark = &parser->line_marks[span->last];
         span->end_line = mark->line;
@@ -616,17 +635,6 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
     }
     parser->content_mark_probes += probes;
     return 1;
-}
-
-/* Take the slice a resolved span already names. `from` is the span's own
- * start offset, which the runs were resolved against. */
-static MARKDOWN_CORE_INLINE void markdown_core_parser_adopt_content_span(markdown_core_node *owner,
-                                                                         markdown_core_node *node,
-                                                                         const markdown_core_content_span *span,
-                                                                         bufsize_t from) {
-    node->content_mark = span->first;
-    node->content_mark_count = span->last - span->first + 1;
-    node->content_mark_offset = from + owner->content_mark_offset;
 }
 
 /* THE PARSE'S NODE OPERATIONS, WHICH RECORD THE KIND THEY PRODUCE.
@@ -651,6 +659,12 @@ static MARKDOWN_CORE_INLINE void markdown_core_parser_adopt_content_span(markdow
  * passes, never miss one, because a kind in the finished tree was necessarily
  * created; and a pass that runs over a tree holding none of its declared kinds
  * finds nothing to do. */
+static inline void markdown_core_parser_fail(markdown_core_parser *parser, markdown_core_parse_error error) {
+    if (!parser->error) {
+        parser->error = error;
+    }
+}
+
 static inline void markdown_core_parser_note_kind(markdown_core_parser *parser, markdown_core_node_type kind) {
     if (parser) {
         markdown_core_node_kind_set_add(&parser->kinds_created, kind);
@@ -703,19 +717,26 @@ static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_k
     return markdown_core_node_set_kind(node, kind);
 }
 
-/* ONE LINE OF THE BLOCK-START LOOKAHEAD'S RESUME CACHE.
- *
- * A candidate that scans forward matches the open containers' prefixes on
- * every line it visits. Two failed candidates that both reach a line have
- * nested container chains -- the later one opened inside the earlier one's
- * scan -- so the later scan resumes each line from the deepest container the
- * earlier one matched, and every (container, line) prefix is matched at most
- * once per parse. `container` is NULL for a line no scan has recorded. */
-typedef struct markdown_core_lookahead_entry {
+/* Physical geometry is present for every visited line. Optional normalized
+ * views and grammar facts share one lazily created record for that line. */
+typedef struct markdown_core_input_line {
+    /* Input buffers, hence offsets and line counts, are bounded by INT32_MAX / 2. */
+    uint32_t start, end;
+    /* One-based index; zero means no query needs optional state for this line. */
+    uint32_t facts;
+} markdown_core_input_line;
+
+typedef struct markdown_core_line_facts {
+    struct markdown_core_normalized_line *normalized;
     /* Table grammar search facts under one matched container prefix. */
     const struct markdown_core_node *table_container;
     int table_offset;
     unsigned table_absent;
+    /* A candidate matches open-container prefixes on every line it visits.
+     * Failed candidates reaching the same line have nested container chains,
+     * so each resumes from the deepest match already recorded. Each
+     * (container, line) prefix is matched at most once per parse. NULL means
+     * that no scan has recorded a prefix. */
     const struct markdown_core_node *container;
     /* Its distance from the document root: chain[depth] == container. */
     int depth;
@@ -732,45 +753,43 @@ typedef struct markdown_core_lookahead_entry {
      * after the run and where it begins, so a later scan whose extra containers
      * accept every blank line steps over the run at once. 0 when not a run. */
     int run_end;
+    /* Only NUL-bearing lines need this count; it occupies former padding. */
+    uint32_t nul_count;
     const unsigned char *run_end_cursor;
-} markdown_core_lookahead_entry;
-/* ONE LINE'S ENTRY: an index into an array, where the compiler can see it.
- *
- * Lines are numbered from the first line any lookahead visited: candidates
- * come in source order and each begins at the line after its own, so no
- * lookahead asks about an earlier line.
- *
- * The body is a subtraction, a bounds test and an address. It was an ordinary
- * out-of-line function, asked once per line visit from two translation units
- * -- about 10,600 times on `block-hr` alone, at 147 Ir a call inclusive, of
- * which 27 Ir was the prologue and epilogue of a call that computes an array
- * subscript.
- *
- * The growth path is what kept it out of line, and it is the rare one: a
- * realloc that doubles, so it runs a handful of times per document. It stays
- * out of line, and the index path does not pay for it. */
-markdown_core_lookahead_entry *markdown_core_parser_lookahead_entry_grow(markdown_core_parser *parser, int index);
+} markdown_core_line_facts;
+/* The index is a contiguous prefix. Its next record already owns this line's
+ * continuation; at the frontier the scanner owns it. No newline bytes need
+ * rereading and no third offset needs retaining on every physical line. */
+static inline size_t markdown_core_input_line_next(const markdown_core_parser *parser,
+                                                   const markdown_core_input_line *line) {
+    const markdown_core_input_line *next = line + 1;
+    return next < parser->input_lines + parser->input_line_count ? next->start : parser->input_scanned;
+}
 
-static inline markdown_core_lookahead_entry *markdown_core_parser_lookahead_entry(markdown_core_parser *parser,
-                                                                                  int line) {
-    int index;
+/* Returned pointers are borrowed until the next request that grows the
+ * index. Keep line numbers or copies across such a request. */
+markdown_core_input_line *markdown_core_parser_extend_source_lines(markdown_core_parser *parser, size_t index);
 
-    if (parser->lookahead_base_line == 0) {
-        parser->lookahead_base_line = line;
-    }
-    index = line - parser->lookahead_base_line;
-    if (index < 0) {
-        /* Unreachable by the ordering argument above; a line before the base
-         * is matched without the cache rather than through it. */
+static inline markdown_core_input_line *markdown_core_parser_source_line(markdown_core_parser *parser, int line) {
+    if (line < parser->input_first_line || parser->error) {
         return NULL;
     }
-    if (index >= parser->lookahead_entries_alloc) {
-        return markdown_core_parser_lookahead_entry_grow(parser, index);
+    size_t index = (size_t)(line - parser->input_first_line);
+    return index < parser->input_line_count ? &parser->input_lines[index]
+                                            : markdown_core_parser_extend_source_lines(parser, index);
+}
+
+/* Optional state is sparse within the input index: properties and ordinary
+ * driver visits need only geometry unless they normalize a NUL-bearing line.
+ * Both vectors reset with their input and retain capacity until disposal. */
+markdown_core_line_facts *markdown_core_parser_extend_line_facts(markdown_core_parser *parser,
+                                                                 markdown_core_input_line *line);
+static inline markdown_core_line_facts *markdown_core_parser_get_line_facts(markdown_core_parser *parser, int number) {
+    markdown_core_input_line *line = markdown_core_parser_source_line(parser, number);
+    if (!line) {
+        return NULL;
     }
-    if (parser->lookahead_entries_used <= index) {
-        parser->lookahead_entries_used = index + 1;
-    }
-    return &parser->lookahead_entries[index];
+    return line->facts ? &parser->input_facts[line->facts - 1] : markdown_core_parser_extend_line_facts(parser, line);
 }
 
 /* A NON-CONSUMING LOOKAHEAD over the lines after the one being processed.
@@ -808,7 +827,9 @@ typedef struct {
 } markdown_core_block_lookahead;
 
 /* Stable source-coordinate ordering, shared by deferred nodes and cell geometry. */
-int markdown_core_order_source_entries(void *entries, size_t count, size_t stride, uint64_t (*key)(const void *));
+void markdown_core_source_order_dispose(markdown_core_source_order *workspace);
+int markdown_core_order_source_entries(markdown_core_source_order *workspace, void *entries, size_t count,
+                                       size_t stride, uint64_t (*key)(const void *));
 
 struct markdown_core_block_reader;
 /* Query the ordinary block-start rules before the table slot. Paragraph
@@ -825,7 +846,13 @@ bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdo
 /* Project a byte column in the active input to its original source column.
  * Line numbers already name physical source lines. Column zero stays a
  * line-ending sentinel. Producers call this when assigning node scopes. */
-int markdown_core_parser_source_column(markdown_core_parser *parser, int line, int column);
+int markdown_core_parser_mapped_source_column(markdown_core_parser *parser, int line, int column);
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int markdown_core_parser_source_column(
+    markdown_core_parser *parser, int line, int column) {
+    return column < 0 || parser->block_root == parser->root
+               ? column
+               : markdown_core_parser_mapped_source_column(parser, line, column);
+}
 int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                              int column, bufsize_t length, bufsize_t offset);
 

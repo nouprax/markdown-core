@@ -219,10 +219,14 @@ enum markdown_core_node__internal_flags {
     // Deferred contextual escape token, decoded when inline ownership is final.
     MARKDOWN_CORE_NODE__ESCAPED_SPACE = (1 << 6),
 
+    /* Reference definitions have advanced this block's semantic beginning.
+     * A later arrival may supply its first surviving content line. */
+    MARKDOWN_CORE_NODE__REFERENCE_PREFIX = (1 << 7),
+
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 7),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 8),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -285,10 +289,7 @@ struct markdown_core_node {
     int internal_offset;
     /* This node's slice of parser-owned content-to-source runs. Zero count
      * means there is no mapped content (for example, an empty cell). */
-    int content_mark;
-    int content_mark_count;
-    /* A slice reads immutable parser-owned marks at this content origin. */
-    int content_mark_offset;
+    markdown_core_content_map content_map;
     uint16_t kind;
     markdown_core_node_internal_flags flags;
 
@@ -347,6 +348,10 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_INLINE_P(markdown_core_node 
     return node != NULL && MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)node->kind);
 }
 
+/* The fixed grammar and an element's retained kind domain, without callbacks.
+ * Checked mutation and construction assertions use this same rule. */
+bool markdown_core_node_can_contain_builtin(const markdown_core_node *node, markdown_core_node_type child_type);
+
 MARKDOWN_CORE_EXPORT bool markdown_core_node_can_contain_type(markdown_core_node *node,
                                                               markdown_core_node_type child_type);
 
@@ -365,13 +370,12 @@ int markdown_core_visit_block_subtrees_since(markdown_core_node *node,
 int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
                                        void *context);
 
-/* Attach an exclusively owned, detached subtree before a child of parent,
- * or at the end when before is NULL. The caller must establish that the
- * subtree is disjoint from parent, by construction or an earlier cycle check.
- * No ancestor walk, allocation, or transfer occurs on rejection. This private
- * operation validates construction and shares its non-failing splice with
- * the checked mutation API. */
-int markdown_core_node_attach_owned(markdown_core_node *parent, markdown_core_node *child, markdown_core_node *before);
+/* Commit an exclusively owned, detached subtree after the caller has proved
+ * containment and disjointness. No callbacks, allocation, or rejection occurs
+ * after ownership starts to move. Debug/ASan checks the pointer links and
+ * pure built-in containment; stateful callbacks are never re-evaluated. */
+void markdown_core_node_attach_validated(markdown_core_node *parent, markdown_core_node *child,
+                                         markdown_core_node *before);
 
 /* The bit a BLOCK kind occupies in a container-kind set, or zero for an inline
  * kind or none at all. Block kind values are small and dense, so a set of the

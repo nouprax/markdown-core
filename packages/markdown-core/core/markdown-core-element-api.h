@@ -10,6 +10,12 @@ extern "C" {
 
 struct markdown_core_chunk;
 
+/* A borrowed slice of immutable parser-owned source runs. It owns no AST node
+ * or allocation and may be copied while a node is split or consolidated. */
+typedef struct {
+    int first, count, offset;
+} markdown_core_content_map;
+
 /** Internal element parsing API.
  *
  * Every parse attaches the complete immutable element table. Elements own
@@ -27,6 +33,13 @@ struct markdown_core_chunk;
  * opaque-body elements provide only their construction and decoding hook.
  * A callback may consume an internal token without returning a node. A decline
  * leaves both the cursor and the tree unchanged.
+ * A returned token is exclusively owned and detached. Its constructor must
+ * guarantee the fixed grammar's built-in containment for the receiving
+ * parent; the dispatcher commits that proof and checks it in Debug/ASan.
+ * An optional dynamic parent policy is a separate decision made by the
+ * dispatcher for each returned token, with refusal releasing the token.
+ * Private test descriptors have the same constructor obligations. Registering
+ * a descriptor does not turn this internal API into a supported extension API.
  *
  * Element state follows the descriptor's parser, inline and node lifecycle
  * callbacks. Owned subtree roots participate in the shared iterative walks.
@@ -232,7 +245,7 @@ typedef enum {
     /** The node was freed or replaced. No later step sees this event: the
      *  node it names is gone. Legal only at EXIT. */
     MARKDOWN_CORE_FINISH_CONSUMED,
-    /** An allocation failed and 'parser->oom' is set. The walk stops. */
+    /** An allocation failed and 'parser->error' is set. The walk stops. */
     MARKDOWN_CORE_FINISH_FAILED
 } markdown_core_finish_result;
 
@@ -258,7 +271,7 @@ typedef enum {
  * roots.
  *
  * The step obeys the LOCAL contract above. It returns CONSUMED when it freed
- * or replaced 'node' (legal only at EXIT), FAILED with 'parser->oom' set when
+ * or replaced 'node' (legal only at EXIT), FAILED with 'parser->error' set when
  * an allocation failed, and CONTINUE otherwise.
  */
 typedef markdown_core_finish_result (*markdown_core_finish_step_func)(const markdown_core_element *element,
@@ -269,7 +282,7 @@ typedef markdown_core_finish_result (*markdown_core_finish_step_func)(const mark
 
 /** Rewrite the tree rooted at 'root' in place, after its finish walk.
  *
- * Return 1 on success and 0 on failure, having set 'parser->oom' to report it.
+ * Return 1 on success and 0 on failure, having set 'parser->error' to report it.
  *
  * 'root' itself belongs to whoever holds it: the parser for the document, and
  * the owning element for a node-valued field such as a definition term or a
@@ -399,8 +412,8 @@ int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser);
  * every line of it on the first line's row.
  */
 MARKDOWN_CORE_EXPORT
-int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, markdown_core_node *owner,
-                                             markdown_core_node *node, bufsize_t from, bufsize_t length);
+int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, const markdown_core_content_map *owner,
+                                             markdown_core_content_map *map, bufsize_t from, bufsize_t length);
 
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_core_node *node, int line, int column);
@@ -420,8 +433,8 @@ int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_cor
  * the parse transaction releases it with the rest of the parse state.
  */
 MARKDOWN_CORE_EXPORT
-int markdown_core_parser_content_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t content_offset,
-                                       int *line, int *column);
+int markdown_core_parser_content_place(markdown_core_parser *parser, const markdown_core_content_map *map,
+                                       bufsize_t content_offset, int *line, int *column);
 
 /** Append a source run for content already assembled by a producer. Runs
  * must be contiguous in the parser vector and have increasing content offsets.
@@ -432,16 +445,16 @@ int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markd
 /** Append the source runs covering a literal slice to a growing result map.
  * Each source run is copied once; producers use adopt_content_marks for a
  * read-only slice that needs no allocation. */
-int markdown_core_parser_append_content_marks(markdown_core_parser *parser, markdown_core_node *owner,
-                                              markdown_core_node *node, bufsize_t from, bufsize_t length,
+int markdown_core_parser_append_content_marks(markdown_core_parser *parser, const markdown_core_content_map *owner,
+                                              markdown_core_content_map *map, bufsize_t from, bufsize_t length,
                                               bufsize_t offset);
 /** Project a logical inline range, including its Text literal mapping. */
 void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
                                       int to);
 /** The inclusive end of the authored bytes represented by a content byte.
  * Uses the same run lookup as content_place, which returns its start. */
-int markdown_core_parser_content_end_place(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
-                                           int *line, int *column);
+int markdown_core_parser_content_end_place(markdown_core_parser *parser, const markdown_core_content_map *map,
+                                           bufsize_t offset, int *line, int *column);
 
 /** Return the absolute index of the first nonspace column coming after 'offset'
  * in the line currently being processed, counting tabs as multiple

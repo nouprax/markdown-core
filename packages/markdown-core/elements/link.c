@@ -21,7 +21,8 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     markdown_core_attribute_parser attributes = {.data = chunk.data, .length = chunk.len};
     while (chunk.len && chunk.data[0] == '[') {
         int line = b->start_line, column = b->start_column;
-        markdown_core_parser_content_place(parser, b, (bufsize_t)(chunk.data - node_content->ptr), &line, &column);
+        markdown_core_parser_content_place(parser, &b->content_map, (bufsize_t)(chunk.data - node_content->ptr), &line,
+                                           &column);
         uint64_t source_key = ((uint64_t)(uint32_t)line << 32) | (uint32_t)column;
         pos = markdown_core_parse_reference_inline(&chunk, parser->refmap, &attributes, source_key);
         if (!pos) {
@@ -31,7 +32,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
         chunk.len -= pos;
     }
     if (attributes.oom) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     parser->attribute_work += attributes.work;
     markdown_core_attribute_parser_free(&attributes);
@@ -50,6 +51,12 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     // column is answered rather than assumed, and the marks are rebased so the
     // inline phase reads the same map against the shortened buffer.
     bufsize_t dropped = node_content->size - chunk.len;
+    if (dropped) {
+        b->flags |= MARKDOWN_CORE_NODE__REFERENCE_PREFIX;
+    }
+    if (!(b->flags & MARKDOWN_CORE_NODE__REFERENCE_PREFIX)) {
+        return !markdown_core_block_is_blank(node_content, 0);
+    }
     int line, column;
     markdown_core_block_rebase_content_marks(parser, b, dropped, chunk.len);
     markdown_core_strbuf_drop(node_content, dropped);
@@ -61,7 +68,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
      * the answer from the surviving run rather than from the size of the cut
      * is what makes both arrivals give the same result. On a block with no
      * definitions in front of it this is what the block already said. */
-    if (markdown_core_parser_content_place(parser, b, 0, &line, &column)) {
+    if (markdown_core_parser_content_place(parser, &b->content_map, 0, &line, &column)) {
         b->start_line = line;
         b->start_column = column;
     }
@@ -349,7 +356,7 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_chunk *input, markd
     } else {
         markdown_core_attributes_free(&value);
     }
-    if ((inline_state.oom || lost) && refmap) {
+    if ((inline_state.error || lost) && refmap) {
         refmap->oom = 1;
     }
     return inline_state.pos;
@@ -399,7 +406,7 @@ markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_state
                 url = markdown_core_clean_url(&url_chunk, &lost);
                 title = markdown_core_clean_title(&title_chunk, &lost);
                 if (lost) {
-                    inline_state->oom = 1;
+                    inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
                 }
             }
             markdown_core_chunk_free(&url_chunk);
@@ -481,7 +488,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
         }
     }
     if (!inl) {
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         if (!record) {
             markdown_core_chunk_free(&url);
             markdown_core_optional_chunk_free(&title);
@@ -516,7 +523,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
     // handler consumed for itself. Counting from the OPENING bracket instead
     // would count the label's own newlines a second time -- measured,
     // `[a\nb](/u) tail` then reports line 3 of a two-line document.
-    markdown_core_node_attach_owned(opener->inl_text->parent, inl, opener->inl_text);
+    markdown_core_node_attach_validated(opener->inl_text->parent, inl, opener->inl_text);
     markdown_core_inline_take_bracket_content(parser, opener, inl);
 
     if (is_image) {
@@ -548,7 +555,7 @@ void markdown_core_inline_take_bracket_content(markdown_core_parser *parser, bra
     while (child != opener->close_text) {
         markdown_core_node *next = child->next;
         markdown_core_node_unlink(child);
-        markdown_core_node_attach_owned(owner, child, NULL);
+        markdown_core_node_attach_validated(owner, child, NULL);
         parser->bracket_work++;
         child = next;
     }
@@ -580,7 +587,7 @@ void markdown_core_inline_push_bracket(markdown_core_inline_state *inline_state,
                                        markdown_core_node *inl_text) {
     bracket *b = (bracket *)markdown_core_alloc(1, sizeof(bracket));
     if (!b) {
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return;
     }
     if (inline_state->last_bracket != NULL) {
@@ -615,9 +622,9 @@ void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inl
     if (opener->kind == BRACKET_IMAGE) {
         opener->inl_text->as.literal->len = 1;
         markdown_core_inline_state_place(inline_state, opener->inl_text, opener->position - 2, opener->position - 2);
-        markdown_core_node_attach_owned(opener->inl_text->parent, replacement, opener->inl_text->next);
+        markdown_core_node_attach_validated(opener->inl_text->parent, replacement, opener->inl_text->next);
     } else {
-        markdown_core_node_attach_owned(opener->inl_text->parent, replacement, opener->inl_text);
+        markdown_core_node_attach_validated(opener->inl_text->parent, replacement, opener->inl_text);
         markdown_core_parser_release_node(inline_state->owner_parser, opener->inl_text);
     }
 }

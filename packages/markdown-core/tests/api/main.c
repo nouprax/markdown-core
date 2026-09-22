@@ -15,6 +15,11 @@
 #include "directive.h"
 #include <stdlib.h>
 #include <string.h>
+#if !defined(NDEBUG) && !defined(_WIN32)
+#include <signal.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 #include "alloc.h"
 #include "markdown-core.h"
@@ -82,7 +87,7 @@ typedef union {
     void *pointer;
 } properties_allocation;
 static size_t properties_live_bytes, properties_peak_bytes;
-static int properties_counting;
+static int properties_counting, properties_force_moves;
 
 static void properties_account(size_t old_size, size_t new_size) {
     properties_live_bytes = properties_live_bytes - old_size + new_size;
@@ -127,6 +132,20 @@ static void payload_probe_disarm(void) {
         abort();
     }
     payload_counting = 0;
+}
+
+typedef struct {
+    size_t allocations, releases;
+} payload_probe_calls;
+
+/* Callbacks borrow the surrounding test's armed region. Never let a snapshot
+ * silently observe disabled counters, even in an NDEBUG test binary. */
+static payload_probe_calls payload_probe_snapshot(void) {
+    if (!payload_counting) {
+        fprintf(stderr, "payload snapshot requested outside an armed region\n");
+        abort();
+    }
+    return (payload_probe_calls){payload_allocations, payload_releases};
 }
 
 /* Refusals are counted the same way whichever entry point asks, because a
@@ -190,7 +209,19 @@ void *markdown_core_realloc(void *pointer, size_t size) {
         }
         allocation = pointer ? (properties_allocation *)pointer - 1 : NULL;
         old_size = allocation ? allocation->size : 0;
-        allocation = realloc(allocation, sizeof(*allocation) + size);
+        if (properties_force_moves) {
+            properties_allocation *grown = malloc(sizeof(*grown) + size);
+            if (!grown) {
+                return NULL;
+            }
+            if (allocation) {
+                memcpy(grown + 1, allocation + 1, old_size < size ? old_size : size);
+                free(allocation);
+            }
+            allocation = grown;
+        } else {
+            allocation = realloc(allocation, sizeof(*allocation) + size);
+        }
         if (!allocation) {
             return NULL;
         }
@@ -2065,8 +2096,7 @@ static void inline_dispatch_ownership(test_batch_runner *runner) {
  *
  * This is a property test rather than a parse test on purpose. Measured at
  * 3a.3: reverting the lift alone leaves `correctness` at 69/69 and both
- * allocation-failure sweeps green, because the two engine buffers that are
- * cleared and reused -- `parser->curline` and `parser->line_scratch` -- now both
+ * allocation-failure sweeps green, because the parser's reusable buffers
  * report at the transaction and abandon the parse before the reuse. The lift
  * removes the class by construction, and nothing else can see it. */
 
@@ -2741,6 +2771,7 @@ static void element_owned_field_lifecycle(test_batch_runner *runner) {
 typedef struct {
     markdown_core_node_type rejected_kind;
     size_t rejections;
+    size_t allowed;
 } conversion_policy;
 
 static int conversion_can_contain(const markdown_core_element *element, markdown_core_node *node,
@@ -2748,6 +2779,10 @@ static int conversion_can_contain(const markdown_core_element *element, markdown
     conversion_policy *policy = node->user_data;
     (void)element;
     if (child_kind == policy->rejected_kind) {
+        if (policy->allowed) {
+            policy->allowed--;
+            return true;
+        }
         policy->rejections++;
         return false;
     }
@@ -2793,6 +2828,7 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         {MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_PARAGRAPH, "!~~text~~\n", "!~~text~~"},
         {MARKDOWN_CORE_NODE_SPAN, MARKDOWN_CORE_NODE_PARAGRAPH, "![text]{}\n", "![text]{}"},
         {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_PARAGRAPH, "! [text](u)\n", "! [text](u)"},
+        {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_PARAGRAPH, "! a@b.co\n", "! a@b.co"},
         {MARKDOWN_CORE_NODE_EMBEDDED, MARKDOWN_CORE_NODE_PARAGRAPH, "![text](u)\n", "![text](u)"},
         {MARKDOWN_CORE_NODE_CITE, MARKDOWN_CORE_NODE_PARAGRAPH, "!^[text]\n", "!^[text]"},
         {MARKDOWN_CORE_NODE_CITE, MARKDOWN_CORE_NODE_PARAGRAPH, "![^n]\n\n[^n]: text\n", "![^n]"},
@@ -2802,12 +2838,14 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         {MARKDOWN_CORE_NODE_INSERTION, MARKDOWN_CORE_NODE_PARAGRAPH, "!++text++\n", "!++text++"},
         {MARKDOWN_CORE_NODE_SUPERSCRIPT, MARKDOWN_CORE_NODE_PARAGRAPH, "!^text^\n", "!^text^"},
         {MARKDOWN_CORE_NODE_SUBSCRIPT, MARKDOWN_CORE_NODE_PARAGRAPH, "!~text~\n", "!~text~"},
+        {MARKDOWN_CORE_NODE_FORMULA, MARKDOWN_CORE_NODE_PARAGRAPH, "!$text$\n", "!$text$"},
+        {MARKDOWN_CORE_NODE_FORMULA_BLOCK, MARKDOWN_CORE_NODE_CODE_BLOCK, "```formula\nx\n```\n", "x\n"},
 
     };
     payload_fail_at = 0;
     for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
         size_t live_before = payload_live;
-        conversion_policy policy = {cases[i].rejected_kind, 0};
+        conversion_policy policy = {cases[i].rejected_kind, 0, 0};
         markdown_core_node *root = markdown_core_parse_document_with_setup(cases[i].source, strlen(cases[i].source),
                                                                            configure_conversion_policy, &policy);
         OK(runner, policy.rejections > 0, "case %zu exercises parent containment rejection", i);
@@ -2819,7 +2857,7 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         OK(runner, block && block->kind == cases[i].retained_kind && !block->next,
            "case %zu retains the original block", i);
         markdown_core_strbuf literal = MARKDOWN_CORE_BUF_INIT();
-        if (block && block->kind == MARKDOWN_CORE_NODE_HTML_BLOCK) {
+        if (block && (block->kind == MARKDOWN_CORE_NODE_HTML_BLOCK || block->kind == MARKDOWN_CORE_NODE_CODE_BLOCK)) {
             markdown_core_strbuf_puts(&literal, markdown_core_node_get_literal(block));
         } else if (block) {
             for (markdown_core_node *child = block->first_child; child; child = child->next) {
@@ -3133,6 +3171,15 @@ static void ref_source_pos(test_batch_runner *runner) {
                      "    │   └── Text scope=1:12..1:20 anchor=null attributes={} literal=\"reference\" children=0\n"
                      "    └── Text scope=1:22..1:28 anchor=null attributes={} literal=\" links.\" children=0\n",
                      "reference link scopes are as expected");
+    markdown_core_node *root = parse("[r]: /u\n===\ntext\n");
+    markdown_core_node *paragraph = root ? root->first_child : NULL;
+    OK(runner,
+       paragraph && paragraph->kind == MARKDOWN_CORE_NODE_PARAGRAPH && paragraph->start_line == 2 &&
+           paragraph->end_line == 3 && paragraph->first_child && paragraph->first_child->start_line == 2,
+       "a consumed definition prefix still relocates content arriving after the setext probe");
+    if (root) {
+        markdown_core_node_free(root);
+    }
 }
 
 static void autolink_source_pos(test_batch_runner *runner) {
@@ -3737,11 +3784,12 @@ typedef struct {
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
     size_t registered_definitions, definition_lists, citation_brace_bytes, tables, table_frontier;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
+    size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
     size_t inline_hooks;
-    size_t properties_lines;
+    size_t properties_lines, physical_line_bytes, metadata_key_bytes, metadata_value_bytes, table_scratch_growth;
     /* The finish stage's traversal count and its denominator (parser.h):
      * recorded by a global pass at the document root, which is the last root
      * the finish walk completes, so these are the stage's totals. */
@@ -3784,6 +3832,18 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
     work->whitespace = parser->whitespace_work;
     work->inline_hooks = parser->inline_hook_work;
     work->properties_lines = parser->properties_line_work;
+    work->physical_line_bytes = parser->input_line_work;
+    work->physical_lines = parser->input_line_count;
+    work->physical_capacity = parser->input_line_capacity;
+    work->physical_facts = parser->input_fact_count;
+    work->physical_fact_capacity = parser->input_fact_capacity;
+    work->normalized_lines = 0;
+    for (size_t i = 0; i < parser->input_fact_count; i++) {
+        work->normalized_lines += parser->input_facts[i].normalized != NULL;
+    }
+    work->metadata_key_bytes = parser->metadata_key_work;
+    work->metadata_value_bytes = parser->metadata_decoded_bytes;
+    work->table_scratch_growth = parser->table_scratch_growth;
     work->brackets = parser->bracket_work;
     work->citations = parser->citation_work;
     work->citation_brace_bytes = parser->citation_brace_bytes;
@@ -4271,7 +4331,7 @@ static int strip_comments(const markdown_core_element *element, markdown_core_pa
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type event;
     if (!iter) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return 0;
     }
     /* At EXIT the iterator already holds the parent or following sibling, so
@@ -4300,7 +4360,7 @@ static int html_to_placeholder(const markdown_core_element *element, markdown_co
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type event;
     if (!iter) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return 0;
     }
     while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
@@ -4327,7 +4387,7 @@ static int html_to_placeholder(const markdown_core_element *element, markdown_co
             !markdown_core_node_append_child(para, text)) {
             markdown_core_node_free(para);
             markdown_core_node_free(text);
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             markdown_core_iter_free(iter);
             return 0;
         }
@@ -4530,8 +4590,8 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         source[length - 1] = '@'; /* A failed candidate, as well as ordinary text. */
         source[length] = 0;
         markdown_core_node_set_literal(text, source);
-        markdown_core_node_attach_owned(root, paragraph, NULL);
-        markdown_core_node_attach_owned(paragraph, text, NULL);
+        markdown_core_node_attach_validated(root, paragraph, NULL);
+        markdown_core_node_attach_validated(paragraph, text, NULL);
         const unsigned char *original = text->as.literal->data;
         void *state = NULL;
         text_allocation_calls = 0;
@@ -5331,11 +5391,12 @@ static void source_entries_order_by_the_key_bytes_that_differ(test_batch_runner 
     static const struct {
         const char *name;
         int allocations;
+        size_t passes;
     } shapes[] = {
-        {"already ordered", 1},
-        {"top byte only", 2},
-        {"every byte", 2},
-        {"ties", 2},
+        {"already ordered", 1, 0},
+        {"top byte only", 2, 1},
+        {"every byte", 2, 8},
+        {"ties", 2, 1},
     };
     for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
         uint32_t state = 0x9E3779B9u;
@@ -5367,9 +5428,20 @@ static void source_entries_order_by_the_key_bytes_that_differ(test_batch_runner 
             nodes[i].start_column = column;
             entries[i] = (source_entry){&nodes[i], i};
         }
+        markdown_core_source_order workspace = {0};
         payload_probe_arm();
-        int ok = markdown_core_order_source_entries(entries, COUNT, sizeof(*entries), markdown_core_source_key);
+        int ok =
+            markdown_core_order_source_entries(&workspace, entries, COUNT, sizeof(*entries), markdown_core_source_key);
+        INT_EQ(runner, workspace.work, COUNT * (1 + 2 * shapes[shape].passes),
+               "ordering charges the key scan and only the radix passes performed");
         size_t allocations = payload_allocations;
+        OK(runner,
+           markdown_core_order_source_entries(&workspace, entries, COUNT, sizeof(*entries), markdown_core_source_key),
+           "a second ordering reuses scratch");
+        INT_EQ(runner, payload_allocations, allocations, "ordering allocates only on capacity growth");
+        INT_EQ(runner, workspace.work, COUNT * (2 + 2 * shapes[shape].passes),
+               "already ordered replay adds one key scan");
+        markdown_core_source_order_dispose(&workspace);
         size_t live = payload_live;
         payload_probe_disarm();
         OK(runner, ok && source_entries_ordered(entries, COUNT), "%s: entries are ordered by key, ties by arrival",
@@ -5378,9 +5450,10 @@ static void source_entries_order_by_the_key_bytes_that_differ(test_batch_runner 
                "%s: the keys are computed once and an ordered input moves nothing", shapes[shape].name);
         INT_EQ(runner, (int)live, 0, "%s: the scratch is released", shapes[shape].name);
     }
+    markdown_core_source_order workspace = {0};
     OK(runner,
-       markdown_core_order_source_entries(entries, 0, sizeof(*entries), markdown_core_source_key) &&
-           markdown_core_order_source_entries(entries, 1, sizeof(*entries), markdown_core_source_key),
+       markdown_core_order_source_entries(&workspace, entries, 0, sizeof(*entries), markdown_core_source_key) &&
+           markdown_core_order_source_entries(&workspace, entries, 1, sizeof(*entries), markdown_core_source_key),
        "fewer than two entries are ordered as they are");
 }
 
@@ -5532,7 +5605,7 @@ static void probe_placements(markdown_core_inline_state *inline_state) {
     if (!owner || owner->kind != MARKDOWN_CORE_NODE_PARAGRAPH) {
         return;
     }
-    int first = owner->content_mark, last = first + owner->content_mark_count - 1;
+    int first = owner->content_map.first, last = first + owner->content_map.count - 1;
     for (int cursor = first; cursor <= last; cursor++) {
         for (int from = 0; from < inline_state->input.len; from++) {
             for (int to = -1; to < inline_state->input.len; to++) {
@@ -5541,7 +5614,7 @@ static void probe_placements(markdown_core_inline_state *inline_state) {
                 inline_state->mark_cursor = cursor;
                 markdown_core_inline_seat_cursor(inline_state);
                 markdown_core_inline_state_place(inline_state, &placed, from, to);
-                markdown_core_parser_content_span(parser, owner, from, to, &span, NULL);
+                markdown_core_parser_content_span(parser, &owner->content_map, from, to, &span, NULL);
                 placements_checked++;
                 if (placed.start_line != span.start_line || placed.start_column != span.start_column ||
                     (to >= 0 && (placed.end_line != span.end_line || placed.end_column != span.end_column))) {
@@ -6057,7 +6130,7 @@ static markdown_core_node *seed_anchor(const markdown_core_element *element, int
             owner = owner->parent;
         }
         if (!markdown_core_chunk_set_cstr(&owner->attributes.anchor, "existing")) {
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
     }
     return NULL;
@@ -6921,39 +6994,9 @@ static void inline_hook_projection_ignores_non_owners(test_batch_runner *runner)
     markdown_core_strbuf_free(&source);
 }
 
-/* THE PROPERTIES ENVELOPE'S LINE-GEOMETRY BOUND.
- *
- * The closing fence has to be found before any member can be decoded, since
- * every member's end bound depends on it. That search used to walk every
- * line byte by byte and discard what it found, and each member line was then
- * scanned again by the member classifier and twice by the boundary search --
- * four byte scans per line on the metadata corpus, and more for a literal
- * block or a block sequence, whose decoders walked their lines once more.
- * Now the fence is found by one `memchr` pass that allocates nothing, the
- * envelope's lines are recorded by one pass over exactly the envelope, and
- * everything after that reads geometry from the index.
- *
- * Nothing about the output can tell those apart: a consumer that scanned a
- * line it already had would build the identical document, so every golden,
- * every spec example and the byte-equivalence check would still pass. The
- * bound is asserted on `properties_line_work` instead, which counts the bytes
- * the searches cover. K = 3: the fence pass hands each document byte to
- * `memchr` once, and the index pass hands each envelope byte to the LF search
- * and then to the CR search bounded by the LF, so the count is at most three
- * times the document whatever ends its lines. One more derivation of every
- * member's first line through the scanner -- what the boundary search used to
- * do -- adds that line's bytes per member and breaks the bound. The shapes
- * are the ones the former consumers rescanned: scalar members, a block
- * sequence, a literal block and a comment line. A bare CR ends a line here,
- * and a search for '\n' alone runs past one to the end of the envelope on
- * every line, so the CR-only document is what makes losing the LF memo a
- * failure rather than a blind spot; the decoded values are checked under
- * every ending so the geometry itself is held, not only its cost. The first
- * assertion keeps the bound from being met by a counter that never fires.
- *
- * What this cannot see is a consumer that re-derived a line with a byte loop
- * of its own, which the counter never learns of. There is no such loop left
- * in properties.c to call; the gate holds the searches to their bound. */
+/* Metadata, the block driver and lookahead borrow the same physical lines.
+ * Bare CR, LF and CRLF all count as one ending; every raw byte contributes
+ * exactly once even when frontmatter classified its line before the driver. */
 static void properties_envelope_derives_each_line_once(test_batch_runner *runner) {
     static const char *const endings[] = {"\n", "\r", "\r\n"};
     for (size_t e = 0; e < sizeof(endings) / sizeof(*endings); e++) {
@@ -7018,13 +7061,548 @@ static void properties_envelope_derives_each_line_once(test_batch_runner *runner
                "the literal block owns exactly its lines with endings normalized: ending=%zu", e);
         }
         OK(runner, work.properties_lines > 0, "the fence search examines bytes, so the counter is live: ending=%zu", e);
-        OK(runner, work.properties_lines <= 3 * (size_t)source.size,
-           "the fence pass and the index pass examine each byte at most three times: %zu bytes examined for %d "
-           "source bytes, ending=%zu",
-           work.properties_lines, source.size, e);
+        OK(runner, work.properties_lines <= (size_t)source.size,
+           "the closing fence search examines each source byte at most once");
+        INT_EQ(runner, work.physical_line_bytes, (size_t)source.size,
+               "all consumers share one physical scan of the input");
+        OK(runner, work.metadata_key_bytes > 0 && work.metadata_key_bytes <= (size_t)source.size,
+           "boundary discovery and field decoding classify each member line once");
         markdown_core_node_free(root);
         markdown_core_strbuf_free(&source);
     }
+}
+
+/* Unknown plain keys and already accepted fields borrow their source spans.
+ * Only the line index grows with rejected members; values allocate nothing. */
+static void properties_rejected_members_borrow_source(test_batch_runner *runner) {
+    size_t baseline_allocations = 0, baseline_decoded = 0;
+    for (size_t members = 0; members <= 1024; members += 1024) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        markdown_core_strbuf_puts(&source, "---\ntitle: Known\n");
+        for (size_t i = 0; i < members; i++) {
+            markdown_core_strbuf_puts(&source, i % 2 ? "title: ignored\n" : "unsupported: ignored\n");
+        }
+        markdown_core_strbuf_puts(&source, "---\nbody\n");
+        payload_probe_arm();
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
+        OK(runner, root != NULL, "metadata with %zu rejected members parses", members);
+        if (!members) {
+            baseline_allocations = payload_allocations;
+            baseline_decoded = work.metadata_value_bytes;
+        } else {
+            OK(runner, payload_allocations <= baseline_allocations + 16,
+               "rejected members add logarithmic index growth, not per-key allocations: %zu versus %zu",
+               payload_allocations, baseline_allocations);
+            INT_EQ(runner, work.metadata_value_bytes, baseline_decoded,
+                   "unknown and duplicate values are never decoded");
+        }
+        markdown_core_node_free(root);
+        INT_EQ(runner, payload_live, 0, "the metadata transaction releases all allocations");
+        payload_probe_disarm();
+        markdown_core_strbuf_free(&source);
+    }
+}
+
+static void source_line_geometry_is_shared(test_batch_runner *runner) {
+    /* Physical geometry classifies bytes before any UTF-8 interpretation.
+     * Every byte other than CR/LF is content; NUL requests normalization. */
+    for (unsigned value = 0; value <= 255; value++) {
+        for (size_t position = 0; position < 3 * sizeof(uint64_t); position++) {
+            unsigned char bytes[3 * sizeof(uint64_t) + 1];
+            memset(bytes, 'a', sizeof(bytes));
+            bytes[position] = (unsigned char)value;
+            bytes[sizeof(bytes) - 1] = '\n';
+            markdown_core_parser input = {0};
+            input.input_source = bytes;
+            input.input_length = sizeof(bytes);
+            input.input_first_line = 1;
+            markdown_core_input_line *first = markdown_core_parser_source_line(&input, 1);
+            bool split = value == '\r' || value == '\n';
+            OK(runner, first && first->start == 0 && first->end == (split ? position : sizeof(bytes) - 1),
+               "only CR and LF end a physical line: byte %u at %zu", value, position);
+            OK(runner, first && ((first->facts && input.input_facts[first->facts - 1].nul_count == 1) == (value == 0)),
+               "only NUL requests normalization: byte %u", value);
+            markdown_core_input_line *second = markdown_core_parser_source_line(&input, 2);
+            bool remaining = split && !(value == '\r' && position == sizeof(bytes) - 2);
+            OK(runner,
+               remaining ? second && second->start == position + 1 && second->end == sizeof(bytes) - 1 : !second,
+               "content after a word or tail boundary belongs to exactly one line: byte %u at %zu", value, position);
+            INT_EQ(runner, input.input_line_work, sizeof(bytes), "span search advances the frontier exactly once");
+            markdown_core_free(input.input_facts);
+            markdown_core_free(input.input_lines);
+        }
+    }
+    static const unsigned char source[] = "a\0b\r\nc\rd\nlast";
+    markdown_core_parser parser = {0};
+    parser.input_source = source;
+    parser.input_length = sizeof(source) - 1;
+    parser.input_first_line = 7;
+    static const size_t starts[] = {0, 5, 7, 9}, ends[] = {3, 6, 8, 13}, next[] = {5, 7, 9, 13};
+    for (int pass = 0; pass < 3; pass++) {
+        for (int i = 3; i >= 0; i--) {
+            markdown_core_input_line *line = markdown_core_parser_source_line(&parser, i + 7);
+            OK(runner,
+               line && line->start == starts[i] && line->end == ends[i] &&
+                   markdown_core_input_line_next(&parser, line) == next[i],
+               "physical line geometry is stable across lookahead and replay: %d/%d", pass, i);
+            OK(runner, line && (line->facts && parser.input_facts[line->facts - 1].nul_count != 0) == (i == 0),
+               "NUL normalization is a line fact");
+        }
+        INT_EQ(runner, parser.input_line_work, sizeof(source) - 1, "replay never scans source geometry again");
+    }
+    OK(runner, !markdown_core_parser_source_line(&parser, 6) && !markdown_core_parser_source_line(&parser, 11),
+       "the active input has an explicit line range");
+    INT_EQ(runner, parser.input_fact_count, 1, "only the NUL-bearing line needs optional geometry state");
+    markdown_core_line_facts *first = markdown_core_parser_get_line_facts(&parser, 7);
+    OK(runner, first != NULL, "a grammar query attaches facts to its physical line");
+    if (first) {
+        first->run_end = 10;
+    }
+    markdown_core_line_facts *last = markdown_core_parser_get_line_facts(&parser, 10);
+    OK(runner, last && !last->run_end && markdown_core_parser_get_line_facts(&parser, 7)->run_end == 10,
+       "unrelated line queries preserve their own facts");
+    INT_EQ(runner, parser.input_fact_count, 2, "only queried lines own speculative facts");
+    INT_EQ(runner, parser.input_line_work, sizeof(source) - 1, "facts do not rediscover geometry");
+    markdown_core_free(parser.input_facts);
+    markdown_core_free(parser.input_lines);
+}
+
+static void short_line_storage_is_bounded(test_batch_runner *runner) {
+    INT_EQ(runner, sizeof(markdown_core_input_line), 12, "ordinary physical geometry occupies twelve bytes");
+    for (size_t count = 8; count <= 65537; count = count == 8 ? 1025 : count * 64 - 63) {
+        for (int shape = 0; shape < 3; shape++) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+            for (size_t i = 0; i < count; i++) {
+                if (shape) {
+                    markdown_core_strbuf_putc(&source, shape == 1 ? 'x' : 0);
+                }
+                markdown_core_strbuf_putc(&source, '\n');
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
+            OK(runner, root != NULL, "adversarial short lines parse");
+            INT_EQ(runner, work.physical_lines, count, "one geometry record per physical line");
+            INT_EQ(runner, work.physical_line_bytes, source.size, "the source frontier consumes each byte once");
+            INT_EQ(runner, work.physical_facts, shape == 2 ? count : 0,
+                   "every NUL-bearing line, and no ordinary short line, needs one fact record");
+            INT_EQ(runner, work.normalized_lines, shape == 2 ? count : 0,
+                   "each NUL-bearing line owns exactly one replacement view");
+            OK(runner,
+               shape == 2 ? work.physical_fact_capacity >= count && work.physical_fact_capacity < 2 * count
+                          : work.physical_fact_capacity == 0,
+               "optional facts obey their own doubling bound");
+            OK(runner, work.physical_capacity >= count && work.physical_capacity < 2 * count,
+               "retained geometry capacity is bounded by twice the number of lines");
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+static void growth_preserves_input_views(test_batch_runner *runner) {
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+    markdown_core_strbuf_puts(&source, "---\nname: title\nabstract: |\n");
+    for (int i = 0; i < 257; i++) {
+        markdown_core_strbuf_puts(&source, "  prose\n");
+    }
+    markdown_core_strbuf_puts(&source, "---\n\n");
+    for (int i = 0; i < 65; i++) {
+        markdown_core_strbuf_puts(&source, "a   b\n--- ---\nc   d\n--- ---\n\n");
+    }
+    properties_probe_arm();
+    markdown_core_document *reference = markdown_core_document_parse(source.ptr, source.size, NULL);
+    uint8_t *expected = NULL, *actual = NULL;
+    size_t expected_length = 0, actual_length = 0;
+    OK(runner, reference && markdown_core_document_dump(reference, &expected, &expected_length, NULL),
+       "reference metadata and tables have a complete canonical dump");
+    properties_force_moves = 1;
+    markdown_core_document *moved = markdown_core_document_parse(source.ptr, source.size, NULL);
+    OK(runner, moved && markdown_core_document_dump(moved, &actual, &actual_length, NULL),
+       "metadata and separator views survive every growth moving storage");
+    OK(runner, expected && actual && expected_length == actual_length && !memcmp(expected, actual, expected_length),
+       "moving shared workspaces preserves every value, child and source position");
+    markdown_core_dump_free(actual);
+    markdown_core_document_free(moved);
+    markdown_core_dump_free(expected);
+    markdown_core_document_free(reference);
+    INT_EQ(runner, properties_live_bytes, 0, "moving storage retains no allocations after disposal");
+    properties_force_moves = 0;
+    properties_probe_disarm();
+    markdown_core_strbuf_free(&source);
+}
+
+static void construction_checks_containment(test_batch_runner *runner) {
+#if !defined(NDEBUG) && !defined(_WIN32)
+    pid_t child = fork();
+    if (child == 0) {
+        (void)freopen("/dev/null", "w", stderr);
+        markdown_core_node *parent = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *block = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node_attach_validated(parent, block, NULL);
+        _exit(0);
+    }
+    int status = 0;
+    OK(runner, child > 0 && waitpid(child, &status, 0) == child && WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT,
+       "an unproven built-in attachment triggers the Debug/ASan containment assertion");
+#else
+    (void)runner;
+#endif
+}
+
+static markdown_core_parse_error observed_token_error;
+static void observe_token_error(markdown_core_inline_state *state) {
+    if (state->error) {
+        observed_token_error = state->error;
+    }
+}
+static const markdown_core_element ERROR_OBSERVER = {.name = "error-observer", .dispose_inline = observe_token_error};
+static bool configure_error_observer(markdown_core_parser *parser, void *context) {
+    return configure_conversion_policy(parser, context) && markdown_core_parser_attach_element(parser, &ERROR_OBSERVER);
+}
+static int reject_additional_paragraph(const markdown_core_element *element, markdown_core_node *node,
+                                       markdown_core_node_type kind) {
+    (void)element;
+    if (kind == MARKDOWN_CORE_NODE_PARAGRAPH && node->first_child) {
+        (*(size_t *)node->user_data)++;
+        return 0;
+    }
+    return markdown_core_node_can_contain_builtin(node, kind);
+}
+static const markdown_core_element LEAD_POLICY = {.name = "lead-policy",
+                                                  .can_contain_func = reject_additional_paragraph};
+static bool configure_lead_policy(markdown_core_parser *parser, void *context) {
+    parser->root->element = &LEAD_POLICY;
+    parser->root->user_data = context;
+    return true;
+}
+static void rejected_token_allocation_failures(test_batch_runner *runner) {
+    const char *source = "! `code`\n";
+    /* A constructor can return its owned token after a literal/attribute
+     * allocation failed. Its later policy refusal must preserve that cause. */
+    for (size_t fail_at = 1;; fail_at++) {
+        conversion_policy policy = {MARKDOWN_CORE_NODE_CODE, 0, 0};
+        payload_probe_arm();
+        payload_fail_at = fail_at;
+        observed_token_error = MARKDOWN_CORE_PARSE_OK;
+        markdown_core_node *root =
+            markdown_core_parse_document_with_setup(source, strlen(source), configure_error_observer, &policy);
+        if (root) {
+            markdown_core_node_free(root);
+        }
+        bool refused = payload_allocations >= fail_at;
+        if (refused && observed_token_error) {
+            INT_EQ(runner, observed_token_error, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED,
+                   "a later policy rejection preserves the constructor's allocation failure: %zu", fail_at);
+        }
+        INT_EQ(runner, payload_live, 0, "allocation refusal plus semantic refusal leaks nothing: %zu", fail_at);
+        payload_probe_disarm();
+        if (!refused) {
+            break;
+        }
+    }
+}
+
+static void semantic_rejection_preserves_its_cause(test_batch_runner *runner) {
+    conversion_policy policy = {MARKDOWN_CORE_NODE_CODE, 0, 0};
+    const char *source = "! `code`\n";
+    observed_token_error = MARKDOWN_CORE_PARSE_OK;
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup(source, strlen(source), configure_error_observer, &policy);
+    OK(runner, !root, "a consumed rejected token fails the transaction");
+    INT_EQ(runner, observed_token_error, MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED,
+           "semantic rejection is distinct from allocation failure");
+    if (root) {
+        markdown_core_node_free(root);
+    }
+    markdown_core_parser parser = {0};
+    markdown_core_parser_fail(&parser, MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED);
+    markdown_core_parser_fail(&parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    INT_EQ(runner, parser.error, MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED, "cleanup cannot overwrite the first cause");
+
+    size_t rejections = 0;
+    source = "lead\n| h |\n| - |\n";
+    root = markdown_core_parse_document_with_setup(source, strlen(source), configure_lead_policy, &rejections);
+    OK(runner, root && rejections, "refused table lead leaves the original parse available");
+    if (!root) {
+        return;
+    }
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 0, "a refused split never changes the paragraph kind");
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_PARAGRAPH), 1,
+           "a refused split preserves one complete paragraph");
+    markdown_core_node_free(root);
+}
+
+typedef struct {
+    test_batch_runner *runner;
+    bool entered, matches;
+} table_transaction_probe;
+
+/* Exercise the existing non-committing caption query while the real source
+ * driver owns the current line. A scan hook only observes; the normal table
+ * producer still parses and constructs the document afterwards. */
+static bool probe_table_transactions(markdown_core_parser *parser, block_start_context *context, block_start *start) {
+    (void)start;
+    table_transaction_probe *probe = parser->root->user_data;
+    if (probe->entered) {
+        return false;
+    }
+    probe->entered = true;
+    for (int pass = 0; pass < 4; pass++) {
+        payload_probe_calls before = payload_probe_snapshot();
+        size_t geometry = parser->table_geometry_lines, nodes = parser->nodes_created;
+        markdown_core_block_lookahead lookahead;
+        bool begun =
+            markdown_core_parser_lookahead_begin(parser, context->container, MARKDOWN_CORE_NODE_TABLE, &lookahead);
+        bool matched =
+            begun && markdown_core_table_caption_probe(&lookahead, context->input, context->first, context->indent);
+        payload_probe_calls after = payload_probe_snapshot();
+        OK(probe->runner, begun && !parser->error && matched == probe->matches,
+           "cold and warm table transactions agree on recognition");
+        INT_EQ(probe->runner, parser->nodes_created, nodes, "a table query constructs no AST nodes");
+        if (probe->matches) {
+            OK(probe->runner, parser->table_geometry_lines > geometry,
+               "a warm query still rebuilds candidate geometry in retained storage");
+        }
+        if (pass == 0) {
+            OK(probe->runner, after.allocations > before.allocations,
+               "the cold query observes real workspace allocation");
+        } else {
+            INT_EQ(probe->runner, after.allocations, before.allocations,
+                   "a warm table transaction makes zero allocator calls");
+            INT_EQ(probe->runner, after.releases, before.releases, "a warm table transaction makes zero release calls");
+        }
+    }
+    return false;
+}
+
+static const markdown_core_element TABLE_TRANSACTION_PROBE = {
+    .name = "table-transaction-probe", .scan_block_start = probe_table_transactions, .scan_block_gate = {.bytes = "T"}};
+
+static bool configure_table_transaction_probe(markdown_core_parser *parser, void *context) {
+    parser->root->user_data = context;
+    return markdown_core_parser_attach_element(parser, &TABLE_TRANSACTION_PROBE);
+}
+
+static void table_candidates_reuse_scratch(test_batch_runner *runner) {
+    static const struct {
+        const char *body;
+        bool matches;
+    } queries[] = {
+        {"| h | q |\n| - | - |\n| a | b |\n", true},
+        {"h   j\n--- ---\nv   w\n--- ---\n", true},
+        {"-------\nh   j\n--- ---\nv   w\n\nx   y\n-------\n", true},
+        {"+---+---+\n| a | b |\n+   +   +\n| c | d |\n+---+---+\n", true},
+        {"+---+---+\n| a | b |\n", false},
+    };
+    for (size_t i = 0; i < sizeof(queries) / sizeof(*queries); i++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        markdown_core_strbuf_puts(&source, "Table: caption\n\n");
+        markdown_core_strbuf_puts(&source, queries[i].body);
+        table_transaction_probe probe = {.runner = runner, .matches = queries[i].matches};
+        payload_probe_arm();
+        markdown_core_node *root = markdown_core_parse_document_with_setup((char *)source.ptr, source.size,
+                                                                           configure_table_transaction_probe, &probe);
+        OK(runner, root && probe.entered, "the source driver entered the allocator-observed table query");
+        if (root) {
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), queries[i].matches ? 1 : 0,
+                   "speculation preserves subsequent table construction");
+        }
+        markdown_core_node_free(root);
+        INT_EQ(runner, payload_live, 0, "the table transaction owner releases every workspace and AST allocation");
+        payload_probe_disarm();
+        markdown_core_strbuf_free(&source);
+    }
+    static const char tables[] = "| h | q |\n| - | - |\n| a | b |\n\n"
+                                 "h   j\n--- ---\nv   w\n--- ---\n\n"
+                                 "-------\nh   j\n--- ---\nv   w\n\nx   y\n-------\n\n"
+                                 "+---+---+\n| a | b |\n+   +   +\n| c | d |\n+---+---+\n\n";
+    size_t growth = 0;
+    for (size_t repetitions = 1; repetitions <= 64; repetitions *= 8) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        for (size_t i = 0; i < repetitions; i++) {
+            markdown_core_strbuf_puts(&source, tables);
+        }
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
+        OK(runner, root != NULL, "interleaved table grammars parse after scratch reuse");
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 4 * repetitions,
+               "resetting a candidate preserves every subsequent table");
+        if (repetitions == 1) {
+            growth = work.table_scratch_growth;
+            OK(runner, growth > 0, "table scratch growth counter observes real reservations");
+        } else {
+            INT_EQ(runner, work.table_scratch_growth, growth,
+                   "scratch allocation depends on peak candidate shape, not number of tables");
+        }
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
+/* One semantic decision authorizes one commit. A stateful predicate that
+ * accepts only the first link must not be consulted again after allocation. */
+static void parser_attachment_commits_one_decision(test_batch_runner *runner) {
+    conversion_policy paragraph_policy = {MARKDOWN_CORE_NODE_PARAGRAPH, 0, 1};
+    payload_probe_arm();
+    markdown_core_node *paragraph_root =
+        markdown_core_parse_document_with_setup("plain\n", 6, configure_conversion_policy, &paragraph_policy);
+    OK(runner, paragraph_root && count_kind(paragraph_root, MARKDOWN_CORE_NODE_PARAGRAPH) == 1,
+       "a paragraph commits its already selected parent");
+    INT_EQ(runner, paragraph_policy.allowed, 0, "paragraph parent selection consumes one acceptance");
+    INT_EQ(runner, paragraph_policy.rejections, 0, "paragraph construction never repeats parent selection");
+    markdown_core_node_free(paragraph_root);
+    INT_EQ(runner, payload_live, 0, "a selected paragraph releases all storage");
+    markdown_core_parser rejected = {0};
+    paragraph_root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
+    paragraph_root->element = &CONVERSION_POLICY;
+    paragraph_root->user_data = &paragraph_policy;
+    rejected.root = rejected.current = paragraph_root;
+    size_t attempts = payload_allocations;
+    OK(runner, !markdown_core_parser_add_child(&rejected, paragraph_root, MARKDOWN_CORE_NODE_PARAGRAPH, 1),
+       "root refusal terminates parent selection without walking past the root");
+    INT_EQ(runner, rejected.error, MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED,
+           "a rejected block parent reports semantic refusal");
+    INT_EQ(runner, payload_allocations, attempts, "refused parent selection allocates no child");
+    markdown_core_node_free(paragraph_root);
+    INT_EQ(runner, payload_live, 0, "refused parent selection releases all storage");
+    payload_probe_disarm();
+
+    const char *source = "! [first](u) [second](v)\n";
+    conversion_policy policy = {MARKDOWN_CORE_NODE_LINK, 0, 1};
+    payload_probe_arm();
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup(source, strlen(source), configure_conversion_policy, &policy);
+    OK(runner, root != NULL, "a stateful containment policy leaves parsing transactional");
+    INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), 1,
+           "the first decision commits its link and the second leaves literal text");
+    INT_EQ(runner, policy.rejections, 1, "commit never repeats the semantic predicate");
+    markdown_core_node_free(root);
+    INT_EQ(runner, payload_live, 0, "no detached replacement is lost on semantic rejection");
+    policy = (conversion_policy){MARKDOWN_CORE_NODE_CODE, 0, 0};
+    source = "! `code`\n";
+    root = markdown_core_parse_document_with_setup(source, strlen(source), configure_conversion_policy, &policy);
+    OK(runner, !root && policy.rejections, "a refused constructed token fails the transaction");
+    if (root) {
+        markdown_core_node_free(root);
+    }
+    INT_EQ(runner, payload_live, 0, "a refused token is released even after its constructor consumed input");
+    payload_probe_disarm();
+}
+
+/* Invalid syntax must not consume a stateful parent's acceptance. Once a
+ * formula is recognized, that one decision authorizes its attachment. */
+static void formula_containment_follows_recognition(test_batch_runner *runner) {
+    static const struct {
+        const char *source, *prefix;
+    } cases[] = {
+        {"! $`$ $good$ $later$\n", "! $`$ "},
+        {"! $`bad$ $good$ $later$\n", "! $`bad$ "},
+        {"! $`good`$ $later$\n", "! "},
+    };
+    payload_probe_arm();
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        conversion_policy policy = {MARKDOWN_CORE_NODE_FORMULA, 0, 1};
+        markdown_core_node *root = markdown_core_parse_document_with_setup(cases[i].source, strlen(cases[i].source),
+                                                                           configure_conversion_policy, &policy);
+        OK(runner, root != NULL, "formula policy preserves the parse transaction");
+        INT_EQ(runner, policy.allowed, 0, "the first valid formula consumes the acceptance");
+        INT_EQ(runner, policy.rejections, 1, "only the later valid formula is rejected");
+        if (root) {
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_FORMULA), 1,
+                   "invalid candidates never prevent the first valid formula from attaching");
+            markdown_core_node *prefix = root->first_child ? root->first_child->first_child : NULL;
+            markdown_core_node *formula = prefix ? prefix->next : NULL;
+            markdown_core_node *suffix = formula ? formula->next : NULL;
+            bool expected_shape = prefix && prefix->kind == MARKDOWN_CORE_NODE_TEXT && formula &&
+                                  formula->kind == MARKDOWN_CORE_NODE_FORMULA && suffix &&
+                                  suffix->kind == MARKDOWN_CORE_NODE_TEXT && !suffix->next;
+            OK(runner, expected_shape, "only the accepted formula replaces its source span");
+            if (expected_shape) {
+                STR_EQ(runner, markdown_core_node_get_literal(prefix), cases[i].prefix,
+                       "invalid formula syntax remains literal text");
+                STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "good",
+                       "the first valid formula owns the recognized body");
+                STR_EQ(runner, markdown_core_node_get_literal(suffix), " $later$",
+                       "the rejected formula retains its original text");
+            }
+            INT_EQ(runner, markdown_core_node_check(root, NULL), 0, "formula attachment keeps the tree consistent");
+            markdown_core_node_free(root);
+        }
+        INT_EQ(runner, payload_live, 0, "accepted and rejected formula candidates release all allocations");
+    }
+    payload_probe_disarm();
+}
+
+/* NUL is one scalar represented as U+FFFD before grammar sees a line. Driver,
+ * lookahead, inline cells and queued block cells must see identical bytes and
+ * the same native byte-column convention. Views remain stable while another
+ * line's view is allocated and while the line index grows. */
+static void lookahead_and_driver_share_normalized_lines(test_batch_runner *runner) {
+    payload_probe_arm();
+    static const char *const forms[] = {
+        "| @ | h |\n| - | - |\n| a | @ |\n",
+        "h   j\n--- ---\n@   w\n--- ---\n",
+        "-------\nh   j\n--- ---\n@   w\n\nx   @\n-------\n",
+        "+---+---+\n| @ | b |\n+---+---+\n| c | @ |\n+---+---+\n",
+        /* Minimized mapping assertion: expansion used to happen only after
+         * these lookahead bytes had already acquired cell source runs. */
+        (" -  -  -  -  -\n Stage      Description    @                          Ir/B\n"
+         "          repeated to the target size.\n\n-----------------------------------------\n"),
+    };
+    static const char *const endings[] = {"\n", "\r", "\r\n"};
+    for (size_t f = 0; f < sizeof(forms) / sizeof(*forms); f++) {
+        for (size_t e = 0; e < sizeof(endings) / sizeof(*endings); e++) {
+            for (int quoted = 0; quoted < 2; quoted++) {
+                markdown_core_strbuf input = MARKDOWN_CORE_BUF_INIT(), control = MARKDOWN_CORE_BUF_INIT();
+                if (quoted) {
+                    markdown_core_strbuf_puts(&input, "> ");
+                    markdown_core_strbuf_puts(&control, "> ");
+                }
+                for (const char *at = forms[f]; *at; at++) {
+                    if (*at == '@') {
+                        markdown_core_strbuf_putc(&input, 0);
+                        markdown_core_strbuf_puts(&control, "\xef\xbf\xbd");
+                    } else if (*at == '\n') {
+                        markdown_core_strbuf_puts(&input, endings[e]);
+                        markdown_core_strbuf_puts(&control, endings[e]);
+                        if (quoted && at[1]) {
+                            markdown_core_strbuf_puts(&input, "> ");
+                            markdown_core_strbuf_puts(&control, "> ");
+                        }
+                    } else {
+                        markdown_core_strbuf_putc(&input, *at);
+                        markdown_core_strbuf_putc(&control, *at);
+                    }
+                }
+                uint8_t *dumps[2] = {NULL, NULL};
+                size_t lengths[2] = {0, 0};
+                markdown_core_strbuf *sources[] = {&input, &control};
+                for (size_t i = 0; i < 2; i++) {
+                    markdown_core_document *document =
+                        markdown_core_document_parse(sources[i]->ptr, sources[i]->size, NULL);
+                    OK(runner, document != NULL, "normalized table parses: %zu/%zu/%d/%zu", f, e, quoted, i);
+                    if (document) {
+                        OK(runner, markdown_core_document_dump(document, &dumps[i], &lengths[i], NULL),
+                           "normalized table has a complete canonical dump");
+                        markdown_core_document_free(document);
+                    }
+                }
+                OK(runner, dumps[0] && dumps[1] && lengths[0] == lengths[1] && !memcmp(dumps[0], dumps[1], lengths[0]),
+                   "NUL and its normalized scalar produce identical table values and coordinates: %zu/%zu/%d", f, e,
+                   quoted);
+                markdown_core_dump_free(dumps[0]);
+                markdown_core_dump_free(dumps[1]);
+                markdown_core_strbuf_free(&input);
+                markdown_core_strbuf_free(&control);
+            }
+        }
+    }
+    INT_EQ(runner, payload_live, 0, "all immutable line views end with their input transaction");
+    payload_probe_disarm();
 }
 
 /* Definition list is the other element whose opening grammar spans two lines:
@@ -7103,7 +7681,7 @@ static int postprocess_deletes_cites(const markdown_core_element *element, markd
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type event;
     if (!iter) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return 0;
     }
     while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
@@ -7957,6 +8535,17 @@ int main(void) {
     table_open_gate_admits_only_possible_tables(runner);
     inline_hook_projection_ignores_non_owners(runner);
     properties_envelope_derives_each_line_once(runner);
+    properties_rejected_members_borrow_source(runner);
+    source_line_geometry_is_shared(runner);
+    short_line_storage_is_bounded(runner);
+    growth_preserves_input_views(runner);
+    construction_checks_containment(runner);
+    semantic_rejection_preserves_its_cause(runner);
+    rejected_token_allocation_failures(runner);
+    table_candidates_reuse_scratch(runner);
+    parser_attachment_commits_one_decision(runner);
+    formula_containment_follows_recognition(runner);
+    lookahead_and_driver_share_normalized_lines(runner);
     definition_open_gate_admits_only_possible_terms(runner);
     a_pass_may_free_the_roots_a_later_pass_reads(runner);
     finish_stage_runs_every_phase_at_each_root(runner);

@@ -376,8 +376,45 @@ test("full-validation gates reject every failed, missing, or unexpectedly skippe
     }
 });
 
+test("only the source benchmark enters the required workflow dependency graph", () => {
+    const visited = new Set();
+    const required = [];
+    const visit = (file, id) => {
+        const key = `${file}/${id}`;
+        if (visited.has(key)) return;
+        visited.add(key);
+        const job = workflow(file).jobs[id];
+        required.push(job);
+        for (const dependency of [job.needs ?? []].flat()) visit(file, dependency);
+        const reused = /^\.\/\.github\/workflows\/(.+)\.yml$/.exec(job.uses ?? "");
+        // Every nested job contributes to a reusable workflow's aggregate
+        // result, even when no dependency points to that job inside it.
+        if (reused) for (const child of Object.keys(workflow(reused[1]).jobs)) visit(reused[1], child);
+    };
+    visit("ci", "required-gates");
+    assert.ok(visited.has("stage-benchmark/stages"));
+    assert.equal(JSON.stringify(required).includes("benchmark-attributes.mjs"), false);
+
+    const diagnostic = workflow("attribute-benchmark");
+    assert.equal("workflow_call" in diagnostic.on, false);
+    for (const event of ["pull_request", "push", "merge_group", "workflow_dispatch"]) {
+        assert.ok(event in diagnostic.on);
+    }
+    assert.ok(diagnostic.jobs.attributes.steps.some((step) => step.run?.includes("benchmark-attributes.mjs")));
+    // Its failure, cancellation, skip or missing result is not a gate input;
+    // source failures remain covered by the full-validation test above.
+    const gate = workflow("ci").jobs["required-gates"].steps[0];
+    for (const diagnosticResult of ["failure", "cancelled", "skipped", ""]) {
+        const env = Object.fromEntries(Object.keys(gate.env).map((key) => [key, "success"]));
+        const result = spawnSync("bash", ["-e", "-c", gate.run], {
+            env: { ...process.env, ...env, ATTRIBUTE_BENCHMARK: diagnosticResult }
+        });
+        assert.equal(result.status, 0);
+    }
+});
+
 test("documentation decisions cover the complete job graph including benchmarks", () => {
-    for (const file of ["ci", "codeql", "release-dry-run", "stage-benchmark"]) {
+    for (const file of ["ci", "codeql", "release-dry-run", "stage-benchmark", "attribute-benchmark"]) {
         const { jobs } = workflow(file);
         const skipped = new Set();
         const visit = (id, ancestors = new Set()) => {

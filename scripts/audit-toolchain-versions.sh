@@ -109,6 +109,7 @@ workflow_files=(
     .github/workflows/release.yml
     .github/workflows/release-dry-run.yml
     .github/workflows/stage-benchmark.yml
+    .github/workflows/attribute-benchmark.yml
 )
 expect_workflow_value Node "$node_version" actions/setup-node node-version "${workflow_files[@]}"
 expect_workflow_value pnpm "$pnpm_version" pnpm/action-setup version "${workflow_files[@]}"

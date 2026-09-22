@@ -32,7 +32,8 @@ bool markdown_core_block_ends_with_blank_line(markdown_core_node *node);
 markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, markdown_core_node *b);
 void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t count,
                                         bool columns);
-int markdown_core_block_order_definitions(markdown_core_definition_collection *collection);
+int markdown_core_block_order_definitions(markdown_core_parser *parser,
+                                          markdown_core_definition_collection *collection);
 void markdown_core_block_own_definitions(markdown_core_definition_collection *collection, markdown_core_node **slot);
 typedef struct markdown_core_block_start_context {
     markdown_core_node *container;
@@ -58,4 +59,7 @@ bool markdown_core_block_continue_indented(markdown_core_parser *parser, markdow
 void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *input, markdown_core_parser *parser);
 markdown_core_node *markdown_core_block_parent_for(markdown_core_parser *parser, markdown_core_node *parent,
                                                    markdown_core_node_type kind);
+/* Commit a parent selected by block_parent_for without repeating its policy. */
+markdown_core_node *markdown_core_parser_add_child_validated(markdown_core_parser *parser, markdown_core_node *parent,
+                                                             markdown_core_node_type kind, int start_column);
 #endif

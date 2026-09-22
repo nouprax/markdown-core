@@ -88,14 +88,16 @@ const ARMS = {
     payload_allocations: "payload_probe_arm",
     text_allocation_calls: "text_counting = 1"
 };
-/* The interposer, the arming helpers and the accounting helper are where these
- * live; `marker_free_count` needs no arming because its branch is ungated. */
+/* The interposer, arming and accounting helpers own these counters. The
+ * snapshot helper aborts if a callback observes an unarmed region;
+ * `marker_free_count` needs no arming because its branch is ungated. */
 const PROBE_INFRASTRUCTURE = new Set([
     "markdown_core_alloc",
     "markdown_core_realloc",
     "markdown_core_free",
     "payload_probe_arm",
     "payload_probe_disarm",
+    "payload_probe_snapshot",
     "properties_probe_arm",
     "properties_probe_disarm",
     "properties_account",

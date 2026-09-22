@@ -25,8 +25,8 @@
  * fast the machine was or what else was running on it, so a hosted runner is
  * as good a place to measure as a quiet laptop and a 2% change is a real 2%.
  * Wall clock cannot make that claim, which is why the pipeline this replaced
- * could only ever be informational. Nothing here is a merge gate: it is the
- * measurement an optimization is argued from.
+ * could only ever be informational. With --baseline-ref, the source stage
+ * also has a per-document regression gate measured within this one run.
  *
  * They are not independent of the TOOLCHAIN: another compiler or C library
  * emits a different instruction stream for the same source, and it need not
@@ -43,7 +43,7 @@
  * here. Dr/Dw are reported alongside for exactly that reason.
  *
  *   node scripts/benchmark-stages.mjs [--out DIR] [--case NAME]... [--scale N]
- *                                     [--quiet]
+ *                                     [--quiet] [--baseline-ref COMMIT]
  */
 
 import { Buffer } from "node:buffer";
@@ -54,7 +54,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { baseName, costRecord, edgesBetween, foldNames, nodesEnteredFrom, parseCallgrind } from "./lib/callgrind.mjs";
-import { compiledFlags as readCompiledFlags, discardTree, effectiveFlags, markTree } from "./lib/compile-identity.mjs";
+import {
+    compiledFlags as readCompiledFlags,
+    discardTree,
+    effectiveFlags,
+    markTree,
+    sameCompileOptions
+} from "./lib/compile-identity.mjs";
+import { sourceBudget, SOURCE_IR_LIMIT } from "./lib/source-budget.mjs";
 import { caseClosure, splitWithCases } from "./lib/corpus-splits.mjs";
 import { boundarySource, pairReview } from "./lib/pair-review.mjs";
 import { pairingIdentity, pairRatios, proofWorkload, provenPair, validatePairs } from "./lib/corpus-pairs.mjs";
@@ -169,6 +176,10 @@ function parseArguments(argv) {
         } else if (flag === "--out") {
             options.out = path.resolve(value);
             index++;
+        } else if (flag === "--baseline-ref") {
+            if (!/^[0-9a-f]{40}$/u.test(value)) fail("--baseline-ref must be a full commit SHA");
+            options.baselineRef = value;
+            index++;
         } else if (flag === "--case") {
             options.cases.push(value);
             index++;
@@ -195,6 +206,7 @@ function parseArguments(argv) {
             fail(`unknown argument: ${flag}`);
         }
     }
+    if (options.corpusOnly && options.baselineRef) fail("--baseline-ref requires measurement");
     if (options.scale < 1) fail("--scale must be a positive integer");
     return options;
 }
@@ -760,23 +772,70 @@ const discardForeignTree = (buildDir, profile, versions) => discardTree(buildDir
 
 const stampTree = (buildDir, profile, versions) => markTree(buildDir, stampOf(profile, versions));
 
-function buildRunners(profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions) {
+function buildRunners(profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions, sourceRoot = root) {
     discardForeignTree(profile.binaryDir, profile, versions);
     run(
         "cmake",
         [
             "--preset",
             PROFILE_PRESET,
+            "-B",
+            profile.binaryDir,
             "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
             `-DMARKDOWN_CORE_CMARK_SOURCE_DIR=${path.join(cmark.checkout, "src")}`,
             `-DMARKDOWN_CORE_CMARK_BUILD_DIR=${cmarkBuildDir}`,
             `-DMARKDOWN_CORE_CMARK_GFM_SOURCE_DIR=${gfm.checkout}`,
             `-DMARKDOWN_CORE_CMARK_GFM_BUILD_DIR=${gfmBuildDir}`
         ],
-        { env: buildEnvironment() }
+        { env: buildEnvironment(), cwd: sourceRoot }
     );
-    run("cmake", ["--build", "--preset", PROFILE_PRESET, "--parallel"], { env: buildEnvironment() });
+    run("cmake", ["--build", profile.binaryDir, "--parallel"], { env: buildEnvironment(), cwd: sourceRoot });
     stampTree(profile.binaryDir, profile, versions);
+}
+
+/* Rebuild the requested base with this run's harness, preset and references.
+ * Only engine source comes from the base. The current corpus is generated once
+ * and passed byte-for-byte to both binaries, even when a PR changes its corpus. */
+function buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions) {
+    if (!options.baselineRef) return null;
+    const revision = run("git", ["rev-parse", "--verify", `${options.baselineRef}^{commit}`]).trim();
+    const directory = path.join(options.out, "baseline");
+    fs.rmSync(directory, { recursive: true, force: true });
+    fs.mkdirSync(directory, { recursive: true });
+    const source = path.join(directory, "source");
+    fs.mkdirSync(source);
+    fs.mkdirSync(path.join(directory, "corpus"));
+    const archive = path.join(directory, "source.tar");
+    run("git", ["archive", "--format=tar", `--output=${archive}`, revision]);
+    run("tar", ["-xf", archive, "-C", source]);
+    fs.unlinkSync(archive);
+    fs.cpSync(BENCHMARKS, path.join(source, "packages/markdown-core/benchmarks"), { recursive: true });
+    fs.copyFileSync(path.join(root, "CMakePresets.json"), path.join(source, "CMakePresets.json"));
+    const built = { ...profile, binaryDir: path.join(directory, "build") };
+    buildRunners(built, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions, source);
+    verifyStageSymbols(built);
+    verifyBuildProvenance(built, versions);
+    const compiled = Object.fromEntries(
+        [
+            ["markdown-core", "libmarkdown-core-public-static"],
+            ["attribute runner", ATTRIBUTE_RUNNER.target]
+        ].map(([engine, target]) => [engine, readCompiledFlags(source, built.binaryDir, target, fail)])
+    );
+    if (JSON.stringify(effectiveFlags(built.binaryDir)) !== JSON.stringify(effectiveFlags(profile.binaryDir))) {
+        fail("baseline and current core use different effective build flags");
+    }
+    for (const [engine, record] of Object.entries(compiled)) {
+        if (!sameCompileOptions(record, versions.compiled.objects[engine])) {
+            fail(`baseline and current ${engine} use different effective compile options`);
+        }
+    }
+    const libraries = loadedLibraries(
+        path.join(built.binaryDir, ENGINES["markdown-core"].runner),
+        measurementRoot(directory, fail)
+    );
+    if (JSON.stringify(libraries) !== JSON.stringify(versions.libraries))
+        fail("baseline uses different runtime libraries");
+    return { revision, profile: built, directory, compiled, binaries: runnerIdentity(built), cases: [] };
 }
 
 /**
@@ -1758,7 +1817,11 @@ export function markdownReport(report) {
             " change both engines by the same proportion, so a toolchain roll moves the" +
             " ratio columns too.",
         "",
-        "**Compare this report only against one whose table above is identical.**" +
+        "**Compare only matching toolchain, environment, corpus and compile-option identities.**" +
+            " The measured-object inventory is provenance, not a compile option: source" +
+            " paths and object counts may change in a refactor. Each revision reports" +
+            " its own inventory; surviving paths must retain their options and the" +
+            " distinct option sets must match." +
             " Across differing toolchains nothing here is comparable, ratios included," +
             " and a difference cannot be read as a code change. The table carries the" +
             " EFFECTIVE compile and link flags rather than the preset's, because CMake" +
@@ -2215,7 +2278,7 @@ export function markdownReport(report) {
                         ` (${least.host}, ${count(least.measured.wholePerList)}, ${least.measured.inPlaceOverAlone.toFixed(2)}x)` +
                         ` is **${(most.measured.wholePerList / least.measured.wholePerList).toFixed(2)}x**. The spread` +
                         " is evidence, not a threshold: it names the host to open when it moves, and it is" +
-                        " comparable only against a report whose identity table above is identical.",
+                        " comparable only with matching toolchain, environment, corpus and compile options.",
                     ""
                 );
             }
@@ -2532,12 +2595,7 @@ function main() {
         cmark: compiled.cmark.flags,
         "cmark-gfm": compiled["cmark-gfm"].flags,
         "cmark-gfm-extensions": compiled["cmark-gfm-extensions"].flags,
-        objects: Object.fromEntries(
-            Object.entries(compiled).map(([engine, record]) => [
-                engine,
-                { units: record.units, distinct: record.distinct, digest: record.digest }
-            ])
-        ),
+        objects: compiled,
         shared: tokens("markdown-core")
             .filter((flag) => tokens("cmark").includes(flag))
             .join(" "),
@@ -2554,6 +2612,7 @@ function main() {
     versions.architecture = process.arch;
     const binaries = runnerIdentity(profile);
 
+    const baseline = buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions);
     const corpus = buildCorpus(options, manifest);
     const splitWith = splitWithCases(manifest);
     const cases = [];
@@ -2589,7 +2648,31 @@ function main() {
             };
         }
         if (!options.quiet) console.error(`measured ${document.case} x${document.scale}`);
-        cases.push({ ...document, file: path.relative(options.out, document.file), engines });
+        const entry = { ...document, file: path.relative(options.out, document.file), engines };
+        cases.push(entry);
+        if (baseline) {
+            const measured = measure(baseline.profile, "markdown-core", document, baseline.directory);
+            if (measured.receiptBytes !== document.bytes) fail(`baseline received different bytes: ${document.case}`);
+            baseline.cases.push({
+                ...entry,
+                file: path.relative(baseline.directory, document.file),
+                engines: {
+                    ...engines,
+                    "markdown-core": {
+                        parsePathIr: measured.parsePathIr,
+                        outsideStagesIr: measured.outsideStagesIr,
+                        rootChildren: measured.rootChildren,
+                        hotPaths: measured.hotPaths,
+                        stages: Object.fromEntries(
+                            STAGES.map((stage) => [
+                                stage,
+                                { ...derive(document, measured.stages[stage]), ...measured.stages[stage] }
+                            ])
+                        )
+                    }
+                }
+            });
+        }
     }
 
     const report = {
@@ -2623,13 +2706,56 @@ function main() {
         artifacts: path.relative(root, options.out),
         cases
     };
+    if (baseline) {
+        const previous = {
+            ...report,
+            revision: baseline.revision,
+            toolchain: {
+                ...versions,
+                compiled: {
+                    ...versions.compiled,
+                    objects: { ...versions.compiled.objects, ...baseline.compiled }
+                }
+            },
+            binaries: {
+                ...binaries,
+                "markdown-core": baseline.binaries["markdown-core"],
+                "attribute runner": baseline.binaries["attribute runner"]
+            },
+            cases: baseline.cases,
+            splits: measureSplits(manifest, baseline.cases, baseline.profile, baseline.directory),
+            artifacts: path.relative(root, baseline.directory)
+        };
+        fs.writeFileSync(path.join(baseline.directory, "stages.json"), `${JSON.stringify(previous, null, 4)}\n`);
+        fs.writeFileSync(path.join(baseline.directory, "stages.md"), `${markdownReport(previous)}\n`);
+        report.sourceBudget = {
+            baseline: baseline.revision,
+            limit: SOURCE_IR_LIMIT,
+            rows: sourceBudget(cases, baseline.cases)
+        };
+    }
     const json = path.join(options.out, "stages.json");
     const markdown = path.join(options.out, "stages.md");
     fs.writeFileSync(json, `${JSON.stringify(report, null, 4)}\n`);
-    const rendered = markdownReport(report);
+    let rendered = markdownReport(report);
+    if (report.sourceBudget) {
+        const failed = report.sourceBudget.rows.filter((row) => !row.passed);
+        rendered += `\n\n## Source-stage regression gate\n\nBase: ${report.sourceBudget.baseline}. Both revisions use this run's corpus, harness, toolchain and runtime libraries. Each document/scale must stay within ${((SOURCE_IR_LIMIT - 1) * 100).toFixed(0)}% of its baseline source_to_buffer Ir. ${report.sourceBudget.rows.length - failed.length}/${report.sourceBudget.rows.length} passed. AST improvements do not offset source regressions.\n`;
+        if (failed.length)
+            rendered +=
+                "\n| Case | Scale | Base Ir | Current Ir | Ratio |\n| --- | ---: | ---: | ---: | ---: |\n" +
+                failed
+                    .map(
+                        (row) =>
+                            `| ${row.case} | ${row.scale} | ${row.before} | ${row.after} | ${row.ratio.toFixed(3)}x |`
+                    )
+                    .join("\n");
+    }
     fs.writeFileSync(markdown, `${rendered}\n`);
     process.stdout.write(`${rendered}\n`);
     console.error(`wrote ${path.relative(root, json)} and ${path.relative(root, markdown)}`);
+    if (report.sourceBudget?.rows.some((row) => !row.passed))
+        fail("source_to_buffer instruction budget exceeded; see stages.md");
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

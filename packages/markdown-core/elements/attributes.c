@@ -609,7 +609,7 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
     }
     int matched = markdown_core_attributes_parse(&inline_state->attributes, start, value, end);
     if (inline_state->attributes.oom) {
-        inline_state->oom = 1;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
     return matched;
 }
@@ -636,7 +636,7 @@ bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, mar
         info_end = attribute_start;
     }
     if (attributes.oom) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     parser->attribute_work += attributes.work;
     markdown_core_attribute_parser_free(&attributes);

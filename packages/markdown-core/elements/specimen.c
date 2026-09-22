@@ -61,8 +61,8 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_parser 
 void markdown_core_block_prepare_specimens(markdown_core_parser *parser) {
     markdown_core_definition_collection *collection = &parser->specimens;
     if (!markdown_core_key_index_init(&parser->specimen_ids, collection->count) ||
-        (collection->count && !markdown_core_block_order_definitions(collection))) {
-        parser->oom = true;
+        (collection->count && !markdown_core_block_order_definitions(parser, collection))) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
     for (size_t i = 0; i < collection->count; i++) {
@@ -70,7 +70,7 @@ void markdown_core_block_prepare_specimens(markdown_core_parser *parser) {
         markdown_core_optional_chunk *id = &definition->as.specimen->id;
         if (id->has_value && !markdown_core_key_index_insert(&parser->specimen_ids, id->value.data, id->value.len,
                                                              definition, 0, NULL)) {
-            parser->oom = true;
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return;
         }
     }
@@ -82,7 +82,7 @@ static bool markdown_core_specimen_open(markdown_core_parser *parser, markdown_c
     markdown_core_specimen_value specimen = start->specimen;
 
     if (specimen.id.has_value && !markdown_core_chunk_to_cstr(&specimen.id.value)) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
     *container =

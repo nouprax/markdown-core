@@ -61,7 +61,7 @@ static bool S_attach_block_identifier(markdown_core_parser *parser, markdown_cor
     }
     markdown_core_chunk identifier = candidate->identifier;
     if (!markdown_core_chunk_to_cstr(&identifier)) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
     markdown_core_chunk_free(&owner->attributes.anchor);
@@ -79,15 +79,17 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_parser *parse
     int line, column;
     if (parent && markdown_core_block_type(parent) == MARKDOWN_CORE_NODE_LIST_ITEM &&
         parent->first_child == paragraph &&
-        markdown_core_parser_content_place(
-            parser, paragraph, (bufsize_t)(candidate.identifier.data - paragraph->content.ptr), &line, &column) &&
+        markdown_core_parser_content_place(parser, &paragraph->content_map,
+                                           (bufsize_t)(candidate.identifier.data - paragraph->content.ptr), &line,
+                                           &column) &&
         line == parent->start_line) {
         owner = parent;
     }
-    bufsize_t at = (bufsize_t)(candidate.identifier.data - paragraph->content.ptr) + paragraph->content_mark_offset;
-    int indent = paragraph->content_mark_count
-                     ? parser->line_marks[markdown_core_block_content_mark_at(parser, paragraph, at)].indent
-                     : 0;
+    bufsize_t at = (bufsize_t)(candidate.identifier.data - paragraph->content.ptr) + paragraph->content_map.offset;
+    int indent =
+        paragraph->content_map.count
+            ? parser->line_marks[markdown_core_block_content_mark_at(parser, &paragraph->content_map, at)].indent
+            : 0;
     if (candidate.own_line && ((indent >= CODE_INDENT) || (!candidate.content_end && owner == paragraph))) {
         return;
     }
@@ -122,7 +124,7 @@ bool markdown_core_block_attach_identifier_line(markdown_core_parser *parser, ma
         followed_by_boundary = blank_lines > 0;
         markdown_core_parser_lookahead_end(&lookahead);
     }
-    if (!followed_by_boundary || parser->oom || !S_attach_block_identifier(parser, owner, &candidate)) {
+    if (!followed_by_boundary || parser->error || !S_attach_block_identifier(parser, owner, &candidate)) {
         return false;
     }
     markdown_core_block_set_end_to_current_line(parser, owner);

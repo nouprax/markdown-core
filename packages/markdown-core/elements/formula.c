@@ -140,7 +140,7 @@ static int set_formula_literal_bytes(markdown_core_node *node, const unsigned ch
          * the whole old code block, and `finish_step` clears the node's own
          * content. Keeping a borrowed pointer past that is a use-after-free that
          * every later read of the literal walks into -- ASan: heap-use-after-free
-         * in markdown_core_elements_get_formula_literal -- and `parser->oom`
+         * in markdown_core_elements_get_formula_literal -- and `parser->error`
          * stayed 0, so nothing downstream knew. Drop the borrow and say so; the
          * callers turn the 0 into the loss flag. */
         markdown_core_chunk empty = MARKDOWN_CORE_CHUNK_EMPTY;
@@ -238,7 +238,7 @@ static markdown_core_node *try_opening_formula_block(const markdown_core_element
 
     formula = get_formula(node);
     if (!formula) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
 
@@ -302,7 +302,7 @@ static markdown_core_node *match_formula_delimiter(const markdown_core_element *
     markdown_core_node *node = make_delimiter_text(parser, inline_state, len);
 
     if (!node) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
 
@@ -527,18 +527,18 @@ static markdown_core_node *make_formula_node(const markdown_core_element *elemen
                                              bufsize_t literal_len) {
     markdown_core_node *node = markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_FORMULA, element);
     if (!node) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
     if (!get_formula(node)) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_parser_release_node(parser, node);
         return NULL;
     }
 
     get_formula(node)->mode = mode;
     if (!set_formula_literal_bytes(node, literal, literal_len)) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_parser_release_node(parser, node);
         return NULL;
     }
@@ -581,6 +581,12 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
         body_len -= 2;
     }
 
+    /* Only recognized syntax asks the parent for a containment decision;
+     * that decision authorizes the attachment after allocation. */
+    if (!opener_node->parent || !markdown_core_node_can_contain_type(opener_node->parent, MARKDOWN_CORE_NODE_FORMULA)) {
+        goto done;
+    }
+
     markdown_core_strbuf_init(&unescaped, 0);
     if (is_backslash_delim(rule)) {
         unsigned char close_char = mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE ? ']' : ')';
@@ -605,7 +611,7 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
     formula = unescaped.oom ? NULL : make_formula_node(element, parser, mode, body, body_len);
     markdown_core_strbuf_free(&unescaped);
     if (!formula) {
-        parser->oom = true;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         goto done;
     }
 
@@ -614,15 +620,12 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
     formula->start_column = opener_node->start_column;
     formula->end_column = closer_node->end_column;
 
-    if (markdown_core_node_attach_owned(opener_node->parent, formula, opener_node)) {
-        /* REQUIREMENT 11b: the two delimiter runs are the formula's markers and
-         * the bytes between them are its content. `free_nodes_through` below
-         * frees EVERY node the span was built from, so without these claims the
-         * whole construct would fall back to the block. */
-        free_nodes_through(parser, opener_node, closer_node);
-    } else {
-        markdown_core_parser_release_node(parser, formula);
-    }
+    markdown_core_node_attach_validated(opener_node->parent, formula, opener_node);
+    /* REQUIREMENT 11b: the two delimiter runs are the formula's markers and
+     * the bytes between them are its content. `free_nodes_through` below
+     * frees EVERY node the span was built from, so without these claims the
+     * whole construct would fall back to the block. */
+    free_nodes_through(parser, opener_node, closer_node);
 
 done:
     return;
@@ -640,14 +643,8 @@ static const char *get_type_string(const markdown_core_element *element, markdow
     return "<unknown>";
 }
 
-static int can_contain(const markdown_core_element *element, markdown_core_node *node,
-                       markdown_core_node_type child_type) {
-    if (is_formula_node(node)) {
-        return 0;
-    }
-
-    return 0;
-}
+static const markdown_core_node_type containment_kinds[] = {MARKDOWN_CORE_NODE_FORMULA,
+                                                            MARKDOWN_CORE_NODE_FORMULA_BLOCK, MARKDOWN_CORE_NODE_NONE};
 
 static int accepts_lines(const markdown_core_element *element, markdown_core_node *node) {
     return node && node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK;
@@ -683,22 +680,22 @@ static markdown_core_node *new_formula_block_from_literal(const markdown_core_el
     return formula;
 }
 
-static markdown_core_node *replace_with_formula_block(const markdown_core_element *element,
-                                                      markdown_core_parser *parser, markdown_core_node *oldnode,
-                                                      const unsigned char *literal, bufsize_t literal_len) {
+static markdown_core_finish_result replace_with_formula_block(const markdown_core_element *element,
+                                                              markdown_core_parser *parser, markdown_core_node *oldnode,
+                                                              const unsigned char *literal, bufsize_t literal_len) {
+    /* Rewriting a valid block is optional. A parent's semantic rejection is
+     * not an allocation failure and leaves the original block intact. */
+    if (!oldnode->parent || !markdown_core_node_can_contain_type(oldnode->parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
+        return MARKDOWN_CORE_FINISH_CONTINUE;
+    }
     markdown_core_node *formula = new_formula_block_from_literal(element, parser, oldnode, literal, literal_len);
     if (!formula) {
-        return NULL;
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return MARKDOWN_CORE_FINISH_FAILED;
     }
-
-    if (markdown_core_node_attach_owned(oldnode->parent, formula, oldnode)) {
-        /* The bytes did not change hands, the node did. Said before the free,
-         * because after it there is nothing left to name. */
-        markdown_core_parser_release_node(parser, oldnode);
-        return formula;
-    }
-    markdown_core_parser_release_node(parser, formula);
-    return NULL;
+    markdown_core_node_attach_validated(oldnode->parent, formula, oldnode);
+    markdown_core_parser_release_node(parser, oldnode);
+    return MARKDOWN_CORE_FINISH_CONSUMED;
 }
 
 /* The formula element's finish STEP: one node at its EXIT, from inside the one
@@ -729,20 +726,16 @@ static markdown_core_finish_result finish_step(const markdown_core_element *elem
              * then cleared, so a failed copy would leave the chunk borrowing a
              * buffer this very statement empties. */
             if (!set_formula_literal_trimmed(node, node->content.ptr, node->content.size)) {
-                parser->oom = true;
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             }
             markdown_core_strbuf_clear(&node->content);
         }
-        return parser->oom ? MARKDOWN_CORE_FINISH_FAILED : MARKDOWN_CORE_FINISH_CONTINUE;
+        return parser->error ? MARKDOWN_CORE_FINISH_FAILED : MARKDOWN_CORE_FINISH_CONTINUE;
     }
 
     if (may_replace && node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code->info)) {
-        if (!replace_with_formula_block(element, parser, node, node->as.code->literal.data,
-                                        node->as.code->literal.len)) {
-            parser->oom = true;
-            return MARKDOWN_CORE_FINISH_FAILED;
-        }
-        return MARKDOWN_CORE_FINISH_CONSUMED;
+        return replace_with_formula_block(element, parser, node, node->as.code->literal.data,
+                                          node->as.code->literal.len);
     }
 
     /* Only an anonymous paragraph is a removable wrapper. A declared anchor
@@ -756,11 +749,7 @@ static markdown_core_finish_result finish_step(const markdown_core_element *elem
         if (!formula) {
             return MARKDOWN_CORE_FINISH_CONTINUE;
         }
-        if (!replace_with_formula_block(element, parser, node, formula->literal.data, formula->literal.len)) {
-            parser->oom = true;
-            return MARKDOWN_CORE_FINISH_FAILED;
-        }
-        return MARKDOWN_CORE_FINISH_CONSUMED;
+        return replace_with_formula_block(element, parser, node, formula->literal.data, formula->literal.len);
     }
 
     return MARKDOWN_CORE_FINISH_CONTINUE;
@@ -803,7 +792,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .finish_acts_on_kinds = FORMULA_ACTS_ON_KINDS,
     .finish_exit_kinds = FORMULA_EXIT_KINDS,
     .get_type_string_func = get_type_string,
-    .can_contain_func = can_contain,
+    .containment_kinds = containment_kinds,
     .accepts_lines_func = accepts_lines,
     .opaque_alloc_func = formula_opaque_alloc,
     .opaque_free_func = formula_opaque_free,
