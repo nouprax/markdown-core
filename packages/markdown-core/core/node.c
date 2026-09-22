@@ -180,19 +180,21 @@ static void S_slab_drop(markdown_core_node_slab *slab) {
     }
 }
 
-/* A zeroed cell, or NULL. The pool's released cells come first, then the
+/* Uninitialized cell storage, or NULL. The pool's released cells come first, then the
  * current slab, then a new one; the pool holds the slab it takes from, so a
  * release that empties it cannot free it out from under the pool. A NULL
  * pool takes one cell from the allocator, with no slab.
  *
- * A slab is taken uninitialised and each cell is zeroed as it is handed out,
- * whether it is fresh or reused: one path, and the bytes are cleared right
- * before they are written rather than a slab ahead. Clearing whole slabs
- * through `calloc` cost more than the allocations it replaced. */
+ * The constructor initializes the node and its active record after taking
+ * the cell. Spare record capacity is storage, not an object to initialize. */
 static markdown_core_node_cell *S_cell_take(markdown_core_node_pool *pool) {
     markdown_core_node_cell *cell;
     if (!pool) {
-        return (markdown_core_node_cell *)markdown_core_alloc(1, sizeof(*cell));
+        cell = markdown_core_realloc(NULL, sizeof(*cell));
+        if (cell) {
+            cell->header.slab = NULL;
+        }
+        return cell;
     }
     if (pool->released) {
         markdown_core_node *node = pool->released;
@@ -214,7 +216,6 @@ static markdown_core_node_cell *S_cell_take(markdown_core_node_pool *pool) {
         cell->header.slab = pool->current;
         pool->current->head.holds++;
     }
-    memset(&cell->node, 0, sizeof(*cell) - offsetof(markdown_core_node_cell, node));
     return cell;
 }
 
@@ -313,14 +314,17 @@ static void S_init_node_as(markdown_core_node_type type, markdown_core_node_data
 
 markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, markdown_core_node_type type,
                                                 const markdown_core_element *element) {
-    /* Construction gives the node and its record one cell, when the record
-     * fits; the cell is zeroed, so every field of `content` but `ptr` already
-     * holds what an init would write. */
+    /* Only the active record is an object. Clear it together with the node,
+     * including any alignment gap, whether the cell is fresh or reused.
+     * An external record is initialized by its own allocation below. */
     size_t payload_size = S_node_payload_size(type);
     markdown_core_node_cell *cell = S_cell_take(pool);
     if (!cell) {
         return NULL;
     }
+    size_t inline_size = payload_size <= MARKDOWN_CORE_NODE_CELL_RECORD_BYTES ? payload_size : 0;
+    memset(&cell->node, 0,
+           offsetof(markdown_core_node_cell, record) - offsetof(markdown_core_node_cell, node) + inline_size);
     markdown_core_node *node = &cell->node.node;
     if (payload_size > MARKDOWN_CORE_NODE_CELL_RECORD_BYTES) {
         node->node_data_allocation = markdown_core_alloc(1, payload_size);

@@ -74,7 +74,8 @@ static markdown_core_node *make_block(markdown_core_parser *parser, markdown_cor
     if (!e) {
         return NULL;
     }
-    markdown_core_strbuf_grow(&e->content, 32);
+    /* Empty content borrows the strbuf sentinel. Only writing content takes
+     * storage; containers and empty leaves need no separate allocation. */
     e->flags = MARKDOWN_CORE_NODE__OPEN;
     e->start_line = start_line;
     e->start_column = start_column;
@@ -982,14 +983,21 @@ static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
  * it holds in a register; this form is for the sibling consolidation absorbs
  * at a Text's EXIT, whose ENTER is stepped over, so consolidation completes
  * it first (iterator.h). */
-static void complete_inline_node(markdown_core_parser *parser, markdown_core_node *node, int script_depth) {
-    const markdown_core_element *structure = markdown_core_node_structure(node);
-    if (structure && structure->complete_inline) {
-        structure->complete_inline(parser, node, script_depth);
+static inline void complete_inline_from_plan(markdown_core_parser *parser, markdown_core_node *node,
+                                             const markdown_core_finish_kind *plan, int script_depth,
+                                             void (*observe)(markdown_core_parser *, markdown_core_node *)) {
+    if (plan->complete) {
+        plan->complete(parser, node, script_depth);
     }
-    if (parser->document_structure->observe_inline) {
-        parser->document_structure->observe_inline(parser, node);
+    if (observe) {
+        observe(parser, node);
     }
+}
+
+static void complete_consolidated_text(markdown_core_parser *parser, markdown_core_node *node, int script_depth) {
+    assert(node->kind == MARKDOWN_CORE_NODE_TEXT);
+    complete_inline_from_plan(parser, node, &parser->finish_kinds[MARKDOWN_CORE_FINISH_TEXT_INDEX], script_depth,
+                              parser->document_structure->observe_inline);
 }
 
 /* The steps projected for one event, in descriptor order, each behind its
@@ -1158,7 +1166,7 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
                 result = MARKDOWN_CORE_FINISH_CONTINUE;
                 if (index == MARKDOWN_CORE_FINISH_TEXT_INDEX && markdown_core_text_needs_consolidation(node)) {
                     result = markdown_core_consolidate_text_step(parser, iter, node, &walk.scratch,
-                                                                 complete_inline_node, frame->script_depth);
+                                                                 complete_consolidated_text, frame->script_depth);
                 }
                 if (result == MARKDOWN_CORE_FINISH_CONTINUE && dispatch[2 * index + 1]) {
                     result =
@@ -1197,12 +1205,7 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
                     break;
                 }
             }
-            if (facts->complete) {
-                facts->complete(parser, node, frame->script_depth);
-            }
-            if (observe) {
-                observe(parser, node);
-            }
+            complete_inline_from_plan(parser, node, facts, frame->script_depth, observe);
             /* The field roots, of a kind that owns them through its record
              * or of an element that owns them through its hook: the answer is
              * no for almost every node, and it is one flag and one load. */

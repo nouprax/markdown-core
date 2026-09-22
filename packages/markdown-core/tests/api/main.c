@@ -65,6 +65,7 @@ static size_t payload_allocations, payload_fail_at, payload_live;
  * for a release that has nothing to release. */
 static size_t payload_releases;
 static int payload_counting;
+static int payload_fill_fresh;
 static int strbuf_refuse_next;
 static void *marker_to_free;
 static int marker_free_count;
@@ -230,6 +231,9 @@ void *markdown_core_realloc(void *pointer, size_t size) {
         return allocation + 1;
     }
     result = realloc(pointer, size);
+    if (fresh && result && payload_fill_fresh) {
+        memset(result, 0xa5, size);
+    }
     if (payload_counting) {
         payload_live += result != NULL && fresh;
     }
@@ -2100,6 +2104,42 @@ static void inline_dispatch_ownership(test_batch_runner *runner) {
  * report at the transaction and abandon the parse before the reuse. The lift
  * removes the class by construction, and nothing else can see it. */
 
+static void strbuf_growth_preserves_termination(test_batch_runner *runner) {
+    const bufsize_t initial[] = {0, 1, 32};
+    for (size_t i = 0; i < sizeof(initial) / sizeof(*initial); i++) {
+        payload_probe_arm();
+        payload_fill_fresh = 1;
+        markdown_core_strbuf buf;
+        markdown_core_strbuf_init(&buf, initial[i]);
+        markdown_core_strbuf_grow(&buf, 64);
+        OK(runner, !buf.oom && buf.ptr[0] == 0 && buf.size == 0,
+           "fresh nonzero-filled storage is an empty terminated string");
+        markdown_core_strbuf_puts(&buf, "value");
+        markdown_core_strbuf_grow(&buf, 256);
+        STR_EQ(runner, (char *)buf.ptr, "value", "nonempty growth preserves bytes and terminator");
+        unsigned char *before = buf.ptr;
+        bufsize_t capacity = buf.asize;
+        strbuf_refuse_next = 1;
+        markdown_core_strbuf_grow(&buf, 1024);
+        OK(runner, buf.oom && buf.ptr == before && buf.asize == capacity,
+           "failed growth preserves storage and reports loss");
+        STR_EQ(runner, (char *)buf.ptr, "value", "failed growth preserves the terminated value");
+        markdown_core_strbuf_clear(&buf);
+        markdown_core_strbuf_grow(&buf, 1024);
+        OK(runner, !buf.oom && buf.ptr[buf.size] == 0, "clear and empty owned growth remain terminated");
+        unsigned char *empty = markdown_core_strbuf_detach(&buf);
+        OK(runner, empty && empty[0] == 0, "detaching the empty owned buffer returns an empty string");
+        markdown_core_free(empty);
+        empty = markdown_core_strbuf_detach(&buf);
+        OK(runner, empty && empty[0] == 0, "detaching the sentinel returns an owned empty string");
+        markdown_core_free(empty);
+        markdown_core_strbuf_free(&buf);
+        payload_fill_fresh = 0;
+        INT_EQ(runner, payload_live, 0, "every buffer allocation is released");
+        payload_probe_disarm();
+    }
+}
+
 static void strbuf_failure_is_a_transaction(test_batch_runner *runner) {
     markdown_core_strbuf buf;
 
@@ -2555,6 +2595,82 @@ static void node_cells_come_from_slabs_and_go_back_to_the_pool(test_batch_runner
     }
     OK(runner, freed_slabs >= 3, "every slab was freed by a node's release: %zu", freed_slabs);
     INT_EQ(runner, payload_live, 0, "cells, slabs and records are all released");
+    payload_probe_disarm();
+}
+
+static void node_reuse_initializes_the_active_record(test_batch_runner *runner) {
+    const struct {
+        markdown_core_node_type kind;
+        size_t bytes;
+    } cases[] = {{MARKDOWN_CORE_NODE_PARAGRAPH, 0},
+                 {MARKDOWN_CORE_NODE_TEXT, sizeof(markdown_core_chunk)},
+                 {MARKDOWN_CORE_NODE_LIST, sizeof(markdown_core_list)},
+                 {MARKDOWN_CORE_NODE_HEADING, sizeof(markdown_core_heading)},
+                 {MARKDOWN_CORE_NODE_METADATA, sizeof(markdown_core_metadata_fields)}};
+    markdown_core_node_pool pool = {0};
+    payload_probe_arm();
+    payload_fill_fresh = 1;
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        markdown_core_node *dirty = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_LIST, NULL);
+        void *record = dirty->as.data;
+        OK(runner, !dirty->node_data_allocation, "the dirty record occupies retained cell storage");
+        markdown_core_node_pool_release(&pool, dirty);
+        /* A released cell is retained by the pool. Poison its object storage,
+         * keeping only the free-list link that the pool owns while idle. */
+        markdown_core_node *next = dirty->next;
+        memset(dirty, 0xa5, sizeof(*dirty));
+        dirty->next = next;
+        memset(record, 0xa5, sizeof(markdown_core_list));
+        markdown_core_node *node = markdown_core_node_pool_new(&pool, cases[i].kind, NULL);
+        markdown_core_node *control = markdown_core_node_new(cases[i].kind);
+        OK(runner, node == dirty && control, "a dirty cell is reused for kind %d", cases[i].kind);
+        OK(runner,
+           !node->parent && !node->prev && !node->next && !node->first_child && !node->last_child &&
+               !node->start_line && !node->flags && !node->element && !node->user_data &&
+               node->content.ptr == markdown_core_strbuf__initbuf && !node->content.size && !node->content.asize &&
+               !node->content.oom,
+           "all node state is initialized independently of its former kind");
+        OK(runner, cases[i].bytes ? !memcmp(node->as.data, control->as.data, cases[i].bytes) : !node->as.data,
+           "the active record has the same complete initialization as a fresh node");
+        markdown_core_node_pool_release(&pool, node);
+        markdown_core_node_free(control);
+    }
+    markdown_core_node_pool_dispose(&pool);
+    payload_fill_fresh = 0;
+    INT_EQ(runner, payload_live, 0, "dirty-cell reuse and external records release every allocation");
+    payload_probe_disarm();
+}
+
+static bool inspect_lazy_block_content(markdown_core_parser *parser, void *context) {
+    test_batch_runner *runner = context;
+    OK(runner, parser->root->content.ptr == markdown_core_strbuf__initbuf,
+       "the document has no allocated content buffer");
+    const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_THEMATIC_BREAK,
+                                             MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_DEFINITION_LIST};
+    for (size_t i = 0; i < sizeof(kinds) / sizeof(*kinds); i++) {
+        size_t before = payload_probe_snapshot().allocations;
+        markdown_core_node *node = markdown_core_parser_add_child_validated(parser, parser->root, kinds[i], 1);
+        OK(runner, node && node->content.ptr == markdown_core_strbuf__initbuf && !node->content.asize,
+           "every empty block starts with the same borrowed empty content");
+        INT_EQ(runner, payload_probe_snapshot().allocations, before,
+               "a block fits the existing slab without a content allocation");
+        if (kinds[i] == MARKDOWN_CORE_NODE_PARAGRAPH) {
+            markdown_core_strbuf_puts(&node->content, "first write");
+            INT_EQ(runner, payload_probe_snapshot().allocations, before + 1,
+                   "the first write alone acquires content storage");
+            STR_EQ(runner, (char *)node->content.ptr, "first write", "the first write preserves the value");
+        }
+        markdown_core_parser_release_node(parser, node);
+    }
+    return true;
+}
+
+static void block_content_storage_follows_writes(test_batch_runner *runner) {
+    payload_probe_arm();
+    markdown_core_node *root = markdown_core_parse_document_with_setup("", 0, inspect_lazy_block_content, runner);
+    OK(runner, root != NULL, "probing empty block storage preserves the parse");
+    markdown_core_node_free(root);
+    INT_EQ(runner, payload_live, 0, "lazy content and parser resources are released");
     payload_probe_disarm();
 }
 
@@ -7923,6 +8039,53 @@ static size_t nodes_handed_to_finish(const inline_work *work, size_t finished_tr
  * which completion turns into NBSP and which must therefore be completed
  * before the Text beside it absorbs it. */
 
+typedef struct {
+    markdown_core_element document;
+    void (*observe)(markdown_core_parser *, markdown_core_node *);
+    size_t spaces, uncompleted;
+} completion_probe;
+
+static void observe_completed_text(markdown_core_parser *parser, markdown_core_node *node) {
+    completion_probe *probe = parser->root->user_data;
+    if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
+        probe->uncompleted += (node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) != 0;
+        probe->spaces += node->as.literal->len == 2 && !memcmp(node->as.literal->data, "\xc2\xa0", 2);
+    }
+    if (probe->observe) {
+        probe->observe(parser, node);
+    }
+}
+
+static bool configure_completion_probe(markdown_core_parser *parser, void *context) {
+    completion_probe *probe = context;
+    probe->document = *parser->document_structure;
+    probe->observe = probe->document.observe_inline;
+    probe->document.observe_inline = observe_completed_text;
+    parser->document_structure = &probe->document;
+    parser->root->user_data = probe;
+    return true;
+}
+
+static void absorbed_text_completes_before_observation(test_batch_runner *runner) {
+    const char *source = "^a\\ b\\ c^ d\\*e\n";
+    completion_probe probe = {0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup(source, strlen(source), configure_completion_probe, &probe);
+    OK(runner, root != NULL, "normal and absorbed text completion share a successful transaction");
+    if (root) {
+        INT_EQ(runner, probe.uncompleted, 0, "the observer never sees a Text before kind completion");
+        INT_EQ(runner, probe.spaces, 2, "both absorbed escaped spaces complete exactly once at their word depth");
+        markdown_core_node *script = root->first_child->first_child;
+        INT_EQ(runner, script->kind, MARKDOWN_CORE_NODE_SUPERSCRIPT, "the word owner is preserved");
+        STR_EQ(runner, markdown_core_node_get_literal(script->first_child),
+               "a\xc2\xa0"
+               "b\xc2\xa0"
+               "c",
+               "consolidation copies already completed operands");
+    }
+    markdown_core_node_free(root);
+}
+
 static void finish_stage_walks_each_root_once(test_batch_runner *runner) {
     static const char source[] = "Term a\\.b@c.io $x$\n"
                                  ": body with x\\.y@z.com and $$y$$\n"
@@ -8438,6 +8601,10 @@ int main(void) {
     test_batch_runner *runner = test_batch_runner_new();
 
     universal_values(runner);
+    absorbed_text_completes_before_observation(runner);
+    strbuf_growth_preserves_termination(runner);
+    node_reuse_initializes_the_active_record(runner);
+    block_content_storage_follows_writes(runner);
     node_cells_come_from_slabs_and_go_back_to_the_pool(runner);
     properties_values(runner);
     properties_source_boundaries(runner);

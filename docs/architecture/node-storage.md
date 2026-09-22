@@ -22,7 +22,7 @@ and nothing else about the storage is visible through the node.
 
 A slab lives while anything holds it: every cell taken from it, and the pool
 while that slab is the one it takes cells from. A cell released during the
-parse goes back to the pool and is handed out again, zeroed, before another
+parse goes back to the pool and is handed out again, initialized, before another
 cell is taken from a slab, so the storage a parse holds is bounded by its peak
 live node count rather than by how many nodes it made. A cell released with no
 pool drops its hold, and the slab is freed with its last one -- by whichever
@@ -43,6 +43,18 @@ It takes one cell for the node and its kind's record, establishes defaults,
 and only then exposes the node. Failure releases all acquired storage; a slab
 that cannot be allocated refuses the node and leaves the pool usable.
 Node data and its strings use the library's allocator.
+
+Initialization clears the whole node and exactly the active inline record
+(including the alignment gap before it). Spare record capacity has no live
+object and is not read or initialized. Records larger than the cell's capacity
+are separately zero-allocated. Fresh, recycled and standalone cells use this
+same constructor; the pool's slab header remains outside object initialization.
+
+An empty node's content borrows the strbuf sentinel. Creating a block does not
+reserve content storage; the first write acquires it through the ordinary
+buffer growth operation. Successful growth always establishes `ptr[size] == 0`,
+including the first allocation, which cannot copy the sentinel's NUL byte.
+Failed growth preserves the old storage and terminated value and records OOM.
 
 `CrossLink` stores a `markdown_core_cross_reference` record containing its raw
 path, optional anchor, and optional label. `CrossEmbedded` stores a

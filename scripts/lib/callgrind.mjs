@@ -65,7 +65,8 @@ function numbers(value) {
  * Parse one callgrind output file.
  *
  * Returns the declared event names, the file's own `summary`/`totals` lines,
- * the self cost of every function, and every call edge keyed by
+ * the self cost of every function and source file (including inline headers),
+ * and every call edge keyed by
  * `caller<NUL>callee`. Costs are arrays aligned with `events`.
  */
 export function parseCallgrind(text) {
@@ -73,6 +74,7 @@ export function parseCallgrind(text) {
     const files = new Map();
     const functions = new Map();
     const self = new Map();
+    const selfByFile = new Map();
     const edges = new Map();
 
     let events = [];
@@ -80,6 +82,7 @@ export function parseCallgrind(text) {
     let summary = null;
     let totals = null;
     let currentFunction = null;
+    let currentFile = "(unknown)";
     let calledFunction = null;
     let pendingCalls = 0;
 
@@ -113,6 +116,8 @@ export function parseCallgrind(text) {
                 case "fl":
                 case "fi":
                 case "fe":
+                    currentFile = resolveName(files, value);
+                    break;
                 case "cfi":
                 case "cfl":
                     resolveName(files, value);
@@ -151,10 +156,13 @@ export function parseCallgrind(text) {
             const cost = self.get(currentFunction) ?? [];
             addCost(cost, costs);
             self.set(currentFunction, cost);
+            const fileCost = selfByFile.get(currentFile) ?? [];
+            addCost(fileCost, costs);
+            selfByFile.set(currentFile, fileCost);
         }
     }
 
-    return { events, summary, totals, self, edges };
+    return { events, summary, totals, self, selfByFile, edges };
 }
 
 /**
