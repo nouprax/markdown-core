@@ -1202,10 +1202,11 @@ jobs:
             - name: Fuzz against the remark ecosystem
               run: pnpm fuzz:parity -- --oracle remark --iterations 400 --seed 1
 
-    stage-benchmark:
+    benchmark:
+        name: Benchmark
         needs: changes
         if: ${{ needs.changes.outputs.required == 'true' }}
-        uses: ./.github/workflows/stage-benchmark.yml
+        uses: ./.github/workflows/benchmark.yml
         permissions:
             actions: read
             contents: read
@@ -1214,21 +1215,22 @@ jobs:
         # Push runs use an independent, non-required context. PR and
         # merge-queue runs alone own the name referenced by the ruleset.
         name: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'Required gates' || 'Development branch gates' }}
-        if: ${{ always() && (needs.changes.result != 'success' || needs.changes.outputs.required != 'false') }}
+        if: ${{ always() }}
         needs:
             - changes
             - tests-ready
             - upstream-parity
-            - stage-benchmark
+            - benchmark
         runs-on: ubuntu-latest
         steps:
-            - name: Require the complete test and parity layers
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - name: Report required validation result
+              uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
               env:
-                  CHANGES: ${{ needs.changes.result }}
-                  TESTS_READY: ${{ needs.tests-ready.result }}
-                  UPSTREAM_PARITY: ${{ needs.upstream-parity.result }}
-                  SOURCE_BUDGET: ${{ needs.stage-benchmark.result }}
-              run: |
-                  for result in "$CHANGES" "$TESTS_READY" "$UPSTREAM_PARITY" "$SOURCE_BUDGET"; do
-                      test "$result" = success
-                  done
+                  NEEDS: ${{ toJSON(needs) }}
+              with:
+                  script: |
+                      const { requireGate } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/ci-gate.mjs`);
+                      core.info(requireGate(JSON.parse(process.env.NEEDS)));

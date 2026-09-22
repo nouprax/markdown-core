@@ -1,0 +1,276 @@
+import { Buffer } from "node:buffer";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { sourceBudget, SOURCE_IR_LIMIT } from "./lib/source-budget.mjs";
+
+const marker = "<!-- markdown-core-benchmark -->";
+const archiveLimit = 8 * 1024 * 1024;
+const reportLimit = 16 * 1024 * 1024;
+const measurements = [
+    {
+        kind: "stages",
+        title: "Parse stages",
+        job: "Benchmark / Measure - parse stages against cmark",
+        members: ["stages.json", "baseline/stages.json"],
+        render: stageSection
+    },
+    {
+        kind: "attributes",
+        title: "Attribute grammar",
+        job: "Benchmark / Measure - the attribute grammar against lexbor",
+        members: ["attributes.json"],
+        render: attributeSection
+    }
+];
+const count = (value) => {
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error("Invalid benchmark count");
+    return value;
+};
+const digest = (value, length = 64) => {
+    if (typeof value !== "string" || !new RegExp(`^[0-9a-f]{${length}}$`).test(value)) {
+        throw new Error("Invalid benchmark identity");
+    }
+    return value;
+};
+const number = (value) => count(value).toLocaleString("en-US");
+const ratio = (after, before) => (before > 0 ? `${(after / before).toFixed(4)}×` : "n/a");
+
+// These are projections of the existing report schemas, not Markdown supplied
+// by a PR. Only validated IDs, digests and numeric counts reach the comment.
+function stageCounts(report) {
+    if (report?.schemaVersion !== 4 || !Array.isArray(report.cases) || !report.cases.length) {
+        throw new Error("Invalid stage report");
+    }
+    digest(report.corpus.digest);
+    digest(report.pairingDigest);
+    if (report.corpus.cases !== report.cases.length) throw new Error("Incomplete stage report");
+    const totals = [0, 0, 0, 0];
+    for (const row of report.cases) {
+        if (typeof row.case !== "string" || !/^[a-z0-9][a-z0-9-]{0,127}$/.test(row.case)) {
+            throw new Error("Invalid benchmark case ID");
+        }
+        if (!count(row.scale) || !count(row.bytes)) throw new Error("Empty benchmark workload");
+        digest(row.sha256);
+        const engine = row.engines["markdown-core"];
+        const values = [
+            engine.stages.source_to_buffer.cost.Ir,
+            engine.stages.buffer_to_ast.cost.Ir,
+            engine.outsideStagesIr,
+            engine.parsePathIr
+        ].map(count);
+        if (values[0] + values[1] + values[2] !== values[3]) throw new Error("Inconsistent parse counts");
+        values.forEach((value, i) => (totals[i] = count(totals[i] + value)));
+    }
+    return totals;
+}
+
+export function stageSection(current, baseline) {
+    const after = stageCounts(current);
+    const before = stageCounts(baseline);
+    if (current.corpus.digest !== baseline.corpus.digest || current.pairingDigest !== baseline.pairingDigest) {
+        throw new Error("Benchmark identities differ");
+    }
+    const rows = sourceBudget(current.cases, baseline.cases);
+    const failures = rows.filter((row) => !row.passed);
+    const lines = [
+        "### Parse stages",
+        "",
+        `Baseline: \`${digest(baseline.revision, 40)}\`. ${number(rows.length)} document/scale workloads, measured in the same job.`,
+        "",
+        "| Core instructions (Ir) | Base | PR | PR / base |",
+        "| --- | ---: | ---: | ---: |"
+    ];
+    ["Source → buffer", "Buffer → AST", "Outside the two stages", "Complete parse path"].forEach((name, i) =>
+        lines.push(`| ${name} | ${number(before[i])} | ${number(after[i])} | ${ratio(after[i], before[i])} |`)
+    );
+    lines.push(
+        "",
+        "Totals sum this finite workload; they are not elapsed time or a general speedup claim.",
+        "",
+        `Source budget (+${((SOURCE_IR_LIMIT - 1) * 100).toFixed(0)}% per document): **${number(rows.length - failures.length)}/${number(rows.length)} passed**, ${number(failures.length)} exceeded. Required when CI inputs require execution.`,
+        "",
+        "<details><summary>Largest source-stage ratios (up to 10 workloads)</summary>",
+        "",
+        "| Case | Scale | Base Ir | PR Ir | PR / base |",
+        "| --- | ---: | ---: | ---: | ---: |",
+        ...[...rows]
+            .sort((a, b) => b.ratio - a.ratio)
+            .slice(0, 10)
+            .map(
+                (row) =>
+                    `| ${row.case} | ${row.scale} | ${number(row.before)} | ${number(row.after)} | ${ratio(row.after, row.before)} |`
+            ),
+        "",
+        "</details>",
+        "",
+        `Corpus: \`${current.corpus.digest}\` · Pairing: \`${current.pairingDigest}\`.`,
+        "Full reference comparisons, all workloads, toolchain identities and raw profiles are in the run artifacts."
+    );
+    return lines.join("\n");
+}
+
+export function attributeSection(report) {
+    if (report?.schemaVersion !== 1) throw new Error("Invalid attribute report");
+    const lines = [
+        "### Attribute grammar",
+        "",
+        "| Engine | Lists | Values | Instructions (Ir) | Data reads | Data writes |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |"
+    ];
+    for (const name of ["markdown-core", "lexbor"]) {
+        const row = report.baselines[name];
+        const values = [row.lists, row.values, row.ir, row.dataReads, row.dataWrites];
+        if (values.some((value) => !count(value))) throw new Error("Empty attribute measurement");
+        lines.push(`| ${name} | ${values.map(number).join(" | ")} |`);
+    }
+    const ours = report.baselines["markdown-core"];
+    const theirs = report.baselines.lexbor;
+    if (ours.lists !== theirs.lists || ours.values !== theirs.values) throw new Error("Attribute census differs");
+    lines.push("", `Core / lexbor instructions: **${ratio(ours.ir, theirs.ir)}** on the same recovered attributes.`);
+    return lines.join("\n");
+}
+
+// Never extract archive paths into the checkout or interpret report content as
+// commands. Read only fixed, bounded JSON members from a private temporary zip.
+export function readArchive(bytes, members) {
+    if (bytes.length > archiveLimit) throw new Error("Benchmark archive exceeds limit");
+    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "benchmark-comment-"));
+    try {
+        const zip = path.join(temporary, "report.zip");
+        fs.writeFileSync(zip, bytes);
+        const names = execFileSync("unzip", ["-Z1", zip], { encoding: "utf8", maxBuffer: 65536, timeout: 5000 })
+            .trim()
+            .split("\n");
+        return members.map((member) => {
+            if (names.filter((name) => name === member).length !== 1)
+                throw new Error("Missing or duplicate report member");
+            return JSON.parse(
+                execFileSync("unzip", ["-p", zip, member], {
+                    encoding: "utf8",
+                    maxBuffer: reportLimit,
+                    timeout: 5000
+                })
+            );
+        });
+    } finally {
+        fs.rmSync(temporary, { recursive: true, force: true });
+    }
+}
+
+export async function publish({ github, context, core, read = readArchive }) {
+    const run = context.payload.workflow_run;
+    const repo = context.repo;
+    if (
+        context.eventName !== "workflow_run" ||
+        run.event !== "pull_request" ||
+        run.path !== ".github/workflows/ci.yml" ||
+        run.status !== "completed"
+    )
+        return;
+    digest(run.head_sha, 40);
+    count(run.id);
+    count(run.run_attempt);
+    const associated = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
+        ...repo,
+        commit_sha: run.head_sha,
+        per_page: 100
+    });
+    const matches = (pr) =>
+        pr.state === "open" &&
+        pr.base.repo.full_name === `${repo.owner}/${repo.repo}` &&
+        pr.head.sha === run.head_sha &&
+        pr.head.repo?.id === run.head_repository.id &&
+        pr.head.ref === run.head_branch;
+    const pulls = associated.filter(matches);
+    if (!pulls.length) return;
+
+    const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+        ...repo,
+        run_id: run.id,
+        per_page: 100
+    });
+    // Failed-job reruns retain successful jobs from earlier attempts. Select
+    // each job's own attempt so a retained result survives, but an unsuccessful
+    // new measurement cannot fall back to its earlier artifact.
+    const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+        ...repo,
+        run_id: run.id,
+        filter: "latest",
+        per_page: 100
+    });
+    if (
+        run.conclusion === "success" &&
+        (jobs.some((job) => job.name === "Benchmark" && job.conclusion === "skipped") ||
+            measurements.every((measurement) =>
+                jobs.some((job) => job.name === measurement.job && job.conclusion === "skipped")
+            ))
+    )
+        return;
+    const sections = [];
+    for (const { kind, title, job: jobName, members, render } of measurements) {
+        const job = jobs.find((item) => item.name === jobName);
+        const matches = artifacts.filter((item) => item.name === `benchmark-report-${kind}-${job?.run_attempt}`);
+        if (job?.conclusion === "skipped" && !matches.length) {
+            sections.push(`### ${title}\n\nMeasurement skipped. See the run logs for the preflight decision.`);
+            continue;
+        }
+        try {
+            if (job?.status !== "completed" || !count(job.run_attempt) || job.run_attempt > run.run_attempt) {
+                throw new Error("Measurement job is missing or belongs to another attempt");
+            }
+            if (
+                matches.length !== 1 ||
+                matches[0].expired ||
+                !count(matches[0].size_in_bytes) ||
+                matches[0].size_in_bytes > archiveLimit
+            )
+                throw new Error("Missing, expired or oversized benchmark artifact");
+            const archive = await github.rest.actions.downloadArtifact({
+                ...repo,
+                artifact_id: matches[0].id,
+                archive_format: "zip"
+            });
+            sections.push(render(...read(Buffer.from(archive.data), members)));
+        } catch (error) {
+            core.warning(`Could not read ${kind} benchmark: ${error.message}`);
+            sections.push(`### ${title}\n\nResult unavailable. See the run logs and artifacts.`);
+        }
+    }
+    const status = ["success", "failure", "cancelled", "timed_out", "skipped"].includes(run.conclusion)
+        ? run.conclusion
+        : "unknown";
+    const runUrl = `https://github.com/${repo.owner}/${repo.repo}/actions/runs/${run.id}/attempts/${run.run_attempt}`;
+    const body = `${marker}\n<!-- run:${run.id}:${run.run_attempt} -->\n## Benchmark\n\nCommit: \`${run.head_sha}\` · [Run and full reports](${runUrl}) · CI status: **${status}**\n\nBenchmark is required when CI inputs require execution. This ordinary PR comment does not create a review thread to resolve.\n\n${sections.join("\n\n")}`;
+
+    for (const pr of pulls) {
+        const comments = await github.paginate(github.rest.issues.listComments, {
+            ...repo,
+            issue_number: pr.number,
+            per_page: 100
+        });
+        const existing = comments.find(
+            (comment) =>
+                comment.user?.login === "github-actions[bot]" &&
+                comment.user.type === "Bot" &&
+                comment.body?.startsWith(`${marker}\n`)
+        );
+        const previous = /<!-- run:(\d+):(\d+) -->/.exec(existing?.body ?? "");
+        if (
+            previous &&
+            (Number(previous[1]) > run.id || (Number(previous[1]) === run.id && Number(previous[2]) > run.run_attempt))
+        )
+            continue;
+        // Refresh after downloads so an old completion cannot overwrite a
+        // newer head or a report belonging to a newer attempt of the same run.
+        const { data: latest } = await github.rest.actions.getWorkflowRun({ ...repo, run_id: run.id });
+        const { data: current } = await github.rest.pulls.get({ ...repo, pull_number: pr.number });
+        if (!matches(current) || latest.run_attempt !== run.run_attempt || latest.status !== "completed") continue;
+        if (existing) {
+            await github.rest.issues.updateComment({ ...repo, comment_id: existing.id, body });
+        } else {
+            await github.rest.issues.createComment({ ...repo, issue_number: pr.number, body });
+        }
+    }
+}
