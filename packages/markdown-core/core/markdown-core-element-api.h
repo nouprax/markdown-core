@@ -568,6 +568,7 @@ typedef enum {
  *
  * A change releases values owned by the old kind and installs the new kind's
  * defaults. Node identity and element-owned opaque data are preserved.
+ * A record that fits the node's existing cell needs no allocation.
  * Setting the current kind succeeds without allocating or changing its data.
  */
 MARKDOWN_CORE_EXPORT markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node,

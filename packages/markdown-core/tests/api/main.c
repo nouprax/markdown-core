@@ -2554,8 +2554,8 @@ static void node_cells_come_from_slabs_and_go_back_to_the_pool(test_batch_runner
     }
     INT_EQ(runner, payload_allocations, allocations, "reusing released cells makes no allocator call");
 
-    /* A record too large for the cell is owned apart from it, like a
-     * replacement record, and released with the node. */
+    /* A record too large for the cell is owned apart from it and released
+     * with the node, under the same rule used by kind conversion. */
     markdown_core_node *large = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_METADATA, NULL);
     OK(runner, large && large->node_data_allocation && large->as.data == large->node_data_allocation,
        "a record that does not fit the cell is owned through node_data_allocation");
@@ -2675,6 +2675,31 @@ static bool inspect_lazy_block_content(markdown_core_parser *parser, void *conte
                    "streaming content retains its established initial reservation");
             STR_EQ(runner, (char *)node->content.ptr, "first write\nsecond write\n",
                    "incremental writes preserve the complete value");
+            unsigned char bytes[256];
+            memset(bytes, 'x', sizeof(bytes));
+            bytes[0] = '\t';
+            markdown_core_chunk large = {bytes, sizeof(bytes), 0};
+            for (int partial_tab = 0; partial_tab < 2; partial_tab++) {
+                markdown_core_strbuf_free(&node->content);
+                node->content_map = (markdown_core_content_map){0};
+                parser->offset = 0;
+                parser->column = 1;
+                parser->partially_consumed_tab = partial_tab;
+                before = payload_probe_snapshot().allocations;
+                markdown_core_block_add_line(node, &large, parser);
+                INT_EQ(runner, payload_probe_snapshot().allocations, before + 1,
+                       "the complete first write, including tab expansion, needs one allocation");
+                INT_EQ(runner, node->content.size, sizeof(bytes) + (partial_tab ? 2 : 0),
+                       "first-write reservation preserves expanded content length");
+                OK(runner, !memcmp(node->content.ptr + (partial_tab ? 3 : 1), bytes + 1, sizeof(bytes) - 1),
+                   "first-write reservation preserves the copied source bytes");
+                if (partial_tab) {
+                    OK(runner, !memcmp(node->content.ptr, "   ", 3), "the partial tab writes its remaining spaces");
+                }
+            }
+            parser->offset = 0;
+            parser->column = 0;
+            parser->partially_consumed_tab = false;
         }
         markdown_core_parser_release_node(parser, node);
     }
@@ -2745,7 +2770,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     INT_EQ(runner, markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
            "setting the current kind preserves its data without allocation");
     INT_EQ(runner, payload_allocations + 1, payload_fail_at, "setting the current kind allocates nothing");
-    INT_EQ(runner, markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_LINK),
+    INT_EQ(runner, markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
            MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED, "conversion reports replacement allocation failure");
     OK(runner,
        text->kind == MARKDOWN_CORE_NODE_TEXT && text->as.literal == original_payload && text->parent == parent &&
@@ -2753,10 +2778,15 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
        "failed kind conversion preserves data, identity, and tree links");
     STR_EQ(runner, markdown_core_node_get_literal(text), "retained", "failed retyping retains owned bytes");
     INT_EQ(runner, payload_live, before, "failed retyping neither frees nor leaks an allocation");
-    payload_fail_at = 0;
+    /* Inline replacement needs no allocation, even when the next allocation
+     * is armed to fail. Its cell is already owned by this node. */
+    payload_fail_at = payload_allocations + 1;
+    size_t inline_attempts = payload_allocations;
     INT_EQ(runner, markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
            "successful kind conversion installs new defaults");
-    OK(runner, text->as.link && !text->as.link->resource, "converted link has a payload and no resource");
+    OK(runner, text->as.link && !text->as.link->resource && !text->node_data_allocation,
+       "converted link reuses its cell with empty defaults");
+    INT_EQ(runner, payload_allocations, inline_attempts, "inline replacement does not attempt allocation");
     size_t attempts = payload_allocations;
     markdown_core_link *original_link = text->as.link;
     payload_fail_at = attempts + 1;
@@ -2775,7 +2805,8 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     markdown_core_node *empty = markdown_core_node_new(MARKDOWN_CORE_NODE_EMPHASIS);
     OK(runner, markdown_core_node_append_child(parent, empty), "a fieldless node joins the parent");
     INT_EQ(runner, markdown_core_node_set_kind(empty, MARKDOWN_CORE_NODE_CROSS_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
-           "a node constructed without fields acquires an owned replacement record");
+           "a node constructed without fields acquires an inline replacement record");
+    OK(runner, !empty->node_data_allocation, "a previously unused cell record becomes active");
     markdown_core_destination destination;
     markdown_core_optional_string label;
     label = markdown_core_node_cross_label(empty);
@@ -2795,7 +2826,8 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     payload_fail_at = payload_allocations + 1;
     before = payload_live;
     OK(runner,
-       markdown_core_node_set_kind(cite, MARKDOWN_CORE_NODE_TEXT) == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED &&
+       markdown_core_node_set_kind(cite, MARKDOWN_CORE_NODE_CROSS_EMBEDDED) ==
+               MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED &&
            cite->as.cite->citations == item && item->as.citation->prefix->first_child == prefix,
        "failed retyping preserves node-valued fields");
     INT_EQ(runner, payload_live, before, "failed retyping leaves the owned subtree alive");
@@ -2805,6 +2837,65 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     markdown_core_node_free(parent);
     INT_EQ(runner, payload_live, 0, "conversion and destruction release payloads, fields, and affixes exactly once");
     payload_probe_disarm();
+}
+
+static void kind_conversion_reuses_cell_storage(test_batch_runner *runner) {
+    for (int pooled = 0; pooled < 2; pooled++) {
+        payload_probe_arm();
+        markdown_core_node_pool pool = {0};
+        markdown_core_node_pool *source = pooled ? &pool : NULL;
+        markdown_core_node *parent = markdown_core_node_pool_new(source, MARKDOWN_CORE_NODE_PARAGRAPH, NULL);
+        markdown_core_node *node = markdown_core_node_pool_new(source, MARKDOWN_CORE_NODE_TEXT, NULL);
+        OK(runner, markdown_core_node_append_child(parent, node), "the convertible node joins its parent");
+        void *cell_record = node->as.data;
+        markdown_core_node_pool_dispose(&pool);
+        OK(runner, markdown_core_node_set_literal(node, "owned text"), "the old inline record owns bytes");
+
+        size_t attempts = payload_allocations;
+        payload_fail_at = attempts + 1;
+        INT_EQ(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
+               "inline replacement succeeds with allocation refused, even after pool disposal");
+        OK(runner, node->as.data == cell_record && !node->node_data_allocation && !node->as.link->resource,
+           "inline replacement reuses the original record address with new defaults");
+        INT_EQ(runner, payload_allocations, attempts, "inline replacement makes no allocator call");
+        INT_EQ(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+               MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED, "external replacement can still fail atomically");
+        OK(runner,
+           node->kind == MARKDOWN_CORE_NODE_LINK && node->as.data == cell_record && node->parent == parent &&
+               parent->first_child == node,
+           "failed external replacement retains the inline record and tree links");
+
+        payload_fail_at = 0;
+        INT_EQ(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+               MARKDOWN_CORE_NODE_SET_KIND_OK, "a record exceeding capacity obtains external storage");
+        void *external = node->node_data_allocation;
+        OK(runner, external && node->as.data == external && external != cell_record,
+           "external allocation ownership is explicit");
+        OK(runner, markdown_core_chunk_set_cstr(&node->as.cross_embedded->reference.path, "owned path"),
+           "the external record owns a string");
+        attempts = payload_allocations;
+        payload_fail_at = attempts + 1;
+        INT_EQ(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+               MARKDOWN_CORE_NODE_SET_KIND_OK, "the same external kind preserves its record without allocation");
+        OK(runner, node->node_data_allocation == external, "no-op conversion preserves external ownership");
+        STR_EQ(runner, (char *)node->as.cross_embedded->reference.path.data, "owned path",
+               "no-op conversion preserves external fields");
+
+        size_t releases = payload_releases;
+        INT_EQ(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
+               "external to inline conversion succeeds with allocation refused");
+        INT_EQ(runner, payload_allocations, attempts, "returning to the cell makes no allocation");
+        INT_EQ(runner, payload_releases, releases + 2, "the external record and its string are each released once");
+        OK(runner, node->as.data == cell_record && !node->node_data_allocation && !node->as.literal->data,
+           "returning to the cell reinitializes its former record bytes");
+        INT_EQ(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_STRONG), MARKDOWN_CORE_NODE_SET_KIND_OK,
+               "a fieldless kind releases its active record without storage work");
+        OK(runner, !node->as.data && !node->node_data_allocation, "a fieldless kind owns no record");
+        payload_fail_at = 0;
+        markdown_core_node_free(parent);
+        INT_EQ(runner, payload_live, 0, "all record backing and detached slab storage is released");
+        payload_probe_disarm();
+    }
 }
 
 /* Element fields use the same nonrecursive ownership walk as typed fields.
@@ -8672,6 +8763,7 @@ int main(void) {
     percent_comment_nodes(runner);
     cross_link_fields(runner);
     node_payload_lifecycle(runner);
+    kind_conversion_reuses_cell_storage(runner);
     element_owned_field_lifecycle(runner);
     kind_conversion_containment(runner);
     version(runner);

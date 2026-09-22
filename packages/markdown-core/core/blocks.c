@@ -427,11 +427,20 @@ void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk 
     int i;
     assert(node->flags & MARKDOWN_CORE_NODE__OPEN);
     /* Block content accumulates physical lines. Keep its existing initial
-     * reservation, but acquire it when the first line writes bytes rather
-     * than when any block (including an empty container) is constructed.
+     * minimum reservation, but acquire enough for the complete first write
+     * rather than allocating a small buffer and immediately growing it.
+     * Empty blocks, including containers, never acquire this storage.
      * Producers of already delimited values use ordinary strbuf writes. */
     if (!markdown_core_strbuf_owns(&node->content) && (parser->partially_consumed_tab || ch->len > parser->offset)) {
-        markdown_core_strbuf_grow(&node->content, 32);
+        size_t initial = (size_t)(ch->len - parser->offset);
+        if (parser->partially_consumed_tab) {
+            initial += TAB_STOP - (parser->column % TAB_STOP) - 1;
+        }
+        /* Saturate only the conversion; strbuf owns the capacity limit and
+         * failure contract, including a tab expansion beyond that limit. */
+        markdown_core_strbuf_grow(&node->content, initial > INT32_MAX ? INT32_MAX
+                                                  : initial > 32      ? (bufsize_t)initial
+                                                                      : 32);
         if (node->content.oom) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return;
