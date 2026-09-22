@@ -2111,6 +2111,8 @@ static void strbuf_growth_preserves_termination(test_batch_runner *runner) {
         payload_fill_fresh = 1;
         markdown_core_strbuf buf;
         markdown_core_strbuf_init(&buf, initial[i]);
+        OK(runner, !buf.oom && !buf.size && buf.ptr[0] == 0,
+           "initialization itself establishes a terminated empty string");
         markdown_core_strbuf_grow(&buf, 64);
         OK(runner, !buf.oom && buf.ptr[0] == 0 && buf.size == 0,
            "fresh nonzero-filled storage is an empty terminated string");
@@ -2615,12 +2617,13 @@ static void node_reuse_initializes_the_active_record(test_batch_runner *runner) 
         void *record = dirty->as.data;
         OK(runner, !dirty->node_data_allocation, "the dirty record occupies retained cell storage");
         markdown_core_node_pool_release(&pool, dirty);
-        /* A released cell is retained by the pool. Poison its object storage,
-         * keeping only the free-list link that the pool owns while idle. */
+        /* A released cell is retained by the pool. Use a DIFFERENT poison
+         * from fresh allocations, so omitted initialization cannot compare
+         * equal by accident. Keep the pool's idle free-list link. */
         markdown_core_node *next = dirty->next;
-        memset(dirty, 0xa5, sizeof(*dirty));
+        memset(dirty, 0x5a, sizeof(*dirty));
         dirty->next = next;
-        memset(record, 0xa5, sizeof(markdown_core_list));
+        memset(record, 0x5a, sizeof(markdown_core_list));
         markdown_core_node *node = markdown_core_node_pool_new(&pool, cases[i].kind, NULL);
         markdown_core_node *control = markdown_core_node_new(cases[i].kind);
         OK(runner, node == dirty && control, "a dirty cell is reused for kind %d", cases[i].kind);
