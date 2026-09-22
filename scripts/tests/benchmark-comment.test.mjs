@@ -109,6 +109,8 @@ test("archives read only fixed JSON members without extracting or executing file
     execFileSync("zip", ["-q", "report.zip", "attributes.json", "untrusted.sh"], { cwd });
     const bytes = fs.readFileSync(path.join(cwd, "report.zip"));
     assert.deepEqual(readArchive(bytes, ["attributes.json"]), [attributes()]);
+    assert.throws(() => readArchive(bytes, ["attributes.json"], { archiveBytes: bytes.length - 1 }));
+    assert.throws(() => readArchive(bytes, ["attributes.json"], { memberBytes: 8 }));
     assert.throws(() => readArchive(bytes, ["stages.json"]));
     assert.throws(() => readArchive(Buffer.alloc(8 * 1024 * 1024 + 1), ["attributes.json"]));
     fs.writeFileSync(path.join(cwd, "attributes.json"), "x".repeat(16 * 1024 * 1024 + 1));
@@ -127,12 +129,14 @@ function fixture() {
         event: "pull_request",
         status: "completed",
         conclusion: "success",
-        pull_requests: []
+        created_at: "2026-09-22T12:00:00Z",
+        pull_requests: [{ number: 9 }]
     };
     const pr = {
         number: 9,
         state: "open",
-        base: { repo: { full_name: "nouprax/markdown-core" } },
+        created_at: "2026-09-22T11:00:00Z",
+        base: { sha: base, repo: { full_name: "nouprax/markdown-core" } },
         head: { sha: head, ref: "contribution", repo: { id: 100 } }
     };
     const state = {
@@ -144,9 +148,18 @@ function fixture() {
         writes: [],
         warnings: [],
         associated: [pr],
-        artifacts: ["stages", "attributes"].map((kind, id) => ({
+        inputs: {
+            version: 1,
+            repository: "nouprax/markdown-core",
+            event: "pull_request",
+            ref: "refs/pull/9/merge",
+            pullRequest: 9,
+            head,
+            base
+        },
+        artifacts: ["benchmark-report-stages-1", "benchmark-report-attributes-1", "ci-inputs"].map((name, id) => ({
             id,
-            name: `benchmark-report-${kind}-1`,
+            name,
             expired: false,
             size_in_bytes: 100
         })),
@@ -179,13 +192,17 @@ function fixture() {
                 payload: { workflow_run: run }
             },
             core: { warning: (message) => state.warnings.push(message) },
-            read: (bytes) => (bytes.toString() === "0" ? [stageReport(103), stageReport(100)] : [attributes()])
+            read: (bytes) => {
+                if (bytes.toString() === "2") return [state.inputs];
+                return bytes.toString() === "0" ? [stageReport(103), stageReport(100)] : [attributes()];
+            }
         });
     return state;
 }
 
 test("fork runs with empty PR metadata find the current PR through commit association", async () => {
     const state = fixture();
+    state.run.pull_requests = [];
     state.run.conclusion = "failure"; // A failed source budget still has results.
     await state.publish();
     assert.equal(state.writes.length, 1);
@@ -194,6 +211,115 @@ test("fork runs with empty PR metadata find the current PR through commit associ
     assert.match(state.writes[0].body, /2.0000×/);
     assert.match(state.writes[0].body, /CI status: \*\*failure\*\*/);
     assert.match(state.writes[0].body, /runs\/42\/attempts\/1/);
+});
+
+test("run PR identities exclude another PR with the same repository, branch and SHA", async () => {
+    const state = fixture();
+    state.run.pull_requests = [{ number: 8 }];
+    await state.publish();
+    assert.equal(state.writes.length, 0);
+});
+
+test("closing a PR and opening another never transfers the old benchmark", async () => {
+    for (const fork of [false, true]) {
+        const state = fixture();
+        if (fork) state.run.pull_requests = [];
+        state.pr.state = "closed";
+        state.current.number = 10;
+        state.current.created_at = "2026-09-22T12:01:00Z";
+        state.associated.push(state.current);
+        await state.publish();
+        assert.equal(state.writes.length, 0);
+        // Even an artifact claiming the new PR cannot authorize this write.
+        state.inputs.pullRequest = 10;
+        state.inputs.ref = "refs/pull/10/merge";
+        await state.publish();
+        assert.equal(state.writes.length, 0);
+    }
+});
+
+test("recorded inputs select only the triggering fork PR and its tested base", async () => {
+    const state = fixture();
+    state.run.pull_requests = [];
+    state.associated.push({ ...state.pr, number: 10, base: { ...state.pr.base, sha: head } });
+    await state.publish();
+    assert.equal(state.writes.length, 1);
+    assert.equal(state.writes[0].issue_number, 9);
+    state.writes.length = 0;
+    state.pr.base.sha = head;
+    await state.publish();
+    assert.equal(state.writes.length, 0);
+});
+
+test("base changes during publishing cannot receive the previous baseline's result", async () => {
+    for (const fork of [false, true]) {
+        const state = fixture();
+        if (fork) state.run.pull_requests = [];
+        state.current.base.sha = head;
+        await state.publish();
+        assert.equal(state.writes.length, 0);
+    }
+});
+
+test("mutable workflow PR metadata cannot replace the recorded tested base", async () => {
+    const state = fixture();
+    state.pr.base.sha = state.current.base.sha = head;
+    state.run.pull_requests[0].base = { sha: head };
+    await state.publish();
+    assert.equal(state.writes.length, 0);
+});
+
+test("unavailable or inconsistent input evidence fails closed without publishing", async () => {
+    for (const mutate of [
+        (s) => {
+            s.artifacts.pop();
+        },
+        (s) => {
+            s.artifacts[2].expired = true;
+        },
+        (s) => {
+            s.artifacts[2].size_in_bytes = 65537;
+        },
+        (s) => {
+            s.artifacts.push(s.artifacts[2]);
+        },
+        (s) => {
+            s.inputs.version = 2;
+        },
+        (s) => {
+            s.inputs.repository = "someone/else";
+        },
+        (s) => {
+            s.inputs.event = "push";
+        },
+        (s) => {
+            s.inputs.head = base;
+        },
+        (s) => {
+            s.inputs.base = "bad";
+        },
+        (s) => {
+            s.inputs.pullRequest = "9";
+        },
+        (s) => {
+            s.inputs.ref = "refs/pull/10/merge";
+        }
+    ]) {
+        const state = fixture();
+        mutate(state);
+        await state.publish();
+        assert.equal(state.writes.length, 0);
+        assert.equal(state.warnings.length, 1);
+    }
+});
+
+test("a report for another baseline is unavailable even if the PR inputs match", async () => {
+    const state = fixture();
+    state.inputs.base = state.pr.base.sha = state.current.base.sha = head;
+    await state.publish();
+    assert.match(state.writes[0].body, /Result unavailable/);
+    assert.doesNotMatch(state.writes[0].body, /0\/1 passed/);
+    assert.match(state.writes[0].body, /2.0000×/);
 });
 
 test("one bot-owned comment is updated, without editing a user's marker imitation", async () => {

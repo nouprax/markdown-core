@@ -241,9 +241,18 @@ its original commit and run link.
 Measurement runs have read-only permissions, including on fork PRs. The
 `workflow_run` publisher checks out only its default-branch commit, reads
 bounded JSON members without extracting or executing PR artifacts, and renders
-only validated counts and identifiers. PR association comes from GitHub's
-commit API, never an artifact-supplied PR number. It checks the current head,
-head repository, branch, open state and run attempt before writing, and will
+only validated counts and identifiers. Candidate PRs come from GitHub's commit
+association API, restricted to the triggering run's PR identities when present.
+A PR created after the run cannot receive its results, including for fork runs
+whose PR list is empty. The existing `ci-inputs` snapshot then narrows these
+candidates to the recorded PR number, merge ref, head and tested base; an
+artifact cannot nominate an unrelated PR. Missing or invalid input evidence
+prevents publication. This snapshot is necessary because historical run API
+responses can contain a PR's updated base rather than the base actually tested.
+The stage report's baseline must also equal that recorded base.
+
+Immediately before writing, the publisher rechecks the PR identity, current
+head and base, head repository, branch, open state and run attempt, and will
 not overwrite a newer run's bot-owned comment. The publisher must first exist
 on the default branch before GitHub can trigger it.
 

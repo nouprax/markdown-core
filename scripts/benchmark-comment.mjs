@@ -134,8 +134,8 @@ export function attributeSection(report) {
 
 // Never extract archive paths into the checkout or interpret report content as
 // commands. Read only fixed, bounded JSON members from a private temporary zip.
-export function readArchive(bytes, members) {
-    if (bytes.length > archiveLimit) throw new Error("Benchmark archive exceeds limit");
+export function readArchive(bytes, members, { archiveBytes = archiveLimit, memberBytes = reportLimit } = {}) {
+    if (bytes.length > archiveBytes) throw new Error("Benchmark archive exceeds limit");
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "benchmark-comment-"));
     try {
         const zip = path.join(temporary, "report.zip");
@@ -149,7 +149,7 @@ export function readArchive(bytes, members) {
             return JSON.parse(
                 execFileSync("unzip", ["-p", zip, member], {
                     encoding: "utf8",
-                    maxBuffer: reportLimit,
+                    maxBuffer: memberBytes,
                     timeout: 5000
                 })
             );
@@ -177,14 +177,21 @@ export async function publish({ github, context, core, read = readArchive }) {
         commit_sha: run.head_sha,
         per_page: 100
     });
-    const matches = (pr) =>
+    // Run membership binds same-head PRs to the triggering PR. Creation time
+    // also prevents a later replacement PR from inheriting a fork run whose
+    // pull_requests array is empty. Artifact metadata may only narrow these
+    // API-authorized candidates, never nominate an unrelated PR.
+    const triggering = new Set((run.pull_requests ?? []).map((pr) => pr.number));
+    const matchesRun = (pr) =>
         pr.state === "open" &&
+        (triggering.size === 0 || triggering.has(pr.number)) &&
+        Date.parse(pr.created_at) <= Date.parse(run.created_at) &&
         pr.base.repo.full_name === `${repo.owner}/${repo.repo}` &&
         pr.head.sha === run.head_sha &&
         pr.head.repo?.id === run.head_repository.id &&
         pr.head.ref === run.head_branch;
-    const pulls = associated.filter(matches);
-    if (!pulls.length) return;
+    const candidates = associated.filter(matchesRun);
+    if (!candidates.length) return;
 
     const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
         ...repo,
@@ -208,11 +215,51 @@ export async function publish({ github, context, core, read = readArchive }) {
             ))
     )
         return;
+
+    const readArtifact = async (name, members, limits = {}) => {
+        const matches = artifacts.filter((item) => item.name === name);
+        if (
+            matches.length !== 1 ||
+            matches[0].expired ||
+            !count(matches[0].size_in_bytes) ||
+            matches[0].size_in_bytes > (limits.archiveBytes ?? archiveLimit)
+        )
+            throw new Error("Missing, expired or oversized benchmark artifact");
+        const archive = await github.rest.actions.downloadArtifact({
+            ...repo,
+            artifact_id: matches[0].id,
+            archive_format: "zip"
+        });
+        return read(Buffer.from(archive.data), members, limits);
+    };
+    let inputs;
+    try {
+        [inputs] = await readArtifact("ci-inputs", ["inputs.json"], { archiveBytes: 65536, memberBytes: 16384 });
+        if (
+            inputs?.version !== 1 ||
+            inputs.repository !== `${repo.owner}/${repo.repo}` ||
+            inputs.event !== "pull_request" ||
+            inputs.head !== run.head_sha ||
+            !count(inputs.pullRequest) ||
+            inputs.ref !== `refs/pull/${inputs.pullRequest}/merge`
+        )
+            throw new Error("CI inputs do not identify the triggering PR snapshot");
+        digest(inputs.base, 40);
+    } catch (error) {
+        core.warning(`Cannot bind benchmark results to a PR: ${error.message}`);
+        return;
+    }
+    // Historical workflow API responses can contain the PR's current base.
+    // The existing input evidence records the actual tested merge's parent.
+    const matches = (pr) => matchesRun(pr) && pr.number === inputs.pullRequest && pr.base.sha === inputs.base;
+    const pulls = candidates.filter(matches);
+    if (!pulls.length) return;
+
     const sections = [];
     for (const { kind, title, job: jobName, members, render } of measurements) {
         const job = jobs.find((item) => item.name === jobName);
-        const matches = artifacts.filter((item) => item.name === `benchmark-report-${kind}-${job?.run_attempt}`);
-        if (job?.conclusion === "skipped" && !matches.length) {
+        const artifactName = `benchmark-report-${kind}-${job?.run_attempt}`;
+        if (job?.conclusion === "skipped" && !artifacts.some((item) => item.name === artifactName)) {
             sections.push(`### ${title}\n\nMeasurement skipped. See the run logs for the preflight decision.`);
             continue;
         }
@@ -220,19 +267,11 @@ export async function publish({ github, context, core, read = readArchive }) {
             if (job?.status !== "completed" || !count(job.run_attempt) || job.run_attempt > run.run_attempt) {
                 throw new Error("Measurement job is missing or belongs to another attempt");
             }
-            if (
-                matches.length !== 1 ||
-                matches[0].expired ||
-                !count(matches[0].size_in_bytes) ||
-                matches[0].size_in_bytes > archiveLimit
-            )
-                throw new Error("Missing, expired or oversized benchmark artifact");
-            const archive = await github.rest.actions.downloadArtifact({
-                ...repo,
-                artifact_id: matches[0].id,
-                archive_format: "zip"
-            });
-            sections.push(render(...read(Buffer.from(archive.data), members)));
+            const reports = await readArtifact(artifactName, members);
+            if (kind === "stages" && reports[1]?.revision !== inputs.base) {
+                throw new Error("Stage baseline differs from the tested PR base");
+            }
+            sections.push(render(...reports));
         } catch (error) {
             core.warning(`Could not read ${kind} benchmark: ${error.message}`);
             sections.push(`### ${title}\n\nResult unavailable. See the run logs and artifacts.`);
@@ -263,7 +302,7 @@ export async function publish({ github, context, core, read = readArchive }) {
         )
             continue;
         // Refresh after downloads so an old completion cannot overwrite a
-        // newer head or a report belonging to a newer attempt of the same run.
+        // newer PR snapshot (including base) or a newer attempt of the same run.
         const { data: latest } = await github.rest.actions.getWorkflowRun({ ...repo, run_id: run.id });
         const { data: current } = await github.rest.pulls.get({ ...repo, pull_number: pr.number });
         if (!matches(current) || latest.run_attempt !== run.run_attempt || latest.status !== "completed") continue;
