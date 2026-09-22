@@ -140,8 +140,8 @@ typedef union {
 
 /* Room for a kind's record inside the cell. The bound is a property of the
  * cell, not of any kind: a record that fits is placed here, and one that does
- * not is owned through `node_data_allocation` exactly as a replacement record
- * is, so the release path has one rule for both. Sixty-four bytes hold every
+ * not is owned through `node_data_allocation`. Construction and conversion
+ * use this same capacity and ownership rule. Sixty-four bytes hold every
  * record but the metadata fields and a cross transclusion's, which are one
  * per document and rare. */
 #define MARKDOWN_CORE_NODE_CELL_RECORD_BYTES 64
@@ -180,19 +180,21 @@ static void S_slab_drop(markdown_core_node_slab *slab) {
     }
 }
 
-/* A zeroed cell, or NULL. The pool's released cells come first, then the
+/* Uninitialized cell storage, or NULL. The pool's released cells come first, then the
  * current slab, then a new one; the pool holds the slab it takes from, so a
  * release that empties it cannot free it out from under the pool. A NULL
  * pool takes one cell from the allocator, with no slab.
  *
- * A slab is taken uninitialised and each cell is zeroed as it is handed out,
- * whether it is fresh or reused: one path, and the bytes are cleared right
- * before they are written rather than a slab ahead. Clearing whole slabs
- * through `calloc` cost more than the allocations it replaced. */
+ * The constructor initializes the node and its active record after taking
+ * the cell. Spare record capacity is storage, not an object to initialize. */
 static markdown_core_node_cell *S_cell_take(markdown_core_node_pool *pool) {
     markdown_core_node_cell *cell;
     if (!pool) {
-        return (markdown_core_node_cell *)markdown_core_alloc(1, sizeof(*cell));
+        cell = markdown_core_realloc(NULL, sizeof(*cell));
+        if (cell) {
+            cell->header.slab = NULL;
+        }
+        return cell;
     }
     if (pool->released) {
         markdown_core_node *node = pool->released;
@@ -214,7 +216,6 @@ static markdown_core_node_cell *S_cell_take(markdown_core_node_pool *pool) {
         cell->header.slab = pool->current;
         pool->current->head.holds++;
     }
-    memset(&cell->node, 0, sizeof(*cell) - offsetof(markdown_core_node_cell, node));
     return cell;
 }
 
@@ -313,14 +314,17 @@ static void S_init_node_as(markdown_core_node_type type, markdown_core_node_data
 
 markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, markdown_core_node_type type,
                                                 const markdown_core_element *element) {
-    /* Construction gives the node and its record one cell, when the record
-     * fits; the cell is zeroed, so every field of `content` but `ptr` already
-     * holds what an init would write. */
+    /* Only the active record is an object. Clear it together with the node,
+     * including any alignment gap, whether the cell is fresh or reused.
+     * An external record is initialized by its own allocation below. */
     size_t payload_size = S_node_payload_size(type);
     markdown_core_node_cell *cell = S_cell_take(pool);
     if (!cell) {
         return NULL;
     }
+    size_t inline_size = payload_size <= MARKDOWN_CORE_NODE_CELL_RECORD_BYTES ? payload_size : 0;
+    memset(&cell->node, 0,
+           offsetof(markdown_core_node_cell, record) - offsetof(markdown_core_node_cell, node) + inline_size);
     markdown_core_node *node = &cell->node.node;
     if (payload_size > MARKDOWN_CORE_NODE_CELL_RECORD_BYTES) {
         node->node_data_allocation = markdown_core_alloc(1, payload_size);
@@ -407,8 +411,8 @@ static void free_node_as(markdown_core_node *node) {
     default:
         break;
     }
-    /* Free only the record this node owns separately: a replacement a kind
-     * change installed, or an initial record too large for the cell. Pointer
+    /* Free only a record too large for the cell, whether construction or a
+     * kind change installed it. Pointer
      * equality cannot establish ownership: an allocator may place a
      * replacement right after a cell. Almost no node owns one, so the release
      * is entered only when there is one. */
@@ -538,20 +542,25 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
         return MARKDOWN_CORE_NODE_SET_KIND_REJECTED;
     }
 
-    /* Allocate before releasing anything. A failed conversion preserves the
-     * old kind, data, and owned subtrees, with stable node identity. */
+    /* Reserve any external replacement before releasing anything. A record
+     * that fits already has storage in the node's cell; initializing it after
+     * the old fields are destroyed cannot fail. Both cases keep the node's
+     * address, and an allocation refusal preserves all old owned values. */
     size_t size = S_node_payload_size(kind);
-    markdown_core_node_data replacement = {.data = size ? markdown_core_alloc(1, size) : NULL};
-    if (size && !replacement.data) {
+    void *allocation = size > MARKDOWN_CORE_NODE_CELL_RECORD_BYTES ? markdown_core_alloc(1, size) : NULL;
+    if (size > MARKDOWN_CORE_NODE_CELL_RECORD_BYTES && !allocation) {
         return MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED;
     }
-    S_init_node_as(kind, &replacement);
     markdown_core_node fields = {0};
     S_splice_owned_fields(node, &fields);
     S_free_nodes(NULL, fields.next);
     free_node_as(node);
-    node->as = replacement;
-    node->node_data_allocation = replacement.data;
+    node->as.data = allocation ? allocation : size ? S_cell_of(node)->record : NULL;
+    node->node_data_allocation = allocation;
+    if (!allocation && size) {
+        memset(node->as.data, 0, size);
+    }
+    S_init_node_as(kind, &node->as);
     node->kind = (uint16_t)kind;
     return MARKDOWN_CORE_NODE_SET_KIND_OK;
 }

@@ -129,7 +129,10 @@ a global postprocess pass receives the root after its walk completes. A step
 that declares the kinds it acts on reads that gate at each event it is asked
 at, since a kind's first node may be made by the walk itself. A Text sibling that consolidation
 absorbs is completed by consolidation before it is read, since its ENTER is
-stepped over. The document's finalization -- footnote and specimen ownership,
+stepped over. Both paths use the parser's projected finish-kind completion
+plan, with kind completion before document observation at the inherited word
+depth; consolidation does not reinterpret the absorbed Text's element.
+The document's finalization -- footnote and specimen ownership,
 heading anchors -- follows the walk and reads the finished tree. Field order and inherited script depth are retained,
 and a phase rewrites each root in place: a field root is the node its owner put
 there and no phase substitutes another for it. Definition families start

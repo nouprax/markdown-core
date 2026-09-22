@@ -74,7 +74,8 @@ static markdown_core_node *make_block(markdown_core_parser *parser, markdown_cor
     if (!e) {
         return NULL;
     }
-    markdown_core_strbuf_grow(&e->content, 32);
+    /* Empty content borrows the strbuf sentinel. Only writing content takes
+     * storage; containers and empty leaves need no separate allocation. */
     e->flags = MARKDOWN_CORE_NODE__OPEN;
     e->start_line = start_line;
     e->start_column = start_column;
@@ -425,6 +426,26 @@ void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk 
     int chars_to_tab;
     int i;
     assert(node->flags & MARKDOWN_CORE_NODE__OPEN);
+    /* Block content accumulates physical lines. Keep its existing initial
+     * minimum reservation, but acquire enough for the complete first write
+     * rather than allocating a small buffer and immediately growing it.
+     * Empty blocks, including containers, never acquire this storage.
+     * Producers of already delimited values use ordinary strbuf writes. */
+    if (!markdown_core_strbuf_owns(&node->content) && (parser->partially_consumed_tab || ch->len > parser->offset)) {
+        size_t initial = (size_t)(ch->len - parser->offset);
+        if (parser->partially_consumed_tab) {
+            initial += TAB_STOP - (parser->column % TAB_STOP) - 1;
+        }
+        /* Saturate only the conversion; strbuf owns the capacity limit and
+         * failure contract, including a tab expansion beyond that limit. */
+        markdown_core_strbuf_grow(&node->content, initial > INT32_MAX ? INT32_MAX
+                                                  : initial > 32      ? (bufsize_t)initial
+                                                                      : 32);
+        if (node->content.oom) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return;
+        }
+    }
     /* Indentation stripped ahead of the content belongs to the CONTAINER that
      * stripped it, not to the block being written into -- the same rule the
      * block openers follow, and for the same reason: a block begins at its own
@@ -982,14 +1003,21 @@ static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
  * it holds in a register; this form is for the sibling consolidation absorbs
  * at a Text's EXIT, whose ENTER is stepped over, so consolidation completes
  * it first (iterator.h). */
-static void complete_inline_node(markdown_core_parser *parser, markdown_core_node *node, int script_depth) {
-    const markdown_core_element *structure = markdown_core_node_structure(node);
-    if (structure && structure->complete_inline) {
-        structure->complete_inline(parser, node, script_depth);
+static inline void complete_inline_from_plan(markdown_core_parser *parser, markdown_core_node *node,
+                                             const markdown_core_finish_kind *plan, int script_depth,
+                                             void (*observe)(markdown_core_parser *, markdown_core_node *)) {
+    if (plan->complete) {
+        plan->complete(parser, node, script_depth);
     }
-    if (parser->document_structure->observe_inline) {
-        parser->document_structure->observe_inline(parser, node);
+    if (observe) {
+        observe(parser, node);
     }
+}
+
+static void complete_consolidated_text(markdown_core_parser *parser, markdown_core_node *node, int script_depth) {
+    assert(node->kind == MARKDOWN_CORE_NODE_TEXT);
+    complete_inline_from_plan(parser, node, &parser->finish_kinds[MARKDOWN_CORE_FINISH_TEXT_INDEX], script_depth,
+                              parser->document_structure->observe_inline);
 }
 
 /* The steps projected for one event, in descriptor order, each behind its
@@ -1158,7 +1186,7 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
                 result = MARKDOWN_CORE_FINISH_CONTINUE;
                 if (index == MARKDOWN_CORE_FINISH_TEXT_INDEX && markdown_core_text_needs_consolidation(node)) {
                     result = markdown_core_consolidate_text_step(parser, iter, node, &walk.scratch,
-                                                                 complete_inline_node, frame->script_depth);
+                                                                 complete_consolidated_text, frame->script_depth);
                 }
                 if (result == MARKDOWN_CORE_FINISH_CONTINUE && dispatch[2 * index + 1]) {
                     result =
@@ -1197,12 +1225,7 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
                     break;
                 }
             }
-            if (facts->complete) {
-                facts->complete(parser, node, frame->script_depth);
-            }
-            if (observe) {
-                observe(parser, node);
-            }
+            complete_inline_from_plan(parser, node, facts, frame->script_depth, observe);
             /* The field roots, of a kind that owns them through its record
              * or of an element that owns them through its hook: the answer is
              * no for almost every node, and it is one flag and one load. */

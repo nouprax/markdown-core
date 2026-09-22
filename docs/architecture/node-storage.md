@@ -7,8 +7,8 @@ kind-specific fields has no data record. Field-bearing kinds own a
 record containing their ordinary typed fields. Construction places the node
 and its record together in one cell, with the typed pointer referring directly
 to that record; a record larger than the cell's record space is owned apart
-from the cell through `node_data_allocation`, exactly as a replacement record
-is, so release has one rule for both. A C99 union provides scalar alignment
+from the cell through `node_data_allocation`. Kind conversion uses the same
+capacity and ownership rule. A C99 union provides scalar alignment
 for the node and the record; the cell's header before them is padded to the
 same alignment, and that padding is included in measured memory costs.
 
@@ -22,7 +22,7 @@ and nothing else about the storage is visible through the node.
 
 A slab lives while anything holds it: every cell taken from it, and the pool
 while that slab is the one it takes cells from. A cell released during the
-parse goes back to the pool and is handed out again, zeroed, before another
+parse goes back to the pool and is handed out again, initialized, before another
 cell is taken from a slab, so the storage a parse holds is bounded by its peak
 live node count rather than by how many nodes it made. A cell released with no
 pool drops its hold, and the slab is freed with its last one -- by whichever
@@ -43,6 +43,23 @@ It takes one cell for the node and its kind's record, establishes defaults,
 and only then exposes the node. Failure releases all acquired storage; a slab
 that cannot be allocated refuses the node and leaves the pool usable.
 Node data and its strings use the library's allocator.
+
+Initialization clears the whole node and exactly the active inline record
+(including the alignment gap before it). Spare record capacity has no live
+object and is not read or initialized. Records larger than the cell's capacity
+are separately zero-allocated. Fresh, recycled and standalone cells use this
+same constructor; the pool's slab header remains outside object initialization.
+
+An empty node's content borrows the strbuf sentinel. Creating a block does not
+reserve content storage; the first write acquires it through the ordinary
+buffer growth operation. The streaming line writer acquires the former
+32-byte minimum reservation on its first nonempty append, reserving the whole
+write (including any partial-tab expansion) in one growth; producers of already
+delimited values continue to use ordinary writes through the same strbuf API.
+This preserves the established streaming growth policy without allocating
+for blocks that never receive content. Successful growth always establishes `ptr[size] == 0`,
+including the first allocation, which cannot copy the sentinel's NUL byte.
+Failed growth preserves the old storage and terminated value and records OOM.
 
 `CrossLink` stores a `markdown_core_cross_reference` record containing its raw
 path, optional anchor, and optional label. `CrossEmbedded` stores a
@@ -92,14 +109,16 @@ A source-boundary audit keeps arbitrary reparenting out of parser construction;
 regression inputs vary nesting depth and autolink count independently.
 
 Kind conversion preserves node identity and tree links. After containment
-validation, it allocates a replacement record before releasing the old fields.
-The original record shares the node's cell and is reclaimed with the
-node, unless it did not fit the cell; that record, and every replacement
-record, is freed when replaced or when the node dies.
+validation, it reserves an external replacement before releasing the old
+fields if the new record exceeds cell capacity. A record that fits already
+has storage: the conversion releases the old fields, zeroes the new active
+record in the cell, establishes defaults and commits the new kind. These last
+operations cannot fail and never overwrite a still-live old field. The old
+record is freed only when it was external; cell storage stays with the node.
 The typed view and allocation ownership are explicit: `as` points to the
 current record, while `node_data_allocation` owns whichever record is not in
-the cell, if any: a replacement, or an initial record too large for the cell's
-record space. Ownership is never inferred by comparing potentially adjacent
+the cell, if any, because it exceeds the cell's record space. Ownership is
+never inferred by comparing potentially adjacent
 addresses.
 `markdown_core_node_set_kind` distinguishes containment rejection from allocation
 failure. Parser callers decline rejected conversions and set the OOM flag only
@@ -114,10 +133,10 @@ fields of one data record throughout parsing. Converting a closed HTML comment
 to Comment transfers its owned literal only after the new record can be
 created. Setext headings also use the shared kind conversion operation.
 
-Construction and kind conversion have different ownership constraints: an
-unpublished node and its initial record can share a cell, while a
-replacement record must preserve the existing node's address. All kinds use
-these same lifecycle rules. No per-kind pools, packed field offsets, or
+Construction and kind conversion use one record capacity/ownership model.
+Their initialization order differs because conversion must destroy the old
+fields before reusing their bytes, while construction has no old live fields.
+All kinds use these same lifecycle rules. No per-kind pools, packed field offsets, or
 cardinality-dependent storage paths are needed. Benchmarks measure parse time,
 allocation work, and memory independently of the deterministic layout tests.
 

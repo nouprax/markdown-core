@@ -25,6 +25,32 @@ node scripts/benchmark-stages.mjs
 The driver builds all three engines, runs them under callgrind, and writes
 `build/benchmark-stages/stages.md`, `stages.json`, and the raw dumps.
 
+An existing artifact can also be aggregated without rerunning the experiment:
+
+```sh
+node scripts/report-performance.mjs build/benchmark-stages build/performance-census
+```
+
+For an artifact measured with `--baseline-ref`, select its baseline explicitly:
+
+```sh
+node scripts/report-performance.mjs build/benchmark-stages build/baseline-census --baseline
+```
+
+The input remains the complete artifact directory. Baseline Core profiles live
+under `baseline/`, while the reference profiles belong to the whole experiment
+and are measured once. The reporter checks the paired reports' revision,
+document/proof identity, runtime, reference binaries and shared measurements
+before combining them; it does not search other directories for missing data.
+
+This writes a Markdown census and a JSON accounting ledger: the same-input
+reference cohort excludes unmatched fields; proved domains and reviewed
+boundaries remain separate. It accepts `--case` subset artifacts and omits
+contracts whose required documents were not measured. Whole-program self and
+allocator self include the harness and must not be subtracted from parse-edge
+costs. The complete parse lifecycle edge includes document teardown, while the
+two stages below do not.
+
 ## The two stages
 
 A parse has two paths worth optimizing separately, and they have different
@@ -43,10 +69,11 @@ grow one for this: it parses one complete buffer per call, and the stage split
 is read afterwards out of the recorded call graph.
 
 Parser allocation, dialect attachment, element discovery, and tree release are
-outside both stages. They are fixed cost that no document-size argument applies
-to, so folding them in would produce a number that looks like parsing and
-isn't. They are worth measuring — see the empty-input allocation counts in the
-C API tests — but not here.
+outside both stages. Their scaling differs: setup has a per-transaction cost,
+while tree release scales with the owned nodes and values. The complete
+parse-path count includes both; keeping it alongside the stages makes those
+lifecycle costs visible. Empty-input allocation counts in the C API tests
+cover the setup boundary separately.
 
 What that exclusion costs is itself measured rather than asserted: the report
 states the share of each engine's whole parse path the two stages cover. A

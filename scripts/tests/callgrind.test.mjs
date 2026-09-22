@@ -116,3 +116,34 @@ test("a cost line shorter than the event list counts the rest as zero", () => {
     const profile = parseCallgrind("events: Ir Dr Dw\nfn=solo\n1 42\n");
     assert.deepEqual(costRecord(profile, profile.self.get("solo")), { Ir: 42, Dr: 0, Dw: 0 });
 });
+
+test("source attribution follows inline files without assigning callee costs to callers", () => {
+    const profile = parseCallgrind(`events: Ir Dr Dw
+fl=(1) node.c
+fn=(1) make_node
+1 10 2 3
+fi=(2) inline.h
+2 20 4 5
+cfi=(3) allocator.c
+cfn=(2) allocate
+calls=1 10
+* 100 30 40
+* 30 6 7
+fe=(1)
+3 40 8 9
+fl=(3)
+fn=(2)
+10 100 30 40
+`);
+    assert.deepEqual(profile.selfByFile.get("node.c"), [50, 10, 12]);
+    assert.deepEqual(profile.selfByFile.get("inline.h"), [50, 10, 12]);
+    assert.deepEqual(profile.selfByFile.get("allocator.c"), [100, 30, 40]);
+    assert.equal(
+        [...profile.selfByFile.values()].reduce((sum, cost) => sum + cost[0], 0),
+        200
+    );
+    assert.equal(
+        [...profile.self.values()].reduce((sum, cost) => sum + cost[0], 0),
+        200
+    );
+});

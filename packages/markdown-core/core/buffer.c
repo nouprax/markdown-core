@@ -85,6 +85,9 @@ void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size)
     }
     buf->ptr = new_ptr;
     buf->asize = new_size;
+    /* The sentinel's terminator is not copied by realloc(NULL, ...). Growth
+     * establishes the same string invariant for empty and nonempty buffers. */
+    buf->ptr[buf->size] = '\0';
 }
 
 bufsize_t markdown_core_strbuf_len(const markdown_core_strbuf *buf) { return buf->size; }

@@ -244,8 +244,8 @@ typedef struct {
 
 /* Every arm points to the kind's ordinary typed record. Construction places
  * the record after an aligned node allocation header; a kind with no fields
- * has no record. Retyping keeps node identity stable and installs a separately
- * allocated replacement. The common node layout never depends on record size. */
+ * has no record. Retyping keeps node identity stable and reuses cell capacity
+ * or owns an external record. The common node layout never depends on record size. */
 typedef union {
     void *data;
     markdown_core_chunk *literal;
@@ -298,8 +298,8 @@ struct markdown_core_node {
      * opaque_free_func. It survives kind changes independently of `as`. */
     void *opaque;
 
-    /* Owns a replacement record, when present. The initial record belongs to
-     * the node allocation instead. `as` is the typed view in either case. */
+    /* Owns a record too large for the cell, whether installed at construction
+     * or conversion. `as` is the typed view for either backing. */
     void *node_data_allocation;
     markdown_core_node_data as;
 };
