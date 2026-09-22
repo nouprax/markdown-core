@@ -125,6 +125,34 @@ ranges; disposal releases capacity. Column and dash views store offsets into
 their vectors, never pointers that a later reservation can invalidate.
 Table AST columns are copied into document-owned storage at commitment.
 
+Captured lines also retain the horizontal-border result for their immutable
+whole-line extent, from first nonspace to the last nonspace byte. Opening,
+suffix-failure publication, head/footer discovery and region construction
+consume that one fact. Subintervals still use the same exact border scanner:
+alignment colons and partial walls mean that whole-line validity cannot prove
+cell-interval validity. The fact is reset with the captured line, never shared
+across a different container prefix or query. Its byte work is counted only
+when the scanner runs; wide, multicolumn and spanning tests bound it by one
+whole extent per line plus the actual interior cell intervals.
+
+Every table-candidate entry uses the same raw-source necessary-condition gate
+before replaying lookahead. Grid and separator openers are admitted from the
+current line; headed simple and pipe forms require respectively two dash runs
+or one in the immediate physical successor. Container continuation can strip
+a prefix but cannot add or split dash runs. The indexed physical extent keeps
+CR, CRLF and unterminated EOF consistent with ordinary input. Caption handling
+and pipe eligibility remain explicit grammar decisions; admission grants no
+recognition or containment result. The definition-precedence caption query
+therefore rejects impossible candidates without replaying the successor, while
+all actual table grammars retain priority over a definition body.
+Admission and recognition have distinct lifetimes: the ordinary opener admits
+borrowed input before acquiring a workspace, whereas a caption admits a line
+already captured by its query. Each then enters the same admitted-candidate
+recognizer. Replaying admission there would rescan the ordinary opener's raw
+successor and is forbidden by the per-document Source regression gate.
+The shared predicate is inline in both entry points, so sharing its grammar
+does not add a per-candidate call transporting already-loaded source geometry.
+
 The grid frontier remains proportional to width and closed regions to output.
 There is no rows-by-width dense grid. Stable source ordering shares one radix
 workspace across table regions, headings, footnotes, and specimens. Its space

@@ -135,14 +135,11 @@ static int set_formula_literal_bytes(markdown_core_node *node, const unsigned ch
     formula->literal.alloc = 0;
     if (!markdown_core_chunk_to_cstr(&formula->literal)) {
         /* THE BORROW MUST NOT SURVIVE THE COPY FAILING. `data` belongs to the
-         * caller and dies immediately: `make_backslash_delimited_formula` frees
-         * its strbuf on the next statement, `replace_with_formula_block` frees
-         * the whole old code block, and `finish_step` clears the node's own
-         * content. Keeping a borrowed pointer past that is a use-after-free that
-         * every later read of the literal walks into -- ASan: heap-use-after-free
-         * in markdown_core_elements_get_formula_literal -- and `parser->error`
-         * stayed 0, so nothing downstream knew. Drop the borrow and say so; the
-         * callers turn the 0 into the loss flag. */
+         * caller and dies immediately: `make_formula_span` frees
+         * its temporary strbuf after constructing the leaf. Keeping a borrowed pointer past that is a use-after-free
+         * that every later read of the literal walks into -- ASan: heap-use-after-free in
+         * markdown_core_elements_get_formula_literal -- and `parser->error` stayed 0, so nothing downstream knew. Drop
+         * the borrow and say so; the callers turn the 0 into the loss flag. */
         markdown_core_chunk empty = MARKDOWN_CORE_CHUNK_EMPTY;
         formula->literal = empty;
         return 0;
@@ -150,17 +147,34 @@ static int set_formula_literal_bytes(markdown_core_node *node, const unsigned ch
     return 1;
 }
 
-static int set_formula_literal_trimmed(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
-    while (len > 0 && markdown_core_isspace(data[0])) {
-        data++;
-        len--;
+/* A literal's storage follows its semantic owner. Trimming an owned chunk
+ * compacts in place and preserves its allocation base/NUL invariant. Borrowed
+ * chunks acquire ownership before any mutation, leaving the old view intact
+ * on allocation failure. */
+static int own_trimmed_literal(markdown_core_chunk *literal) {
+    bufsize_t from = 0;
+    bufsize_t end = literal->len;
+    while (from < end && markdown_core_isspace(literal->data[from])) {
+        from++;
     }
-
-    while (len > 0 && markdown_core_isspace(data[len - 1])) {
-        len--;
+    while (end > from && markdown_core_isspace(literal->data[end - 1])) {
+        end--;
     }
-
-    return set_formula_literal_bytes(node, data, len);
+    bufsize_t length = end - from;
+    if (literal->alloc) {
+        if (from && length) {
+            memmove(literal->data, literal->data + from, length);
+        }
+        literal->data[length] = 0;
+        literal->len = length;
+    } else {
+        markdown_core_chunk owned = {literal->data ? literal->data + from : NULL, length, 0};
+        if (!markdown_core_chunk_to_cstr(&owned)) {
+            return 0;
+        }
+        *literal = owned;
+    }
+    return 1;
 }
 
 static int is_line_end(const unsigned char *data, bufsize_t len, bufsize_t pos) {
@@ -286,19 +300,46 @@ static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, mar
 static int scan_formula_closer(const unsigned char *data, int length, int at, markdown_core_delimiter_rule rule,
                                bool *closes);
 
+static markdown_core_node *make_formula_span(const markdown_core_element *element, markdown_core_parser *parser,
+                                             markdown_core_inline_state *inline_state, markdown_core_node *parent,
+                                             markdown_core_delimiter_rule rule, bufsize_t start, bufsize_t from,
+                                             bufsize_t close, bufsize_t end);
+
+static bool formula_body_admitted(markdown_core_delimiter_rule rule, const unsigned char *body, bufsize_t len) {
+    return rule != FORMULA_DELIM_DOLLAR_INLINE || !len || body[0] != '`' || (len >= 2 && body[len - 1] == '`');
+}
+
 static markdown_core_node *match_formula_delimiter(const markdown_core_element *self, markdown_core_parser *parser,
-                                                   markdown_core_inline_state *inline_state,
+                                                   markdown_core_node *parent, markdown_core_inline_state *inline_state,
                                                    markdown_core_delimiter_rule rule, bufsize_t len, int can_open,
                                                    int can_close) {
     if (can_open) {
-        int from = markdown_core_inline_state_get_offset(inline_state) + len;
+        int start = markdown_core_inline_state_get_offset(inline_state);
+        int from = start + len;
         int close = markdown_core_inline_state_find_opaque_close(inline_state, rule, from, scan_formula_closer);
         markdown_core_chunk *input = markdown_core_inline_state_get_chunk(inline_state);
-        if (close >= 0 && (rule != FORMULA_DELIM_DOLLAR_INLINE || input->data[from] != '`' ||
-                           (close - from >= 2 && input->data[close - 1] == '`'))) {
+        if (close >= 0 && formula_body_admitted(rule, input->data + from, close - from)) {
+            /* A dynamic parent's policy is observed at delimiter reduction, in
+             * source order with other deferred replacements. Keep that lifetime
+             * (and exactly one policy decision) rather than asking early and
+             * asking again in the token dispatcher. Fixed owners need no such
+             * deferred transaction: this opaque production is already complete. */
+            if (!(parent->element && parent->element->can_contain_func) &&
+                markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_FORMULA)) {
+                markdown_core_node *formula =
+                    make_formula_span(self, parser, inline_state, parent, rule, start, from, close, close + len);
+                if (formula) {
+                    markdown_core_inline_state_set_offset(inline_state, close + len);
+                }
+                return formula;
+            }
             markdown_core_inline_state_set_opaque_body_end(inline_state, close);
         }
     }
+    /* A rejected backtick-body candidate is ordinary inline grammar. Its
+     * lexical closer can be hidden by a code span or bracket scope, so retain
+     * the alternating delimiter state until that grammar resolves the range.
+     * Both recognized and deferred pairs use the same literal constructor. */
     markdown_core_node *node = make_delimiter_text(parser, inline_state, len);
 
     if (!node) {
@@ -406,12 +447,13 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     if (character == '$') {
         if (scan_formula_dollar_display_open(chunk->data, len, offset)) {
             open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_DOLLAR_DISPLAY);
-            return match_formula_delimiter(element, parser, inline_state, FORMULA_DELIM_DOLLAR_DISPLAY, 2, !open, open);
+            return match_formula_delimiter(element, parser, parent, inline_state, FORMULA_DELIM_DOLLAR_DISPLAY, 2,
+                                           !open, open);
         }
 
         if (scan_formula_dollar_inline_open(chunk->data, len, offset)) {
             open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_DOLLAR_INLINE);
-            return match_formula_delimiter(element, parser, inline_state, FORMULA_DELIM_DOLLAR_INLINE, 1,
+            return match_formula_delimiter(element, parser, parent, inline_state, FORMULA_DELIM_DOLLAR_INLINE, 1,
                                            !open && dollar_inline_can_open(chunk, (bufsize_t)offset),
                                            open && dollar_inline_can_close(chunk, (bufsize_t)offset));
         }
@@ -419,28 +461,28 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
         opener_len = scan_formula_latex_backslash_display_open(chunk->data, len, offset);
         if (opener_len) {
             open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY);
-            return match_formula_delimiter(element, parser, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+            return match_formula_delimiter(element, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
                                            opener_len, !open, 0);
         }
 
         opener_len = scan_formula_latex_backslash_inline_open(chunk->data, len, offset);
         if (opener_len) {
             open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE);
-            return match_formula_delimiter(element, parser, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
+            return match_formula_delimiter(element, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
                                            opener_len, !open, 0);
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ']', 2);
         if (closer_len &&
             markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY)) {
-            return match_formula_delimiter(element, parser, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+            return match_formula_delimiter(element, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
                                            closer_len, 0, 1);
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ')', 2);
         if (closer_len &&
             markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE)) {
-            return match_formula_delimiter(element, parser, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
+            return match_formula_delimiter(element, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
                                            closer_len, 0, 1);
         }
     }
@@ -545,49 +587,23 @@ static markdown_core_node *make_formula_node(const markdown_core_element *elemen
     return node;
 }
 
-/* The pair is built here, at the pairing, from the bytes between the two
- * runs: the backslash forms unescape their own closer, `` $`...`$ `` drops the
- * backticks it matched, and every form applies the padding rule. Each body is
- * read once, because `match` lets one formula of a form open at a time and
- * so no pair ever spans another of its form. */
-static void insert_formula(const markdown_core_element *element, markdown_core_parser *parser,
-                           markdown_core_inline_state *inline_state, delimiter *opener, delimiter *closer) {
+/* Construct one opaque production from its recognized source extent. The
+ * deferred ordinary-grammar fallback uses exactly the same decoding and scope
+ * operation after its delimiters have resolved. */
+static markdown_core_node *make_formula_span(const markdown_core_element *element, markdown_core_parser *parser,
+                                             markdown_core_inline_state *inline_state, markdown_core_node *parent,
+                                             markdown_core_delimiter_rule rule, bufsize_t start, bufsize_t from,
+                                             bufsize_t close, bufsize_t end) {
     markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
-    markdown_core_node *opener_node = markdown_core_delimiter_node(opener);
-    markdown_core_node *closer_node = markdown_core_delimiter_node(closer);
-    markdown_core_node *formula;
-    markdown_core_delimiter_rule rule = markdown_core_delimiter_rule_of(opener);
     markdown_core_formula_mode mode = mode_for_delim(rule);
-    bufsize_t body_start = markdown_core_delimiter_position(opener);
-    bufsize_t body_end = markdown_core_delimiter_position(closer) - markdown_core_delimiter_length(closer);
-    const unsigned char *body = chunk->data + body_start;
-    bufsize_t body_len = body_end - body_start;
-    markdown_core_strbuf unescaped;
-
-    if (rule != markdown_core_delimiter_rule_of(closer)) {
-        goto done;
-    }
-
-    if (markdown_core_delimiter_length(opener) != markdown_core_delimiter_length(closer) && is_backslash_delim(rule)) {
-        goto done;
-    }
-
-    /* `` $`...`$ ``: a body that opens with a backtick must close with one. */
+    const unsigned char *body = chunk->data + from;
+    bufsize_t body_len = close - from;
+    markdown_core_strbuf unescaped = MARKDOWN_CORE_BUF_INIT();
     if (rule == FORMULA_DELIM_DOLLAR_INLINE && body_len > 0 && body[0] == '`') {
-        if (body_len < 2 || body[body_len - 1] != '`') {
-            goto done;
-        }
+        assert(body_len >= 2 && body[body_len - 1] == '`');
         body++;
         body_len -= 2;
     }
-
-    /* Only recognized syntax asks the parent for a containment decision;
-     * that decision authorizes the attachment after allocation. */
-    if (!opener_node->parent || !markdown_core_node_can_contain_type(opener_node->parent, MARKDOWN_CORE_NODE_FORMULA)) {
-        goto done;
-    }
-
-    markdown_core_strbuf_init(&unescaped, 0);
     if (is_backslash_delim(rule)) {
         unsigned char close_char = mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE ? ']' : ')';
         bufsize_t i = 0;
@@ -595,40 +611,50 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
             if (body[i] == '\\' && i + 1 < body_len && body[i + 1] == close_char) {
                 markdown_core_strbuf_putc(&unescaped, close_char);
                 i += 2;
-                continue;
+            } else {
+                markdown_core_strbuf_putc(&unescaped, body[i++]);
             }
-            markdown_core_strbuf_putc(&unescaped, body[i]);
-            i++;
         }
         body = unescaped.ptr;
         body_len = unescaped.size;
     }
-
-    /* micromark-element-math's padding rule (Q18) applies to every form:
-     * `\(...\)` and `\[...\]` too, and no oracle row covered that until the
-     * step that added two. */
     strip_formula_padding(&body, &body_len);
-    formula = unescaped.oom ? NULL : make_formula_node(element, parser, mode, body, body_len);
+    markdown_core_node *formula = unescaped.oom ? NULL : make_formula_node(element, parser, mode, body, body_len);
     markdown_core_strbuf_free(&unescaped);
     if (!formula) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        goto done;
+        return NULL;
     }
+    markdown_core_parser_content_place(parser, &parent->content_map, start, &formula->start_line,
+                                       &formula->start_column);
+    markdown_core_parser_content_end_place(parser, &parent->content_map, end - 1, &formula->end_line,
+                                           &formula->end_column);
+    return formula;
+}
 
-    formula->start_line = opener_node->start_line;
-    formula->end_line = closer_node->end_line;
-    formula->start_column = opener_node->start_column;
-    formula->end_column = closer_node->end_column;
-
+static void insert_formula(const markdown_core_element *element, markdown_core_parser *parser,
+                           markdown_core_inline_state *inline_state, delimiter *opener, delimiter *closer) {
+    markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
+    markdown_core_node *opener_node = markdown_core_delimiter_node(opener);
+    markdown_core_node *closer_node = markdown_core_delimiter_node(closer);
+    markdown_core_delimiter_rule rule = markdown_core_delimiter_rule_of(opener);
+    bufsize_t from = markdown_core_delimiter_position(opener);
+    bufsize_t close = markdown_core_delimiter_position(closer) - markdown_core_delimiter_length(closer);
+    if (rule != markdown_core_delimiter_rule_of(closer) ||
+        (is_backslash_delim(rule) &&
+         markdown_core_delimiter_length(opener) != markdown_core_delimiter_length(closer)) ||
+        !formula_body_admitted(rule, chunk->data + from, close - from) || !opener_node->parent ||
+        !markdown_core_node_can_contain_type(opener_node->parent, MARKDOWN_CORE_NODE_FORMULA)) {
+        return;
+    }
+    markdown_core_node *formula = make_formula_span(element, parser, inline_state, opener_node->parent, rule,
+                                                    from - markdown_core_delimiter_length(opener), from, close,
+                                                    markdown_core_delimiter_position(closer));
+    if (!formula) {
+        return;
+    }
     markdown_core_node_attach_validated(opener_node->parent, formula, opener_node);
-    /* REQUIREMENT 11b: the two delimiter runs are the formula's markers and
-     * the bytes between them are its content. `free_nodes_through` below
-     * frees EVERY node the span was built from, so without these claims the
-     * whole construct would fall back to the block. */
     free_nodes_through(parser, opener_node, closer_node);
-
-done:
-    return;
 }
 
 static const char *get_type_string(const markdown_core_element *element, markdown_core_node *node) {
@@ -655,47 +681,50 @@ static int info_is_formula(const markdown_core_optional_chunk *info) {
     return info->has_value && info->value.len == 7 && memcmp(info->value.data, "formula", 7) == 0;
 }
 
-static markdown_core_node *new_formula_block_from_literal(const markdown_core_element *element,
-                                                          markdown_core_parser *parser, markdown_core_node *oldnode,
-                                                          const unsigned char *literal, bufsize_t literal_len) {
-    markdown_core_node *formula =
-        markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_FORMULA_BLOCK, element);
+static markdown_core_finish_result replace_with_formula_block(const markdown_core_element *element,
+                                                              markdown_core_parser *parser, markdown_core_node *oldnode,
+                                                              markdown_core_node *donor) {
+    /* Rewriting a valid block is optional. Rejection retains its complete
+     * ownership; reserve the destination before moving any live payload. */
+    if (!oldnode->parent || !markdown_core_node_can_contain_type(oldnode->parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
+        return MARKDOWN_CORE_FINISH_CONTINUE;
+    }
+    markdown_core_node *formula = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_FORMULA_BLOCK);
     if (!formula) {
-        return NULL;
+        goto failed;
     }
-    if (!get_formula(formula)) {
-        markdown_core_parser_release_node(parser, formula);
-        return NULL;
+    markdown_core_node_set_element(formula, element);
+    if (donor) {
+        /* Inline -> block changes ownership and mode, not the formula payload's
+         * lifetime. The paragraph's destructor must no longer own this value. */
+        node_formula *payload = get_formula(donor);
+        if (!own_trimmed_literal(&payload->literal)) {
+            markdown_core_parser_release_node(parser, formula);
+            goto failed;
+        }
+        formula->opaque = donor->opaque;
+        donor->opaque = NULL;
+    } else {
+        formula_opaque_alloc(element, formula);
+        if (!formula->opaque || !own_trimmed_literal(&oldnode->as.code->literal)) {
+            markdown_core_parser_release_node(parser, formula);
+            goto failed;
+        }
+        get_formula(formula)->literal = oldnode->as.code->literal;
+        oldnode->as.code->literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
     }
-
     get_formula(formula)->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
     formula->start_line = oldnode->start_line;
     formula->start_column = oldnode->start_column;
     formula->end_line = oldnode->end_line;
     formula->end_column = oldnode->end_column;
-    if (!set_formula_literal_trimmed(formula, literal, literal_len)) {
-        markdown_core_parser_release_node(parser, formula);
-        return NULL;
-    }
-    return formula;
-}
-
-static markdown_core_finish_result replace_with_formula_block(const markdown_core_element *element,
-                                                              markdown_core_parser *parser, markdown_core_node *oldnode,
-                                                              const unsigned char *literal, bufsize_t literal_len) {
-    /* Rewriting a valid block is optional. A parent's semantic rejection is
-     * not an allocation failure and leaves the original block intact. */
-    if (!oldnode->parent || !markdown_core_node_can_contain_type(oldnode->parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
-        return MARKDOWN_CORE_FINISH_CONTINUE;
-    }
-    markdown_core_node *formula = new_formula_block_from_literal(element, parser, oldnode, literal, literal_len);
-    if (!formula) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return MARKDOWN_CORE_FINISH_FAILED;
-    }
     markdown_core_node_attach_validated(oldnode->parent, formula, oldnode);
     markdown_core_parser_release_node(parser, oldnode);
     return MARKDOWN_CORE_FINISH_CONSUMED;
+
+failed:
+    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    return MARKDOWN_CORE_FINISH_FAILED;
 }
 
 /* The formula element's finish STEP: one node at its EXIT, from inside the one
@@ -722,20 +751,16 @@ static markdown_core_finish_result finish_step(const markdown_core_element *elem
     if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
         if (formula && !formula->literal.data) {
-            /* The literal is copied OUT of `node->content` and the content is
-             * then cleared, so a failed copy would leave the chunk borrowing a
-             * buffer this very statement empties. */
-            if (!set_formula_literal_trimmed(node, node->content.ptr, node->content.size)) {
+            formula->literal = markdown_core_chunk_buf_detach(&node->content);
+            if (!formula->literal.data || !own_trimmed_literal(&formula->literal)) {
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             }
-            markdown_core_strbuf_clear(&node->content);
         }
         return parser->error ? MARKDOWN_CORE_FINISH_FAILED : MARKDOWN_CORE_FINISH_CONTINUE;
     }
 
     if (may_replace && node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code->info)) {
-        return replace_with_formula_block(element, parser, node, node->as.code->literal.data,
-                                          node->as.code->literal.len);
+        return replace_with_formula_block(element, parser, node, NULL);
     }
 
     /* Only an anonymous paragraph is a removable wrapper. A declared anchor
@@ -749,7 +774,7 @@ static markdown_core_finish_result finish_step(const markdown_core_element *elem
         if (!formula) {
             return MARKDOWN_CORE_FINISH_CONTINUE;
         }
-        return replace_with_formula_block(element, parser, node, formula->literal.data, formula->literal.len);
+        return replace_with_formula_block(element, parser, node, node->first_child);
     }
 
     return MARKDOWN_CORE_FINISH_CONTINUE;

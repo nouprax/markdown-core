@@ -51,3 +51,11 @@ Terms and bodies preserve source order without duplicating source or ownership.
 Allocation failure leaves every partially built root on this ownership graph,
 so parser failure uses ordinary destruction. Strict OOM sweeps cover term roots,
 body roots, nameless attributes, reference probes and nested continuation.
+
+A directive block's recognized suffix owns one attribute-parser memo for one
+immutable input extent. The opener carries that result into value decoding;
+recognition and construction use the same offsets and memo. A probe has its own
+lifetime and constructs no semantic attributes. Every success, malformed suffix,
+parent refusal and allocation failure disposes the recognized suffix once and
+accounts its total work once. A class-word suffix owns no brace memo. Inline
+directives already share their inline state's attribute recognizer.

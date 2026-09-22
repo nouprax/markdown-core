@@ -2,9 +2,13 @@
 
 The inline parser has one delimiter stack and one forward pairing algorithm.
 `*`, `_`, `==`, `++`, `^`, single `~` and `~~` share parsed-body construction,
-source placement, containment checks and failure handling. Formula pairs use
-that matcher too; their hook decodes an opaque literal instead of transferring
-parsed children. The hook cannot traverse or mutate the delimiter stack.
+source placement, containment checks and failure handling. Recognized opaque
+formulas construct their leaf directly under a fixed owner. A rejected backtick
+candidate remains ordinary inline grammar: a code span can hide its first
+lexical closer, so delimiter pairing must still resolve that fallback. Dynamic
+containment policies also retain deferred pairing, preserving their decision
+order and single invocation. Both paths call one formula literal/position
+constructor; the hook cannot traverse or mutate the delimiter stack.
 
 ## Stack entries and lifetime
 
@@ -47,9 +51,16 @@ flanking semantics and `~` transparency remain unchanged; Strikethrough now
 uses the same classifier and constructor as the other parsed delimiters.
 
 The matcher walks forward and searches backward using the existing
-`openers_bottom[length % 3][rule]` memo. A boundary advances those same memo
-slots for word-body rules. No script-specific search or second matching pass
-exists. Empty word pairs consume both markers as text. An unmatched marker
+`openers_bottom[length % 3][rule]` memo for failed searches. Each invocation
+also retains one word boundary and one affix boundary. A closer's effective
+floor is the maximum of its failed-search memo, the affix floor, and (for word
+bodies) the word floor. Every component starts at the range's stack bottom.
+A boundary updates one shared floor instead of broadcasting to every rule and
+residue. Positions in a range are nondecreasing: pushes follow the source cursor,
+citation commitment only changes an existing entry's kind, and range reduction
+only removes entries. Thus a boundary dominates all earlier failed searches,
+and the factored maximum equals the former per-slot assignment. Residue-specific
+failure memos still bound unsuccessful searches; no second matching pass exists. Empty word pairs consume both markers as text. An unmatched marker
 retains its authored Text, so later valid pairs remain available.
 
 Ordinary text is classified from disjoint UTF-8 source slices. Newline tokens
@@ -146,3 +157,22 @@ Token scans, range reductions and continuation resolution are linear in source
 bytes plus emitted nodes. Doubling tests include successful and failed nested
 keys, long braced keys, semicolon groups and author-tail chains through 8192
 levels; allocation sweeps include pending and finalized affix owners.
+
+## Opaque payload ownership
+
+A recognized formula under a fixed owner has no delimiter/body Text lifetime.
+The opaque scanner and its failed-suffix memo decide the complete extent before
+construction. Rejected backtick candidates and dynamic containment callbacks
+retain their ordinary/deferred grammar contract; they are not selected by input
+size or benchmark frequency. Body decoding, padding, markers and source placement
+are shared by both construction paths.
+
+Formula block promotion reserves its destination before touching the old owner.
+An inline formula transfers its opaque payload and literal together; a code
+fence transfers its owned literal into a newly initialized formula payload.
+Trimming compacts an owned buffer in place and restores NUL termination, while a
+borrowed chunk obtains independent storage before mutation. Direct formula
+blocks detach their accumulated content buffer. Failure before commitment keeps
+the old owner intact; commitment clears the donor slot before releasing the old
+subtree. The finish walk still reports the old node as consumed, preserving
+observer and iterator ordering.

@@ -583,8 +583,11 @@ typedef struct {
 typedef struct markdown_core_table_source_line {
     const unsigned char *data, *after;
     markdown_core_parser *parser;
-    int length, input_length, offset, first, first_column, indent, line, blanks;
-    bool dashes_scanned, full_boundary;
+    int length, input_length, offset, first, first_column, indent, line, blanks, horizontal_end;
+    /* Horizontal grammar returns only zero, '-' or '='. Group the byte facts
+     * with the final offset so the cache fits the former LP64 padding. */
+    bool dashes_scanned, full_boundary, horizontal_scanned;
+    unsigned char horizontal_kind;
     size_t dash_count;
     size_t dash_offset, byte_offset;
     bool dashes_ready, columns_ready;
@@ -1428,14 +1431,40 @@ static int table_grid_root(table_source *source, int *parents, int column) {
 
 static int table_horizontal_bytes(const table_source_line *line, int first, int last) {
     line->parser->table_scan_work += (size_t)(last - first);
+    line->parser->table_horizontal_work += (size_t)(last - first);
     return scan_table_horizontal(line->data, last, first);
 }
 
-static int table_horizontal(const table_source_line *line, int left, int right) {
+/* A whole-line border is one immutable lexical fact. Opening, suffix proof,
+ * group discovery and region construction all consume it. A cell interval is
+ * a different grammar extent: alignment colons or partial walls forbid
+ * inferring its result from the whole line. Both extents use the same scanner. */
+static int table_full_horizontal(table_source_line *line) {
+    if (!line->horizontal_scanned) {
+        int end = line->length;
+        while (end > line->first && (line->data[end - 1] == ' ' || line->data[end - 1] == '\t')) {
+            end--;
+        }
+        line->parser->table_scan_work += (size_t)(line->length - end);
+        line->horizontal_end = end;
+        line->horizontal_kind = (unsigned char)table_horizontal_bytes(line, line->first, end);
+        line->horizontal_scanned = true;
+    }
+    return line->horizontal_kind;
+}
+
+static int table_horizontal(table_source_line *line, int left, int right) {
     if (left < 0 || right >= line->columns || left >= right) {
         return 0;
     }
-    return table_horizontal_bytes(line, table_byte(line, left), table_byte(line, right) + 1);
+    int first = table_byte(line, left), end = table_byte(line, right) + 1;
+    if (first == line->first) {
+        int kind = table_full_horizontal(line);
+        if (end == line->horizontal_end) {
+            return kind;
+        }
+    }
+    return table_horizontal_bytes(line, first, end);
 }
 
 static void table_grid_join(table_source *source, int *parents, int *sizes, int a, int b) {
@@ -1725,16 +1754,11 @@ static bool table_grid_opening(table_source *source, size_t index, int *left, in
         return false;
     }
     table_source_line *line = &source->lines[index];
-    int last = line->length;
-    while (last > line->first && (line->data[last - 1] == ' ' || line->data[last - 1] == '\t')) {
-        last--;
-    }
-    line->parser->table_scan_work += (size_t)(line->length - last) + (last > line->first);
-    if (!table_horizontal_bytes(line, line->first, last) || !table_source_columns(source, index)) {
+    if (!table_full_horizontal(line) || !table_source_columns(source, index)) {
         return false;
     }
     *left = table_column(line, line->first);
-    *right = table_column(line, last - 1);
+    *right = table_column(line, line->horizontal_end - 1);
     return true;
 }
 
@@ -1995,10 +2019,74 @@ done:
     return matches;
 }
 
-static bool table_parse_candidate(table_source *source, size_t start, table_candidate *candidate, bool pipe) {
-    if (!table_source_get(source, start) || source->lines[start].indent >= 4) {
+/* An uncaptured line uses the same all-or-nothing separator grammar. */
+static size_t table_dash_count_raw(const unsigned char *data, bufsize_t from, bufsize_t length) {
+    const unsigned char *p = data + from, *end = data + length, *run;
+    size_t count = 0;
+    int result;
+    do {
+        result = scan_table_dash(&p, end, &run);
+        if (result > 0) {
+            count++;
+        }
+    } while (result > 0);
+    return result < 0 ? 0 : count;
+}
+
+/* Container continuation only strips a prefix. It cannot add or split a dash
+ * run, so the raw next physical line bounds the stripped line's run count. */
+static size_t table_dash_runs_anywhere(const unsigned char *data, const unsigned char *end, size_t stop) {
+    size_t runs = 0;
+    while (data < end && runs < stop) {
+        if (*data == '-') {
+            runs++;
+            while (data < end && *data == '-') {
+                data++;
+            }
+            continue;
+        }
+        data++;
+    }
+    return runs;
+}
+
+/* One necessary-condition predicate for every candidate entry. A grid starts
+ * with '+', a headerless table with at least two dash runs. A full boundary
+ * requires a nonblank physical successor. Otherwise only a headed simple or
+ * pipe table remains, requiring respectively two dash runs or one. A true
+ * result grants no grammar or containment decision; the ordinary recognizer
+ * still owns it. Read the indexed physical extent so CR, CRLF and EOF agree
+ * with the source driver, without replaying container continuation. Keep this
+ * predicate in its caller: all arguments are already-loaded source geometry,
+ * not a separate per-candidate out-of-line operation. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_grammar_admits(markdown_core_parser *parser,
+                                                                                 const unsigned char *input, int length,
+                                                                                 int first, size_t runs, int next_line,
+                                                                                 const unsigned char *cursor,
+                                                                                 bool pipe) {
+    if ((first < length && input[first] == '+') || runs >= 2) {
+        return true;
+    }
+    if (!cursor || cursor >= parser->lookahead_end) {
         return false;
     }
+    if (runs == 1) {
+        while (cursor < parser->lookahead_end && (*cursor == ' ' || *cursor == '\t')) {
+            cursor++;
+        }
+        return cursor < parser->lookahead_end && !markdown_core_is_line_end((char)*cursor);
+    }
+    markdown_core_input_line *line = markdown_core_parser_source_line(parser, next_line);
+    size_t required = pipe ? 1u : 2u;
+    return line && table_dash_runs_anywhere(cursor, parser->input_source + line->end, required) >= required;
+}
+
+/* Admission and recognition have separate lifetimes. A top-level opener
+ * admits borrowed input before acquiring a workspace; a caption admits an
+ * already captured line. Both enter this one recognizer with that proof, so
+ * the successful opener never repeats its raw-source lookahead. */
+static bool table_parse_admitted_candidate(table_source *source, size_t start, table_candidate *candidate, bool pipe) {
+    assert(start < source->count && source->lines[start].indent < 4);
     bool boundary = table_full_boundary(source, start);
     if (table_parse_grid(source, start, candidate) || (boundary && table_parse_multiline(source, start, candidate)) ||
         table_parse_simple(source, start, candidate) ||
@@ -2006,6 +2094,17 @@ static bool table_parse_candidate(table_source *source, size_t start, table_cand
         return true;
     }
     return pipe && table_parse_pipe_header(source, start, candidate);
+}
+
+static bool table_parse_candidate(table_source *source, size_t start, table_candidate *candidate, bool pipe) {
+    if (!table_source_get(source, start) || source->lines[start].indent >= 4) {
+        return false;
+    }
+    size_t runs = table_dash_count(source, start);
+    table_source_line *line = &source->lines[start];
+    return table_grammar_admits(source->parser, line->data, line->length, line->first, runs, line->line + 1,
+                                line->after, pipe) &&
+           table_parse_admitted_candidate(source, start, candidate, pipe);
 }
 
 static void table_append_range(table_source *source, markdown_core_node *node, size_t index, int left, int right,
@@ -2250,98 +2349,19 @@ bool markdown_core_table_caption_probe(markdown_core_block_lookahead *lookahead,
     return matched;
 }
 
-/* `table_dash_count` for a line the source has not captured, with the same
- * all-or-nothing rule: any byte outside [ \t-] makes the line no separator at
- * all, so the count is zero. */
-static size_t table_dash_count_raw(const unsigned char *data, bufsize_t from, bufsize_t length) {
-    const unsigned char *p = data + from, *end = data + length, *run;
-    size_t count = 0;
-    int result;
-    do {
-        result = scan_table_dash(&p, end, &run);
-        if (result > 0) {
-            count++;
-        }
-    } while (result > 0);
-    return result < 0 ? 0 : count;
-}
-
-/* Maximal runs of '-' anywhere in [data, end), counted no further than `stop`. */
-static size_t table_dash_runs_anywhere(const unsigned char *data, const unsigned char *end, size_t stop) {
-    size_t runs = 0;
-    while (data < end && runs < stop) {
-        if (*data == '-') {
-            runs++;
-            while (data < end && *data == '-') {
-                data++;
-            }
-            continue;
-        }
-        data++;
-    }
-    return runs;
-}
-
-/* Every element that opens a block declares which bytes can start it, so the
- * core can skip the hook for a line that cannot match. Table declared none,
- * because ONE of its grammars -- a Pandoc simple table WITH a header -- has an
- * arbitrary-prose first line; the answer lives on the NEXT line. So the hook
- * ran on every line, and opened a full lookahead transaction to fetch that
- * line at 548 Ir before it knew any grammar was possible.
- *
- * This is that gate, written across the two lines the grammar spans. Each
- * arm is a NECESSARY condition; a true answer means only that the
- * transaction is worth opening.
- *
- * The second line is read from RAW SOURCE, using the parser's own line-end
- * rule -- a bare CR terminates a line here, so `memchr` for '\n' would run
- * past one. Container continuation strips a PREFIX from that line, and
- * stripping a prefix can neither add a dash run nor split one, so counting
- * runs anywhere in the raw line bounds the count in the stripped line from
- * above. That keeps the arm sound inside a block quote without having to
- * replay the container chain to find out. */
+/* Captions are a separate entry grammar; the body shares candidate admission
+ * with the definition-precedence query and every other table producer. */
 static bool table_open_admits(markdown_core_parser *parser, const unsigned char *input, int length) {
     bufsize_t trimmed = length;
     while (trimmed > 0 && (input[trimmed - 1] == '\n' || input[trimmed - 1] == '\r')) {
         trimmed--;
     }
-    int first = parser->first_nonspace;
-    /* Grid opens on '+'. */
-    if (first < trimmed && input[first] == '+') {
+    if (table_caption_start(input, trimmed, parser->first_nonspace, parser->indent) >= 0) {
         return true;
     }
-    /* A caption opens on "Table:", "table:" or ':'. */
-    if (table_caption_start(input, trimmed, first, parser->indent) >= 0) {
-        return true;
-    }
-    /* Both multiline forms and a headerless simple table need this line to be
-     * a separator: one run for a full boundary, two or more otherwise. A
-     * boundary alone opens nothing: the two grammars that start on one -- a
-     * multiline table with a header, a simple table with a header -- both
-     * refuse when the line below it is blank (table_parse_multiline,
-     * table_parse_simple), so a thematic break with a blank after it is asked
-     * of neither. Blank is read from the raw line: a line blank once its
-     * container prefix is stripped has nothing but that prefix in it, so a raw
-     * line with any byte past spaces and tabs may be a row and is admitted,
-     * and a raw blank is blank in every container. */
-    size_t runs = table_dash_count_raw(input, parser->offset, trimmed);
-    if (runs >= 2) {
-        return true;
-    }
-    const unsigned char *cursor = parser->lookahead_cursor, *end = parser->lookahead_end;
-    if (!cursor || cursor >= end) {
-        return false;
-    }
-    if (runs == 1) {
-        while (cursor < end && (*cursor == ' ' || *cursor == '\t')) {
-            cursor++;
-        }
-        return cursor < end && !markdown_core_is_line_end((char)*cursor);
-    }
-    /* Only a simple table with a header remains, and only its delimiter row,
-     * the next physical line, can still admit one. */
-    markdown_core_input_line *line = markdown_core_parser_source_line(parser, parser->line_number + 1);
-    return line && table_dash_runs_anywhere(cursor, parser->input_source + line->end, 2) >= 2;
+    return table_grammar_admits(parser, input, trimmed, parser->first_nonspace,
+                                table_dash_count_raw(input, parser->offset, trimmed), parser->line_number + 1,
+                                parser->lookahead_cursor, false);
 }
 
 markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, markdown_core_node *parent,
@@ -2389,7 +2409,7 @@ markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, m
     if (caption >= 0) {
         matched = table_after_caption(&source, &caption_last, candidate, !trailing);
     } else {
-        matched = table_parse_candidate(&source, 0, candidate, false);
+        matched = table_parse_admitted_candidate(&source, 0, candidate, false);
     }
     markdown_core_parser_lookahead_end(&source.lookahead);
     if (parser->error || (!matched && !trailing)) {

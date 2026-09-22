@@ -388,6 +388,8 @@ struct markdown_core_parser {
     /* Scalar/byte probe ranges plus union-find and ordering visits. Scans
      * charge a span once; short-circuited ranges may conservatively overcount. */
     size_t table_scan_work, table_frontier_peak;
+    /* Bytes submitted to horizontal-border grammar; cached facts charge zero. */
+    size_t table_horizontal_work;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
     size_t table_scratch_growth;
     /* Properties work: source ranges decoded once at their owning boundary. */

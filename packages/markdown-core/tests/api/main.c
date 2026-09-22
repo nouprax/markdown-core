@@ -4006,7 +4006,7 @@ typedef struct {
     size_t autolink_domains;
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
     size_t registered_definitions, definition_lists, citation_brace_bytes, tables, table_frontier;
-    size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
+    size_t table_workspace_growth, table_geometry_lines, table_separator_scans, table_horizontal_work;
     size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
     bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
@@ -4079,6 +4079,7 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
     work->table_workspace_growth = parser->table_workspace_growth;
     work->table_geometry_lines = parser->table_geometry_lines;
     work->table_separator_scans = parser->table_separator_scans;
+    work->table_horizontal_work = parser->table_horizontal_work;
     work->block_identifier = parser->block_identifier_work;
     work->callout = parser->callout_scan_work;
     work->dimensions = parser->dimension_work;
@@ -6444,6 +6445,70 @@ static void block_identifier_ownership(test_batch_runner *runner) {
 /* Invalid opening borders remain ordinary text without materializing scalar
  * columns or grid topology. Track live allocations as well as geometry work,
  * including long valid prefixes whose rejection occurs near the line end. */
+/* Whole-width and cell-width borders have different semantic extents. Work
+ * stays within one whole-line recognition plus the interior cell intervals,
+ * independently of row count, column count, scalar width and container prefix. */
+static void grid_border_recognition_work(test_batch_runner *runner) {
+    const int widths[] = {8, 257}, columns[] = {1, 3, 17}, rows[] = {1, 9};
+    for (size_t w = 0; w < sizeof(widths) / sizeof(*widths); w++) {
+        for (size_t c = 0; c < sizeof(columns) / sizeof(*columns); c++) {
+            for (size_t r = 0; r < sizeof(rows) / sizeof(*rows); r++) {
+                for (int quoted = 0; quoted <= 1; quoted++) {
+                    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+                    for (int line = 0; line <= 2 * rows[r]; line++) {
+                        if (quoted) {
+                            markdown_core_strbuf_puts(&source, "> ");
+                        }
+                        markdown_core_strbuf_putc(&source, line % 2 ? '|' : '+');
+                        for (int col = 0; col < columns[c]; col++) {
+                            if (line % 2) {
+                                markdown_core_strbuf_puts(&source, col % 2 ? "表" : "x");
+                            }
+                            for (int pos = line % 2; pos < widths[w]; pos++) {
+                                markdown_core_strbuf_putc(&source, line % 2 ? ' ' : '-');
+                            }
+                            markdown_core_strbuf_putc(&source, line % 2 ? '|' : '+');
+                        }
+                        markdown_core_strbuf_puts(&source, "  \t\n");
+                    }
+                    inline_work work = {0};
+                    markdown_core_node *root = markdown_core_parse_document_with_setup((char *)source.ptr, source.size,
+                                                                                       measure_inline_work, &work);
+                    OK(runner, root != NULL, "grid border facts preserve parsing");
+                    if (root) {
+                        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_CELL), rows[r] * columns[c],
+                               "whole-border facts do not collapse cell ownership");
+                        size_t intervals = (size_t)(rows[r] - 1) * columns[c] * (widths[w] + 2);
+                        OK(runner, work.table_horizontal_work <= (size_t)source.size + intervals,
+                           "one whole extent plus cell intervals: rows=%d columns=%d width=%d work=%zu bound=%zu",
+                           rows[r], columns[c], widths[w], work.table_horizontal_work, (size_t)source.size + intervals);
+                    }
+                    markdown_core_node_free(root);
+                    markdown_core_strbuf_free(&source);
+                }
+            }
+        }
+    }
+    static const struct {
+        const char *border;
+        int cells, rowspan;
+    } partial[] = {{"+---+---+", 4, 1}, {"+   +---+", 3, 2}, {"+:-:+---+", 4, 1}, {"+===+---+", 0, 0}};
+    for (size_t i = 0; i < sizeof(partial) / sizeof(*partial); i++) {
+        char source[128];
+        snprintf(source, sizeof(source), "+---+---+\n| a | b |\n%s\n| c | d |\n+---+---+\n", partial[i].border);
+        markdown_core_node *root = parse(source);
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_CELL), partial[i].cells,
+               "partial and mixed borders retain their own interval grammar");
+        if (partial[i].cells) {
+            markdown_core_node *cell = root->first_child->first_child->first_child;
+            int64_t rowspan, colspan;
+            OK(runner, markdown_core_node_table_cell_spans(cell, &rowspan, &colspan) && rowspan == partial[i].rowspan,
+               "the partial boundary alone determines spanning");
+        }
+        markdown_core_node_free(root);
+    }
+}
+
 static void grid_opening_memory(test_batch_runner *runner) {
     const char *runs[] = {"\t", " ", "表", "-", "="};
     for (size_t shape = 0; shape < sizeof(runs) / sizeof(*runs); shape++) {
@@ -7561,6 +7626,8 @@ static void semantic_rejection_preserves_its_cause(test_batch_runner *runner) {
 typedef struct {
     test_batch_runner *runner;
     bool entered, matches;
+    bool bounded_lookahead;
+    size_t lookahead_limit;
 } table_transaction_probe;
 
 /* Exercise the existing non-committing caption query while the real source
@@ -7576,6 +7643,7 @@ static bool probe_table_transactions(markdown_core_parser *parser, block_start_c
     for (int pass = 0; pass < 4; pass++) {
         payload_probe_calls before = payload_probe_snapshot();
         size_t geometry = parser->table_geometry_lines, nodes = parser->nodes_created;
+        size_t lookahead_work = parser->block_lookahead_work;
         markdown_core_block_lookahead lookahead;
         bool begun =
             markdown_core_parser_lookahead_begin(parser, context->container, MARKDOWN_CORE_NODE_TABLE, &lookahead);
@@ -7585,6 +7653,11 @@ static bool probe_table_transactions(markdown_core_parser *parser, block_start_c
         OK(probe->runner, begun && !parser->error && matched == probe->matches,
            "cold and warm table transactions agree on recognition");
         INT_EQ(probe->runner, parser->nodes_created, nodes, "a table query constructs no AST nodes");
+        if (probe->bounded_lookahead) {
+            OK(probe->runner, parser->block_lookahead_work - lookahead_work <= probe->lookahead_limit,
+               "a grammar-impossible successor is not replayed: work=%zu limit=%zu",
+               parser->block_lookahead_work - lookahead_work, probe->lookahead_limit);
+        }
         if (probe->matches) {
             OK(probe->runner, parser->table_geometry_lines > geometry,
                "a warm query still rebuilds candidate geometry in retained storage");
@@ -7607,6 +7680,60 @@ static const markdown_core_element TABLE_TRANSACTION_PROBE = {
 static bool configure_table_transaction_probe(markdown_core_parser *parser, void *context) {
     parser->root->user_data = context;
     return markdown_core_parser_attach_element(parser, &TABLE_TRANSACTION_PROBE);
+}
+
+/* After a caption's blank, only the first nonblank line is a candidate.
+ * Its following line is inspected as raw source, not replayed as a container
+ * lookahead. Test unrelated rejected shapes, all terminators, and EOF. */
+static void table_caption_candidate_admission(test_batch_runner *runner) {
+    const char *starts[] = {"plain text", "***", "# heading", "`code`", ": nope"};
+    const char *endings[] = {"\n", "\r\n", "\r"};
+    for (size_t shape = 0; shape < sizeof(starts) / sizeof(*starts); shape++) {
+        for (size_t e = 0; e < sizeof(endings) / sizeof(*endings); e++) {
+            for (int final = 0; final <= 1; final++) {
+                char source[200];
+                snprintf(source, sizeof(source), "Table: caption%s%s%s%sordinary successor%s", endings[e], endings[e],
+                         starts[shape], endings[e], final ? endings[e] : "");
+                table_transaction_probe probe = {.runner = runner, .bounded_lookahead = true, .lookahead_limit = 2};
+                payload_probe_arm();
+                markdown_core_node *root = markdown_core_parse_document_with_setup(
+                    source, strlen(source), configure_table_transaction_probe, &probe);
+                OK(runner, root && probe.entered, "rejected caption candidates leave an ordinary document");
+                markdown_core_node_free(root);
+                INT_EQ(runner, payload_live, 0, "a rejected candidate releases its workspace");
+                payload_probe_disarm();
+            }
+        }
+    }
+    const char *tables[] = {"| h |\n| - |\n| b |", "h   j\n--- ---\nv   w", "+---+\n| x |\n+---+",
+                            "-------\nh   j\n--- ---\nv   w\n\nx   y\n-------"};
+    for (size_t t = 0; t < sizeof(tables) / sizeof(*tables); t++) {
+        for (size_t e = 0; e < sizeof(endings) / sizeof(*endings); e++) {
+            for (int quoted = 0; quoted <= 1; quoted++) {
+                markdown_core_strbuf body = MARKDOWN_CORE_BUF_INIT(), source = MARKDOWN_CORE_BUF_INIT();
+                markdown_core_strbuf_puts(&body, "term\n\n: caption\n\n");
+                markdown_core_strbuf_puts(&body, tables[t]);
+                for (int at = 0; at < body.size; at++) {
+                    if (quoted && (!at || body.ptr[at - 1] == '\n')) {
+                        markdown_core_strbuf_puts(&source, "> ");
+                    }
+                    if (body.ptr[at] == '\n') {
+                        markdown_core_strbuf_puts(&source, endings[e]);
+                    } else {
+                        markdown_core_strbuf_putc(&source, body.ptr[at]);
+                    }
+                }
+                markdown_core_node *root = parse((char *)source.ptr);
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_DEFINITION_LIST), 0,
+                       "table caption precedence survives the necessary-condition gate");
+                INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), 1,
+                       "all candidate grammars remain eligible through container prefixes and EOF");
+                markdown_core_node_free(root);
+                markdown_core_strbuf_free(&source);
+                markdown_core_strbuf_free(&body);
+            }
+        }
+    }
 }
 
 static void table_candidates_reuse_scratch(test_batch_runner *runner) {
@@ -7758,6 +7885,174 @@ static void formula_containment_follows_recognition(test_batch_runner *runner) {
         INT_EQ(runner, payload_live, 0, "accepted and rejected formula candidates release all allocations");
     }
     payload_probe_disarm();
+}
+
+/* Shared boundaries constrain word bodies, while committed citation affixes
+ * constrain every rule. Mix all three run residues and failed/valid word
+ * candidates in one growing range; field-local pairs must survive reduction. */
+static void delimiter_boundary_floors(test_batch_runner *runner) {
+    static const char unit[] = "^a b^ ^a\\ b^ ~c d~ ~c\\ d~ *e f* **g h** ***i j*** "
+                               "++k l++ ==m n== [*pre* @key *post*] [*pre @key post*] ";
+    for (size_t count = 16; count <= 4096; count *= 16) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_strbuf_puts(&source, unit);
+        }
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
+        OK(runner, root != NULL, "mixed boundary range parses");
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_SUPERSCRIPT), count,
+               "only escaped spaces enter word bodies");
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_SUBSCRIPT), count,
+               "word floors are shared across word rules");
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_EMPHASIS), 2 * count,
+               "ordinary boundaries preserve emphasis in the enclosing range");
+        size_t cites = 0;
+        for (markdown_core_node *node = root->first_child->first_child; node; node = node->next) {
+            if (node->kind == MARKDOWN_CORE_NODE_CITE) {
+                markdown_core_node *item = node->as.cite->citations;
+                size_t emphasis = count_kind(item->as.citation->prefix, MARKDOWN_CORE_NODE_EMPHASIS) +
+                                  count_kind(item->as.citation->suffix, MARKDOWN_CORE_NODE_EMPHASIS);
+                INT_EQ(runner, emphasis, cites % 2 ? 0 : 2, "pairs stay within each committed citation affix");
+                cites++;
+            }
+        }
+        INT_EQ(runner, cites, 2 * count, "all citation groups retain their fields");
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_STRONG), 2 * count,
+               "every residue retains its independent pairing");
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_INSERTION), count,
+               "ordinary spaces do not inhibit inline bodies");
+        INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_MARK), count,
+               "unrelated rules retain independent search floors");
+        OK(runner, work.delimiters <= 16 * (size_t)source.size, "failed searches and scope reduction remain linear");
+        markdown_core_node_free(root);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
+/* Opaque bodies are leaves, not three disposable Text nodes per formula.
+ * Exercise every delimiter form, multiline placement, padding and escapes at
+ * growing body sizes and repetition counts, without relying on timings. */
+static void formula_leaf_construction_work(test_batch_runner *runner) {
+    static const char *const markers[][2] = {
+        {"$", "$"}, {"$`", "`$"}, {"$$", "$$"}, {"\\\\(", "\\\\)"}, {"\\\\[", "\\\\]"}};
+    for (size_t form = 0; form < sizeof(markers) / sizeof(*markers); form++) {
+        for (size_t count = 1; count <= 256; count *= 16) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+            markdown_core_strbuf_puts(&source, "probe ");
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, markers[form][0]);
+                for (size_t j = 0; j <= count; j++) {
+                    markdown_core_strbuf_puts(&source, "body");
+                }
+                markdown_core_strbuf_puts(&source, "\nnext");
+                markdown_core_strbuf_puts(&source, markers[form][1]);
+                markdown_core_strbuf_puts(&source, " end ");
+            }
+            inline_work work = {0};
+            markdown_core_node *root =
+                markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
+            OK(runner, root != NULL, "opaque formula constructs at every size and delimiter form");
+            INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_FORMULA), count, "every body is one opaque leaf");
+            INT_EQ(runner, work.nodes_created, 2 * count + 3,
+                   "only document, paragraph, formula leaves and surrounding text are constructed");
+            INT_EQ(runner, work.nodes_freed, 0, "recognized opaque bodies have no transient AST ownership");
+            OK(runner, work.opaque <= 4 * (size_t)source.size, "opaque search remains linear");
+            markdown_core_node_free(root);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
+/* Promotion moves the value's existing owner. An allocation failure before the
+ * commit preserves the old subtree; borrowed code bytes are never modified. */
+static void formula_promotion_transfers_storage(test_batch_runner *runner) {
+    for (int shape = 0; shape < 3; shape++) {
+        for (size_t fail = 0; fail < 4; fail++) {
+            payload_probe_arm();
+            markdown_core_parser parser = {0};
+            markdown_core_node *root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
+            markdown_core_node *old =
+                markdown_core_node_new(shape == 0 ? MARKDOWN_CORE_NODE_PARAGRAPH : MARKDOWN_CORE_NODE_CODE_BLOCK);
+            markdown_core_node_append_child(root, old);
+            markdown_core_node *donor = NULL;
+            const char *before;
+            void *opaque = NULL;
+            if (shape == 0) {
+                donor = markdown_core_node_new_with_ext(MARKDOWN_CORE_NODE_FORMULA, &MARKDOWN_CORE_ELEMENT_FORMULA);
+                markdown_core_elements_set_formula_mode(donor, MARKDOWN_CORE_FORMULA_MODE_STANDALONE);
+                markdown_core_elements_set_formula_literal(donor, " \t value \n ");
+                markdown_core_node_append_child(old, donor);
+                before = markdown_core_elements_get_formula_literal(donor);
+                opaque = donor->opaque;
+            } else {
+                old->as.code->info = markdown_core_optional_chunk_present(markdown_core_chunk_literal("formula"));
+                old->as.code->literal = markdown_core_chunk_literal(" \t value \n ");
+                if (shape == 1) {
+                    markdown_core_chunk_to_cstr(&old->as.code->literal);
+                }
+                before = (const char *)old->as.code->literal.data;
+            }
+            payload_fail_at = fail ? payload_allocations + fail : 0;
+            markdown_core_finish_result result = MARKDOWN_CORE_ELEMENT_FORMULA.finish_step(
+                &MARKDOWN_CORE_ELEMENT_FORMULA, &parser, old, MARKDOWN_CORE_EVENT_EXIT, 0, NULL);
+            payload_fail_at = 0;
+            if (result == MARKDOWN_CORE_FINISH_FAILED) {
+                INT_EQ(runner, parser.error, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED, "loss is reported");
+                OK(runner, root->first_child == old, "failed promotion preserves the old owner");
+                STR_EQ(runner, before, " \t value \n ", "failed promotion preserves the old literal");
+                if (donor) {
+                    OK(runner, donor->opaque == opaque, "failed promotion preserves the payload owner");
+                }
+            } else {
+                INT_EQ(runner, result, MARKDOWN_CORE_FINISH_CONSUMED, "promotion consumes the replaced subtree");
+                markdown_core_node *formula = root->first_child;
+                const char *after = markdown_core_elements_get_formula_literal(formula);
+                STR_EQ(runner, after, "value", "promotion trims and NUL-terminates its literal");
+                if (shape < 2) {
+                    OK(runner, before == after, "owned literal allocation is transferred without copying");
+                } else {
+                    OK(runner, before != after, "borrowed bytes acquire independent ownership");
+                    STR_EQ(runner, before, " \t value \n ", "borrowed source remains immutable");
+                }
+                if (opaque) {
+                    OK(runner, formula->opaque == opaque, "the formula payload has one lifetime across promotion");
+                }
+            }
+            markdown_core_node_free(root);
+            markdown_core_node_pool_dispose(&parser.nodes);
+            INT_EQ(runner, payload_live, 0, "all transferred or rejected storage is released exactly once");
+            payload_probe_disarm();
+        }
+    }
+}
+
+/* The committed opener and a direct decode have the same recognition work.
+ * A probe owns a separate lifetime and must free its memo on every outcome. */
+static void directive_recognition_survives_construction(test_batch_runner *runner) {
+    static const char *const attributes[] = {"{}", "{.a k=1 k=2}", "{key=\"a b\" flag .c}", "{x=a=b=c}"};
+    for (size_t i = 0; i < sizeof(attributes) / sizeof(*attributes); i++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        markdown_core_strbuf_puts(&source, "::: ");
+        markdown_core_strbuf_puts(&source, attributes[i]);
+        markdown_core_strbuf_puts(&source, "\nbody\n:::\n");
+        markdown_core_attribute_parser recognized = {.data = source.ptr, .length = source.size};
+        markdown_core_attributes value = {0};
+        bufsize_t end;
+        OK(runner, markdown_core_attributes_end(&recognized, 4) != 0, "the envelope is recognized");
+        OK(runner, markdown_core_attributes_parse(&recognized, 4, &value, &end), "the same memo decodes the value");
+        inline_work work = {0};
+        markdown_core_node *root =
+            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
+        OK(runner, root != NULL, "the block owns the decoded attributes");
+        INT_EQ(runner, work.attributes, recognized.work,
+               "construction reuses recognition instead of scanning the attribute extent again");
+        markdown_core_node_free(root);
+        markdown_core_attributes_free(&value);
+        markdown_core_attribute_parser_free(&recognized);
+        markdown_core_strbuf_free(&source);
+    }
 }
 
 /* NUL is one scalar represented as U+FFFD before grammar sees a line. Driver,
@@ -8802,6 +9097,7 @@ int main(void) {
     autolink_source_pos(runner);
     table_source_map_growth(runner);
     table_values(runner);
+    grid_border_recognition_work(runner);
     grid_opening_memory(runner);
     table_candidate_work(runner);
     bounded_scanners(runner);
@@ -8817,9 +9113,14 @@ int main(void) {
     construction_checks_containment(runner);
     semantic_rejection_preserves_its_cause(runner);
     rejected_token_allocation_failures(runner);
+    table_caption_candidate_admission(runner);
     table_candidates_reuse_scratch(runner);
     parser_attachment_commits_one_decision(runner);
     formula_containment_follows_recognition(runner);
+    delimiter_boundary_floors(runner);
+    formula_leaf_construction_work(runner);
+    formula_promotion_transfers_storage(runner);
+    directive_recognition_survives_construction(runner);
     lookahead_and_driver_share_normalized_lines(runner);
     definition_open_gate_admits_only_possible_terms(runner);
     a_pass_may_free_the_roots_a_later_pass_reads(runner);

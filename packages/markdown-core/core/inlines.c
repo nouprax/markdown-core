@@ -501,6 +501,8 @@ void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markd
     /* One slot per RULE, so the array is sized by construction. It used to be
      * `[3][128]` indexed by a byte the public push accepts unconstrained. */
     bufsize_t openers_bottom[3][MARKDOWN_CORE_DELIM_RULE_COUNT];
+    bufsize_t word_bottom = stack_bottom;
+    bufsize_t affix_bottom = stack_bottom;
     int i;
 
     // initialize openers_bottom:
@@ -529,23 +531,30 @@ void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markd
     // ordinary text and pushes no delimiter.
     while (closer != after) {
         const markdown_core_element *element = closer->owner;
-        if (closer->kind == DELIMITER_BOUNDARY || closer->kind == DELIMITER_AFFIX_BOUNDARY) {
-            for (int rule = 0; rule < MARKDOWN_CORE_DELIM_RULE_COUNT; rule++) {
-                if (closer->kind == DELIMITER_AFFIX_BOUNDARY ||
-                    delimiter_spec(inline_state, rule)->body == DELIMITER_WORD_BODY) {
-                    for (i = 0; i < 3; i++) {
-                        openers_bottom[i][rule] = closer->position;
-                    }
-                }
-            }
+        /* Positions are ordered along this range, including retained citation
+         * tokens and completed-field boundaries. A boundary therefore dominates
+         * every earlier failed search. Store its shared cause once, not once per
+         * rule/residue; the effective bound is their maximum at the query. */
+        if (closer->kind == DELIMITER_BOUNDARY) {
+            assert(closer->position >= word_bottom);
+            word_bottom = closer->position;
+        } else if (closer->kind == DELIMITER_AFFIX_BOUNDARY) {
+            assert(closer->position >= affix_bottom);
+            affix_bottom = closer->position;
         }
         assert(closer->kind != DELIMITER_FIELD);
         if (closer->can_close) {
             // Now look backwards for first matching opener:
             opener = closer->previous;
             opener_found = false;
-            while (opener != NULL && opener->position >= stack_bottom &&
-                   opener->position >= openers_bottom[closer->length % 3][closer->rule]) {
+            bufsize_t bottom = openers_bottom[closer->length % 3][closer->rule];
+            if (bottom < affix_bottom) {
+                bottom = affix_bottom;
+            }
+            if (delimiter_spec(inline_state, closer->rule)->body == DELIMITER_WORD_BODY && bottom < word_bottom) {
+                bottom = word_bottom;
+            }
+            while (opener != NULL && opener->position >= bottom) {
                 if (inline_state->owner_parser) {
                     inline_state->owner_parser->delimiter_work++;
                 }

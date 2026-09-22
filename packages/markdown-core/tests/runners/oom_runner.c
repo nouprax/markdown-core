@@ -119,7 +119,11 @@ static const char OOM_LINE_AND_CORE_CORPUS[] = "\xef\xbb\xbf# bom\r\n"
                                                "\n"
                                                "[shortcut]: <https://example.com/a(b)> 'title'\n";
 
-static const char OOM_ELEMENT_EDGE_CORPUS[] = ":inline[label]{.a class=\"\" .b id=x id=y entity=&amp;}\n"
+static const char OOM_ELEMENT_EDGE_CORPUS[] = "probe $x$ $$ y $$ \\\\(z\\)q\\\\) $`x`$\n\n"
+                                              "$$ padded $$\n\n```formula\n padded \n```\n\n"
+                                              "$$\n padded \n$$\n\n$$\n$$\n\n"
+                                              "::: {.a k=1} trailing\n\n::: {.a k=1\n\n"
+                                              ":inline[label]{.a class=\"\" .b id=x id=y entity=&amp;}\n"
                                               "\n"
                                               ":::outer[lab]{empty=\"\" key='value'}\n"
                                               ":::inner\n"
