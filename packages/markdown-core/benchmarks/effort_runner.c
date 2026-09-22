@@ -43,6 +43,23 @@ EFFORT_NOINLINE void bench_effort_release(effort_state *states, int count) {
     free(states);
 }
 
+/* Receipts are outside the measured edges, but Callgrind still executes their
+ * code. Format bounded chunks instead of invoking libc's formatter per byte. */
+static void print_hex(const unsigned char *bytes, int32_t length) {
+    static const char digits[] = "0123456789abcdef";
+    char output[2048];
+    while (length > 0) {
+        size_t count = (size_t)length < sizeof(output) / 2 ? (size_t)length : sizeof(output) / 2;
+        for (size_t i = 0; i < count; i++) {
+            output[2 * i] = digits[bytes[i] >> 4];
+            output[2 * i + 1] = digits[bytes[i] & 15];
+        }
+        fwrite(output, 2, count, stdout);
+        bytes += count;
+        length -= (int32_t)count;
+    }
+}
+
 int main(int argc, char **argv) {
     const char *names[] = {"copy", "trim", "unescape", "whitespace", "code", "closer", "owners"};
     long count, start, ticks;
@@ -131,13 +148,9 @@ int main(int argc, char **argv) {
             return 1;
         }
         printf("{\"source\":\"");
-        for (int j = 0; j < s->length; j++) {
-            printf("%02x", s->input[j]);
-        }
+        print_hex(s->input, s->length);
         printf("\",\"hex\":\"");
-        for (int j = 0; j < s->size; j++) {
-            printf("%02x", s->data[j]);
-        }
+        print_hex(s->data, s->size);
         printf("\",\"position\":%d,\"result\":%d,\"scanned\":%d,\"cache\":[", s->position, s->result, s->scanned);
         for (int j = 0; j <= 80; j++) {
             printf("%s%d", j ? "," : "", s->cache[j]);
