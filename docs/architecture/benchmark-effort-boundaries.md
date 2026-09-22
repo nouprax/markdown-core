@@ -36,18 +36,21 @@ optimum. A ratio of 2 does not mean half the instructions can be removed.
 
 `effort_runner.h` defines the common state. Input is an immutable, independently
 owned, length-delimited byte string plus a NUL sentinel. Length is nonnegative
-and less than INT32_MAX/2. Output is a distinct mutable buffer with capacity
-length+1. It initially holds input and its sentinel, except for copy, whose
-initial logical length is zero. The caller retains both allocations throughout
-the call; no output may borrow input. Output is bytes, length and trailing NUL;
-bytes beyond the logical terminator are unspecified. Input must remain unchanged.
-All fresh-search result fields and the 81-word memo are initially zero.
+and less than INT32_MAX/2. For the six byte tasks, output is a distinct mutable
+buffer with capacity length+1. It initially holds input and its sentinel,
+except for copy, whose initial logical length is zero. The caller retains both
+allocations throughout the call; no output may borrow input. Byte output is
+bytes, length and trailing NUL; bytes beyond the terminator are unspecified.
+The ownership task instead returns a native graph described below; its separate
+observation buffer has capacity 5*length+1. Input must remain unchanged. All
+fresh-search result fields, the 81-word memo and the failure field start at zero;
+the native graph pointer starts null.
 
-There is sufficient writable capacity on both sides. The six byte operations may not
-allocate, fail semantically, or report OOM. The ownership operation below charges
+There is sufficient writable capacity on both sides. The six byte operations
+may not allocate, fail semantically, or report OOM. The ownership operation below charges
 its native array allocation inside the measured edge and reports a checked
-resource failure if calloc fails; neither native attach primitive allocates. This is a complete local contract
-with explicit preconditions, not a claim that the full parsers share failure
+resource failure if calloc fails; neither native attach primitive allocates.
+This is a complete local contract with explicit preconditions, not a claim that the full parsers share failure
 behavior. Core sticky OOM and cmark's allocator/abort behavior are deliberately
 outside this domain. Admission rejects invalid lengths, cursor/run parameters,
 CR/NUL in normalized inputs, and a cursor splitting a delimiter run. Rejected
@@ -71,9 +74,11 @@ repeated calls do not accidentally benchmark an already normalized buffer.
 | code | NUL/CR-normalized bytes, otherwise arbitrary | Replace LF by space; if the result contains a non-space and starts/ends with space, remove exactly one at each end |
 | closer | NUL/CR-normalized bytes; 0 <= start <= length at a maximal-run boundary; 1 <= ticks <= 80 | Find the first maximal backtick run of exactly ticks after start; return its exclusive end and cursor, or result=0/cursor=length/scanned=1 if absent. Memo[k] is the start of the last visited run of length k, k=1..80, initially zero; stop at the matching run. Preserve input/output bytes. |
 
-These domains include empty input, malformed/unclosed delimiters, arbitrary
+| owners | Nonempty topologically ordered parent-index stream, as specified below | Ordered ownership graph; all five intrusive links per owner; checked allocation failure |
+
+The byte domains include empty input, malformed/unclosed delimiters, arbitrary
 high bytes and adversarial long runs. They are infinite up to the fixed-word
-machine bound, not the old seven-digit template languages. The finite test corpus
+machine bound, not the old six-digit template languages. The finite test corpus
 is regression evidence; it is not a proof over every string.
 
 ### Ownership construction for all 43 structural pairs
@@ -155,8 +160,8 @@ stays the supplied pointer; no caller state is silently transferred.
 For copy, the production memmove writes exactly the input range, then size and
 NUL. Empty input clears the descriptor and NUL. For trim, the first scan finds
 the maximal W-prefix; drop preserves the remaining order; the reverse scan
-removes exactly its W-suffix. The all-W case becomes empty. On the admitted domain both classification
-tables have exactly the W set and the ASCII punctuation ranges 33..47, 58..64,
+removes exactly its W-suffix. The all-W case becomes empty. On the admitted
+domain both classification tables have exactly the W set and the ASCII punctuation ranges 33..47, 58..64,
 91..96, 123..126, independent of locale and signed-char representation.
 
 For unescape, at every read boundary the written prefix equals the relation on
