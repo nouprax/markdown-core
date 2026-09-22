@@ -1,4 +1,4 @@
-name: Stage Benchmark
+name: Benchmark
 
 # What a parse costs Markdown Core, stage by stage, next to what the same bytes
 # cost cmark. Callgrind counts instructions and data references rather than
@@ -13,17 +13,10 @@ name: Stage Benchmark
 # What this job produces is comparable
 # to another run of this job, not to whatever a contributor ran locally.
 #
-# The report goes to the run's job summary and an artifact. It is deliberately
-# NOT a pull-request comment: a comment needs `pull-requests: write`, and a
-# workflow that both executes pull-request code and holds a write token is the
-# shape the previous pipeline needed two workflows and an artifact-validation
-# protocol to make safe. Both the event base and the pull-request head execute
-# with this read-only token; no privileged publisher consumes their artifacts.
-#
-# The source stage gates regressions against the event's base in this same job.
-# Callgrind ratios against references remain diagnostics, not elapsed speedups.
-# The independent attribute/lexbor diagnostic lives in attribute-benchmark.yml
-# so its failure cannot enter this reusable workflow's required result.
+# CI calls this workflow only when its shared preflight requires execution.
+# Both measurements contribute to Required gates. Manual runs always measure.
+# The CI completion publisher reads bounded JSON artifacts and updates one PR
+# comment; only that trusted default-branch publisher has write permissions.
 
 on:
     workflow_call:
@@ -34,20 +27,12 @@ permissions:
     contents: read
 
 concurrency:
-    group: stage-benchmark-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+    group: benchmark-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
     cancel-in-progress: true
 
 jobs:
-    changes:
-        uses: ./.github/workflows/changes.yml
-        permissions:
-            actions: read
-            contents: read
-
     stages:
-        needs: changes
         name: Measure - parse stages against cmark
-        if: ${{ needs.changes.outputs.required == 'true' }}
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -63,7 +48,7 @@ jobs:
                   sudo apt-get install --no-install-recommends --yes valgrind
             - name: Build the pinned reference checkouts
               run: scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm
-            - name: Measure every engine and gate source-stage regressions
+            - name: Measure every engine and compare source-stage regressions
               env:
                   BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
               run: |
@@ -71,16 +56,21 @@ jobs:
                       BASE_REVISION=$(git rev-parse HEAD^)
                   fi
                   node scripts/benchmark-stages.mjs --scale 2 --baseline-ref "$BASE_REVISION"
-            - name: Publish the report to the run summary
+            - name: Upload structured results for the PR comment
               if: ${{ always() }}
-              run: |
-                  test -f build/benchmark-stages/stages.md \
-                      && cat build/benchmark-stages/stages.md >>"$GITHUB_STEP_SUMMARY"
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: benchmark-report-stages-${{ github.run_attempt }}
+                  path: |
+                      build/benchmark-stages/stages.json
+                      build/benchmark-stages/baseline/stages.json
+                  if-no-files-found: warn
+                  retention-days: 30
             - name: Upload the report and the raw dumps
               if: ${{ always() }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
-                  name: stage-benchmark-${{ github.sha }}
+                  name: benchmark-stages-${{ github.sha }}-${{ github.run_attempt }}
                   # The dumps are what a reviewer opens in kcachegrind when a
                   # stage total moves and the table does not say why, and the
                   # corpus is what they diff when the report's corpus digest
@@ -95,5 +85,48 @@ jobs:
                       build/benchmark-stages/baseline/stages.json
                       build/benchmark-stages/baseline/callgrind
                       build/benchmark-stages/baseline/corpus
+                  if-no-files-found: error
+                  retention-days: 30
+
+    attributes:
+        name: Measure - the attribute grammar against lexbor
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version: 26.8.1
+            - name: Install callgrind
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install --no-install-recommends --yes valgrind
+            - name: Build the pinned lexbor baseline
+              run: scripts/init-environment.sh --install oracle-lexbor
+            # A separate job from the stage measurement, for the same reason it
+            # is a separate driver: the two baselines cannot be given the same
+            # bytes, so this compares one grammar against one grammar rather
+            # than two document parsers on one corpus.
+            - name: Measure the attribute grammar
+              run: node scripts/benchmark-attributes.mjs
+            - name: Upload structured results for the PR comment
+              if: ${{ always() }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: benchmark-report-attributes-${{ github.run_attempt }}
+                  path: build/benchmark-attributes/attributes.json
+                  if-no-files-found: warn
+                  retention-days: 30
+            - name: Upload the report and the raw dumps
+              if: ${{ always() }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: benchmark-attributes-${{ github.sha }}-${{ github.run_attempt }}
+                  path: |
+                      build/benchmark-attributes/attributes.md
+                      build/benchmark-attributes/attributes.json
+                      build/benchmark-attributes/callgrind
+                      build/benchmark-attributes/input
                   if-no-files-found: error
                   retention-days: 30

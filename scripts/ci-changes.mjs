@@ -4,13 +4,9 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { inputVersion, requiredWorkflows, sameInputs, validationSource } from "./lib/ci-inputs.mjs";
 
 const evidenceName = "ci-inputs";
-const requiredWorkflows = [
-    ".github/workflows/ci.yml",
-    ".github/workflows/codeql.yml",
-    ".github/workflows/release-dry-run.yml"
-];
 
 // Everything is an execution input unless explicitly identified as prose.
 // In particular, .md fixtures and machine-readable contracts are not docs.
@@ -67,7 +63,7 @@ export function capture(context, cwd) {
         base = payload.merge_group.base_sha;
     }
     return {
-        version: 1,
+        version: inputVersion,
         repository: `${context.repo.owner}/${context.repo.repo}`,
         event: eventName,
         ref,
@@ -114,8 +110,8 @@ export async function readEvidence(github, repo, run) {
 }
 
 export async function decide({ context, current, baseFingerprint, github, evidence = readEvidence }) {
-    const run = (reason) => ({ required: true, reason });
-    const skip = (reason) => ({ required: false, reason });
+    const run = (reason) => ({ required: true, reason, sources: {} });
+    const skip = (reason, sources = {}) => ({ required: false, reason, sources });
     const { eventName, payload, ref, repo } = context;
     if (
         !["pull_request", "push", "merge_group"].includes(eventName) ||
@@ -149,7 +145,8 @@ export async function decide({ context, current, baseFingerprint, github, eviden
         });
         if (data.total_count > data.workflow_runs.length) return run("Run history is incomplete.");
         const workflows = eventName === "push" ? requiredWorkflows.slice(0, 2) : requiredWorkflows;
-        const sources = [];
+        const sources = {};
+        const urls = [];
         for (const workflow of workflows) {
             const previous = data.workflow_runs
                 .filter(
@@ -161,22 +158,18 @@ export async function decide({ context, current, baseFingerprint, github, eviden
                 return run(`The preceding ${workflow} run has not completed successfully.`);
             }
             const record = await evidence(github, repo, previous);
-            if (
-                !record ||
-                record.version !== 1 ||
-                record.repository !== current.repository ||
-                record.event !== current.event ||
-                record.ref !== current.ref ||
-                record.pullRequest !== current.pullRequest ||
-                record.head !== before ||
-                record.base !== current.base ||
-                record.fingerprint !== current.fingerprint
-            ) {
+            if (!record || record.version !== inputVersion || !sameInputs(record, current) || record.head !== before) {
                 return run(`The preceding ${workflow} run does not prove identical execution inputs and base.`);
             }
-            sources.push(previous.html_url);
+            const source = validationSource(record, workflow, previous);
+            if (!source) return run(`The preceding ${workflow} run has no full validation to reuse.`);
+            sources[workflow] = source;
+            urls.push(previous.html_url);
         }
-        return skip(`Reusing successful validation of identical inputs and integration base: ${sources.join(", ")}`);
+        return skip(
+            `Reusing successful validation of identical inputs and integration base: ${urls.join(", ")}`,
+            sources
+        );
     } catch (error) {
         return run(`Validation evidence is unavailable; running fully (${error.message}).`);
     }
@@ -188,7 +181,8 @@ export async function check({ github, context, core, cwd = process.cwd() }) {
     const decision = await decide({ context, current, baseFingerprint, github });
     const directory = path.join(cwd, "build/ci");
     fs.mkdirSync(directory, { recursive: true });
-    fs.writeFileSync(path.join(directory, "inputs.json"), `${JSON.stringify(current)}\n`);
+    const record = { ...current, validation: { required: decision.required, sources: decision.sources } };
+    fs.writeFileSync(path.join(directory, "inputs.json"), `${JSON.stringify(record)}\n`);
     core.info(decision.reason);
     core.setOutput("required", String(decision.required));
     await core.summary.addHeading("CI execution").addRaw(decision.reason).write();
