@@ -232,7 +232,10 @@ The existing stage benchmark builds both runners with its pinned compiler,
 flags and cmark checkout, then runs the suite and writes `effort/effort.json`,
 `effort/effort.md`, exact input files and raw Callgrind dumps. Report identity
 hashes this proof, the cost model, both adapters, common driver, measurement
-logic and build definitions. Each binary digest and actual compile inventory
+logic and build definitions. It conservatively includes the complete benchmark
+library tree and stage entry point, so indirect cache/isolation, profile parsing
+and compile-identity dependencies cannot change without invalidating the identity.
+Each binary digest and actual compile inventory
 is recorded alongside the parent run's toolchain/reference identity.
 
 Production `code.c`/pinned `inlines.c` are included in adapter translation units

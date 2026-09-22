@@ -28,14 +28,18 @@ const invoke = (command, args, options) => {
 };
 
 export function boundaryIdentity(root) {
+    // The benchmark library is one conservative provenance boundary. Hash the
+    // complete tree so a new indirect helper cannot silently change isolation,
+    // profiling or interpretation while retaining an earlier identity.
+    const library = fs
+        .readdirSync(path.join(root, "scripts/lib"), { recursive: true })
+        .filter((file) => file.endsWith(".mjs"))
+        .map((file) => `scripts/lib/${file.split(path.sep).join("/")}`);
     const files = [
         "docs/architecture/benchmark-effort-boundaries.md",
         "docs/architecture/benchmark-parser-effort.md",
-        "scripts/lib/effort-boundaries.mjs",
-        "scripts/lib/measure-effort.mjs",
-        "scripts/lib/pair-productions.mjs",
-        "scripts/lib/corpus-pairs.mjs",
-        "scripts/lib/pair-effort.mjs",
+        "scripts/benchmark-stages.mjs",
+        ...library,
         "packages/markdown-core/benchmarks/effort_runner.h",
         "packages/markdown-core/benchmarks/effort_runner.c",
         "packages/markdown-core/benchmarks/effort_adapter.h",
@@ -43,7 +47,12 @@ export function boundaryIdentity(root) {
         "packages/markdown-core/benchmarks/cmark_effort.c",
         "packages/markdown-core/benchmarks/CMakeLists.txt"
     ];
-    return digest(files.map((file) => `${file}\0${digest(fs.readFileSync(path.join(root, file)))}`).join("\n"));
+    return digest(
+        files
+            .sort()
+            .map((file) => `${file}\0${digest(fs.readFileSync(path.join(root, file)))}`)
+            .join("\n")
+    );
 }
 
 export function readBoundaryEdges(text, iterations) {

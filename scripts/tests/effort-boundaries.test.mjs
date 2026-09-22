@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import {
     admitBoundary,
@@ -13,10 +15,33 @@ import {
     boundaryPairAudit,
     verifyBoundaryReceipt
 } from "../lib/effort-boundaries.mjs";
-import { readBoundaryEdges, boundaryMarkdown } from "../lib/measure-effort.mjs";
+import { readBoundaryEdges, boundaryMarkdown, boundaryIdentity } from "../lib/measure-effort.mjs";
 
 const fixture = (operation, text, options = {}) => ({ id: "test", operation, input: Buffer.from(text), ...options });
 const output = (operation, text) => Buffer.from(boundaryOracle(fixture(operation, text)).hex, "hex").toString();
+test("identity covers indirect cost dependencies and newly added library helpers", (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "boundary-identity-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    for (const file of [
+        "docs/architecture",
+        "scripts/lib",
+        "scripts/benchmark-stages.mjs",
+        "packages/markdown-core/benchmarks"
+    ])
+        fs.cpSync(new URL(`../../${file}`, import.meta.url), path.join(root, file), { recursive: true });
+    const before = boundaryIdentity(root);
+    for (const file of ["measurement.mjs", "callgrind.mjs", "compile-identity.mjs", "pair-review.mjs"]) {
+        const target = path.join(root, "scripts/lib", file);
+        const source = fs.readFileSync(target);
+        fs.appendFileSync(target, "\n// changed dependency\n");
+        assert.notEqual(boundaryIdentity(root), before, file);
+        fs.writeFileSync(target, source);
+        assert.equal(boundaryIdentity(root), before);
+    }
+    fs.mkdirSync(path.join(root, "scripts/lib/nested"));
+    fs.writeFileSync(path.join(root, "scripts/lib/nested/helper.mjs"), "export const setting = 1;\n");
+    assert.notEqual(boundaryIdentity(root), before);
+});
 test("normalization contracts preserve bytes, padding and escape consumption", () => {
     assert.equal(output("copy", "a\0b"), "a\0b");
     assert.equal(output("trim", " \t\na\0b\r\n"), "a\0b");
