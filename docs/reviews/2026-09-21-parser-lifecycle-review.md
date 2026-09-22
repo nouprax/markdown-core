@@ -201,6 +201,26 @@ confirmed the seven earlier repairs and identified the following follow-ups:
   stage can evade this gate. Complete parse and outside-stage counts remain
   required report context, including the six-byte boundary document.
 
+## Codex benchmark-gate review (2026-09-22)
+
+Both Codex findings were still present after the Claude follow-up:
+
+- [Source inventory was mistaken for compile options](https://github.com/nouprax/markdown-core/pull/365#discussion_r4061043281).
+  Baseline compatibility now compares the distinct ordered compile lines and
+  the options of surviving paths, while additions, deletions and renames may
+  change the inventory. Each report retains its revision's actual inventory,
+  including per-source options, rather than copying the head inventory into
+  the baseline report. Tests cover all three refactors, changed options on one
+  surviving unit despite an unchanged option union, macro arguments and option
+  order. Cache/link options and runtime-library checks remain required.
+- [The attribute diagnostic accidentally blocked the source gate](https://github.com/nouprax/markdown-core/pull/365#discussion_r4067985831).
+  Attribute/lexbor measurement is now a standalone informational workflow,
+  with the same preflight, read-only permissions and artifact publication.
+  It cannot fail CI's reusable source workflow or release validation through
+  an aggregate result. A regression test traverses dependencies and nested
+  reusable workflows; source failure still fails the gate, while attribute
+  failure, cancellation or absence is outside that dependency graph.
+
 ## Commit review ledger
 
 | Commit | Main area examined | Conclusion |

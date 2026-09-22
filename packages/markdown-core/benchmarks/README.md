@@ -102,14 +102,14 @@ by the driver. The flags are Release plus two additions:
 
 The report does not stop there and claim the two compile lines match, because
 they do not. It reads every object of each linked engine out of that tree's
-`compile_commands.json` — 59 for Markdown Core and 19 for cmark — and splits the
+`compile_commands.json` and splits the
 options into what both engines got and what only one of them did.
 
 Every object, not the one holding the stage boundaries: a stage's cost is
 inclusive, so it contains whatever the scanners and inline code did, and CMake
 lets a single source carry its own options. `elements/CMakeLists.txt` gives ten
 scanner sources `-Wno-unused-variable` through `set_source_files_properties`,
-which is why Markdown Core's 59 objects have two distinct compile lines and not
+which is why Markdown Core's objects have two distinct compile lines and not
 one. The report names the object count and the number of distinct lines, and
 digests the whole per-file set, so a per-source option anywhere in an engine
 moves the identity. Naming the target matters too, since Markdown Core compiles
@@ -754,9 +754,10 @@ engine trees, and a tree stamped with different ones is rebuilt rather than
 reused.
 
 The ratio is not exempt. A compiler upgrade need not change both engines by the
-same proportion, so a toolchain roll moves the ratio too. **Two reports whose
-toolchain tables differ are not comparable at all** — not their counts, not
-their ratios — and a difference between them cannot be read as a code change.
+same proportion, so a toolchain roll moves the ratio too. **Toolchain and
+measurement-input identities must match** for counts or ratios to be comparable.
+Source/object inventories and binary hashes record the revisions being compared;
+those may differ without changing the toolchain.
 What holds inside one report is that both engines met the same compiler, so the
 ratio there is a fact about the two parsers rather than about the build.
 
@@ -767,8 +768,17 @@ CI calls this workflow as a dependency of `Required gates`. With
 harness, preset and pinned references, generates the current corpus once, and
 measures both cores on those exact bytes in the same isolated environment.
 Effective flags, compiler provenance and loaded runtime libraries must agree.
+The distinct ordered compile-option sets must match, as must the options of
+each surviving source path. Adding, removing or renaming a translation unit
+does not itself break compatibility. Object counts, per-source options and
+inventory digests remain separate provenance, recorded for each revision in
+its own report rather than copied from head to base.
 Both complete reports and Callgrind dumps are retained; the base report reuses
 this run's measured reference results and identifies their actual binaries.
+
+The attribute/lexbor comparison is an independent informational workflow. Its
+setup, measurement and artifact failures do not enter the source workflow's
+aggregate result, CI's required gates or the release dependency graph.
 
 Every case/scale must have `source_to_buffer` Ir at most 1.02 times its base.
 The 2% allowance is an explicit review budget, not a claim of measurement noise

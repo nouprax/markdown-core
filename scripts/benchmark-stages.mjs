@@ -54,7 +54,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { baseName, costRecord, edgesBetween, foldNames, nodesEnteredFrom, parseCallgrind } from "./lib/callgrind.mjs";
-import { compiledFlags as readCompiledFlags, discardTree, effectiveFlags, markTree } from "./lib/compile-identity.mjs";
+import {
+    compiledFlags as readCompiledFlags,
+    discardTree,
+    effectiveFlags,
+    markTree,
+    sameCompileOptions
+} from "./lib/compile-identity.mjs";
 import { sourceBudget, SOURCE_IR_LIMIT } from "./lib/source-budget.mjs";
 import { caseClosure, splitWithCases } from "./lib/corpus-splits.mjs";
 import { boundarySource, pairReview } from "./lib/pair-review.mjs";
@@ -809,13 +815,19 @@ function buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir,
     buildRunners(built, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions, source);
     verifyStageSymbols(built);
     verifyBuildProvenance(built, versions);
-    const compiled = readCompiledFlags(source, built.binaryDir, "libmarkdown-core-public-static", fail);
-    const current = readCompiledFlags(root, profile.binaryDir, "libmarkdown-core-public-static", fail);
-    if (
-        JSON.stringify(compiled) !== JSON.stringify(current) ||
-        JSON.stringify(effectiveFlags(built.binaryDir)) !== JSON.stringify(effectiveFlags(profile.binaryDir))
-    ) {
+    const compiled = Object.fromEntries(
+        [
+            ["markdown-core", "libmarkdown-core-public-static"],
+            ["attribute runner", ATTRIBUTE_RUNNER.target]
+        ].map(([engine, target]) => [engine, readCompiledFlags(source, built.binaryDir, target, fail)])
+    );
+    if (JSON.stringify(effectiveFlags(built.binaryDir)) !== JSON.stringify(effectiveFlags(profile.binaryDir))) {
         fail("baseline and current core use different effective build flags");
+    }
+    for (const [engine, record] of Object.entries(compiled)) {
+        if (!sameCompileOptions(record, versions.compiled.objects[engine])) {
+            fail(`baseline and current ${engine} use different effective compile options`);
+        }
     }
     const libraries = loadedLibraries(
         path.join(built.binaryDir, ENGINES["markdown-core"].runner),
@@ -823,7 +835,7 @@ function buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir,
     );
     if (JSON.stringify(libraries) !== JSON.stringify(versions.libraries))
         fail("baseline uses different runtime libraries");
-    return { revision, profile: built, directory, binaries: runnerIdentity(built), cases: [] };
+    return { revision, profile: built, directory, compiled, binaries: runnerIdentity(built), cases: [] };
 }
 
 /**
@@ -1805,7 +1817,11 @@ export function markdownReport(report) {
             " change both engines by the same proportion, so a toolchain roll moves the" +
             " ratio columns too.",
         "",
-        "**Compare this report only against one whose table above is identical.**" +
+        "**Compare only matching toolchain, environment, corpus and compile-option identities.**" +
+            " The measured-object inventory is provenance, not a compile option: source" +
+            " paths and object counts may change in a refactor. Each revision reports" +
+            " its own inventory; surviving paths must retain their options and the" +
+            " distinct option sets must match." +
             " Across differing toolchains nothing here is comparable, ratios included," +
             " and a difference cannot be read as a code change. The table carries the" +
             " EFFECTIVE compile and link flags rather than the preset's, because CMake" +
@@ -2262,7 +2278,7 @@ export function markdownReport(report) {
                         ` (${least.host}, ${count(least.measured.wholePerList)}, ${least.measured.inPlaceOverAlone.toFixed(2)}x)` +
                         ` is **${(most.measured.wholePerList / least.measured.wholePerList).toFixed(2)}x**. The spread` +
                         " is evidence, not a threshold: it names the host to open when it moves, and it is" +
-                        " comparable only against a report whose identity table above is identical.",
+                        " comparable only with matching toolchain, environment, corpus and compile options.",
                     ""
                 );
             }
@@ -2579,12 +2595,7 @@ function main() {
         cmark: compiled.cmark.flags,
         "cmark-gfm": compiled["cmark-gfm"].flags,
         "cmark-gfm-extensions": compiled["cmark-gfm-extensions"].flags,
-        objects: Object.fromEntries(
-            Object.entries(compiled).map(([engine, record]) => [
-                engine,
-                { units: record.units, distinct: record.distinct, digest: record.digest }
-            ])
-        ),
+        objects: compiled,
         shared: tokens("markdown-core")
             .filter((flag) => tokens("cmark").includes(flag))
             .join(" "),
@@ -2699,6 +2710,13 @@ function main() {
         const previous = {
             ...report,
             revision: baseline.revision,
+            toolchain: {
+                ...versions,
+                compiled: {
+                    ...versions.compiled,
+                    objects: { ...versions.compiled.objects, ...baseline.compiled }
+                }
+            },
             binaries: {
                 ...binaries,
                 "markdown-core": baseline.binaries["markdown-core"],
