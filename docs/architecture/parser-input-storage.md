@@ -33,10 +33,10 @@ any active input during the parse, not just the final input's length.
 For N NUL-bearing lines, normalized views additionally retain one pointer-sized
 header per line plus its raw content length, two extra bytes per NUL, and LF/NUL
 terminators. On LP64/LLP64, repeated `\0\n` therefore requests
-12C + 64C + 13L input-workspace bytes: for L >= 8, [89L, 165L), or
-44.5–82.5 times that two-byte-per-line input. This still excludes the AST and
-allocator overhead; neither this bound nor the LF-only geometry bound is a
-bound on total parse memory or process RSS.
+12C + 64C + 13L bytes for geometry, facts and normalized views: for L >= 8,
+[89L, 165L), or 44.5–82.5 times that two-byte-per-line input. This excludes
+other parser workspaces, the AST and allocator overhead; neither this bound
+nor the LF-only geometry bound is a bound on total parse memory or process RSS.
 Tests use empty, one-character and NUL-bearing lines across capacity boundaries
 and assert record size, independent geometry/fact capacity bounds, one normalized
 view per NUL-bearing line, and one frontier advance per source byte.

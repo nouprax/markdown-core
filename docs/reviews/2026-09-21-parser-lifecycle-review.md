@@ -195,7 +195,7 @@ confirmed the seven earlier repairs and identified the following follow-ups:
 - NUL-bearing short lines now exercise fact capacity and normalized-view
   counts. The documentation already included NUL-bearing facts and explicitly
   excluded AST/allocator memory from its geometry bound. It now gives the full
-  input-workspace formula for repeated NUL lines; the reported whole-process
+  geometry/facts/views formula for repeated NUL lines; the reported whole-process
   RSS is a different quantity and does not contradict that bound.
 - The source-budget module now explicitly states that moving work outside the
   stage can evade this gate. Complete parse and outside-stage counts remain

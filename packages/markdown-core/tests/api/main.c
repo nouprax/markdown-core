@@ -134,6 +134,20 @@ static void payload_probe_disarm(void) {
     payload_counting = 0;
 }
 
+typedef struct {
+    size_t allocations, releases;
+} payload_probe_calls;
+
+/* Callbacks borrow the surrounding test's armed region. Never let a snapshot
+ * silently observe disabled counters, even in an NDEBUG test binary. */
+static payload_probe_calls payload_probe_snapshot(void) {
+    if (!payload_counting) {
+        fprintf(stderr, "payload snapshot requested outside an armed region\n");
+        abort();
+    }
+    return (payload_probe_calls){payload_allocations, payload_releases};
+}
+
 /* Refusals are counted the same way whichever entry point asks, because a
  * constructor that grows a buffer and one that allocates a record are the same
  * ordinal to a sweep that refuses the Nth. */
@@ -7337,13 +7351,14 @@ static bool probe_table_transactions(markdown_core_parser *parser, block_start_c
     }
     probe->entered = true;
     for (int pass = 0; pass < 4; pass++) {
-        size_t allocations = payload_allocations, releases = payload_releases;
+        payload_probe_calls before = payload_probe_snapshot();
         size_t geometry = parser->table_geometry_lines, nodes = parser->nodes_created;
         markdown_core_block_lookahead lookahead;
         bool begun =
             markdown_core_parser_lookahead_begin(parser, context->container, MARKDOWN_CORE_NODE_TABLE, &lookahead);
         bool matched =
             begun && markdown_core_table_caption_probe(&lookahead, context->input, context->first, context->indent);
+        payload_probe_calls after = payload_probe_snapshot();
         OK(probe->runner, begun && !parser->error && matched == probe->matches,
            "cold and warm table transactions agree on recognition");
         INT_EQ(probe->runner, parser->nodes_created, nodes, "a table query constructs no AST nodes");
@@ -7352,11 +7367,12 @@ static bool probe_table_transactions(markdown_core_parser *parser, block_start_c
                "a warm query still rebuilds candidate geometry in retained storage");
         }
         if (pass == 0) {
-            OK(probe->runner, payload_allocations > allocations, "the cold query observes real workspace allocation");
+            OK(probe->runner, after.allocations > before.allocations,
+               "the cold query observes real workspace allocation");
         } else {
-            INT_EQ(probe->runner, payload_allocations, allocations,
+            INT_EQ(probe->runner, after.allocations, before.allocations,
                    "a warm table transaction makes zero allocator calls");
-            INT_EQ(probe->runner, payload_releases, releases, "a warm table transaction makes zero release calls");
+            INT_EQ(probe->runner, after.releases, before.releases, "a warm table transaction makes zero release calls");
         }
     }
     return false;
