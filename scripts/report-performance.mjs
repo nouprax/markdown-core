@@ -86,7 +86,8 @@ export function summarize(report, readProfile) {
         }
     }
     const atOne = new Map(report.cases.filter((c) => c.scale === 1).map((c) => [c.case, c]));
-    const pairs = report.pairs.filter(provenPair).map((pair) => {
+    const measuredPairs = report.pairs.filter((pair) => atOne.has(pair.case) && atOne.has(pair.isomorph));
+    const pairs = measuredPairs.filter(provenPair).map((pair) => {
         const a = atOne.get(pair.case),
             b = atOne.get(pair.isomorph);
         const ref = referenceFor(b);
@@ -112,7 +113,7 @@ export function summarize(report, readProfile) {
         .filter((pair) => pair.contract.review)
         .flatMap((pair) => {
             const review = pairReview(pair);
-            if (!review.baseline) return [];
+            if (!review.baseline || !atOne.has(pair.case) || !atOne.has(review.baseline)) return [];
             const a = atOne.get(pair.case),
                 b = atOne.get(review.baseline);
             assert.equal(a.units, b.units, `${pair.case}: boundary units`);
@@ -147,7 +148,7 @@ export function summarize(report, readProfile) {
 }
 
 const number = (n) => n.toLocaleString("en-US");
-const ratio = (a, b) => `${(a / b).toFixed(3)}×`;
+const ratio = (a, b) => (b > 0 ? `${(a / b).toFixed(3)}×` : "—");
 const median = (values) => {
     const sorted = [...values].sort((a, b) => a - b),
         mid = Math.floor(sorted.length / 2);

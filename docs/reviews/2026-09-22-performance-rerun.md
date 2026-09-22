@@ -42,7 +42,7 @@ it is not substituted for the measured cost-line sum.
 
 | Previous item | Fresh evidence and disposition |
 | --- | --- |
-| Node lifecycle | The slab model from #362 is in main. Constructor self is 514,294,439 Ir over the current reference cohort. Recycled cells still clear the entire maximum record, even for kinds with no record: confirmed as #369. Block creation also allocates a content buffer before any content exists: #368. |
+| Node lifecycle | The slab model from #362 is in main. Constructor self is 514,294,439 Ir over the current reference cohort. Recycled cells still clear the entire maximum record, even for kinds with no record: #369. Block creation allocates content before writing: #368. Kind conversion also abandons existing cell storage for a separate replacement allocation: #373 (24,159 calls / 5,307,575 inclusive Ir over the full corpus, not this reference cohort). |
 | Repeated attach checks | #365 supplies owner proofs, validated attachment and debug/ASan containment assertions; #354 is closed. Public checked mutations remain necessary. This rerun found no new unproved internal attachment bypass or repeated decision to remove. |
 | Finish walk | `walk_owned_trees` is 451,879,231 self Ir. ENTER/EXIT events, mutation handling, field roots and word depth are required semantics. One actual duplicated operation remains: absorbed Text completion reinterprets its structure despite the projected finish plan, #370. The consolidation-to-completion edge is 815,344 calls / 39,136,512 inclusive Ir; that whole cost is not removable because completion and observation remain required. |
 | Per-line block pipeline | #365's shared line index and static-inline driver advancement address #355. Keep the per-document source-stage regression gate. `S_parse_source`/`open_new_blocks` self totals (842,476,508 / 520,400,102 Ir) do not by themselves identify another redundant scan. |
@@ -62,11 +62,16 @@ so they cannot prove the cost of one equivalent semantic operation.
 1. [#368](https://github.com/nouprax/markdown-core/issues/368): every block uses
    the existing empty-buffer sentinel; the first write acquires storage.
    The streaming line writer retains the former 32-byte initial reservation
-   at this ownership transition; bounded value producers keep ordinary strbuf writes.
+   at this ownership transition and reserves the whole first write in one growth;
+   bounded value producers keep ordinary strbuf writes.
    The policy is shared by every block kind and physical line. Removing the
    reservation entirely caused extra reallocations: early partial Linux
    profiles showed fences +3.65% and Setext workloads +2.54% source Ir. This
    revision moves the reservation to its correct lifecycle boundary instead.
+   A full intermediate rerun then exposed one source-gate regression
+   (`split-attributes-link`, +3.64%): reserving 32 and immediately growing for
+   the known first line changed allocator work. Reserving the complete write,
+   including tab expansion, removes that redundant allocation generally.
 2. [#369](https://github.com/nouprax/markdown-core/issues/369): initialize the
    complete node and the active record, not spare cell storage. Fresh/reused
    cells share one constructor; external records retain their own allocation
@@ -83,16 +88,33 @@ so they cannot prove the cost of one equivalent semantic operation.
    filling fresh memory with `0xa5` reproduced the old empty buffer's non-NUL
    terminator; this is a buffer-contract defect, not a claim of a reproduced
    public-entry overread.
+5. [#373](https://github.com/nouprax/markdown-core/issues/373): kind conversion
+   uses the same record capacity/ownership rule as construction. An external
+   replacement is reserved before old fields are destroyed. A fitting record
+   reuses the cell after destruction, with infallible initialization; node
+   identity, links and element-owned state survive. All conversion callers
+   were checked: Setext and pipe-table conversion borrow no old record after
+   success; HTML comment conversion restores its borrowed literal only on
+   rejection/failure, before any destructive commit. Existing cell storage
+   preserves the node address just as an external replacement does.
+6. [#374](https://github.com/nouprax/markdown-core/issues/374): the new census
+   reporter supports valid `--case` artifacts, whose pair registry remains
+   complete while the measured cases are a subset. A proof or boundary is
+   reported only when both required scale-1 documents were measured. An empty
+   reference cohort has no ratio. This fixes the Codex review finding in the
+   new reporting tool, rather than attributing it to the baseline parser.
 
 Tests cover poisoned cell reuse across zero/inline/external payload kinds,
 buffer growth and failed growth, block storage acquisition and release, and
-completion-before-observation for absorbed escaped spaces. Existing lifecycle,
+completion-before-observation for absorbed escaped spaces. Conversion tests
+cover refused allocation, both record backings, old owned fields and nodes
+that outlive their parser pool. Existing lifecycle,
 OOM, mutation, complexity and full-AST parity suites remain required.
 
 ## Baseline census
 
 Local validation of the implementation: Release, Debug, ASan and UBSan each
-passed all 90 CTest entries; all 147 script tests passed. All 464 benchmark
+passed all 90 CTest entries; all 149 script tests passed. All 464 benchmark
 documents produced byte-identical complete AST dumps against main's tree.
 The pinned-oracle audits passed 714 CommonMark and 97 GFM inputs, with their
 existing declared divergences/projections; the domain/boundary audit passed.

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 
 import { parseCallgrind } from "../lib/callgrind.mjs";
-import { referenceFor, summarize } from "../report-performance.mjs";
+import { pairReview } from "../lib/pair-review.mjs";
+import { referenceFor, render, summarize } from "../report-performance.mjs";
 
 test("the reference cohort excludes unmatched fields and selects the declared grammar", () => {
     assert.equal(referenceFor({ dialect: "commonmark", carries: [] }), "cmark");
@@ -78,4 +80,52 @@ test("inconsistent stage accounting and incomplete profile partitions fail close
             () => parseCallgrind(profileText)
         )
     );
+});
+
+const registry = JSON.parse(
+    fs.readFileSync(new URL("../../packages/markdown-core/benchmarks/corpus.json", import.meta.url))
+);
+const subsetCase = (name, dialect = "extended") => ({
+    case: name,
+    dialect,
+    carries: [],
+    scale: 1,
+    units: 2,
+    bytes: 16,
+    engines: { "markdown-core": measurement, cmark: measurement }
+});
+const summarizeSubset = (cases) =>
+    summarize({ corpus: { digest: "test" }, cases, pairs: registry.pairs }, () => parseCallgrind(profileText));
+
+test("a selected proof pair ignores unmeasured contracts in the full manifest", () => {
+    const pair = registry.pairs.find((pair) => pair.contract.proof === "insertion-strong-v1");
+    const cases = [subsetCase(pair.case), subsetCase(pair.isomorph, "commonmark")];
+    const summary = summarizeSubset(cases);
+    assert.equal(summary.pairs.length, 1);
+    assert.equal(summary.pairs[0].case, pair.case);
+    assert.equal(summary.pairs[0].sameJob, 1);
+    assert.deepEqual(summary.boundaries, []);
+    const oneSide = summarizeSubset(cases.slice(0, 1));
+    assert.deepEqual(oneSide.pairs, []);
+    assert.equal(oneSide.core.documents, 0);
+    assert.doesNotMatch(render(oneSide), /NaN|Infinity/u);
+});
+
+test("a selected boundary needs its own two measured documents, not its historical counterpart", () => {
+    const pair = registry.pairs.find((pair) => pair.contract.review && pairReview(pair).baseline);
+    const baseline = pairReview(pair).baseline;
+    const without = subsetCase(baseline);
+    without.engines["markdown-core"] = {
+        ...measurement,
+        stages: { ...measurement.stages, buffer_to_ast: { cost: { Ir: 60 } } },
+        parsePathIr: 100
+    };
+    const cases = [subsetCase(pair.case), without];
+    const summary = summarizeSubset(cases);
+    assert.deepEqual(summary.pairs, []);
+    assert.equal(summary.boundaries.length, 1);
+    assert.equal(summary.boundaries[0].baseline, baseline);
+    assert.equal(summary.boundaries[0].delta, -10);
+    assert.deepEqual(summarizeSubset(cases.slice(0, 1)).boundaries, []);
+    assert.deepEqual(summarizeSubset(cases.slice(1)).boundaries, []);
 });
