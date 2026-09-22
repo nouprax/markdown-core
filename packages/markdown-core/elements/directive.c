@@ -33,6 +33,9 @@ typedef struct {
     /* Borrowed authored attributes: a braced envelope or one class word. */
     bufsize_t attributes_start;
     bufsize_t attributes_len;
+    /* One immutable source extent and its recognition memo survive until the
+     * committed owner decodes the value, or a declined probe releases it. */
+    markdown_core_attribute_parser attributes;
     bufsize_t end;
 } parsed_directive;
 
@@ -224,13 +227,12 @@ static void directive_opaque_free(const markdown_core_element *element, markdown
  * strings or records. The parser owns and accounts for recognition work. */
 static int scan_directive_attributes(markdown_core_parser *parser, unsigned char *data, bufsize_t len, bufsize_t *pos,
                                      parsed_directive *parsed) {
-    markdown_core_attribute_parser attributes = {.data = data, .length = len};
-    bufsize_t end = markdown_core_attributes_end(&attributes, *pos);
-    if (attributes.oom) {
+    parsed->attributes.data = data;
+    parsed->attributes.length = len;
+    bufsize_t end = markdown_core_attributes_end(&parsed->attributes, *pos);
+    if (parsed->attributes.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
-    parser->attribute_work += attributes.work;
-    markdown_core_attribute_parser_free(&attributes);
     if (!end) {
         return 0;
     }
@@ -242,8 +244,6 @@ static int scan_directive_attributes(markdown_core_parser *parser, unsigned char
 
 static int parse_directive_suffix(markdown_core_parser *parser, unsigned char *data, bufsize_t len, bufsize_t pos,
                                   parsed_directive *parsed) {
-    memset(parsed, 0, sizeof(*parsed));
-
     if (!scan_name(data, len, pos, &parsed->name_start, &parsed->name_len)) {
         return 0;
     }
@@ -326,14 +326,12 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
     if (parsed->attributes_len) {
         const unsigned char *source = data + parsed->attributes_start;
         if (*source == '{') {
-            markdown_core_attribute_parser attributes = {.data = source, .length = parsed->attributes_len};
             bufsize_t end;
-            int matched = markdown_core_attributes_parse(&attributes, 0, &node->attributes, &end);
-            parser->attribute_work += attributes.work;
-            if (attributes.oom) {
+            int matched =
+                markdown_core_attributes_parse(&parsed->attributes, parsed->attributes_start, &node->attributes, &end);
+            if (parsed->attributes.oom) {
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             }
-            markdown_core_attribute_parser_free(&attributes);
             if (!matched) {
                 return 0;
             }
@@ -550,7 +548,6 @@ static bufsize_t count_colons(const unsigned char *data, bufsize_t len, bufsize_
  * the opener's attribute spelling differs; a class word is one literal class. */
 static int parse_nameless_suffix(markdown_core_parser *parser, unsigned char *data, bufsize_t len, bufsize_t pos,
                                  parsed_directive *parsed) {
-    memset(parsed, 0, sizeof(*parsed));
     while (pos < len && ascii_is_line_space(data[pos])) {
         pos++;
     }
@@ -596,12 +593,17 @@ static bufsize_t scan_directive_block(markdown_core_parser *parser, unsigned cha
     return matched && has_only_spaces_until_line_end(input, len, parsed->end) ? colon_count : 0;
 }
 
+static void free_parsed_directive(markdown_core_parser *parser, parsed_directive *parsed) {
+    parser->attribute_work += parsed->attributes.work;
+    markdown_core_attribute_parser_free(&parsed->attributes);
+}
+
 static int probe_directive_block(markdown_core_parser *parser, markdown_core_chunk *input, int first, int indent,
                                  markdown_core_block_reader *reader) {
     (void)reader;
     parsed_directive parsed;
     bool matched = scan_directive_block(parser, input->data, input->len, first, indent, &parsed) != 0;
-
+    free_parsed_directive(parser, &parsed);
     return matched;
 }
 
@@ -613,44 +615,36 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
     parsed_directive parsed;
     bufsize_t colon_count =
         scan_directive_block(parser, input, len, first_nonspace, markdown_core_parser_get_indent(parser), &parsed);
-    markdown_core_node *node;
+    markdown_core_node *node = NULL;
     node_directive *directive;
     if (!colon_count) {
-
-        return NULL;
+        goto done;
     }
 
     node = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
                                           (int)first_nonspace + 1);
     if (!node) {
-
-        return NULL;
+        goto done;
     }
 
     markdown_core_node_set_element(node, element);
     node->opaque = markdown_core_alloc(1, sizeof(node_directive));
-    if (!node->opaque) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        markdown_core_parser_release_node(parser, node);
-
-        return NULL;
-    }
-
-    if (!apply_parsed_directive(element, parser, node, input, &parsed, markdown_core_parser_get_line_number(parser),
-                                (int)first_nonspace)) {
+    if (!node->opaque || !apply_parsed_directive(element, parser, node, input, &parsed,
+                                                 markdown_core_parser_get_line_number(parser), (int)first_nonspace)) {
         /* The suffix already validated; failure here is allocation loss. */
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_parser_release_node(parser, node);
-
-        return NULL;
+        node = NULL;
+        goto done;
     }
 
     directive = get_directive(node);
     directive->fence_length = (int)colon_count;
     directive->consume_line = 1;
-
     markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser), false);
 
+done:
+    free_parsed_directive(parser, &parsed);
     return node;
 }
 
