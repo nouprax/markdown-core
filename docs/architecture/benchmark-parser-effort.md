@@ -141,7 +141,11 @@ Publish three clearly distinguished forms of evidence:
    grammar/construction interactions. They are neither additive feature prices
    nor lower bounds on unavoidable effort.
 
-The strict equal-effort cohort is empty until a certificate meets the theorem.
+The full-parser equal-effort cohort is empty until a certificate meets the theorem.
+The [local boundary suite](benchmark-effort-boundaries.md) supplies six separate
+identical-contract certificates and measured production implementations. Their
+entry promises, adapters, preparation, residuals and failure domain are explicit;
+they do not upgrade any of the 43 full-parser claims.
 Do not label a restricted-domain toy decoder as a full-parser certificate.
 Benchmark prioritization can use high absolute costs, but a repair must identify
 redundant work or a better general data structure and then pass semantic/failure

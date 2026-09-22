@@ -5,13 +5,13 @@ it costs a reference implementation to parse the same bytes. The comparison
 exists to give an optimization somewhere to argue from: a claim that a change
 made the parser faster should name a stage and a number.
 
-A ratio is only a comparison where both parsers did the same job, so which
-reference a case is read against is part of the measurement. cmark answers for
-CommonMark, cmark-gfm for the GFM constructs, and for dialect constructs neither
-implements, a [proved-domain pair](#isomorph-pairs) puts a reference back in the
-comparison by giving it the same workload in a grammar it has. A case with no
-pair is reported as a **bound**, and a bound is never ranked against a
-comparison. A production that decorates a host rather than standing on its own
+The reference grammar and comparison contract are part of every measurement.
+cmark supplies CommonMark controls and cmark-gfm supplies GFM controls. For
+dialect constructs, [structurally proved pairs](#isomorph-pairs) preserve the
+declared ownership/field correspondence; their A/R ratios do not establish equal
+optimal parsing effort. Cases historically labelled **bound** are unmatched
+descriptive controls, not mathematical bounds on an optimum. A production that
+decorates a host rather than standing on its own
 — an attribute list — is measured as a [split](#splitting-a-corpus-the-remainder-inside-its-hosts): its host is
 compared without it, and its own cost is read in place, in every host the
 grammar gives it, as the difference between two whole documents, against the
@@ -24,6 +24,14 @@ node scripts/benchmark-stages.mjs
 
 The driver builds all three engines, runs them under callgrind, and writes
 `build/benchmark-stages/stages.md`, `stages.json`, and the raw dumps.
+
+It also measures six [certified local operation contracts](../../../docs/architecture/benchmark-effort-boundaries.md)
+and writes `build/benchmark-stages/effort/effort.{md,json}`, exact input bytes and
+raw dumps. Both native implementations receive the same canonical entry state;
+descriptor adapters count inside the operation, and preparation/release are
+reported separately. VT/FF classification mismatches are split explicitly.
+These local certificates do not upgrade the 43 unproved full-parser optima or
+provide a coverage percentage of their parse costs.
 
 An existing artifact can also be aggregated without rerunning the experiment:
 
