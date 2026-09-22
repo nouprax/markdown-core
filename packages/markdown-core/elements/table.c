@@ -2074,16 +2074,12 @@ static bool table_grammar_admits(markdown_core_parser *parser, const unsigned ch
     return line && table_dash_runs_anywhere(cursor, parser->input_source + line->end, required) >= required;
 }
 
-static bool table_parse_candidate(table_source *source, size_t start, table_candidate *candidate, bool pipe) {
-    if (!table_source_get(source, start) || source->lines[start].indent >= 4) {
-        return false;
-    }
-    size_t runs = table_dash_count(source, start);
-    table_source_line *line = &source->lines[start];
-    if (!table_grammar_admits(source->parser, line->data, line->length, line->first, runs, line->line + 1, line->after,
-                              pipe)) {
-        return false;
-    }
+/* Admission and recognition have separate lifetimes. A top-level opener
+ * admits borrowed input before acquiring a workspace; a caption admits an
+ * already captured line. Both enter this one recognizer with that proof, so
+ * the successful opener never repeats its raw-source lookahead. */
+static bool table_parse_admitted_candidate(table_source *source, size_t start, table_candidate *candidate, bool pipe) {
+    assert(start < source->count && source->lines[start].indent < 4);
     bool boundary = table_full_boundary(source, start);
     if (table_parse_grid(source, start, candidate) || (boundary && table_parse_multiline(source, start, candidate)) ||
         table_parse_simple(source, start, candidate) ||
@@ -2091,6 +2087,17 @@ static bool table_parse_candidate(table_source *source, size_t start, table_cand
         return true;
     }
     return pipe && table_parse_pipe_header(source, start, candidate);
+}
+
+static bool table_parse_candidate(table_source *source, size_t start, table_candidate *candidate, bool pipe) {
+    if (!table_source_get(source, start) || source->lines[start].indent >= 4) {
+        return false;
+    }
+    size_t runs = table_dash_count(source, start);
+    table_source_line *line = &source->lines[start];
+    return table_grammar_admits(source->parser, line->data, line->length, line->first, runs, line->line + 1,
+                                line->after, pipe) &&
+           table_parse_admitted_candidate(source, start, candidate, pipe);
 }
 
 static void table_append_range(table_source *source, markdown_core_node *node, size_t index, int left, int right,
@@ -2395,7 +2402,7 @@ markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, m
     if (caption >= 0) {
         matched = table_after_caption(&source, &caption_last, candidate, !trailing);
     } else {
-        matched = table_parse_candidate(&source, 0, candidate, false);
+        matched = table_parse_admitted_candidate(&source, 0, candidate, false);
     }
     markdown_core_parser_lookahead_end(&source.lookahead);
     if (parser->error || (!matched && !trailing)) {

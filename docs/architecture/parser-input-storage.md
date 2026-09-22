@@ -145,6 +145,11 @@ and pipe eligibility remain explicit grammar decisions; admission grants no
 recognition or containment result. The definition-precedence caption query
 therefore rejects impossible candidates without replaying the successor, while
 all actual table grammars retain priority over a definition body.
+Admission and recognition have distinct lifetimes: the ordinary opener admits
+borrowed input before acquiring a workspace, whereas a caption admits a line
+already captured by its query. Each then enters the same admitted-candidate
+recognizer. Replaying admission there would rescan the ordinary opener's raw
+successor and is forbidden by the per-document Source regression gate.
 
 The grid frontier remains proportional to width and closed regions to output.
 There is no rows-by-width dense grid. Stable source ordering shares one radix
