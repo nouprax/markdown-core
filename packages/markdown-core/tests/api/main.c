@@ -2658,10 +2658,23 @@ static bool inspect_lazy_block_content(markdown_core_parser *parser, void *conte
         INT_EQ(runner, payload_probe_snapshot().allocations, before,
                "a block fits the existing slab without a content allocation");
         if (kinds[i] == MARKDOWN_CORE_NODE_PARAGRAPH) {
-            markdown_core_strbuf_puts(&node->content, "first write");
+            /* Warm mapping storage independently so this measures content
+             * ownership, not the parser's shared source-map vector. */
+            OK(runner, markdown_core_parser_mark_content(parser, node, 1, 1), "the content mapping is available");
+            before = payload_probe_snapshot().allocations;
+            markdown_core_chunk empty = {(unsigned char *)"", 0, 0};
+            markdown_core_block_add_line(node, &empty, parser);
+            INT_EQ(runner, payload_probe_snapshot().allocations, before, "an empty write acquires no storage");
+            markdown_core_chunk first = {(unsigned char *)"first write\n", 12, 0};
+            markdown_core_block_add_line(node, &first, parser);
             INT_EQ(runner, payload_probe_snapshot().allocations, before + 1,
                    "the first write alone acquires content storage");
-            STR_EQ(runner, (char *)node->content.ptr, "first write", "the first write preserves the value");
+            markdown_core_chunk second = {(unsigned char *)"second write\n", 13, 0};
+            markdown_core_block_add_line(node, &second, parser);
+            INT_EQ(runner, payload_probe_snapshot().allocations, before + 1,
+                   "streaming content retains its established initial reservation");
+            STR_EQ(runner, (char *)node->content.ptr, "first write\nsecond write\n",
+                   "incremental writes preserve the complete value");
         }
         markdown_core_parser_release_node(parser, node);
     }

@@ -61,7 +61,12 @@ so they cannot prove the cost of one equivalent semantic operation.
 
 1. [#368](https://github.com/nouprax/markdown-core/issues/368): every block uses
    the existing empty-buffer sentinel; the first write acquires storage.
-   No kind, input size or benchmark-cardinality branch is introduced.
+   The streaming line writer retains the former 32-byte initial reservation
+   at this ownership transition; bounded value producers keep ordinary strbuf writes.
+   The policy is shared by every block kind and physical line. Removing the
+   reservation entirely caused extra reallocations: early partial Linux
+   profiles showed fences +3.65% and Setext workloads +2.54% source Ir. This
+   revision moves the reservation to its correct lifecycle boundary instead.
 2. [#369](https://github.com/nouprax/markdown-core/issues/369): initialize the
    complete node and the active record, not spare cell storage. Fresh/reused
    cells share one constructor; external records retain their own allocation

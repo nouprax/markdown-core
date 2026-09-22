@@ -52,7 +52,11 @@ same constructor; the pool's slab header remains outside object initialization.
 
 An empty node's content borrows the strbuf sentinel. Creating a block does not
 reserve content storage; the first write acquires it through the ordinary
-buffer growth operation. Successful growth always establishes `ptr[size] == 0`,
+buffer growth operation. The streaming line writer acquires the former
+32-byte initial reservation on its first nonempty append; producers of already
+delimited values continue to use ordinary writes through the same strbuf API.
+This preserves the established streaming growth policy without allocating
+for blocks that never receive content. Successful growth always establishes `ptr[size] == 0`,
 including the first allocation, which cannot copy the sentinel's NUL byte.
 Failed growth preserves the old storage and terminated value and records OOM.
 

@@ -426,6 +426,17 @@ void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk 
     int chars_to_tab;
     int i;
     assert(node->flags & MARKDOWN_CORE_NODE__OPEN);
+    /* Block content accumulates physical lines. Keep its existing initial
+     * reservation, but acquire it when the first line writes bytes rather
+     * than when any block (including an empty container) is constructed.
+     * Producers of already delimited values use ordinary strbuf writes. */
+    if (!markdown_core_strbuf_owns(&node->content) && (parser->partially_consumed_tab || ch->len > parser->offset)) {
+        markdown_core_strbuf_grow(&node->content, 32);
+        if (node->content.oom) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return;
+        }
+    }
     /* Indentation stripped ahead of the content belongs to the CONTAINER that
      * stripped it, not to the block being written into -- the same rule the
      * block openers follow, and for the same reason: a block begins at its own
