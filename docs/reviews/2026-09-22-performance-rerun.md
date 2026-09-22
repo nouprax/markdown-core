@@ -103,6 +103,12 @@ so they cannot prove the cost of one equivalent semantic operation.
    reported only when both required scale-1 documents were measured. An empty
    reference cohort has no ratio. This fixes the Codex review finding in the
    new reporting tool, rather than attributing it to the baseline parser.
+7. [#375](https://github.com/nouprax/markdown-core/issues/375): the same-job
+   artifact stores only the remeasured Core profiles under `baseline/`; its
+   reference profiles are shared with the current report. Explicit `--baseline`
+   selection reads this ownership layout after checking revision, corpus,
+   proof, runtime, reference binary and copied-measurement identity. It fails
+   on mismatches or missing evidence instead of searching unrelated paths.
 
 Tests cover poisoned cell reuse across zero/inline/external payload kinds,
 buffer growth and failed growth, block storage acquisition and release, and
@@ -114,7 +120,7 @@ OOM, mutation, complexity and full-AST parity suites remain required.
 ## Baseline census
 
 Local validation of the implementation: Release, Debug, ASan and UBSan each
-passed all 90 CTest entries; all 149 script tests passed. All 464 benchmark
+passed all 90 CTest entries; all 150 script tests passed. All 464 benchmark
 documents produced byte-identical complete AST dumps against main's tree.
 The pinned-oracle audits passed 714 CommonMark and 97 GFM inputs, with their
 existing declared divergences/projections; the domain/boundary audit passed.

@@ -31,6 +31,18 @@ An existing artifact can also be aggregated without rerunning the experiment:
 node scripts/report-performance.mjs build/benchmark-stages build/performance-census
 ```
 
+For an artifact measured with `--baseline-ref`, select its baseline explicitly:
+
+```sh
+node scripts/report-performance.mjs build/benchmark-stages build/baseline-census --baseline
+```
+
+The input remains the complete artifact directory. Baseline Core profiles live
+under `baseline/`, while the reference profiles belong to the whole experiment
+and are measured once. The reporter checks the paired reports' revision,
+document/proof identity, runtime, reference binaries and shared measurements
+before combining them; it does not search other directories for missing data.
+
 This writes a Markdown census and a JSON accounting ledger: the same-input
 reference cohort excludes unmatched fields; proved domains and reviewed
 boundaries remain separate. It accepts `--case` subset artifacts and omits

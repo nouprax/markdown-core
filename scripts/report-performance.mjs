@@ -284,17 +284,68 @@ export function render(summary) {
     return rows.join("\n") + "\n";
 }
 
+export function summarizeArtifact(input, baseline = false) {
+    const readReport = (directory) => JSON.parse(fs.readFileSync(path.join(directory, "stages.json"), "utf8"));
+    const current = readReport(input);
+    const directory = baseline ? path.join(input, "baseline") : input;
+    const report = baseline ? readReport(directory) : current;
+    if (baseline) {
+        // The producer remeasures Core and shares this job's reference profiles.
+        // Bind those two reports before reading any shared evidence; never search
+        // parent directories or substitute a profile just because it exists.
+        assert.ok(current.sourceBudget?.baseline, "the artifact has no recorded baseline");
+        assert.equal(report.revision, current.sourceBudget.baseline, "baseline revision");
+        for (const key of ["corpus", "pairingDigest", "pairs", "cmark", "cmarkGfm", "profile"])
+            assert.deepEqual(report[key], current[key], `baseline ${key}`);
+        const { compiled: beforeCompiled, ...beforeRuntime } = report.toolchain;
+        const { compiled: afterCompiled, ...afterRuntime } = current.toolchain;
+        assert.deepEqual(beforeRuntime, afterRuntime, "baseline runtime");
+        for (const engine of ["cmark", "cmark-gfm", "cmark-gfm-extensions"]) {
+            assert.deepEqual(report.binaries[engine], current.binaries[engine], `${engine} binary`);
+            assert.deepEqual(beforeCompiled.objects[engine], afterCompiled.objects[engine], `${engine} objects`);
+        }
+        assert.equal(report.cases.length, current.cases.length, "baseline case count");
+        const omit = (object, keys) =>
+            Object.fromEntries(Object.entries(object).filter(([key]) => !keys.includes(key)));
+        for (let i = 0; i < report.cases.length; i++) {
+            const before = report.cases[i],
+                after = current.cases[i];
+            assert.deepEqual(
+                omit(before, ["file", "engines"]),
+                omit(after, ["file", "engines"]),
+                "baseline document identity"
+            );
+            assert.deepEqual(
+                omit(before.engines, ["markdown-core"]),
+                omit(after.engines, ["markdown-core"]),
+                "shared reference measurements"
+            );
+        }
+    }
+    return summarize(report, (entry, engine) =>
+        parseCallgrind(
+            fs.readFileSync(
+                path.join(
+                    engine === "markdown-core" ? directory : input,
+                    "callgrind",
+                    `${engine}.${entry.case}.x${entry.scale}.out`
+                ),
+                "utf8"
+            )
+        )
+    );
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
     const input = process.argv[2],
         output = process.argv[3];
-    if (!input || !output || process.argv.length !== 4)
-        throw new Error("usage: report-performance.mjs ARTIFACT_DIR OUTPUT_PREFIX");
-    const report = JSON.parse(fs.readFileSync(path.join(input, "stages.json"), "utf8"));
-    const summary = summarize(report, (entry, engine) =>
-        parseCallgrind(
-            fs.readFileSync(path.join(input, "callgrind", `${engine}.${entry.case}.x${entry.scale}.out`), "utf8")
-        )
-    );
+    if (
+        !input ||
+        !output ||
+        (process.argv.length !== 4 && !(process.argv.length === 5 && process.argv[4] === "--baseline"))
+    )
+        throw new Error("usage: report-performance.mjs ARTIFACT_DIR OUTPUT_PREFIX [--baseline]");
+    const summary = summarizeArtifact(input, process.argv[4] === "--baseline");
     fs.mkdirSync(path.dirname(output), { recursive: true });
     fs.writeFileSync(`${output}.json`, JSON.stringify(summary, null, 2) + "\n");
     fs.writeFileSync(`${output}.md`, render(summary));

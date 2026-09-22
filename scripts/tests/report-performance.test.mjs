@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { parseCallgrind } from "../lib/callgrind.mjs";
 import { pairReview } from "../lib/pair-review.mjs";
-import { referenceFor, render, summarize } from "../report-performance.mjs";
+import { referenceFor, render, summarize, summarizeArtifact } from "../report-performance.mjs";
 
 test("the reference cohort excludes unmatched fields and selects the declared grammar", () => {
     assert.equal(referenceFor({ dialect: "commonmark", carries: [] }), "cmark");
@@ -128,4 +130,65 @@ test("a selected boundary needs its own two measured documents, not its historic
     assert.equal(summary.boundaries[0].delta, -10);
     assert.deepEqual(summarizeSubset(cases.slice(0, 1)).boundaries, []);
     assert.deepEqual(summarizeSubset(cases.slice(1)).boundaries, []);
+});
+
+test("same-job baselines use their own Core profiles and the validated shared references", (t) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "performance-artifact-"));
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    for (const subdir of ["callgrind", "baseline/callgrind"])
+        fs.mkdirSync(path.join(directory, subdir), { recursive: true });
+    const current = {
+        corpus: { digest: "same bytes" },
+        pairingDigest: "same proofs",
+        pairs: [],
+        profile: { flags: "same flags" },
+        toolchain: { compiler: "same compiler", compiled: { objects: { cmark: "pinned objects" } } },
+        binaries: { cmark: "pinned binary" },
+        cmark: { version: "pinned" },
+        sourceBudget: { baseline: "base revision" },
+        cases: [{ ...subsetCase("common", "commonmark"), sha256: "same document", file: "corpus/common.md" }]
+    };
+    const baseline = globalThis.structuredClone(current);
+    delete baseline.sourceBudget;
+    baseline.revision = current.sourceBudget.baseline;
+    baseline.cases[0].file = "../corpus/common.md";
+    baseline.cases[0].engines["markdown-core"] = {
+        stages: { source_to_buffer: { cost: { Ir: 60 } }, buffer_to_ast: { cost: { Ir: 100 } } },
+        parsePathIr: 180,
+        outsideStagesIr: 20
+    };
+    const writeReports = () => {
+        fs.writeFileSync(path.join(directory, "stages.json"), JSON.stringify(current));
+        fs.writeFileSync(path.join(directory, "baseline/stages.json"), JSON.stringify(baseline));
+    };
+    writeReports();
+    for (const engine of ["markdown-core", "cmark"])
+        fs.writeFileSync(path.join(directory, "callgrind", `${engine}.common.x1.out`), profileText);
+    const beforeProfile = profileText
+        .replace(/^1 (\d+)$/gmu, (_, cost) => `1 ${Number(cost) * 2}`)
+        .replace("totals: 100", "totals: 200");
+    const coreProfile = path.join(directory, "baseline/callgrind/markdown-core.common.x1.out");
+    fs.writeFileSync(coreProfile, beforeProfile);
+    assert.equal(summarizeArtifact(directory).core.parse, 90);
+    const result = summarizeArtifact(directory, true);
+    assert.equal(result.core.parse, 180);
+    assert.equal(result.core.program, 200);
+    assert.equal(result.reference.parse, 90);
+    assert.equal(result.reference.program, 100);
+
+    baseline.cases[0].engines.cmark.parsePathIr++;
+    writeReports();
+    assert.throws(() => summarizeArtifact(directory, true), /shared reference measurements/u);
+    baseline.cases[0].engines.cmark.parsePathIr--;
+    baseline.binaries.cmark = "another binary";
+    writeReports();
+    assert.throws(() => summarizeArtifact(directory, true), /cmark binary/u);
+    baseline.binaries.cmark = current.binaries.cmark;
+    baseline.cases[0].sha256 = "different bytes";
+    writeReports();
+    assert.throws(() => summarizeArtifact(directory, true), /baseline document identity/u);
+    baseline.cases[0].sha256 = current.cases[0].sha256;
+    writeReports();
+    fs.unlinkSync(coreProfile);
+    assert.throws(() => summarizeArtifact(directory, true), /ENOENT/u);
 });
