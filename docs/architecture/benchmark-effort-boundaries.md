@@ -50,6 +50,13 @@ There is sufficient writable capacity on both sides. The six byte operations
 may not allocate, fail semantically, or report OOM. The ownership operation below charges
 its native array allocation inside the measured edge and reports a checked
 resource failure if calloc fails; neither native attach primitive allocates.
+The optimum theorem concerns successful computation on resource-sufficient
+machine states: both candidates have enough storage for their native array and
+result. On that domain returning an allocation error is not an admissible way
+to avoid constructing the graph. A real allocation failure invalidates the
+measurement rather than producing a cheap success. The checked failure branch
+is defensive behavior outside that promised measurement domain; no equality
+of full-parser OOM policies is inferred.
 This is a complete local contract with explicit preconditions, not a claim that the full parsers share failure
 behavior. Core sticky OOM and cmark's allocator/abort behavior are deliberately
 outside this domain. Admission rejects invalid lengths, cursor/run parameters,
@@ -73,12 +80,11 @@ repeated calls do not accidentally benchmark an already normalized buffer.
 | whitespace | Bytes excluding VT and FF | Replace every maximal nonempty W-run by one ASCII space; preserve all other bytes |
 | code | NUL/CR-normalized bytes, otherwise arbitrary | Replace LF by space; if the result contains a non-space and starts/ends with space, remove exactly one at each end |
 | closer | NUL/CR-normalized bytes; 0 <= start <= length at a maximal-run boundary; 1 <= ticks <= 80 | Find the first maximal backtick run of exactly ticks after start; return its exclusive end and cursor, or result=0/cursor=length/scanned=1 if absent. Memo[k] is the start of the last visited run of length k, k=1..80, initially zero; stop at the matching run. Preserve input/output bytes. |
-
 | owners | Nonempty topologically ordered parent-index stream, as specified below | Ordered ownership graph; all five intrusive links per owner; checked allocation failure |
 
 The byte domains include empty input, malformed/unclosed delimiters, arbitrary
-high bytes and adversarial long runs. They are infinite up to the fixed-word
-machine bound, not the old six-digit template languages. The finite test corpus
+high bytes and adversarial long runs. They cover every length admitted by the
+fixed-word machine bound, not only the old six-digit template languages. The finite test corpus
 is regression evidence; it is not a proof over every string.
 
 ### Ownership construction for all 43 structural pairs
