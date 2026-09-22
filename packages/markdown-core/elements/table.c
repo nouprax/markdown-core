@@ -1447,7 +1447,7 @@ static int table_full_horizontal(table_source_line *line) {
         }
         line->parser->table_scan_work += (size_t)(line->length - end);
         line->horizontal_end = end;
-        line->horizontal_kind = table_horizontal_bytes(line, line->first, end);
+        line->horizontal_kind = (unsigned char)table_horizontal_bytes(line, line->first, end);
         line->horizontal_scanned = true;
     }
     return line->horizontal_kind;
