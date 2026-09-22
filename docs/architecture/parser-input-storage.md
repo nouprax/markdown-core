@@ -150,6 +150,8 @@ borrowed input before acquiring a workspace, whereas a caption admits a line
 already captured by its query. Each then enters the same admitted-candidate
 recognizer. Replaying admission there would rescan the ordinary opener's raw
 successor and is forbidden by the per-document Source regression gate.
+The shared predicate is inline in both entry points, so sharing its grammar
+does not add a per-candidate call transporting already-loaded source geometry.
 
 The grid frontier remains proportional to width and closed regions to output.
 There is no rows-by-width dense grid. Stable source ordering shares one radix

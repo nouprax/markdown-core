@@ -2054,9 +2054,14 @@ static size_t table_dash_runs_anywhere(const unsigned char *data, const unsigned
  * pipe table remains, requiring respectively two dash runs or one. A true
  * result grants no grammar or containment decision; the ordinary recognizer
  * still owns it. Read the indexed physical extent so CR, CRLF and EOF agree
- * with the source driver, without replaying container continuation. */
-static bool table_grammar_admits(markdown_core_parser *parser, const unsigned char *input, int length, int first,
-                                 size_t runs, int next_line, const unsigned char *cursor, bool pipe) {
+ * with the source driver, without replaying container continuation. Keep this
+ * predicate in its caller: all arguments are already-loaded source geometry,
+ * not a separate per-candidate out-of-line operation. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_grammar_admits(markdown_core_parser *parser,
+                                                                                 const unsigned char *input, int length,
+                                                                                 int first, size_t runs, int next_line,
+                                                                                 const unsigned char *cursor,
+                                                                                 bool pipe) {
     if ((first < length && input[first] == '+') || runs >= 2) {
         return true;
     }
