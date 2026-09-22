@@ -166,6 +166,8 @@ export function render(summary) {
             "The JSON lists every included and excluded document. Proof pairs use scale 1 and are a separate cohort.",
         "",
         "Ir is Callgrind's instruction-read count, not elapsed time. Parse-path costs come from the harness call edge. " +
+            "Complete parse means the bench_parse_document lifecycle: parsing, the root receipt and document teardown; " +
+            "main's input loading and process setup are outside that edge. " +
             "Program self costs below include process startup, input loading, receipts and shared libc leaves. " +
             "Allocator self is every cost line attributed to malloc.c, including harness allocation. " +
             "It must not be subtracted from parse-path Ir or described as exact parse-only allocator cost.",

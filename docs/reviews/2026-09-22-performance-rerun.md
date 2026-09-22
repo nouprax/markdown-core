@@ -31,6 +31,9 @@ node scripts/report-performance.mjs build/stage-rerun build/performance-rerun
 
 The census generator writes both Markdown and JSON. JSON includes the exact
 cohort, omitted fields, self costs by function/file and inclusive call edges.
+"Complete parse" is the `bench_parse_document` lifecycle, including parsing,
+the root receipt and document teardown; `main`'s input loading and process
+setup are outside that edge. The two stages exclude this teardown work.
 It verifies the parse-stage partition and that function/file self partitions
 sum to the profile's `totals`. Callgrind `summary` can differ from `totals`;
 it is not substituted for the measured cost-line sum.
