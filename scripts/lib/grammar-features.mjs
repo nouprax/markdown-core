@@ -818,13 +818,41 @@ pair(
     [["Span"], ["Link"]]
 );
 
+pair(
+    "specimen-reset",
+    "specimens",
+    ["explicit-reset", "positive-nine-digit-start", "binding"],
+    ["As (@", k, ") shows.\n\n(", f("reset", "positive9"), "@", k, ") ", b, "\n\n"],
+    ["As [", k, "] shows.\n\n[", k, "]: /", k, "\n\n", f("reset", "positive9"), ". ", b, "\n\n"],
+    [
+        ["Specimen", "Citation"],
+        ["List", "Link"]
+    ]
+);
+pair(
+    "specimen-groups",
+    "specimens",
+    ["anonymous-definitions", "duplicate-definitions", "group-reset-suppression"],
+    ["(5@) ", b, "\n\n(7@", k, ") ", t, "\n\n(@", k, ") ", b, "\n\nAs (@", k, ") shows.\n\n"],
+    ["5. ", b, "\n\n7. ", t, "\n\n1. ", b, "\n\nAs [", k, "] shows.\n\n[", k, "]: /", k, "\n\n"],
+    [
+        ["Specimen", "Citation"],
+        ["List", "Link"]
+    ]
+);
 export const featureGrammars = new Map(entries.map((entry) => [entry.id, Object.freeze(entry)]));
 if (featureGrammars.size !== entries.length) throw new Error("duplicate feature grammar");
 
 /** Grammar slots, not a list of accepted sample strings. Each independent
  * name receives a separately generated value of its declared lexical type. */
 export function featureValues(parameters) {
-    return { unicode: `é字${parameters.value}`, empty: "", ordinal: parameters.start, state: parameters.mode };
+    return {
+        unicode: `é字${parameters.value}`,
+        empty: "",
+        ordinal: parameters.start,
+        state: parameters.mode,
+        reset: parameters.reset ?? String(parameters.start)
+    };
 }
 
 // Finite lexical substitutions are explicit bijections, not numeric-value

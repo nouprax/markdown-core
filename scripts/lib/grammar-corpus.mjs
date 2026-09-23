@@ -20,6 +20,7 @@ export const hash = (value) => createHash("sha256").update(value).digest("hex");
 export const normalForms = Object.freeze({
     word: "Word = [a-z]+ ;",
     "attribute-key": "AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ;",
+    positive9: "Positive9 = [1-9][0-9]{0,8} ;",
     phrase: "Phrase = Word (SP Word)* ; Word = [a-z]+ ;",
     inline: "Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;",
     empty: "Empty = epsilon ;",
@@ -45,7 +46,6 @@ const additionalBoundaries = {
     "metadata-literal": "properties",
     "multiline-matrix": "tables",
     "headless-multiline": "tables",
-    "specimen-groups": "specimens",
     "image-dimensions": "links-and-images"
 };
 export const historicalHosts = {
@@ -57,8 +57,7 @@ export const historicalHosts = {
         reason: "Numeric image width/height has no field in the supplied CommonMark image counterpart; target and label remain locally paired."
     },
     "specimen-reset": {
-        legacy: "specimenstart",
-        reason: "Explicit specimen ordinal resets do not occur in the footnote counterpart; the key and entire definition body are retained."
+        legacy: "specimenstart"
     },
     "trailing-caption": {
         legacy: "tcaption"
@@ -90,8 +89,6 @@ const isProduct = (id) => featureGrammars.has(id) || (!direct[id] && !directFram
 
 const boundaryReason = (id) => {
     if (historicalHosts[id]) return historicalHosts[id].reason;
-    if (id === "specimen-groups")
-        return "Source-group reset suppression, anonymous and duplicate definitions have no matching production in cmark/GFM footnotes; label and complete body grammars are paired locally.";
     if (id === "image-dimensions")
         return "Positive bounded width/height recognition is absent from the pinned cmark image grammar; image label and destination are paired locally without attributing numeric validation to the reference.";
     if (id === "multiline-matrix" || id === "headless-multiline")
@@ -173,6 +170,12 @@ export function validateGrammarCertificates() {
         if (entry.scope === "paired-document-grammar") {
             if (isProduct(entry.id)) {
                 assert.deepEqual(grammarNormalForm(entry.id, "dialect"), grammarNormalForm(entry.id, "common"));
+                if (entry.identity)
+                    assert.deepEqual(
+                        productGrammar(entry.id).dialect,
+                        productGrammar(entry.id).common,
+                        "identity certificate changed a production"
+                    );
                 continue;
             }
             if (directFrames.has(entry.id)) continue;
@@ -240,6 +243,10 @@ export function recognizeValue(grammar, source) {
         assert.ok(!["id", "class"].includes(source), "reserved attribute key outside record grammar");
         return source;
     }
+    if (grammar === "positive9") {
+        assert.match(source, /^[1-9][0-9]{0,8}$/u);
+        return source;
+    }
     if (grammar === "phrase") {
         assert.match(source, /^[a-z]+(?: [a-z]+)*$/u);
         return source.split(" ");
@@ -281,7 +288,8 @@ function parameters(index) {
         tail: bodyAt(index + 23, (index + 1) % 3),
         words: [word(index * 7 + 1, 1 + (index % 11)), word(index * 31 + 17), word(index + 99, 1 + (index % 5))],
         mode: index % 3,
-        start: 1 + (index % 18)
+        start: 1 + (index % 18),
+        reset: String(index % 3 === 2 ? 999999999 : index + 1)
     };
 }
 function chainBody(seed, depth) {
@@ -406,13 +414,15 @@ function fieldPattern(field) {
     assert.ok(!finiteLexicons[field.grammar], "finite field needs a declared encoding");
     return ["word", "attribute-key"].includes(field.grammar)
         ? "[a-z]+"
-        : field.grammar === "unicode"
-          ? "[a-zé字]+"
-          : field.grammar === "phrase"
-            ? "[a-z]+(?: [a-z]+)*"
-            : field.grammar === "inline"
-              ? "[a-z* ]+"
-              : "";
+        : field.grammar === "positive9"
+          ? "[1-9][0-9]{0,8}"
+          : field.grammar === "unicode"
+            ? "[a-zé字]+"
+            : field.grammar === "phrase"
+              ? "[a-z]+(?: [a-z]+)*"
+              : field.grammar === "inline"
+                ? "[a-z* ]+"
+                : "";
 }
 function decodeField(field, source) {
     const tokens = finiteLexicons[field.grammar]?.[field.encoding];
@@ -540,13 +550,6 @@ function renderHosts(id, p) {
             ["Embedded"],
             ["Embedded"]
         );
-    if (id === "specimen-groups")
-        return pair(
-            ["(5@) ", b, "\n\n(7@", key, ") ", t, "\n\n(@", key, ") ", b, "\n\nAs (@", key, ") shows.\n\n"],
-            ["> ", b, "\n\n> ", t, "\n\n> ", b, "\n\nAs [", key, "](/", key, ") shows.\n\n"],
-            ["Specimen", "Citation"],
-            ["Callout", "Link"]
-        );
     if (id === "multiline-matrix" || id === "headless-multiline") {
         const last = slot("last", "word", p.words[0]),
             footer = slot("footer", "word", p.words[1]);
@@ -578,13 +581,6 @@ function renderHosts(id, p) {
             ["See ![", literal, "](/", target, ") here.\n\n"],
             ["CrossEmbedded"],
             ["Embedded"]
-        );
-    if (id === "specimen-reset")
-        return pair(
-            ["As (@", key, ") shows.\n\n(", String(p.start), "@", key, ") ", b, "\n\n"],
-            ["As [^", key, "] shows.\n\n[^", key, "]: ", b, "\n\n"],
-            ["Specimen", "Citation"],
-            ["Footnote", "Cite"]
         );
     if (id === "headless-matrix") {
         const width = Math.max(key.source.length, target.source.length, value.source.length, anchor.source.length) + 2;
@@ -843,7 +839,7 @@ function grammarDescription(certificate, side) {
                         : `${part.name}:${part.grammar}${part.encoding ? `[${part.encoding}: ${finiteLexicons[part.grammar][part.encoding].map(JSON.stringify).join("|")}]` : ""}`
                 )
                 .join(" ") +
-            " ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; " +
+            " ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; " +
             Object.values(normalForms).join(" ")
         );
     }
@@ -900,6 +896,8 @@ export function instantiateGrammar(id, p) {
     const [dialect, common] = renderHosts(id, p);
     for (const document of [dialect, common]) assert.equal(recomposeHost(document), document.source);
     if (directFrames.has(id) || isProduct(id)) {
+        if (certificate.identity)
+            assert.equal(dialect.source, common.source, "identity certificate changed source bytes");
         const a = recognizePairedDocument(id, "dialect", dialect.source),
             b = recognizePairedDocument(id, "common", common.source);
         assert.deepEqual(a, b);
@@ -1112,7 +1110,6 @@ export function buildGrammarCorpus({ units = 12, scale = 2 } = {}) {
                                 "task-value",
                                 "simple-matrix",
                                 "specimen-graph",
-                                "specimen-reset",
                                 "headless-matrix",
                                 "leading-caption",
                                 "trailing-caption"
@@ -1488,7 +1485,31 @@ export function auditGrammarCorpus(corpus, parse) {
             if (side === "common") projectHtmlComments(tree);
             observed[side] = tree;
             parses++;
+            // B is a real benchmark implementation too. The reference's
+            // acceptance alone cannot attest to Core on the alternate syntax.
+            // For identity inputs A already is that exact Core execution.
+            if (side === "common" && !proof.identity) {
+                const coreCommon = parse("core", entry.text);
+                parses++;
+                assert.deepEqual(
+                    normalize(coreCommon, "ours"),
+                    normalize(tree, "upstream"),
+                    `${proof.id}: Core/reference counterpart conformance`
+                );
+            }
             const nodes = allNodes(tree);
+            if (side === "common" && ["specimen-reset", "specimen-groups"].includes(proof.id)) {
+                const lists = allNodes(normalize(tree, "upstream")).filter((node) => node.kind === "List");
+                assert.equal(lists.length, proof.units, "reference reset group count");
+                assert.deepEqual(
+                    lists.map((node) => node.fields.start),
+                    proof.rows.map((row) =>
+                        proof.id === "specimen-groups"
+                            ? "5"
+                            : row.derivation[0].find(([name]) => name === "reset")[1].value
+                    )
+                );
+            }
             const forbidden = featureGrammars.get(proof.id)?.forbidden;
             if (forbidden)
                 assert.ok(

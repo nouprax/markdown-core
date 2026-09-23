@@ -50,8 +50,8 @@ const fresh = () => ({
 test("catalog is a complete reviewable corpus with exact grammar/proof/example provenance", () => {
     validateGrammarCertificates();
     assert.equal(grammarCertificates.length, 185);
-    assert.equal(full.length, 171);
-    assert.equal(split.length, 14);
+    assert.equal(full.length, 173);
+    assert.equal(split.length, 12);
     assert.deepEqual(new Set(grammarCertificates.flatMap((c) => c.legacy)), new Set(pairReviews.keys()));
     assert.deepEqual(
         new Set(grammarCertificates.map((c) => c.structuralPredecessor).filter(Boolean)),
@@ -169,7 +169,7 @@ test("boundary splits keep every byte and every independent field, with measured
 
 test("scaled corpus repeats derivations, keeps metadata document-initial, and records exact normal forms", () => {
     const corpus = buildGrammarCorpus();
-    assert.equal(corpus.cases.length, 796);
+    assert.equal(corpus.cases.length, 788);
     for (const proof of corpus.proofs) {
         assert.equal(proof.units, 12 * proof.scale);
         if (proof.id.startsWith("metadata")) {
@@ -369,6 +369,20 @@ test("finite substitutions and bindings retain every alternative, state, and equ
         /inconsistent binding/u
     );
     assert.throws(() => recognizePairedDocument("roman-list", "dialect", "i. a\niiii. b\n\n"));
+    for (const reset of ["1", "999999999"]) {
+        const row = instantiateGrammar("specimen-reset", { ...fresh(), reset });
+        assert.ok(row.common.source.includes(`${reset}. `));
+        assert.equal(
+            encodePairedDocument(
+                "specimen-reset",
+                "dialect",
+                recognizePairedDocument("specimen-reset", "common", row.common.source)
+            ),
+            row.dialect.source
+        );
+    }
+    for (const reset of ["0", "0001", "1000000000"])
+        assert.throws(() => instantiateGrammar("specimen-reset", { ...fresh(), reset }));
 });
 
 test("native feature guards reject a nameless substitute for the named-container grammar", () => {
@@ -381,5 +395,24 @@ test("native feature guards reject a nameless substitute for the named-container
             fields: {},
             children: [{ kind: "DirectiveBlock", fields: { name: "null" }, children: [] }]
         }))
+    );
+});
+
+test("Core on the alternate syntax is audited independently of reference acceptance", () => {
+    const corpus = buildGrammarCorpus({ units: 1, scale: 1 });
+    corpus.proofs = corpus.proofs.filter((proof) => proof.id === "record-span");
+    const common = grammarUnit("record-span").common.source;
+    const node = (kind, fields = {}) => ({ kind, fields, children: [] });
+    assert.throws(
+        () =>
+            auditGrammarCorpus(corpus, (engine, input) => ({
+                ...node("Document"),
+                children: [
+                    input === common
+                        ? node(engine === "core" ? "Paragraph" : "Link", { dest: 'url("/target")' })
+                        : node("Span")
+                ]
+            })),
+        /Core\/reference counterpart conformance/u
     );
 });

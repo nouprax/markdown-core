@@ -1930,15 +1930,15 @@
                 },
                 {
                     "id": "specimen-groups",
-                    "scope": "boundary-grammar",
+                    "scope": "paired-document-grammar",
                     "identity": false,
-                    "facets": []
+                    "facets": ["anonymous-definitions", "duplicate-definitions", "group-reset-suppression"]
                 },
                 {
                     "id": "specimen-reset",
-                    "scope": "boundary-grammar",
+                    "scope": "paired-document-grammar",
                     "identity": false,
-                    "facets": []
+                    "facets": ["explicit-reset", "positive-nine-digit-start", "binding"]
                 }
             ],
             "conformance": ["packages/markdown-core/tests/fixtures/dialect-specimens.txt"]

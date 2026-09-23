@@ -3,8 +3,8 @@
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
 contains all 185 certificates, their concrete grammars, normal forms and two
-complete examples per family. The default run emits 796 documents at two scales:
-171 whole declared-language pairs and 14 local boundary pairs with complete
+complete examples per family. The default run emits 788 documents at two scales:
+173 whole declared-language pairs and 12 local boundary pairs with complete
 hosts. The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
 30 syntax-guide features, 136 sections and 32 registered elements. The historical
 30 scenarios and 43 structural domains remain accounted for, but their counts
@@ -254,16 +254,28 @@ zero copying cost. This covers reference-label reuse, specimen definition/call
 bindings and inherited attributes. Equality constraints are checked from bytes;
 an inconsistent second label is rejected instead of overwritten in a map.
 
-T3 and T7 now provide whole declared-language counterparts for twelve formerly
+T3 and T7 now provide whole declared-language counterparts for thirteen formerly
 split families: four numeral lists, two default lists, all three callout states,
-citation affixes, both caption placements, mixed definitions, and specimen
-binding. Prefix/key/suffix and caption/table fields all survive independently.
+citation affixes, both caption placements, mixed definitions, specimen binding, and specimen resets. Prefix/key/suffix and caption/table fields all survive independently.
 Named containers use `:::name`, while `::: name` is the nameless grammar; native
 checks verify the actual name, not merely a DirectiveBlock node.
 
+Specimen resets add a shared lexical nonterminal
+`Positive9 = [1-9][0-9]{0,8}`. The reset marker `(n@key)` is translated to an
+ordered-list start `n.` plus a reference definition/call carrying the same key.
+Both spellings recognize the same bounded decimal field. The group certificate
+uses the common first-marker rule: the first reset/ordered marker establishes
+the start, later authored numbers do not restart the group, blank lines preserve
+the group, and an outside paragraph separates it from the next group. Anonymous
+and duplicate labels are retained as declared repeated fields, rather than
+requiring the reference to use footnotes. Native checks assert both Core specimen
+starts (`5,null,null`) and the reference list start (`5`). The variable-reset
+family exercises `999999999` as well as small starts. This proves the declared
+single-line-body reset grammar, not every unrestricted continuation shape.
+
 ## Boundary corpus and its limits (T5)
 
-Fourteen families retain local proofs:
+Twelve families retain local proofs:
 
 | Families | Residual outside the certified local grammar |
 | --- | --- |
@@ -271,12 +283,10 @@ Fourteen families retain local proofs:
 | multiline-matrix, headless-multiline | Physical-line segmentation and logical-row block parsing, including the required second row. |
 | metadataempty, metadata, metadata-types, metadata-literal | Initial envelope, typed members, ten fields, first-valid retention, recovery and literal indentation. |
 | embed-dimensions, image-dimensions | Bounded positive numeric dimensions and suffix selection. |
-| specimen-reset, specimen-groups | Authored resets and group-dependent suppression, anonymous and duplicate definitions. |
 
 The concrete CommonMark/GFM counterparts lack these productions. For example,
 cmark's image label has no bounded integer nonterminal, a GFM pipe table has no
-span/column-interval predicate, and a footnote marker has no reset integer or
-source-group reset state. Erasing those constraints is not an equivalence
+span/column-interval predicate, and metadata has no typed member production in CommonMark. Erasing those constraints is not an equivalence
 transformation. A table's independently varying cells do not eliminate its width
 equations. Metadata scalar/list/null alternatives cannot be replaced by an opaque
 code block and called the same member grammar.
@@ -338,7 +348,9 @@ pnpm audit:corpus-pairs
 pnpm benchmark:grammar --scale 2 --out build/benchmark-grammar
 ```
 
-The native audit runs Core/cmark/cmark-gfm on the actual emitted documents.
+The native audit runs Core on both encodings and the pinned reference on the
+common encoding. An identity input reuses its identical Core execution. Reference
+acceptance alone cannot attest to Core on the alternate encoding.
 It checks recursive meanings, literal fields, fixed task/formula states and
 boundary field counts against grammar-derived expectations. It also verifies
 that historical residual hosts really retain their affixes, dimensions, reset

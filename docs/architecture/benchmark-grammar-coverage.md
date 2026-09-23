@@ -29,8 +29,8 @@ never the proof.
    and, for boundaries, both complete hosts. Missing halves fail reporting.
 
 There are **30 specification features, 136 sections, 32 registered elements,
-185 certificates and 796 generated documents** at the default two scales.
-Of these, **171 certify whole declared languages and 14 certify local boundary
+185 certificates and 788 generated documents** at the default two scales.
+Of these, **173 certify whole declared languages and 12 certify local boundary
 languages**. This is feature coverage, not a theorem that the union of these
 restricted grammars equals every possible document of the unrestricted dialect.
 In particular a boundary's residual is not proved impossible to match against
@@ -58,7 +58,7 @@ all imaginable reference grammars. The ledger exposes that distinction.
 | Block IDs | Paragraph, list-item and standalone container declarations. |
 | Footnotes | GFM references, nested inline notes, cycles, duplicate/unused definitions, repeated calls and fallback. The GFM retention difference is checked and reported. |
 | Citations | Author/suppressed/normal modes, groups, independent prefix/key/suffix and rejected keys. |
-| Specimens | Definition/call equality is paired; resets, anonymous/duplicate definitions and group suppression have complete hosts plus local body proofs. |
+| Specimens | Definition/call equality, explicit nine-digit resets, anonymous/duplicate definitions and group reset suppression have constructive whole-language counterparts. |
 | Lists | Three bullets, decimal delimiters, tight/loose/nested/empty items; alpha/Roman canonical finite domains and default markers have constructive proofs. |
 | Tasks | Standard states, custom/Unicode markers and heading bodies. |
 | Definition lists | Tight/loose, multiple/empty definitions and multiple blocks. |
