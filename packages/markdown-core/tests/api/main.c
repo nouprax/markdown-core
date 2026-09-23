@@ -1697,6 +1697,45 @@ static bool attach_dispatch_observers(markdown_core_parser *parser, void *contex
            markdown_core_parser_attach_element(parser, &disjoint);
 }
 
+static bool attach_precedence_observers(markdown_core_parser *parser, void *context) {
+    /* Precedences past both ends of the named range, a tie at one of them
+     * attached apart, and the named values, all attached out of order. Every
+     * owner declines without consuming, so each is asked exactly once. */
+    static const markdown_core_element late = {.name = "y-late-observer",
+                                               .inline_precedence = (markdown_core_inline_precedence)2,
+                                               .match_inline = observe_dispatch,
+                                               .terminates_text = "%",
+                                               .dispatch = "%"};
+    static const markdown_core_element fallback = {.name = "fallback-observer",
+                                                   .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
+                                                   .match_inline = observe_dispatch,
+                                                   .terminates_text = "%",
+                                                   .dispatch = "%"};
+    static const markdown_core_element later = {.name = "z-late-observer",
+                                                .inline_precedence = (markdown_core_inline_precedence)2,
+                                                .match_inline = observe_dispatch,
+                                                .terminates_text = "%",
+                                                .dispatch = "%%"};
+    static const markdown_core_element ordinary = {
+        .name = "default-observer", .match_inline = observe_dispatch, .terminates_text = "%", .dispatch = "%"};
+    static const markdown_core_element token = {.name = "token-observer",
+                                                .inline_precedence = MARKDOWN_CORE_INLINE_TOKEN,
+                                                .match_inline = observe_dispatch,
+                                                .terminates_text = "%",
+                                                .dispatch = "%"};
+    static const markdown_core_element early = {.name = "early-observer",
+                                                .inline_precedence = (markdown_core_inline_precedence)-2,
+                                                .match_inline = observe_dispatch,
+                                                .terminates_text = "%",
+                                                .dispatch = "%"};
+    parser->root->user_data = context;
+    return markdown_core_parser_attach_element(parser, &late) &&
+           markdown_core_parser_attach_element(parser, &fallback) &&
+           markdown_core_parser_attach_element(parser, &later) &&
+           markdown_core_parser_attach_element(parser, &ordinary) &&
+           markdown_core_parser_attach_element(parser, &token) && markdown_core_parser_attach_element(parser, &early);
+}
+
 /* A declared block-start gate is a PROMISE ABOUT A NEGATIVE: the dispatcher
  * skips the hook for every byte the gate leaves out, so a byte wrongly left out
  * is not a slow parse, it is a construct that silently stops existing. Nothing
@@ -2088,6 +2127,23 @@ static void inline_dispatch_ownership(test_batch_runner *runner) {
         STR_EQ(runner, markdown_core_node_get_literal(code), "!", "dispatch does not inspect an opaque token body");
         STR_EQ(runner, markdown_core_node_get_literal(code->next), "  tail",
                "consumed input is not offered to fallbacks");
+    }
+    markdown_core_node_free(root);
+}
+
+/* The dispatch order is a function of every precedence value a descriptor
+ * can hold, not only the three named ones: an owner outside that range is
+ * asked in its place, and never leaves its reserved slot empty. */
+static void inline_dispatch_orders_every_precedence(test_batch_runner *runner) {
+    const char source[] = "a % b\n";
+    dispatch_observation observation = {0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_precedence_observers, &observation);
+    OK(runner, root != NULL, "owners at unnamed precedences complete the parse");
+    STR_EQ(runner, observation.calls, "etdfyz", "owners are asked in ascending precedence, ties in descriptor order");
+    if (root) {
+        STR_EQ(runner, markdown_core_node_get_literal(root->first_child->first_child), "a % b",
+               "a byte every owner declines stays text");
     }
     markdown_core_node_free(root);
 }
@@ -9248,6 +9304,7 @@ int main(void) {
     postprocess_kind_sets_are_well_formed(runner);
     block_gate_admits_every_opener(runner);
     inline_dispatch_ownership(runner);
+    inline_dispatch_orders_every_precedence(runner);
     no_node_is_its_own_ancestor(runner);
     iterator_contract_is_total(runner);
 

@@ -2108,25 +2108,37 @@ static size_t S_project_inline_bytes(markdown_core_parser *parser) {
     return parser->inline_dispatch_offsets[256];
 }
 
-/* Fill each byte's owners into `entries`: by precedence, and within one
- * precedence in descriptor order, which is the order `try_elements` asks
- * them in. Walking the precedences outermost gives each byte's list that
- * order directly, with no per-byte sort. */
+/* Fill each byte's owners into `entries` in the order `try_elements` asks
+ * them: by ascending precedence, and within one precedence in descriptor
+ * order. The owners are ordered once -- a stable insertion by precedence over
+ * the elements with an inline matcher -- and then emitted, so every byte's
+ * list inherits that order with no per-byte sort. The ordering is total over
+ * the field's values, not only the named ones, so every entry
+ * `S_project_inline_bytes` counted is written. */
 static void S_project_inline_dispatch(markdown_core_parser *parser, const markdown_core_element **entries) {
+    const markdown_core_element *owners[MARKDOWN_CORE_ELEMENT_LIMIT];
+    size_t count = 0;
+    assert(parser->element_count <= MARKDOWN_CORE_ELEMENT_LIMIT);
+    for (size_t i = 0; i < parser->element_count; i++) {
+        const markdown_core_element *element = parser->elements[i];
+        if (!element->match_inline) {
+            continue;
+        }
+        size_t at = count++;
+        while (at > 0 && owners[at - 1]->inline_precedence > element->inline_precedence) {
+            owners[at] = owners[at - 1];
+            at--;
+        }
+        owners[at] = element;
+    }
     size_t next[256];
     memcpy(next, parser->inline_dispatch_offsets, sizeof(next));
     parser->inline_dispatch = entries;
-    for (int precedence = MARKDOWN_CORE_INLINE_TOKEN; precedence <= MARKDOWN_CORE_INLINE_FALLBACK; precedence++) {
-        for (size_t i = 0; i < parser->element_count; i++) {
-            const markdown_core_element *element = parser->elements[i];
-            if (!element->match_inline || (int)element->inline_precedence != precedence) {
-                continue;
-            }
-            const unsigned char *bytes = (const unsigned char *)element->dispatch;
-            for (const unsigned char *c = bytes; c && *c; c++) {
-                if (!S_declared_earlier(bytes, c)) {
-                    entries[next[*c]++] = element;
-                }
+    for (size_t i = 0; i < count; i++) {
+        const unsigned char *bytes = (const unsigned char *)owners[i]->dispatch;
+        for (const unsigned char *c = bytes; c && *c; c++) {
+            if (!S_declared_earlier(bytes, c)) {
+                entries[next[*c]++] = owners[i];
             }
         }
     }
