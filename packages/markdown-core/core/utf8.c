@@ -87,36 +87,42 @@ int markdown_core_utf8proc_iterate_general(const uint8_t *str, bufsize_t str_len
     return length;
 }
 
-void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf) {
-    uint8_t dst[4];
-    bufsize_t len = 0;
-
-    assert(uc >= 0);
-
+/* The UTF-8 encoding of a scalar below 0x110000, written at `dst`; returns
+ * its length. The one encoder: appending a character and writing a projected
+ * literal into reserved storage both go through it. */
+static inline int S_encode_scalar(int32_t uc, uint8_t *dst) {
     if (uc < 0x80) {
         dst[0] = (uint8_t)(uc);
-        len = 1;
-    } else if (uc < 0x800) {
+        return 1;
+    }
+    if (uc < 0x800) {
         dst[0] = (uint8_t)(0xC0 + (uc >> 6));
         dst[1] = 0x80 + (uc & 0x3F);
-        len = 2;
-    } else if (uc < 0x10000) {
+        return 2;
+    }
+    if (uc < 0x10000) {
         dst[0] = (uint8_t)(0xE0 + (uc >> 12));
         dst[1] = 0x80 + ((uc >> 6) & 0x3F);
         dst[2] = 0x80 + (uc & 0x3F);
-        len = 3;
-    } else if (uc < 0x110000) {
-        dst[0] = (uint8_t)(0xF0 + (uc >> 18));
-        dst[1] = 0x80 + ((uc >> 12) & 0x3F);
-        dst[2] = 0x80 + ((uc >> 6) & 0x3F);
-        dst[3] = 0x80 + (uc & 0x3F);
-        len = 4;
-    } else {
+        return 3;
+    }
+    dst[0] = (uint8_t)(0xF0 + (uc >> 18));
+    dst[1] = 0x80 + ((uc >> 12) & 0x3F);
+    dst[2] = 0x80 + ((uc >> 6) & 0x3F);
+    dst[3] = 0x80 + (uc & 0x3F);
+    return 4;
+}
+
+void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf) {
+    uint8_t dst[4];
+
+    assert(uc >= 0);
+
+    if (uc >= 0x110000) {
         encode_unknown(buf);
         return;
     }
-
-    markdown_core_strbuf_put(buf, dst, len);
+    markdown_core_strbuf_put(buf, dst, S_encode_scalar(uc, dst));
 }
 
 #include "case_fold.inc"
@@ -207,31 +213,44 @@ int markdown_core_utf8proc_is_punctuation(int32_t uc) {
 
 #include "anchor_scalars.inc"
 
-static int32_t anchor_scalar(int32_t uc) {
-    size_t low = 0, high = sizeof(anchor_scalars) / sizeof(*anchor_scalars);
-    while (low < high) {
-        size_t mid = low + (high - low) / 2;
-        if (uc < anchor_scalars[mid][0]) {
-            high = mid;
-        } else if (uc > anchor_scalars[mid][1]) {
-            low = mid + 1;
-        } else {
-            return uc + anchor_scalars[mid][2];
-        }
+/* The anchors module's image of one scalar, or 0 when the scalar is removed.
+ * Three dependent loads for every scalar: the generated table is staged by
+ * page, leaf and class, so no script is searched for and none is special. */
+static inline int32_t anchor_scalar(int32_t uc) {
+    if ((uint32_t)uc >= 0x110000) {
+        return 0;
     }
-    return 0;
+    uint8_t page = anchor_pages[uc >> (ANCHOR_LEAF_BITS + ANCHOR_PAGE_BITS)];
+    uint16_t leaf = anchor_leaves[page][(uc >> ANCHOR_LEAF_BITS) & ((1 << ANCHOR_PAGE_BITS) - 1)];
+    uint8_t projected = anchor_classes[leaf][uc & ((1 << ANCHOR_LEAF_BITS) - 1)];
+    return projected ? uc + anchor_deltas[projected] : 0;
 }
 
 /* Consume a complete literal here so UTF-8 decoding, scalar projection and
- * encoding share one loop and can be inlined within the Unicode module. */
+ * encoding share one loop and write straight into reserved storage.
+ *
+ * The reservation is an upper bound, not a guess. The generator asserts that
+ * no scalar's image is longer than 3/2 of its own encoding, and a byte that
+ * begins no character is stepped over as a one-byte scalar whose image is at
+ * most two bytes -- so twice the literal always suffices, whatever the input. */
 void markdown_core_utf8proc_anchor(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len) {
+    if (len <= 0) {
+        return;
+    }
+    size_t reserve = (size_t)dest->size + 2 * (size_t)len;
+    markdown_core_strbuf_grow(dest, reserve > (size_t)INT32_MAX ? INT32_MAX : (bufsize_t)reserve);
+    if (dest->oom) {
+        return;
+    }
+    uint8_t *out = dest->ptr + dest->size;
     for (bufsize_t at = 0; at < len;) {
         int32_t scalar;
-        int width = markdown_core_utf8proc_step(str + at, len - at, &scalar);
-        at += width;
+        at += markdown_core_utf8proc_step(str + at, len - at, &scalar);
         scalar = anchor_scalar(scalar);
         if (scalar) {
-            markdown_core_utf8proc_encode_char(scalar, dest);
+            out += S_encode_scalar(scalar, out);
         }
     }
+    dest->size = (bufsize_t)(out - dest->ptr);
+    dest->ptr[dest->size] = '\0';
 }
