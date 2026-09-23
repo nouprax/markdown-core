@@ -71,7 +71,7 @@ jobs:
                   cmake --build build/codeql --parallel
             - name: Build Kotlin product
               if: matrix.language == 'java-kotlin'
-              run: scripts/gradle.sh --no-build-cache --rerun-tasks :packages:kotlin-markdown-core:compileKotlinJvm
+              run: scripts/tooling/run-gradle.sh --no-build-cache --rerun-tasks :packages:kotlin-markdown-core:compileKotlinJvm
             - name: Build Swift product
               if: matrix.language == 'swift'
               run: swift build --target MarkdownCore
@@ -97,5 +97,5 @@ jobs:
                   NEEDS: ${{ toJSON(needs) }}
               with:
                   script: |
-                      const { requireGate } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/ci-gate.mjs`);
+                      const { requireGate } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/shared/ci-gate.mjs`);
                       core.info(requireGate(JSON.parse(process.env.NEEDS)));

@@ -8,7 +8,7 @@
  *
  * The version measured is whatever `.tools/cmark/<pinned version>` holds; the
  * driver records it in the report, and the pin itself lives in
- * scripts/init-environment.sh next to the parity oracles.
+ * scripts/tooling/setup-environment.sh next to the parity oracles.
  */
 #include <cmark.h>
 

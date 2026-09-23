@@ -21,7 +21,7 @@ AST-pair census, ownership model or legacy measurement mode.
 pnpm benchmark --corpus-only
 
 # Linux with Callgrind and the pinned references.
-scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm
+scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
 pnpm benchmark
 
 # Measure a whole family, including the selected input's counterpart/hosts.
@@ -66,7 +66,7 @@ Local and host costs are not additive. Grammar equivalence does not assert
 equal native ASTs, output work, or globally optimal instruction counts.
 
 The source-language proof checks run in
-`node --test scripts/tests/grammar-corpus.test.mjs`. Native parser correctness
+`node --test scripts/benchmark/tests/corpus.test.mjs`. Native parser correctness
 belongs to parity and regression. The common runner retains its historical
 nonempty input/root-child receipt guard; it neither validates feature hits nor
 establishes grammar equivalence.
@@ -118,7 +118,7 @@ behavior.
 `pnpm benchmark:attributes` remains an independent comparison of Core's
 attribute-list grammar with the pinned lexbor HTML attribute tokenizer. Their
 authored spellings differ; the workload and recovered attribute values are
-defined by `scripts/benchmark-attributes.mjs`. It builds both implementations
+defined by `scripts/benchmark/measure-attributes.mjs`. It builds both implementations
 with recorded flags and measures scanning, decoding and release on the harness
 entry edge. Its reports and raw profiles live in `build/benchmark-attributes`.
 

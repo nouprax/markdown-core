@@ -4,7 +4,7 @@
 # reached from another compilation unit, so this list is not a set of mistakes
 # to fix one by one -- most of it cannot be made package-private without
 # collapsing the multiplatform source-set split. It is a REVIEWED RECORD, and
-# `scripts/audit-kotlin-jvm-surface.sh` fails on anything added to the actual
+# `scripts/audit/check-kotlin-jvm-surface.sh` fails on anything added to the actual
 # surface that is not written down here.
 #
 # `checkKotlinAbi` does not overlap with this: its dump is the Kotlin API, and

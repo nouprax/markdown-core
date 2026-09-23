@@ -44,7 +44,7 @@ function run(command, args) {
 // `--skip-build` runs against an artifact somebody else already built, which
 // is what CI does: the build job produces `dist/` and the test job consumes
 // it, so rebuilding here would be both wasted work and a different artifact
-// from the one under test. `scripts/audit-ci-policy.sh` requires the flag to
+// from the one under test. `scripts/audit/check-ci-policy.sh` requires the flag to
 // exist for exactly that reason.
 if (!process.argv.includes("--skip-build")) run("node", ["scripts/build.mjs"]);
 const selected = requested ? [requested] : suites;

@@ -17,7 +17,7 @@
             "Attribute member grammar and consumer projection. Markdown Core takes attribute names as written, like an HTML start tag, at every attachment site (docs/specs/dialect/attributes.md) and projects IDs to the universal anchor and remaining values to shared classes and records; remark remains the evidence only for the directive envelope and attachment position, which the directives module states. New runtime differences in the member grammar must be registered when they begin reproducing."
         ]
     },
-    "claim": "Within the evidence boundary above, Markdown Core's semantics are identical to the unified/remark ecosystem's except for the registered differences below. The check that enforces current runtime behavior is scripts/check-mdast-parity.mjs.",
+    "claim": "Within the evidence boundary above, Markdown Core's semantics are identical to the unified/remark ecosystem's except for the registered differences below. The check that enforces current runtime behavior is scripts/correctness/check-mdast-parity.mjs.",
     "corpus": [
         "specs/oracles/remark/corpus.md",
         "packages/markdown-core/tests/fixtures/elements-directive.txt",
@@ -58,7 +58,7 @@
             "summary": "A line ending inside an inline code span is a space in this repository AST and stays a line ending in mdast.",
             "authority": "cmark. CommonMark states that a code span line ending is treated as a space; cmark applies it when it builds the node, and mdast-util-to-hast applies it at render time instead. The two agree on the span content; they disagree on which layer states it.",
             "handling": "The oracle converts line endings in mdast inline code before comparing, so the comparison is about the span content.",
-            "evidence": "scripts/lib/mdast-oracle.mjs, inlineCode; the base-language claim is checked by scripts/check-upstream-parity.mjs over spec.txt."
+            "evidence": "scripts/correctness/mdast-oracle.mjs, inlineCode; the base-language claim is checked by scripts/correctness/check-upstream-parity.mjs over spec.txt."
         },
         {
             "id": "html-comment-node",

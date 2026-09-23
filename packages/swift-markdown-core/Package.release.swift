@@ -2,9 +2,9 @@
 import PackageDescription
 
 // THE RELEASE MANIFEST: the same two targets the root `Package.swift`
-// declares, and NOTHING ELSE. `scripts/check-swift-source-archive.sh` copies
+// declares, and NOTHING ELSE. `scripts/release/check-swift-source-archive.sh` copies
 // this file in as the archive's `Package.swift`, and
-// `scripts/audit-ci-policy.sh` refuses it if it names a test target, the
+// `scripts/audit/check-ci-policy.sh` refuses it if it names a test target, the
 // benchmarks, the conformance suite, a plugin or a tool -- so the product
 // build cannot reach any of them even by accident.
 //

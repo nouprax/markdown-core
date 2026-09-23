@@ -29,7 +29,7 @@ test: build
 	ctest --preset correctness
 
 bench:
-	node scripts/benchmark.mjs
+	node scripts/benchmark/run.mjs
 
 asan-test:
 	cmake --preset asan
@@ -90,4 +90,4 @@ distclean: clean
 # Maintenance-only source generation; the generated files are tracked, so
 # these never run during normal build or test.
 $(ELEMENTSDIR)/%_scanners.c: $(ELEMENTSDIR)/%_scanners.re $(ELEMENTSDIR)/scanner_common.re
-	scripts/check-generated-scanners.sh --write $<
+	scripts/tooling/check-generated-scanners.sh --write $<

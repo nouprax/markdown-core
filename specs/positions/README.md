@@ -4,9 +4,9 @@ Three gates that judge the engine's source positions, and one ledger each.
 
 | Ledger | Script | Asks |
 |---|---|---|
-| `inline-sourcepos.json` | `scripts/audit-inline-sourcepos.mjs` | does an authority outside this repository agree? |
-| `containment.json` | `scripts/audit-scope-containment.mjs` | is the tree's geometry consistent with itself? |
-| `places.json` | `scripts/audit-position-places.mjs` | are both coordinates valid source places, and is the scope ordered? |
+| `inline-sourcepos.json` | `scripts/audit/check-inline-sourcepos.mjs` | does an authority outside this repository agree? |
+| `containment.json` | `scripts/audit/check-scope-containment.mjs` | is the tree's geometry consistent with itself? |
+| `places.json` | `scripts/audit/check-position-places.mjs` | are both coordinates valid source places, and is the scope ordered? |
 
 ## Why three
 
@@ -67,9 +67,9 @@ So both directions fail without `--update`, and `--update` is a deliberate act
 taken in the commit that moves the behaviour, whose message names the rows.
 
 ```
-node scripts/audit-inline-sourcepos.mjs [--update] [--verbose]
-node scripts/audit-scope-containment.mjs [--update] [--verbose]
-node scripts/audit-position-places.mjs   [--update] [--verbose]
+node scripts/audit/check-inline-sourcepos.mjs [--update] [--verbose]
+node scripts/audit/check-scope-containment.mjs [--update] [--verbose]
+node scripts/audit/check-position-places.mjs   [--update] [--verbose]
 ```
 
 A row identity is what was measured — the input, the node's index path from the

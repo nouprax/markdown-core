@@ -276,5 +276,5 @@
     "pendingExpectedDivergences": [],
     "backlog": [],
     "retiredBacklog": [],
-    "backlogNote": "An entry here says cmark-gfm is right and this engine has not caught up yet. Each names the item that closes it and must still diverge until then; the commit that lands the fix deletes the entry, and `retiredBacklog` records only an entry whose input left the corpus without ever agreeing. scripts/check-upstream-parity.mjs enforces every direction."
+    "backlogNote": "An entry here says cmark-gfm is right and this engine has not caught up yet. Each names the item that closes it and must still diverge until then; the commit that lands the fix deletes the entry, and `retiredBacklog` records only an entry whose input left the corpus without ever agreeing. scripts/correctness/check-upstream-parity.mjs enforces every direction."
 }

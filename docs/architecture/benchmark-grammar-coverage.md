@@ -19,7 +19,7 @@ the responsibility of the existing parity and regression pipelines.
    the unmatched reference productions, and supplies a positive proof for the
    complete local field grammar. A local ratio never certifies a host ratio.
 4. Every specification section has an explicit disposition in
-   `scripts/lib/grammar-sections.mjs`: source-grammar sections name their
+   `scripts/benchmark/sections.mjs`: source-grammar sections name their
    certificates, while context-only sections explain why they introduce no new
    source production. Missing/renamed sections, stale links, nonexistent or empty
    certificate lists fail before the ledger can be regenerated. Every certificate
@@ -102,8 +102,8 @@ After reviewing a grammar or specification change, regenerate both ledgers:
 ```sh
 node --input-type=module <<'JS'
 import fs from 'node:fs';
-import {buildGrammarCorpus, grammarCatalog} from './scripts/lib/grammar-corpus.mjs';
-import {featureCoverage} from './scripts/lib/grammar-coverage.mjs';
+import {buildGrammarCorpus, grammarCatalog} from './scripts/benchmark/corpus.mjs';
+import {featureCoverage} from './scripts/benchmark/coverage.mjs';
 const corpus = buildGrammarCorpus({units:2});
 for (const [name, value] of [
   ['grammar-corpus', grammarCatalog()],
@@ -111,7 +111,7 @@ for (const [name, value] of [
 ]) fs.writeFileSync(`packages/markdown-core/benchmarks/${name}.json`, JSON.stringify(value, null, 4) + '\n');
 JS
 pnpm exec prettier --write packages/markdown-core/benchmarks/grammar-{corpus,coverage}.json
-node --test scripts/tests/grammar-corpus.test.mjs
+node --test scripts/benchmark/tests/corpus.test.mjs
 ```
 
 Regenerating a digest does not discharge a changed rule's proof obligation. Review

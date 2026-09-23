@@ -5,7 +5,7 @@
 The [machine-readable contract](canonical-ast.json) defines the ordered kind
 and field inventory. This companion specifies ownership, coordinates, values,
 and traversal. The node table below is checked against that inventory by
-`scripts/audit-ast-projections.mjs`.
+`scripts/audit/check-ast-projections.mjs`.
 
 The contract is implemented by the C facade and the Swift, Kotlin, and
 ECMAScript bindings. Platform APIs use idiomatic syntax while preserving names,

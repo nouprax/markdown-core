@@ -1,6 +1,6 @@
 {
     "schemaVersion": 1,
-    "purpose": "The machine-readable, normative canonical AST contract. C, Swift, Kotlin, and TypeScript declare projections of this shape, and scripts/audit-ast-projections.mjs checks every projection plus the prose and debug-dump tables against this file. Formula is the only kind whose placement mode varies; placement for Code, CodeBlock, Directive, DirectiveBlock, and FormulaBlock is implied by the kind.",
+    "purpose": "The machine-readable, normative canonical AST contract. C, Swift, Kotlin, and TypeScript declare projections of this shape, and scripts/audit/check-ast-projections.mjs checks every projection plus the prose and debug-dump tables against this file. Formula is the only kind whose placement mode varies; placement for Code, CodeBlock, Directive, DirectiveBlock, and FormulaBlock is implied by the kind.",
     "prose": "docs/specs/canonical-ast.md",
     "dumpGrammar": "docs/specs/canonical-ast-dump.md",
     "walk": {

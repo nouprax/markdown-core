@@ -36,7 +36,7 @@ explicitly. There is no cross-host aggregate and no public stress task.
 | --- | --- | --- |
 | C | One CMake/CTest graph with presets and labels | `ctest --test-dir build/cmake -N`; `ctest --preset correctness -L spec`; `ctest --preset correctness -R pathological_backticks` |
 | Swift | SwiftPM correctness and conformance test targets; xcodebuild on iOS | `swift test list`; `swift test --filter`; xcodebuild `-only-testing` |
-| Kotlin | Gradle/KMP named platform tasks; instrumentation class selection on Android | `scripts/gradle.sh :packages:kotlin-markdown-core:tasks --group verification`; native `--tests` or runner arguments |
+| Kotlin | Gradle/KMP named platform tasks; instrumentation class selection on Android | `scripts/tooling/run-gradle.sh :packages:kotlin-markdown-core:tasks --group verification`; native `--tests` or runner arguments |
 | ECMAScript | Package-native Node/browser correctness runner and separate conformance runner | `node packages/es-markdown-core/scripts/run-tests.mjs --list`; `--target` and `--suite`; Node `--test-name-pattern` |
 
 Root `pnpm` tasks map task families to execution platforms in one step. Do not
@@ -45,7 +45,7 @@ family router. Diagnostic sharding uses the native filters.
 
 C data-driven runners also offer `spec_runner --list/--example/--section`,
 `pathological_runner --list/--case`, and `concurrency_runner --case`.
-`scripts/audit-test-topology.sh` compares discovery with CTest registration.
+`scripts/audit/check-test-topology.sh` compares discovery with CTest registration.
 The stage benchmark's runners are not in the test graph at all.
 
 ## Correctness and conformance
@@ -307,13 +307,13 @@ shared `changes.yml` preflight; CI's Benchmark call uses that same decision.
 Repository integrity, documentation contracts, test
 topology, and documented release coordinates are checked even for
 documentation-only changes. Required workflows and their final gates always
-run. The gates share `scripts/ci-gate.mjs`: a successful preflight with an
+run. The gates share `scripts/shared/ci-gate.mjs`: a successful preflight with an
 explicit `false` accepts successful or skipped dependencies and reports success.
 An explicit `true` requires every dependency to succeed. Failed or cancelled
 dependencies, failed preflight, and missing or invalid decisions always fail;
 an unexpected skip is never treated as successful full validation.
 
-`scripts/ci-changes.mjs` identifies prose through a conservative path allowlist.
+`scripts/shared/ci-changes.mjs` identifies prose through a conservative path allowlist.
 Markdown fixtures, machine-readable specifications, source, build configuration,
 lockfiles, and workflows remain execution inputs. The fingerprint covers Git
 paths, modes, and blob identities; executable Markdown, symlinks, and submodules
@@ -346,7 +346,7 @@ falls back to full validation. Manual, scheduled, and formal release runs always
 execute fully. A skipped stage benchmark produces no report.
 
 `pnpm audit:tests` checks contracts without compiling. After an existing C build,
-`scripts/audit-test-topology.sh build/cmake` additionally checks dynamic discovery,
+`scripts/audit/check-test-topology.sh build/cmake` additionally checks dynamic discovery,
 nonempty labels, and disjoint correctness/conformance selection. Audits must not
 rebuild C or Swift just to inspect their topology.
 

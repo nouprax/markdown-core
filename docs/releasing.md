@@ -32,7 +32,7 @@ become an independent source of truth.
 ## Prepare a release
 
 1. Set `VERSION` to the intended stable SemVer.
-2. Update the checked projections named by `scripts/check-release-version.mjs`.
+2. Update the checked projections named by `scripts/release/check-version.mjs`.
 3. Move the matching changelog section from `unreleased` to its release date.
 4. Write `docs/releases/<VERSION>.md` for consumers. Keep internal migration
    bookkeeping and validation transcripts out of the release notes.

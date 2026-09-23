@@ -1,0 +1,121 @@
+/**
+ * D9: whether a reference resolves must not depend on how many resolved first.
+ *
+ * **This gate was REGISTERED RED until Step 9b.2 and is now GREEN with an empty
+ * ledger.** It is still the mdast backlog's shape -- the ledger names what is
+ * wrong, and the gate fails both when a registered row stops reproducing and
+ * when a new one appears -- so an empty ledger is the strongest state it has,
+ * not a retired one: a row appearing here fails the run.
+ *
+ * Resolving a reference USED TO COPY the definition's destination and title
+ * into the node, so `markdown_core_map_lookup` carried a running budget --
+ * `max(100000, input size)` bytes summed over successful lookups -- and simply
+ * stopped resolving once it was spent. Two properties died:
+ *
+ *   UNIFORM       N references to one label are identical, so they must all
+ *                 resolve or none must. Under the budget the first k resolved
+ *                 and the rest degraded to text, with k a function of the
+ *                 destination's length.
+ *   INDEPENDENT   `[b]` resolves in a two-line document. Prefix that document
+ *                 with an unrelated `[a]` big enough to spend the budget and
+ *                 the identical `[b]` became `Text literal="[b]"`. The
+ *                 contamination crossed labels.
+ *
+ * **Deleting the budget was never the fix**, which is why this was pinned
+ * rather than repaired for so long: with it gone and nothing in its place,
+ * 656 KB of input produced 134 MB of copied destinations. The budget bought a
+ * linear output bound by breaking resolution. `reference_expansion_bound` in
+ * `pathological_runner.c` now guards the payload ratio directly; this audit
+ * guards the independent lookup-order invariant.
+ *
+ * A reference that SHARES its definition's resource buys both, and that is
+ * M2's model: the parser's map owns each winning destination and title once,
+ * every occurrence that resolves to the label is the `Link` or `Embedded` it
+ * names and reads through that one resource, so nothing is copied, there is
+ * nothing to charge and no budget. `reference_expansion_bound` counts the
+ * payload once per distinct resource identity and holds it within the source
+ * while both properties below hold.
+ *
+ *   node scripts/audit/check-reference-order-independence.mjs [--update] [--verbose]
+ */
+
+import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+
+import { parseCanonicalDump, parseDestination } from "../shared/upstream-cmark.mjs";
+import { loadLedger, reconcileLedger, requireBinary, runBinary, walkWithPath } from "./source-positions.mjs";
+
+const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const LEDGER = "specs/reference-resolution/ledger.json";
+const ledger = loadLedger(root, LEDGER);
+const update = process.argv.includes("--update");
+const verbose = process.argv.includes("--verbose");
+
+const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdown-core", "pnpm build:c");
+const parse = (input) => parseCanonicalDump(runBinary(ours, [], input));
+// A reference RESOLVED is the `Link` its definition names, carrying that
+// definition's destination (M2); a reference that did not is prose, brackets
+// intact.
+const resolved = (tree, destination) =>
+    [...walkWithPath(tree)].filter(({ node }) => {
+        if (node.kind !== "Link") return false;
+        const dest = parseDestination(node.fields.dest ?? "");
+        return dest?.kind === "url" && dest.value === destination;
+    }).length;
+const unresolved = (tree, label) =>
+    [...walkWithPath(tree)].filter(({ node }) => node.kind === "Text" && node.fields.literal === label).length;
+
+// A destination long enough that the 100 KB floor runs out inside a document
+// small enough to read, and short enough that the whole corpus parses fast.
+const DESTINATION = `/${"u".repeat(ledger.destinationLength - 1)}`;
+
+const measured = [];
+
+// UNIFORM: N identical references to one label.
+{
+    const count = ledger.uniformReferences;
+    const input = `[a]: ${DESTINATION}\n\n${"[a]\n\n".repeat(count)}`;
+    const tree = parse(input);
+    const yes = resolved(tree, DESTINATION);
+    const no = unresolved(tree, "[a]");
+    if (yes !== count)
+        measured.push({
+            source: "uniform",
+            input: `[a]: /u*${String(ledger.destinationLength - 1)} then ${String(count)} references to [a]`,
+            findings: [{ property: "uniform", references: count, resolved: yes, degradedToText: no }]
+        });
+}
+
+// INDEPENDENT: the same reference, with and without an unrelated prefix.
+{
+    const tail = "[b]: /short\n\n[b]\n";
+    const alone = resolved(parse(tail), "/short");
+    const prefix = `[a]: ${DESTINATION}\n\n${"[a]\n\n".repeat(ledger.contaminationReferences)}`;
+    const contaminated = resolved(parse(prefix + tail), "/short");
+    if (alone !== contaminated)
+        measured.push({
+            source: "independent",
+            input: tail,
+            findings: [
+                {
+                    property: "independent",
+                    aloneResolves: alone,
+                    afterUnrelatedPrefixResolves: contaminated,
+                    prefixReferences: ledger.contaminationReferences
+                }
+            ]
+        });
+}
+
+if (verbose) for (const entry of measured) process.stdout.write(`${entry.source}: ${JSON.stringify(entry.findings)}\n`);
+
+reconcileLedger({
+    root,
+    ledgerPath: LEDGER,
+    ledger,
+    measured,
+    update,
+    subject: "reference order independence",
+    scanned: 2
+});

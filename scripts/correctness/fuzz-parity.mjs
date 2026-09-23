@@ -1,0 +1,326 @@
+#!/usr/bin/env node
+/**
+ * Differential parity fuzzing.
+ *
+ * The parity gates compare this parser against external authorities over a
+ * corpus people wrote. That corpus reaches the constructs someone thought to
+ * write down; this reaches the ones nobody did — nesting, adjacency, and
+ * truncation that hand-written examples do not produce.
+ *
+ * Generation is seeded and reproducible: a failure prints the seed and the
+ * iteration that produced it, and re-running with `--seed` replays exactly the
+ * same inputs. Randomness that could not be replayed would report defects
+ * nobody can then look at.
+ *
+ *   node scripts/correctness/fuzz-parity.mjs [--oracle commonmark|gfm|remark] [--seed N]
+ *                                [--iterations N] [--verbose]
+ */
+
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { readExamples, selectExamples } from "../shared/fixture-corpus.mjs";
+import { outsideSharedFuzzScope } from "./fuzz-scope.mjs";
+
+const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+
+function argument(name, fallback) {
+    const index = process.argv.indexOf(`--${name}`);
+    return index >= 0 ? process.argv[index + 1] : fallback;
+}
+const oracleName = argument("oracle", "commonmark");
+const seed = Number(argument("seed", "1"));
+const iterations = Number(argument("iterations", "300"));
+const verbose = process.argv.includes("--verbose");
+
+// xorshift64*, so a seed replays byte for byte across hosts and Node versions.
+function prng(state) {
+    let value = BigInt(state) || 1n;
+    const mask = (1n << 64n) - 1n;
+    return () => {
+        value ^= value >> 12n;
+        value = (value << 25n) & mask;
+        value ^= value >> 27n;
+        return Number(((value * 2685821657736338717n) & mask) >> 33n) / 2 ** 31;
+    };
+}
+
+/**
+ * Fragments are the lines of the corpora the parity gates already use, so the
+ * generator produces material both parsers were built to handle rather than
+ * arbitrary bytes. Arbitrary bytes are a different test — they belong to the
+ * existing libFuzzer harnesses, which check that nothing crashes; this one
+ * checks that two implementations agree, which needs inputs that mean
+ * something to both.
+ *
+ * The list comes from the oracle's own policy rather than a copy kept here, so
+ * widening a gate's corpus widens what the fuzzer recombines. A copy would
+ * quietly stay narrow and still describe itself as the gate's corpus.
+ */
+function fragments(entries, policyPath) {
+    const seen = new Set();
+    for (const entry of entries) {
+        const file = typeof entry === "string" ? entry : entry.file;
+        const selection = typeof entry === "string" ? undefined : entry.selection;
+        for (const example of selectExamples(readExamples(root, file), selection, policyPath)) {
+            for (const line of example.input.split("\n")) {
+                if (line.length && line.length < 80) seen.add(line);
+            }
+        }
+    }
+    return [...seen];
+}
+
+const ORACLES = {
+    commonmark: {
+        policy: "specs/oracles/cmark/deltas.json",
+        gate: "scripts/correctness/check-upstream-parity.mjs",
+        // The dialect is one language, and against CommonMark every feature
+        // beyond it diverges wherever recombination puts its trigger: a bare
+        // URL, `www.` host, or address becomes a link (`gfm-autolink-literal`),
+        // a colon before an alphanumeric opens a text directive
+        // (`text-directive`), a pipe row completes a table, `~~` strikes,
+        // `$` opens a formula, `[^` calls a footnote, `:::` opens a directive
+        // block, and `[ ]` after a bullet marks a task. Each is judged by the
+        // oracle that owns it -- cmark-gfm or remark -- whose fuzz oracle keeps
+        // the fragments; this one explores the base language cmark judges.
+        gateArgs: ["--oracle", "commonmark"],
+        excludeFragments: [
+            "://",
+            "www.",
+            "@",
+            "|",
+            "~~",
+            "$",
+            "[^",
+            /(^|[^:]):[A-Za-z0-9]/,
+            /^\s*:::/,
+            /^\s*[-*+]\s+\[[ xX]\]/
+        ]
+    },
+    gfm: {
+        policy: "specs/oracles/cmark-gfm/deltas.json",
+        gate: "scripts/correctness/check-upstream-parity.mjs",
+        // Upstream reads a task item's checked state with a substring search
+        // for `[x]` or `[X]` over the whole line, so an unchecked item that acquires a
+        // literal completion marker through recombination reproduces the registered
+        // `tasklist-authored-marker` difference — endlessly, and in inputs no
+        // registry entry can name in advance. Checked items are exercised by
+        // the corpus gate, which reads the fixtures unrecombined. `"title" ok`
+        // is the corpus's one title-then-junk line: recombined under any
+        // definition line it can reproduce cmark-gfm's CommonMark title-rewind
+        // bug, which is outside this oracle's GFM-extension scope. `\|` is the
+        // same shape for `table-split-lead-spelling`: recombination can park it
+        // above a table delimiter, where cmark-gfm pre-unescapes even a pipe
+        // inside a code span. Both spellings are exercised unrecombined by the
+        // corpus gate. `[^` is the newest and it is the
+        // remark oracle's reason arriving here: whether a footnote call resolves
+        // depends on a definition elsewhere in the document, and since Step 9a
+        // an UNRESOLVED call keeps its interior where upstream flattens it
+        // (`footnote-failed-call-interior`). Recombination separates a call
+        // from its definition by construction, so any line carrying one
+        // diverges. Both sides are exercised unrecombined by the corpus gate.
+        // A colon before an alphanumeric opens the dialect's text directive
+        // (`text-directive` in the cmark ledger), which cmark-gfm does not
+        // have; truncation turns `mailto:x@y.z` into `mailto:x@y`, where no
+        // address follows and the directive claims the name. The address
+        // forms themselves are judged unrecombined by the corpus gate.
+        gateArgs: ["--oracle", "gfm"],
+        excludeFragments: ["[x]", "[X]", '"title" ok', "\\|", "[^", /(^|[^:]):[A-Za-z0-9]/]
+    },
+    remark: {
+        policy: "specs/oracles/remark/deltas.json",
+        gate: "scripts/correctness/check-mdast-parity.mjs",
+        // See the note on `pool`. Dollar math: GitHub is the authority, not
+        // remark. Footnote references: whether one resolves depends on a
+        // definition elsewhere in the document, so a fragment that agrees in
+        // its own corpus diverges the moment recombination separates it from
+        // its definition. Bare URLs: recombined next to a directive label that
+        // never closes, they reach `autolink-after-failed-label`. All three are
+        // registered differences whose scope is wider than the one input each
+        // entry names, which is what an input-keyed registry cannot express.
+        gateArgs: [],
+        // An empty task prefix creates no paragraph here; remark can lazily
+        // continue the paragraph it forms before stripping that prefix.
+        // Recombination and truncation reproduce this registered boundary.
+        // Zero trailing spaces reaches task-prefix-line-ending-separator:
+        // a newline cannot supply the task marker's required separator.
+        // P5: a directive label with attributes can become a bracketed Span
+        // when recombination invalidates its enclosing directive. Remark has
+        // no Span syntax; span-after-failed-directive pins the exact witness.
+        // A directive name is taken as written -- any run of bytes other than
+        // whitespace, `[`, `{` and `:` -- where remark-directive admits only
+        // ASCII letters, digits, `-` and `_`. A colon before a byte outside
+        // remark's class is therefore a name here and never one there
+        // (`directive-name-*` in the ledger); recombination puts such a
+        // colon before any bracket in the pool, so the shape is excluded
+        // rather than rediscovered. The part-less form, remark's directive
+        // where the dialect keeps text, is judged on remark's own parse by
+        // `outsideSharedFuzzScope`, since telling a part from a broken one
+        // needs bracket balance a substring cannot express.
+        excludeFragments: [
+            "]{",
+            "$",
+            "[^",
+            "://",
+            /^[\s>]*(?:[-*+]|\d+[.)])\s+\[[ xX]\][ \t\v\f]*$/,
+            /(^|[^:]):[^A-Za-z0-9\s[{:]/u
+        ]
+    }
+};
+const oracle = ORACLES[oracleName];
+if (!oracle) {
+    process.stderr.write(`fuzz-parity: unknown oracle "${oracleName}"\n`);
+    process.exit(2);
+}
+
+const policy = JSON.parse(fs.readFileSync(path.join(root, oracle.policy), "utf8"));
+const registered = new Set((policy.expectedDivergences ?? []).map((entry) => entry.input));
+
+// A registered divergence names one exact input, but the construct inside it
+// diverges wherever it appears. Recombining corpus lines would therefore
+// rediscover those constructs endlessly and report each recombination as new,
+// which is noise rather than a finding. Lines drawn from a registered input
+// are dropped from the pool so the generator explores only the space where the
+// two implementations are supposed to agree.
+const divergentLines = new Set();
+// A backlog entry's lines are dropped for the same reason: the engine has not
+// caught up there yet, and rediscovering that in every recombination would
+// drown the findings the fuzzer exists for.
+for (const entry of [
+    ...(policy.expectedDivergences ?? []),
+    ...(policy.backlog ?? []),
+    ...(policy.baselineBacklog ?? [])
+]) {
+    for (const line of entry.input.split("\n")) if (line.length) divergentLines.add(line);
+}
+// A registry entry names one input, but some entries stand for a disagreement
+// that is broader than the input they cite. Dollar-delimited math is the case:
+// GitHub is the authority for `$...$` and `$$...$$`, not remark, and the two
+// disagree about the construct generally rather than on three specific
+// strings. Generating those fragments would rediscover that in every
+// recombination, so the oracle's own exclusions say where it is authoritative.
+const excluded = (line) =>
+    (oracle.excludeFragments ?? []).some((pattern) =>
+        pattern instanceof RegExp ? pattern.test(line) : line.includes(pattern)
+    );
+const pool = fragments(policy.corpus ?? [], oracle.policy).filter(
+    (line) => !divergentLines.has(line) && !excluded(line)
+);
+if (pool.length === 0) {
+    process.stderr.write("fuzz-parity: every corpus fragment was excluded; nothing would be generated.\n");
+    process.exit(1);
+}
+const random = prng(seed);
+const pick = (items) => items[Math.min(items.length - 1, Math.floor(random() * items.length))];
+
+function generate() {
+    const lines = [];
+    const count = 1 + Math.floor(random() * 6);
+    for (let i = 0; i < count; i++) {
+        const fragment = pick(pool);
+        const roll = random();
+        let line = fragment;
+        if (roll < 0.15) line = fragment.slice(0, 1 + Math.floor(random() * fragment.length));
+        else if (roll < 0.3) line = `${fragment}${pick(pool)}`;
+        else if (roll < 0.4) line = "";
+        // A recombined line answers to the same exclusions as a fragment:
+        // truncation and adjacency build, across a boundary, the shapes the
+        // exclusions name -- a delimiter row's closing `--:` against a line
+        // that opens `hello@...` is a text directive no fragment carried. The
+        // fragment stands in, so the draw sequence and every other line of the
+        // seed replay unchanged.
+        lines.push(excluded(line) ? fragment : line);
+    }
+    return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Each candidate is checked by running the real gate over a one-example
+ * fixture. Reusing the gate rather than reimplementing the comparison is what
+ * keeps the fuzzer honest: it cannot drift into accepting something the gate
+ * would reject, and every registered divergence and normalization applies
+ * unchanged.
+ */
+// Per-run scratch. A shared directory works until two runs overlap — the CI
+// job runs both oracles, and a seed sweep runs several at once — and then the
+// first to finish deletes the directory the others are still writing into.
+const scratch = path.join(root, `build/fuzz-parity/${oracleName}-${String(seed)}-${String(process.pid)}`);
+fs.mkdirSync(scratch, { recursive: true });
+const fixture = path.join(scratch, "candidate.md");
+const fence = "`".repeat(32);
+
+function diverges(input) {
+    fs.writeFileSync(fixture, `${fence} example\n${input}.\nplaceholder\n${fence}\n`);
+    try {
+        execFileSync(
+            "node",
+            [path.join(root, oracle.gate), ...(oracle.gateArgs ?? []), "--corpus", path.relative(root, fixture)],
+            {
+                cwd: root,
+                encoding: "utf8",
+                stdio: "pipe"
+            }
+        );
+        return null;
+    } catch (error) {
+        return String(error.stdout ?? "") + String(error.stderr ?? "");
+    }
+}
+
+const failures = [];
+let compared = 0;
+let registeredInputs = 0;
+const outsideScope = new Map();
+try {
+    for (let iteration = 0; iteration < iterations; iteration++) {
+        const input = generate();
+        if (registered.has(input)) {
+            registeredInputs++;
+            continue;
+        }
+        const boundary = outsideSharedFuzzScope(input);
+        if (boundary) {
+            outsideScope.set(boundary, (outsideScope.get(boundary) ?? 0) + 1);
+            continue;
+        }
+        compared++;
+        const report = diverges(input);
+        if (report) failures.push({ iteration, input, report });
+        if (verbose && iteration % 50 === 0) {
+            process.stdout.write(`  ${String(iteration)}/${String(iterations)}\n`);
+        }
+    }
+} finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+}
+
+process.stdout.write(
+    `fuzz-parity [${oracleName}]: ${String(compared - failures.length)}/${String(compared)} compared inputs agree ` +
+        `(seed ${String(seed)}, ${String(pool.length)} fragments, ${String(iterations)} generated)\n`
+);
+for (const [boundary, count] of outsideScope) {
+    process.stdout.write(`  outside shared oracle scope: ${boundary} (${String(count)} inputs)\n`);
+}
+if (registeredInputs) process.stdout.write(`  exact registered inputs: ${String(registeredInputs)}\n`);
+if (!compared) {
+    process.stderr.write("fuzz-parity: no input reached differential comparison.\n");
+    process.exit(1);
+}
+
+if (failures.length) {
+    process.stderr.write(`\nfuzz-parity [${oracleName}] FAILED: ${String(failures.length)} input(s) diverge\n`);
+    for (const failure of failures.slice(0, verbose ? failures.length : 3)) {
+        process.stderr.write(`\n  iteration ${String(failure.iteration)} (replay: --seed ${String(seed)})\n`);
+        process.stderr.write(`  ${JSON.stringify(failure.input)}\n`);
+        process.stderr.write(failure.report.replace(/^/gm, "  "));
+    }
+    process.stderr.write(
+        "\nA divergence is a defect or a deliberate difference; the parity registries decide which.\n"
+    );
+    process.exit(1);
+}
+
+process.stdout.write(`\nfuzz-parity [${oracleName}] passed.\n`);

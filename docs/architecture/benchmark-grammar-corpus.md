@@ -127,7 +127,7 @@ spaces; code-span newline/padding rules therefore introduce no alternate value.
 ## Labelled product equivalence (T3)
 
 The original product families below and the additional feature productions in
-`scripts/lib/grammar-features.mjs` are complete concrete grammar pairs over their
+`scripts/benchmark/features.mjs` are complete concrete grammar pairs over their
 declared domains. Identical productions use T6; products with repeated bindings
 or finite lexical substitutions use T7.
 Their exact productions (including all whitespace and punctuation) are in the
@@ -351,7 +351,7 @@ Run:
 
 ```sh
 pnpm benchmark --corpus-only --out build/benchmark-grammar
-node --test scripts/tests/grammar-corpus.test.mjs
+node --test scripts/benchmark/tests/corpus.test.mjs
 # Linux with the pinned compiler, oracles and Callgrind:
 pnpm benchmark --out build/benchmark-grammar
 ```
@@ -381,6 +381,6 @@ To regenerate the checked-in example catalog after changing a grammar, run the
 following and review its grammar and example diff together with the proof:
 
 ```sh
-node --input-type=module -e 'import fs from "node:fs"; import {grammarCatalog} from "./scripts/lib/grammar-corpus.mjs"; fs.writeFileSync("packages/markdown-core/benchmarks/grammar-corpus.json", JSON.stringify(grammarCatalog(), null, 4) + "\n");'
+node --input-type=module -e 'import fs from "node:fs"; import {grammarCatalog} from "./scripts/benchmark/corpus.mjs"; fs.writeFileSync("packages/markdown-core/benchmarks/grammar-corpus.json", JSON.stringify(grammarCatalog(), null, 4) + "\n");'
 pnpm exec prettier --write packages/markdown-core/benchmarks/grammar-corpus.json
 ```

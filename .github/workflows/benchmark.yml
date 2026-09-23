@@ -47,7 +47,7 @@ jobs:
                   sudo apt-get update
                   sudo apt-get install --no-install-recommends --yes valgrind
             - name: Build the pinned reference checkouts
-              run: scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm
+              run: scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
             - name: Measure every engine and compare source-stage regressions
               env:
                   BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
@@ -55,7 +55,7 @@ jobs:
                   if [ -z "$BASE_REVISION" ] || [ "$BASE_REVISION" = 0000000000000000000000000000000000000000 ]; then
                       BASE_REVISION=$(git rev-parse HEAD^)
                   fi
-                  node scripts/benchmark.mjs --out build/benchmark-grammar --baseline-ref "$BASE_REVISION"
+                  node scripts/benchmark/run.mjs --out build/benchmark-grammar --baseline-ref "$BASE_REVISION"
             - name: Upload structured results for the PR comment
               if: ${{ always() }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -103,13 +103,13 @@ jobs:
                   sudo apt-get update
                   sudo apt-get install --no-install-recommends --yes valgrind
             - name: Build the pinned lexbor baseline
-              run: scripts/init-environment.sh --install oracle-lexbor
+              run: scripts/tooling/setup-environment.sh --install oracle-lexbor
             # A separate job from the stage measurement, for the same reason it
             # is a separate driver: the two baselines cannot be given the same
             # bytes, so this compares one grammar against one grammar rather
             # than two document parsers on one corpus.
             - name: Measure the attribute grammar
-              run: node scripts/benchmark-attributes.mjs
+              run: node scripts/benchmark/measure-attributes.mjs
             - name: Upload structured results for the PR comment
               if: ${{ always() }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

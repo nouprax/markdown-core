@@ -2,7 +2,7 @@
 title: mdast parity corpus
 ---
 
-Inputs for `scripts/check-mdast-parity.mjs`, in the repository's spec-fixture
+Inputs for `scripts/correctness/check-mdast-parity.mjs`, in the repository's spec-fixture
 format. The expected block of each example is this parser's canonical dump, as
 everywhere else — but the parity gate never reads it. It compares against
 remark's tree instead, so these expected blocks exist only to keep the file
