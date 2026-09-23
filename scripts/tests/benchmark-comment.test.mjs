@@ -6,7 +6,16 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { parse } from "yaml";
-import { attributeSection, publish, readArchive, stageSection } from "../benchmark-comment.mjs";
+import { boundaryModel, boundaryOperations } from "../lib/effort-boundaries.mjs";
+import { boundaryMarkdown } from "../lib/measure-effort.mjs";
+import {
+    attributeSection,
+    effortSection,
+    referenceSection,
+    publish,
+    readArchive,
+    stageSection
+} from "../benchmark-comment.mjs";
 
 const head = "a".repeat(40);
 const base = "b".repeat(40);
@@ -16,17 +25,31 @@ function stageReport(ir) {
         revision: base,
         corpus: { digest: "c".repeat(64), cases: 1 },
         pairingDigest: "d".repeat(64),
+        pairs: [],
         cases: [
             {
                 case: "inline-links-flat",
+                dialect: "commonmark",
+                carries: [],
                 scale: 1,
                 bytes: 32,
                 sha256: "e".repeat(64),
                 engines: {
                     "markdown-core": {
-                        stages: { source_to_buffer: { cost: { Ir: ir } }, buffer_to_ast: { cost: { Ir: 50 } } },
+                        stages: {
+                            source_to_buffer: { ir, cost: { Ir: ir } },
+                            buffer_to_ast: { ir: 50, cost: { Ir: 50 } }
+                        },
                         parsePathIr: ir + 60,
                         outsideStagesIr: 10
+                    },
+                    cmark: {
+                        stages: {
+                            source_to_buffer: { ir: 50, cost: { Ir: 50 } },
+                            buffer_to_ast: { ir: 25, cost: { Ir: 25 } }
+                        },
+                        parsePathIr: 80,
+                        outsideStagesIr: 5
                     }
                 }
             }
@@ -41,6 +64,32 @@ const attributes = () => ({
     }
 });
 
+function effortReport() {
+    const edges = (ir) => ({
+        operation: { calls: 16, cost: { Ir: ir } },
+        prepare: { calls: 1, cost: { Ir: 1000 } },
+        release: { calls: 1, cost: { Ir: 500 } }
+    });
+    return {
+        schemaVersion: 1,
+        model: boundaryModel,
+        scope: "local-operation-including-native-adapters",
+        certificates: [...boundaryOperations],
+        fullParserCertificates: 0,
+        measured: true,
+        iterations: 16,
+        identity: "e".repeat(64),
+        revision: head,
+        checkedFixtures: 7,
+        pairs: [],
+        cases: boundaryOperations.map((operation) => ({
+            id: `${operation}-input`,
+            operation,
+            engines: { "markdown-core": edges(300), cmark: edges(100) }
+        }))
+    };
+}
+
 test("PR tables report numeric results, source regressions, and complete parse accounting", () => {
     const body = stageSection(stageReport(103), stageReport(100));
     assert.match(body, /0\/1 passed/);
@@ -49,6 +98,136 @@ test("PR tables report numeric results, source regressions, and complete parse a
     assert.match(body, /inline-links-flat/);
     assert.match(body, /Required when CI inputs require execution/);
     assert.match(attributeSection(attributes()), /2.0000×/);
+});
+
+test("unchanged PR/base counts retain the actual reference and local-operation ratios", () => {
+    const body = stageSection(stageReport(100), stageReport(100));
+    assert.match(body, /\| Source → buffer \| 100 \| 100 \| 1.0000× \|/);
+    assert.match(body, /\| CommonMark \| cmark \| 1 \| 2.0000× \| 2.0000× \|/);
+    assert.ok(body.indexOf("Same-input parser comparisons") < body.indexOf("PR/base regression"));
+    const local = effortSection(effortReport());
+    for (const operation of boundaryOperations) assert.ok(local.includes(`| ${operation} | 1 | 3.0000× | 3.0000× |`));
+    assert.match(local, /does not certify equal whole-parser effort/);
+    assert.match(local, /1,000 \/ 500/);
+    assert.match(boundaryMarkdown(effortReport()), /\| copy-input \| 300 \| 100 \| 3.000x \| 1000\/500 \|/);
+});
+
+test("local summaries use per-input medians without pooling contracts or lifecycle costs", () => {
+    const report = effortReport();
+    const copy = globalThis.structuredClone(report.cases[0]);
+    copy.id = "copy-larger-input";
+    copy.engines["markdown-core"].operation.cost.Ir = 100;
+    copy.engines.cmark.operation.cost.Ir = 1000;
+    copy.engines["markdown-core"].prepare.cost.Ir = 999999;
+    report.cases.push(copy);
+    const body = effortSection(report);
+    assert.match(body, /\| copy \| 2 \| 1.5500× \| 3.0000× \|/);
+    assert.match(body, /\| owners \| 1 \| 3.0000× \| 3.0000× \|/);
+    report.measured = false;
+    assert.throws(() => effortSection(report), /no measured/);
+    assert.doesNotMatch(boundaryMarkdown(report), /3.000x/);
+});
+
+test("malformed or incomplete local measurements cannot claim an equal-contract ratio", () => {
+    for (const mutate of [
+        (r) => {
+            r.schemaVersion = 2;
+        },
+        (r) => {
+            r.model = "made-up";
+        },
+        (r) => {
+            r.scope = "full-parser";
+        },
+        (r) => {
+            r.fullParserCertificates = 7;
+        },
+        (r) => {
+            r.certificates.pop();
+        },
+        (r) => {
+            r.certificates[0] = r.certificates[1];
+        },
+        (r) => {
+            r.cases.pop();
+        },
+        (r) => {
+            r.cases.push(r.cases[0]);
+        },
+        (r) => {
+            r.cases[0].id = "@everyone";
+        },
+        (r) => {
+            r.cases[0].operation = "parse";
+        },
+        (r) => {
+            delete r.cases[0].engines.cmark;
+        },
+        (r) => {
+            r.iterations = 0;
+        },
+        (r) => {
+            r.cases[0].engines.cmark.operation.calls = 8;
+        },
+        (r) => {
+            r.cases[0].engines.cmark.prepare.calls = 16;
+        },
+        ...[0, -1, "100", Number.MAX_SAFE_INTEGER + 1, NaN].map((ir) => (r) => {
+            r.cases[0].engines.cmark.operation.cost.Ir = ir;
+        })
+    ]) {
+        const report = effortReport();
+        mutate(report);
+        assert.throws(() => effortSection(report));
+        assert.throws(() => boundaryMarkdown(report));
+    }
+});
+
+test("parser cohorts use their own reference and exclude cross-syntax, unmatched and scaled inputs", () => {
+    const measurement = (n) => ({
+        stages: { source_to_buffer: { ir: n, cost: { Ir: n } }, buffer_to_ast: { ir: n, cost: { Ir: n } } }
+    });
+    const entry = (name, n, extra = {}) => ({
+        case: name,
+        scale: 1,
+        dialect: "commonmark",
+        carries: [],
+        bytes: 32,
+        units: 1,
+        engines: { "markdown-core": measurement(n), cmark: measurement(100), "cmark-gfm": measurement(50) },
+        ...extra
+    });
+    const report = {
+        pairs: [
+            { case: "candidate", isomorph: "candidate-twin", contract: { pending: "unproved" } },
+            { case: "structural", isomorph: "structural-twin", contract: { proof: "insertion-strong-v1" } }
+        ],
+        splits: [{ hosts: [{ with: "split-with" }] }],
+        cases: [
+            entry("plain-one", 100),
+            entry("plain-three", 300),
+            entry("gfm", 400, { gfm: true }),
+            entry("candidate", 9000, { gfm: true, dialect: "extended" }),
+            entry("candidate-twin", 9000),
+            entry("structural", 9000, { dialect: "extended" }),
+            entry("structural-twin", 9000),
+            entry("unmatched", 9000, { carries: ["anchor"] }),
+            entry("scaled", 9000, { scale: 2 }),
+            entry("split-with", 9000),
+            entry("boundary", 9000, { boundary: {} }),
+            entry("dialect", 9000, { dialect: "extended" })
+        ]
+    };
+    const body = referenceSection(report);
+    assert.match(body, /\| CommonMark \| cmark \| 2 \| 2.0000× \| 3.0000× \|/);
+    assert.match(body, /\| GFM extensions \| cmark-gfm \| 1 \| 8.0000× \| 8.0000× \|/);
+    assert.doesNotMatch(body, /Same-job|equal-effort median|90.0000/);
+    report.cases = report.cases.filter((row) => !row.case.endsWith("-twin"));
+    assert.match(referenceSection(report), /\| GFM extensions \| cmark-gfm \| 1 \| 8.0000× \|/);
+    report.cases[2].engines["cmark-gfm"].stages.source_to_buffer.ir = 1;
+    assert.throws(() => referenceSection(report), /reference stage count/);
+    delete report.cases[2].engines["cmark-gfm"];
+    assert.throws(() => referenceSection(report), /Missing reference/);
 });
 
 test("report projections reject corrupt counts, mismatched workloads and injected text", () => {
@@ -160,7 +339,12 @@ function fixture() {
             fingerprint: "f".repeat(64),
             validation: { required: true, sources: {} }
         },
-        artifacts: ["benchmark-report-stages-1", "benchmark-report-attributes-1", "ci-inputs"].map((name, id) => ({
+        artifacts: [
+            "benchmark-report-stages-1",
+            "benchmark-report-attributes-1",
+            "ci-inputs",
+            "benchmark-report-effort-1"
+        ].map((name, id) => ({
             id,
             name,
             expired: false,
@@ -203,6 +387,7 @@ function fixture() {
             },
             core: { warning: (message) => state.warnings.push(message) },
             read: (bytes) => {
+                if (bytes.toString() === "3") return [effortReport()];
                 if (bytes.toString() === "102") return [state.inputs];
                 if (bytes.toString() === "2") return [state.original?.inputs ?? state.inputs];
                 return bytes.toString() === "0" ? [stageReport(103), stageReport(100)] : [attributes()];
@@ -210,6 +395,21 @@ function fixture() {
         });
     return state;
 }
+
+test("missing local artifacts do not hide parse/attribute results, and parse failures retain local results", async () => {
+    const missing = fixture();
+    missing.artifacts = missing.artifacts.filter((artifact) => !artifact.name.startsWith("benchmark-report-effort"));
+    await missing.publish();
+    assert.match(missing.writes[0].body, /Local equal-effort operations\n\nResult unavailable/);
+    assert.match(missing.writes[0].body, /0\/1 passed/);
+    assert.match(missing.writes[0].body, /Core \/ lexbor/);
+    const partial = fixture();
+    partial.artifacts = partial.artifacts.filter((artifact) => !artifact.name.startsWith("benchmark-report-stages"));
+    partial.run.conclusion = "failure";
+    await partial.publish();
+    assert.match(partial.writes[0].body, /\| owners \| 1 \| 3.0000× \| 3.0000× \|/);
+    assert.match(partial.writes[0].body, /Parse stages\n\nResult unavailable/);
+});
 
 test("fork runs with empty PR metadata find the current PR through commit association", async () => {
     const state = fixture();
@@ -283,7 +483,7 @@ test("mutable workflow PR metadata cannot replace the recorded tested base", asy
 test("unavailable or inconsistent input evidence fails closed without publishing", async () => {
     for (const mutate of [
         (s) => {
-            s.artifacts.pop();
+            s.artifacts.splice(2, 1);
         },
         (s) => {
             s.artifacts[2].expired = true;
@@ -478,6 +678,7 @@ test("a documentation push recovers a measurement whose old publisher lost the P
         assert.match(body, /runs\/42\/attempts\/1/);
         assert.match(body, /0\/1 passed/);
         assert.match(body, /2.0000×/);
+        assert.match(body, /\| owners \| 1 \| 3.0000× \| 3.0000× \|/);
         assert.equal(state.warnings.length, 0);
     }
 });
@@ -579,7 +780,7 @@ test("unavailable, superseded or mismatched original validation is explicit and 
             s.original.inputs.validation.required = false;
         },
         (s) => {
-            s.original.artifacts.pop();
+            s.original.artifacts.splice(2, 1);
         },
         (s) => {
             s.original.artifacts[2].expired = true;
@@ -632,6 +833,7 @@ test("reuse reads each retained job's attempt and exposes missing original repor
     state.original.latest.run_attempt = 2;
     state.original.jobs[0].run_attempt = 2;
     state.original.artifacts[0].name = "benchmark-report-stages-2";
+    state.original.artifacts[3].name = "benchmark-report-effort-2";
     await state.publish();
     assert.match(state.writes[0].body, /0\/1 passed/);
     assert.match(state.writes[0].body, /2.0000×/);
@@ -649,6 +851,7 @@ test("failed-job retries retain successful measurements but cannot reuse a faile
     state.run.run_attempt = state.latest.run_attempt = 2;
     state.jobs[0].run_attempt = 2;
     state.artifacts[0].name = "benchmark-report-stages-2";
+    state.artifacts[3].name = "benchmark-report-effort-2";
     // Attribute job and artifact still belong to attempt 1.
     await state.publish();
     assert.match(state.writes[0].body, /0\/1 passed/);
@@ -695,11 +898,12 @@ test("producer and publisher keep PR execution separate from write permissions",
     assert.equal(steps.length, 2);
     assert.ok(steps.every((step) => !step.run));
     assert.match(steps[1].with.script, /scripts\/benchmark-comment\.mjs/);
-    for (const [kind, members] of [
+    for (const [kind, members, job = kind] of [
+        ["effort", ["effort/effort.json"], "stages"],
         ["stages", ["stages.json", "baseline/stages.json"]],
         ["attributes", ["attributes.json"]]
     ]) {
-        const upload = producer.jobs[kind].steps.find(
+        const upload = producer.jobs[job].steps.find(
             (step) => step.with?.name === `benchmark-report-${kind}-` + "${{ github.run_attempt }}"
         );
         assert.ok(upload);

@@ -231,9 +231,22 @@ required run must finish both measurements and artifact uploads successfully.
 
 After a PR's CI run completes, `Benchmark Comment` publishes validated numeric
 results to one ordinary PR comment and updates it on later runs. It creates no
-review thread to resolve. The comment includes base/current source, AST and
-complete-parse counts, the source budget, attribute results and a link to all
-reports and raw profiles. Missing or invalid reports are explicitly unavailable;
+review thread to resolve. The comment starts with Core/cmark instruction ratios
+for the seven certified local operation contracts, grouped by operation with
+per-input medians and maxima. The largest ratios include raw operation Ir and
+separate preparation/release costs. These compare implementations of identical
+local problems; they do not certify equal full-parser effort or attainment of
+the optimum. The local report has its own attempt-scoped JSON artifact, so a
+later parse-stage failure does not discard completed local measurements.
+
+The comment also shows scale-1 CommonMark/cmark and GFM/cmark-gfm parser ratios,
+using the same cohort selection and Source + AST accounting as `stages.md`.
+Structural pairs, unmatched fields, candidate substitutions and feature-absent
+diagnostics do not enter those medians. The PR/base regression table retains
+source, AST and complete-parse counts and the per-document source budget;
+its ratio of 1 means unchanged Core counts, not parity with a reference parser.
+Attribute/lexbor results and links to all reports and raw profiles follow.
+Missing or invalid reports are explicitly unavailable;
 failed measurements do not silently retain an older result as current. A
 documentation-only follow-up that reuses validation publishes the original
 measurement for the current commit, identifying both the measured commit and

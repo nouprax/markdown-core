@@ -15,6 +15,7 @@ import {
 import { baseName, costRecord, foldNames, parseCallgrind } from "./callgrind.mjs";
 import { CACHE, measurementEnvironment, measurementRoot } from "./measurement.mjs";
 import { compiledFlags } from "./compile-identity.mjs";
+import { boundaryRows } from "./effort-results.mjs";
 
 const fail = (message) => {
     throw new Error(message);
@@ -201,12 +202,11 @@ export function boundaryMarkdown(report) {
         "| Boundary input | Core operation Ir | cmark operation Ir | Core/cmark | Core prepare/release | cmark prepare/release |",
         "| --- | ---: | ---: | ---: | ---: | ---: |"
     ];
-    for (const row of report.cases) {
-        const a = row.engines["markdown-core"],
-            b = row.engines.cmark;
-        if (!a || !b) continue;
+    for (const row of boundaryRows(report)) {
+        const a = row.core,
+            b = row.reference;
         lines.push(
-            `| ${row.id} | ${a.operation.cost.Ir} | ${b.operation.cost.Ir} | ${(a.operation.cost.Ir / b.operation.cost.Ir).toFixed(3)}x | ${a.prepare.cost.Ir}/${a.release.cost.Ir} | ${b.prepare.cost.Ir}/${b.release.cost.Ir} |`
+            `| ${row.id} | ${a.operation} | ${b.operation} | ${row.ratio.toFixed(3)}x | ${a.prepare}/${a.release} | ${b.prepare}/${b.release} |`
         );
     }
     lines.push(

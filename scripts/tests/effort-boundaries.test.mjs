@@ -11,6 +11,7 @@ import {
     splitWhitespaceBoundary,
     boundaryFixtures,
     boundaryOperations,
+    boundaryModel,
     boundaryOracle,
     boundaryPairAudit,
     verifyBoundaryReceipt
@@ -104,6 +105,12 @@ test("measurement refuses missing edges and false positive call counts", () => {
 });
 test("unmeasured report cannot manufacture an effort ratio", () => {
     const text = boundaryMarkdown({
+        schemaVersion: 1,
+        model: boundaryModel,
+        scope: "local-operation-including-native-adapters",
+        certificates: boundaryOperations,
+        fullParserCertificates: 0,
+        measured: false,
         identity: "test",
         checkedFixtures: 1,
         cases: [{ id: "x", engines: {} }],

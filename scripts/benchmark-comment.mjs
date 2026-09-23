@@ -5,11 +5,21 @@ import os from "node:os";
 import path from "node:path";
 import { inputVersion, sameInputs, validationSource } from "./lib/ci-inputs.mjs";
 import { sourceBudget, SOURCE_IR_LIMIT } from "./lib/source-budget.mjs";
+import { boundaryOperations } from "./lib/effort-boundaries.mjs";
+import { boundaryRows } from "./lib/effort-results.mjs";
+import { median, sameInputGroups, stageComparisons } from "./lib/stage-comparisons.mjs";
 
 const marker = "<!-- markdown-core-benchmark -->";
 const archiveLimit = 8 * 1024 * 1024;
 const reportLimit = 16 * 1024 * 1024;
 const measurements = [
+    {
+        kind: "effort",
+        title: "Local equal-effort operations",
+        job: "Benchmark / Measure - parse stages against cmark",
+        members: ["effort.json"],
+        render: effortSection
+    },
     {
         kind: "stages",
         title: "Parse stages",
@@ -76,7 +86,9 @@ export function stageSection(current, baseline) {
     const rows = sourceBudget(current.cases, baseline.cases);
     const failures = rows.filter((row) => !row.passed);
     const lines = [
-        "### Parse stages",
+        referenceSection(current),
+        "",
+        "### PR/base regression",
         "",
         `Baseline: \`${digest(baseline.revision, 40)}\`. ${number(rows.length)} document/scale workloads, measured in the same job.`,
         "",
@@ -108,6 +120,96 @@ export function stageSection(current, baseline) {
         "",
         `Corpus: \`${current.corpus.digest}\` · Pairing: \`${current.pairingDigest}\`.`,
         "Full reference comparisons, all workloads, toolchain identities and raw profiles are in the run artifacts."
+    );
+    return lines.join("\n");
+}
+
+export function referenceSection(report) {
+    // These derived stage values also drive stages.md. Validate their original
+    // counts before interpreting any grouping metadata from an artifact.
+    if (!Array.isArray(report.pairs)) throw new Error("Missing stage pairing contracts");
+    for (const row of report.cases) {
+        if (
+            !Array.isArray(row.carries) ||
+            !["commonmark", "extended"].includes(row.dialect) ||
+            (row.gfm !== undefined && typeof row.gfm !== "boolean")
+        )
+            throw new Error("Invalid reference cohort");
+        for (const engine of Object.values(row.engines)) {
+            for (const name of ["source_to_buffer", "buffer_to_ast"]) {
+                const stage = engine.stages[name];
+                if (!count(stage.cost.Ir) || stage.ir !== stage.cost.Ir)
+                    throw new Error("Invalid reference stage count");
+            }
+        }
+        const reference = row.gfm ? "cmark-gfm" : "cmark";
+        if ((row.gfm || row.dialect === "commonmark") && !row.engines[reference]) {
+            throw new Error("Missing reference measurement");
+        }
+    }
+    const groups = sameInputGroups(stageComparisons(report));
+    const lines = [
+        "### Same-input parser comparisons",
+        "",
+        "Core/reference instruction ratios at scale 1, summing Source → buffer + Buffer → AST. Lower is less measured work; these are not elapsed-time speedups.",
+        "",
+        "| Workload | Reference | Cases | Median Core/reference | Worst Core/reference |",
+        "| --- | --- | ---: | ---: | ---: |"
+    ];
+    for (const [label, reference, rows] of groups) {
+        if (!rows.length) continue;
+        lines.push(
+            `| ${label} | ${reference} | ${number(rows.length)} | ${ratio(median(rows.map((row) => row.comparisonRatio)), 1)} | ${ratio(rows[0].comparisonRatio, 1)} |`
+        );
+    }
+    if (groups.every(([, , rows]) => !rows.length)) lines.push("", "No same-input reference workloads measured.");
+    lines.push(
+        "",
+        "Structural pairs, candidate substitutions, unmatched fields and feature-absent diagnostics are excluded from these medians. Cross-syntax A/B, B/R and A/R remain in the full report as descriptive controls."
+    );
+    return lines.join("\n");
+}
+
+export function effortSection(report) {
+    const rows = boundaryRows(report);
+    if (!rows.length) throw new Error("Local boundary report has no measured instruction counts");
+    digest(report.identity);
+    digest(report.revision, 40);
+    const lines = [
+        "### Local equal-effort operations",
+        "",
+        `${number(rows.length)} measured inputs across ${number(boundaryOperations.length)} identical local operation contracts. Core/cmark compares production code plus native adapters; lower is less measured instruction work. This does not certify equal whole-parser effort or attainment of the optimum.`,
+        "",
+        "| Operation | Inputs | Median Core/cmark | Worst Core/cmark |",
+        "| --- | ---: | ---: | ---: |"
+    ];
+    for (const operation of boundaryOperations) {
+        const values = rows.filter((row) => row.operation === operation).map((row) => row.ratio);
+        lines.push(
+            `| ${operation} | ${number(values.length)} | ${ratio(median(values), 1)} | ${ratio(
+                values.reduce((a, b) => Math.max(a, b)),
+                1
+            )} |`
+        );
+    }
+    lines.push(
+        "",
+        "<details><summary>Largest local operation ratios (up to 10 inputs)</summary>",
+        "",
+        "| Input | Core operation Ir | cmark operation Ir | Core/cmark | Core prepare/release Ir | cmark prepare/release Ir |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |"
+    );
+    for (const row of [...rows].sort((a, b) => b.ratio - a.ratio).slice(0, 10)) {
+        lines.push(
+            `| ${row.id} | ${number(row.core.operation)} | ${number(row.reference.operation)} | ${ratio(row.core.operation, row.reference.operation)} | ${number(row.core.prepare)} / ${number(row.core.release)} | ${number(row.reference.prepare)} / ${number(row.reference.release)} |`
+        );
+    }
+    lines.push(
+        "",
+        "</details>",
+        "",
+        `Operation Ir includes ${number(report.iterations)} fresh invocations per input. Preparation and release are separate harness costs; local ratios are not combined into a whole-parse ratio.`,
+        `Contract: \`${report.identity}\`. All input-level ratios, receipts and raw profiles are in the effort report artifacts.`
     );
     return lines.join("\n");
 }
