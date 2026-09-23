@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "alloc.h"
 #include "config.h"
@@ -65,7 +66,7 @@ static void S_count_step(markdown_core_parser *parser, markdown_core_event_type 
  * `S_is_leaf` list, so its EXIT was suppressed and freeing at ENTER
  * happened to be safe; with the contract total it is a use-after-free. */
 markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_parser *parser, markdown_core_iter *iter,
-                                                                markdown_core_node *cur, markdown_core_strbuf *buf,
+                                                                markdown_core_node *cur,
                                                                 markdown_core_complete_node_func complete, int depth) {
     markdown_core_node *tmp, *next;
 
@@ -89,11 +90,24 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
         bool view = parser && cur->content_map.count > 0;
         int view_end = cur->content_map.first + cur->content_map.count;
         bufsize_t view_offset = cur->content_map.offset + cur->as.literal->len;
-        for (tmp = cur->next; view && tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT; tmp = tmp->next) {
+        /* THE MERGED LITERAL IS ALLOCATED ONCE, at its length. Every operand
+         * is known before the first is absorbed, so the run's length is a sum
+         * taken here, and each operand is copied to its place: no buffer
+         * grows, and none is handed over and grown again for the next run. */
+        size_t length = (size_t)cur->as.literal->len;
+        for (tmp = cur->next; tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT; tmp = tmp->next) {
+            length += (size_t)tmp->as.literal->len;
+            if (!view) {
+                continue;
+            }
             view = tmp->content_map.count > 0 && tmp->content_map.offset == view_offset &&
                    tmp->content_map.first >= view_end - 1 && tmp->content_map.first <= view_end;
             view_end = tmp->content_map.first + tmp->content_map.count;
             view_offset += tmp->as.literal->len;
+        }
+        /* The bound every literal buffer shares (buffer.c). */
+        if (length > (size_t)(INT32_MAX / 2)) {
+            return MARKDOWN_CORE_FINISH_FAILED;
         }
         if (view) {
             combined_map.first = cur->content_map.first;
@@ -103,10 +117,13 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
                                                                         cur->as.literal->len, 0)) {
             return MARKDOWN_CORE_FINISH_FAILED;
         }
-        markdown_core_strbuf_clear(buf);
-        markdown_core_strbuf_put(buf, cur->as.literal->data, cur->as.literal->len);
-        if (buf->oom) {
+        unsigned char *merged = markdown_core_realloc(NULL, length + 1);
+        if (!merged) {
             return MARKDOWN_CORE_FINISH_FAILED;
+        }
+        bufsize_t at = cur->as.literal->len;
+        if (at) {
+            memcpy(merged, cur->as.literal->data, (size_t)at);
         }
         tmp = cur->next;
         while (tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT) {
@@ -121,12 +138,13 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
             }
             if (parser && !view &&
                 !markdown_core_parser_append_content_marks(parser, &tmp->content_map, &combined_map, 0,
-                                                           tmp->as.literal->len, buf->size)) {
+                                                           tmp->as.literal->len, at)) {
+                markdown_core_free(merged);
                 return MARKDOWN_CORE_FINISH_FAILED;
             }
-            markdown_core_strbuf_put(buf, tmp->as.literal->data, tmp->as.literal->len);
-            if (buf->oom) {
-                return MARKDOWN_CORE_FINISH_FAILED;
+            if (tmp->as.literal->len) {
+                memcpy(merged + at, tmp->as.literal->data, (size_t)tmp->as.literal->len);
+                at += tmp->as.literal->len;
             }
             // ONLY AN OPERAND THAT OWNS BYTES CAN SAY WHERE THE RUN ENDS.
             // An empty one has no last byte to end at, and the empties in
@@ -155,14 +173,8 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
         }
         markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
         markdown_core_chunk_free(cur->as.literal);
-        *cur->as.literal = markdown_core_chunk_buf_detach(buf);
-        if (!cur->as.literal->data) {
-            // The buffer was poisoned, so this run's bytes are LOST rather
-            // than absent. Report it and leave the node where it is: the
-            // drop below must only ever remove a node that is honestly
-            // empty, never one an allocation failure emptied.
-            return MARKDOWN_CORE_FINISH_FAILED;
-        }
+        merged[at] = '\0';
+        *cur->as.literal = (markdown_core_chunk){merged, at, 1};
     }
 
     // A `TEXT` NODE THAT OWNS NO BYTES IS NOT A NODE. It has no literal to
@@ -193,7 +205,6 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
         return 1;
     }
     markdown_core_iter *iter = markdown_core_iter_new(root);
-    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT();
     markdown_core_event_type ev_type;
     int ok = 1;
 
@@ -207,7 +218,7 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
         if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->kind != MARKDOWN_CORE_NODE_TEXT) {
             continue;
         }
-        if (markdown_core_consolidate_text_step(parser, iter, cur, &buf, NULL, 0) == MARKDOWN_CORE_FINISH_FAILED) {
+        if (markdown_core_consolidate_text_step(parser, iter, cur, NULL, 0) == MARKDOWN_CORE_FINISH_FAILED) {
             ok = 0;
             break;
         }
@@ -216,7 +227,6 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
         S_count_step(parser, MARKDOWN_CORE_EVENT_DONE);
     }
 
-    markdown_core_strbuf_free(&buf);
     markdown_core_iter_free(iter);
     return ok;
 }

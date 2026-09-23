@@ -855,9 +855,6 @@ typedef struct {
      * whether its fields are the walk's to parse. */
     int script_depth;
     bool parses;
-    /* Consolidation's buffer, allocated once for the walk rather than once
-     * per merged run. */
-    markdown_core_strbuf scratch;
 } owned_tree_walk;
 
 static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
@@ -1031,11 +1028,7 @@ static int record_finish_root(finish_roots *record, markdown_core_node *root) {
  * nothing and is not counted. */
 static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *root, bool parses, tree_phase_func finish,
                             void *context, finish_roots *record, int record_initial) {
-    owned_tree_walk walk = {.parser = parser,
-                            .slots = parser->finish_step_slots,
-                            .script_depth = 0,
-                            .parses = parses,
-                            .scratch = MARKDOWN_CORE_BUF_INIT()};
+    owned_tree_walk walk = {.parser = parser, .slots = parser->finish_step_slots, .script_depth = 0, .parses = parses};
     finish_count count = {0, 0, 0};
     void (*const observe)(markdown_core_parser *, markdown_core_node *) = parser->document_structure->observe_inline;
     const markdown_core_finish_kind *const kinds = parser->finish_kinds;
@@ -1087,8 +1080,8 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
                  * them safe. */
                 result = MARKDOWN_CORE_FINISH_CONTINUE;
                 if (index == MARKDOWN_CORE_FINISH_TEXT_INDEX && markdown_core_text_needs_consolidation(node)) {
-                    result = markdown_core_consolidate_text_step(parser, iter, node, &walk.scratch,
-                                                                 complete_consolidated_text, frame->script_depth);
+                    result = markdown_core_consolidate_text_step(parser, iter, node, complete_consolidated_text,
+                                                                 frame->script_depth);
                 }
                 if (result == MARKDOWN_CORE_FINISH_CONTINUE && dispatch[2 * index + 1]) {
                     result =
@@ -1159,7 +1152,6 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
         }
     }
     flush_finish_count(parser, &count);
-    markdown_core_strbuf_free(&walk.scratch);
     markdown_core_free(walk.frames);
     markdown_core_free(walk.states);
     return !parser->error;
