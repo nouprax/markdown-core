@@ -1,5 +1,10 @@
 # Benchmark structural isomorphism
 
+The new [grammar-certified corpus](benchmark-grammar-corpus.md) supplies positive
+syntax-translation equivalence proofs and runnable inputs. This document concerns
+the older structural cohort; its stronger full-native-parser optimum question
+is not the admission criterion for that grammar corpus.
+
 A structural pair compares a declared language of workloads through two grammars.
 Its justification comes from those grammars, not the implementations' current
 node layout, a favorable measurement, a fixed example or equal node counts.

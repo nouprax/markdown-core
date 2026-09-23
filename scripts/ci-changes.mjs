@@ -11,6 +11,8 @@ const evidenceName = "ci-inputs";
 // Everything is an execution input unless explicitly identified as prose.
 // In particular, .md fixtures and machine-readable contracts are not docs.
 export function isDocumentation(file) {
+    // The mathematical corpus certificate participates in artifact identity.
+    if (file === "docs/architecture/benchmark-grammar-corpus.md") return false;
     return (
         /^(?:README|CHANGELOG|CONTRIBUTING|UPSTREAM|AGENTS)\.md$/.test(file) ||
         (/^docs\/.+\.md$/s.test(file) && !file.startsWith("docs/specs/")) ||

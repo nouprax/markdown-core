@@ -5,6 +5,26 @@ it costs a reference implementation to parse the same bytes. The comparison
 exists to give an optimization somewhere to argue from: a claim that a change
 made the parser faster should name a stage and a number.
 
+The primary grammar-equivalence corpus is [grammar-corpus.json](grammar-corpus.json),
+with [mathematical proofs and exact domains](../../../docs/architecture/benchmark-grammar-corpus.md).
+It contains 47 certified families covering all 30 historical scenarios: 35
+whole concrete grammar pairs and 12 explicit local boundary pairs. The catalog
+includes two complete examples for every family. The deterministic generator
+varies independent fields, widths, repetition and recursion, emitting 236
+measurable documents at the default two scales:
+
+```sh
+pnpm benchmark:grammar --corpus-only --out build/benchmark-grammar
+pnpm benchmark:grammar --scale 2 --out build/benchmark-grammar
+```
+
+The second command uses Linux Callgrind and the same pinned engines/toolchain
+as the older suite. Read `build/benchmark-grammar/stages.md`; exact documents,
+derivations, grammars and lossless boundary partitions accompany it in
+`corpus/grammar-corpus.json`. A boundary ratio measures its declared common
+entry grammar, with host costs reported separately. The older diagnostic
+suite and its census command below keep their structural interpretation.
+
 The reference grammar and comparison contract are part of every measurement.
 cmark supplies CommonMark controls and cmark-gfm supplies GFM controls. For
 dialect constructs, [structurally proved pairs](#isomorph-pairs) preserve the

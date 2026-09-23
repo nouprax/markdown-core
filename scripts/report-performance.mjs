@@ -69,6 +69,10 @@ function accumulate(target, engine, profile) {
 }
 
 export function summarize(report, readProfile) {
+    assert.ok(
+        !report.grammarCorpus,
+        "grammar corpus: use its stages.md certificate report; the legacy structural census cannot classify this cohort"
+    );
     const full = fresh(),
         core = fresh(),
         reference = fresh();

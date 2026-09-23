@@ -73,6 +73,7 @@ import {
 } from "./lib/corpus-pairs.mjs";
 import { effortModel } from "./lib/pair-effort.mjs";
 import { measureEffortBoundaries } from "./lib/measure-effort.mjs";
+import { buildGrammarCorpus, writeGrammarCorpus, grammarMarkdown, documentMetadata } from "./lib/grammar-corpus.mjs";
 import {
     BUILD_FLAG_VARIABLES,
     buildEnvironment,
@@ -181,6 +182,8 @@ function parseArguments(argv) {
             options.quiet = true;
         } else if (flag === "--corpus-only") {
             options.corpusOnly = true;
+        } else if (flag === "--grammar-corpus") {
+            options.grammarCorpus = true;
         } else if (!value) {
             fail(`${flag} needs a value`);
         } else if (flag === "--out") {
@@ -1148,7 +1151,11 @@ function refuseResponseFiles() {
     }
 }
 
-function corpusManifest() {
+function corpusManifest(options) {
+    if (options.grammarCorpus) {
+        const grammar = buildGrammarCorpus({ scale: 1 });
+        return { schemaVersion: 3, grammar: true, targetBytes: null, pairs: [], cases: grammar.cases };
+    }
     const manifest = JSON.parse(fs.readFileSync(path.join(BENCHMARKS, "corpus.json"), "utf8"));
     if (manifest.schemaVersion !== 3) fail(`unsupported corpus schema: ${manifest.schemaVersion}`);
     validatePairs(manifest);
@@ -1179,6 +1186,35 @@ function refuseUnknownCases(options, manifest) {
 function buildCorpus(options, manifest) {
     const directory = path.join(options.out, "corpus");
     fs.mkdirSync(directory, { recursive: true });
+    if (manifest.grammar) {
+        const grammar = writeGrammarCorpus(directory, { scale: options.scale });
+        const selected = new Set(options.cases);
+        const families = new Set(grammar.cases.filter((entry) => selected.has(entry.name)).map((entry) => entry.id));
+        const documents = grammar.cases
+            .filter((entry) => !selected.size || families.has(entry.id))
+            .map((entry) => ({
+                ...documentMetadata(entry),
+                case: entry.name,
+                file: path.join(directory, `${entry.name}.x${entry.scale}.md`)
+            }));
+        return {
+            targetBytes: null,
+            digest: corpusDigest(documents),
+            documents,
+            grammarCorpus: {
+                version: grammar.version,
+                identity: grammar.identity,
+                certificates: grammar.certificates,
+                proofs: grammar.proofs.map((proof) => {
+                    const summary = { ...proof };
+                    delete summary.rows;
+                    delete summary.hosts;
+                    return summary;
+                }),
+                artifact: "corpus/grammar-corpus.json"
+            }
+        };
+    }
     /* A named case drags in what it is DEFINED AGAINST -- its pair, a split
      * `with` its `without`, a counted case its generated match -- to a
      * fixpoint. The rule is `caseClosure` in `lib/corpus-splits.mjs`, where
@@ -1809,7 +1845,9 @@ export function markdownReport(report) {
         `| C library dispatch | \`${report.toolchain.dispatch.slice(0, 16)}\` |`,
         `| Corpus | \`${report.corpus.digest.slice(0, 16)}\` (${report.corpus.cases} documents) |`,
         `| Pairing contracts | \`${report.pairingDigest.slice(0, 16)}\` |`,
-        `| Report interpretation | ${effortModel}: \`${currentPairingIdentity(report.pairs)}\` |`,
+        report.grammarCorpus
+            ? `| Report interpretation | ${report.grammarCorpus.version}: \`${report.grammarCorpus.identity}\` |`
+            : `| Report interpretation | ${effortModel}: \`${currentPairingIdentity(report.pairs)}\` |`,
         "",
         "The pairing-contract identity belongs to the original measurement; the report interpretation is recorded separately. " +
             "A changed interpretation does not remeasure the parser or change its instruction counts.",
@@ -1870,6 +1908,8 @@ export function markdownReport(report) {
             " moved.",
         ""
     );
+
+    if (report.grammarCorpus) return lines.join("\n") + "\n" + grammarMarkdown(report);
 
     /* A ratio is only a comparison where both engines did the same job. */
     const stageIr = (engines, engine) =>
@@ -2171,18 +2211,12 @@ export function markdownReport(report) {
             lines.push(
                 "### Parse-effort adjudication",
                 "",
-                "Alphabet-renaming obstructions rule out only whole-domain byte permutations preserving ordered owners; they do not prove unequal optimal costs.",
-                "They are supplementary checks, not admission conditions for equivalence through formal grammar rewrites.",
-                "",
-                "| Structural proof | Full optimum | Optional alphabet-map check | Missing cost obligation |",
-                "| --- | --- | --- | --- |"
+                "| Structural proof | Status | Missing cost obligation |",
+                "| --- | --- | --- |"
             );
             for (const item of pairs) {
                 const pair = item.isomorph;
-                const renaming = pair.effort.alphabetRenaming;
-                lines.push(
-                    `| ${pair.contract.proof} | ${pair.effort.status} | ${renaming ? `refuted: ${renaming.certificate}` : "not adjudicated"} | ${pair.effort.reason} |`
-                );
+                lines.push(`| ${pair.contract.proof} | ${pair.effort.status} | ${pair.effort.reason} |`);
             }
             lines.push("");
         }
@@ -2478,7 +2512,7 @@ function main() {
     /* What the arguments alone decide is settled before anything is installed,
      * configured or built: a mistyped case name is the caller's to fix either
      * way, and it costs them nothing to hear it now. */
-    const manifest = corpusManifest();
+    const manifest = corpusManifest(options);
     refuseUnknownCases(options, manifest);
     /* The corpus is a function of the manifest and the tracked samples alone.
      * Writing it needs no compiler, no valgrind and no reference engine, so
@@ -2629,14 +2663,15 @@ function main() {
 
     const baseline = buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions);
     // Independently admitted local problems; never fold their ratios into A/R.
-    measureEffortBoundaries({
-        root,
-        binaryDir: profile.binaryDir,
-        out: options.out,
-        pairs: manifest.pairs,
-        toolchain: versions,
-        cmark: { version: cmark.version, commit: cmark.commit }
-    });
+    if (!options.grammarCorpus)
+        measureEffortBoundaries({
+            root,
+            binaryDir: profile.binaryDir,
+            out: options.out,
+            pairs: manifest.pairs,
+            toolchain: versions,
+            cmark: { version: cmark.version, commit: cmark.commit }
+        });
     const corpus = buildCorpus(options, manifest);
     const splitWith = splitWithCases(manifest);
     const cases = [];
@@ -2711,6 +2746,7 @@ function main() {
          * report saying so. */
         cmarkGfm: { version: gfm.version, commit: gfm.commit },
         corpus: { targetBytes: corpus.targetBytes, cases: corpus.documents.length, digest: corpus.digest },
+        ...(corpus.grammarCorpus ? { grammarCorpus: corpus.grammarCorpus } : {}),
         pairingDigest: currentPairingIdentity(manifest.pairs),
         // Record the exact contracts beside the raw measurements.
         pairs: manifest.pairs,

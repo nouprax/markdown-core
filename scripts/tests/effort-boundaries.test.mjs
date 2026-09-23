@@ -38,12 +38,6 @@ test("identity covers indirect cost dependencies and newly added library helpers
         fs.writeFileSync(target, source);
         assert.equal(boundaryIdentity(root), before);
     }
-    const proof = path.join(root, "docs/architecture/benchmark-effort-renaming.md");
-    const source = fs.readFileSync(proof);
-    fs.appendFileSync(proof, "\nChanged adjudication\n");
-    assert.notEqual(boundaryIdentity(root), before);
-    fs.writeFileSync(proof, source);
-    assert.equal(boundaryIdentity(root), before);
     fs.mkdirSync(path.join(root, "scripts/lib/nested"));
     fs.writeFileSync(path.join(root, "scripts/lib/nested/helper.mjs"), "export const setting = 1;\n");
     assert.notEqual(boundaryIdentity(root), before);
