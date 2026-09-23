@@ -2,10 +2,10 @@
 
 #include "markdown_core_ctype.h"
 
-/** 1 = space, 2 = punct, 3 = digit, 4 = alpha, 0 = other
- */
+/* The class of every byte (markdown_core_ctype.h): 1 = space, 2 = punct,
+ * 3 = digit, 4 = alpha, 0 = other. */
 // clang-format off: the row/column table is intentionally aligned by byte value.
-static const uint8_t markdown_core_ctype_class[256] = {
+const uint8_t markdown_core_ctype_class[256] = {
     /*      0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f */
     /* 0 */ 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0,
     /* 1 */ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -24,23 +24,3 @@ static const uint8_t markdown_core_ctype_class[256] = {
     /* e */ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     /* f */ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 // clang-format on
-
-/**
- * Returns 1 if c is a "whitespace" character as defined by the spec.
- */
-int markdown_core_isspace(char c) { return markdown_core_ctype_class[(uint8_t)c] == 1; }
-
-/**
- * Returns 1 if c is an ascii punctuation character.
- */
-int markdown_core_ispunct(char c) { return markdown_core_ctype_class[(uint8_t)c] == 2; }
-
-int markdown_core_isalnum(char c) {
-    uint8_t result;
-    result = markdown_core_ctype_class[(uint8_t)c];
-    return (result == 3 || result == 4);
-}
-
-int markdown_core_isdigit(char c) { return markdown_core_ctype_class[(uint8_t)c] == 3; }
-
-int markdown_core_isalpha(char c) { return markdown_core_ctype_class[(uint8_t)c] == 4; }
