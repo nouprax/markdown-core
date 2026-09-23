@@ -7,10 +7,12 @@ made the parser faster should name a stage and a number.
 
 The primary grammar-equivalence corpus is [grammar-corpus.json](grammar-corpus.json),
 with [mathematical proofs and exact domains](../../../docs/architecture/benchmark-grammar-corpus.md).
-It contains 55 certified families covering all 30 historical scenarios: 35
-whole concrete grammar pairs and 20 explicit local boundary pairs. The catalog
+It contains 185 certified families: 171 whole declared-language pairs and 14
+explicit local boundary pairs. The [feature ledger](../../../docs/architecture/benchmark-grammar-coverage.md)
+covers all 30 syntax-guide features and 32 registered elements; shared CommonMark/GFM
+features use identical input. All 30 historical scenarios remain represented. The catalog
 includes two complete examples for every family. The deterministic generator
-varies independent fields, widths, repetition and recursion, emitting 300
+varies independent fields, widths, repetition and recursion, emitting 796
 measurable documents at the default two scales:
 
 ```sh

@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import {
     buildGrammarCorpus,
     auditGrammarCorpus,
-    historicalResiduals,
+    historicalHosts,
     grammarCatalog,
     grammarCertificates,
     grammarNormalForm,
@@ -24,10 +24,13 @@ import {
     writeGrammarCorpus,
     grammarSourceIdentity,
     grammarMarkdown,
+    grammarEngines,
     validateGrammarCertificates
 } from "../lib/grammar-corpus.mjs";
 import { pairReviews } from "../lib/pair-review.mjs";
 import { productionProofs } from "../lib/pair-productions.mjs";
+import { featureGrammars, finiteLexicons } from "../lib/grammar-features.mjs";
+import { featureCoverage, validateFeatureCoverage, specificationSections } from "../lib/grammar-coverage.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const full = grammarCertificates.filter((c) => c.scope === "paired-document-grammar");
@@ -46,9 +49,9 @@ const fresh = () => ({
 
 test("catalog is a complete reviewable corpus with exact grammar/proof/example provenance", () => {
     validateGrammarCertificates();
-    assert.equal(grammarCertificates.length, 55);
-    assert.equal(full.length, 35);
-    assert.equal(split.length, 20);
+    assert.equal(grammarCertificates.length, 185);
+    assert.equal(full.length, 171);
+    assert.equal(split.length, 14);
     assert.deepEqual(new Set(grammarCertificates.flatMap((c) => c.legacy)), new Set(pairReviews.keys()));
     assert.deepEqual(
         new Set(grammarCertificates.map((c) => c.structuralPredecessor).filter(Boolean)),
@@ -162,23 +165,18 @@ test("boundary splits keep every byte and every independent field, with measured
             assert.throws(() => recomposeHost(truncated), /extent/u);
         }
     }
-    const a = instantiateGrammar("callout", fresh());
-    const b = instantiateGrammar("callout", { ...fresh(), mode: 1 });
-    assert.notEqual(a.dialect.source, b.dialect.source);
-    assert.equal(a.common.source, b.common.source); // concrete noninjective full-host proposal
-    assert.equal(a.boundary.dialect, b.boundary.dialect);
 });
 
 test("scaled corpus repeats derivations, keeps metadata document-initial, and records exact normal forms", () => {
     const corpus = buildGrammarCorpus();
-    assert.equal(corpus.cases.length, 300);
+    assert.equal(corpus.cases.length, 796);
     for (const proof of corpus.proofs) {
         assert.equal(proof.units, 12 * proof.scale);
         if (proof.id.startsWith("metadata")) {
             assert.equal(proof.hosts.dialect.source.split("---\n").length - 1, 2);
             assert.equal(
                 proof.hosts.dialect.pieces.filter((p) => p.kind === "slot").length,
-                (proof.id === "metadataempty" ? 3 : 2) * proof.units
+                proof.rows[0].dialect.pieces.filter((p) => p.kind === "slot").length * proof.units
             );
         }
         if (proof.scope === "paired-document-grammar") {
@@ -204,6 +202,11 @@ test("artifact identity binds proof text and source dependencies; corpus is dete
             "scripts/audit-corpus-pairs.mjs",
             "scripts/init-environment.sh",
             "packages/markdown-core/benchmarks/grammar-corpus.json",
+            "packages/markdown-core/benchmarks/grammar-coverage.json",
+            "docs/specs/dialect",
+            "docs/specs/dialect.md",
+            "packages/markdown-core/tests/fixtures",
+            "docs/architecture/benchmark-grammar-coverage.md",
             "docs/architecture/benchmark-grammar-corpus.md"
         ];
         for (const file of paths) {
@@ -272,12 +275,13 @@ test("grammar reporting keeps the boundary ratio separate and rejects missing me
 });
 
 test("historical residual features have actual hosts and cannot pass through a shared subset label", () => {
-    assert.equal(Object.keys(historicalResiduals).length, 8);
-    for (const [id, record] of Object.entries(historicalResiduals)) {
+    assert.equal(Object.keys(historicalHosts).length, 8);
+    for (const [id, record] of Object.entries(historicalHosts)) {
         const entry = grammarCertificates.find((c) => c.id === id);
         assert.deepEqual(entry.legacy, [record.legacy]);
-        assert.equal(entry.scope, "boundary-grammar");
-        assert.notEqual(grammarUnit(id).dialect.source, grammarUnit(id).boundary.dialect);
+        if (entry.scope === "boundary-grammar")
+            assert.notEqual(grammarUnit(id).dialect.source, grammarUnit(id).boundary.dialect);
+        else assert.ok(grammarUnit(id).derivation);
     }
     const corpus = buildGrammarCorpus({ units: 1, scale: 1 });
     corpus.proofs = corpus.proofs.filter((p) => p.id === "trailing-caption");
@@ -289,5 +293,93 @@ test("historical residual features have actual hosts and cannot pass through a s
                 children: [{ kind: "Table", fields: {}, children: [] }]
             })),
         /lost TableCaption/u
+    );
+});
+
+test("the complete syntax and element inventories fail closed when a feature, rule, or source changes", () => {
+    const corpus = buildGrammarCorpus({ units: 1, scale: 1 });
+    const coverage = validateFeatureCoverage(root, corpus);
+    assert.equal(coverage.features, 30);
+    assert.equal(coverage.elements, 32);
+    assert.equal(coverage.sections, 136);
+    assert.throws(
+        () =>
+            validateFeatureCoverage(root, {
+                ...corpus,
+                certificates: corpus.certificates.filter((entry) => entry.id !== "metadata-types")
+            }),
+        /coverage changed/u
+    );
+    assert.throws(
+        () =>
+            featureCoverage(root, { ...corpus, cases: corpus.cases.filter((entry) => entry.id !== "gfm-pipe-table") }),
+        /missing executable/u
+    );
+    const source = "# Syntax\n\n```markdown\n## Example\n```\n\n## Rule\nOne.\n";
+    assert.deepEqual(
+        specificationSections(source).map((section) => section.title),
+        ["Syntax", "Rule"]
+    );
+    assert.notDeepEqual(specificationSections(source), specificationSections(source.replace("One.", "Two.")));
+    assert.ok(
+        featureCoverage(root, corpus).features.every((entry) => entry.certificates.length && entry.conformance.length)
+    );
+});
+
+test("shared features use the same source grammar and bytes", () => {
+    for (const feature of featureGrammars.values())
+        if (feature.identity) {
+            assert.deepEqual(feature.dialect, feature.common);
+            const row = grammarUnit(feature.id, 15);
+            assert.equal(row.dialect.source, row.common.source, feature.id);
+        }
+});
+
+test("reference measurements are limited to the exact certified input side", () => {
+    for (const document of buildGrammarCorpus({ units: 1, scale: 1 }).cases) {
+        const engines = grammarEngines(document);
+        if (document.side === "dialect" || document.part === "host") assert.deepEqual(engines, ["markdown-core"]);
+        else assert.deepEqual(engines, ["markdown-core", document.gfm ? "cmark-gfm" : "cmark"]);
+    }
+    assert.throws(() => grammarEngines({ side: "common", part: "unknown" }));
+});
+
+test("finite substitutions and bindings retain every alternative, state, and equality constraint", () => {
+    for (const id of ["alpha-list", "upper-list", "roman-list", "upper-roman-list"])
+        for (let start = 1; start <= 26; start++) {
+            const row = instantiateGrammar(id, { ...fresh(), start });
+            assert.equal(row.derivation[0].find(([name]) => name === "ordinal")[1].value, start);
+            assert.equal(
+                encodePairedDocument(id, "dialect", recognizePairedDocument(id, "common", row.common.source)),
+                row.dialect.source
+            );
+        }
+    for (const tokens of Object.values(finiteLexicons.ordinal)) assert.equal(new Set(tokens).size, 26);
+    const rows = [0, 1, 2].map((mode) => instantiateGrammar("callout", { ...fresh(), mode }));
+    assert.equal(new Set(rows.map((row) => row.common.source)).size, 3);
+    assert.equal(new Set(rows.map((row) => row.dialect.source)).size, 3);
+    const source = instantiateGrammar("specimen-graph", fresh()).dialect.source;
+    assert.throws(
+        () =>
+            recognizePairedDocument(
+                "specimen-graph",
+                "dialect",
+                source.replace("(@firstkey) start", "(@wrongkey) start")
+            ),
+        /inconsistent binding/u
+    );
+    assert.throws(() => recognizePairedDocument("roman-list", "dialect", "i. a\niiii. b\n\n"));
+});
+
+test("native feature guards reject a nameless substitute for the named-container grammar", () => {
+    const corpus = buildGrammarCorpus({ units: 1, scale: 1 });
+    corpus.proofs = corpus.proofs.filter((proof) => proof.id === "named-container");
+    assert.ok(grammarUnit("named-container").dialect.source.startsWith(":::nd\n"));
+    assert.throws(() =>
+        auditGrammarCorpus(corpus, () => ({
+            kind: "Document",
+            fields: {},
+            children: [{ kind: "DirectiveBlock", fields: { name: "null" }, children: [] }]
+        }))
     );
 });

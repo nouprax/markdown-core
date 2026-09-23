@@ -73,7 +73,13 @@ import {
 } from "./lib/corpus-pairs.mjs";
 import { effortModel } from "./lib/pair-effort.mjs";
 import { measureEffortBoundaries } from "./lib/measure-effort.mjs";
-import { buildGrammarCorpus, writeGrammarCorpus, grammarMarkdown, documentMetadata } from "./lib/grammar-corpus.mjs";
+import {
+    buildGrammarCorpus,
+    writeGrammarCorpus,
+    grammarMarkdown,
+    documentMetadata,
+    grammarEngines
+} from "./lib/grammar-corpus.mjs";
 import {
     BUILD_FLAG_VARIABLES,
     buildEnvironment,
@@ -169,7 +175,7 @@ function run(command, args, options = {}) {
 
 function parseArguments(argv) {
     const options = {
-        out: path.join(root, "build/benchmark-stages"),
+        out: path.join(root, argv.includes("--grammar-corpus") ? "build/benchmark-grammar" : "build/benchmark-stages"),
         cases: [],
         scale: 2,
         quiet: false,
@@ -1204,6 +1210,7 @@ function buildCorpus(options, manifest) {
             grammarCorpus: {
                 version: grammar.version,
                 identity: grammar.identity,
+                coverage: grammar.coverage,
                 certificates: grammar.certificates,
                 proofs: grammar.proofs.map((proof) => {
                     const summary = { ...proof };
@@ -2685,9 +2692,11 @@ function main() {
          * rule: its bytes hold a production no reference decodes, its number is
          * the difference against its `without`, and a cmark reading of it
          * would print a per-byte ratio for a document that is not a comparison. */
-        const applicable = splitWith.has(document.case)
-            ? ["markdown-core"]
-            : Object.keys(ENGINES).filter((engine) => engine !== "cmark-gfm" || document.gfm === true);
+        const applicable = options.grammarCorpus
+            ? grammarEngines(document)
+            : splitWith.has(document.case)
+              ? ["markdown-core"]
+              : Object.keys(ENGINES).filter((engine) => engine !== "cmark-gfm" || document.gfm === true);
         for (const engine of applicable) {
             const measured = measure(profile, engine, document, options.out);
             if (measured.receiptBytes !== document.bytes) {

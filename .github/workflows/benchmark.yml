@@ -83,7 +83,14 @@ jobs:
                       build/benchmark-stages/callgrind
                       build/benchmark-stages/corpus
                       build/benchmark-stages/effort
-                      build/benchmark-grammar
+                      build/benchmark-grammar/stages.md
+                      build/benchmark-grammar/stages.json
+                      build/benchmark-grammar/callgrind
+                      build/benchmark-grammar/corpus
+                      build/benchmark-grammar/baseline/stages.md
+                      build/benchmark-grammar/baseline/stages.json
+                      build/benchmark-grammar/baseline/callgrind
+                      build/benchmark-grammar/baseline/corpus
                       build/benchmark-stages/baseline/stages.md
                       build/benchmark-stages/baseline/stages.json
                       build/benchmark-stages/baseline/callgrind

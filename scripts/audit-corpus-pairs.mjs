@@ -11,6 +11,7 @@ import { productionProofs } from "./lib/pair-productions.mjs";
 import { boundarySource, pairReview } from "./lib/pair-review.mjs";
 import { parseCanonicalDump, parseUpstreamXml } from "./lib/upstream-cmark.mjs";
 import { buildGrammarCorpus, auditGrammarCorpus } from "./lib/grammar-corpus.mjs";
+import { validateFeatureCoverage } from "./lib/grammar-coverage.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const BENCHMARKS = path.join(root, "packages/markdown-core/benchmarks");
@@ -68,7 +69,9 @@ function main() {
     const cmark = oracle("cmark", "cmark", "CMARK_VERSION", "CMARK_COMMIT");
     const gfm = oracle("cmark-gfm", "cmark-gfm", "CMARK_GFM_VERSION", "CMARK_GFM_COMMIT");
     const GFM_EXTENSIONS = ["table", "strikethrough", "autolink", "tasklist", "footnotes"];
-    const grammarAudit = auditGrammarCorpus(buildGrammarCorpus(), (engine, input) => {
+    const grammarCorpus = buildGrammarCorpus();
+    const coverage = validateFeatureCoverage(root, grammarCorpus);
+    const grammarAudit = auditGrammarCorpus(grammarCorpus, (engine, input) => {
         const binary = engine === "core" ? DUMP : engine === "gfm" ? gfm : cmark;
         const args =
             engine === "core"
@@ -83,7 +86,7 @@ function main() {
         });
         return engine === "core" ? parseCanonicalDump(output) : parseUpstreamXml(output);
     });
-    process.stdout.write(`  grammar-certified corpus: ${JSON.stringify(grammarAudit)}\n`);
+    process.stdout.write(`  grammar-certified corpus: ${JSON.stringify({ ...grammarAudit, coverage })}\n`);
     const manifest = JSON.parse(fs.readFileSync(path.join(BENCHMARKS, "corpus.json"), "utf8"));
     validatePairs(manifest);
     const cases = new Map((manifest.cases ?? []).map((entry) => [entry.name, entry]));
@@ -370,7 +373,7 @@ function main() {
         process.exit(1);
     }
     process.stdout.write(
-        "corpus pair audit passed (55 grammar certificates; legacy structural contracts remain separate)\n"
+        `corpus pair audit passed (${grammarAudit.certificates} grammar certificates; legacy structural contracts remain separate)\n`
     );
 }
 
