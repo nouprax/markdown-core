@@ -14950,6 +14950,885 @@
             ]
         },
         {
+            "id": "block-id-container-list",
+            "certificate": "block-id-container-list-grammar-v2",
+            "scope": "paired-document-grammar",
+            "legacy": [],
+            "structuralPredecessor": null,
+            "feature": "block-identifiers",
+            "facets": ["standalone-id", "list-container"],
+            "identity": false,
+            "outputDifference": null,
+            "theorem": "T3",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "body",
+                        "grammar": "inline"
+                    },
+                    {
+                        "name": "key",
+                        "grammar": "word",
+                        "maxBytes": 1000
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = \"- \" body:inline \"\\n\\n#\" key:word{source-bytes<=1000} \"#\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"- \" body:inline \"\\n\\n[\" key:word{source-bytes<=1000} \"]: /block\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+            },
+            "rewrite": [
+                "inline-administrative-productions",
+                "invertible-fixed-terminal-encoding",
+                "label-preserving-product-permutation",
+                "common-normal-form"
+            ],
+            "residual": null,
+            "examples": [
+                {
+                    "dialect": "- b **uu mbmb qbqb** ac\n\n#nd#\n\n",
+                    "common": "- b **uu mbmb qbqb** ac\n\n[nd]: /block\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "body",
+                                {
+                                    "grammar": "inline",
+                                    "value": ["b", ["uu", "mbmb", "qbqb"], "ac"]
+                                }
+                            ],
+                            [
+                                "key",
+                                {
+                                    "grammar": "word",
+                                    "value": "nd"
+                                }
+                            ]
+                        ]
+                    ]
+                },
+                {
+                    "dialect": "- lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n#od#\n\n",
+                    "common": "- lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n[od]: /block\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "body",
+                                {
+                                    "grammar": "inline",
+                                    "value": [
+                                        "lblblb",
+                                        ["agag", "ububububub", "ok"],
+                                        "vc",
+                                        ["qiqi", "ybybybyb", "apap"],
+                                        "tctctc"
+                                    ]
+                                }
+                            ],
+                            [
+                                "key",
+                                {
+                                    "grammar": "word",
+                                    "value": "od"
+                                }
+                            ]
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "block-id-container-table",
+            "certificate": "block-id-container-table-grammar-v2",
+            "scope": "paired-document-grammar",
+            "legacy": [],
+            "structuralPredecessor": null,
+            "feature": "block-identifiers",
+            "facets": ["standalone-id", "table-container"],
+            "identity": false,
+            "outputDifference": null,
+            "theorem": "T3",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "key",
+                        "grammar": "word",
+                        "maxBytes": 1000
+                    },
+                    {
+                        "name": "target",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "value",
+                        "grammar": "word"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = \"| \" value:word \" |\\n| --- |\\n| \" target:word \" |\\n\\n#\" key:word{source-bytes<=1000} \"#\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"| \" value:word \" |\\n| --- |\\n| \" target:word \" |\\n\\n[\" key:word{source-bytes<=1000} \"]: /block\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+            },
+            "rewrite": [
+                "inline-administrative-productions",
+                "invertible-fixed-terminal-encoding",
+                "label-preserving-product-permutation",
+                "common-normal-form"
+            ],
+            "residual": null,
+            "examples": [
+                {
+                    "dialect": "| rbrb |\n| --- |\n| h |\n\n#nd#\n\n",
+                    "common": "| rbrb |\n| --- |\n| h |\n\n[nd]: /block\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "key",
+                                {
+                                    "grammar": "word",
+                                    "value": "nd"
+                                }
+                            ],
+                            [
+                                "target",
+                                {
+                                    "grammar": "word",
+                                    "value": "h"
+                                }
+                            ],
+                            [
+                                "value",
+                                {
+                                    "grammar": "word",
+                                    "value": "rbrb"
+                                }
+                            ]
+                        ]
+                    ]
+                },
+                {
+                    "dialect": "| ececec |\n| --- |\n| ss |\n\n#od#\n\n",
+                    "common": "| ececec |\n| --- |\n| ss |\n\n[od]: /block\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "key",
+                                {
+                                    "grammar": "word",
+                                    "value": "od"
+                                }
+                            ],
+                            [
+                                "target",
+                                {
+                                    "grammar": "word",
+                                    "value": "ss"
+                                }
+                            ],
+                            [
+                                "value",
+                                {
+                                    "grammar": "word",
+                                    "value": "ececec"
+                                }
+                            ]
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "block-id-escaped",
+            "certificate": "block-id-escaped-grammar-v2",
+            "scope": "paired-document-grammar",
+            "legacy": [],
+            "structuralPredecessor": null,
+            "feature": "block-identifiers",
+            "facets": ["escaped-id", "fallback"],
+            "identity": true,
+            "outputDifference": null,
+            "theorem": "T6",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "key",
+                        "grammar": "word"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = \"probe \" \"\\\\#\" key:word \"#\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"probe \" \"\\\\#\" key:word \"#\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+            },
+            "rewrite": [
+                "inline-administrative-productions",
+                "invertible-fixed-terminal-encoding",
+                "label-preserving-product-permutation",
+                "common-normal-form"
+            ],
+            "residual": null,
+            "examples": [
+                {
+                    "dialect": "probe \\#nd# end\n\n",
+                    "common": "probe \\#nd# end\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "key",
+                                {
+                                    "grammar": "word",
+                                    "value": "nd"
+                                }
+                            ]
+                        ]
+                    ]
+                },
+                {
+                    "dialect": "probe \\#od# end\n\n",
+                    "common": "probe \\#od# end\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "key",
+                                {
+                                    "grammar": "word",
+                                    "value": "od"
+                                }
+                            ]
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "cross-link-table",
+            "certificate": "cross-link-table-grammar-v2",
+            "scope": "paired-document-grammar",
+            "legacy": [],
+            "structuralPredecessor": null,
+            "feature": "cross-links",
+            "facets": ["pipe-table", "escaped-label-separator"],
+            "identity": false,
+            "outputDifference": null,
+            "theorem": "T3",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "body",
+                        "grammar": "inline"
+                    },
+                    {
+                        "name": "literal",
+                        "grammar": "phrase"
+                    },
+                    {
+                        "name": "target",
+                        "grammar": "word"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = \"| \" \"\" \"[[\" target:word \"\\\\|\" literal:phrase \"]] |\\n| --- |\\n| \" body:inline \" |\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"| \" \"\" \"[\" literal:phrase \"](/\" target:word \") |\\n| --- |\\n| \" body:inline \" |\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+            },
+            "rewrite": [
+                "inline-administrative-productions",
+                "invertible-fixed-terminal-encoding",
+                "label-preserving-product-permutation",
+                "common-normal-form"
+            ],
+            "residual": null,
+            "examples": [
+                {
+                    "dialect": "| [[h\\|b r vd]] |\n| --- |\n| b **uu mbmb qbqb** ac |\n\n",
+                    "common": "| [b r vd](/h) |\n| --- |\n| b **uu mbmb qbqb** ac |\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "body",
+                                {
+                                    "grammar": "inline",
+                                    "value": ["b", ["uu", "mbmb", "qbqb"], "ac"]
+                                }
+                            ],
+                            [
+                                "literal",
+                                {
+                                    "grammar": "phrase",
+                                    "value": ["b", "r", "vd"]
+                                }
+                            ],
+                            [
+                                "target",
+                                {
+                                    "grammar": "word",
+                                    "value": "h"
+                                }
+                            ]
+                        ]
+                    ]
+                },
+                {
+                    "dialect": "| [[ss\\|ii wb wdwd]] |\n| --- |\n| lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc |\n\n",
+                    "common": "| [ii wb wdwd](/ss) |\n| --- |\n| lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc |\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "body",
+                                {
+                                    "grammar": "inline",
+                                    "value": [
+                                        "lblblb",
+                                        ["agag", "ububububub", "ok"],
+                                        "vc",
+                                        ["qiqi", "ybybybyb", "apap"],
+                                        "tctctc"
+                                    ]
+                                }
+                            ],
+                            [
+                                "literal",
+                                {
+                                    "grammar": "phrase",
+                                    "value": ["ii", "wb", "wdwd"]
+                                }
+                            ],
+                            [
+                                "target",
+                                {
+                                    "grammar": "word",
+                                    "value": "ss"
+                                }
+                            ]
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "cross-embed-table",
+            "certificate": "cross-embed-table-grammar-v2",
+            "scope": "paired-document-grammar",
+            "legacy": [],
+            "structuralPredecessor": null,
+            "feature": "cross-links",
+            "facets": ["pipe-table", "escaped-label-separator"],
+            "identity": false,
+            "outputDifference": null,
+            "theorem": "T3",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "body",
+                        "grammar": "inline"
+                    },
+                    {
+                        "name": "literal",
+                        "grammar": "phrase"
+                    },
+                    {
+                        "name": "target",
+                        "grammar": "word"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = \"| \" \"!\" \"[[\" target:word \"\\\\|\" literal:phrase \"]] |\\n| --- |\\n| \" body:inline \" |\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"| \" \"!\" \"[\" literal:phrase \"](/\" target:word \") |\\n| --- |\\n| \" body:inline \" |\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+            },
+            "rewrite": [
+                "inline-administrative-productions",
+                "invertible-fixed-terminal-encoding",
+                "label-preserving-product-permutation",
+                "common-normal-form"
+            ],
+            "residual": null,
+            "examples": [
+                {
+                    "dialect": "| ![[h\\|b r vd]] |\n| --- |\n| b **uu mbmb qbqb** ac |\n\n",
+                    "common": "| ![b r vd](/h) |\n| --- |\n| b **uu mbmb qbqb** ac |\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "body",
+                                {
+                                    "grammar": "inline",
+                                    "value": ["b", ["uu", "mbmb", "qbqb"], "ac"]
+                                }
+                            ],
+                            [
+                                "literal",
+                                {
+                                    "grammar": "phrase",
+                                    "value": ["b", "r", "vd"]
+                                }
+                            ],
+                            [
+                                "target",
+                                {
+                                    "grammar": "word",
+                                    "value": "h"
+                                }
+                            ]
+                        ]
+                    ]
+                },
+                {
+                    "dialect": "| ![[ss\\|ii wb wdwd]] |\n| --- |\n| lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc |\n\n",
+                    "common": "| ![ii wb wdwd](/ss) |\n| --- |\n| lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc |\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "body",
+                                {
+                                    "grammar": "inline",
+                                    "value": [
+                                        "lblblb",
+                                        ["agag", "ububububub", "ok"],
+                                        "vc",
+                                        ["qiqi", "ybybybyb", "apap"],
+                                        "tctctc"
+                                    ]
+                                }
+                            ],
+                            [
+                                "literal",
+                                {
+                                    "grammar": "phrase",
+                                    "value": ["ii", "wb", "wdwd"]
+                                }
+                            ],
+                            [
+                                "target",
+                                {
+                                    "grammar": "word",
+                                    "value": "ss"
+                                }
+                            ]
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "fallback-task-separator",
+            "certificate": "fallback-task-separator-grammar-v2",
+            "scope": "paired-document-grammar",
+            "legacy": [],
+            "structuralPredecessor": null,
+            "feature": "task-lists",
+            "facets": ["required-separator", "invalid-marker"],
+            "identity": true,
+            "outputDifference": null,
+            "theorem": "T6",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "key",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "target",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "value",
+                        "grammar": "word"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = \"- [x]\\n- [x]\" key:word \"\\n- [] \" value:word \"\\n- [ab] \" target:word \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"- [x]\\n- [x]\" key:word \"\\n- [] \" value:word \"\\n- [ab] \" target:word \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+            },
+            "rewrite": [
+                "inline-administrative-productions",
+                "invertible-fixed-terminal-encoding",
+                "label-preserving-product-permutation",
+                "common-normal-form"
+            ],
+            "residual": null,
+            "examples": [
+                {
+                    "dialect": "- [x]\n- [x]nd\n- [] rbrb\n- [ab] h\n\n",
+                    "common": "- [x]\n- [x]nd\n- [] rbrb\n- [ab] h\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "key",
+                                {
+                                    "grammar": "word",
+                                    "value": "nd"
+                                }
+                            ],
+                            [
+                                "target",
+                                {
+                                    "grammar": "word",
+                                    "value": "h"
+                                }
+                            ],
+                            [
+                                "value",
+                                {
+                                    "grammar": "word",
+                                    "value": "rbrb"
+                                }
+                            ]
+                        ]
+                    ]
+                },
+                {
+                    "dialect": "- [x]\n- [x]od\n- [] ececec\n- [ab] ss\n\n",
+                    "common": "- [x]\n- [x]od\n- [] ececec\n- [ab] ss\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "key",
+                                {
+                                    "grammar": "word",
+                                    "value": "od"
+                                }
+                            ],
+                            [
+                                "target",
+                                {
+                                    "grammar": "word",
+                                    "value": "ss"
+                                }
+                            ],
+                            [
+                                "value",
+                                {
+                                    "grammar": "word",
+                                    "value": "ececec"
+                                }
+                            ]
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "task-nested",
+            "certificate": "task-nested-grammar-v2",
+            "scope": "paired-document-grammar",
+            "legacy": [],
+            "structuralPredecessor": null,
+            "feature": "task-lists",
+            "facets": ["nested-tasks", "ordered-task"],
+            "identity": true,
+            "outputDifference": null,
+            "theorem": "T6",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "body",
+                        "grammar": "inline"
+                    },
+                    {
+                        "name": "tail",
+                        "grammar": "inline"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = \"1. [ ] \" body:inline \"\\n   - [x] \" tail:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"1. [ ] \" body:inline \"\\n   - [x] \" tail:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+            },
+            "rewrite": [
+                "inline-administrative-productions",
+                "invertible-fixed-terminal-encoding",
+                "label-preserving-product-permutation",
+                "common-normal-form"
+            ],
+            "residual": null,
+            "examples": [
+                {
+                    "dialect": "1. [ ] b **uu mbmb qbqb** ac\n   - [x] epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n",
+                    "common": "1. [ ] b **uu mbmb qbqb** ac\n   - [x] epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "body",
+                                {
+                                    "grammar": "inline",
+                                    "value": ["b", ["uu", "mbmb", "qbqb"], "ac"]
+                                }
+                            ],
+                            [
+                                "tail",
+                                {
+                                    "grammar": "inline",
+                                    "value": [
+                                        "epepepep",
+                                        ["tttttt", "pc", "zhb"],
+                                        "qd",
+                                        ["jwjwjw", "tctctctctc", "lmblmb"],
+                                        "eabeabeab"
+                                    ]
+                                }
+                            ]
+                        ]
+                    ]
+                },
+                {
+                    "dialect": "1. [ ] lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n   - [x] vp **kukukuku **zyzyzy xcxcxcxc xqbxqbxqb** yd **pbbpbbpbb bdbdbd jvb** cjbcjb** rd **axaxaxax **pbbpbbpbb bdbdbd jvb** ce **febfebfeb fdfd vzbvzb** onbonbonb** hbb\n\n",
+                    "common": "1. [ ] lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n   - [x] vp **kukukuku **zyzyzy xcxcxcxc xqbxqbxqb** yd **pbbpbbpbb bdbdbd jvb** cjbcjb** rd **axaxaxax **pbbpbbpbb bdbdbd jvb** ce **febfebfeb fdfd vzbvzb** onbonbonb** hbb\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "body",
+                                {
+                                    "grammar": "inline",
+                                    "value": [
+                                        "lblblb",
+                                        ["agag", "ububububub", "ok"],
+                                        "vc",
+                                        ["qiqi", "ybybybyb", "apap"],
+                                        "tctctc"
+                                    ]
+                                }
+                            ],
+                            [
+                                "tail",
+                                {
+                                    "grammar": "inline",
+                                    "value": [
+                                        "vp",
+                                        [
+                                            "kukukuku",
+                                            ["zyzyzy", "xcxcxcxc", "xqbxqbxqb"],
+                                            "yd",
+                                            ["pbbpbbpbb", "bdbdbd", "jvb"],
+                                            "cjbcjb"
+                                        ],
+                                        "rd",
+                                        [
+                                            "axaxaxax",
+                                            ["pbbpbbpbb", "bdbdbd", "jvb"],
+                                            "ce",
+                                            ["febfebfeb", "fdfd", "vzbvzb"],
+                                            "onbonbonb"
+                                        ],
+                                        "hbb"
+                                    ]
+                                }
+                            ]
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "mark-formatting",
+            "certificate": "mark-formatting-grammar-v2",
+            "scope": "paired-document-grammar",
+            "legacy": [],
+            "structuralPredecessor": null,
+            "feature": "marks",
+            "facets": ["formatted-content"],
+            "identity": false,
+            "outputDifference": null,
+            "theorem": "T3",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "body",
+                        "grammar": "inline"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = \"probe \" \"==\" body:inline \"==\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"probe \" \"**\" body:inline \"**\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+            },
+            "rewrite": [
+                "inline-administrative-productions",
+                "invertible-fixed-terminal-encoding",
+                "label-preserving-product-permutation",
+                "common-normal-form"
+            ],
+            "residual": null,
+            "examples": [
+                {
+                    "dialect": "probe ==b **uu mbmb qbqb** ac== end\n\n",
+                    "common": "probe **b **uu mbmb qbqb** ac** end\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "body",
+                                {
+                                    "grammar": "inline",
+                                    "value": ["b", ["uu", "mbmb", "qbqb"], "ac"]
+                                }
+                            ]
+                        ]
+                    ]
+                },
+                {
+                    "dialect": "probe ==lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc== end\n\n",
+                    "common": "probe **lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc** end\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "body",
+                                {
+                                    "grammar": "inline",
+                                    "value": [
+                                        "lblblb",
+                                        ["agag", "ububububub", "ok"],
+                                        "vc",
+                                        ["qiqi", "ybybybyb", "apap"],
+                                        "tctctc"
+                                    ]
+                                }
+                            ]
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "gfm-footnote-blocks",
+            "certificate": "gfm-footnote-blocks-grammar-v2",
+            "scope": "paired-document-grammar",
+            "legacy": [],
+            "structuralPredecessor": null,
+            "feature": "footnotes",
+            "facets": ["definition-blocks", "continuation-indentation"],
+            "identity": true,
+            "outputDifference": null,
+            "theorem": "T6",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "body",
+                        "grammar": "inline"
+                    },
+                    {
+                        "name": "key",
+                        "grammar": "word",
+                        "maxBytes": 999
+                    },
+                    {
+                        "name": "tail",
+                        "grammar": "inline"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = \"probe [^\" key:word{source-bytes<=999} \"] end\\n\\n[^\" key:word{source-bytes<=999} \"]: \" body:inline \"\\n\\n    \" tail:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"probe [^\" key:word{source-bytes<=999} \"] end\\n\\n[^\" key:word{source-bytes<=999} \"]: \" body:inline \"\\n\\n    \" tail:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+            },
+            "rewrite": [
+                "inline-administrative-productions",
+                "invertible-fixed-terminal-encoding",
+                "label-preserving-product-permutation",
+                "common-normal-form"
+            ],
+            "residual": null,
+            "examples": [
+                {
+                    "dialect": "probe [^nd] end\n\n[^nd]: b **uu mbmb qbqb** ac\n\n    epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n",
+                    "common": "probe [^nd] end\n\n[^nd]: b **uu mbmb qbqb** ac\n\n    epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "body",
+                                {
+                                    "grammar": "inline",
+                                    "value": ["b", ["uu", "mbmb", "qbqb"], "ac"]
+                                }
+                            ],
+                            [
+                                "key",
+                                {
+                                    "grammar": "word",
+                                    "value": "nd"
+                                }
+                            ],
+                            [
+                                "tail",
+                                {
+                                    "grammar": "inline",
+                                    "value": [
+                                        "epepepep",
+                                        ["tttttt", "pc", "zhb"],
+                                        "qd",
+                                        ["jwjwjw", "tctctctctc", "lmblmb"],
+                                        "eabeabeab"
+                                    ]
+                                }
+                            ]
+                        ]
+                    ]
+                },
+                {
+                    "dialect": "probe [^od] end\n\n[^od]: lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n    vp **kukukuku **zyzyzy xcxcxcxc xqbxqbxqb** yd **pbbpbbpbb bdbdbd jvb** cjbcjb** rd **axaxaxax **pbbpbbpbb bdbdbd jvb** ce **febfebfeb fdfd vzbvzb** onbonbonb** hbb\n\n",
+                    "common": "probe [^od] end\n\n[^od]: lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n    vp **kukukuku **zyzyzy xcxcxcxc xqbxqbxqb** yd **pbbpbbpbb bdbdbd jvb** cjbcjb** rd **axaxaxax **pbbpbbpbb bdbdbd jvb** ce **febfebfeb fdfd vzbvzb** onbonbonb** hbb\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "body",
+                                {
+                                    "grammar": "inline",
+                                    "value": [
+                                        "lblblb",
+                                        ["agag", "ububububub", "ok"],
+                                        "vc",
+                                        ["qiqi", "ybybybyb", "apap"],
+                                        "tctctc"
+                                    ]
+                                }
+                            ],
+                            [
+                                "key",
+                                {
+                                    "grammar": "word",
+                                    "value": "od"
+                                }
+                            ],
+                            [
+                                "tail",
+                                {
+                                    "grammar": "inline",
+                                    "value": [
+                                        "vp",
+                                        [
+                                            "kukukuku",
+                                            ["zyzyzy", "xcxcxcxc", "xqbxqbxqb"],
+                                            "yd",
+                                            ["pbbpbbpbb", "bdbdbd", "jvb"],
+                                            "cjbcjb"
+                                        ],
+                                        "rd",
+                                        [
+                                            "axaxaxax",
+                                            ["pbbpbbpbb", "bdbdbd", "jvb"],
+                                            "ce",
+                                            ["febfebfeb", "fdfd", "vzbvzb"],
+                                            "onbonbonb"
+                                        ],
+                                        "hbb"
+                                    ]
+                                }
+                            ]
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
             "id": "embed-dimensions",
             "certificate": "embed-dimensions-grammar-v2",
             "scope": "boundary-grammar",

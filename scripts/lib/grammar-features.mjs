@@ -28,9 +28,12 @@ const labelBounds = {
     "heading-explicit-id": { key: 1000 },
     "block-id-paragraph": { key: 1000 },
     "block-id-list": { key: 1000, value: 1000 },
+    "block-id-container-list": { key: 1000 },
+    "block-id-container-table": { key: 1000 },
     "attribute-reference": { key: 1000 },
     "gfm-footnote": { key: 999 },
     "gfm-footnote-cycle": { key: 999 },
+    "gfm-footnote-blocks": { key: 999 },
     "footnote-retention": { key: 999, target: 999 },
     "specimen-graph": { key: 999 },
     "specimen-reset": { key: 1000 },
@@ -701,6 +704,57 @@ pair(
     ["(5@) ", b, "\n\n(7@", k, ") ", t, "\n\n(@", k, ") ", b, "\n\nAs (@", k, ") shows.\n\n"],
     ["5. ", b, "\n\n7. ", t, "\n\n1. ", b, "\n\nAs [", k, "] shows.\n\n[", k, "]: /", k, "\n\n"]
 );
+
+// Source forms identified by the section-level coverage review. These reuse
+// the same identity/product proofs; no native output expectations are added.
+pair(
+    "block-id-container-list",
+    "block-identifiers",
+    ["standalone-id", "list-container"],
+    ["- ", b, "\n\n#", k, "#\n\n"],
+    ["- ", b, "\n\n[", k, "]: /block\n\n"]
+);
+pair(
+    "block-id-container-table",
+    "block-identifiers",
+    ["standalone-id", "table-container"],
+    ["| ", v, " |\n| --- |\n| ", target, " |\n\n#", k, "#\n\n"],
+    ["| ", v, " |\n| --- |\n| ", target, " |\n\n[", k, "]: /block\n\n"],
+    { gfm: true }
+);
+shared("block-id-escaped", "block-identifiers", ["escaped-id", "fallback"], inline("\\#", k, "#"));
+for (const [name, prefix] of [
+    ["link", ""],
+    ["embed", "!"]
+])
+    pair(
+        `cross-${name}-table`,
+        "cross-links",
+        ["pipe-table", "escaped-label-separator"],
+        ["| ", prefix, "[[", target, "\\|", p, "]] |\n| --- |\n| ", b, " |\n\n"],
+        ["| ", prefix, "[", p, "](/", target, ") |\n| --- |\n| ", b, " |\n\n"],
+        { gfm: true }
+    );
+shared(
+    "fallback-task-separator",
+    "task-lists",
+    ["required-separator", "invalid-marker"],
+    ["- [x]\n- [x]", k, "\n- [] ", v, "\n- [ab] ", target, "\n\n"],
+    { gfm: true }
+);
+shared("task-nested", "task-lists", ["nested-tasks", "ordered-task"], ["1. [ ] ", b, "\n   - [x] ", t, "\n\n"], {
+    gfm: true
+});
+
+pair("mark-formatting", "marks", ["formatted-content"], inline("==", b, "=="), inline("**", b, "**"));
+shared(
+    "gfm-footnote-blocks",
+    "footnotes",
+    ["definition-blocks", "continuation-indentation"],
+    ["probe [^", k, "] end\n\n[^", k, "]: ", b, "\n\n    ", t, "\n\n"],
+    { gfm: true }
+);
+
 export const featureGrammars = new Map(entries.map((entry) => [entry.id, Object.freeze(entry)]));
 if (featureGrammars.size !== entries.length) throw new Error("duplicate feature grammar");
 

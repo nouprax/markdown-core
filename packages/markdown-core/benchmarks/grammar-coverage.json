@@ -1,6 +1,6 @@
 {
-    "version": 1,
-    "contract": "Every syntax feature and registered element has generated grammar-certified inputs; every specification section has a reviewed, content-bound disposition. Parser correctness is owned by parity and regression suites. Whole-language proofs apply only to the declared grammars; local boundaries do not certify their residual host grammar.",
+    "version": 2,
+    "contract": "Every syntax feature and registered element has generated grammar-certified inputs; every specification section explicitly names its source-grammar certificates or explains why it introduces no grammar obligation. Parser correctness is owned by parity and regression suites. Whole-language proofs apply only to the declared grammars; local boundaries do not certify their residual host grammar.",
     "guide": {
         "file": "docs/specs/dialect.md",
         "sha256": "f60a1079196774f5745ce8c6c07892034a5d8a43ace01b0f319366e7d39aca4f"
@@ -15,31 +15,51 @@
                     "title": "Anchors",
                     "line": 1,
                     "level": 1,
-                    "sha256": "d3a9a86e5e0b999f0298dbb818bcacd53b3670a1b46f6d21c957ed10cfa01e9e"
+                    "sha256": "d3a9a86e5e0b999f0298dbb818bcacd53b3670a1b46f6d21c957ed10cfa01e9e",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["heading-explicit-id", "anchor-last-empty", "common-anchor-generation"]
+                    }
                 },
                 {
                     "title": "Explicit anchors",
                     "line": 18,
                     "level": 2,
-                    "sha256": "e913648d39df90b1985102f214c1ceb0e29e0778f5729906be56fd7840b4f46c"
+                    "sha256": "e913648d39df90b1985102f214c1ceb0e29e0778f5729906be56fd7840b4f46c",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["heading-explicit-id", "anchor-last-empty"]
+                    }
                 },
                 {
                     "title": "Automatic anchors",
                     "line": 32,
                     "level": 2,
-                    "sha256": "c7a9c4be18ddaa2fba220c8ca50dea49a293fd93ab31f56abacb2d08d0dca792"
+                    "sha256": "c7a9c4be18ddaa2fba220c8ca50dea49a293fd93ab31f56abacb2d08d0dca792",
+                    "disposition": {
+                        "kind": "context",
+                        "reason": "Automatic IDs are derived output, with no additional authored grammar. The heading source workload is common-anchor-generation; correctness of normalization/collision allocation belongs to regression and parity."
+                    }
                 },
                 {
                     "title": "Implicit heading references",
                     "line": 68,
                     "level": 2,
-                    "sha256": "266130a2f201a102389d619c93f10bbaf2bd195951fdd8c98f06d1a0fc6c257b"
+                    "sha256": "266130a2f201a102389d619c93f10bbaf2bd195951fdd8c98f06d1a0fc6c257b",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["heading-reference"]
+                    }
                 },
                 {
                     "title": "Anchor ownership",
                     "line": 89,
                     "level": 2,
-                    "sha256": "9862eff4bc06026120ab178339a9022066c0c8571f426699c721aa42eacf9653"
+                    "sha256": "9862eff4bc06026120ab178339a9022066c0c8571f426699c721aa42eacf9653",
+                    "disposition": {
+                        "kind": "context",
+                        "reason": "Anchor ownership, inheritance and application matching are output/resolution contracts. Authored forms are covered by explicit/implicit anchor sections and attribute-reference."
+                    }
                 }
             ],
             "elements": [],
@@ -79,55 +99,111 @@
                     "title": "Attributes",
                     "line": 1,
                     "level": 1,
-                    "sha256": "1526f4f2a8d18eb7f0764ba13b4b0f69f01e0ce6697caa56dd505dc950a75be3"
+                    "sha256": "1526f4f2a8d18eb7f0764ba13b4b0f69f01e0ce6697caa56dd505dc950a75be3",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["record-span", "class-span", "attribute-bare"]
+                    }
                 },
                 {
                     "title": "Write attribute members",
                     "line": 16,
                     "level": 2,
-                    "sha256": "825083ff33992642697eaf93743bb823f08f30753b40f92706da31d4edf86ae3"
+                    "sha256": "825083ff33992642697eaf93743bb823f08f30753b40f92706da31d4edf86ae3",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["record-span", "class-span", "attribute-bare", "attribute-order"]
+                    }
                 },
                 {
                     "title": "Values and spacing",
                     "line": 52,
                     "level": 2,
-                    "sha256": "cf229f251f98e449652f6f420dbf90729de1c2dbc89e99cce998d1d6273cd6ab"
+                    "sha256": "cf229f251f98e449652f6f420dbf90729de1c2dbc89e99cce998d1d6273cd6ab",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": [
+                            "attribute-double",
+                            "attribute-single",
+                            "attribute-unquoted",
+                            "attribute-empty",
+                            "attribute-newline",
+                            "attribute-escaped-value"
+                        ]
+                    }
                 },
                 {
                     "title": "Attachment sites",
                     "line": 75,
                     "level": 2,
-                    "sha256": "8a737d8cf1aa5aed2c12fe62a18acd229b1b644006b05eacba9ebb980057e0ba"
+                    "sha256": "8a737d8cf1aa5aed2c12fe62a18acd229b1b644006b05eacba9ebb980057e0ba",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": [
+                            "attribute-code",
+                            "attribute-heading",
+                            "attribute-fence",
+                            "attribute-link",
+                            "attribute-image",
+                            "attribute-autolink",
+                            "attribute-reference"
+                        ]
+                    }
                 },
                 {
                     "title": "Inline code",
                     "line": 94,
                     "level": 3,
-                    "sha256": "f05d16b8f45e5f9e39d3afa428aa54421994e55193138e2d75b59aecca2bc910"
+                    "sha256": "f05d16b8f45e5f9e39d3afa428aa54421994e55193138e2d75b59aecca2bc910",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["attribute-code"]
+                    }
                 },
                 {
                     "title": "Headings",
                     "line": 103,
                     "level": 3,
-                    "sha256": "c7a0f6101803682370dd3493414734c6c81fb73f59c0df2a9275745fb5fc3cc6"
+                    "sha256": "c7a0f6101803682370dd3493414734c6c81fb73f59c0df2a9275745fb5fc3cc6",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["attribute-heading"]
+                    }
                 },
                 {
                     "title": "Fenced code",
                     "line": 117,
                     "level": 3,
-                    "sha256": "98bfe640027c99bc53ee70c798cdab4ac835e50db9b62c1e154d335e758947c0"
+                    "sha256": "98bfe640027c99bc53ee70c798cdab4ac835e50db9b62c1e154d335e758947c0",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["attribute-fence"]
+                    }
                 },
                 {
                     "title": "Links, images, and inherited attributes",
                     "line": 130,
                     "level": 3,
-                    "sha256": "8f4da662eb55bd3fbc4f5636c51a342b894a03f6584f711373cfe93ad4266cb6"
+                    "sha256": "8f4da662eb55bd3fbc4f5636c51a342b894a03f6584f711373cfe93ad4266cb6",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": [
+                            "attribute-link",
+                            "attribute-image",
+                            "attribute-autolink",
+                            "attribute-reference"
+                        ]
+                    }
                 },
                 {
                     "title": "Invalid containers",
                     "line": 152,
                     "level": 2,
-                    "sha256": "2cdacae499d86370f96a4168c5746c97d1ce5affa7e68bc60dd8dbd7fb31fac4"
+                    "sha256": "2cdacae499d86370f96a4168c5746c97d1ce5affa7e68bc60dd8dbd7fb31fac4",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["fallback-attributes"]
+                    }
                 }
             ],
             "elements": ["ATTRIBUTES"],
@@ -251,37 +327,61 @@
                     "title": "Basics",
                     "line": 1,
                     "level": 1,
-                    "sha256": "fb21c297490bf6e79b71880331c136e4b1bc1b428473b54e3d7cd7dd709bcc42"
+                    "sha256": "fb21c297490bf6e79b71880331c136e4b1bc1b428473b54e3d7cd7dd709bcc42",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-paragraph", "common-eol-lf", "common-eol-cr", "common-eol-crlf"]
+                    }
                 },
                 {
                     "title": "Indentation",
                     "line": 19,
                     "level": 2,
-                    "sha256": "125ad2e77a01d9b4df87d23209c7b947f83ca58cb62bee269da249b8d6116b16"
+                    "sha256": "125ad2e77a01d9b4df87d23209c7b947f83ca58cb62bee269da249b8d6116b16",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-tabs", "common-indented-code", "common-list-loose"]
+                    }
                 },
                 {
                     "title": "Escape punctuation",
                     "line": 30,
                     "level": 2,
-                    "sha256": "9e8bbdfee528049ab91e8f42277563a3d24ce906b7c54c98a47037c046c61e0c"
+                    "sha256": "9e8bbdfee528049ab91e8f42277563a3d24ce906b7c54c98a47037c046c61e0c",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-escapes"]
+                    }
                 },
                 {
                     "title": "Character references",
                     "line": 42,
                     "level": 2,
-                    "sha256": "ff4abdce320c04f973e4fc5c82c667be3781808dc412edfec0aa1681db55de62"
+                    "sha256": "ff4abdce320c04f973e4fc5c82c667be3781808dc412edfec0aa1681db55de62",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-entities"]
+                    }
                 },
                 {
                     "title": "Literal punctuation",
                     "line": 55,
                     "level": 2,
-                    "sha256": "7b56dbe63ba99cd1559801c94a709f1a7c1789dcf583451b348f0d794e033a53"
+                    "sha256": "7b56dbe63ba99cd1559801c94a709f1a7c1789dcf583451b348f0d794e033a53",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-paragraph"]
+                    }
                 },
                 {
                     "title": "Learn the block and inline forms",
                     "line": 65,
                     "level": 2,
-                    "sha256": "b9237430ef33b3c788d078dab0f4b1ae7cc625dcfb7ced2f51a24c183934b7eb"
+                    "sha256": "b9237430ef33b3c788d078dab0f4b1ae7cc625dcfb7ced2f51a24c183934b7eb",
+                    "disposition": {
+                        "kind": "context",
+                        "reason": "Navigation to the dedicated syntax pages; this section introduces no source production."
+                    }
                 }
             ],
             "elements": ["DOCUMENT", "PARAGRAPH", "TEXT"],
@@ -339,25 +439,41 @@
                     "title": "Block identifiers",
                     "line": 1,
                     "level": 1,
-                    "sha256": "082bd95882fd6029581d39f64f573c1b56162a7e2e40a00b8765ed4ce7bc1f74"
+                    "sha256": "082bd95882fd6029581d39f64f573c1b56162a7e2e40a00b8765ed4ce7bc1f74",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["block-id-paragraph"]
+                    }
                 },
                 {
                     "title": "Paragraphs and list items",
                     "line": 18,
                     "level": 2,
-                    "sha256": "6492f937edf89c27a78b718674b814b7511725a3c161d726e20ca89b01d65b65"
+                    "sha256": "6492f937edf89c27a78b718674b814b7511725a3c161d726e20ca89b01d65b65",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["block-id-paragraph", "block-id-list"]
+                    }
                 },
                 {
                     "title": "Lists, quotes, and tables",
                     "line": 34,
                     "level": 2,
-                    "sha256": "2916af7f8c27cc2f87fd4b4b5993e56c0d777477e4c0676f841fa6e2d549009f"
+                    "sha256": "2916af7f8c27cc2f87fd4b4b5993e56c0d777477e4c0676f841fa6e2d549009f",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["anchor", "block-id-container-list", "block-id-container-table"]
+                    }
                 },
                 {
                     "title": "Boundaries",
                     "line": 57,
                     "level": 2,
-                    "sha256": "85097437d1e66c934b8fdf16d0e8484ef1bb29f0b0ca2470ed55b71425db589c"
+                    "sha256": "85097437d1e66c934b8fdf16d0e8484ef1bb29f0b0ca2470ed55b71425db589c",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["block-id-escaped", "attribute-heading"]
+                    }
                 }
             ],
             "elements": [],
@@ -367,6 +483,24 @@
                     "scope": "paired-document-grammar",
                     "identity": false,
                     "facets": []
+                },
+                {
+                    "id": "block-id-container-list",
+                    "scope": "paired-document-grammar",
+                    "identity": false,
+                    "facets": ["standalone-id", "list-container"]
+                },
+                {
+                    "id": "block-id-container-table",
+                    "scope": "paired-document-grammar",
+                    "identity": false,
+                    "facets": ["standalone-id", "table-container"]
+                },
+                {
+                    "id": "block-id-escaped",
+                    "scope": "paired-document-grammar",
+                    "identity": true,
+                    "facets": ["escaped-id", "fallback"]
                 },
                 {
                     "id": "block-id-list",
@@ -391,19 +525,36 @@
                     "title": "Bracketed spans",
                     "line": 1,
                     "level": 1,
-                    "sha256": "95a7e54c8ce49a284ea70e08718c4e0cb3ea4a1b7d58e8c36a70bb8ac6b5bd31"
+                    "sha256": "95a7e54c8ce49a284ea70e08718c4e0cb3ea4a1b7d58e8c36a70bb8ac6b5bd31",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["record-span", "class-span"]
+                    }
                 },
                 {
                     "title": "Empty spans and nested content",
                     "line": 19,
                     "level": 2,
-                    "sha256": "e06d7dc25d7e97c6416dba863c670d01920378a9ba06e753f977f450d3aa3155"
+                    "sha256": "e06d7dc25d7e97c6416dba863c670d01920378a9ba06e753f977f450d3aa3155",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["span-empty", "span-nested"]
+                    }
                 },
                 {
                     "title": "Links and spans",
                     "line": 29,
                     "level": 2,
-                    "sha256": "b78ab8e8a8060199a4a472e1169fbe660ad0f751467f3b517c53a378db0e76d3"
+                    "sha256": "b78ab8e8a8060199a4a472e1169fbe660ad0f751467f3b517c53a378db0e76d3",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": [
+                            "record-span",
+                            "common-link-direct",
+                            "common-reference-shortcut",
+                            "fallback-span"
+                        ]
+                    }
                 }
             ],
             "elements": [],
@@ -449,25 +600,41 @@
                     "title": "Quotes and callouts",
                     "line": 1,
                     "level": 1,
-                    "sha256": "0d583c220b3b9081aa7b386639d67d46c92b1506874b2cf59d337c01c4ad41a5"
+                    "sha256": "0d583c220b3b9081aa7b386639d67d46c92b1506874b2cf59d337c01c4ad41a5",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-quote", "callout"]
+                    }
                 },
                 {
                     "title": "Add a type and title",
                     "line": 19,
                     "level": 2,
-                    "sha256": "a32164342052bc673ef13444d5a3a0ad91e6c2f1658cb634d1d7994117e77695"
+                    "sha256": "a32164342052bc673ef13444d5a3a0ad91e6c2f1658cb634d1d7994117e77695",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["callout"]
+                    }
                 },
                 {
                     "title": "Fold state",
                     "line": 37,
                     "level": 2,
-                    "sha256": "29968094b4670cd775001c4e6906a5fd398d6589bb7c69b2b18f4cee12a7f4e9"
+                    "sha256": "29968094b4670cd775001c4e6906a5fd398d6589bb7c69b2b18f4cee12a7f4e9",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["callout"]
+                    }
                 },
                 {
                     "title": "Metadata boundaries",
                     "line": 53,
                     "level": 2,
-                    "sha256": "0edf7c90ab9a16b5427b982bfd44efaf0540cefc9218ef54cad9a610e4034f7c"
+                    "sha256": "0edf7c90ab9a16b5427b982bfd44efaf0540cefc9218ef54cad9a610e4034f7c",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["callout"]
+                    }
                 }
             ],
             "elements": ["CALLOUT"],
@@ -495,31 +662,51 @@
                     "title": "Citations",
                     "line": 1,
                     "level": 1,
-                    "sha256": "fd396f8a74c95eed51b678a078522072fef4f77ad4a338b76c617e32a07716b9"
+                    "sha256": "fd396f8a74c95eed51b678a078522072fef4f77ad4a338b76c617e32a07716b9",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["cite-normal", "citation-group"]
+                    }
                 },
                 {
                     "title": "Author and suppression modes",
                     "line": 22,
                     "level": 2,
-                    "sha256": "e42575c5c181e2b85e859269ffdf93318b5d9758be124673995ed2cd5ae0456d"
+                    "sha256": "e42575c5c181e2b85e859269ffdf93318b5d9758be124673995ed2cd5ae0456d",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["cite-author", "cite-suppress"]
+                    }
                 },
                 {
                     "title": "Citation keys",
                     "line": 41,
                     "level": 2,
-                    "sha256": "a61ee808080d0a959aafb97dd38136b6b6ceaa0460c57b243a62290212213a2a"
+                    "sha256": "a61ee808080d0a959aafb97dd38136b6b6ceaa0460c57b243a62290212213a2a",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["cite-normal", "fallback-citation"]
+                    }
                 },
                 {
                     "title": "Affixes and tails",
                     "line": 61,
                     "level": 2,
-                    "sha256": "227b03047c102524122328b79e8bf8508bf87e25b8cdb7f4b86da3d9f0609f59"
+                    "sha256": "227b03047c102524122328b79e8bf8508bf87e25b8cdb7f4b86da3d9f0609f59",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["citation-affixes", "citation-group"]
+                    }
                 },
                 {
                     "title": "Boundaries and fallback",
                     "line": 83,
                     "level": 2,
-                    "sha256": "6bd0131937fc7429ab8472bf150a538d74da86526c05df2e15c64529b2d2a51f"
+                    "sha256": "6bd0131937fc7429ab8472bf150a538d74da86526c05df2e15c64529b2d2a51f",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["fallback-citation"]
+                    }
                 }
             ],
             "elements": ["CITATION"],
@@ -571,25 +758,41 @@
                     "title": "Code",
                     "line": 1,
                     "level": 1,
-                    "sha256": "1c755e751fcae0c0604ae44429f1b3c31616f3c618b40d2f580ee7cc9b32f65b"
+                    "sha256": "1c755e751fcae0c0604ae44429f1b3c31616f3c618b40d2f580ee7cc9b32f65b",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-code-span", "common-code-newline"]
+                    }
                 },
                 {
                     "title": "Include a backtick",
                     "line": 14,
                     "level": 2,
-                    "sha256": "5861a0ca4ba58e9e4c8c4ea4107c56edea33bb207c318d39076389410824cc53"
+                    "sha256": "5861a0ca4ba58e9e4c8c4ea4107c56edea33bb207c318d39076389410824cc53",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-code-span"]
+                    }
                 },
                 {
                     "title": "Fenced code",
                     "line": 30,
                     "level": 2,
-                    "sha256": "a3a46bacc699e2c533842af9ec21b0f8ce22607d108dab64d219112dd6a6ab98"
+                    "sha256": "a3a46bacc699e2c533842af9ec21b0f8ce22607d108dab64d219112dd6a6ab98",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-code-fence-backtick", "common-code-fence-tilde"]
+                    }
                 },
                 {
                     "title": "Indented code",
                     "line": 61,
                     "level": 2,
-                    "sha256": "6df4782d556c94c404637d0e1ae6a034952fd9ac4c82f1217b52dc85352173c7"
+                    "sha256": "6df4782d556c94c404637d0e1ae6a034952fd9ac4c82f1217b52dc85352173c7",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-indented-code"]
+                    }
                 }
             ],
             "elements": ["CODE", "CODE_BLOCK"],
@@ -635,25 +838,41 @@
                     "title": "Comments",
                     "line": 1,
                     "level": 1,
-                    "sha256": "225a6b68c41059de6adff25583c112ab1ad9039e55b51be1e0691d22bb52f913"
+                    "sha256": "225a6b68c41059de6adff25583c112ab1ad9039e55b51be1e0691d22bb52f913",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["opaque-comment", "comment-empty"]
+                    }
                 },
                 {
                     "title": "Block comments",
                     "line": 17,
                     "level": 2,
-                    "sha256": "db91c0472955fd8fc1d0822b89530b4fa13f5f6398c5dfc65146f2434a1c9e81"
+                    "sha256": "db91c0472955fd8fc1d0822b89530b4fa13f5f6398c5dfc65146f2434a1c9e81",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["leaf-comment"]
+                    }
                 },
                 {
                     "title": "HTML comments",
                     "line": 37,
                     "level": 2,
-                    "sha256": "dd1fa37cab54787752f1b5d52f86bfce460236e60998084f118669809c305050"
+                    "sha256": "dd1fa37cab54787752f1b5d52f86bfce460236e60998084f118669809c305050",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-html-comment", "common-inline-comment"]
+                    }
                 },
                 {
                     "title": "Boundaries",
                     "line": 45,
                     "level": 2,
-                    "sha256": "2b8e3a897893e6995ed715c073d2221303c3d507633c81ea1f8b41832803732e"
+                    "sha256": "2b8e3a897893e6995ed715c073d2221303c3d507633c81ea1f8b41832803732e",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["fallback-comment", "comment-empty"]
+                    }
                 }
             ],
             "elements": ["COMMENT"],
@@ -705,31 +924,86 @@
                     "title": "Compatibility and precedence",
                     "line": 1,
                     "level": 1,
-                    "sha256": "3a16236f77870452f4792f277801eb903011b463698ae5f883477ab95b71d6b4"
+                    "sha256": "3a16236f77870452f4792f277801eb903011b463698ae5f883477ab95b71d6b4",
+                    "disposition": {
+                        "kind": "context",
+                        "reason": "Scope and navigation for the compatibility guide; the following sections enumerate the source-language interactions."
+                    }
                 },
                 {
                     "title": "Differences to know",
                     "line": 10,
                     "level": 2,
-                    "sha256": "724dd593fa2b842fc16a67c95a9cd938d6abde628aa0a951adc79f7104e2a08f"
+                    "sha256": "724dd593fa2b842fc16a67c95a9cd938d6abde628aa0a951adc79f7104e2a08f",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": [
+                            "run-sub",
+                            "run-strike",
+                            "script-empty",
+                            "callout",
+                            "block-id-paragraph",
+                            "cross-raw-label",
+                            "metadata-types",
+                            "attribute-bare",
+                            "named-container",
+                            "formula-parenthesis",
+                            "task-unicode",
+                            "common-html-comment",
+                            "common-inline-html",
+                            "decimal-list",
+                            "footnote-retention",
+                            "fallback-grid",
+                            "common-paragraph"
+                        ]
+                    }
                 },
                 {
                     "title": "Block recognition",
                     "line": 37,
                     "level": 2,
-                    "sha256": "b2739e0d66d978aa329c26e2a7228a95adbffe65234f88826e8be5de192035da"
+                    "sha256": "b2739e0d66d978aa329c26e2a7228a95adbffe65234f88826e8be5de192035da",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": [
+                            "composition-directive-callout",
+                            "common-setext-two",
+                            "metadata-types",
+                            "leaf-promotion",
+                            "leading-caption"
+                        ]
+                    }
                 },
                 {
                     "title": "Inline recognition",
                     "line": 68,
                     "level": 2,
-                    "sha256": "57e7eccb2d207aaf2601865b29c08221853db0dc803424ede081c16976e48978"
+                    "sha256": "57e7eccb2d207aaf2601865b29c08221853db0dc803424ede081c16976e48978",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": [
+                            "composition-literal-islands",
+                            "record-span",
+                            "common-link-direct",
+                            "common-escapes",
+                            "formula-parenthesis"
+                        ]
+                    }
                 },
                 {
                     "title": "Literal content and incomplete syntax",
                     "line": 92,
                     "level": 2,
-                    "sha256": "0794901c97d1d31cfc63ba503a14f39c0cc83bff908a7090cf6c7e788685ff0d"
+                    "sha256": "0794901c97d1d31cfc63ba503a14f39c0cc83bff908a7090cf6c7e788685ff0d",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": [
+                            "composition-literal-islands",
+                            "fallback-insertion",
+                            "fallback-cross-link",
+                            "fallback-directive"
+                        ]
+                    }
                 }
             ],
             "elements": [],
@@ -757,37 +1031,61 @@
                     "title": "Cross links and embeds",
                     "line": 1,
                     "level": 1,
-                    "sha256": "c787276aeaf59842d32e7dedda735337dd80c0c7b126b47bd53164b9196168b9"
+                    "sha256": "c787276aeaf59842d32e7dedda735337dd80c0c7b126b47bd53164b9196168b9",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["cross-link", "cross-link-absent", "cross-link-empty", "cross-raw-label"]
+                    }
                 },
                 {
                     "title": "Headings and blocks",
                     "line": 19,
                     "level": 2,
-                    "sha256": "aef112bbce9142726a62bea3af8f2ca63a79b6bfb03b014b5c51fef15e1f1b57"
+                    "sha256": "aef112bbce9142726a62bea3af8f2ca63a79b6bfb03b014b5c51fef15e1f1b57",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["cross-anchor", "cross-local", "cross-block-anchor"]
+                    }
                 },
                 {
                     "title": "Embeds",
                     "line": 50,
                     "level": 2,
-                    "sha256": "2bb0193bb76bb5d9b572412d11650294bcaebc6bfb929b762e09bbafd335e40a"
+                    "sha256": "2bb0193bb76bb5d9b572412d11650294bcaebc6bfb929b762e09bbafd335e40a",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["cross-embed", "cross-embed-absent", "cross-embed-empty"]
+                    }
                 },
                 {
                     "title": "Dimensions",
                     "line": 64,
                     "level": 2,
-                    "sha256": "2c6ad041dfb7097a176827071802634ad627fe8e7641f369bd67b8a5749375eb"
+                    "sha256": "2c6ad041dfb7097a176827071802634ad627fe8e7641f369bd67b8a5749375eb",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["embed-dimensions"]
+                    }
                 },
                 {
                     "title": "Pipes and tables",
                     "line": 76,
                     "level": 2,
-                    "sha256": "dab1ab625cf2b13c677a601b0c491979da8234332572c2e1407e08b08fc39afb"
+                    "sha256": "dab1ab625cf2b13c677a601b0c491979da8234332572c2e1407e08b08fc39afb",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["cross-link-table", "cross-embed-table"]
+                    }
                 },
                 {
                     "title": "Incomplete targets",
                     "line": 91,
                     "level": 2,
-                    "sha256": "41aa5be5def0701b7676c05dd95a649c063f810565de71593de66a1ed513dc80"
+                    "sha256": "41aa5be5def0701b7676c05dd95a649c063f810565de71593de66a1ed513dc80",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["fallback-cross-link"]
+                    }
                 }
             ],
             "elements": ["CROSS_LINK"],
@@ -823,6 +1121,12 @@
                     "facets": []
                 },
                 {
+                    "id": "cross-embed-table",
+                    "scope": "paired-document-grammar",
+                    "identity": false,
+                    "facets": ["pipe-table", "escaped-label-separator"]
+                },
+                {
                     "id": "cross-link",
                     "scope": "paired-document-grammar",
                     "identity": false,
@@ -839,6 +1143,12 @@
                     "scope": "paired-document-grammar",
                     "identity": false,
                     "facets": []
+                },
+                {
+                    "id": "cross-link-table",
+                    "scope": "paired-document-grammar",
+                    "identity": false,
+                    "facets": ["pipe-table", "escaped-label-separator"]
                 },
                 {
                     "id": "cross-local",
@@ -875,25 +1185,41 @@
                     "title": "Definition lists",
                     "line": 1,
                     "level": 1,
-                    "sha256": "beb7316975152c880375631971314329de728d017d7949b36704df7e657c0390"
+                    "sha256": "beb7316975152c880375631971314329de728d017d7949b36704df7e657c0390",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["loose-definition", "mixed-definitions"]
+                    }
                 },
                 {
                     "title": "Multiple definitions and terms",
                     "line": 16,
                     "level": 2,
-                    "sha256": "4e9bbf8be9cc50b55c1677581738012ea65fba0704961dfa5a8f2fcb32c5f0b0"
+                    "sha256": "4e9bbf8be9cc50b55c1677581738012ea65fba0704961dfa5a8f2fcb32c5f0b0",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["mixed-definitions"]
+                    }
                 },
                 {
                     "title": "Block content",
                     "line": 42,
                     "level": 2,
-                    "sha256": "091aae2b57cfbda53b34308bba241a7d004ebfeb35582ef55b8904739d52809b"
+                    "sha256": "091aae2b57cfbda53b34308bba241a7d004ebfeb35582ef55b8904739d52809b",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["definition-blocks"]
+                    }
                 },
                 {
                     "title": "Recognition boundaries",
                     "line": 59,
                     "level": 2,
-                    "sha256": "3ba597105a308a36cb4a1a58e39d922db3e085952290508a91c25cf4f9e85329"
+                    "sha256": "3ba597105a308a36cb4a1a58e39d922db3e085952290508a91c25cf4f9e85329",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["loose-definition", "mixed-definitions"]
+                    }
                 }
             ],
             "elements": ["DEFINITION_LIST"],
@@ -927,37 +1253,67 @@
                     "title": "Directives",
                     "line": 1,
                     "level": 1,
-                    "sha256": "5f191c0d39add8cb97b23e8120ae00d3f8225dcd404cbb788d6a966c8cf77d00"
+                    "sha256": "5f191c0d39add8cb97b23e8120ae00d3f8225dcd404cbb788d6a966c8cf77d00",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["inline-directive", "leaf-directive", "named-container", "anonymous-container"]
+                    }
                 },
                 {
                     "title": "Inline directives",
                     "line": 17,
                     "level": 2,
-                    "sha256": "02cb7ed592c1d3bc34a45c5fcc55c59e785a1df73db086e7461e32477972c2f5"
+                    "sha256": "02cb7ed592c1d3bc34a45c5fcc55c59e785a1df73db086e7461e32477972c2f5",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": [
+                            "inline-directive",
+                            "empty-directive",
+                            "directive-attribute-only",
+                            "directive-both-parts",
+                            "directive-unicode"
+                        ]
+                    }
                 },
                 {
                     "title": "Leaf directives",
                     "line": 43,
                     "level": 2,
-                    "sha256": "89e0d74d2ada8ff497d1e381b4bc7951f95e1835f3eabb6e8879b830c442d3db"
+                    "sha256": "89e0d74d2ada8ff497d1e381b4bc7951f95e1835f3eabb6e8879b830c442d3db",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["leaf-directive", "directive-leaf-bare"]
+                    }
                 },
                 {
                     "title": "Container directives",
                     "line": 56,
                     "level": 2,
-                    "sha256": "87807751c995f3da7b7cbe575d872905cf18af86128ede5b6e3532e72bc22f42"
+                    "sha256": "87807751c995f3da7b7cbe575d872905cf18af86128ede5b6e3532e72bc22f42",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["named-container", "directive-nested"]
+                    }
                 },
                 {
                     "title": "Nameless containers",
                     "line": 88,
                     "level": 2,
-                    "sha256": "f89c10b7a530b00a0bb5d5049b9d742111cc307b05c6f49855c1724dca2b916b"
+                    "sha256": "f89c10b7a530b00a0bb5d5049b9d742111cc307b05c6f49855c1724dca2b916b",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["anonymous-container", "directive-unbraced"]
+                    }
                 },
                 {
                     "title": "Container boundaries",
                     "line": 112,
                     "level": 2,
-                    "sha256": "4ed1264483ecb64bb609baadf824a3cd92c6fa6ce2b86e362e43887084120fea"
+                    "sha256": "4ed1264483ecb64bb609baadf824a3cd92c6fa6ce2b86e362e43887084120fea",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["directive-nested", "fallback-directive"]
+                    }
                 }
             ],
             "elements": ["DIRECTIVE"],
@@ -1045,19 +1401,31 @@
                     "title": "Emphasis",
                     "line": 1,
                     "level": 1,
-                    "sha256": "cbcd644fba5f225ca0cbfd3db24aac601a8e1980c957f2a1508b23c5a0295af4"
+                    "sha256": "cbcd644fba5f225ca0cbfd3db24aac601a8e1980c957f2a1508b23c5a0295af4",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-emphasis-asterisk", "common-emphasis-underscore"]
+                    }
                 },
                 {
                     "title": "Nest formatting",
                     "line": 19,
                     "level": 2,
-                    "sha256": "bab53b407b67caa170612602bd79d1a7d3abfc0b2e5a4080c71c04eda4d59616"
+                    "sha256": "bab53b407b67caa170612602bd79d1a7d3abfc0b2e5a4080c71c04eda4d59616",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-emphasis-asterisk", "common-emphasis-underscore"]
+                    }
                 },
                 {
                     "title": "Spaces and word boundaries",
                     "line": 29,
                     "level": 2,
-                    "sha256": "0527944be6c5a8038aa4ef23f13d9f45adfebbef6202fc790a192774c8c89098"
+                    "sha256": "0527944be6c5a8038aa4ef23f13d9f45adfebbef6202fc790a192774c8c89098",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-emphasis-asterisk", "common-emphasis-underscore"]
+                    }
                 }
             ],
             "elements": ["EMPHASIS", "EMPHASIS_UNDERSCORE"],
@@ -1085,31 +1453,51 @@
                     "title": "Footnotes",
                     "line": 1,
                     "level": 1,
-                    "sha256": "375c45af55e130bb02e0ab6813c3eae9412f790397fde8c1536d57619cfcbe79"
+                    "sha256": "375c45af55e130bb02e0ab6813c3eae9412f790397fde8c1536d57619cfcbe79",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["gfm-footnote"]
+                    }
                 },
                 {
                     "title": "Definition bodies",
                     "line": 18,
                     "level": 2,
-                    "sha256": "cfacc4107c8fba92837417990472e333abd06602afaf613cc9c817cecfacefa6"
+                    "sha256": "cfacc4107c8fba92837417990472e333abd06602afaf613cc9c817cecfacefa6",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["gfm-footnote", "gfm-footnote-blocks"]
+                    }
                 },
                 {
                     "title": "Undefined calls",
                     "line": 41,
                     "level": 2,
-                    "sha256": "b44af8bda55bc510390b5bb65e305c10baa4532840fde88fcaa6d3c98bb61b8e"
+                    "sha256": "b44af8bda55bc510390b5bb65e305c10baa4532840fde88fcaa6d3c98bb61b8e",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["fallback-footnote"]
+                    }
                 },
                 {
                     "title": "Inline footnotes",
                     "line": 53,
                     "level": 2,
-                    "sha256": "dabe5a573e53e974bde0330c3cf18b1c616c3a45151fcd0f4fdb6671ff584b8a"
+                    "sha256": "dabe5a573e53e974bde0330c3cf18b1c616c3a45151fcd0f4fdb6671ff584b8a",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["inline-footnote", "footnote-nested-inline"]
+                    }
                 },
                 {
                     "title": "Walking and resolution",
                     "line": 77,
                     "level": 2,
-                    "sha256": "2dbce36fa7c1439138925cce0377c2143969844361aa0905fa12b7a18c4c66e0"
+                    "sha256": "2dbce36fa7c1439138925cce0377c2143969844361aa0905fa12b7a18c4c66e0",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["footnote-retention", "gfm-footnote-cycle"]
+                    }
                 }
             ],
             "elements": ["FOOTNOTE"],
@@ -1139,6 +1527,12 @@
                     "facets": ["reference-notes", "forward-resolution", "definition-bodies"]
                 },
                 {
+                    "id": "gfm-footnote-blocks",
+                    "scope": "paired-document-grammar",
+                    "identity": true,
+                    "facets": ["definition-blocks", "continuation-indentation"]
+                },
+                {
                     "id": "gfm-footnote-cycle",
                     "scope": "paired-document-grammar",
                     "identity": true,
@@ -1161,31 +1555,51 @@
                     "title": "Formulas",
                     "line": 1,
                     "level": 1,
-                    "sha256": "9e087eb82dba6ce35a884948fea6d710cb8cddf888a100d26e0051295b73cdb2"
+                    "sha256": "9e087eb82dba6ce35a884948fea6d710cb8cddf888a100d26e0051295b73cdb2",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["opaque-formula", "opaque-display"]
+                    }
                 },
                 {
                     "title": "Inline forms",
                     "line": 15,
                     "level": 2,
-                    "sha256": "991c20b587459dafe9aad5b0aa7e32ffc48c2bade0b45ce217db1757ed4a5fd3"
+                    "sha256": "991c20b587459dafe9aad5b0aa7e32ffc48c2bade0b45ce217db1757ed4a5fd3",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["opaque-formula", "formula-backtick", "formula-parenthesis", "formula-bracket"]
+                    }
                 },
                 {
                     "title": "Dollar boundaries",
                     "line": 38,
                     "level": 2,
-                    "sha256": "807cb409ab644a83639cd7c85e2e6f7d20cb5cfdc9ae56565644b43b2bba5aa6"
+                    "sha256": "807cb409ab644a83639cd7c85e2e6f7d20cb5cfdc9ae56565644b43b2bba5aa6",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["opaque-formula", "opaque-display", "fallback-formula"]
+                    }
                 },
                 {
                     "title": "Formula blocks",
                     "line": 57,
                     "level": 2,
-                    "sha256": "556626d935eda32eb29eb4914bb953ef53ca13fcd4dc7b3f74b9b68d77bce6b7"
+                    "sha256": "556626d935eda32eb29eb4914bb953ef53ca13fcd4dc7b3f74b9b68d77bce6b7",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["leaf-formula", "leaf-promotion", "formula-bracket-block"]
+                    }
                 },
                 {
                     "title": "Code fences",
                     "line": 75,
                     "level": 2,
-                    "sha256": "762ce890704678ef04135a62773468c7adeb7d66b697ce15f7a27e817de7bdf9"
+                    "sha256": "762ce890704678ef04135a62773468c7adeb7d66b697ce15f7a27e817de7bdf9",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["leaf-fence"]
+                    }
                 }
             ],
             "elements": ["FORMULA"],
@@ -1261,19 +1675,38 @@
                     "title": "Headings",
                     "line": 1,
                     "level": 1,
-                    "sha256": "cf1a1d079e3010f1d2a265a67a20bbe6591a5e7a432f7b5d6a96d0b142f7b97e"
+                    "sha256": "cf1a1d079e3010f1d2a265a67a20bbe6591a5e7a432f7b5d6a96d0b142f7b97e",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": [
+                            "common-atx-1",
+                            "common-atx-2",
+                            "common-atx-3",
+                            "common-atx-4",
+                            "common-atx-5",
+                            "common-atx-6"
+                        ]
+                    }
                 },
                 {
                     "title": "Underlined headings",
                     "line": 22,
                     "level": 2,
-                    "sha256": "98e84416498adb29725c60bdf008fb3d68d242267cb3cbe680fce1862e1f8b23"
+                    "sha256": "98e84416498adb29725c60bdf008fb3d68d242267cb3cbe680fce1862e1f8b23",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-setext-one", "common-setext-two"]
+                    }
                 },
                 {
                     "title": "Format a heading",
                     "line": 39,
                     "level": 2,
-                    "sha256": "95464d55987e9f36639f61691f38cb231de4b4f5a0bdfc72478c29ab24047b8c"
+                    "sha256": "95464d55987e9f36639f61691f38cb231de4b4f5a0bdfc72478c29ab24047b8c",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-atx-1", "attribute-heading"]
+                    }
                 }
             ],
             "elements": ["HEADING"],
@@ -1337,19 +1770,38 @@
                     "title": "HTML",
                     "line": 1,
                     "level": 1,
-                    "sha256": "1fbac5e0876f054401590b054218d2bfccde4a20adc0d0eb548ccb40ca0cc103"
+                    "sha256": "1fbac5e0876f054401590b054218d2bfccde4a20adc0d0eb548ccb40ca0cc103",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-inline-html"]
+                    }
                 },
                 {
                     "title": "HTML blocks",
                     "line": 15,
                     "level": 2,
-                    "sha256": "a5a9557311b4a09a43d0fe734c76c19a646d946a9ab3f0dab6e6ec9c28337ab5"
+                    "sha256": "a5a9557311b4a09a43d0fe734c76c19a646d946a9ab3f0dab6e6ec9c28337ab5",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": [
+                            "common-html-raw",
+                            "common-html-instruction",
+                            "common-html-declaration",
+                            "common-html-cdata",
+                            "common-html-block-tag",
+                            "common-html-complete-tag"
+                        ]
+                    }
                 },
                 {
                     "title": "Comments",
                     "line": 36,
                     "level": 2,
-                    "sha256": "fcab7c47f65bc29accbedea2091aae53c9adb001905fc58ad08503f9993d7872"
+                    "sha256": "fcab7c47f65bc29accbedea2091aae53c9adb001905fc58ad08503f9993d7872",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-html-comment", "common-inline-comment"]
+                    }
                 }
             ],
             "elements": ["HTML", "HTML_BLOCK"],
@@ -1407,19 +1859,31 @@
                     "title": "Insertions",
                     "line": 1,
                     "level": 1,
-                    "sha256": "c859a104fe185156a567fb682f43fbbe8210f86dea6fbd691a4e960c0bb69023"
+                    "sha256": "c859a104fe185156a567fb682f43fbbe8210f86dea6fbd691a4e960c0bb69023",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["insertion-strong", "run-insertion"]
+                    }
                 },
                 {
                     "title": "Nest and combine",
                     "line": 15,
                     "level": 2,
-                    "sha256": "41f9c24ce103a7a6f66042c71587b0fba67857098b5b803e970040b0ca1b0944"
+                    "sha256": "41f9c24ce103a7a6f66042c71587b0fba67857098b5b803e970040b0ca1b0944",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["insertion-strong", "composition-literal-islands"]
+                    }
                 },
                 {
                     "title": "Matching rules",
                     "line": 29,
                     "level": 2,
-                    "sha256": "f056a3860172627d8a0311eda8c2b114b327130d933aa22810ab9d36405fc41a"
+                    "sha256": "f056a3860172627d8a0311eda8c2b114b327130d933aa22810ab9d36405fc41a",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["run-insertion", "fallback-insertion"]
+                    }
                 }
             ],
             "elements": ["INSERTION"],
@@ -1453,19 +1917,32 @@
                     "title": "Line breaks",
                     "line": 1,
                     "level": 1,
-                    "sha256": "06c6864bcf3b09f2e651dad5fa64d181b2d7e6bdf60aa76e807557cff2a73fb4"
+                    "sha256": "06c6864bcf3b09f2e651dad5fa64d181b2d7e6bdf60aa76e807557cff2a73fb4",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-softbreak"]
+                    }
                 },
                 {
                     "title": "Hard breaks",
                     "line": 15,
                     "level": 2,
-                    "sha256": "58fa21d34f65609701c17d1569e0d621fa89733cb7ecb8be19bc1715f32903fd"
+                    "sha256": "58fa21d34f65609701c17d1569e0d621fa89733cb7ecb8be19bc1715f32903fd",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-hardbreak-backslash", "common-hardbreak-spaces"]
+                    }
                 },
                 {
                     "title": "Source positions",
                     "line": 31,
                     "level": 2,
-                    "sha256": "bec1be915971b2d388b417a819f116abc9f02c7c6ca59310702eefca89f49788"
+                    "sha256": "bec1be915971b2d388b417a819f116abc9f02c7c6ca59310702eefca89f49788",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-eol-lf", "common-eol-cr", "common-eol-crlf"],
+                        "note": "Line-ending spellings are source grammar; native coordinate attribution is an output contract owned by parity/regression."
+                    }
                 }
             ],
             "elements": ["LINE_BREAK"],
@@ -1499,43 +1976,82 @@
                     "title": "Links and images",
                     "line": 1,
                     "level": 1,
-                    "sha256": "d1056e515ca5c70a36c3cd7f96d13a87f61616bc4795acc574a73a29fd457296"
+                    "sha256": "d1056e515ca5c70a36c3cd7f96d13a87f61616bc4795acc574a73a29fd457296",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-link-direct", "common-image"]
+                    }
                 },
                 {
                     "title": "Reference links",
                     "line": 21,
                     "level": 2,
-                    "sha256": "4763d68ee6893c17b99d043791f715e5174cbeee412dba3f3834e838a67b0839"
+                    "sha256": "4763d68ee6893c17b99d043791f715e5174cbeee412dba3f3834e838a67b0839",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": [
+                            "common-reference-full",
+                            "common-reference-collapsed",
+                            "common-reference-shortcut",
+                            "common-reference-duplicate",
+                            "common-unresolved-reference"
+                        ]
+                    }
                 },
                 {
                     "title": "Automatic links",
                     "line": 41,
                     "level": 2,
-                    "sha256": "82d83587b529f4a38c4030f9ddccca45c2508adcfc8ed737555118adfece8456"
+                    "sha256": "82d83587b529f4a38c4030f9ddccca45c2508adcfc8ed737555118adfece8456",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-angle-autolink", "gfm-bare-autolink"]
+                    }
                 },
                 {
                     "title": "Images",
                     "line": 63,
                     "level": 2,
-                    "sha256": "f9623a4e7f25415d66a333eaefb375b84f6aaac17a43c65824d0b4b5979d7479"
+                    "sha256": "f9623a4e7f25415d66a333eaefb375b84f6aaac17a43c65824d0b4b5979d7479",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-image"]
+                    }
                 },
                 {
                     "title": "Image dimensions",
                     "line": 80,
                     "level": 2,
-                    "sha256": "9cb0c1985b899643145d48bba0f04522fc98563589be9b4fc22178306a37d55a"
+                    "sha256": "9cb0c1985b899643145d48bba0f04522fc98563589be9b4fc22178306a37d55a",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["image-dimensions", "embed-dimensions", "fallback-image-dimensions"]
+                    }
                 },
                 {
                     "title": "Attributes",
                     "line": 102,
                     "level": 2,
-                    "sha256": "ba141aee0d55e7ad85605d9104a1ee8d5b10c1cab5951abec9244ccbe7e1af38"
+                    "sha256": "ba141aee0d55e7ad85605d9104a1ee8d5b10c1cab5951abec9244ccbe7e1af38",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["attribute-link", "attribute-image", "attribute-reference"]
+                    }
                 },
                 {
                     "title": "Bracket precedence",
                     "line": 118,
                     "level": 2,
-                    "sha256": "a46dc676a5297e220204661ee1d6883e2539e6cc110b6c59ec4dcff0e9749a44"
+                    "sha256": "a46dc676a5297e220204661ee1d6883e2539e6cc110b6c59ec4dcff0e9749a44",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": [
+                            "record-span",
+                            "common-link-direct",
+                            "common-reference-shortcut",
+                            "common-unresolved-reference"
+                        ]
+                    }
                 }
             ],
             "elements": ["AUTOLINK", "LINK", "EMBEDDED"],
@@ -1623,31 +2139,51 @@
                     "title": "Lists",
                     "line": 1,
                     "level": 1,
-                    "sha256": "8aa6360e095d90bdb3fc29e967b9cb45580e64990799b50bbe9a055b1d9d5c7a"
+                    "sha256": "8aa6360e095d90bdb3fc29e967b9cb45580e64990799b50bbe9a055b1d9d5c7a",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-bullet-dash", "common-bullet-plus", "common-bullet-star"]
+                    }
                 },
                 {
                     "title": "Numbered lists",
                     "line": 21,
                     "level": 2,
-                    "sha256": "9fab2c2e4b04505dcf9a5f439b8f0afa6d5fc2f483503da2cb7efc073f081268"
+                    "sha256": "9fab2c2e4b04505dcf9a5f439b8f0afa6d5fc2f483503da2cb7efc073f081268",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["decimal-list", "common-list-parenthesis", "fallback-list-limit"]
+                    }
                 },
                 {
                     "title": "Alphabetic and Roman markers",
                     "line": 38,
                     "level": 2,
-                    "sha256": "4bbfd88e8295dcb1882c787f93d6bed69d4e686a2b2eb99e95c962a9a999c534"
+                    "sha256": "4bbfd88e8295dcb1882c787f93d6bed69d4e686a2b2eb99e95c962a9a999c534",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["alpha-list", "upper-list", "roman-list", "upper-roman-list"]
+                    }
                 },
                 {
                     "title": "Automatic markers",
                     "line": 71,
                     "level": 2,
-                    "sha256": "b90fb35bcb5eb3151f0b2975333cd8cfa05688dfc59f9c43cc221fdfda1c30b9"
+                    "sha256": "b90fb35bcb5eb3151f0b2975333cd8cfa05688dfc59f9c43cc221fdfda1c30b9",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["default-list", "enclosed-default-list"]
+                    }
                 },
                 {
                     "title": "Blank lines and starts",
                     "line": 82,
                     "level": 2,
-                    "sha256": "4293ff2a9f81305e10b30cda4302f00876c1b3f335c5be75edd6132591cfd299"
+                    "sha256": "4293ff2a9f81305e10b30cda4302f00876c1b3f335c5be75edd6132591cfd299",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-list-loose", "decimal-list"]
+                    }
                 }
             ],
             "elements": ["LIST"],
@@ -1741,19 +2277,31 @@
                     "title": "Highlights",
                     "line": 1,
                     "level": 1,
-                    "sha256": "3395e557db8063a0746664f7005760467a0096f9ab4534698c0c933b9bdee17b"
+                    "sha256": "3395e557db8063a0746664f7005760467a0096f9ab4534698c0c933b9bdee17b",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["run-mark"]
+                    }
                 },
                 {
                     "title": "Format highlighted text",
                     "line": 14,
                     "level": 2,
-                    "sha256": "f15c0f6200e8f46c2311bd3e3706e64422205e1683a1aacf50215b85b5250573"
+                    "sha256": "f15c0f6200e8f46c2311bd3e3706e64422205e1683a1aacf50215b85b5250573",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["mark-formatting"]
+                    }
                 },
                 {
                     "title": "When signs stay literal",
                     "line": 41,
                     "level": 2,
-                    "sha256": "e26774f78dd48fca1b1432b2235056c2ba4f7c302c3f7d37a1c529878ab6dd34"
+                    "sha256": "e26774f78dd48fca1b1432b2235056c2ba4f7c302c3f7d37a1c529878ab6dd34",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["fallback-mark"]
+                    }
                 }
             ],
             "elements": ["MARK"],
@@ -1763,6 +2311,12 @@
                     "scope": "paired-document-grammar",
                     "identity": true,
                     "facets": ["fallback", "rejected-prefix"]
+                },
+                {
+                    "id": "mark-formatting",
+                    "scope": "paired-document-grammar",
+                    "identity": false,
+                    "facets": ["formatted-content"]
                 },
                 {
                     "id": "run-mark",
@@ -1781,31 +2335,51 @@
                     "title": "Properties",
                     "line": 1,
                     "level": 1,
-                    "sha256": "5da6e48610d43f090cd20d55255a736282d44982cb28b2e1ca403d9b6dc4a495"
+                    "sha256": "5da6e48610d43f090cd20d55255a736282d44982cb28b2e1ca403d9b6dc4a495",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["metadata", "metadataempty"]
+                    }
                 },
                 {
                     "title": "Supported fields",
                     "line": 25,
                     "level": 2,
-                    "sha256": "0d0c81fc63f6d5fd26b9c7c37bffb3ab48075b4d152b45b78f432d997d52add1"
+                    "sha256": "0d0c81fc63f6d5fd26b9c7c37bffb3ab48075b4d152b45b78f432d997d52add1",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["metadata-types"]
+                    }
                 },
                 {
                     "title": "Values",
                     "line": 47,
                     "level": 2,
-                    "sha256": "b1ff70e4bb1fae4ab1ad76141aadce3039ea3b15330614ff89a04bb3ac274307"
+                    "sha256": "b1ff70e4bb1fae4ab1ad76141aadce3039ea3b15330614ff89a04bb3ac274307",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["metadata-types"]
+                    }
                 },
                 {
                     "title": "Literal prose",
                     "line": 87,
                     "level": 2,
-                    "sha256": "0cef42dbe7063f6fcf55076e73ce8621749e1fcaac45c394c42b360f56dc4fed"
+                    "sha256": "0cef42dbe7063f6fcf55076e73ce8621749e1fcaac45c394c42b360f56dc4fed",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["metadata-literal"]
+                    }
                 },
                 {
                     "title": "Envelope and recovery",
                     "line": 117,
                     "level": 2,
-                    "sha256": "b6744a138b23b7b69b6d525626447d9b87740ed48ceac06b7e7872ee19cc99a2"
+                    "sha256": "b6744a138b23b7b69b6d525626447d9b87740ed48ceac06b7e7872ee19cc99a2",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["metadataempty", "metadata-types", "fallback-noninitial-metadata"]
+                    }
                 }
             ],
             "elements": [],
@@ -1851,25 +2425,41 @@
                     "title": "Specimens (numbered examples)",
                     "line": 1,
                     "level": 1,
-                    "sha256": "2ec5dc8a31bb77d0d7500cdf380560a5ef82ca6323a298b875a3bc03911ab93c"
+                    "sha256": "2ec5dc8a31bb77d0d7500cdf380560a5ef82ca6323a298b875a3bc03911ab93c",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["specimen-graph"]
+                    }
                 },
                 {
                     "title": "Anonymous definitions and resets",
                     "line": 19,
                     "level": 2,
-                    "sha256": "9fdeddb8a659f08f52f75416d51162ce8a17f7c443cf826addf4ccb68d2cd024"
+                    "sha256": "9fdeddb8a659f08f52f75416d51162ce8a17f7c443cf826addf4ccb68d2cd024",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["specimen-reset", "specimen-groups"]
+                    }
                 },
                 {
                     "title": "Bodies and labels",
                     "line": 41,
                     "level": 2,
-                    "sha256": "ea13280615ea0f974588dee7e21e03a9530ac9db89e0a97c74eebcad66640ddc"
+                    "sha256": "ea13280615ea0f974588dee7e21e03a9530ac9db89e0a97c74eebcad66640ddc",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["specimen-graph", "specimen-groups"]
+                    }
                 },
                 {
                     "title": "Reference forms",
                     "line": 59,
                     "level": 2,
-                    "sha256": "8ddf91e07b7a032105ec0c4af94cd02f94e20e0dd3c285e6c6b37cc373b61e5c"
+                    "sha256": "8ddf91e07b7a032105ec0c4af94cd02f94e20e0dd3c285e6c6b37cc373b61e5c",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["specimen-graph"]
+                    }
                 }
             ],
             "elements": ["SPECIMEN"],
@@ -1903,19 +2493,31 @@
                     "title": "Strikethrough",
                     "line": 1,
                     "level": 1,
-                    "sha256": "5e59b48c6ef36f1bb5d6f761ab096b62ba41e300c9fd9cbd7bf4467ed1c2ad3e"
+                    "sha256": "5e59b48c6ef36f1bb5d6f761ab096b62ba41e300c9fd9cbd7bf4467ed1c2ad3e",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["gfm-strike", "run-strike"]
+                    }
                 },
                 {
                     "title": "Combine formatting",
                     "line": 15,
                     "level": 2,
-                    "sha256": "8a2f0c2c7aa88213da70b055b6acfdbb39f9180923b6e16e1a2bc70f46970b96"
+                    "sha256": "8a2f0c2c7aa88213da70b055b6acfdbb39f9180923b6e16e1a2bc70f46970b96",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["gfm-strike"]
+                    }
                 },
                 {
                     "title": "Literal tildes",
                     "line": 27,
                     "level": 2,
-                    "sha256": "f1879cea09c9cce7d25fd94c75499259b2ec3127d407fd007ba1d72d9290078a"
+                    "sha256": "f1879cea09c9cce7d25fd94c75499259b2ec3127d407fd007ba1d72d9290078a",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["fallback-strike", "run-sub"]
+                    }
                 }
             ],
             "elements": ["STRIKETHROUGH"],
@@ -1949,19 +2551,31 @@
                     "title": "Superscript and subscript",
                     "line": 1,
                     "level": 1,
-                    "sha256": "6376275fc5c84512f9d46a7c53d8235537013be6ca85625b39ae9825d140c83c"
+                    "sha256": "6376275fc5c84512f9d46a7c53d8235537013be6ca85625b39ae9825d140c83c",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["run-super", "run-sub", "script-empty"]
+                    }
                 },
                 {
                     "title": "Include formatting or spaces",
                     "line": 14,
                     "level": 2,
-                    "sha256": "0bded6d26eb29414cf6f37f10f7611736a55c1dd79515d198b6de34f7b052a5f"
+                    "sha256": "0bded6d26eb29414cf6f37f10f7611736a55c1dd79515d198b6de34f7b052a5f",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["script-formatting", "script-escaped-space"]
+                    }
                 },
                 {
                     "title": "Delimiter boundaries",
                     "line": 33,
                     "level": 2,
-                    "sha256": "2ffa1ec68d69cabd66b09101f5f5d30b4e52af9ff9a0133bc157292029f489f6"
+                    "sha256": "2ffa1ec68d69cabd66b09101f5f5d30b4e52af9ff9a0133bc157292029f489f6",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["fallback-script", "run-super", "run-sub"]
+                    }
                 }
             ],
             "elements": ["SUPERSCRIPT", "SUBSCRIPT"],
@@ -2013,73 +2627,134 @@
                     "title": "Tables",
                     "line": 1,
                     "level": 1,
-                    "sha256": "9188173a3bc6df5960c9a54f44daa5e6868f43042741cd94bc686690dcc1814a"
+                    "sha256": "9188173a3bc6df5960c9a54f44daa5e6868f43042741cd94bc686690dcc1814a",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["gfm-pipe-table", "simple-matrix", "multiline-matrix", "grid-cell"]
+                    }
                 },
                 {
                     "title": "Pipe tables",
                     "line": 10,
                     "level": 2,
-                    "sha256": "80a068a7a58bed3565457224f5930433d71b55463dac95d378d2dceaed30485a"
+                    "sha256": "80a068a7a58bed3565457224f5930433d71b55463dac95d378d2dceaed30485a",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["gfm-pipe-table", "gfm-pipe-ragged"]
+                    }
                 },
                 {
                     "title": "Pipes inside cells",
                     "line": 35,
                     "level": 3,
-                    "sha256": "c7d86f5c326524fa8802ffc1bed3a2279724fde88bf1ed8c65c65ef5a2c1fbd7"
+                    "sha256": "c7d86f5c326524fa8802ffc1bed3a2279724fde88bf1ed8c65c65ef5a2c1fbd7",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["gfm-pipe-ragged", "cross-link-table", "cross-embed-table"]
+                    }
                 },
                 {
                     "title": "Captions",
                     "line": 50,
                     "level": 2,
-                    "sha256": "1b58db42d0cb982880eec4dfd05abe2737832b8a505631ebda1fa3d822f2e029"
+                    "sha256": "1b58db42d0cb982880eec4dfd05abe2737832b8a505631ebda1fa3d822f2e029",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["leading-caption", "trailing-caption", "sparse-grid"]
+                    }
                 },
                 {
                     "title": "Simple tables",
                     "line": 78,
                     "level": 2,
-                    "sha256": "63d547b25b5abca3df164ade2db40ba726fff76cce4e1a377dfd46ea346b99d7"
+                    "sha256": "63d547b25b5abca3df164ade2db40ba726fff76cce4e1a377dfd46ea346b99d7",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["simple-matrix", "headless-matrix"]
+                    }
                 },
                 {
                     "title": "Multiline tables",
                     "line": 117,
                     "level": 2,
-                    "sha256": "19e707c0324e6f0f62a4c2ee271c78549538987b1a92209fffcc221f23bcae21"
+                    "sha256": "19e707c0324e6f0f62a4c2ee271c78549538987b1a92209fffcc221f23bcae21",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["multiline-matrix", "headless-multiline"]
+                    }
                 },
                 {
                     "title": "Grid tables",
                     "line": 148,
                     "level": 2,
-                    "sha256": "fe30992633d63c6f1b361f79fe8d6afefb493ed6dfcaf2e775407dd0fda88de4"
+                    "sha256": "fe30992633d63c6f1b361f79fe8d6afefb493ed6dfcaf2e775407dd0fda88de4",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["grid-cell", "sparse-grid"]
+                    }
                 },
                 {
                     "title": "Merged cells",
                     "line": 166,
                     "level": 3,
-                    "sha256": "508b139f9366bce0c108f5101bfb29282592d3894bf7cef20b84247a137119b5"
+                    "sha256": "508b139f9366bce0c108f5101bfb29282592d3894bf7cef20b84247a137119b5",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["sparse-grid"]
+                    }
                 },
                 {
                     "title": "Foot rows",
                     "line": 194,
                     "level": 3,
-                    "sha256": "952c3083226671357904ded75e7c06f5b5cc52344ccd9ddd2c35618b6934f730"
+                    "sha256": "952c3083226671357904ded75e7c06f5b5cc52344ccd9ddd2c35618b6934f730",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["sparse-grid"]
+                    }
                 },
                 {
                     "title": "Boundaries and row groups",
                     "line": 211,
                     "level": 3,
-                    "sha256": "a4b50f863d2ee0dcd991166f520c78b6af37401bf502711f69797ae78b3856b3"
+                    "sha256": "a4b50f863d2ee0dcd991166f520c78b6af37401bf502711f69797ae78b3856b3",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["sparse-grid", "fallback-grid"]
+                    }
                 },
                 {
                     "title": "Column widths and source positions",
                     "line": 231,
                     "level": 2,
-                    "sha256": "cddff1849c1ee392aa76287395caed27ae644e0a5aff60ef0646ca56c5d6cb49"
+                    "sha256": "cddff1849c1ee392aa76287395caed27ae644e0a5aff60ef0646ca56c5d6cb49",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": [
+                            "grid-cell",
+                            "multiline-matrix",
+                            "headless-multiline",
+                            "block-id-container-table"
+                        ],
+                        "note": "Authored geometry has explicit local boundary proofs; numeric width output and original-coordinate contracts remain parity/regression responsibilities."
+                    }
                 },
                 {
                     "title": "Competing block syntax",
                     "line": 250,
                     "level": 2,
-                    "sha256": "15848b2923c6f996b4242f01a024271bd4e138e33638837236011e4bdc58d0fd"
+                    "sha256": "15848b2923c6f996b4242f01a024271bd4e138e33638837236011e4bdc58d0fd",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": [
+                            "common-setext-one",
+                            "common-setext-two",
+                            "simple-matrix",
+                            "multiline-matrix",
+                            "grid-cell",
+                            "fallback-grid"
+                        ]
+                    }
                 }
             ],
             "elements": ["TABLE"],
@@ -2161,23 +2836,41 @@
                     "title": "Task lists",
                     "line": 1,
                     "level": 1,
-                    "sha256": "e62a7bee107c78bfcf5ac4a99f22b669e2b2fa2b184820d40f39557d98a9d756"
+                    "sha256": "e62a7bee107c78bfcf5ac4a99f22b669e2b2fa2b184820d40f39557d98a9d756",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["gfm-task-open", "gfm-task-lower", "gfm-task-upper"]
+                    }
                 },
                 {
                     "title": "Custom markers and nesting",
                     "line": 19,
                     "level": 2,
-                    "sha256": "83e608e2845916e457f4f7d63af5d68b385f552a815e350fa03493aeaa11b88c"
+                    "sha256": "83e608e2845916e457f4f7d63af5d68b385f552a815e350fa03493aeaa11b88c",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["task-value", "task-unicode", "task-nested"]
+                    }
                 },
                 {
                     "title": "Required separator",
                     "line": 31,
                     "level": 2,
-                    "sha256": "71666d40e433ea8b403318f954530d67d66e6fc7741540d49b6a105eec3b56f4"
+                    "sha256": "71666d40e433ea8b403318f954530d67d66e6fc7741540d49b6a105eec3b56f4",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["fallback-task-separator", "task-heading"]
+                    }
                 }
             ],
             "elements": [],
             "certificates": [
+                {
+                    "id": "fallback-task-separator",
+                    "scope": "paired-document-grammar",
+                    "identity": true,
+                    "facets": ["required-separator", "invalid-marker"]
+                },
                 {
                     "id": "gfm-task-lower",
                     "scope": "paired-document-grammar",
@@ -2203,6 +2896,12 @@
                     "facets": ["heading-body", "first-block"]
                 },
                 {
+                    "id": "task-nested",
+                    "scope": "paired-document-grammar",
+                    "identity": true,
+                    "facets": ["nested-tasks", "ordered-task"]
+                },
+                {
                     "id": "task-unicode",
                     "scope": "paired-document-grammar",
                     "identity": false,
@@ -2225,7 +2924,11 @@
                     "title": "Thematic breaks",
                     "line": 1,
                     "level": 1,
-                    "sha256": "23b28c0c1be24aae6a67169b21d760868f2a7bbee4f83759195d10114e37db48"
+                    "sha256": "23b28c0c1be24aae6a67169b21d760868f2a7bbee4f83759195d10114e37db48",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["common-thematic-dash", "common-thematic-star", "common-thematic-underscore"]
+                    }
                 }
             ],
             "elements": ["THEMATIC_BREAK"],

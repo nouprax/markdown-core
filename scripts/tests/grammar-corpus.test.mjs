@@ -29,7 +29,13 @@ import {
 import { pairReviews } from "../lib/pair-review.mjs";
 import { productionProofs } from "../lib/pair-productions.mjs";
 import { featureGrammars, finiteLexicons } from "../lib/grammar-features.mjs";
-import { featureCoverage, validateFeatureCoverage, specificationSections } from "../lib/grammar-coverage.mjs";
+import {
+    featureCoverage,
+    validateFeatureCoverage,
+    specificationSections,
+    reviewedSections
+} from "../lib/grammar-coverage.mjs";
+import { sectionDispositions } from "../lib/grammar-sections.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const full = grammarCertificates.filter((c) => c.scope === "paired-document-grammar");
@@ -48,8 +54,8 @@ const fresh = () => ({
 
 test("catalog is a complete reviewable corpus with exact grammar/proof/example provenance", () => {
     validateGrammarCertificates();
-    assert.equal(grammarCertificates.length, 185);
-    assert.equal(full.length, 173);
+    assert.equal(grammarCertificates.length, 194);
+    assert.equal(full.length, 182);
     assert.equal(split.length, 12);
     assert.deepEqual(new Set(grammarCertificates.flatMap((c) => c.legacy)), new Set(pairReviews.keys()));
     assert.deepEqual(
@@ -168,7 +174,7 @@ test("boundary splits keep every byte and every independent field, with measured
 
 test("scaled corpus repeats derivations, keeps metadata document-initial, and records exact normal forms", () => {
     const corpus = buildGrammarCorpus();
-    assert.equal(corpus.cases.length, 788);
+    assert.equal(corpus.cases.length, 824);
     for (const proof of corpus.proofs) {
         assert.ok(proof.units >= 12 * proof.scale);
         assert.equal(
@@ -321,7 +327,7 @@ test("the complete syntax and element inventories fail closed when a feature, ru
                 ...corpus,
                 certificates: corpus.certificates.filter((entry) => entry.id !== "metadata-types")
             }),
-        /coverage changed/u
+        /coverage changed|unknown grammar certificate/u
     );
     assert.throws(
         () =>
@@ -336,6 +342,50 @@ test("the complete syntax and element inventories fail closed when a feature, ru
     assert.notDeepEqual(specificationSections(source), specificationSections(source.replace("One.", "Two.")));
     assert.ok(
         featureCoverage(root, corpus).features.every((entry) => entry.certificates.length && entry.sections.length)
+    );
+});
+
+test("section coverage requires explicit proof links before a ledger can be regenerated", () => {
+    const sections = specificationSections(fs.readFileSync(path.join(root, "docs/specs/dialect/formulas.md"), "utf8"));
+    const certificates = new Map(grammarCertificates.map((certificate) => [certificate.id, certificate]));
+    assert.throws(
+        () =>
+            reviewedSections(
+                "formulas",
+                [
+                    ...sections,
+                    {
+                        title: "New formula production",
+                        line: 999,
+                        level: 2,
+                        sha256: "new"
+                    }
+                ],
+                certificates
+            ),
+        /explicit disposition/u
+    );
+    assert.throws(() => reviewedSections("formulas", sections.slice(1), certificates), /explicit disposition/u);
+    const decisions = { ...sectionDispositions.formulas };
+    decisions.Formulas = { kind: "grammar", certificates: [] };
+    assert.throws(
+        () => reviewedSections("formulas", sections, certificates, decisions),
+        /missing grammar certificate/u
+    );
+    decisions.Formulas = { kind: "grammar", certificates: ["unproved-formula"] };
+    assert.throws(
+        () => reviewedSections("formulas", sections, certificates, decisions),
+        /unknown grammar certificate/u
+    );
+    decisions.Formulas = { kind: "context", reason: "" };
+    assert.throws(() => reviewedSections("formulas", sections, certificates, decisions), /context needs a reason/u);
+    const ledger = featureCoverage(root, buildGrammarCorpus({ units: 1, scale: 1 }));
+    const all = ledger.features.flatMap((feature) => feature.sections);
+    assert.equal(all.filter((section) => section.disposition.kind === "grammar").length, 132);
+    assert.equal(all.filter((section) => section.disposition.kind === "context").length, 4);
+    assert.deepEqual(
+        new Set(all.flatMap((section) => section.disposition.certificates ?? [])),
+        new Set(certificates.keys())
     );
 });
 

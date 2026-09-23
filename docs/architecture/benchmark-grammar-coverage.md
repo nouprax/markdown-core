@@ -18,9 +18,12 @@ the responsibility of the existing parity and regression pipelines.
 3. A boundary retains its complete host and an exhaustive byte partition, names
    the unmatched reference productions, and supplies a positive proof for the
    complete local field grammar. A local ratio never certifies a host ratio.
-4. The ledger binds every specification section by digest. A new specification,
-   element, section or changed rule fails the grammar coverage check until its
-   disposition is reviewed. Correctness fixtures and native output assertions
+4. Every specification section has an explicit disposition in
+   `scripts/lib/grammar-sections.mjs`: source-grammar sections name their
+   certificates, while context-only sections explain why they introduce no new
+   source production. Missing/renamed sections, stale links, nonexistent or empty
+   certificate lists fail before the ledger can be regenerated. Every certificate
+   must have a section link. Source digests additionally expose changed rules. Correctness fixtures and native output assertions
    remain in parity/regression; changing them does not change this proof identity.
 5. The generated source, grammar, normal form, proof identity and
    Callgrind reports travel together. Filtering a benchmark selects both sides
@@ -31,8 +34,13 @@ the responsibility of the existing parity and regression pipelines.
    coverage. Callgrind measures these generated documents.
 
 There are **30 specification features, 136 sections, 32 registered elements,
-185 certificates and 788 generated documents** at the default two scales.
-Of these, **173 certify whole declared languages and 12 certify local boundary
+194 certificates and 824 generated documents** at the default two scales.
+Of the 136 sections, **132 link to grammar certificates and four are explicitly
+context-only** (automatic-anchor output, anchor ownership, and two navigation
+introductions). Cross-feature links reuse the same certificate; a documentation
+heading does not demand another benchmark. Mixed sections link their source
+productions and explicitly keep output-coordinate rules in parity/regression.
+Of these, **182 certify whole declared languages and 12 certify local boundary
 languages**. This is feature coverage, not a theorem that the union of these
 restricted grammars equals every possible document of the unrestricted dialect.
 In particular a boundary's residual is not proved impossible to match against
@@ -48,21 +56,21 @@ all imaginable reference grammars. The ledger exposes that distinction.
 | Code | Code spans, backtick runs, padding/newlines, both fence characters, info and indented blocks. |
 | HTML | Inline tags/attributes, raw blocks, processing instructions, declarations, CDATA, block/complete tags; comments have their own families. |
 | Insertions | Recursive insertion/strong substitution, runs, protected code and rejected openers. |
-| Highlights | Paired runs and rejected openers. |
+| Highlights | Paired runs, formatted bodies and rejected openers. |
 | Strikethrough | Same-input GFM pairs, cross-syntax pairs and rejected openers. |
 | Super/subscript | Both markers, formatted content, empty superscript, escaped spaces and raw-space rejection. |
 | Comments | Inline/block percent forms, empty comments, inline/block HTML comments and fallback. |
 | Formulas | Dollar, backtick-dollar, doubled-backslash parentheses/brackets, blocks, formula fences, promotion and fallback. |
 | Bracketed spans | Empty, nested, record/class forms and rejected suffixes. |
 | Links/images | Direct links/images, all reference forms, duplicate and unresolved references, angle/bare autolinks; numeric dimensions have an explicit boundary. |
-| Cross links/embeds | Absent/empty/raw labels, path/local/heading/block targets, embed forms and fallback; numeric dimensions remain a boundary. |
+| Cross links/embeds | Absent/empty/raw labels, path/local/heading/block targets, embed forms, escaped pipes within tables and fallback; numeric dimensions remain a boundary. |
 | Anchors | Explicit IDs, last/empty ID, Unicode/duplicate/empty automatic bases and implicit references. |
-| Block IDs | Paragraph, list-item and standalone container declarations. |
-| Footnotes | GFM references, nested inline notes, cycles, duplicate/unused definitions, repeated calls and fallback. The GFM retention difference is documented for cost interpretation. |
+| Block IDs | Paragraph, list-item, list/quote/table container declarations and escaped markers. |
+| Footnotes | GFM references and multi-block definitions, nested inline notes, cycles, duplicate/unused definitions, repeated calls and fallback. The GFM retention difference is documented for cost interpretation. |
 | Citations | Author/suppressed/normal modes, groups, independent prefix/key/suffix and rejected keys. |
 | Specimens | Definition/call equality, explicit nine-digit resets, anonymous/duplicate definitions and group reset suppression have constructive whole-language counterparts. |
 | Lists | Three bullets, decimal delimiters, tight/loose/nested/empty items; alpha/Roman canonical finite domains and default markers have constructive proofs. |
-| Tasks | Standard states, custom/Unicode markers and heading bodies. |
+| Tasks | Standard states, custom/Unicode markers, nested ordered tasks, heading bodies and missing-separator fallback. |
 | Definition lists | Tight/loose, multiple/empty definitions and multiple blocks. |
 | Quotes/callouts | Same-input plain/nested/lazy quotes; variable type and all three collapse states have invertible counterparts. |
 | Tables | Same-input pipe/alignment/ragged/escaped-pipe forms, both captions; simple, headless, multiline, grid, spans, sparse rows and footer use geometry boundaries. |

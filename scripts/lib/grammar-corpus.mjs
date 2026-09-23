@@ -1207,6 +1207,7 @@ export function grammarSourceIdentity(root = fileURLToPath(new URL("../../", imp
         "scripts/lib/grammar-corpus.mjs",
         "scripts/lib/grammar-features.mjs",
         "scripts/lib/grammar-coverage.mjs",
+        "scripts/lib/grammar-sections.mjs",
         "scripts/lib/element-inventory.mjs",
         "scripts/lib/pair-productions.mjs",
         "scripts/lib/pair-review.mjs",

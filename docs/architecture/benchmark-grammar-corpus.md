@@ -2,11 +2,13 @@
 
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
-contains all 185 certificates, their concrete grammars, normal forms and two
-complete examples per family. The default run emits 788 documents at two scales:
-173 whole declared-language pairs and 12 local boundary pairs with complete
+contains all 194 certificates, their concrete grammars, normal forms and two
+complete examples per family. The default run emits 824 documents at two scales:
+182 whole declared-language pairs and 12 local boundary pairs with complete
 hosts. The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
-30 syntax-guide features, 136 sections and 32 registered elements. The historical
+30 syntax-guide features, 136 sections and 32 registered elements. Its explicit
+section mapping names certificates for 132 source-language sections and gives
+reviewed context-only dispositions for four sections. The historical
 30 scenarios and 43 structural domains remain accounted for, but their counts
 are no longer used as a claim of complete feature coverage.
 

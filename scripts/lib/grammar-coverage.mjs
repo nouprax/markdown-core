@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { readElementInventory } from "./element-inventory.mjs";
+import { sectionDispositions } from "./grammar-sections.mjs";
 
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 // The specification is the feature boundary. These links retain the earlier
@@ -89,6 +90,39 @@ export function specificationSections(source) {
     }));
 }
 
+/** A refreshed source digest cannot supply a missing coverage decision. */
+export function reviewedSections(feature, sections, certificates, dispositions = sectionDispositions[feature]) {
+    assert.ok(dispositions, `${feature}: missing section dispositions`);
+    const titles = sections.map((section) => section.title);
+    assert.equal(new Set(titles).size, titles.length, `${feature}: ambiguous section titles`);
+    assert.deepEqual(
+        Object.keys(dispositions).sort(),
+        [...titles].sort(),
+        `${feature}: every specification section needs an explicit disposition`
+    );
+    return sections.map((section) => {
+        const disposition = dispositions[section.title];
+        if (disposition.kind === "grammar") {
+            assert.ok(
+                Array.isArray(disposition.certificates) && disposition.certificates.length,
+                `${feature}/${section.title}: missing grammar certificate`
+            );
+            assert.equal(
+                new Set(disposition.certificates).size,
+                disposition.certificates.length,
+                `${feature}/${section.title}: duplicate grammar certificate`
+            );
+            for (const id of disposition.certificates)
+                assert.ok(certificates.has(id), `${feature}/${section.title}: unknown grammar certificate ${id}`);
+        } else {
+            assert.equal(disposition.kind, "context", `${feature}/${section.title}: invalid disposition kind`);
+            assert.equal(typeof disposition.reason, "string");
+            assert.ok(disposition.reason.trim(), `${feature}/${section.title}: context needs a reason`);
+        }
+        return { ...section, disposition };
+    });
+}
+
 export function featureCoverage(root, corpus) {
     const specDirectory = "docs/specs/dialect";
     const specifications = fs
@@ -100,6 +134,11 @@ export function featureCoverage(root, corpus) {
         Object.keys(featureOwners).sort(),
         specifications,
         "every syntax specification needs an explicit feature disposition"
+    );
+    assert.deepEqual(
+        Object.keys(sectionDispositions).sort(),
+        specifications,
+        "every feature needs reviewed section dispositions"
     );
     const inventory = readElementInventory(path.join(root, "packages/markdown-core/elements"));
     const elements = Object.values(featureOwners)
@@ -147,16 +186,28 @@ export function featureCoverage(root, corpus) {
             feature: name,
             specification: spec,
             sha256: digest(source),
-            sections: specificationSections(source),
+            sections: reviewedSections(name, specificationSections(source), certificates),
             elements: owner.elements,
             certificates: proofs
         };
     });
     assert.deepEqual(covered, new Set(certificates.keys()), "every certificate must have a specification owner");
+    const referenced = new Set(
+        features.flatMap((feature) =>
+            feature.sections.flatMap((section) =>
+                section.disposition.kind === "grammar" ? section.disposition.certificates : []
+            )
+        )
+    );
+    assert.deepEqual(
+        referenced,
+        new Set(certificates.keys()),
+        "every certificate needs an explicit specification-section link"
+    );
     return {
-        version: 1,
+        version: 2,
         contract:
-            "Every syntax feature and registered element has generated grammar-certified inputs; every specification section has a reviewed, content-bound disposition. Parser correctness is owned by parity and regression suites. Whole-language proofs apply only to the declared grammars; local boundaries do not certify their residual host grammar.",
+            "Every syntax feature and registered element has generated grammar-certified inputs; every specification section explicitly names its source-grammar certificates or explains why it introduces no grammar obligation. Parser correctness is owned by parity and regression suites. Whole-language proofs apply only to the declared grammars; local boundaries do not certify their residual host grammar.",
         guide: {
             file: "docs/specs/dialect.md",
             sha256: digest(fs.readFileSync(path.join(root, "docs/specs/dialect.md")))
