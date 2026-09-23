@@ -755,7 +755,19 @@ function buildRunners(profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions,
         ],
         { env: buildEnvironment(), cwd: sourceRoot }
     );
-    run("cmake", ["--build", profile.binaryDir, "--parallel"], { env: buildEnvironment(), cwd: sourceRoot });
+    // Independent benchmarks may use adapters that do not compile against the
+    // selected base revision. Build only this measurement's registered runners.
+    run(
+        "cmake",
+        [
+            "--build",
+            profile.binaryDir,
+            "--parallel",
+            "--target",
+            ...Object.values(MEASURED_BINARIES).map((runner) => path.basename(runner))
+        ],
+        { env: buildEnvironment(), cwd: sourceRoot }
+    );
     stampTree(profile.binaryDir, profile, versions);
 }
 
