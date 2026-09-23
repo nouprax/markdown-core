@@ -9,7 +9,7 @@
  * language, from the same codebase cmark is.
  *
  * It is pinned already, as the GFM extension oracle in
- * scripts/init-environment.sh; this reads the same build.
+ * scripts/tooling/setup-environment.sh; this reads the same build.
  *
  * The stage split is cmark's, unchanged: `cmark_parser_feed` is the
  * source-to-buffer path and `cmark_parser_finish` is the buffer-to-AST path,

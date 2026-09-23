@@ -30,7 +30,7 @@ extern "C" {
  * THE SEAM IS THE LINKER, NOT A GLOBAL, and that is forced by two contracts
  * this repository already holds:
  *
- *   - `scripts/audit-package-contents.sh`: "The engine holds no process-level
+ *   - `scripts/audit/check-package-contents.sh`: "The engine holds no process-level
  *     mutable state by contract: every object in the installed static archives
  *     must be free of writable data/bss/common/TLS definitions." A swappable
  *     allocator variable is exactly that, so there is no global to swap.

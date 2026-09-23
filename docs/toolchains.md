@@ -1,7 +1,7 @@
 # Supported toolchains
 
 This is the normative toolchain contract for Markdown Core. The exact pins live
-in `scripts/init-environment.sh`; `scripts/audit-toolchain-versions.sh` checks
+in `scripts/tooling/setup-environment.sh`; `scripts/audit/check-toolchain-versions.sh` checks
 that workflows, wrappers, manifests, consumers, and the cloud image agree with
 that source of truth. The versions below were reviewed on 2026-09-02.
 
@@ -50,7 +50,7 @@ three Swift manifests and the deployment-contract matrix.
 Check a prepared machine without downloading anything:
 
 ```sh
-scripts/init-environment.sh --check
+scripts/tooling/setup-environment.sh --check
 pnpm audit:toolchains
 ```
 

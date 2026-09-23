@@ -3,7 +3,7 @@
 `deltas.json` pins cmark-gfm `0.29.0.gfm.13` and registers every reviewed
 difference in the GFM extension layer.
 
-`scripts/check-upstream-parity.mjs --oracle gfm` enforces it. It selects only
+`scripts/correctness/check-upstream-parity.mjs --oracle gfm` enforces it. It selects only
 GFM extension sections and extension-tagged regressions, runs Markdown Core
 with the product scanners excluded through the harness's internal layer
 selection, and fails on any unregistered drift.
@@ -65,7 +65,7 @@ reproducing, so a fix upstream cannot pass unnoticed).
 ## Running it
 
 ```sh
-scripts/init-environment.sh --install oracle-cmark-gfm # build the pinned oracle
+scripts/tooling/setup-environment.sh --install oracle-cmark-gfm # build the pinned oracle
 pnpm build:c
 pnpm check:gfm-parity                                  # add -- --verbose for every diff
 ```

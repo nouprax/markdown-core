@@ -37,7 +37,7 @@ jobs:
               with:
                   node-version: 26.8.1
             - name: Validate exact SemVer tag and coordinated versions
-              run: node scripts/check-release-version.mjs --skip-swift --tag="$GITHUB_REF_NAME"
+              run: node scripts/release/check-version.mjs --skip-swift --tag="$GITHUB_REF_NAME"
             - name: Require the tag commit to be on main
               run: |
                   git fetch --no-tags origin main
@@ -70,7 +70,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - name: Build and audit C release artifact
-              run: scripts/stage-c-release.sh build/release-c
+              run: scripts/release/stage-c.sh build/release-c
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: release-c-${{ matrix.artifact-label }}
@@ -87,9 +87,9 @@ jobs:
               with:
                   xcode-version: "26.6"
             - name: Check prepared Swift release environment
-              run: scripts/init-environment.sh --check wrappers swift
+              run: scripts/tooling/setup-environment.sh --check wrappers swift
             - name: Validate Swift source archive and product consumer
-              run: scripts/check-swift-source-archive.sh build/release-swift
+              run: scripts/release/check-swift-source-archive.sh build/release-swift
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: release-swift-source
@@ -114,9 +114,9 @@ jobs:
                   version: 6.0.9
             - run: pnpm install --frozen-lockfile
             - name: Check prepared npm release environment
-              run: scripts/init-environment.sh --check node emscripten dependencies
+              run: scripts/tooling/setup-environment.sh --check node emscripten dependencies
             - name: Build, pack, and run the npm artifact consumer
-              run: scripts/stage-npm-release.sh build/release-npm
+              run: scripts/release/stage-npm.sh build/release-npm
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: release-npm-package
@@ -148,9 +148,9 @@ jobs:
                   packages: platform-tools
             - run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
             - name: Check prepared Android release environment
-              run: scripts/init-environment.sh --check java wrappers android
+              run: scripts/tooling/setup-environment.sh --check java wrappers android
             - name: Build Linux, root, JVM, and Android Maven publications
-              run: scripts/stage-maven-publications.sh build/release-maven-linux linux-release
+              run: scripts/release/stage-maven-publications.sh build/release-maven-linux linux-release
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: release-maven-linux
@@ -170,9 +170,9 @@ jobs:
                   distribution: temurin
                   java-version: 26
             - name: Check prepared macOS publication environment
-              run: scripts/init-environment.sh --check java wrappers
+              run: scripts/tooling/setup-environment.sh --check java wrappers
             - name: Build macOS Native publication and JVM payload
-              run: scripts/stage-maven-publications.sh build/release-maven-macos macos-native
+              run: scripts/release/stage-maven-publications.sh build/release-maven-macos macos-native
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: release-maven-macos
@@ -202,7 +202,7 @@ jobs:
                   packages: platform-tools
             - run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
             - name: Check prepared staged-consumer environment
-              run: scripts/init-environment.sh --check java wrappers android
+              run: scripts/tooling/setup-environment.sh --check java wrappers android
             - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
               with:
                   name: release-maven-linux
@@ -213,7 +213,7 @@ jobs:
                   path: build/release-maven-macos
             - name: Aggregate the complete deployment
               run: |
-                  node scripts/merge-maven-publications.mjs \
+                  node scripts/release/merge-maven-publications.mjs \
                       build/release-maven-linux \
                       build/release-maven-macos \
                       build/release-maven-central
@@ -221,11 +221,11 @@ jobs:
               env:
                   MAVEN_SIGNING_KEY: ${{ secrets.MAVEN_SIGNING_KEY }}
                   MAVEN_SIGNING_PASSWORD: ${{ secrets.MAVEN_SIGNING_PASSWORD }}
-              run: scripts/sign-maven-publications.sh build/release-maven-central
+              run: scripts/release/sign-maven-publications.sh build/release-maven-central
             - name: Run staged consumers and audit the final bundle
               run: |
-                  scripts/check-kotlin-consumers.sh --repository build/release-maven-central
-                  node scripts/audit-maven-publications.mjs \
+                  scripts/conformance/check-kotlin-consumers.sh --repository build/release-maven-central
+                  node scripts/audit/check-maven-publications.mjs \
                       build/release-maven-central --full --signed
                   (cd build/release-maven-central && zip -qr ../markdown-core-maven-central.zip com/nouprax)
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -272,7 +272,7 @@ jobs:
                   MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
                   MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
               run: |
-                  deployment=$(scripts/central-portal.sh upload build/markdown-core-maven-central.zip)
+                  deployment=$(scripts/release/manage-central.sh upload build/markdown-core-maven-central.zip)
                   echo "deployment-id=$deployment" >>"$GITHUB_OUTPUT"
                   mkdir -p build/central-deployment
                   {
@@ -280,7 +280,7 @@ jobs:
                       echo "release-tag=$GITHUB_REF_NAME"
                       echo "version=$(cat VERSION)"
                   } >build/central-deployment/central-deployment.env
-                  scripts/wait-central-deployment.sh "$deployment" VALIDATED
+                  scripts/release/wait-central-deployment.sh "$deployment" VALIDATED
             - name: Publish the deployment binding for manual resume
               # Uploaded even when the VALIDATED wait above fails: a resume
               # must recover the deployment this run created, and only this
@@ -327,8 +327,8 @@ jobs:
                   MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
                   MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
               run: |
-                  scripts/central-portal.sh publish "$DEPLOYMENT_ID"
-                  scripts/wait-central-deployment.sh "$DEPLOYMENT_ID" PUBLISHED
+                  scripts/release/manage-central.sh publish "$DEPLOYMENT_ID"
+                  scripts/release/wait-central-deployment.sh "$DEPLOYMENT_ID" PUBLISHED
 
     github-release:
         name: Publish Release - GitHub
@@ -359,7 +359,7 @@ jobs:
                   name: release-maven-central
                   path: release-files
             - name: Create release checksums
-              run: scripts/create-release-checksums.sh release-files
+              run: scripts/release/create-checksums.sh release-files
             - name: Attest release artifact provenance
               uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
               with:
@@ -398,7 +398,7 @@ jobs:
                   registry-url: https://registry.npmjs.org
             - name: Validate the protected release tag
               run: |
-                  node scripts/check-release-version.mjs --skip-swift --tag="$RELEASE_TAG"
+                  node scripts/release/check-version.mjs --skip-swift --tag="$RELEASE_TAG"
                   test -s "docs/releases/$(cat VERSION).md"
                   git fetch --no-tags origin main
                   git merge-base --is-ancestor HEAD origin/main
@@ -460,19 +460,19 @@ jobs:
                   MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
                   MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
               run: |
-                  state=$(scripts/central-portal.sh status "$DEPLOYMENT_ID" | jq -r '.deploymentState')
+                  state=$(scripts/release/manage-central.sh status "$DEPLOYMENT_ID" | jq -r '.deploymentState')
                   case "$state" in
                       PUBLISHED)
                           echo "Central deployment $DEPLOYMENT_ID is already published" ;;
                       VALIDATED|PUBLISHING)
-                          scripts/central-portal.sh publish "$DEPLOYMENT_ID" || true
-                          scripts/wait-central-deployment.sh "$DEPLOYMENT_ID" PUBLISHED ;;
+                          scripts/release/manage-central.sh publish "$DEPLOYMENT_ID" || true
+                          scripts/release/wait-central-deployment.sh "$DEPLOYMENT_ID" PUBLISHED ;;
                       *)
                           echo "Central deployment $DEPLOYMENT_ID is not resumable from state: $state" >&2
                           exit 1 ;;
                   esac
             - name: Create release checksums
-              run: scripts/create-release-checksums.sh release-files
+              run: scripts/release/create-checksums.sh release-files
             - name: Attest release artifact provenance
               uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
               with:

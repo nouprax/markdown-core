@@ -1,6 +1,6 @@
 # Convenience wrapper around the single CMake/CTest graph.  This Makefile
 # never implements a second test or benchmark runner: `make test` runs the
-# CTest `correctness` preset, `make bench` delegates to the stage benchmark's
+# CTest `correctness` preset, `make bench` delegates to the benchmark's
 # own driver, and sanitizer targets reuse the test graph through their presets.
 # Measurement deliberately has no CTest preset to delegate to: a runner in the
 # test graph is a runner one preset change away from gating a merge.
@@ -29,7 +29,7 @@ test: build
 	ctest --preset correctness
 
 bench:
-	node scripts/benchmark-stages.mjs
+	node scripts/benchmark/run.mjs
 
 asan-test:
 	cmake --preset asan
@@ -90,4 +90,4 @@ distclean: clean
 # Maintenance-only source generation; the generated files are tracked, so
 # these never run during normal build or test.
 $(ELEMENTSDIR)/%_scanners.c: $(ELEMENTSDIR)/%_scanners.re $(ELEMENTSDIR)/scanner_common.re
-	scripts/check-generated-scanners.sh --write $<
+	scripts/tooling/check-generated-scanners.sh --write $<

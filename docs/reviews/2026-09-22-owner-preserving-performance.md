@@ -1,9 +1,14 @@
 # Ownership-preserving performance rerun
 
+> Historical report. The scenario suite and its commands were retired after PR #388.
+> Reproduction requires [the original implementation](https://github.com/nouprax/markdown-core/tree/bd0b2a8ed9d7e3842f564915cbc7e2c6b6b7be8f).
+> Current comparisons use the [grammar-certified corpus](../architecture/benchmark-grammar-corpus.md).
+
+
 **Interpretation correction (#384):** the structural proofs used below do not
 prove equal optimal parser effort. Historical "Grammar / Shape / Same" columns
 are descriptive A/B / B/R / A/R only; the cross-syntax medians and `Same-job`
-interpretation are withdrawn. See the [cost model and re-audit](../architecture/benchmark-parser-effort.md).
+interpretation are withdrawn. See the [cost model and re-audit](https://github.com/nouprax/markdown-core/blob/bd0b2a8ed9d7e3842f564915cbc7e2c6b6b7be8f/docs/architecture/benchmark-parser-effort.md).
 The raw measurements and same-input before/after savings remain valid.
 
 The six fixes reduce complete-parse Ir by **1.04%** on the 224-document

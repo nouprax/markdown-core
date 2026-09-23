@@ -133,7 +133,7 @@ width is invalid. The value introduces no node or child line.
 Fields appear after `scope` and before `children` in exactly this order:
 
 This table is CHECKED against `canonical-ast.json` by
-`scripts/audit-ast-projections.mjs`: every kind appears exactly once and its
+`scripts/audit/check-ast-projections.mjs`: every kind appears exactly once and its
 fields are the contract's, in the contract's order, minus node-valued fields
 that the dump represents as nested descendants.
 
@@ -196,7 +196,7 @@ Document scope=1:1..1:10 anchor=null attributes={} children=1
 Any public behavior-bearing field added later must be added to this table, the
 manifest coverage vocabulary, affected shared goldens, and all four dump
 implementations in the same reviewed change.
-`scripts/generate-canonical-ast-candidates.sh` writes C dump candidates below
+`scripts/conformance/generate-canonical-ast-candidates.sh` writes C dump candidates below
 `build/canonical-ast-candidates/` for human review; tests never accept them.
 
 ## Owned nodes and groups

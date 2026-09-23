@@ -18,9 +18,9 @@ policy that defines each comparison:
   and per-platform artifact digests for the explicitly selected Pandoc
   extension layer, including the shared attribute grammar and consumer model.
 
-lexbor is pinned in `scripts/init-environment.sh` beside these and is NOT one
+lexbor is pinned in `scripts/tooling/setup-environment.sh` beside these and is NOT one
 of them. It is a performance baseline for the attribute grammar — the reference
-half of `scripts/benchmark-attributes.mjs` — so it registers no deltas, gates
+half of `scripts/benchmark/measure-attributes.mjs` — so it registers no deltas, gates
 nothing, and no behaviour is judged against it. See
 `packages/markdown-core/benchmarks/README.md`.
 
@@ -33,7 +33,7 @@ registered difference that disappears both fail an active gate.
 Seeded differential fuzzing compares only the shared language of its selected
 oracle. A document combining a heading with unresolved bracket text
 can activate implicit heading references, which cmark, cmark-gfm and remark do
-not implement. `scripts/lib/fuzz-scope.mjs` conservatively classifies that
+not implement. `scripts/correctness/fuzz-scope.mjs` conservatively classifies that
 composition with an independent CommonMark parse. It neither consults product
 output nor implements heading-label matching. Explicitly resolved references,
 headings without unresolved brackets, references without headings, and brackets
@@ -72,4 +72,4 @@ These are external oracle policies, not copies of Markdown Core's expected
 output. Product-owned golden AST dumps remain solely in
 `packages/markdown-core/tests/fixtures/`, and cross-binding contract fixtures
 remain solely in `specs/canonical-ast/`. Root-level `.txt` golden mirrors are
-forbidden here by `scripts/audit-test-topology.sh`.
+forbidden here by `scripts/audit/check-test-topology.sh`.

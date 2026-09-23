@@ -50,7 +50,7 @@ jobs:
             - name: Install JavaScript dependencies
               run: pnpm install --frozen-lockfile
             - name: Check prepared repository environment
-              run: scripts/init-environment.sh --check node java wrappers dependencies
+              run: scripts/tooling/setup-environment.sh --check node java wrappers dependencies
             - name: Check cross-platform contracts
               run: pnpm check:contracts
             - name: Audit test layout and public surface
@@ -83,7 +83,7 @@ jobs:
                   version: 11.25.0
             - name: Install C health-check dependencies
               run: |
-                  scripts/install-clang-format.sh
+                  scripts/tooling/install-clang-format.sh
                   pnpm install --frozen-lockfile
             - name: Check C and CMake formatting
               run: |
@@ -91,8 +91,6 @@ jobs:
                   pnpm format:cmake:check
             - name: Lint C
               run: pnpm lint:c
-            - name: Audit corpus reach
-              run: pnpm audit:corpus-reach
             - name: Audit the node integrity check
               run: pnpm audit:node-integrity-check
 
@@ -188,7 +186,7 @@ jobs:
                   sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
                   pnpm install --frozen-lockfile
             - name: Check prepared package-audit environment
-              run: scripts/init-environment.sh --check core node java wrappers android emscripten dependencies
+              run: scripts/tooling/setup-environment.sh --check core node java wrappers android emscripten dependencies
             - name: Audit installed and published package contents
               run: pnpm audit:packages
 
@@ -210,11 +208,11 @@ jobs:
                   run_install: false
                   version: 11.25.0
             - name: Check prepared Swift environment
-              run: scripts/init-environment.sh --check node wrappers swift
+              run: scripts/tooling/setup-environment.sh --check node wrappers swift
             - name: Check Swift formatting
-              run: scripts/format-swift.sh --check
+              run: scripts/tooling/format-swift.sh --check
             - name: Lint Swift
-              run: scripts/lint-swift.sh
+              run: scripts/tooling/lint-swift.sh
 
     health-checks-ready:
         name: Health Checks - Ready
@@ -265,7 +263,7 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - name: Build immutable C product artifact
               run: |
-                  scripts/build-c-product-artifact.sh \
+                  scripts/build/create-c-product.sh \
                       "${{ matrix.variant }}" \
                       "${{ matrix.shared }}" \
                       build/ci-artifacts/c-product
@@ -284,7 +282,7 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - name: Build immutable C product artifact
               shell: bash
-              run: scripts/build-c-product-artifact.sh windows-static OFF build/ci-artifacts/c-product Release
+              run: scripts/build/create-c-product.sh windows-static OFF build/ci-artifacts/c-product Release
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: c-product-windows-static-${{ github.sha }}
@@ -311,7 +309,7 @@ jobs:
             - name: Install ES build dependencies
               run: pnpm install --frozen-lockfile
             - name: Build immutable ES product artifact
-              run: scripts/build-es-product-artifact.sh
+              run: scripts/build/create-es-product.sh
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: es-product-${{ github.sha }}
@@ -351,7 +349,7 @@ jobs:
               run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
             - name: Build immutable Kotlin product artifact
               run: |
-                  scripts/build-kotlin-product-artifact.sh \
+                  scripts/build/create-kotlin-product.sh \
                       "${{ matrix.mode }}" \
                       "build/ci-artifacts/kotlin-product-${{ matrix.artifact-label }}"
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -371,7 +369,7 @@ jobs:
               with:
                   xcode-version: "26.6"
             - name: Build immutable Swift product artifact
-              run: scripts/build-swift-product-artifact.sh
+              run: scripts/build/create-swift-product.sh
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: swift-product-${{ github.sha }}
@@ -399,7 +397,7 @@ jobs:
                   shasum -a 256 -c SHA256SUMS
                   tar -xzf swift-product-tree.tar.gz -C ../../..
             - name: Build immutable macOS and iOS test products
-              run: scripts/build-swift-test-artifact.sh
+              run: scripts/build/create-swift-tests.sh
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: swift-test-${{ github.sha }}
@@ -434,7 +432,7 @@ jobs:
                   name: swift-test-${{ github.sha }}
                   path: build/ci-artifacts/swift
             - name: Run Swift suite without building
-              run: scripts/run-swift-test-artifact.sh build/ci-artifacts/swift "${{ matrix.suite }}"
+              run: scripts/shared/run-swift-test-artifact.sh build/ci-artifacts/swift "${{ matrix.suite }}"
 
     swift-deployment-contract:
         name: Build - Swift / ${{ matrix.label }}
@@ -459,7 +457,7 @@ jobs:
               env:
                   PLATFORM: ${{ matrix.platform }}
                   VERSION: ${{ matrix.version }}
-              run: scripts/build-swift-deployment.sh "$PLATFORM" "$VERSION"
+              run: scripts/build/check-swift-deployment.sh "$PLATFORM" "$VERSION"
 
     kotlin-test-build:
         name: Build Test - Kotlin / ${{ matrix.label }}
@@ -491,7 +489,7 @@ jobs:
               if: matrix.os == 'ubuntu-latest'
               run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
             - name: Build immutable Kotlin test products
-              run: scripts/build-kotlin-host-test-artifact.sh "${{ matrix.target }}"
+              run: scripts/build/create-kotlin-host-tests.sh "${{ matrix.target }}"
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: kotlin-host-${{ matrix.target-id }}-${{ github.sha }}
@@ -568,7 +566,7 @@ jobs:
                   path: build/ci-artifacts/kotlin-${{ matrix.artifact-dir }}
             - name: Run Kotlin suite without building
               run: |
-                  scripts/run-kotlin-host-test-artifact.sh \
+                  scripts/shared/run-kotlin-host-test-artifact.sh \
                       "build/ci-artifacts/kotlin-${{ matrix.artifact-dir }}" \
                       "${{ matrix.platform }}" \
                       "${{ matrix.suite }}"
@@ -625,7 +623,7 @@ jobs:
             - name: Install Android build dependencies
               run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
             - name: Build immutable Android instrumentation artifact
-              run: scripts/build-kotlin-android-test-artifact.sh
+              run: scripts/build/create-kotlin-android-tests.sh
             - name: Upload Android instrumentation artifact
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
@@ -731,7 +729,7 @@ jobs:
               # attempts.
               run: |
                   for attempt in 1 2; do
-                      if scripts/run-kotlin-android-test-artifact.sh \
+                      if scripts/shared/run-kotlin-android-test-artifact.sh \
                           build/ci-artifacts/kotlin-android-x86_64 \
                           "${{ matrix.suite }}" \
                           "${{ matrix.page-size }}"; then
@@ -774,7 +772,7 @@ jobs:
                   name: es-product-${{ github.sha }}
                   path: build/ci-artifacts/es-product
             - name: Build immutable ES test artifact
-              run: scripts/build-es-test-artifact.sh build/ci-artifacts/es build/ci-artifacts/es-product
+              run: scripts/build/create-es-tests.sh build/ci-artifacts/es build/ci-artifacts/es-product
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: es-test-${{ github.sha }}
@@ -815,7 +813,7 @@ jobs:
                   name: es-test-${{ github.sha }}
                   path: build/ci-artifacts/es
             - name: Run ES suite without building
-              run: scripts/run-es-test-artifact.sh build/ci-artifacts/es "${{ matrix.suite }}"
+              run: scripts/shared/run-es-test-artifact.sh build/ci-artifacts/es "${{ matrix.suite }}"
               env:
                   CHROME: ${{ steps.setup-chrome.outputs.chrome-path }}
 
@@ -867,7 +865,7 @@ jobs:
                   fi
                   tar -xzf c-product-tree.tar.gz -C ../../..
             - name: Configure
-              run: scripts/build-c-test-artifact.sh default "${{ matrix.shared }}" build/ci-artifacts/c
+              run: scripts/build/create-c-tests.sh default "${{ matrix.shared }}" build/ci-artifacts/c
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: c-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.shared }}-${{ github.sha }}
@@ -893,7 +891,7 @@ jobs:
                   tar -xzf c-product-tree.tar.gz -C ../../..
             - name: Build immutable C test artifact
               shell: bash
-              run: scripts/build-c-test-artifact.sh default OFF build/ci-artifacts/c Release
+              run: scripts/build/create-c-tests.sh default OFF build/ci-artifacts/c Release
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: c-windows-static-${{ github.sha }}
@@ -912,7 +910,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - name: Build immutable debug test artifact
-              run: scripts/build-c-test-artifact.sh debug - build/ci-artifacts/c
+              run: scripts/build/create-c-tests.sh debug - build/ci-artifacts/c
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: c-debug-${{ github.sha }}
@@ -938,7 +936,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - name: Build immutable sanitizer test artifact
-              run: scripts/build-c-test-artifact.sh "${{ matrix.sanitizer }}" - build/ci-artifacts/c
+              run: scripts/build/create-c-tests.sh "${{ matrix.sanitizer }}" - build/ci-artifacts/c
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: c-${{ matrix.sanitizer }}-${{ github.sha }}
@@ -991,7 +989,7 @@ jobs:
                   name: c-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.shared }}-${{ github.sha }}
                   path: build/ci-artifacts/c
             - name: Run CTest suite without building
-              run: scripts/run-c-test-artifact.sh build/ci-artifacts/c "${{ matrix.suite }}"
+              run: scripts/shared/run-c-test-artifact.sh build/ci-artifacts/c "${{ matrix.suite }}"
 
     c-test-windows:
         name: Test - C / ${{ matrix.label }}
@@ -1013,7 +1011,7 @@ jobs:
                   path: build/ci-artifacts/c
             - name: Run CTest suite without building
               shell: bash
-              run: scripts/run-c-test-artifact.sh build/ci-artifacts/c "${{ matrix.suite }}" Release
+              run: scripts/shared/run-c-test-artifact.sh build/ci-artifacts/c "${{ matrix.suite }}" Release
 
     c-debug-test:
         name: Test - C Debug / Node Integrity
@@ -1026,7 +1024,7 @@ jobs:
                   name: c-debug-${{ github.sha }}
                   path: build/ci-artifacts/c
             - name: Run the debug suite without building
-              run: scripts/run-c-test-artifact.sh build/ci-artifacts/c correctness-debug
+              run: scripts/shared/run-c-test-artifact.sh build/ci-artifacts/c correctness-debug
 
     # ThreadSanitizer gates the frozen concurrency contract. All sanitizer
     # consumers execute a prebuilt instrumented tree on a fresh runner.
@@ -1058,7 +1056,7 @@ jobs:
                   name: c-${{ matrix.sanitizer }}-${{ github.sha }}
                   path: build/ci-artifacts/c
             - name: Run sanitizer suite without building
-              run: scripts/run-c-test-artifact.sh build/ci-artifacts/c "${{ matrix.preset }}"
+              run: scripts/shared/run-c-test-artifact.sh build/ci-artifacts/c "${{ matrix.preset }}"
 
     builds-ready:
         name: Builds - Ready
@@ -1157,14 +1155,7 @@ jobs:
             - name: Build this parser
               run: pnpm build:c
             - name: Build the pinned parser oracles
-              run: scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm oracle-pandoc
-            # The benchmark corpus's pairs, against the reference engines' own
-            # output rather than against this parser's opinion of the paired
-            # document. It lives here because it needs the pinned oracle
-            # binaries this job already builds, and because the corpus-reach
-            # audit has to stay runnable without them.
-            - name: Audit benchmark pairs against the references
-              run: pnpm audit:corpus-pairs
+              run: scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm oracle-pandoc
             - name: Compare CommonMark against current cmark
               run: pnpm check:commonmark-parity
             - name: Compare GFM extensions against cmark-gfm
@@ -1232,5 +1223,5 @@ jobs:
                   NEEDS: ${{ toJSON(needs) }}
               with:
                   script: |
-                      const { requireGate } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/ci-gate.mjs`);
+                      const { requireGate } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/shared/ci-gate.mjs`);
                       core.info(requireGate(JSON.parse(process.env.NEEDS)));

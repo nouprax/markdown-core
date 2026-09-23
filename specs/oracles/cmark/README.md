@@ -24,7 +24,7 @@ registered input or tree projection must continue to reproduce.
 ## Running it
 
 ```sh
-scripts/init-environment.sh --install oracle-cmark
+scripts/tooling/setup-environment.sh --install oracle-cmark
 pnpm build:c
 pnpm check:commonmark-parity
 ```

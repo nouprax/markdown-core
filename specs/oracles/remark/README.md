@@ -5,10 +5,10 @@ dependency surface through the repository lockfile, selects the compared
 corpus, and records every deliberate divergence. `corpus.md` supplies focused
 inputs for semantics not already covered by the C extension fixtures.
 
-`scripts/check-mdast-parity.mjs` parses each input independently with remark
+`scripts/correctness/check-mdast-parity.mjs` parses each input independently with remark
 and Markdown Core, projects only mutually representable fields, and fails when
 an unregistered difference appears or a registered one stops reproducing.
-`scripts/fuzz-parity.mjs --oracle remark` reuses the same policy for seeded
+`scripts/correctness/fuzz-parity.mjs --oracle remark` reuses the same policy for seeded
 generated inputs.
 
 mdast does not retain ordered-list delimiter punctuation, so this oracle does

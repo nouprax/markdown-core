@@ -19,7 +19,7 @@ the responsibility of the existing parity and regression pipelines.
    the unmatched reference productions, and supplies a positive proof for the
    complete local field grammar. A local ratio never certifies a host ratio.
 4. Every specification section has an explicit disposition in
-   `scripts/lib/grammar-sections.mjs`: source-grammar sections name their
+   `scripts/benchmark/sections.mjs`: source-grammar sections name their
    certificates, while context-only sections explain why they introduce no new
    source production. Missing/renamed sections, stale links, nonexistent or empty
    certificate lists fail before the ledger can be regenerated. Every certificate
@@ -28,13 +28,13 @@ the responsibility of the existing parity and regression pipelines.
 5. The generated source, grammar, normal form, proof identity and
    Callgrind reports travel together. Filtering a benchmark selects both sides
    and, for boundaries, both complete hosts. Missing halves fail reporting.
-6. Every measured scale enumerates the full Cartesian product of finite grammar
+6. Every generated input enumerates the full Cartesian product of finite grammar
    fields, including all 26 canonical ordinal alternatives and all three callout
    states. Requested unit counts are lower bounds; they cannot truncate this
    coverage. Callgrind measures these generated documents.
 
 There are **30 specification features, 136 sections, 32 registered elements,
-194 certificates and 824 generated documents** at the default two scales.
+194 certificates and 412 generated documents**, each measured once.
 Of the 136 sections, **132 link to grammar certificates and four are explicitly
 context-only** (automatic-anchor output, anchor ownership, and two navigation
 introductions). Cross-feature links reuse the same certificate; a documentation
@@ -102,16 +102,16 @@ After reviewing a grammar or specification change, regenerate both ledgers:
 ```sh
 node --input-type=module <<'JS'
 import fs from 'node:fs';
-import {buildGrammarCorpus, grammarCatalog} from './scripts/lib/grammar-corpus.mjs';
-import {featureCoverage} from './scripts/lib/grammar-coverage.mjs';
-const corpus = buildGrammarCorpus({units:2, scale:1});
+import {buildGrammarCorpus, grammarCatalog} from './scripts/benchmark/corpus.mjs';
+import {featureCoverage} from './scripts/benchmark/coverage.mjs';
+const corpus = buildGrammarCorpus({units:2});
 for (const [name, value] of [
   ['grammar-corpus', grammarCatalog()],
   ['grammar-coverage', featureCoverage(process.cwd(), corpus)]
 ]) fs.writeFileSync(`packages/markdown-core/benchmarks/${name}.json`, JSON.stringify(value, null, 4) + '\n');
 JS
 pnpm exec prettier --write packages/markdown-core/benchmarks/grammar-{corpus,coverage}.json
-node --test scripts/tests/grammar-corpus.test.mjs
+node --test scripts/benchmark/tests/corpus.test.mjs
 ```
 
 Regenerating a digest does not discharge a changed rule's proof obligation. Review

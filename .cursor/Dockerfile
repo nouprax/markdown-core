@@ -9,7 +9,7 @@
 # left to the `install` phase in environment.json, where it can see the
 # checked-out source and stay in lockstep with the repository.
 #
-# The pins below mirror docs/toolchains.md and scripts/init-environment.sh.
+# The pins below mirror docs/toolchains.md and scripts/tooling/setup-environment.sh.
 # Keep them in sync when those files change.
 FROM ubuntu:24.04
 

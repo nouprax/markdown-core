@@ -1,5 +1,10 @@
 # Issue 363: fresh measurement and remaining work
 
+> Historical report. The scenario suite and its commands were retired after PR #388.
+> Reproduction requires [the original implementation](https://github.com/nouprax/markdown-core/tree/bd0b2a8ed9d7e3842f564915cbc7e2c6b6b7be8f).
+> Current comparisons use the [grammar-certified corpus](../architecture/benchmark-grammar-corpus.md).
+
+
 PR #372 resolves seven confirmed problems. The controlled same-input lifecycle
 ratio falls **1.135× → 1.073×** (Ir **−5.50%**); all **464/464** source gates pass.
 See [the final comparison](#final-controlled-comparison) for artifact identity,

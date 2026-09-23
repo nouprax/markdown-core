@@ -28,13 +28,14 @@ jobs:
                   ref: ${{ github.sha }}
                   persist-credentials: false
                   sparse-checkout: |
-                      scripts/benchmark-comment.mjs
-                      scripts/lib/ci-inputs.mjs
-                      scripts/lib/source-budget.mjs
+                      scripts/benchmark/publish-comment.mjs
+                      scripts/shared/ci-inputs.mjs
+                      scripts/benchmark/source-budget.mjs
+                      scripts/benchmark/report.mjs
                   sparse-checkout-cone-mode: false
             - name: Update the PR benchmark comment
               uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
               with:
                   script: |
-                      const { publish } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/benchmark-comment.mjs`);
+                      const { publish } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/benchmark/publish-comment.mjs`);
                       await publish({ github, context, core });

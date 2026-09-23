@@ -1,6 +1,6 @@
 {
     "schemaVersion": 1,
-    "script": "scripts/audit-inline-sourcepos.mjs",
+    "script": "scripts/audit/check-inline-sourcepos.mjs",
     "subject": "Every inline Code and HTML node's position and every Comment node's, compared with cmark 0.31.2's own --sourcepos over its pinned CommonMark specification.",
     "purpose": "Forty-three reviewed differences over 42 cmark 0.31.2 specification inputs: 33 code spans whose Markdown Core scope includes the creating backticks while cmark reports the content extent, 6 raw-HTML and comment tokens whose Markdown Core scope includes the closing byte that cmark leaves outside, and 4 block comments that run from their opener line through their closer line where cmark ends the HTML block on the line before its end condition matched, or at 0:0 when the block is one line. cmark's comment nodes are paired with this engine's Comment nodes through the parity gate's `html-comment-node` projection (M0). This ledger is a fail-closed registry of a deliberate AST representation difference and of one upstream position defect, not a defect budget. A new row, a removed row, or a changed coordinate requires review.",
     "corpus": ".tools/cmark/0.31.2/test/spec.txt",

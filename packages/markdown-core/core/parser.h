@@ -362,7 +362,7 @@ struct markdown_core_parser {
      * finish walk and that public entry point. A traversal that keeps no count
      * -- an iterator a step opened over its node's subtree -- is invisible
      * here, so the other half of the invariant is held on the source:
-     * scripts/audit-finish-hook-shapes.mjs refuses a translation unit that
+     * scripts/audit/check-finish-hook-shapes.mjs refuses a translation unit that
      * declares a finish step and opens an iterator. */
     size_t nodes_created, nodes_created_before_finish;
     size_t nodes_freed, nodes_freed_before_finish;
@@ -506,7 +506,7 @@ struct markdown_core_parser {
      * over-approximates and why that is sound.
      *
      * Every production creation site goes through `markdown_core_parser_note_kind`;
-     * `scripts/audit-parser-kind-record.mjs` holds that. */
+     * `scripts/audit/check-parser-kind-record.mjs` holds that. */
     markdown_core_node_kind_set kinds_created;
     markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
@@ -651,7 +651,7 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
  *
  * `markdown_core_node_new` and `markdown_core_node_set_kind` stay for callers
  * that have no parse -- the tests build trees by hand -- and production code
- * uses these instead, which `scripts/audit-parser-kind-record.mjs` holds.
+ * uses these instead, which `scripts/audit/check-parser-kind-record.mjs` holds.
  *
  * The record OVER-APPROXIMATES, deliberately. A node the parse creates and
  * then discards leaves its bit set although the finished tree holds no such

@@ -32,7 +32,7 @@ jobs:
               with:
                   node-version: 26.8.1
             - name: Validate coordinated release version and tag namespace
-              run: node scripts/check-release-version.mjs --skip-swift
+              run: node scripts/release/check-version.mjs --skip-swift
             - name: Prove dry run has no release credentials
               run: |
                   test -z "${MAVEN_CENTRAL_USERNAME:-}"
@@ -57,7 +57,7 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - name: Build and audit C release artifact
-              run: scripts/stage-c-release.sh build/release-c
+              run: scripts/release/stage-c.sh build/release-c
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: release-c-${{ matrix.artifact-label }}
@@ -74,9 +74,9 @@ jobs:
               with:
                   xcode-version: "26.6"
             - name: Check prepared Swift release environment
-              run: scripts/init-environment.sh --check wrappers swift
+              run: scripts/tooling/setup-environment.sh --check wrappers swift
             - name: Validate Swift source archive and product consumer
-              run: scripts/check-swift-source-archive.sh build/release-swift
+              run: scripts/release/check-swift-source-archive.sh build/release-swift
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: release-swift-source
@@ -101,9 +101,9 @@ jobs:
                   version: 6.0.9
             - run: pnpm install --frozen-lockfile
             - name: Check prepared npm release environment
-              run: scripts/init-environment.sh --check node emscripten dependencies
+              run: scripts/tooling/setup-environment.sh --check node emscripten dependencies
             - name: Build, pack, and run the npm artifact consumer
-              run: scripts/stage-npm-release.sh build/release-npm
+              run: scripts/release/stage-npm.sh build/release-npm
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: release-npm-package
@@ -136,9 +136,9 @@ jobs:
             - name: Install Android publication dependencies
               run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
             - name: Check prepared Android release environment
-              run: scripts/init-environment.sh --check java wrappers android
+              run: scripts/tooling/setup-environment.sh --check java wrappers android
             - name: Build Linux, root, JVM, and Android Maven publications
-              run: scripts/stage-maven-publications.sh build/release-maven-linux linux-release
+              run: scripts/release/stage-maven-publications.sh build/release-maven-linux linux-release
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: release-maven-linux
@@ -158,9 +158,9 @@ jobs:
                   distribution: temurin
                   java-version: 26
             - name: Check prepared macOS publication environment
-              run: scripts/init-environment.sh --check java wrappers
+              run: scripts/tooling/setup-environment.sh --check java wrappers
             - name: Build macOS Native publication and JVM payload
-              run: scripts/stage-maven-publications.sh build/release-maven-macos macos-native
+              run: scripts/release/stage-maven-publications.sh build/release-maven-macos macos-native
             - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: release-maven-macos
@@ -188,7 +188,7 @@ jobs:
             - name: Install staged-consumer dependencies
               run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
             - name: Check prepared staged-consumer environment
-              run: scripts/init-environment.sh --check java wrappers android
+              run: scripts/tooling/setup-environment.sh --check java wrappers android
             - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
               with:
                   name: release-maven-linux
@@ -199,19 +199,19 @@ jobs:
                   path: build/release-maven-macos
             - name: Aggregate host publications and JVM native payloads
               run: |
-                  node scripts/merge-maven-publications.mjs \
+                  node scripts/release/merge-maven-publications.mjs \
                       build/release-maven-linux \
                       build/release-maven-macos \
                       build/release-maven-central
             - name: Sign with a disposable dry-run key and audit the Central bundle
               run: |
                   env -u MAVEN_SIGNING_KEY -u MAVEN_SIGNING_PASSWORD \
-                      scripts/sign-maven-publications.sh build/release-maven-central --ephemeral
+                      scripts/release/sign-maven-publications.sh build/release-maven-central --ephemeral
             - name: Run consumers from the signed staged repository
-              run: scripts/check-kotlin-consumers.sh --repository build/release-maven-central
+              run: scripts/conformance/check-kotlin-consumers.sh --repository build/release-maven-central
             - name: Audit the consumer-validated Central bundle
               run: |
-                  node scripts/audit-maven-publications.mjs \
+                  node scripts/audit/check-maven-publications.mjs \
                       build/release-maven-central --full --signed
             - name: Create independently verifiable Central bundle
               run: (cd build/release-maven-central && zip -qr ../markdown-core-maven-central-dry-run.zip com/nouprax)
@@ -236,5 +236,5 @@ jobs:
                   NEEDS: ${{ toJSON(needs) }}
               with:
                   script: |
-                      const { requireGate } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/ci-gate.mjs`);
+                      const { requireGate } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/shared/ci-gate.mjs`);
                       core.info(requireGate(JSON.parse(process.env.NEEDS)));

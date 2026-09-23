@@ -244,12 +244,12 @@ cmake --preset tsan
 cmake --build --preset tsan --parallel
 ctest --preset correctness-tsan
 
-sh scripts/format-c.sh --check
-sh scripts/format-cmake.sh --check
-bash scripts/audit-public-surface.sh
-bash scripts/audit-package-contents.sh
-bash scripts/audit-test-topology.sh
-node scripts/audit-source-lists.mjs
+sh scripts/tooling/format-c.sh --check
+sh scripts/tooling/format-cmake.sh --check
+bash scripts/audit/check-public-surface.sh
+bash scripts/audit/check-package-contents.sh
+bash scripts/audit/check-test-topology.sh
+node scripts/audit/check-source-lists.mjs
 pnpm check:commonmark-parity
 pnpm check:gfm-parity
 pnpm check:mdast-parity

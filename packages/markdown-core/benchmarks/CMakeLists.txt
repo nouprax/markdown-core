@@ -18,13 +18,6 @@ target_include_directories(markdown_core_stage_runner PRIVATE "${CMAKE_CURRENT_S
 # the measured binary regardless of the library's exported surface.
 target_link_libraries(markdown_core_stage_runner PRIVATE libmarkdown-core-public-static)
 
-add_executable(markdown_core_effort_runner effort_runner.c markdown_core_effort.c)
-target_include_directories(
-    markdown_core_effort_runner
-    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../core" "${CMAKE_CURRENT_SOURCE_DIR}/../elements"
-            "${CMAKE_CURRENT_SOURCE_DIR}/../include" "${CMAKE_BINARY_DIR}/packages/markdown-core/core")
-target_link_libraries(markdown_core_effort_runner PRIVATE libmarkdown-core-public-static)
-
 if(MARKDOWN_CORE_CMARK_SOURCE_DIR AND MARKDOWN_CORE_CMARK_BUILD_DIR)
     if(NOT EXISTS "${MARKDOWN_CORE_CMARK_SOURCE_DIR}/cmark.h")
         message(FATAL_ERROR "MARKDOWN_CORE_CMARK_SOURCE_DIR does not hold cmark.h: ${MARKDOWN_CORE_CMARK_SOURCE_DIR}")
@@ -54,11 +47,6 @@ if(MARKDOWN_CORE_CMARK_SOURCE_DIR AND MARKDOWN_CORE_CMARK_BUILD_DIR)
     # the same translation units the driver compiled with the profile flags.
     target_compile_definitions(cmark_stage_runner PRIVATE CMARK_STATIC_DEFINE)
     target_link_libraries(cmark_stage_runner PRIVATE "${MARKDOWN_CORE_CMARK_LIBRARY}")
-    add_executable(cmark_effort_runner effort_runner.c cmark_effort.c)
-    target_include_directories(cmark_effort_runner PRIVATE "${MARKDOWN_CORE_CMARK_SOURCE_DIR}"
-                                                           "${MARKDOWN_CORE_CMARK_BUILD_DIR}")
-    target_compile_definitions(cmark_effort_runner PRIVATE CMARK_STATIC_DEFINE)
-    target_link_libraries(cmark_effort_runner PRIVATE "${MARKDOWN_CORE_CMARK_LIBRARY}")
 endif()
 
 if(MARKDOWN_CORE_CMARK_GFM_SOURCE_DIR AND MARKDOWN_CORE_CMARK_GFM_BUILD_DIR)

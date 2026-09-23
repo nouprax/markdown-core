@@ -18,7 +18,7 @@ val isIdeSync =
         .getOrElse(false)
 
 // WHICH ABIs THE NATIVE PAYLOAD IS BUILT FOR, narrowed by the caller.
-// `scripts/build-kotlin-android-test-artifact.sh` passes
+// `scripts/build/create-kotlin-android-tests.sh` passes
 // `-PmarkdownCore.android.abis=x86_64` and then REFUSES an artifact carrying
 // anything else, because an instrumentation APK for one emulator has no use for
 // the other three and pays their build time and size. Unset, every ABI is built,

@@ -15,10 +15,10 @@ immutable public AST through per-node Visitor dispatch, then compares the
 result byte for byte. No production path may consume dump text,
 and no release artifact may contain this directory.
 
-Run `node scripts/check-canonical-ast-fixtures.mjs` to audit the schema,
+Run `node scripts/conformance/check-canonical-ast.mjs` to audit the schema,
 discovery, grammar, declared coverage, and completeness. Intentional parser or
 AST contract changes may run
-`scripts/generate-canonical-ast-candidates.sh`; it writes candidates below
+`scripts/conformance/generate-canonical-ast-candidates.sh`; it writes candidates below
 `build/` and prints diffs without changing accepted goldens. Tests and CI never
 rewrite or accept them. A grammar or schema change must update the contract,
 manifest, goldens, all four implementations, and conformance evidence in the

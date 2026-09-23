@@ -3,14 +3,13 @@
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
 contains all 194 certificates, their concrete grammars, normal forms and two
-complete examples per family. The default run emits 824 documents at two scales:
+complete examples per family. The run emits 412 documents, each measured once:
 182 whole declared-language pairs and 12 local boundary pairs with complete
 hosts. The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
 30 syntax-guide features, 136 sections and 32 registered elements. Its explicit
 section mapping names certificates for 132 source-language sections and gives
-reviewed context-only dispositions for four sections. The historical
-30 scenarios and 43 structural domains remain accounted for, but their counts
-are no longer used as a claim of complete feature coverage.
+reviewed context-only dispositions for four sections. Certificates are registered
+directly from their source grammars and specification obligations.
 
 CommonMark/GFM features use the same input on both sides. Extensions use proved
 syntax translations or explicit local boundaries. These are grammar proofs;
@@ -72,7 +71,7 @@ calls count the authored caret in that limit, so their ASCII key domain is at
 most 999 bytes. A specimen or heading key paired with one of these labels takes
 the same bound; an unbounded Word would not prove a valid native counterpart.
 Repeated occurrences retain the same bound. The decoder rejects the first byte
-beyond it, and the default generated schedule reaches each bound at both scales.
+beyond it, and the generated schedule reaches each bound.
 These are syntax limits, distinct from an implementation's allocation failure.
 
 `Body` has a Word at both ends. Its nested atoms have a space before and after
@@ -128,7 +127,7 @@ spaces; code-span newline/padding rules therefore introduce no alternate value.
 ## Labelled product equivalence (T3)
 
 The original product families below and the additional feature productions in
-`scripts/lib/grammar-features.mjs` are complete concrete grammar pairs over their
+`scripts/benchmark/features.mjs` are complete concrete grammar pairs over their
 declared domains. Identical productions use T6; products with repeated bindings
 or finite lexical substitutions use T7.
 Their exact productions (including all whitespace and punctuation) are in the
@@ -333,16 +332,15 @@ one envelope instead. Its lossless pieces retain every occurrence of every value
 
 ## Concrete coverage, variation, and checks
 
-The catalog records each certificate's historical scenario IDs. The registry
-requires exactly the union of all 30 old scenarios and dispositions for every
-old structural domain, including the four previously unpaired families. A historical boundary is upgraded only by a new constructive grammar
-translation. Old structural fixtures remain separate diagnostic controls.
+The registry contains the source-grammar certificates themselves. The specification
+ledger requires an explicit disposition for each feature and section; no older
+AST pairing registry or scenario manifest participates in admission or generation.
 
-The benchmark requests 12 and 24 generated derivation units. Each scale is
-expanded when necessary to enumerate every combination of finite grammar fields;
-the four ordinal families therefore use 26 and 52 units. Word widths, independent
+The benchmark requests 12 generated derivation units per family, expanded when
+necessary to enumerate every combination of finite grammar fields; the four
+ordinal families therefore use 26 units. Word widths, independent
 keys/values/targets/anchors, numbers of atoms, balanced branching and chain depth
-vary deterministically. Chains include depth 32 at scale two. `instantiateGrammar`
+vary deterministically. `instantiateGrammar`
 also accepts independently chosen field values: the grammar is not restricted
 to the generator's finite schedule or correlated counters. Two checked-in
 examples per family provide immediately reviewable source documents; the full
@@ -352,10 +350,10 @@ hosts and residuals in `corpus/grammar-corpus.json`.
 Run:
 
 ```sh
-pnpm benchmark:grammar --corpus-only --out build/benchmark-grammar
-node --test scripts/tests/grammar-corpus.test.mjs
+pnpm benchmark --corpus-only --out build/benchmark-grammar
+node --test scripts/benchmark/tests/corpus.test.mjs
 # Linux with the pinned compiler, oracles and Callgrind:
-pnpm benchmark:grammar --scale 2 --out build/benchmark-grammar
+pnpm benchmark --out build/benchmark-grammar
 ```
 
 The source-language checks validate all generated derivations, inverse laws,
@@ -375,14 +373,14 @@ are neither benchmark acceptance gates nor inputs to the grammar identity.
 The artifact identity covers the grammar/generator/checker sources, entrypoint,
 oracle pins, both proof/coverage documents, syntax specifications and checked-in
 ledgers, plus the exact generated documents and
-proof records. The Callgrind report lists the concrete ratio per certificate
-and scale, retaining full hosts for boundary rows without certifying those host
-ratios. CI measures and archives this suite alongside the older diagnostic suite.
+proof records. The Callgrind report lists one concrete comparison per certificate,
+retaining full hosts for boundary rows without certifying those host ratios.
+CI measures and archives only this parse corpus.
 
 To regenerate the checked-in example catalog after changing a grammar, run the
 following and review its grammar and example diff together with the proof:
 
 ```sh
-node --input-type=module -e 'import fs from "node:fs"; import {grammarCatalog} from "./scripts/lib/grammar-corpus.mjs"; fs.writeFileSync("packages/markdown-core/benchmarks/grammar-corpus.json", JSON.stringify(grammarCatalog(), null, 4) + "\n");'
+node --input-type=module -e 'import fs from "node:fs"; import {grammarCatalog} from "./scripts/benchmark/corpus.mjs"; fs.writeFileSync("packages/markdown-core/benchmarks/grammar-corpus.json", JSON.stringify(grammarCatalog(), null, 4) + "\n");'
 pnpm exec prettier --write packages/markdown-core/benchmarks/grammar-corpus.json
 ```

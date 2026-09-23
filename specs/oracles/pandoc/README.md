@@ -38,7 +38,7 @@ declaration-side `Markup.anchor`; the projection does not copy that value into
 the reference node's own anchor field.
 
 The corpus contains inputs and exact reader strings only. Install its pinned
-host executable explicitly with `scripts/init-environment.sh --install oracle-pandoc`;
+host executable explicitly with `scripts/tooling/setup-environment.sh --install oracle-pandoc`;
 `--check oracle-pandoc` verifies it without downloads. `pnpm check:pandoc-parity`
 runs CLI canaries, both parsers and the fail-closed digest registry. Normal
 builds and tests never install the executable or access the network.
