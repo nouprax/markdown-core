@@ -135,13 +135,20 @@ export function attributeSection(report) {
 
 // Never extract archive paths into the checkout or interpret report content as
 // commands. Read only fixed, bounded JSON members from a private temporary zip.
+// A decoder may handle SIGTERM without exiting while its output pipe is full.
+// Force termination at either resource limit so the synchronous wait is bounded.
 export function readArchive(bytes, members, { archiveBytes = archiveLimit, memberBytes = reportLimit } = {}) {
     if (bytes.length > archiveBytes) throw new Error("Benchmark archive exceeds limit");
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "benchmark-comment-"));
     try {
         const zip = path.join(temporary, "report.zip");
         fs.writeFileSync(zip, bytes);
-        const names = execFileSync("unzip", ["-Z1", zip], { encoding: "utf8", maxBuffer: 65536, timeout: 5000 })
+        const names = execFileSync("unzip", ["-Z1", zip], {
+            encoding: "utf8",
+            maxBuffer: 65536,
+            timeout: 5000,
+            killSignal: "SIGKILL"
+        })
             .trim()
             .split("\n");
         return members.map((member) => {
@@ -151,7 +158,8 @@ export function readArchive(bytes, members, { archiveBytes = archiveLimit, membe
                 execFileSync("unzip", ["-p", zip, member], {
                     encoding: "utf8",
                     maxBuffer: memberBytes,
-                    timeout: 5000
+                    timeout: 5000,
+                    killSignal: "SIGKILL"
                 })
             );
         });

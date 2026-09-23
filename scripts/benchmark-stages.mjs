@@ -72,6 +72,7 @@ import {
     validatePairs
 } from "./lib/corpus-pairs.mjs";
 import { effortModel } from "./lib/pair-effort.mjs";
+import { measureEffortBoundaries } from "./lib/measure-effort.mjs";
 import {
     BUILD_FLAG_VARIABLES,
     buildEnvironment,
@@ -143,7 +144,9 @@ const ATTRIBUTE_RUNNER = {
  * table gives it. */
 const MEASURED_BINARIES = {
     ...Object.fromEntries(Object.entries(ENGINES).map(([engine, definition]) => [engine, definition.runner])),
-    "attribute runner": ATTRIBUTE_RUNNER.runner
+    "attribute runner": ATTRIBUTE_RUNNER.runner,
+    "core effort runner": "packages/markdown-core/benchmarks/markdown_core_effort_runner",
+    "cmark effort runner": "packages/markdown-core/benchmarks/cmark_effort_runner"
 };
 /* How many copies of the remainder the alone measurement decodes: enough that
  * the runner's own setup and the receipt are noise against the lists. */
@@ -825,7 +828,8 @@ function buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir,
     const compiled = Object.fromEntries(
         [
             ["markdown-core", "libmarkdown-core-public-static"],
-            ["attribute runner", ATTRIBUTE_RUNNER.target]
+            ["attribute runner", ATTRIBUTE_RUNNER.target],
+            ["core effort runner", "markdown_core_effort_runner"]
         ].map(([engine, target]) => [engine, readCompiledFlags(source, built.binaryDir, target, fail)])
     );
     if (JSON.stringify(effectiveFlags(built.binaryDir)) !== JSON.stringify(effectiveFlags(profile.binaryDir))) {
@@ -2566,7 +2570,9 @@ function main() {
          * translation units are measured ones and must carry the pinned flags
          * like every other. The stage runners are not in that position: their
          * edges are internal to the parse transaction. */
-        "attribute runner": readCompiledFlags(root, profile.binaryDir, ATTRIBUTE_RUNNER.target, fail)
+        "attribute runner": readCompiledFlags(root, profile.binaryDir, ATTRIBUTE_RUNNER.target, fail),
+        "core effort runner": readCompiledFlags(root, profile.binaryDir, "markdown_core_effort_runner", fail),
+        "cmark effort runner": readCompiledFlags(root, profile.binaryDir, "cmark_effort_runner", fail)
     };
     /* Checked against EVERY measured object rather than their union: a pinned
      * flag missing from one translation unit is a hole a union would paper. */
@@ -2616,6 +2622,15 @@ function main() {
     const binaries = runnerIdentity(profile);
 
     const baseline = buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions);
+    // Independently admitted local problems; never fold their ratios into A/R.
+    measureEffortBoundaries({
+        root,
+        binaryDir: profile.binaryDir,
+        out: options.out,
+        pairs: manifest.pairs,
+        toolchain: versions,
+        cmark: { version: cmark.version, commit: cmark.commit }
+    });
     const corpus = buildCorpus(options, manifest);
     const splitWith = splitWithCases(manifest);
     const cases = [];
@@ -2715,7 +2730,8 @@ function main() {
             binaries: {
                 ...binaries,
                 "markdown-core": baseline.binaries["markdown-core"],
-                "attribute runner": baseline.binaries["attribute runner"]
+                "attribute runner": baseline.binaries["attribute runner"],
+                "core effort runner": baseline.binaries["core effort runner"]
             },
             cases: baseline.cases,
             splits: measureSplits(manifest, baseline.cases, baseline.profile, baseline.directory),

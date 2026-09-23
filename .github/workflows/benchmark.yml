@@ -81,6 +81,7 @@ jobs:
                       build/benchmark-stages/stages.json
                       build/benchmark-stages/callgrind
                       build/benchmark-stages/corpus
+                      build/benchmark-stages/effort
                       build/benchmark-stages/baseline/stages.md
                       build/benchmark-stages/baseline/stages.json
                       build/benchmark-stages/baseline/callgrind

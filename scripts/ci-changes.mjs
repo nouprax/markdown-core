@@ -97,11 +97,14 @@ export async function readEvidence(github, repo, run) {
         const zip = path.join(temporary, "inputs.zip");
         fs.writeFileSync(zip, bytes);
         // Read one bounded member without extracting paths from the archive.
+        // SIGTERM can leave a decoder blocked on its full output pipe; force
+        // termination when either limit is reached before waiting for it.
         return JSON.parse(
             execFileSync("unzip", ["-p", zip, "inputs.json"], {
                 encoding: "utf8",
                 maxBuffer: 16384,
-                timeout: 5000
+                timeout: 5000,
+                killSignal: "SIGKILL"
             })
         );
     } finally {

@@ -387,6 +387,14 @@ test("evidence archives are bounded, unique, unexpired, and parsed without extra
     artifacts[0].size_in_bytes = bytes.length;
     artifacts.push({ ...artifacts[0], id: 2 });
     assert.equal(await readEvidence(github, context.repo, { id: 1 }), null);
+    artifacts.pop();
+    write("inputs.json", "x".repeat(65536));
+    execFileSync("zip", ["-q", "inputs.zip", "inputs.json"], { cwd });
+    const oversized = fs.readFileSync(path.join(cwd, "inputs.zip"));
+    assert.ok(oversized.length < 65536);
+    artifacts[0].size_in_bytes = oversized.length;
+    github.rest.actions.downloadArtifact = async () => ({ data: oversized });
+    await assert.rejects(readEvidence(github, context.repo, { id: 1 }));
 });
 
 const workflow = (name) =>
