@@ -89,30 +89,33 @@ int markdown_core_utf8proc_iterate_general(const uint8_t *str, bufsize_t str_len
     return length;
 }
 
-/* The UTF-8 encoding of a scalar below 0x110000, written at `dst`; returns
- * its length. The one encoder: appending a character and writing a projected
- * literal into reserved storage both go through it. */
-static inline int S_encode_scalar(int32_t uc, uint8_t *dst) {
-    if (uc < 0x80) {
+/* The length of a scalar's UTF-8 encoding, for a scalar below 0x110000. */
+static inline int S_scalar_width(int32_t uc) { return uc < 0x80 ? 1 : uc < 0x800 ? 2 : uc < 0x10000 ? 3 : 4; }
+
+/* The UTF-8 encoding of a scalar below 0x110000, `width` bytes long (see
+ * S_scalar_width), written at `dst`. The one encoder: appending a character
+ * and writing a projected literal into reserved storage both go through it. */
+static inline void S_encode_scalar(int32_t uc, int width, uint8_t *dst) {
+    switch (width) {
+    case 1:
         dst[0] = (uint8_t)(uc);
-        return 1;
-    }
-    if (uc < 0x800) {
+        return;
+    case 2:
         dst[0] = (uint8_t)(0xC0 + (uc >> 6));
         dst[1] = 0x80 + (uc & 0x3F);
-        return 2;
-    }
-    if (uc < 0x10000) {
+        return;
+    case 3:
         dst[0] = (uint8_t)(0xE0 + (uc >> 12));
         dst[1] = 0x80 + ((uc >> 6) & 0x3F);
         dst[2] = 0x80 + (uc & 0x3F);
-        return 3;
+        return;
+    default:
+        dst[0] = (uint8_t)(0xF0 + (uc >> 18));
+        dst[1] = 0x80 + ((uc >> 12) & 0x3F);
+        dst[2] = 0x80 + ((uc >> 6) & 0x3F);
+        dst[3] = 0x80 + (uc & 0x3F);
+        return;
     }
-    dst[0] = (uint8_t)(0xF0 + (uc >> 18));
-    dst[1] = 0x80 + ((uc >> 12) & 0x3F);
-    dst[2] = 0x80 + ((uc >> 6) & 0x3F);
-    dst[3] = 0x80 + (uc & 0x3F);
-    return 4;
 }
 
 void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf) {
@@ -124,7 +127,45 @@ void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf) {
         encode_unknown(buf);
         return;
     }
-    markdown_core_strbuf_put(buf, dst, S_encode_scalar(uc, dst));
+    int width = S_scalar_width(uc);
+    S_encode_scalar(uc, width, dst);
+    markdown_core_strbuf_put(buf, dst, width);
+}
+
+/* A WRITE CURSOR OVER RESERVED STORAGE, for the projections below that turn a
+ * literal into its image one character at a time. Each writes straight into
+ * `buf` through a local cursor `out` and limit `end` instead of appending
+ * character by character, and checks before every character that the room
+ * left holds that character's image, whose exact length it knows. When it
+ * does not, the cursor is handed here to reserve for the rest of the literal
+ * at once -- an upper bound the caller states -- clamped to what a buffer may
+ * hold (buffer.c), because the bound can exceed that limit while the image
+ * itself fits: only an image that does not fit poisons the buffer, at exactly
+ * the byte where appending it would have.
+ * Returns the cursor in the grown buffer, whose room ends at S_image_end, or
+ * NULL when the buffer is poisoned. The cursor stays a local of its caller:
+ * bytes written through it cannot alias it, so it lives in a register. */
+static uint8_t *S_reserve_image(markdown_core_strbuf *buf, uint8_t *out, size_t need, size_t bound) {
+    const size_t limit = (size_t)(INT32_MAX / 2);
+    buf->size = (bufsize_t)(out - buf->ptr);
+    size_t target = (size_t)buf->size + (bound > need ? bound : need);
+    if (target > limit && (size_t)buf->size + need <= limit) {
+        target = limit;
+    }
+    markdown_core_strbuf_grow(buf, target > (size_t)INT32_MAX ? INT32_MAX : (bufsize_t)target);
+    return buf->oom ? NULL : buf->ptr + buf->size;
+}
+
+/* The end of the reserved room; one byte is kept for the terminator. */
+static inline uint8_t *S_image_end(const markdown_core_strbuf *buf) { return buf->ptr + buf->asize - 1; }
+
+/* The image written so far becomes the buffer's content. A buffer that never
+ * reserved has had nothing written into it. */
+static inline void S_finish_image(markdown_core_strbuf *buf, uint8_t *out) {
+    if (markdown_core_strbuf_owns(buf)) {
+        buf->size = (bufsize_t)(out - buf->ptr);
+        buf->ptr[buf->size] = '\0';
+    }
 }
 
 #include "case_fold.inc"
@@ -157,20 +198,14 @@ static const uint32_t *S_case_fold_entry(int32_t c) {
  * therefore remembered and written as one space only when a character follows
  * it and one precedes it, which is the trim.
  *
- * The output is reserved once. No fold image is longer than three times its
- * character (the table's widest is U+0390, two bytes to six), every other
- * character is copied, and a run shrinks, so three times the label bounds it. */
+ * The output goes through the write cursor above: a character's image is a
+ * pending space and the character folded, lowered or copied. No fold is longer
+ * than three times its character (the table's widest is U+0390, two bytes to
+ * six), every other character is copied and a run shrinks, so three times the
+ * rest of the label bounds what remains. */
 void markdown_core_utf8proc_normalize_label(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len) {
-    if (len <= 0) {
-        return;
-    }
-    size_t reserve = (size_t)dest->size + 3 * (size_t)len;
-    markdown_core_strbuf_grow(dest, reserve > (size_t)INT32_MAX ? INT32_MAX : (bufsize_t)reserve);
-    if (dest->oom) {
-        return;
-    }
-    uint8_t *const first = dest->ptr + dest->size;
-    uint8_t *out = first;
+    uint8_t *out = dest->ptr + dest->size, *end = out;
+    const bufsize_t first = dest->size;
     bool space = false;
     while (len > 0) {
         /* Total, so the walk always moves forward. The U+FFFD substitution
@@ -180,13 +215,24 @@ void markdown_core_utf8proc_normalize_label(markdown_core_strbuf *dest, const ui
         int32_t c;
         bufsize_t char_len = markdown_core_utf8proc_step(str, len, &c);
         if (char_len == 1 && markdown_core_isspace((char)str[0])) {
-            space = out != first;
+            space = out - dest->ptr > first;
         } else {
+            const uint32_t *entry = char_len > 1 && c < CF_MAX ? S_case_fold_entry(c) : NULL;
+            /* Seven bytes hold any character's image; only short of that is
+             * this one's exact length asked for. */
+            if (end - out < 7) {
+                size_t width = (size_t)space + (entry ? CF_REPL_SIZE(*entry) : (size_t)char_len);
+                if ((size_t)(end - out) < width) {
+                    if (!(out = S_reserve_image(dest, out, width, width + 3 * (size_t)(len - char_len)))) {
+                        return;
+                    }
+                    end = S_image_end(dest);
+                }
+            }
             if (space) {
                 *out++ = ' ';
                 space = false;
             }
-            const uint32_t *entry = char_len > 1 && c < CF_MAX ? S_case_fold_entry(c) : NULL;
             if (char_len == 1) {
                 *out++ = str[0] >= 'A' && str[0] <= 'Z' ? (uint8_t)(str[0] + ('a' - 'A')) : str[0];
             } else if (entry) {
@@ -200,8 +246,7 @@ void markdown_core_utf8proc_normalize_label(markdown_core_strbuf *dest, const ui
         str += char_len;
         len -= char_len;
     }
-    dest->size = (bufsize_t)(out - dest->ptr);
-    dest->ptr[dest->size] = '\0';
+    S_finish_image(dest, out);
 }
 
 // matches anything in the P[cdefios] classes.
@@ -265,30 +310,34 @@ static inline int32_t anchor_scalar(int32_t uc) {
 }
 
 /* Consume a complete literal here so UTF-8 decoding, scalar projection and
- * encoding share one loop and write straight into reserved storage.
+ * encoding share one loop and write through the cursor above.
  *
- * The reservation is an upper bound, not a guess. The generator asserts that
- * no scalar's image is longer than 3/2 of its own encoding, and a byte that
- * begins no character is stepped over as a one-byte scalar whose image is at
- * most two bytes -- so twice the literal always suffices, whatever the input. */
+ * The bound it reserves for is twice the rest of the literal. The generator
+ * asserts that no scalar's image is longer than 3/2 of its own encoding, and a
+ * byte that begins no character is stepped over as a one-byte scalar whose
+ * image is at most two bytes. */
 void markdown_core_utf8proc_anchor(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len) {
-    if (len <= 0) {
-        return;
-    }
-    size_t reserve = (size_t)dest->size + 2 * (size_t)len;
-    markdown_core_strbuf_grow(dest, reserve > (size_t)INT32_MAX ? INT32_MAX : (bufsize_t)reserve);
-    if (dest->oom) {
-        return;
-    }
-    uint8_t *out = dest->ptr + dest->size;
+    uint8_t *out = dest->ptr + dest->size, *end = out;
     for (bufsize_t at = 0; at < len;) {
         int32_t scalar;
         at += markdown_core_utf8proc_step(str + at, len - at, &scalar);
         scalar = anchor_scalar(scalar);
-        if (scalar) {
-            out += S_encode_scalar(scalar, out);
+        if (!scalar) {
+            continue;
         }
+        int width = S_scalar_width(scalar);
+        /* Four bytes hold any scalar's image; only short of that is this
+         * one's exact width compared. */
+        if (end - out < 4) {
+            if (end - out < width) {
+                if (!(out = S_reserve_image(dest, out, (size_t)width, (size_t)width + 2 * (size_t)(len - at)))) {
+                    return;
+                }
+                end = S_image_end(dest);
+            }
+        }
+        S_encode_scalar(scalar, width, out);
+        out += width;
     }
-    dest->size = (bufsize_t)(out - dest->ptr);
-    dest->ptr[dest->size] = '\0';
+    S_finish_image(dest, out);
 }
