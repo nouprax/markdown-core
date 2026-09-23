@@ -440,8 +440,10 @@ struct markdown_core_parser {
     const markdown_core_element *const *elements;
     const markdown_core_element **element_allocation;
     size_t element_count;
-    /* Stable descriptor order projected by byte once before inline parsing.
-     * Each token visits only its possible owners; offsets include an end sentinel. */
+    /* Each byte's inline owners, by precedence and then descriptor order,
+     * projected with the hook families after setup; the list lives in
+     * `block_hook_allocation`. Each token visits only its possible owners;
+     * offsets include an end sentinel. */
     size_t inline_dispatch_offsets[257];
     const markdown_core_element **inline_dispatch;
     /* The same idea one phase earlier: each block-start hook family projected
@@ -457,8 +459,8 @@ struct markdown_core_parser {
      * descriptor order rather than grouping by anything else. */
     const markdown_core_element **block_hooks[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     size_t block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
-    /* The one block behind the block families, the inline-content families
-     * and the finish steps. */
+    /* The one block behind the block families, the inline-content families,
+     * the inline dispatch lists and the finish steps. */
     void *block_hook_allocation;
     /* Each family's declared gates projected to one list of owners per key
      * (a first non-space byte, no byte, or an indented line), in the family's
@@ -509,10 +511,10 @@ struct markdown_core_parser {
      * `scripts/audit/check-parser-kind-record.mjs` holds that. */
     markdown_core_node_kind_set kinds_created;
     markdown_core_ispunct_func backslash_ispunct;
-    /* Inline special-character tables for this parser: the core defaults plus
-     * the special/emphasis-skip characters of the attached inline elements.
-     * Parser-local so concurrent parsers with different element sets never
-     * observe each other's characters. */
+    /* Inline byte tables for this parser, projected with the hook families:
+     * the text terminators, flanking-transparent bytes and start predicates
+     * of the attached inline elements. Parser-local so concurrent parsers
+     * with different element sets never observe each other's characters. */
     const markdown_core_element *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
     markdown_core_delimiter_rule delimiter_chars[256];
     bool (*inline_start_predicates[256])(markdown_core_inline_state *, bufsize_t);

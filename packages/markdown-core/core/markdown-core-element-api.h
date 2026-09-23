@@ -734,9 +734,6 @@ int markdown_core_inline_state_scan_delimiters(markdown_core_inline_state *inlin
                                                unsigned char c, int *left_flanking, int *right_flanking,
                                                int *punct_before, int *punct_after);
 
-MARKDOWN_CORE_EXPORT
-void markdown_core_manage_elements_special_characters(markdown_core_parser *parser, int add);
-
 #ifdef __cplusplus
 }
 #endif
