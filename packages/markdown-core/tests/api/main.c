@@ -6380,6 +6380,49 @@ static bool observe_reference_definition_lifetime(markdown_core_parser *parser, 
     return markdown_core_parser_attach_element(parser, &observer);
 }
 
+/* THE REFERENCE-LABEL NORMAL FORM is one pass (utf8.c) that folds, trims and
+ * collapses whitespace runs; these are the cases each former pass owned, and
+ * the one the single reservation rests on: U+0390 folds two bytes to six, so a
+ * label of nothing else is exactly three times its length. */
+static void reference_label_normal_form(test_batch_runner *runner) {
+    static const struct {
+        const char *label, *normal;
+    } cases[] = {
+        {"  Foo\t\tBAR \n baz  ", "foo bar baz"},
+        {"\r\nA\r\n", "a"},
+        {"Stra\xC3\x9F"
+         "e \xE1\xBA\x9E",
+         "strasse ss"},
+        {"\xE2\x84\xAA", "k"},
+        {"\xCE\x90\xCE\x90", "\xCE\xB9\xCC\x88\xCC\x81\xCE\xB9\xCC\x88\xCC\x81"},
+        {"A\xC3 B\xFF", "a\xC3 b\xFF"},
+        {"\x0B\x0C", "\x0B\x0C"},
+    };
+    markdown_core_strbuf normal = MARKDOWN_CORE_BUF_INIT();
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        markdown_core_chunk label = markdown_core_chunk_literal(cases[i].label);
+        OK(runner, normalize_map_label_into(&normal, &label), "label %zu has a normal form", i);
+        STR_EQ(runner, (const char *)normal.ptr, cases[i].normal, "label %zu normalizes in one pass", i);
+    }
+    markdown_core_chunk blank = markdown_core_chunk_literal(" \t\n ");
+    OK(runner, !normalize_map_label_into(&normal, &blank), "a whitespace-only label has no normal form");
+    INT_EQ(runner, normal.size, 0, "and leaves the buffer empty");
+
+    markdown_core_strbuf widest = MARKDOWN_CORE_BUF_INIT();
+    for (size_t i = 0; i < 999; i++) {
+        markdown_core_strbuf_puts(&widest, "\xCE\x90");
+    }
+    markdown_core_chunk label = {widest.ptr, widest.size, 0};
+    OK(runner, normalize_map_label_into(&normal, &label), "the widest fold has a normal form");
+    INT_EQ(runner, normal.size, 3 * widest.size, "and it is exactly three times the label");
+    OK(runner,
+       normal.ptr[normal.size] == 0 && memcmp(normal.ptr, "\xCE\xB9\xCC\x88\xCC\x81", 6) == 0 &&
+           memcmp(normal.ptr + normal.size - 6, "\xCE\xB9\xCC\x88\xCC\x81", 6) == 0,
+       "every character folded, terminated");
+    markdown_core_strbuf_free(&widest);
+    markdown_core_strbuf_free(&normal);
+}
+
 static void reference_definition_lifetime(test_batch_runner *runner) {
     const char source[] = "- a\n\n[ref]: /x\n\n#list#\n\n[ref]\n";
     bool retained_at_anchor = false;
@@ -9075,6 +9118,7 @@ int main(void) {
     image_dimension_linear_work(runner);
     block_identifier_ownership(runner);
     reference_definition_lifetime(runner);
+    reference_label_normal_form(runner);
     attribute_linear_work(runner);
     attribute_recognition_is_memoised(runner);
     attribute_values_are_one_arena(runner);

@@ -183,9 +183,7 @@ int normalize_map_label_into(markdown_core_strbuf *normalized, markdown_core_chu
     if (!ref || !ref->len) {
         return 0;
     }
-    markdown_core_utf8proc_case_fold(normalized, ref->data, ref->len);
-    markdown_core_strbuf_trim(normalized);
-    markdown_core_strbuf_normalize_whitespace(normalized);
+    markdown_core_utf8proc_normalize_label(normalized, ref->data, ref->len);
     return normalized->size && !normalized->oom;
 }
 

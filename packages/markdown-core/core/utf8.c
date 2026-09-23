@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <assert.h>
 
@@ -127,43 +129,79 @@ void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf) {
 
 #include "case_fold.inc"
 
-static int S_case_fold_compare(const void *left, const void *right) {
-    uint32_t left_entry = *(const uint32_t *)left;
-    uint32_t right_entry = *(const uint32_t *)right;
-
-    return (int32_t)CF_CODE_POINT(left_entry) - (int32_t)CF_CODE_POINT(right_entry);
+/* The fold table's entry for `c`, or NULL when it folds to itself. */
+static const uint32_t *S_case_fold_entry(int32_t c) {
+    size_t low = 0, high = CF_TABLE_SIZE;
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+        int32_t code = (int32_t)CF_CODE_POINT(cf_table[mid]);
+        if (c < code) {
+            high = mid;
+        } else if (c > code) {
+            low = mid + 1;
+        } else {
+            return &cf_table[mid];
+        }
+    }
+    return NULL;
 }
 
-void markdown_core_utf8proc_case_fold(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len) {
-    int32_t c;
-
+/* THE REFERENCE-LABEL NORMAL FORM, in one pass: case fold, then drop leading
+ * and trailing whitespace and collapse each interior run to one space.
+ *
+ * It was three passes -- fold one character at a time into the buffer, trim
+ * both ends, collapse the runs -- and they compose character by character:
+ * folding neither creates nor changes a whitespace byte (a fold's image is
+ * letters and marks, and a byte that is not a character is copied as it is),
+ * so a run seen in the input is the run the later passes saw. A run is
+ * therefore remembered and written as one space only when a character follows
+ * it and one precedes it, which is the trim.
+ *
+ * The output is reserved once. No fold image is longer than three times its
+ * character (the table's widest is U+0390, two bytes to six), every other
+ * character is copied, and a run shrinks, so three times the label bounds it. */
+void markdown_core_utf8proc_normalize_label(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len) {
+    if (len <= 0) {
+        return;
+    }
+    size_t reserve = (size_t)dest->size + 3 * (size_t)len;
+    markdown_core_strbuf_grow(dest, reserve > (size_t)INT32_MAX ? INT32_MAX : (bufsize_t)reserve);
+    if (dest->oom) {
+        return;
+    }
+    uint8_t *const first = dest->ptr + dest->size;
+    uint8_t *out = first;
+    bool space = false;
     while (len > 0) {
         /* Total, so the walk always moves forward. The U+FFFD substitution
          * this used to make for a byte that starts no character was the one
          * place the library REPAIRED malformed input, which markdown_core.h
          * says it does not do. */
+        int32_t c;
         bufsize_t char_len = markdown_core_utf8proc_step(str, len, &c);
-
-        if (char_len == 1) {
-            if (c >= 'A' && c <= 'Z') {
-                c += 'a' - 'A';
-            }
-            markdown_core_strbuf_putc(dest, c);
-        } else if (c >= CF_MAX) {
-            markdown_core_strbuf_put(dest, str, char_len);
+        if (char_len == 1 && markdown_core_isspace((char)str[0])) {
+            space = out != first;
         } else {
-            uint32_t key = (uint32_t)c;
-            uint32_t *entry = bsearch(&key, cf_table, CF_TABLE_SIZE, sizeof(uint32_t), S_case_fold_compare);
-            if (entry == NULL) {
-                markdown_core_strbuf_put(dest, str, char_len);
+            if (space) {
+                *out++ = ' ';
+                space = false;
+            }
+            const uint32_t *entry = char_len > 1 && c < CF_MAX ? S_case_fold_entry(c) : NULL;
+            if (char_len == 1) {
+                *out++ = str[0] >= 'A' && str[0] <= 'Z' ? (uint8_t)(str[0] + ('a' - 'A')) : str[0];
+            } else if (entry) {
+                memcpy(out, cf_repl + CF_REPL_IDX(*entry), CF_REPL_SIZE(*entry));
+                out += CF_REPL_SIZE(*entry);
             } else {
-                markdown_core_strbuf_put(dest, cf_repl + CF_REPL_IDX(*entry), CF_REPL_SIZE(*entry));
+                memcpy(out, str, (size_t)char_len);
+                out += char_len;
             }
         }
-
         str += char_len;
         len -= char_len;
     }
+    dest->size = (bufsize_t)(out - dest->ptr);
+    dest->ptr[dest->size] = '\0';
 }
 
 // matches anything in the P[cdefios] classes.

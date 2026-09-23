@@ -130,9 +130,6 @@ MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_trim(markdown_core_strbuf *buf);
 
 MARKDOWN_CORE_EXPORT
-void markdown_core_strbuf_normalize_whitespace(markdown_core_strbuf *s);
-
-MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_unescape(markdown_core_strbuf *s);
 
 #ifdef __cplusplus
