@@ -15,6 +15,27 @@ const inline = (...parts) => ["probe ", ...parts, " end\n\n"];
 const entries = [];
 const ordinal = (encoding) => ({ name: "ordinal", grammar: "ordinal", encoding });
 const state = (encoding) => ({ name: "state", grammar: "state", encoding });
+// Pinned cmark/Core link labels admit at most 1000 source bytes. A GFM
+// footnote call includes its leading caret in that counter, leaving 999 for
+// this ASCII key. These are grammar constraints on every occurrence of the
+// binding, including an unrestricted dialect-side key paired with a label.
+const labelBounds = {
+    "common-reference-full": { key: 1000 },
+    "common-reference-collapsed": { key: 1000 },
+    "common-reference-shortcut": { key: 1000 },
+    "common-reference-duplicate": { key: 1000 },
+    "heading-reference": { key: 1000 },
+    "heading-explicit-id": { key: 1000 },
+    "block-id-paragraph": { key: 1000 },
+    "block-id-list": { key: 1000, value: 1000 },
+    "attribute-reference": { key: 1000 },
+    "gfm-footnote": { key: 999 },
+    "gfm-footnote-cycle": { key: 999 },
+    "footnote-retention": { key: 999, target: 999 },
+    "specimen-graph": { key: 999 },
+    "specimen-reset": { key: 1000 },
+    "specimen-groups": { key: 1000 }
+};
 function pair(id, feature, facets, dialect, common, kinds, options = {}) {
     if (feature === "attributes") {
         const restrict = (part) =>
@@ -23,6 +44,14 @@ function pair(id, feature, facets, dialect, common, kinds, options = {}) {
                 : part;
         dialect = dialect.map(restrict);
         common = common.map(restrict);
+    }
+    if (labelBounds[id]) {
+        const bound = (part) =>
+            typeof part !== "string" && labelBounds[id][part.name]
+                ? { ...part, maxBytes: labelBounds[id][part.name] }
+                : part;
+        dialect = dialect.map(bound);
+        common = common.map(bound);
     }
     entries.push({ id, feature, facets, dialect, common, kinds, ...options });
 }
@@ -745,8 +774,9 @@ pair(
     "comments",
     ["empty-percent-comment", "adjacent-delimiters"],
     inline("%%%%", k),
-    inline("<!-- -->", k),
-    [["Comment"], ["Comment"]]
+    inline("<!-->", k),
+    [["Comment"], ["Comment"]],
+    { check: { kind: "Comment", fields: { literal: "" } } }
 );
 pair(
     "definition-blocks",

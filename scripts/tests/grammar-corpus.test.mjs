@@ -344,6 +344,27 @@ test("reference measurements are limited to the exact certified input side", () 
     assert.throws(() => grammarEngines({ side: "common", part: "unknown" }));
 });
 
+test("reference-label bounds are part of the grammar and generated at their exact limits", () => {
+    for (const certificate of full) {
+        const normal = grammarNormalForm(certificate.id, "dialect");
+        for (const field of normal.fields ?? [])
+            if (field.maxBytes) {
+                const p = { ...fresh(), [field.name]: "a".repeat(field.maxBytes) };
+                const row = instantiateGrammar(certificate.id, p);
+                assert.equal(row.derivation[0].find(([name]) => name === field.name)[1].value.length, field.maxBytes);
+                assert.throws(
+                    () => instantiateGrammar(certificate.id, { ...p, [field.name]: p[field.name] + "a" }),
+                    /byte bound/u
+                );
+                const generated = grammarUnit(certificate.id, 11);
+                assert.equal(
+                    generated.derivation[0].find(([name]) => name === field.name)[1].value.length,
+                    field.maxBytes
+                );
+            }
+    }
+});
+
 test("finite substitutions and bindings retain every alternative, state, and equality constraint", () => {
     for (const id of ["alpha-list", "upper-list", "roman-list", "upper-roman-list"])
         for (let start = 1; start <= 26; start++) {

@@ -5844,7 +5844,8 @@
                     },
                     {
                         "name": "key",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 1000
                     },
                     {
                         "name": "target",
@@ -5857,8 +5858,8 @@
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"probe \" \"[\" body:inline \"][\" key:word \"]\" \" end\\n\\n\" \"[\" key:word \"]: /\" target:word \" \\\"\" value:word \"\\\"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe \" \"[\" body:inline \"][\" key:word \"]\" \" end\\n\\n\" \"[\" key:word \"]: /\" target:word \" \\\"\" value:word \"\\\"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = \"probe \" \"[\" body:inline \"][\" key:word{source-bytes<=1000} \"]\" \" end\\n\\n\" \"[\" key:word{source-bytes<=1000} \"]: /\" target:word \" \\\"\" value:word \"\\\"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"probe \" \"[\" body:inline \"][\" key:word{source-bytes<=1000} \"]\" \" end\\n\\n\" \"[\" key:word{source-bytes<=1000} \"]: /\" target:word \" \\\"\" value:word \"\\\"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -5964,7 +5965,8 @@
                 "fields": [
                     {
                         "name": "key",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 1000
                     },
                     {
                         "name": "target",
@@ -5977,8 +5979,8 @@
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"probe \" \"[\" key:word \"][]\" \" end\\n\\n\" \"[\" key:word \"]: /\" target:word \" \\\"\" value:word \"\\\"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe \" \"[\" key:word \"][]\" \" end\\n\\n\" \"[\" key:word \"]: /\" target:word \" \\\"\" value:word \"\\\"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = \"probe \" \"[\" key:word{source-bytes<=1000} \"][]\" \" end\\n\\n\" \"[\" key:word{source-bytes<=1000} \"]: /\" target:word \" \\\"\" value:word \"\\\"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"probe \" \"[\" key:word{source-bytes<=1000} \"][]\" \" end\\n\\n\" \"[\" key:word{source-bytes<=1000} \"]: /\" target:word \" \\\"\" value:word \"\\\"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -6064,7 +6066,8 @@
                 "fields": [
                     {
                         "name": "key",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 1000
                     },
                     {
                         "name": "target",
@@ -6077,8 +6080,8 @@
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"probe \" \"[\" key:word \"]\" \" end\\n\\n\" \"[\" key:word \"]: /\" target:word \" \\\"\" value:word \"\\\"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe \" \"[\" key:word \"]\" \" end\\n\\n\" \"[\" key:word \"]: /\" target:word \" \\\"\" value:word \"\\\"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = \"probe \" \"[\" key:word{source-bytes<=1000} \"]\" \" end\\n\\n\" \"[\" key:word{source-bytes<=1000} \"]: /\" target:word \" \\\"\" value:word \"\\\"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"probe \" \"[\" key:word{source-bytes<=1000} \"]\" \" end\\n\\n\" \"[\" key:word{source-bytes<=1000} \"]: /\" target:word \" \\\"\" value:word \"\\\"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -6164,7 +6167,8 @@
                 "fields": [
                     {
                         "name": "key",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 1000
                     },
                     {
                         "name": "target",
@@ -6177,8 +6181,8 @@
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"[\" key:word \"]\\n\\n[\" key:word \"]: /\" target:word \"\\n[\" key:word \"]: /\" value:word \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"[\" key:word \"]\\n\\n[\" key:word \"]: /\" target:word \"\\n[\" key:word \"]: /\" value:word \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = \"[\" key:word{source-bytes<=1000} \"]\\n\\n[\" key:word{source-bytes<=1000} \"]: /\" target:word \"\\n[\" key:word{source-bytes<=1000} \"]: /\" value:word \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"[\" key:word{source-bytes<=1000} \"]\\n\\n[\" key:word{source-bytes<=1000} \"]: /\" target:word \"\\n[\" key:word{source-bytes<=1000} \"]: /\" value:word \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -7738,13 +7742,14 @@
                     },
                     {
                         "name": "key",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 999
                     }
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"probe [^\" key:word \"] end\\n\\n[^\" key:word \"]: \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe [^\" key:word \"] end\\n\\n[^\" key:word \"]: \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = \"probe [^\" key:word{source-bytes<=999} \"] end\\n\\n[^\" key:word{source-bytes<=999} \"]: \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"probe [^\" key:word{source-bytes<=999} \"] end\\n\\n[^\" key:word{source-bytes<=999} \"]: \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -9694,13 +9699,14 @@
                     },
                     {
                         "name": "key",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 1000
                     }
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = body:inline \" #\" key:word \"#\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = body:inline \"\\n\\n[\" key:word \"]: /target\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = body:inline \" #\" key:word{source-bytes<=1000} \"#\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = body:inline \"\\n\\n[\" key:word{source-bytes<=1000} \"]: /target\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -9782,13 +9788,14 @@
                     },
                     {
                         "name": "key",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 1000
                     }
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"# \" body:inline \" {#\" key:word \"}\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"# \" body:inline \"\\n\\n[\" key:word \"]: /target\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = \"# \" body:inline \" {#\" key:word{source-bytes<=1000} \"}\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"# \" body:inline \"\\n\\n[\" key:word{source-bytes<=1000} \"]: /target\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -9866,13 +9873,14 @@
                 "fields": [
                     {
                         "name": "key",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 1000
                     }
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"[\" key:word \"]\\n\\n# \" key:word \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"[\" key:word \"]\\n\\n[\" key:word \"]: #\" key:word \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = \"[\" key:word{source-bytes<=1000} \"]\\n\\n# \" key:word{source-bytes<=1000} \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"[\" key:word{source-bytes<=1000} \"]\\n\\n[\" key:word{source-bytes<=1000} \"]: #\" key:word{source-bytes<=1000} \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -11508,13 +11516,14 @@
                     },
                     {
                         "name": "key",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 999
                     }
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"As (@\" key:word \") shows.\\n\\n(@\" key:word \") \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"As [^\" key:word \"] shows.\\n\\n[^\" key:word \"]: \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = \"As (@\" key:word{source-bytes<=999} \") shows.\\n\\n(@\" key:word{source-bytes<=999} \") \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"As [^\" key:word{source-bytes<=999} \"] shows.\\n\\n[^\" key:word{source-bytes<=999} \"]: \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -12254,7 +12263,8 @@
                     },
                     {
                         "name": "key",
-                        "grammar": "attribute-key"
+                        "grammar": "attribute-key",
+                        "maxBytes": 1000
                     },
                     {
                         "name": "target",
@@ -12267,8 +12277,8 @@
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"[\" body:inline \"][\" key:attribute-key \"]{#\" anchor:word \" .\" value:word \"}\\n\\n[\" key:attribute-key \"]: /\" target:word \" {.base}\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"[\" body:inline \"][\" key:attribute-key \"] [](#\" anchor:word \" \\\"\" value:word \"\\\")\\n\\n[\" key:attribute-key \"]: /\" target:word \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = \"[\" body:inline \"][\" key:attribute-key{source-bytes<=1000} \"]{#\" anchor:word \" .\" value:word \"}\\n\\n[\" key:attribute-key{source-bytes<=1000} \"]: /\" target:word \" {.base}\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"[\" body:inline \"][\" key:attribute-key{source-bytes<=1000} \"] [](#\" anchor:word \" \\\"\" value:word \"\\\")\\n\\n[\" key:attribute-key{source-bytes<=1000} \"]: /\" target:word \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -12702,17 +12712,19 @@
                     },
                     {
                         "name": "key",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 1000
                     },
                     {
                         "name": "value",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 1000
                     }
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"- \" body:inline \" #\" key:word \"#\\n\\n#\" value:word \"#\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"- \" body:inline \"\\n\\n[\" key:word \"]: /item\\n[\" value:word \"]: /list\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = \"- \" body:inline \" #\" key:word{source-bytes<=1000} \"#\\n\\n#\" value:word{source-bytes<=1000} \"#\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"- \" body:inline \"\\n\\n[\" key:word{source-bytes<=1000} \"]: /item\\n[\" value:word{source-bytes<=1000} \"]: /list\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -12908,13 +12920,14 @@
                     },
                     {
                         "name": "key",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 999
                     }
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"probe [^\" key:word \"]\\n\\n[^\" key:word \"]: \" body:inline \" [^\" key:word \"]\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe [^\" key:word \"]\\n\\n[^\" key:word \"]: \" body:inline \" [^\" key:word \"]\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = \"probe [^\" key:word{source-bytes<=999} \"]\\n\\n[^\" key:word{source-bytes<=999} \"]: \" body:inline \" [^\" key:word{source-bytes<=999} \"]\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"probe [^\" key:word{source-bytes<=999} \"]\\n\\n[^\" key:word{source-bytes<=999} \"]: \" body:inline \" [^\" key:word{source-bytes<=999} \"]\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -12996,7 +13009,8 @@
                     },
                     {
                         "name": "key",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 999
                     },
                     {
                         "name": "literal",
@@ -13008,13 +13022,14 @@
                     },
                     {
                         "name": "target",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 999
                     }
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"probe [^\" key:word \"] [^\" key:word \"] end\\n\\n[^\" key:word \"]: \" body:inline \"\\n\\n[^\" key:word \"]: \" tail:inline \"\\n\\n[^\" target:word \"]: \" literal:phrase \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe [^\" key:word \"] [^\" key:word \"] end\\n\\n[^\" key:word \"]: \" body:inline \"\\n\\n[^\" key:word \"]: \" tail:inline \"\\n\\n[^\" target:word \"]: \" literal:phrase \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = \"probe [^\" key:word{source-bytes<=999} \"] [^\" key:word{source-bytes<=999} \"] end\\n\\n[^\" key:word{source-bytes<=999} \"]: \" body:inline \"\\n\\n[^\" key:word{source-bytes<=999} \"]: \" tail:inline \"\\n\\n[^\" target:word{source-bytes<=999} \"]: \" literal:phrase \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"probe [^\" key:word{source-bytes<=999} \"] [^\" key:word{source-bytes<=999} \"] end\\n\\n[^\" key:word{source-bytes<=999} \"]: \" body:inline \"\\n\\n[^\" key:word{source-bytes<=999} \"]: \" tail:inline \"\\n\\n[^\" target:word{source-bytes<=999} \"]: \" literal:phrase \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -13164,7 +13179,7 @@
             },
             "grammars": {
                 "dialect": "Document = Unit+ ; Unit = \"probe \" \"%%%%\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe \" \"<!-- -->\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "common": "Document = Unit+ ; Unit = \"probe \" \"<!-->\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -13176,7 +13191,7 @@
             "examples": [
                 {
                     "dialect": "probe %%%%nd end\n\n",
-                    "common": "probe <!-- -->nd end\n\n",
+                    "common": "probe <!-->nd end\n\n",
                     "derivation": [
                         [
                             [
@@ -13191,7 +13206,7 @@
                 },
                 {
                     "dialect": "probe %%%%od end\n\n",
-                    "common": "probe <!-- -->od end\n\n",
+                    "common": "probe <!-->od end\n\n",
                     "derivation": [
                         [
                             [
@@ -14716,7 +14731,8 @@
                     },
                     {
                         "name": "key",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 1000
                     },
                     {
                         "name": "reset",
@@ -14725,8 +14741,8 @@
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"As (@\" key:word \") shows.\\n\\n(\" reset:positive9 \"@\" key:word \") \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"As [\" key:word \"] shows.\\n\\n[\" key:word \"]: /\" key:word \"\\n\\n\" reset:positive9 \". \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = \"As (@\" key:word{source-bytes<=1000} \") shows.\\n\\n(\" reset:positive9 \"@\" key:word{source-bytes<=1000} \") \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"As [\" key:word{source-bytes<=1000} \"] shows.\\n\\n[\" key:word{source-bytes<=1000} \"]: /\" key:word{source-bytes<=1000} \"\\n\\n\" reset:positive9 \". \" body:inline \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -14822,7 +14838,8 @@
                     },
                     {
                         "name": "key",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 1000
                     },
                     {
                         "name": "tail",
@@ -14831,8 +14848,8 @@
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"(5@) \" body:inline \"\\n\\n(7@\" key:word \") \" tail:inline \"\\n\\n(@\" key:word \") \" body:inline \"\\n\\nAs (@\" key:word \") shows.\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"5. \" body:inline \"\\n\\n7. \" tail:inline \"\\n\\n1. \" body:inline \"\\n\\nAs [\" key:word \"] shows.\\n\\n[\" key:word \"]: /\" key:word \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = \"(5@) \" body:inline \"\\n\\n(7@\" key:word{source-bytes<=1000} \") \" tail:inline \"\\n\\n(@\" key:word{source-bytes<=1000} \") \" body:inline \"\\n\\nAs (@\" key:word{source-bytes<=1000} \") shows.\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"5. \" body:inline \"\\n\\n7. \" tail:inline \"\\n\\n1. \" body:inline \"\\n\\nAs [\" key:word{source-bytes<=1000} \"] shows.\\n\\n[\" key:word{source-bytes<=1000} \"]: /\" key:word{source-bytes<=1000} \"\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -19502,13 +19519,14 @@
                     },
                     {
                         "name": "key",
-                        "grammar": "word"
+                        "grammar": "word",
+                        "maxBytes": 1000
                     }
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = \"> \" body:inline \"\\n\\n#\" key:word \"#\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"> \" body:inline \"\\n\\n[\" key:word \"]: /target\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "dialect": "Document = Unit+ ; Unit = \"> \" body:inline \"\\n\\n#\" key:word{source-bytes<=1000} \"#\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"> \" body:inline \"\\n\\n[\" key:word{source-bytes<=1000} \"]: /target\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",

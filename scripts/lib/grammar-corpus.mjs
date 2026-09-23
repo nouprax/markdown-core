@@ -325,7 +325,10 @@ export function productGrammar(id) {
     const f = (name, grammar = "word") => ({ name, grammar });
     const b = f("body", "inline"),
         t = f("tail", "inline"),
-        k = f("key", id === "record-span" ? "attribute-key" : "word"),
+        k = {
+            ...f("key", id === "record-span" ? "attribute-key" : "word"),
+            ...(id === "anchor" ? { maxBytes: 1000 } : {})
+        },
         v = f("value"),
         target = f("target"),
         anchor = f("anchor"),
@@ -425,6 +428,10 @@ function fieldPattern(field) {
                 : "";
 }
 function decodeField(field, source) {
+    if (field.maxBytes !== undefined) {
+        assert.ok(Number.isSafeInteger(field.maxBytes) && field.maxBytes > 0);
+        assert.ok(Buffer.byteLength(source) <= field.maxBytes, "field exceeds its grammar byte bound");
+    }
     const tokens = finiteLexicons[field.grammar]?.[field.encoding];
     if (!tokens) return recognizeValue(field.grammar, source);
     const index = tokens.indexOf(source);
@@ -811,7 +818,11 @@ export function grammarNormalForm(id, side) {
         const fields = productGrammar(id)[side].filter((part) => typeof part !== "string");
         const bindings = new Map();
         for (const field of fields) {
-            const type = { name: field.name, grammar: field.grammar };
+            const type = {
+                name: field.name,
+                grammar: field.grammar,
+                ...(field.maxBytes !== undefined ? { maxBytes: field.maxBytes } : {})
+            };
             if (bindings.has(field.name)) assert.deepEqual(bindings.get(field.name), type, "binding changed type");
             else bindings.set(field.name, type);
         }
@@ -836,7 +847,7 @@ function grammarDescription(certificate, side) {
                 .map((part) =>
                     typeof part === "string"
                         ? JSON.stringify(part)
-                        : `${part.name}:${part.grammar}${part.encoding ? `[${part.encoding}: ${finiteLexicons[part.grammar][part.encoding].map(JSON.stringify).join("|")}]` : ""}`
+                        : `${part.name}:${part.grammar}${part.maxBytes ? `{source-bytes<=${part.maxBytes}}` : ""}${part.encoding ? `[${part.encoding}: ${finiteLexicons[part.grammar][part.encoding].map(JSON.stringify).join("|")}]` : ""}`
                 )
                 .join(" ") +
             " ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; " +
@@ -863,7 +874,15 @@ function grammarDescription(certificate, side) {
 }
 
 export function grammarUnit(id, index = 0) {
-    return instantiateGrammar(id, parameters(index));
+    const p = parameters(index);
+    if (isProduct(id) && index % 12 === 11) {
+        for (const field of grammarNormalForm(id, "dialect").fields)
+            if (field.maxBytes) {
+                const value = field.name + p[field.name];
+                p[field.name] = value.repeat(Math.ceil(field.maxBytes / value.length)).slice(0, field.maxBytes);
+            }
+    }
+    return instantiateGrammar(id, p);
 }
 
 export function instantiateGrammar(id, p) {

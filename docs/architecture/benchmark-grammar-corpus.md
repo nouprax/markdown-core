@@ -64,6 +64,15 @@ Body   = Word | Word SP (Atom SP)* Word ;
 Atom   = Word | OPEN Body CLOSE ;
 ```
 
+A field annotated `source-bytes <= n` restricts that lexical language on **both**
+sides. Link reference labels are bounded by 1,000 source bytes. GFM footnote
+calls count the authored caret in that limit, so their ASCII key domain is at
+most 999 bytes. A specimen or heading key paired with one of these labels takes
+the same bound; an unbounded Word would not prove a valid native counterpart.
+Repeated occurrences retain the same bound. The decoder rejects the first byte
+beyond it, and the default generated schedule reaches each bound at both scales.
+These are syntax limits, distinct from an implementation's allocation failure.
+
 `Body` has a Word at both ends. Its nested atoms have a space before and after
 them. `OPEN` and `CLOSE` are the same fixed punctuation token (`**` normally,
 `++` in the recursive insertion side). Words contain neither punctuation nor
