@@ -2,12 +2,14 @@
 
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
-contains all 47 certificates, the two concrete grammars, their normal forms,
+contains all 55 certificates, the two concrete grammars, their normal forms,
 and two complete examples per family. `scripts/lib/grammar-corpus.mjs` generates
 arbitrarily chosen values in those grammars; it does not derive a grammar from a
-native AST. The default benchmark emits 236 documents: 35 whole grammar pairs
-and 12 boundary pairs with both original hosts, at two scales. These cover all
-30 historical scenarios and all 43 former structural pairing domains.
+native AST. The default benchmark emits 300 documents: 35 whole grammar pairs
+and 20 boundary pairs with both original hosts, at two scales. These cover all
+30 historical scenarios and all 43 former structural pairing domains. Eight additional boundary families
+retain historical affix/dimension/reset/caption/headless/sparse/definition work
+that would otherwise disappear when only the shared restricted domain was kept.
 
 ## What equivalence means here
 
@@ -213,9 +215,18 @@ pair is positively proved by T5. No full-host ratio receives a grammar certifica
 | grid-cell | width/max/padding constraints remain on only the grid side | body:B, tail:B |
 | simple-matrix | computed column widths and alignment remain on only the simple side | anchor:W, key:W, target:W, value:W |
 | specimen-graph | binding/ordinal/hoisting rules are not supplied by independent-field products | body:B, key:W |
-| metadataempty | unknown-member acceptance/retention differs from literal code | body:B, value:W |
-| metadata | duplicate typed-member overwrite differs from literal code retention | body:B, value:W |
+| metadataempty | unknown-member acceptance/retention differs from literal code | body:B, key:W, value:W |
+| metadata | first-valid typed-member retention differs from literal code retention | body:B, value:W |
 | callout | three collapse states map to the same reference frame | body:B |
+| citation-affixes | affix attachment/group recognition is absent from a single link label grammar | key:W, literal:P, value:W |
+| embed-dimensions | width/height disappear from the CommonMark image counterpart | literal:P, target:W |
+| specimen-reset | explicit ordinal reset has no footnote counterpart | body:B, key:W |
+| trailing-caption | table-caption attachment differs from a following paragraph | key:W, literal:P, value:W |
+| headless-matrix | a headerless matrix differs from a required pipe-table header | anchor:W, key:W, target:W, value:W |
+| sparse-grid | spans, sparse/empty rows, footer and empty-caption grammar remain residual | anchor:W, footer:W, key:W, last:W, target:W, value:W |
+| leading-caption | leading-caption attachment differs from an independent paragraph | key:W, literal:P, value:W |
+| mixed-definitions | multiple/loose/empty definition recognition remains residual | anchor:W, body:B, empty:E, key:W, literal:P, tail:B, target:W |
+
 
 For example, varying a default list's start changes the decimal counterpart but
 not the default marker. Varying the collapse state likewise leaves its old quote
@@ -245,7 +256,10 @@ It is **not** a claim that the native parser exposes that interior operation as
 a standalone function, or that host cost equals boundary cost plus a subtraction.
 
 Metadata hosts have one initial envelope containing all generated members,
-followed by their bodies. Repeating a document-initial envelope in the middle of
+followed by their bodies. The typed metadata host retains the original large
+integer, boolean, null, mixed author list and empty keyword list as explicit
+residual bytes, alongside varying date members. Unknown-member hosts vary their
+keys independently. Repeating a document-initial envelope in the middle of
 a document would not remain a metadata scenario. The corpus explicitly composes
 one envelope instead. Its lossless pieces retain every occurrence of every value.
 
@@ -277,7 +291,11 @@ pnpm benchmark:grammar --scale 2 --out build/benchmark-grammar
 
 The native audit runs Core/cmark/cmark-gfm on the actual emitted documents.
 It checks recursive meanings, literal fields, fixed task/formula states and
-boundary field counts against grammar-derived expectations. Tests separately
+boundary field counts against grammar-derived expectations. It also verifies
+that historical residual hosts really retain their affixes, dimensions, reset
+ordinals, captions, headless sections, row/column spans, footer, and empty/loose
+definitions. Merely recognizing a generic Table or mapping a scenario ID to a
+shared subset cannot pass that check. Tests separately
 check inverse laws, rejected syntax, independence, lossless partitions, complete
 coverage and reporting boundaries. A native audit is finite evidence that our
 encodings match the implementations; it is not a substitute for T1–T5.

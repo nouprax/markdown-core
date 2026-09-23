@@ -8,6 +8,3338 @@
     },
     "certificates": [
         {
+            "id": "citation-affixes",
+            "certificate": "citation-affixes-grammar-v1",
+            "scope": "boundary-grammar",
+            "legacy": ["citegroup"],
+            "structuralPredecessor": null,
+            "theorem": "T5",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "key",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "literal",
+                        "grammar": "phrase"
+                    },
+                    {
+                        "name": "value",
+                        "grammar": "word"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = key:word literal:phrase value:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;",
+                "common": "Document = Unit+ ; Unit = key:word literal:phrase value:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;"
+            },
+            "rewrite": [
+                "lossless-slot-decomposition",
+                "common-field-order",
+                "shared-explicit-entry-envelope",
+                "identity-grammar"
+            ],
+            "residual": "Citation prefix/suffix attachment and group recognition remain residual; key and both affixes are retained as independent local fields.",
+            "examples": [
+                {
+                    "dialect": "See [b r vd @nd, rbrb] here.\n\n",
+                    "common": "See [b r vd nd rbrb](/nd) here.\n\n",
+                    "fields": [
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "nd"
+                            }
+                        ],
+                        [
+                            "literal",
+                            {
+                                "grammar": "phrase",
+                                "source": "b r vd"
+                            }
+                        ],
+                        [
+                            "value",
+                            {
+                                "grammar": "word",
+                                "source": "rbrb"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "`nd`\n\n`b r vd`\n\n`rbrb`\n\n",
+                        "common": "`nd`\n\n`b r vd`\n\n`rbrb`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 5,
+                                "source": "See ["
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 5,
+                                "end": 11,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "b r vd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 11,
+                                "end": 13,
+                                "source": " @"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 13,
+                                "end": 15,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 15,
+                                "end": 17,
+                                "source": ", "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 17,
+                                "end": 21,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "rbrb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 21,
+                                "end": 30,
+                                "source": "] here.\n\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 5,
+                                "source": "See ["
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 5,
+                                "end": 11,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "b r vd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 11,
+                                "end": 12,
+                                "source": " "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 12,
+                                "end": 14,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 14,
+                                "end": 15,
+                                "source": " "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 15,
+                                "end": 19,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "rbrb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 19,
+                                "end": 22,
+                                "source": "](/"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 22,
+                                "end": 24,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 24,
+                                "end": 33,
+                                "source": ") here.\n\n"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "dialect": "See [ii wb wdwd @od, ececec] here.\n\n",
+                    "common": "See [ii wb wdwd od ececec](/od) here.\n\n",
+                    "fields": [
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "od"
+                            }
+                        ],
+                        [
+                            "literal",
+                            {
+                                "grammar": "phrase",
+                                "source": "ii wb wdwd"
+                            }
+                        ],
+                        [
+                            "value",
+                            {
+                                "grammar": "word",
+                                "source": "ececec"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "`od`\n\n`ii wb wdwd`\n\n`ececec`\n\n",
+                        "common": "`od`\n\n`ii wb wdwd`\n\n`ececec`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 5,
+                                "source": "See ["
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 5,
+                                "end": 15,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "ii wb wdwd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 15,
+                                "end": 17,
+                                "source": " @"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 17,
+                                "end": 19,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 19,
+                                "end": 21,
+                                "source": ", "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 21,
+                                "end": 27,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "ececec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 27,
+                                "end": 36,
+                                "source": "] here.\n\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 5,
+                                "source": "See ["
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 5,
+                                "end": 15,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "ii wb wdwd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 15,
+                                "end": 16,
+                                "source": " "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 16,
+                                "end": 18,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 18,
+                                "end": 19,
+                                "source": " "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 19,
+                                "end": 25,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "ececec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 25,
+                                "end": 28,
+                                "source": "](/"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 28,
+                                "end": 30,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 30,
+                                "end": 39,
+                                "source": ") here.\n\n"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "id": "embed-dimensions",
+            "certificate": "embed-dimensions-grammar-v1",
+            "scope": "boundary-grammar",
+            "legacy": ["embed"],
+            "structuralPredecessor": null,
+            "theorem": "T5",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "literal",
+                        "grammar": "phrase"
+                    },
+                    {
+                        "name": "target",
+                        "grammar": "word"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = literal:phrase target:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;",
+                "common": "Document = Unit+ ; Unit = literal:phrase target:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;"
+            },
+            "rewrite": [
+                "lossless-slot-decomposition",
+                "common-field-order",
+                "shared-explicit-entry-envelope",
+                "identity-grammar"
+            ],
+            "residual": "Numeric image width/height has no field in the supplied CommonMark image counterpart; target and label remain locally paired.",
+            "examples": [
+                {
+                    "dialect": "See ![[h|b r vd|1x2]] here.\n\n",
+                    "common": "See ![b r vd](/h) here.\n\n",
+                    "fields": [
+                        [
+                            "literal",
+                            {
+                                "grammar": "phrase",
+                                "source": "b r vd"
+                            }
+                        ],
+                        [
+                            "target",
+                            {
+                                "grammar": "word",
+                                "source": "h"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "`b r vd`\n\n`h`\n\n",
+                        "common": "`b r vd`\n\n`h`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 7,
+                                "source": "See ![["
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 7,
+                                "end": 8,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "h"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 8,
+                                "end": 9,
+                                "source": "|"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 9,
+                                "end": 15,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "b r vd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 15,
+                                "end": 29,
+                                "source": "|1x2]] here.\n\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 6,
+                                "source": "See !["
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 6,
+                                "end": 12,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "b r vd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 12,
+                                "end": 15,
+                                "source": "](/"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 15,
+                                "end": 16,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "h"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 16,
+                                "end": 25,
+                                "source": ") here.\n\n"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "dialect": "See ![[ss|ii wb wdwd|2x3]] here.\n\n",
+                    "common": "See ![ii wb wdwd](/ss) here.\n\n",
+                    "fields": [
+                        [
+                            "literal",
+                            {
+                                "grammar": "phrase",
+                                "source": "ii wb wdwd"
+                            }
+                        ],
+                        [
+                            "target",
+                            {
+                                "grammar": "word",
+                                "source": "ss"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "`ii wb wdwd`\n\n`ss`\n\n",
+                        "common": "`ii wb wdwd`\n\n`ss`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 7,
+                                "source": "See ![["
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 7,
+                                "end": 9,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "ss"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 9,
+                                "end": 10,
+                                "source": "|"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 10,
+                                "end": 20,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "ii wb wdwd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 20,
+                                "end": 34,
+                                "source": "|2x3]] here.\n\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 6,
+                                "source": "See !["
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 6,
+                                "end": 16,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "ii wb wdwd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 16,
+                                "end": 19,
+                                "source": "](/"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 19,
+                                "end": 21,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "ss"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 21,
+                                "end": 30,
+                                "source": ") here.\n\n"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "id": "specimen-reset",
+            "certificate": "specimen-reset-grammar-v1",
+            "scope": "boundary-grammar",
+            "legacy": ["specimenstart"],
+            "structuralPredecessor": null,
+            "theorem": "T5",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "body",
+                        "grammar": "inline"
+                    },
+                    {
+                        "name": "key",
+                        "grammar": "word"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = body:inline key:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;",
+                "common": "Document = Unit+ ; Unit = body:inline key:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;"
+            },
+            "rewrite": [
+                "lossless-slot-decomposition",
+                "common-field-order",
+                "shared-explicit-entry-envelope",
+                "identity-grammar"
+            ],
+            "residual": "Explicit specimen ordinal resets do not occur in the footnote counterpart; the key and entire definition body are retained.",
+            "examples": [
+                {
+                    "dialect": "As (@nd) shows.\n\n(1@nd) b **uu mbmb qbqb** ac\n\n",
+                    "common": "As [^nd] shows.\n\n[^nd]: b **uu mbmb qbqb** ac\n\n",
+                    "fields": [
+                        [
+                            "body",
+                            {
+                                "grammar": "inline",
+                                "source": "b **uu mbmb qbqb** ac"
+                            }
+                        ],
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "nd"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "b **uu mbmb qbqb** ac\n\n`nd`\n\n",
+                        "common": "b **uu mbmb qbqb** ac\n\n`nd`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 5,
+                                "source": "As (@"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 5,
+                                "end": 7,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 7,
+                                "end": 18,
+                                "source": ") shows.\n\n("
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 18,
+                                "end": 19,
+                                "source": "1"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 19,
+                                "end": 20,
+                                "source": "@"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 20,
+                                "end": 22,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 22,
+                                "end": 24,
+                                "source": ") "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 24,
+                                "end": 45,
+                                "name": "body",
+                                "grammar": "inline",
+                                "source": "b **uu mbmb qbqb** ac"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 45,
+                                "end": 47,
+                                "source": "\n\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 5,
+                                "source": "As [^"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 5,
+                                "end": 7,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 7,
+                                "end": 19,
+                                "source": "] shows.\n\n[^"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 19,
+                                "end": 21,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 21,
+                                "end": 24,
+                                "source": "]: "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 24,
+                                "end": 45,
+                                "name": "body",
+                                "grammar": "inline",
+                                "source": "b **uu mbmb qbqb** ac"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 45,
+                                "end": 47,
+                                "source": "\n\n"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "dialect": "As (@od) shows.\n\n(2@od) lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n",
+                    "common": "As [^od] shows.\n\n[^od]: lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n",
+                    "fields": [
+                        [
+                            "body",
+                            {
+                                "grammar": "inline",
+                                "source": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc"
+                            }
+                        ],
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "od"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n`od`\n\n",
+                        "common": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n`od`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 5,
+                                "source": "As (@"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 5,
+                                "end": 7,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 7,
+                                "end": 18,
+                                "source": ") shows.\n\n("
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 18,
+                                "end": 19,
+                                "source": "2"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 19,
+                                "end": 20,
+                                "source": "@"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 20,
+                                "end": 22,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 22,
+                                "end": 24,
+                                "source": ") "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 24,
+                                "end": 86,
+                                "name": "body",
+                                "grammar": "inline",
+                                "source": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 86,
+                                "end": 88,
+                                "source": "\n\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 5,
+                                "source": "As [^"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 5,
+                                "end": 7,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 7,
+                                "end": 19,
+                                "source": "] shows.\n\n[^"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 19,
+                                "end": 21,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 21,
+                                "end": 24,
+                                "source": "]: "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 24,
+                                "end": 86,
+                                "name": "body",
+                                "grammar": "inline",
+                                "source": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 86,
+                                "end": 88,
+                                "source": "\n\n"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "id": "trailing-caption",
+            "certificate": "trailing-caption-grammar-v1",
+            "scope": "boundary-grammar",
+            "legacy": ["tcaption"],
+            "structuralPredecessor": null,
+            "theorem": "T5",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "key",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "literal",
+                        "grammar": "phrase"
+                    },
+                    {
+                        "name": "value",
+                        "grammar": "word"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = key:word literal:phrase value:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;",
+                "common": "Document = Unit+ ; Unit = key:word literal:phrase value:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;"
+            },
+            "rewrite": [
+                "lossless-slot-decomposition",
+                "common-field-order",
+                "shared-explicit-entry-envelope",
+                "identity-grammar"
+            ],
+            "residual": "Trailing-caption attachment is absent from the pipe-table counterpart; caption and cell fields remain locally paired.",
+            "examples": [
+                {
+                    "dialect": "| nd |\n| --- |\n| rbrb |\n\n: b r vd\n\n",
+                    "common": "| nd |\n| --- |\n| rbrb |\n\nb r vd\n\n",
+                    "fields": [
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "nd"
+                            }
+                        ],
+                        [
+                            "literal",
+                            {
+                                "grammar": "phrase",
+                                "source": "b r vd"
+                            }
+                        ],
+                        [
+                            "value",
+                            {
+                                "grammar": "word",
+                                "source": "rbrb"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "`nd`\n\n`b r vd`\n\n`rbrb`\n\n",
+                        "common": "`nd`\n\n`b r vd`\n\n`rbrb`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 2,
+                                "source": "| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 2,
+                                "end": 4,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 17,
+                                "source": " |\n| --- |\n| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 17,
+                                "end": 21,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "rbrb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 21,
+                                "end": 25,
+                                "source": " |\n\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 25,
+                                "end": 27,
+                                "source": ": "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 27,
+                                "end": 33,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "b r vd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 33,
+                                "end": 35,
+                                "source": "\n\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 2,
+                                "source": "| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 2,
+                                "end": 4,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 17,
+                                "source": " |\n| --- |\n| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 17,
+                                "end": 21,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "rbrb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 21,
+                                "end": 25,
+                                "source": " |\n\n"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 25,
+                                "end": 31,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "b r vd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 31,
+                                "end": 33,
+                                "source": "\n\n"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "dialect": "| od |\n| --- |\n| ececec |\n\n: ii wb wdwd\n\n",
+                    "common": "| od |\n| --- |\n| ececec |\n\nii wb wdwd\n\n",
+                    "fields": [
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "od"
+                            }
+                        ],
+                        [
+                            "literal",
+                            {
+                                "grammar": "phrase",
+                                "source": "ii wb wdwd"
+                            }
+                        ],
+                        [
+                            "value",
+                            {
+                                "grammar": "word",
+                                "source": "ececec"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "`od`\n\n`ii wb wdwd`\n\n`ececec`\n\n",
+                        "common": "`od`\n\n`ii wb wdwd`\n\n`ececec`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 2,
+                                "source": "| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 2,
+                                "end": 4,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 17,
+                                "source": " |\n| --- |\n| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 17,
+                                "end": 23,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "ececec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 23,
+                                "end": 27,
+                                "source": " |\n\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 27,
+                                "end": 29,
+                                "source": ": "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 29,
+                                "end": 39,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "ii wb wdwd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 39,
+                                "end": 41,
+                                "source": "\n\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 2,
+                                "source": "| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 2,
+                                "end": 4,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 17,
+                                "source": " |\n| --- |\n| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 17,
+                                "end": 23,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "ececec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 23,
+                                "end": 27,
+                                "source": " |\n\n"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 27,
+                                "end": 37,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "ii wb wdwd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 37,
+                                "end": 39,
+                                "source": "\n\n"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "id": "headless-matrix",
+            "certificate": "headless-matrix-grammar-v1",
+            "scope": "boundary-grammar",
+            "legacy": ["headless"],
+            "structuralPredecessor": null,
+            "theorem": "T5",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "anchor",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "key",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "target",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "value",
+                        "grammar": "word"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = anchor:word key:word target:word value:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;",
+                "common": "Document = Unit+ ; Unit = anchor:word key:word target:word value:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;"
+            },
+            "rewrite": [
+                "lossless-slot-decomposition",
+                "common-field-order",
+                "shared-explicit-entry-envelope",
+                "identity-grammar"
+            ],
+            "residual": "Headless-row classification differs from the reference header rule; every cell value is retained in the local product.",
+            "examples": [
+                {
+                    "dialect": "------  ------\nnd      h\nrbrb    lb\n------  ------\n\n",
+                    "common": "| nd | h |\n| --- | --- |\n| rbrb | lb |\n\n",
+                    "fields": [
+                        [
+                            "anchor",
+                            {
+                                "grammar": "word",
+                                "source": "lb"
+                            }
+                        ],
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "nd"
+                            }
+                        ],
+                        [
+                            "target",
+                            {
+                                "grammar": "word",
+                                "source": "h"
+                            }
+                        ],
+                        [
+                            "value",
+                            {
+                                "grammar": "word",
+                                "source": "rbrb"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "`lb`\n\n`nd`\n\n`h`\n\n`rbrb`\n\n",
+                        "common": "`lb`\n\n`nd`\n\n`h`\n\n`rbrb`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 15,
+                                "source": "------  ------\n"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 15,
+                                "end": 17,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 17,
+                                "end": 23,
+                                "source": "      "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 23,
+                                "end": 24,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "h"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 24,
+                                "end": 25,
+                                "source": "\n"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 25,
+                                "end": 29,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "rbrb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 29,
+                                "end": 33,
+                                "source": "    "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 33,
+                                "end": 35,
+                                "name": "anchor",
+                                "grammar": "word",
+                                "source": "lb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 35,
+                                "end": 36,
+                                "source": "\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 36,
+                                "end": 51,
+                                "source": "------  ------\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 51,
+                                "end": 52,
+                                "source": "\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 2,
+                                "source": "| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 2,
+                                "end": 4,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 7,
+                                "source": " | "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 7,
+                                "end": 8,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "h"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 8,
+                                "end": 27,
+                                "source": " |\n| --- | --- |\n| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 27,
+                                "end": 31,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "rbrb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 31,
+                                "end": 34,
+                                "source": " | "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 34,
+                                "end": 36,
+                                "name": "anchor",
+                                "grammar": "word",
+                                "source": "lb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 36,
+                                "end": 40,
+                                "source": " |\n\n"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "dialect": "--------  --------\nod        ss\nececec    ec\n--------  --------\n\n",
+                    "common": "| od | ss |\n| --- | --- |\n| ececec | ec |\n\n",
+                    "fields": [
+                        [
+                            "anchor",
+                            {
+                                "grammar": "word",
+                                "source": "ec"
+                            }
+                        ],
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "od"
+                            }
+                        ],
+                        [
+                            "target",
+                            {
+                                "grammar": "word",
+                                "source": "ss"
+                            }
+                        ],
+                        [
+                            "value",
+                            {
+                                "grammar": "word",
+                                "source": "ececec"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "`ec`\n\n`od`\n\n`ss`\n\n`ececec`\n\n",
+                        "common": "`ec`\n\n`od`\n\n`ss`\n\n`ececec`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 19,
+                                "source": "--------  --------\n"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 19,
+                                "end": 21,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 21,
+                                "end": 29,
+                                "source": "        "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 29,
+                                "end": 31,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "ss"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 31,
+                                "end": 32,
+                                "source": "\n"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 32,
+                                "end": 38,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "ececec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 38,
+                                "end": 42,
+                                "source": "    "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 42,
+                                "end": 44,
+                                "name": "anchor",
+                                "grammar": "word",
+                                "source": "ec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 44,
+                                "end": 45,
+                                "source": "\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 45,
+                                "end": 64,
+                                "source": "--------  --------\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 64,
+                                "end": 65,
+                                "source": "\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 2,
+                                "source": "| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 2,
+                                "end": 4,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 7,
+                                "source": " | "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 7,
+                                "end": 9,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "ss"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 9,
+                                "end": 28,
+                                "source": " |\n| --- | --- |\n| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 28,
+                                "end": 34,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "ececec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 34,
+                                "end": 37,
+                                "source": " | "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 37,
+                                "end": 39,
+                                "name": "anchor",
+                                "grammar": "word",
+                                "source": "ec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 39,
+                                "end": 43,
+                                "source": " |\n\n"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "id": "sparse-grid",
+            "certificate": "sparse-grid-grammar-v1",
+            "scope": "boundary-grammar",
+            "legacy": ["sparsegrid"],
+            "structuralPredecessor": null,
+            "theorem": "T5",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "anchor",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "footer",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "key",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "last",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "target",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "value",
+                        "grammar": "word"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = anchor:word footer:word key:word last:word target:word value:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;",
+                "common": "Document = Unit+ ; Unit = anchor:word footer:word key:word last:word target:word value:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;"
+            },
+            "rewrite": [
+                "lossless-slot-decomposition",
+                "common-field-order",
+                "shared-explicit-entry-envelope",
+                "identity-grammar"
+            ],
+            "residual": "Spans, sparse rows, footer and empty-caption recognition remain residual; all six independent cell fields are retained.",
+            "examples": [
+                {
+                    "dialect": "+------+------+\n| nd          |\n+======+======+\n| h    | rbrb |\n+------+      +\n| lb   | b    |\n+------+------+\n+      +      +\n+======+======+\n| r           |\n+======+======+\n\nTable:\n\n---\n\n",
+                    "common": "> nd\n\n> h\n\n> rbrb\n\n> lb\n\n> b\n\n> r\n\n",
+                    "fields": [
+                        [
+                            "anchor",
+                            {
+                                "grammar": "word",
+                                "source": "lb"
+                            }
+                        ],
+                        [
+                            "footer",
+                            {
+                                "grammar": "word",
+                                "source": "r"
+                            }
+                        ],
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "nd"
+                            }
+                        ],
+                        [
+                            "last",
+                            {
+                                "grammar": "word",
+                                "source": "b"
+                            }
+                        ],
+                        [
+                            "target",
+                            {
+                                "grammar": "word",
+                                "source": "h"
+                            }
+                        ],
+                        [
+                            "value",
+                            {
+                                "grammar": "word",
+                                "source": "rbrb"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "`lb`\n\n`r`\n\n`nd`\n\n`b`\n\n`h`\n\n`rbrb`\n\n",
+                        "common": "`lb`\n\n`r`\n\n`nd`\n\n`b`\n\n`h`\n\n`rbrb`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 16,
+                                "source": "+------+------+\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 16,
+                                "end": 18,
+                                "source": "| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 18,
+                                "end": 20,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 20,
+                                "end": 30,
+                                "source": "          "
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 30,
+                                "end": 32,
+                                "source": "|\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 32,
+                                "end": 48,
+                                "source": "+======+======+\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 48,
+                                "end": 49,
+                                "source": "|"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 49,
+                                "end": 50,
+                                "source": " "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 50,
+                                "end": 51,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "h"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 51,
+                                "end": 55,
+                                "source": "    "
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 55,
+                                "end": 56,
+                                "source": "|"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 56,
+                                "end": 57,
+                                "source": " "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 57,
+                                "end": 61,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "rbrb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 61,
+                                "end": 62,
+                                "source": " "
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 62,
+                                "end": 64,
+                                "source": "|\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 64,
+                                "end": 80,
+                                "source": "+------+      +\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 80,
+                                "end": 81,
+                                "source": "|"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 81,
+                                "end": 82,
+                                "source": " "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 82,
+                                "end": 84,
+                                "name": "anchor",
+                                "grammar": "word",
+                                "source": "lb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 84,
+                                "end": 87,
+                                "source": "   "
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 87,
+                                "end": 88,
+                                "source": "|"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 88,
+                                "end": 89,
+                                "source": " "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 89,
+                                "end": 90,
+                                "name": "last",
+                                "grammar": "word",
+                                "source": "b"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 90,
+                                "end": 94,
+                                "source": "    "
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 94,
+                                "end": 96,
+                                "source": "|\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 96,
+                                "end": 112,
+                                "source": "+------+------+\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 112,
+                                "end": 128,
+                                "source": "+      +      +\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 128,
+                                "end": 144,
+                                "source": "+======+======+\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 144,
+                                "end": 146,
+                                "source": "| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 146,
+                                "end": 147,
+                                "name": "footer",
+                                "grammar": "word",
+                                "source": "r"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 147,
+                                "end": 158,
+                                "source": "           "
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 158,
+                                "end": 160,
+                                "source": "|\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 160,
+                                "end": 176,
+                                "source": "+======+======+\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 176,
+                                "end": 190,
+                                "source": "\nTable:\n\n---\n\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 2,
+                                "source": "> "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 2,
+                                "end": 4,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 6,
+                                "source": "\n\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 6,
+                                "end": 8,
+                                "source": "> "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 8,
+                                "end": 9,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "h"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 9,
+                                "end": 11,
+                                "source": "\n\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 11,
+                                "end": 13,
+                                "source": "> "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 13,
+                                "end": 17,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "rbrb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 17,
+                                "end": 19,
+                                "source": "\n\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 19,
+                                "end": 21,
+                                "source": "> "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 21,
+                                "end": 23,
+                                "name": "anchor",
+                                "grammar": "word",
+                                "source": "lb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 23,
+                                "end": 25,
+                                "source": "\n\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 25,
+                                "end": 27,
+                                "source": "> "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 27,
+                                "end": 28,
+                                "name": "last",
+                                "grammar": "word",
+                                "source": "b"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 28,
+                                "end": 30,
+                                "source": "\n\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 30,
+                                "end": 32,
+                                "source": "> "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 32,
+                                "end": 33,
+                                "name": "footer",
+                                "grammar": "word",
+                                "source": "r"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 33,
+                                "end": 35,
+                                "source": "\n\n"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "dialect": "+--------+--------+\n| od              |\n+========+========+\n| ss     | ececec |\n+--------+        +\n| ec     | ii     |\n+--------+--------+\n+        +        +\n+========+========+\n| wb              |\n+========+========+\n\nTable:\n\n---\n\n",
+                    "common": "> od\n\n> ss\n\n> ececec\n\n> ec\n\n> ii\n\n> wb\n\n",
+                    "fields": [
+                        [
+                            "anchor",
+                            {
+                                "grammar": "word",
+                                "source": "ec"
+                            }
+                        ],
+                        [
+                            "footer",
+                            {
+                                "grammar": "word",
+                                "source": "wb"
+                            }
+                        ],
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "od"
+                            }
+                        ],
+                        [
+                            "last",
+                            {
+                                "grammar": "word",
+                                "source": "ii"
+                            }
+                        ],
+                        [
+                            "target",
+                            {
+                                "grammar": "word",
+                                "source": "ss"
+                            }
+                        ],
+                        [
+                            "value",
+                            {
+                                "grammar": "word",
+                                "source": "ececec"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "`ec`\n\n`wb`\n\n`od`\n\n`ii`\n\n`ss`\n\n`ececec`\n\n",
+                        "common": "`ec`\n\n`wb`\n\n`od`\n\n`ii`\n\n`ss`\n\n`ececec`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 20,
+                                "source": "+--------+--------+\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 20,
+                                "end": 22,
+                                "source": "| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 22,
+                                "end": 24,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 24,
+                                "end": 38,
+                                "source": "              "
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 38,
+                                "end": 40,
+                                "source": "|\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 40,
+                                "end": 60,
+                                "source": "+========+========+\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 60,
+                                "end": 61,
+                                "source": "|"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 61,
+                                "end": 62,
+                                "source": " "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 62,
+                                "end": 64,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "ss"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 64,
+                                "end": 69,
+                                "source": "     "
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 69,
+                                "end": 70,
+                                "source": "|"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 70,
+                                "end": 71,
+                                "source": " "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 71,
+                                "end": 77,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "ececec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 77,
+                                "end": 78,
+                                "source": " "
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 78,
+                                "end": 80,
+                                "source": "|\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 80,
+                                "end": 100,
+                                "source": "+--------+        +\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 100,
+                                "end": 101,
+                                "source": "|"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 101,
+                                "end": 102,
+                                "source": " "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 102,
+                                "end": 104,
+                                "name": "anchor",
+                                "grammar": "word",
+                                "source": "ec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 104,
+                                "end": 109,
+                                "source": "     "
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 109,
+                                "end": 110,
+                                "source": "|"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 110,
+                                "end": 111,
+                                "source": " "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 111,
+                                "end": 113,
+                                "name": "last",
+                                "grammar": "word",
+                                "source": "ii"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 113,
+                                "end": 118,
+                                "source": "     "
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 118,
+                                "end": 120,
+                                "source": "|\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 120,
+                                "end": 140,
+                                "source": "+--------+--------+\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 140,
+                                "end": 160,
+                                "source": "+        +        +\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 160,
+                                "end": 180,
+                                "source": "+========+========+\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 180,
+                                "end": 182,
+                                "source": "| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 182,
+                                "end": 184,
+                                "name": "footer",
+                                "grammar": "word",
+                                "source": "wb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 184,
+                                "end": 198,
+                                "source": "              "
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 198,
+                                "end": 200,
+                                "source": "|\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 200,
+                                "end": 220,
+                                "source": "+========+========+\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 220,
+                                "end": 234,
+                                "source": "\nTable:\n\n---\n\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 2,
+                                "source": "> "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 2,
+                                "end": 4,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 6,
+                                "source": "\n\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 6,
+                                "end": 8,
+                                "source": "> "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 8,
+                                "end": 10,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "ss"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 10,
+                                "end": 12,
+                                "source": "\n\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 12,
+                                "end": 14,
+                                "source": "> "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 14,
+                                "end": 20,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "ececec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 20,
+                                "end": 22,
+                                "source": "\n\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 22,
+                                "end": 24,
+                                "source": "> "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 24,
+                                "end": 26,
+                                "name": "anchor",
+                                "grammar": "word",
+                                "source": "ec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 26,
+                                "end": 28,
+                                "source": "\n\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 28,
+                                "end": 30,
+                                "source": "> "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 30,
+                                "end": 32,
+                                "name": "last",
+                                "grammar": "word",
+                                "source": "ii"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 32,
+                                "end": 34,
+                                "source": "\n\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 34,
+                                "end": 36,
+                                "source": "> "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 36,
+                                "end": 38,
+                                "name": "footer",
+                                "grammar": "word",
+                                "source": "wb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 38,
+                                "end": 40,
+                                "source": "\n\n"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "id": "leading-caption",
+            "certificate": "leading-caption-grammar-v1",
+            "scope": "boundary-grammar",
+            "legacy": ["caption"],
+            "structuralPredecessor": null,
+            "theorem": "T5",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "key",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "literal",
+                        "grammar": "phrase"
+                    },
+                    {
+                        "name": "value",
+                        "grammar": "word"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = key:word literal:phrase value:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;",
+                "common": "Document = Unit+ ; Unit = key:word literal:phrase value:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;"
+            },
+            "rewrite": [
+                "lossless-slot-decomposition",
+                "common-field-order",
+                "shared-explicit-entry-envelope",
+                "identity-grammar"
+            ],
+            "residual": "Leading-caption attachment is absent from the pipe-table counterpart; caption and all cells remain locally paired.",
+            "examples": [
+                {
+                    "dialect": "Table: b r vd\n| nd |\n| --- |\n| rbrb |\n\n",
+                    "common": "| nd |\n| --- |\n| rbrb |\n\nb r vd\n\n",
+                    "fields": [
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "nd"
+                            }
+                        ],
+                        [
+                            "literal",
+                            {
+                                "grammar": "phrase",
+                                "source": "b r vd"
+                            }
+                        ],
+                        [
+                            "value",
+                            {
+                                "grammar": "word",
+                                "source": "rbrb"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "`nd`\n\n`b r vd`\n\n`rbrb`\n\n",
+                        "common": "`nd`\n\n`b r vd`\n\n`rbrb`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 7,
+                                "source": "Table: "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 7,
+                                "end": 13,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "b r vd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 13,
+                                "end": 14,
+                                "source": "\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 14,
+                                "end": 16,
+                                "source": "| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 16,
+                                "end": 18,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 18,
+                                "end": 31,
+                                "source": " |\n| --- |\n| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 31,
+                                "end": 35,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "rbrb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 35,
+                                "end": 39,
+                                "source": " |\n\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 2,
+                                "source": "| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 2,
+                                "end": 4,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 17,
+                                "source": " |\n| --- |\n| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 17,
+                                "end": 21,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "rbrb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 21,
+                                "end": 25,
+                                "source": " |\n\n"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 25,
+                                "end": 31,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "b r vd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 31,
+                                "end": 33,
+                                "source": "\n\n"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "dialect": "Table: ii wb wdwd\n| od |\n| --- |\n| ececec |\n\n",
+                    "common": "| od |\n| --- |\n| ececec |\n\nii wb wdwd\n\n",
+                    "fields": [
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "od"
+                            }
+                        ],
+                        [
+                            "literal",
+                            {
+                                "grammar": "phrase",
+                                "source": "ii wb wdwd"
+                            }
+                        ],
+                        [
+                            "value",
+                            {
+                                "grammar": "word",
+                                "source": "ececec"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "`od`\n\n`ii wb wdwd`\n\n`ececec`\n\n",
+                        "common": "`od`\n\n`ii wb wdwd`\n\n`ececec`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 7,
+                                "source": "Table: "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 7,
+                                "end": 17,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "ii wb wdwd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 17,
+                                "end": 18,
+                                "source": "\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 18,
+                                "end": 20,
+                                "source": "| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 20,
+                                "end": 22,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 22,
+                                "end": 35,
+                                "source": " |\n| --- |\n| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 35,
+                                "end": 41,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "ececec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 41,
+                                "end": 45,
+                                "source": " |\n\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 2,
+                                "source": "| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 2,
+                                "end": 4,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 17,
+                                "source": " |\n| --- |\n| "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 17,
+                                "end": 23,
+                                "name": "value",
+                                "grammar": "word",
+                                "source": "ececec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 23,
+                                "end": 27,
+                                "source": " |\n\n"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 27,
+                                "end": 37,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "ii wb wdwd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 37,
+                                "end": 39,
+                                "source": "\n\n"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "id": "mixed-definitions",
+            "certificate": "mixed-definitions-grammar-v1",
+            "scope": "boundary-grammar",
+            "legacy": ["deflist"],
+            "structuralPredecessor": null,
+            "theorem": "T5",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "anchor",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "body",
+                        "grammar": "inline"
+                    },
+                    {
+                        "name": "empty",
+                        "grammar": "empty"
+                    },
+                    {
+                        "name": "key",
+                        "grammar": "word"
+                    },
+                    {
+                        "name": "literal",
+                        "grammar": "phrase"
+                    },
+                    {
+                        "name": "tail",
+                        "grammar": "inline"
+                    },
+                    {
+                        "name": "target",
+                        "grammar": "word"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = anchor:word body:inline empty:empty key:word literal:phrase tail:inline target:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;",
+                "common": "Document = Unit+ ; Unit = anchor:word body:inline empty:empty key:word literal:phrase tail:inline target:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;"
+            },
+            "rewrite": [
+                "lossless-slot-decomposition",
+                "common-field-order",
+                "shared-explicit-entry-envelope",
+                "identity-grammar"
+            ],
+            "residual": "Multiple, loose and empty definitions have unmatched recognition/attachment rules; all terms and bodies, including Empty, are retained.",
+            "examples": [
+                {
+                    "dialect": "nd\n: b **uu mbmb qbqb** ac\n: epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\nlb\n\n: b r vd\n\nh\n:\n\n",
+                    "common": "- nd\n  - b **uu mbmb qbqb** ac\n  - epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n- lb\n\n  b r vd\n\n- h\n  [](/empty)\n\n",
+                    "fields": [
+                        [
+                            "anchor",
+                            {
+                                "grammar": "word",
+                                "source": "lb"
+                            }
+                        ],
+                        [
+                            "body",
+                            {
+                                "grammar": "inline",
+                                "source": "b **uu mbmb qbqb** ac"
+                            }
+                        ],
+                        [
+                            "empty",
+                            {
+                                "grammar": "empty",
+                                "source": ""
+                            }
+                        ],
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "nd"
+                            }
+                        ],
+                        [
+                            "literal",
+                            {
+                                "grammar": "phrase",
+                                "source": "b r vd"
+                            }
+                        ],
+                        [
+                            "tail",
+                            {
+                                "grammar": "inline",
+                                "source": "epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab"
+                            }
+                        ],
+                        [
+                            "target",
+                            {
+                                "grammar": "word",
+                                "source": "h"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "`lb`\n\nb **uu mbmb qbqb** ac\n\n[](/empty)\n\n`nd`\n\n`b r vd`\n\nepepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n`h`\n\n",
+                        "common": "`lb`\n\nb **uu mbmb qbqb** ac\n\n[](/empty)\n\n`nd`\n\n`b r vd`\n\nepepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n`h`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "slot",
+                                "start": 0,
+                                "end": 2,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 2,
+                                "end": 5,
+                                "source": "\n: "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 5,
+                                "end": 26,
+                                "name": "body",
+                                "grammar": "inline",
+                                "source": "b **uu mbmb qbqb** ac"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 26,
+                                "end": 29,
+                                "source": "\n: "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 29,
+                                "end": 97,
+                                "name": "tail",
+                                "grammar": "inline",
+                                "source": "epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 97,
+                                "end": 99,
+                                "source": "\n\n"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 99,
+                                "end": 101,
+                                "name": "anchor",
+                                "grammar": "word",
+                                "source": "lb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 101,
+                                "end": 105,
+                                "source": "\n\n: "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 105,
+                                "end": 111,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "b r vd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 111,
+                                "end": 113,
+                                "source": "\n\n"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 113,
+                                "end": 114,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "h"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 114,
+                                "end": 116,
+                                "source": "\n:"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 116,
+                                "end": 116,
+                                "name": "empty",
+                                "grammar": "empty",
+                                "source": ""
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 116,
+                                "end": 118,
+                                "source": "\n\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 2,
+                                "source": "- "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 2,
+                                "end": 4,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 9,
+                                "source": "\n  - "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 9,
+                                "end": 30,
+                                "name": "body",
+                                "grammar": "inline",
+                                "source": "b **uu mbmb qbqb** ac"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 30,
+                                "end": 35,
+                                "source": "\n  - "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 35,
+                                "end": 103,
+                                "name": "tail",
+                                "grammar": "inline",
+                                "source": "epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 103,
+                                "end": 107,
+                                "source": "\n\n- "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 107,
+                                "end": 109,
+                                "name": "anchor",
+                                "grammar": "word",
+                                "source": "lb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 109,
+                                "end": 113,
+                                "source": "\n\n  "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 113,
+                                "end": 119,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "b r vd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 119,
+                                "end": 123,
+                                "source": "\n\n- "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 123,
+                                "end": 124,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "h"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 124,
+                                "end": 128,
+                                "source": "\n  ["
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 128,
+                                "end": 128,
+                                "name": "empty",
+                                "grammar": "empty",
+                                "source": ""
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 128,
+                                "end": 139,
+                                "source": "](/empty)\n\n"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "dialect": "od\n: lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n: vp **kukukuku **zyzyzy xcxcxcxc xqbxqbxqb** yd **pbbpbbpbb bdbdbd jvb** cjbcjb** rd **axaxaxax **pbbpbbpbb bdbdbd jvb** ce **febfebfeb fdfd vzbvzb** onbonbonb** hbb\n\nec\n\n: ii wb wdwd\n\nss\n:\n\n",
+                    "common": "- od\n  - lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n  - vp **kukukuku **zyzyzy xcxcxcxc xqbxqbxqb** yd **pbbpbbpbb bdbdbd jvb** cjbcjb** rd **axaxaxax **pbbpbbpbb bdbdbd jvb** ce **febfebfeb fdfd vzbvzb** onbonbonb** hbb\n\n- ec\n\n  ii wb wdwd\n\n- ss\n  [](/empty)\n\n",
+                    "fields": [
+                        [
+                            "anchor",
+                            {
+                                "grammar": "word",
+                                "source": "ec"
+                            }
+                        ],
+                        [
+                            "body",
+                            {
+                                "grammar": "inline",
+                                "source": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc"
+                            }
+                        ],
+                        [
+                            "empty",
+                            {
+                                "grammar": "empty",
+                                "source": ""
+                            }
+                        ],
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "od"
+                            }
+                        ],
+                        [
+                            "literal",
+                            {
+                                "grammar": "phrase",
+                                "source": "ii wb wdwd"
+                            }
+                        ],
+                        [
+                            "tail",
+                            {
+                                "grammar": "inline",
+                                "source": "vp **kukukuku **zyzyzy xcxcxcxc xqbxqbxqb** yd **pbbpbbpbb bdbdbd jvb** cjbcjb** rd **axaxaxax **pbbpbbpbb bdbdbd jvb** ce **febfebfeb fdfd vzbvzb** onbonbonb** hbb"
+                            }
+                        ],
+                        [
+                            "target",
+                            {
+                                "grammar": "word",
+                                "source": "ss"
+                            }
+                        ]
+                    ],
+                    "boundary": {
+                        "dialect": "`ec`\n\nlblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n[](/empty)\n\n`od`\n\n`ii wb wdwd`\n\nvp **kukukuku **zyzyzy xcxcxcxc xqbxqbxqb** yd **pbbpbbpbb bdbdbd jvb** cjbcjb** rd **axaxaxax **pbbpbbpbb bdbdbd jvb** ce **febfebfeb fdfd vzbvzb** onbonbonb** hbb\n\n`ss`\n\n",
+                        "common": "`ec`\n\nlblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n[](/empty)\n\n`od`\n\n`ii wb wdwd`\n\nvp **kukukuku **zyzyzy xcxcxcxc xqbxqbxqb** yd **pbbpbbpbb bdbdbd jvb** cjbcjb** rd **axaxaxax **pbbpbbpbb bdbdbd jvb** ce **febfebfeb fdfd vzbvzb** onbonbonb** hbb\n\n`ss`\n\n"
+                    },
+                    "partitions": {
+                        "dialect": [
+                            {
+                                "kind": "slot",
+                                "start": 0,
+                                "end": 2,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 2,
+                                "end": 5,
+                                "source": "\n: "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 5,
+                                "end": 67,
+                                "name": "body",
+                                "grammar": "inline",
+                                "source": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 67,
+                                "end": 70,
+                                "source": "\n: "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 70,
+                                "end": 234,
+                                "name": "tail",
+                                "grammar": "inline",
+                                "source": "vp **kukukuku **zyzyzy xcxcxcxc xqbxqbxqb** yd **pbbpbbpbb bdbdbd jvb** cjbcjb** rd **axaxaxax **pbbpbbpbb bdbdbd jvb** ce **febfebfeb fdfd vzbvzb** onbonbonb** hbb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 234,
+                                "end": 236,
+                                "source": "\n\n"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 236,
+                                "end": 238,
+                                "name": "anchor",
+                                "grammar": "word",
+                                "source": "ec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 238,
+                                "end": 242,
+                                "source": "\n\n: "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 242,
+                                "end": 252,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "ii wb wdwd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 252,
+                                "end": 254,
+                                "source": "\n\n"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 254,
+                                "end": 256,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "ss"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 256,
+                                "end": 258,
+                                "source": "\n:"
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 258,
+                                "end": 258,
+                                "name": "empty",
+                                "grammar": "empty",
+                                "source": ""
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 258,
+                                "end": 260,
+                                "source": "\n\n"
+                            }
+                        ],
+                        "common": [
+                            {
+                                "kind": "residual",
+                                "start": 0,
+                                "end": 2,
+                                "source": "- "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 2,
+                                "end": 4,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 9,
+                                "source": "\n  - "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 9,
+                                "end": 71,
+                                "name": "body",
+                                "grammar": "inline",
+                                "source": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 71,
+                                "end": 76,
+                                "source": "\n  - "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 76,
+                                "end": 240,
+                                "name": "tail",
+                                "grammar": "inline",
+                                "source": "vp **kukukuku **zyzyzy xcxcxcxc xqbxqbxqb** yd **pbbpbbpbb bdbdbd jvb** cjbcjb** rd **axaxaxax **pbbpbbpbb bdbdbd jvb** ce **febfebfeb fdfd vzbvzb** onbonbonb** hbb"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 240,
+                                "end": 244,
+                                "source": "\n\n- "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 244,
+                                "end": 246,
+                                "name": "anchor",
+                                "grammar": "word",
+                                "source": "ec"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 246,
+                                "end": 250,
+                                "source": "\n\n  "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 250,
+                                "end": 260,
+                                "name": "literal",
+                                "grammar": "phrase",
+                                "source": "ii wb wdwd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 260,
+                                "end": 264,
+                                "source": "\n\n- "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 264,
+                                "end": 266,
+                                "name": "target",
+                                "grammar": "word",
+                                "source": "ss"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 266,
+                                "end": 270,
+                                "source": "\n  ["
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 270,
+                                "end": 270,
+                                "name": "empty",
+                                "grammar": "empty",
+                                "source": ""
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 270,
+                                "end": 281,
+                                "source": "](/empty)\n\n"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
             "id": "insertion-strong",
             "certificate": "insertion-strong-grammar-v1",
             "scope": "paired-document-grammar",
@@ -1205,7 +4537,7 @@
                 "shared-explicit-entry-envelope",
                 "identity-grammar"
             ],
-            "residual": "Marker value conversion, continuation, term/body discovery and block ownership remain outside the common inline-field grammar.",
+            "residual": "Marker value conversion and continuation remain outside the common inline-field grammar; default markers do not encode the reference start integer.",
             "examples": [
                 {
                     "dialect": "a) b **uu mbmb qbqb** ac\nb) epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n",
@@ -1519,7 +4851,7 @@
                 "shared-explicit-entry-envelope",
                 "identity-grammar"
             ],
-            "residual": "Geometry, column discovery, padding and cell source mapping remain residual; all cell contents, in source order, enter the local inline grammar.",
+            "residual": "Geometry, column discovery, padding and cell source mapping remain residual; all cell contents enter the labelled local product.",
             "examples": [
                 {
                     "dialect": "+----------------------------------------------------------------------+\n| b **uu mbmb qbqb** ac                                                |\n|                                                                      |\n| epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab |\n+----------------------------------------------------------------------+\n\n",
@@ -1841,7 +5173,7 @@
                 "shared-explicit-entry-envelope",
                 "identity-grammar"
             ],
-            "residual": "Geometry, column discovery, padding and cell source mapping remain residual; all cell contents, in source order, enter the local inline grammar.",
+            "residual": "Geometry, column discovery, padding and cell source mapping remain residual; all cell contents enter the labelled local product.",
             "examples": [
                 {
                     "dialect": "nd      h\n------  ------\nrbrb    lb\n\n",
@@ -3027,7 +6359,7 @@
                 "shared-explicit-entry-envelope",
                 "identity-grammar"
             ],
-            "residual": "Marker value conversion, continuation, term/body discovery and block ownership remain outside the common inline-field grammar.",
+            "residual": "Marker value conversion and continuation remain outside the common inline-field grammar; default markers do not encode the reference start integer.",
             "examples": [
                 {
                     "dialect": "(A) b **uu mbmb qbqb** ac\n(B) epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n",
@@ -3257,7 +6589,7 @@
                 "shared-explicit-entry-envelope",
                 "identity-grammar"
             ],
-            "residual": "Marker value conversion, continuation, term/body discovery and block ownership remain outside the common inline-field grammar.",
+            "residual": "Marker value conversion and continuation remain outside the common inline-field grammar; default markers do not encode the reference start integer.",
             "examples": [
                 {
                     "dialect": "i. b **uu mbmb qbqb** ac\nii. epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n",
@@ -3487,7 +6819,7 @@
                 "shared-explicit-entry-envelope",
                 "identity-grammar"
             ],
-            "residual": "Marker value conversion, continuation, term/body discovery and block ownership remain outside the common inline-field grammar.",
+            "residual": "Marker value conversion and continuation remain outside the common inline-field grammar; default markers do not encode the reference start integer.",
             "examples": [
                 {
                     "dialect": "I) b **uu mbmb qbqb** ac\nII) epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n",
@@ -3717,7 +7049,7 @@
                 "shared-explicit-entry-envelope",
                 "identity-grammar"
             ],
-            "residual": "Marker value conversion, continuation, term/body discovery and block ownership remain outside the common inline-field grammar.",
+            "residual": "Marker value conversion and continuation remain outside the common inline-field grammar; default markers do not encode the reference start integer.",
             "examples": [
                 {
                     "dialect": "#. b **uu mbmb qbqb** ac\n#. epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n",
@@ -3947,7 +7279,7 @@
                 "shared-explicit-entry-envelope",
                 "identity-grammar"
             ],
-            "residual": "Marker value conversion, continuation, term/body discovery and block ownership remain outside the common inline-field grammar.",
+            "residual": "Marker value conversion and continuation remain outside the common inline-field grammar; default markers do not encode the reference start integer.",
             "examples": [
                 {
                     "dialect": "(#) b **uu mbmb qbqb** ac\n(#) epepepep **tttttt pc zhb** qd **jwjwjw tctctctctc lmblmb** eabeabeab\n\n",
@@ -4696,14 +8028,18 @@
                         "grammar": "inline"
                     },
                     {
+                        "name": "key",
+                        "grammar": "word"
+                    },
+                    {
                         "name": "value",
                         "grammar": "word"
                     }
                 ]
             },
             "grammars": {
-                "dialect": "Document = Unit+ ; Unit = body:inline value:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;",
-                "common": "Document = Unit+ ; Unit = body:inline value:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;"
+                "dialect": "Document = Unit+ ; Unit = body:inline key:word value:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;",
+                "common": "Document = Unit+ ; Unit = body:inline key:word value:word ; inline = InlineParagraph ; word = WordParagraph ; phrase = PhraseParagraph ; empty = EmptyLabelParagraph ; InlineParagraph = Body LF LF ; WordParagraph = '`' Word '`' LF LF ; PhraseParagraph = '`' Phrase '`' LF LF ; EmptyLabelParagraph = '[](/empty)' LF LF ; Phrase = Word (SP Word)* ; OPEN = CLOSE = '**' ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;"
             },
             "rewrite": [
                 "lossless-slot-decomposition",
@@ -4711,17 +8047,24 @@
                 "shared-explicit-entry-envelope",
                 "identity-grammar"
             ],
-            "residual": "Envelope detection, typed member decoding and overwrite/unknown-member policy remain residual; the following body is retained.",
+            "residual": "Envelope detection, typed member decoding and first-valid/unknown-member policy remain residual; every value and the following body are retained.",
             "examples": [
                 {
-                    "dialect": "---\nunknown: rbrb\n---\n\nb **uu mbmb qbqb** ac\n\n",
-                    "common": "```\nunknown: rbrb\n```\n\nb **uu mbmb qbqb** ac\n\n",
+                    "dialect": "---\nunknown-nd: rbrb\n---\n\nb **uu mbmb qbqb** ac\n\n",
+                    "common": "```\nunknown-nd: rbrb\n```\n\nb **uu mbmb qbqb** ac\n\n",
                     "fields": [
                         [
                             "body",
                             {
                                 "grammar": "inline",
                                 "source": "b **uu mbmb qbqb** ac"
+                            }
+                        ],
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "nd"
                             }
                         ],
                         [
@@ -4733,8 +8076,8 @@
                         ]
                     ],
                     "boundary": {
-                        "dialect": "b **uu mbmb qbqb** ac\n\n`rbrb`\n\n",
-                        "common": "b **uu mbmb qbqb** ac\n\n`rbrb`\n\n"
+                        "dialect": "b **uu mbmb qbqb** ac\n\n`nd`\n\n`rbrb`\n\n",
+                        "common": "b **uu mbmb qbqb** ac\n\n`nd`\n\n`rbrb`\n\n"
                     },
                     "partitions": {
                         "dialect": [
@@ -4747,35 +8090,61 @@
                             {
                                 "kind": "residual",
                                 "start": 4,
-                                "end": 13,
-                                "source": "unknown: "
+                                "end": 4,
+                                "source": ""
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 12,
+                                "source": "unknown-"
                             },
                             {
                                 "kind": "slot",
-                                "start": 13,
-                                "end": 17,
+                                "start": 12,
+                                "end": 14,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 14,
+                                "end": 16,
+                                "source": ": "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 16,
+                                "end": 20,
                                 "name": "value",
                                 "grammar": "word",
                                 "source": "rbrb"
                             },
                             {
                                 "kind": "residual",
-                                "start": 17,
-                                "end": 23,
-                                "source": "\n---\n\n"
+                                "start": 20,
+                                "end": 21,
+                                "source": "\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 21,
+                                "end": 26,
+                                "source": "---\n\n"
                             },
                             {
                                 "kind": "slot",
-                                "start": 23,
-                                "end": 44,
+                                "start": 26,
+                                "end": 47,
                                 "name": "body",
                                 "grammar": "inline",
                                 "source": "b **uu mbmb qbqb** ac"
                             },
                             {
                                 "kind": "residual",
-                                "start": 44,
-                                "end": 46,
+                                "start": 47,
+                                "end": 49,
                                 "source": "\n\n"
                             }
                         ],
@@ -4789,49 +8158,82 @@
                             {
                                 "kind": "residual",
                                 "start": 4,
-                                "end": 13,
-                                "source": "unknown: "
+                                "end": 4,
+                                "source": ""
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 12,
+                                "source": "unknown-"
                             },
                             {
                                 "kind": "slot",
-                                "start": 13,
-                                "end": 17,
+                                "start": 12,
+                                "end": 14,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "nd"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 14,
+                                "end": 16,
+                                "source": ": "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 16,
+                                "end": 20,
                                 "name": "value",
                                 "grammar": "word",
                                 "source": "rbrb"
                             },
                             {
                                 "kind": "residual",
-                                "start": 17,
-                                "end": 23,
-                                "source": "\n```\n\n"
+                                "start": 20,
+                                "end": 21,
+                                "source": "\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 21,
+                                "end": 26,
+                                "source": "```\n\n"
                             },
                             {
                                 "kind": "slot",
-                                "start": 23,
-                                "end": 44,
+                                "start": 26,
+                                "end": 47,
                                 "name": "body",
                                 "grammar": "inline",
                                 "source": "b **uu mbmb qbqb** ac"
                             },
                             {
                                 "kind": "residual",
-                                "start": 44,
-                                "end": 46,
+                                "start": 47,
+                                "end": 49,
                                 "source": "\n\n"
                             }
                         ]
                     }
                 },
                 {
-                    "dialect": "---\nunknown: ececec\n---\n\nlblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n",
-                    "common": "```\nunknown: ececec\n```\n\nlblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n",
+                    "dialect": "---\nunknown-od: ececec\n---\n\nlblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n",
+                    "common": "```\nunknown-od: ececec\n```\n\nlblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n",
                     "fields": [
                         [
                             "body",
                             {
                                 "grammar": "inline",
                                 "source": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc"
+                            }
+                        ],
+                        [
+                            "key",
+                            {
+                                "grammar": "word",
+                                "source": "od"
                             }
                         ],
                         [
@@ -4843,8 +8245,8 @@
                         ]
                     ],
                     "boundary": {
-                        "dialect": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n`ececec`\n\n",
-                        "common": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n`ececec`\n\n"
+                        "dialect": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n`od`\n\n`ececec`\n\n",
+                        "common": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n`od`\n\n`ececec`\n\n"
                     },
                     "partitions": {
                         "dialect": [
@@ -4857,35 +8259,61 @@
                             {
                                 "kind": "residual",
                                 "start": 4,
-                                "end": 13,
-                                "source": "unknown: "
+                                "end": 4,
+                                "source": ""
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 12,
+                                "source": "unknown-"
                             },
                             {
                                 "kind": "slot",
-                                "start": 13,
-                                "end": 19,
+                                "start": 12,
+                                "end": 14,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 14,
+                                "end": 16,
+                                "source": ": "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 16,
+                                "end": 22,
                                 "name": "value",
                                 "grammar": "word",
                                 "source": "ececec"
                             },
                             {
                                 "kind": "residual",
-                                "start": 19,
-                                "end": 25,
-                                "source": "\n---\n\n"
+                                "start": 22,
+                                "end": 23,
+                                "source": "\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 23,
+                                "end": 28,
+                                "source": "---\n\n"
                             },
                             {
                                 "kind": "slot",
-                                "start": 25,
-                                "end": 87,
+                                "start": 28,
+                                "end": 90,
                                 "name": "body",
                                 "grammar": "inline",
                                 "source": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc"
                             },
                             {
                                 "kind": "residual",
-                                "start": 87,
-                                "end": 89,
+                                "start": 90,
+                                "end": 92,
                                 "source": "\n\n"
                             }
                         ],
@@ -4899,35 +8327,61 @@
                             {
                                 "kind": "residual",
                                 "start": 4,
-                                "end": 13,
-                                "source": "unknown: "
+                                "end": 4,
+                                "source": ""
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 4,
+                                "end": 12,
+                                "source": "unknown-"
                             },
                             {
                                 "kind": "slot",
-                                "start": 13,
-                                "end": 19,
+                                "start": 12,
+                                "end": 14,
+                                "name": "key",
+                                "grammar": "word",
+                                "source": "od"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 14,
+                                "end": 16,
+                                "source": ": "
+                            },
+                            {
+                                "kind": "slot",
+                                "start": 16,
+                                "end": 22,
                                 "name": "value",
                                 "grammar": "word",
                                 "source": "ececec"
                             },
                             {
                                 "kind": "residual",
-                                "start": 19,
-                                "end": 25,
-                                "source": "\n```\n\n"
+                                "start": 22,
+                                "end": 23,
+                                "source": "\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 23,
+                                "end": 28,
+                                "source": "```\n\n"
                             },
                             {
                                 "kind": "slot",
-                                "start": 25,
-                                "end": 87,
+                                "start": 28,
+                                "end": 90,
                                 "name": "body",
                                 "grammar": "inline",
                                 "source": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc"
                             },
                             {
                                 "kind": "residual",
-                                "start": 87,
-                                "end": 89,
+                                "start": 90,
+                                "end": 92,
                                 "source": "\n\n"
                             }
                         ]
@@ -4965,11 +8419,11 @@
                 "shared-explicit-entry-envelope",
                 "identity-grammar"
             ],
-            "residual": "Envelope detection, typed member decoding and overwrite/unknown-member policy remain residual; the following body is retained.",
+            "residual": "Envelope detection, typed member decoding and first-valid/unknown-member policy remain residual; every value and the following body are retained.",
             "examples": [
                 {
-                    "dialect": "---\nname: rbrb\n---\n\nb **uu mbmb qbqb** ac\n\n",
-                    "common": "```\nname: rbrb\n```\n\nb **uu mbmb qbqb** ac\n\n",
+                    "dialect": "---\nname: \"note\"\ntime: 9007199254740993\nstate: true\ncomment:\nauthors: [one, 2]\nkeywords: []\ndate: rbrb\n---\n\nb **uu mbmb qbqb** ac\n\n",
+                    "common": "```\nname: \"note\"\ntime: 9007199254740993\nstate: true\ncomment:\nauthors: [one, 2]\nkeywords: []\ndate: rbrb\n```\n\nb **uu mbmb qbqb** ac\n\n",
                     "fields": [
                         [
                             "body",
@@ -5001,35 +8455,47 @@
                             {
                                 "kind": "residual",
                                 "start": 4,
-                                "end": 10,
-                                "source": "name: "
+                                "end": 92,
+                                "source": "name: \"note\"\ntime: 9007199254740993\nstate: true\ncomment:\nauthors: [one, 2]\nkeywords: []\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 92,
+                                "end": 98,
+                                "source": "date: "
                             },
                             {
                                 "kind": "slot",
-                                "start": 10,
-                                "end": 14,
+                                "start": 98,
+                                "end": 102,
                                 "name": "value",
                                 "grammar": "word",
                                 "source": "rbrb"
                             },
                             {
                                 "kind": "residual",
-                                "start": 14,
-                                "end": 20,
-                                "source": "\n---\n\n"
+                                "start": 102,
+                                "end": 103,
+                                "source": "\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 103,
+                                "end": 108,
+                                "source": "---\n\n"
                             },
                             {
                                 "kind": "slot",
-                                "start": 20,
-                                "end": 41,
+                                "start": 108,
+                                "end": 129,
                                 "name": "body",
                                 "grammar": "inline",
                                 "source": "b **uu mbmb qbqb** ac"
                             },
                             {
                                 "kind": "residual",
-                                "start": 41,
-                                "end": 43,
+                                "start": 129,
+                                "end": 131,
                                 "source": "\n\n"
                             }
                         ],
@@ -5043,43 +8509,55 @@
                             {
                                 "kind": "residual",
                                 "start": 4,
-                                "end": 10,
-                                "source": "name: "
+                                "end": 92,
+                                "source": "name: \"note\"\ntime: 9007199254740993\nstate: true\ncomment:\nauthors: [one, 2]\nkeywords: []\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 92,
+                                "end": 98,
+                                "source": "date: "
                             },
                             {
                                 "kind": "slot",
-                                "start": 10,
-                                "end": 14,
+                                "start": 98,
+                                "end": 102,
                                 "name": "value",
                                 "grammar": "word",
                                 "source": "rbrb"
                             },
                             {
                                 "kind": "residual",
-                                "start": 14,
-                                "end": 20,
-                                "source": "\n```\n\n"
+                                "start": 102,
+                                "end": 103,
+                                "source": "\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 103,
+                                "end": 108,
+                                "source": "```\n\n"
                             },
                             {
                                 "kind": "slot",
-                                "start": 20,
-                                "end": 41,
+                                "start": 108,
+                                "end": 129,
                                 "name": "body",
                                 "grammar": "inline",
                                 "source": "b **uu mbmb qbqb** ac"
                             },
                             {
                                 "kind": "residual",
-                                "start": 41,
-                                "end": 43,
+                                "start": 129,
+                                "end": 131,
                                 "source": "\n\n"
                             }
                         ]
                     }
                 },
                 {
-                    "dialect": "---\nname: ececec\n---\n\nlblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n",
-                    "common": "```\nname: ececec\n```\n\nlblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n",
+                    "dialect": "---\nname: \"note\"\ntime: 9007199254740993\nstate: true\ncomment:\nauthors: [one, 2]\nkeywords: []\ndate: ececec\n---\n\nlblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n",
+                    "common": "```\nname: \"note\"\ntime: 9007199254740993\nstate: true\ncomment:\nauthors: [one, 2]\nkeywords: []\ndate: ececec\n```\n\nlblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc\n\n",
                     "fields": [
                         [
                             "body",
@@ -5111,35 +8589,47 @@
                             {
                                 "kind": "residual",
                                 "start": 4,
-                                "end": 10,
-                                "source": "name: "
+                                "end": 92,
+                                "source": "name: \"note\"\ntime: 9007199254740993\nstate: true\ncomment:\nauthors: [one, 2]\nkeywords: []\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 92,
+                                "end": 98,
+                                "source": "date: "
                             },
                             {
                                 "kind": "slot",
-                                "start": 10,
-                                "end": 16,
+                                "start": 98,
+                                "end": 104,
                                 "name": "value",
                                 "grammar": "word",
                                 "source": "ececec"
                             },
                             {
                                 "kind": "residual",
-                                "start": 16,
-                                "end": 22,
-                                "source": "\n---\n\n"
+                                "start": 104,
+                                "end": 105,
+                                "source": "\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 105,
+                                "end": 110,
+                                "source": "---\n\n"
                             },
                             {
                                 "kind": "slot",
-                                "start": 22,
-                                "end": 84,
+                                "start": 110,
+                                "end": 172,
                                 "name": "body",
                                 "grammar": "inline",
                                 "source": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc"
                             },
                             {
                                 "kind": "residual",
-                                "start": 84,
-                                "end": 86,
+                                "start": 172,
+                                "end": 174,
                                 "source": "\n\n"
                             }
                         ],
@@ -5153,35 +8643,47 @@
                             {
                                 "kind": "residual",
                                 "start": 4,
-                                "end": 10,
-                                "source": "name: "
+                                "end": 92,
+                                "source": "name: \"note\"\ntime: 9007199254740993\nstate: true\ncomment:\nauthors: [one, 2]\nkeywords: []\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 92,
+                                "end": 98,
+                                "source": "date: "
                             },
                             {
                                 "kind": "slot",
-                                "start": 10,
-                                "end": 16,
+                                "start": 98,
+                                "end": 104,
                                 "name": "value",
                                 "grammar": "word",
                                 "source": "ececec"
                             },
                             {
                                 "kind": "residual",
-                                "start": 16,
-                                "end": 22,
-                                "source": "\n```\n\n"
+                                "start": 104,
+                                "end": 105,
+                                "source": "\n"
+                            },
+                            {
+                                "kind": "residual",
+                                "start": 105,
+                                "end": 110,
+                                "source": "```\n\n"
                             },
                             {
                                 "kind": "slot",
-                                "start": 22,
-                                "end": 84,
+                                "start": 110,
+                                "end": 172,
                                 "name": "body",
                                 "grammar": "inline",
                                 "source": "lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc"
                             },
                             {
                                 "kind": "residual",
-                                "start": 84,
-                                "end": 86,
+                                "start": 172,
+                                "end": 174,
                                 "source": "\n\n"
                             }
                         ]

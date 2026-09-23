@@ -370,7 +370,7 @@ function main() {
         process.exit(1);
     }
     process.stdout.write(
-        "corpus pair audit passed (47 grammar certificates; legacy structural contracts remain separate)\n"
+        "corpus pair audit passed (55 grammar certificates; legacy structural contracts remain separate)\n"
     );
 }
 

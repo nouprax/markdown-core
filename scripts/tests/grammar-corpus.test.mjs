@@ -7,6 +7,8 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
     buildGrammarCorpus,
+    auditGrammarCorpus,
+    historicalResiduals,
     grammarCatalog,
     grammarCertificates,
     grammarNormalForm,
@@ -44,9 +46,9 @@ const fresh = () => ({
 
 test("catalog is a complete reviewable corpus with exact grammar/proof/example provenance", () => {
     validateGrammarCertificates();
-    assert.equal(grammarCertificates.length, 47);
+    assert.equal(grammarCertificates.length, 55);
     assert.equal(full.length, 35);
-    assert.equal(split.length, 12);
+    assert.equal(split.length, 20);
     assert.deepEqual(new Set(grammarCertificates.flatMap((c) => c.legacy)), new Set(pairReviews.keys()));
     assert.deepEqual(
         new Set(grammarCertificates.map((c) => c.structuralPredecessor).filter(Boolean)),
@@ -169,12 +171,15 @@ test("boundary splits keep every byte and every independent field, with measured
 
 test("scaled corpus repeats derivations, keeps metadata document-initial, and records exact normal forms", () => {
     const corpus = buildGrammarCorpus();
-    assert.equal(corpus.cases.length, 236);
+    assert.equal(corpus.cases.length, 300);
     for (const proof of corpus.proofs) {
         assert.equal(proof.units, 12 * proof.scale);
         if (proof.id.startsWith("metadata")) {
             assert.equal(proof.hosts.dialect.source.split("---\n").length - 1, 2);
-            assert.equal(proof.hosts.dialect.pieces.filter((p) => p.kind === "slot").length, 2 * proof.units);
+            assert.equal(
+                proof.hosts.dialect.pieces.filter((p) => p.kind === "slot").length,
+                (proof.id === "metadataempty" ? 3 : 2) * proof.units
+            );
         }
         if (proof.scope === "paired-document-grammar") {
             const a = recognizePairedDocument(proof.id, "dialect", proof.hosts.dialect.source);
@@ -263,5 +268,26 @@ test("grammar reporting keeps the boundary ratio separate and rejects missing me
     assert.throws(
         () => grammarMarkdown({ ...report, cases: cases.filter((c) => c.part !== "boundary" || c.side !== "common") }),
         /missing/u
+    );
+});
+
+test("historical residual features have actual hosts and cannot pass through a shared subset label", () => {
+    assert.equal(Object.keys(historicalResiduals).length, 8);
+    for (const [id, record] of Object.entries(historicalResiduals)) {
+        const entry = grammarCertificates.find((c) => c.id === id);
+        assert.deepEqual(entry.legacy, [record.legacy]);
+        assert.equal(entry.scope, "boundary-grammar");
+        assert.notEqual(grammarUnit(id).dialect.source, grammarUnit(id).boundary.dialect);
+    }
+    const corpus = buildGrammarCorpus({ units: 1, scale: 1 });
+    corpus.proofs = corpus.proofs.filter((p) => p.id === "trailing-caption");
+    assert.throws(
+        () =>
+            auditGrammarCorpus(corpus, () => ({
+                kind: "Document",
+                fields: {},
+                children: [{ kind: "Table", fields: {}, children: [] }]
+            })),
+        /lost TableCaption/u
     );
 });

@@ -33,7 +33,42 @@ const direct = {
     "opaque-display": ["phrase", "$$", "``", "Formula"]
 };
 const directFrames = new Set(["task-value", "decimal-list"]);
+export const historicalResiduals = {
+    "citation-affixes": {
+        legacy: "citegroup",
+        reason: "Citation prefix/suffix attachment and group recognition remain residual; key and both affixes are retained as independent local fields."
+    },
+    "embed-dimensions": {
+        legacy: "embed",
+        reason: "Numeric image width/height has no field in the supplied CommonMark image counterpart; target and label remain locally paired."
+    },
+    "specimen-reset": {
+        legacy: "specimenstart",
+        reason: "Explicit specimen ordinal resets do not occur in the footnote counterpart; the key and entire definition body are retained."
+    },
+    "trailing-caption": {
+        legacy: "tcaption",
+        reason: "Trailing-caption attachment is absent from the pipe-table counterpart; caption and cell fields remain locally paired."
+    },
+    "headless-matrix": {
+        legacy: "headless",
+        reason: "Headless-row classification differs from the reference header rule; every cell value is retained in the local product."
+    },
+    "sparse-grid": {
+        legacy: "sparsegrid",
+        reason: "Spans, sparse rows, footer and empty-caption recognition remain residual; all six independent cell fields are retained."
+    },
+    "leading-caption": {
+        legacy: "caption",
+        reason: "Leading-caption attachment is absent from the pipe-table counterpart; caption and all cells remain locally paired."
+    },
+    "mixed-definitions": {
+        legacy: "deflist",
+        reason: "Multiple, loose and empty definitions have unmatched recognition/attachment rules; all terms and bodies, including Empty, are retained."
+    }
+};
 const splitIds = new Set([
+    ...Object.keys(historicalResiduals),
     "alpha-list",
     "upper-list",
     "roman-list",
@@ -50,34 +85,22 @@ const splitIds = new Set([
 const isProduct = (id) => !direct[id] && !directFrames.has(id) && !splitIds.has(id);
 
 const boundaryReason = (id) => {
-    if (id.startsWith("leaf-"))
-        return "Fence/promotion recognition, info fields and terminal-LF normalization remain outside the common payload grammar.";
-    if (id.includes("list") || id === "loose-definition")
-        return "Marker value conversion, continuation, term/body discovery and block ownership remain outside the common inline-field grammar.";
-    if (id.includes("container"))
-        return "Fence/name/attribute decisions and quote-prefix continuation do not share the body grammar; keep those frame bytes as residual.";
-    if (id.includes("directive"))
-        return "Directive name/envelope recognition and link destination/activation remain residual; the label grammar is compared separately.";
-    if (id.startsWith("cross-"))
-        return "Cross-field separation and URL/title validation/normalization remain residual; every present independent field is retained in the local value grammar.";
-    if (id.startsWith("cite-"))
-        return "Citation mode, URI recognition, derived text and unresolved binding behavior remain residual; the key value grammar is matched.";
+    if (historicalResiduals[id]) return historicalResiduals[id].reason;
+    if (id.includes("list"))
+        return "Marker value conversion and continuation remain outside the common inline-field grammar; default markers do not encode the reference start integer.";
     if (id === "specimen-graph")
         return "Definition/call recognition, symbol resolution, hoisting and ordinals remain residual; definition bodies are isolated with their original keys retained in the host.";
     if (id === "simple-matrix" || id === "grid-cell")
-        return "Geometry, column discovery, padding and cell source mapping remain residual; all cell contents, in source order, enter the local inline grammar.";
-    if (id === "record-span" || id === "class-span")
-        return "Attribute member grammar and Markdown URL/title decoding are not identified; independent label and value fields are split explicitly.";
-    if (id === "anchor")
-        return "Identifier declaration/attachment remains residual; the complete host inline body is retained.";
+        return "Geometry, column discovery, padding and cell source mapping remain residual; all cell contents enter the labelled local product.";
     if (id.startsWith("metadata"))
-        return "Envelope detection, typed member decoding and overwrite/unknown-member policy remain residual; the following body is retained.";
+        return "Envelope detection, typed member decoding and first-valid/unknown-member policy remain residual; every value and the following body are retained.";
     if (id === "callout")
         return "Callout kind, collapse state and header recognition remain residual; title inline content is retained.";
     throw new Error(`missing boundary disposition: ${id}`);
 };
 
 const ids = [
+    ...Object.keys(historicalResiduals),
     "insertion-strong",
     ...[...productionProofs.keys()].map((id) => id.replace(/-v2$/u, "")),
     "anchor",
@@ -91,6 +114,7 @@ export const grammarCertificates = ids.map((id) => {
         .filter((review) => review.proofs.includes(`${id}-v2`) || review.id === id)
         .map((review) => review.id);
     if (id === "insertion-strong") legacy.push("runs");
+    if (historicalResiduals[id]) legacy.push(historicalResiduals[id].legacy);
     return Object.freeze({
         id,
         certificate: `${id}-grammar-v1`,
@@ -109,7 +133,15 @@ export const grammarCertificates = ids.map((id) => {
 const byId = new Map(grammarCertificates.map((entry) => [entry.id, entry]));
 
 export function validateGrammarCertificates() {
-    assert.equal(byId.size, 47, "every old structural domain and four unpaired families need a grammar disposition");
+    assert.equal(
+        byId.size,
+        55,
+        "structural domains, unpaired families and historical residual hosts all need a disposition"
+    );
+    for (const [id, residual] of Object.entries(historicalResiduals)) {
+        assert.equal(byId.get(id).scope, "boundary-grammar");
+        assert.deepEqual(byId.get(id).legacy, [residual.legacy]);
+    }
     assert.deepEqual(new Set(grammarCertificates.flatMap((entry) => entry.legacy)), new Set(pairReviews.keys()));
     for (const entry of grammarCertificates) {
         if (entry.scope === "paired-document-grammar") {
@@ -383,6 +415,11 @@ function roman(n) {
     return result;
 }
 
+const metadataPreamble = (id) =>
+    id === "metadataempty"
+        ? ""
+        : 'name: "note"\ntime: 9007199254740993\nstate: true\ncomment:\nauthors: [one, 2]\nkeywords: []\n';
+
 function renderHosts(id, p) {
     const b = slot("body", "inline", renderBody(p.body));
     const t = slot("tail", "inline", renderBody(p.tail));
@@ -391,6 +428,119 @@ function renderHosts(id, p) {
     const target = slot("target", "word", p.target);
     const anchor = slot("anchor", "word", p.anchor);
     const pair = (a, r, kinds, referenceKinds) => [host(a, kinds), host(r, referenceKinds)];
+    const literal = slot("literal", "phrase", p.words.join(" "));
+    if (id === "citation-affixes")
+        return pair(
+            ["See [", literal, " @", key, ", ", value, "] here.\n\n"],
+            ["See [", literal, " ", key, " ", value, "](/", key, ") here.\n\n"],
+            ["Citation"],
+            ["Link"]
+        );
+    if (id === "embed-dimensions")
+        return pair(
+            ["See ![[", target, "|", literal, `|${p.start}x${p.start + 1}]] here.\n\n`],
+            ["See ![", literal, "](/", target, ") here.\n\n"],
+            ["CrossEmbedded"],
+            ["Embedded"]
+        );
+    if (id === "specimen-reset")
+        return pair(
+            ["As (@", key, ") shows.\n\n(", String(p.start), "@", key, ") ", b, "\n\n"],
+            ["As [^", key, "] shows.\n\n[^", key, "]: ", b, "\n\n"],
+            ["Specimen", "Citation"],
+            ["Footnote", "Cite"]
+        );
+    if (id === "leading-caption" || id === "trailing-caption") {
+        const table = ["| ", key, " |\n| --- |\n| ", value, " |\n\n"];
+        return pair(
+            id === "leading-caption" ? ["Table: ", literal, "\n", table] : [table, ": ", literal, "\n\n"],
+            [table, literal, "\n\n"],
+            ["Table"],
+            ["Table"]
+        );
+    }
+    if (id === "headless-matrix") {
+        const width = Math.max(key.source.length, target.source.length, value.source.length, anchor.source.length) + 2;
+        const rule = "-".repeat(width) + "  " + "-".repeat(width) + "\n";
+        return pair(
+            [
+                rule,
+                key,
+                " ".repeat(width - key.source.length + 2),
+                target,
+                "\n",
+                value,
+                " ".repeat(width - value.source.length + 2),
+                anchor,
+                "\n",
+                rule,
+                "\n"
+            ],
+            ["| ", key, " | ", target, " |\n| --- | --- |\n| ", value, " | ", anchor, " |\n\n"],
+            ["Table"],
+            ["Table"]
+        );
+    }
+    if (id === "sparse-grid") {
+        const d = slot("last", "word", p.words[0]),
+            footer = slot("footer", "word", p.words[1]);
+        const width = Math.max(...[key, target, value, anchor, d, footer].map((x) => x.source.length)) + 2;
+        const rule = (left, right) => `+${left.repeat(width)}+${right.repeat(width)}+\n`;
+        const cell = (field) => [" ", field, " ".repeat(width - field.source.length - 1)];
+        const spanning = (field) => ["| ", field, " ".repeat(2 * width - field.source.length), "|\n"];
+        return pair(
+            [
+                rule("-", "-"),
+                spanning(key),
+                rule("=", "="),
+                "|",
+                cell(target),
+                "|",
+                cell(value),
+                "|\n",
+                rule("-", " "),
+                "|",
+                cell(anchor),
+                "|",
+                cell(d),
+                "|\n",
+                rule("-", "-"),
+                rule(" ", " "),
+                rule("=", "="),
+                spanning(footer),
+                rule("=", "="),
+                "\nTable:\n\n---\n\n"
+            ],
+            [key, target, value, anchor, d, footer].flatMap((field) => ["> ", field, "\n\n"]),
+            ["Table"],
+            ["Callout"]
+        );
+    }
+    if (id === "mixed-definitions") {
+        const empty = slot("empty", "empty", "");
+        return pair(
+            [key, "\n: ", b, "\n: ", t, "\n\n", anchor, "\n\n: ", literal, "\n\n", target, "\n:", empty, "\n\n"],
+            [
+                "- ",
+                key,
+                "\n  - ",
+                b,
+                "\n  - ",
+                t,
+                "\n\n- ",
+                anchor,
+                "\n\n  ",
+                literal,
+                "\n\n- ",
+                target,
+                "\n  [",
+                empty,
+                "](/empty)\n\n"
+            ],
+            ["DefinitionList"],
+            ["List"]
+        );
+    }
     if (isProduct(id)) {
         const { dialect, common, kinds } = productGrammar(id);
         const values = {
@@ -496,13 +646,20 @@ function renderHosts(id, p) {
             ["Specimen", "Citation"],
             ["Footnote", "Cite"]
         );
-    if (id.startsWith("metadata"))
+    if (id.startsWith("metadata")) {
+        const member = [
+            metadataPreamble(id),
+            ...(id === "metadataempty" ? ["unknown-", key, ": "] : ["date: "]),
+            value,
+            "\n"
+        ];
         return pair(
-            ["---\n", id === "metadataempty" ? "unknown: " : "name: ", value, "\n---\n\n", b, "\n\n"],
-            ["```\n", id === "metadataempty" ? "unknown: " : "name: ", value, "\n```\n\n", b, "\n\n"],
+            ["---\n", member, "---\n\n", b, "\n\n"],
+            ["```\n", member, "```\n\n", b, "\n\n"],
             ["Metadata"],
             ["CodeBlock"]
         );
+    }
     if (id === "callout")
         return pair([`> [!note]${["", "-", "+"][p.mode]} `, b, "\n\n"], ["> ", b, "\n\n"], ["Callout"], ["Callout"]);
     throw new Error(`no grammar host: ${id}`);
@@ -584,22 +741,29 @@ export function encodeBoundary(id, units) {
 
 function composeHosts(id, rows, side) {
     if (id.startsWith("metadata")) {
-        const values = rows.map((row, i) =>
-            slot(`value-${i}`, "word", row.fields.find(([name]) => name === "value")[1].source)
-        );
-        const bodies = rows.map((row, i) =>
-            slot(`body-${i}`, "inline", row.fields.find(([name]) => name === "body")[1].source)
-        );
+        const field = (row, name, i) =>
+            slot(
+                `${name}-${i}`,
+                name === "body" ? "inline" : "word",
+                row.fields.find(([key]) => key === name)[1].source
+            );
+        const members = rows.flatMap((row, i) => [
+            ...(id === "metadataempty" ? ["unknown-", field(row, "key", i), ": "] : ["date: "]),
+            field(row, "value", i),
+            "\n"
+        ]);
         return host(
             [
                 side === "dialect" ? "---\n" : "```\n",
-                values.flatMap((value) => [id === "metadataempty" ? "unknown: " : "name: ", value, "\n"]),
+                metadataPreamble(id),
+                members,
                 side === "dialect" ? "---\n\n" : "```\n\n",
-                bodies.flatMap((body) => [body, "\n\n"])
+                rows.flatMap((row, i) => [field(row, "body", i), "\n\n"])
             ],
             side === "dialect" ? ["Metadata"] : ["CodeBlock"]
         );
     }
+
     return host(
         rows.flatMap((row) =>
             row[side].pieces.length
@@ -893,8 +1057,15 @@ export function buildGrammarCorpus({ units = 12, scale = 2 } = {}) {
                         bytes: Buffer.byteLength(text),
                         dialect: side === "dialect" && part !== "boundary" ? "extended" : "commonmark",
                         gfm:
-                            ["task-value", "simple-matrix", "specimen-graph"].includes(certificate.id) &&
-                            part !== "boundary",
+                            [
+                                "task-value",
+                                "simple-matrix",
+                                "specimen-graph",
+                                "specimen-reset",
+                                "headless-matrix",
+                                "leading-caption",
+                                "trailing-caption"
+                            ].includes(certificate.id) && part !== "boundary",
                         carries: [],
                         growth: "grammar derivations"
                     });
@@ -1021,6 +1192,78 @@ function inlineMeaning(nodes, kind) {
     });
 }
 
+function auditResidualHost(proof, nodes) {
+    const of = (kind) => nodes.filter((node) => node.kind === kind);
+    const count = (kind, n = proof.units) =>
+        assert.equal(of(kind).length, n, `${proof.id}: residual host lost ${kind}`);
+    if (proof.id.startsWith("metadata")) {
+        count("Metadata", 1);
+        if (proof.id === "metadata") {
+            const fields = of("Metadata")[0].fields;
+            for (const [name, value] of Object.entries({
+                time: 'scalar(number("9007199254740993"))',
+                state: "scalar(bool(true))",
+                comment: "scalar(null)",
+                authors: 'list([text("one"),number("2")])',
+                keywords: "list([])"
+            }))
+                assert.equal(fields[name], value);
+            assert.equal(
+                fields.date,
+                `scalar(text(${JSON.stringify(proof.rows[0].fields.find(([name]) => name === "value")[1].source)}))`
+            );
+        }
+    } else if (proof.id === "citation-affixes") {
+        for (const kind of ["CitationPrefix", "CitationSuffix"]) {
+            count(kind);
+            assert.ok(of(kind).every((node) => node.children.length > 0));
+        }
+    } else if (proof.id === "embed-dimensions") {
+        count("CrossEmbedded");
+        assert.deepEqual(
+            of("CrossEmbedded").map((node) => node.fields.dimensions),
+            proof.rows.map((row) => {
+                const match = /\|(\d+)x(\d+)\]\]/u.exec(row.dialect.source);
+                return `(width=${match[1]},height=${match[2]})`;
+            })
+        );
+    } else if (proof.id === "specimen-reset") {
+        count("Specimen");
+        assert.deepEqual(
+            of("Specimen").map((node) => node.fields.start),
+            proof.rows.map((row) => /\((\d+)@/u.exec(row.dialect.source)[1])
+        );
+    } else if (proof.id === "leading-caption" || proof.id === "trailing-caption") {
+        count("TableCaption");
+        assert.deepEqual(
+            of("TableCaption").map((node) => node.children.map((child) => child.fields.literal).join("")),
+            proof.rows.map((row) => row.fields.find(([name]) => name === "literal")[1].source)
+        );
+    } else if (proof.id === "headless-matrix") {
+        count("TableHead");
+        assert.ok(of("TableHead").every((node) => !node.children.length));
+        assert.ok(of("TableBody").every((node) => node.children.length === 2));
+    } else if (proof.id === "sparse-grid") {
+        count("TableCaption");
+        count("TableFoot");
+        assert.ok(of("TableCaption").every((node) => !node.children.length));
+        assert.ok(of("TableFoot").every((node) => node.children.length === 1));
+        assert.equal(of("TableCell").filter((node) => node.fields.colspan === "2").length, 2 * proof.units);
+        assert.equal(of("TableCell").filter((node) => node.fields.rowspan === "2").length, 3 * proof.units);
+        for (const row of proof.rows)
+            for (const [, field] of row.fields)
+                assert.ok(
+                    of("Text").some((node) => node.fields.literal === field.source),
+                    "sparse grid lost a cell value"
+                );
+    } else if (proof.id === "mixed-definitions") {
+        count("Definition", 3 * proof.units);
+        count("DefinitionBody", 4 * proof.units);
+        assert.equal(of("DefinitionBody").filter((node) => !node.children.length).length, proof.units);
+        assert.equal(of("Definition").filter((node) => node.fields.compact === "false").length, proof.units);
+    }
+}
+
 /** Native execution checks the grammar-derived expectations. It is not the
  * mathematical proof, and none of its output supplies a grammar definition.
  */
@@ -1036,6 +1279,7 @@ export function auditGrammarCorpus(corpus, parse) {
             const tree = parse(side === "dialect" ? "core" : entry.gfm ? "gfm" : "cmark", entry.text);
             parses++;
             const nodes = allNodes(tree);
+            if (side === "dialect") auditResidualHost(proof, nodes);
             for (const kind of proof.hosts[side].kinds)
                 assert.ok(
                     nodes.some((node) => node.kind === kind),
