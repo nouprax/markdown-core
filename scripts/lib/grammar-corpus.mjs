@@ -288,7 +288,7 @@ function parameters(index) {
         tail: bodyAt(index + 23, (index + 1) % 3),
         words: [word(index * 7 + 1, 1 + (index % 11)), word(index * 31 + 17), word(index + 99, 1 + (index % 5))],
         mode: index % 3,
-        start: 1 + (index % 18),
+        start: 1 + (index % finiteLexicons.ordinal.decimal.length),
         reset: String(index % 3 === 2 ? 999999999 : index + 1)
     };
 }
@@ -522,7 +522,8 @@ function renderHosts(id, p) {
             anchor: p.anchor,
             literal: p.words,
             label: id.endsWith("empty") ? "" : p.words,
-            ...featureValues(p)
+            ...featureValues(p),
+            ...p.finiteValues
         };
         return [dialect, common].map((grammar, i) =>
             host(
@@ -873,8 +874,29 @@ function grammarDescription(certificate, side) {
     return `Document = Paragraph+ ; Paragraph = 'probe ' OPEN ${payload} CLOSE ' end' LF LF ; OPEN = ${JSON.stringify(marker)} ; CLOSE = ${JSON.stringify(marker)} ; ${normalForms[certificate.grammar]}`;
 }
 
+// The grammar determines the finite enumeration, independently of requested
+// workload size. Repeated names are one binding; independent fields form a
+// Cartesian product. The same schedule feeds native audits and Callgrind.
+function finiteFields(id) {
+    if (!isProduct(id)) return [];
+    return [
+        ...new Map(
+            productGrammar(id)
+                .dialect.filter((part) => part.encoding)
+                .map((field) => [field.name, field])
+        ).values()
+    ];
+}
+
 export function grammarUnit(id, index = 0) {
     const p = parameters(index);
+    let ordinal = index;
+    p.finiteValues = {};
+    for (const field of finiteFields(id)) {
+        const tokens = finiteLexicons[field.grammar][field.encoding];
+        p.finiteValues[field.name] = decodeField(field, tokens[ordinal % tokens.length]);
+        ordinal = Math.floor(ordinal / tokens.length);
+    }
     if (isProduct(id) && index % 12 === 11) {
         for (const field of grammarNormalForm(id, "dialect").fields)
             if (field.maxBytes) {
@@ -1075,7 +1097,7 @@ export function grammarCatalog() {
             grammars: proof.grammars,
             rewrite: proof.rewrite,
             residual: proof.residual,
-            examples: proof.rows.map((row) => ({
+            examples: proof.rows.slice(0, 2).map((row) => ({
                 dialect: row.dialect.source,
                 common: row.common.source,
                 ...(row.derivation
@@ -1097,8 +1119,14 @@ export function buildGrammarCorpus({ units = 12, scale = 2 } = {}) {
     const cases = [],
         proofs = [];
     for (const certificate of grammarCertificates) {
+        const alternatives = finiteFields(certificate.id).reduce(
+            (count, field) => count * finiteLexicons[field.grammar][field.encoding].length,
+            1
+        );
         for (let level = 1; level <= scale; level++) {
-            const rows = Array.from({ length: units * level }, (_, index) => grammarUnit(certificate.id, index));
+            const rows = Array.from({ length: Math.max(units, alternatives) * level }, (_, index) =>
+                grammarUnit(certificate.id, index)
+            );
             const bound = certificate.scope === "boundary-grammar";
             const names = {};
             const hosts = Object.fromEntries(

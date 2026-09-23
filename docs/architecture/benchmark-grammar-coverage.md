@@ -27,6 +27,10 @@ never the proof.
 5. The generated source, grammar, normal form, proof identity, native checks and
    Callgrind reports travel together. Filtering a benchmark selects both sides
    and, for boundaries, both complete hosts. Missing halves fail reporting.
+6. Every measured scale enumerates the full Cartesian product of finite grammar
+   fields, including all 26 canonical ordinal alternatives and all three callout
+   states. Requested unit counts are lower bounds; they cannot truncate this
+   coverage. Native auditing and Callgrind consume the same generated documents.
 
 There are **30 specification features, 136 sections, 32 registered elements,
 185 certificates and 788 generated documents** at the default two scales.

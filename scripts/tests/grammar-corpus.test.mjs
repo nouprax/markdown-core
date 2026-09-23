@@ -171,7 +171,11 @@ test("scaled corpus repeats derivations, keeps metadata document-initial, and re
     const corpus = buildGrammarCorpus();
     assert.equal(corpus.cases.length, 788);
     for (const proof of corpus.proofs) {
-        assert.equal(proof.units, 12 * proof.scale);
+        assert.ok(proof.units >= 12 * proof.scale);
+        assert.equal(
+            proof.units,
+            corpus.proofs.find((first) => first.id === proof.id && first.scale === 1).units * proof.scale
+        );
         if (proof.id.startsWith("metadata")) {
             assert.equal(proof.hosts.dialect.source.split("---\n").length - 1, 2);
             assert.equal(
@@ -362,6 +366,28 @@ test("reference-label bounds are part of the grammar and generated at their exac
                     field.maxBytes
                 );
             }
+    }
+});
+
+test("every measured scale exhausts finite grammar alternatives even with one requested unit", () => {
+    for (const units of [1, 12]) {
+        const corpus = buildGrammarCorpus({ units, scale: 2 });
+        for (const proof of corpus.proofs) {
+            const fields = (proof.normalForm.fields ?? []).filter((field) => finiteLexicons[field.grammar]);
+            if (!fields.length) continue;
+            const cardinalities = fields.map((field) => Object.values(finiteLexicons[field.grammar])[0].length);
+            const expected = cardinalities.reduce((count, size) => count * size, 1);
+            const tuples = proof.rows.map((row) =>
+                JSON.stringify(fields.map((field) => row.derivation[0].find(([name]) => name === field.name)[1].value))
+            );
+            assert.equal(new Set(tuples).size, expected, `${proof.id} scale ${proof.scale}`);
+            for (const side of ["dialect", "common"]) {
+                const document = corpus.cases.find(
+                    (entry) => entry.id === proof.id && entry.scale === proof.scale && entry.side === side
+                );
+                assert.equal(recognizePairedDocument(proof.id, side, document.text).length, proof.rows.length);
+            }
+        }
     }
 });
 
