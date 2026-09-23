@@ -1,5 +1,5 @@
 /** Specification-owned feature inventory. A feature is admitted through its
- * source grammars and native witnesses, not through an AST-kind census. The
+ * source grammars and mathematical certificates, not through an AST-kind census. The
  * descriptor inventory independently guards against a newly attached module.
  */
 import assert from "node:assert/strict";
@@ -7,7 +7,6 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { readElementInventory } from "./element-inventory.mjs";
-import { readExamples } from "./fixture-corpus.mjs";
 
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 // The specification is the feature boundary. These links retain the earlier
@@ -114,7 +113,6 @@ export function featureCoverage(root, corpus) {
     );
     const certificates = new Map(corpus.certificates.map((entry) => [entry.id, entry]));
     const covered = new Set();
-    const conformance = new Map();
     const features = specifications.map((name) => {
         const owner = featureOwners[name];
         const ids = [
@@ -145,44 +143,25 @@ export function featureCoverage(root, corpus) {
         });
         const spec = `${specDirectory}/${name}.md`;
         const source = fs.readFileSync(path.join(root, spec), "utf8");
-        const fixtures = `packages/markdown-core/tests/fixtures/dialect-${name}.txt`;
-        const files = fs.existsSync(path.join(root, fixtures))
-            ? [fixtures]
-            : [
-                  "packages/markdown-core/tests/fixtures/spec.txt",
-                  "packages/markdown-core/tests/fixtures/regression.txt"
-              ];
-        for (const file of files) {
-            if (conformance.has(file)) continue;
-            const examples = readExamples(root, file);
-            assert.ok(examples.length, `${name}: no conformance witnesses`);
-            conformance.set(file, {
-                file,
-                sha256: digest(fs.readFileSync(path.join(root, file))),
-                cases: examples.map((entry) => ({ source: entry.source, sha256: digest(entry.input) }))
-            });
-        }
         return {
             feature: name,
             specification: spec,
             sha256: digest(source),
             sections: specificationSections(source),
             elements: owner.elements,
-            certificates: proofs,
-            conformance: files
+            certificates: proofs
         };
     });
     assert.deepEqual(covered, new Set(certificates.keys()), "every certificate must have a specification owner");
     return {
         version: 1,
         contract:
-            "Every syntax feature and registered element has generated grammar-certified inputs; every specification section and its complete conformance corpus has a reviewed, content-bound disposition. Whole-language proofs apply only to the declared grammars; local boundaries do not certify their residual host grammar.",
+            "Every syntax feature and registered element has generated grammar-certified inputs; every specification section has a reviewed, content-bound disposition. Parser correctness is owned by parity and regression suites. Whole-language proofs apply only to the declared grammars; local boundaries do not certify their residual host grammar.",
         guide: {
             file: "docs/specs/dialect.md",
             sha256: digest(fs.readFileSync(path.join(root, "docs/specs/dialect.md")))
         },
-        features,
-        conformance: [...conformance.values()].sort((a, b) => a.file.localeCompare(b.file))
+        features
     };
 }
 
@@ -194,7 +173,7 @@ export function validateFeatureCoverage(root, corpus) {
     assert.deepEqual(
         actual,
         expected,
-        "grammar feature coverage changed: review the syntax/rule/fixture delta and update its certificates before regenerating grammar-coverage.json"
+        "grammar feature coverage changed: review the syntax/rule delta and update its certificates before regenerating grammar-coverage.json"
     );
     return {
         features: actual.features.length,

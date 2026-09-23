@@ -7,7 +7,6 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
     buildGrammarCorpus,
-    auditGrammarCorpus,
     historicalHosts,
     grammarCatalog,
     grammarCertificates,
@@ -203,13 +202,11 @@ test("artifact identity binds proof text and source dependencies; corpus is dete
         const paths = [
             "scripts/lib",
             "scripts/benchmark-stages.mjs",
-            "scripts/audit-corpus-pairs.mjs",
             "scripts/init-environment.sh",
             "packages/markdown-core/benchmarks/grammar-corpus.json",
             "packages/markdown-core/benchmarks/grammar-coverage.json",
             "docs/specs/dialect",
             "docs/specs/dialect.md",
-            "packages/markdown-core/tests/fixtures",
             "docs/architecture/benchmark-grammar-coverage.md",
             "docs/architecture/benchmark-grammar-corpus.md"
         ];
@@ -219,6 +216,12 @@ test("artifact identity binds proof text and source dependencies; corpus is dete
         }
         const original = grammarSourceIdentity(directory);
         assert.equal(original, grammarSourceIdentity());
+        // Native correctness inputs are deliberately outside grammar provenance.
+        const correctness = path.join(directory, "packages/markdown-core/tests/fixtures/new-correctness.txt");
+        fs.mkdirSync(path.dirname(correctness), { recursive: true });
+        fs.writeFileSync(correctness, "A new native regression fixture.\n");
+        fs.appendFileSync(path.join(directory, "scripts/lib/upstream-cmark.mjs"), "\n// Changed parity projection.\n");
+        assert.equal(original, grammarSourceIdentity(directory));
         fs.appendFileSync(path.join(directory, paths.at(-1)), "\nChanged proof obligation.\n");
         assert.notEqual(original, grammarSourceIdentity(directory));
     } finally {
@@ -304,17 +307,6 @@ test("historical residual features have actual hosts and cannot pass through a s
             assert.notEqual(grammarUnit(id).dialect.source, grammarUnit(id).boundary.dialect);
         else assert.ok(grammarUnit(id).derivation);
     }
-    const corpus = buildGrammarCorpus({ units: 1, scale: 1 });
-    corpus.proofs = corpus.proofs.filter((p) => p.id === "trailing-caption");
-    assert.throws(
-        () =>
-            auditGrammarCorpus(corpus, () => ({
-                kind: "Document",
-                fields: {},
-                children: [{ kind: "Table", fields: {}, children: [] }]
-            })),
-        /lost TableCaption/u
-    );
 });
 
 test("the complete syntax and element inventories fail closed when a feature, rule, or source changes", () => {
@@ -343,7 +335,7 @@ test("the complete syntax and element inventories fail closed when a feature, ru
     );
     assert.notDeepEqual(specificationSections(source), specificationSections(source.replace("One.", "Two.")));
     assert.ok(
-        featureCoverage(root, corpus).features.every((entry) => entry.certificates.length && entry.conformance.length)
+        featureCoverage(root, corpus).features.every((entry) => entry.certificates.length && entry.sections.length)
     );
 });
 
@@ -447,36 +439,4 @@ test("finite substitutions and bindings retain every alternative, state, and equ
     }
     for (const reset of ["0", "0001", "1000000000"])
         assert.throws(() => instantiateGrammar("specimen-reset", { ...fresh(), reset }));
-});
-
-test("native feature guards reject a nameless substitute for the named-container grammar", () => {
-    const corpus = buildGrammarCorpus({ units: 1, scale: 1 });
-    corpus.proofs = corpus.proofs.filter((proof) => proof.id === "named-container");
-    assert.ok(grammarUnit("named-container").dialect.source.startsWith(":::nd\n"));
-    assert.throws(() =>
-        auditGrammarCorpus(corpus, () => ({
-            kind: "Document",
-            fields: {},
-            children: [{ kind: "DirectiveBlock", fields: { name: "null" }, children: [] }]
-        }))
-    );
-});
-
-test("Core on the alternate syntax is audited independently of reference acceptance", () => {
-    const corpus = buildGrammarCorpus({ units: 1, scale: 1 });
-    corpus.proofs = corpus.proofs.filter((proof) => proof.id === "record-span");
-    const common = grammarUnit("record-span").common.source;
-    const node = (kind, fields = {}) => ({ kind, fields, children: [] });
-    assert.throws(
-        () =>
-            auditGrammarCorpus(corpus, (engine, input) => ({
-                ...node("Document"),
-                children: [
-                    input === common
-                        ? node(engine === "core" ? "Paragraph" : "Link", { dest: 'url("/target")' })
-                        : node("Span")
-                ]
-            })),
-        /Core\/reference counterpart conformance/u
-    );
 });

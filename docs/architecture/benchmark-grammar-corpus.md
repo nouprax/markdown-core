@@ -190,9 +190,8 @@ forms; absence is never silently turned into an empty variable.
 
 The standalone source recognizer compiles these literal/nonterminal productions,
 then uses T1 recognizers on every captured field and requires complete input
-consumption. It compares both decoded Documents, separately from native-parser
-execution. Native parsing is an additional conformance witness that the emitted
-frames activate the intended constructs; native output never defines the proof.
+consumption. It compares both decoded Documents without executing a native parser.
+Native output correctness belongs to the parity and regression suites.
 
 ## List frame equivalence (T4)
 
@@ -223,14 +222,13 @@ No alternate heading, HTML, hard-break, entity or escape spelling is necessary.
 The catalog marks these certificates `identity: true`, the generator emits equal
 bytes, and the checker compares the productions and independently decodes both.
 
-The native audit compares the existing scoped CommonMark/GFM semantic projections.
-That comparison is conformance evidence, not the identity proof. A quote's node
-name, automatic heading anchors, source positions and emitted definition retention
-are output-model questions. In particular `footnote-retention` uses the identical
-reference-definition grammar even though Core retains three authored definitions
-per generated unit and GFM emits only the first used one. The audit checks those
-exact different counts and the report names the difference. Dropping a definition
-from the output cannot refute equality of its source grammar.
+Native output differences affect performance interpretation without changing
+source grammar identity. A quote's node name, automatic heading anchors, source
+positions and emitted definition retention are output-model questions. For
+example `footnote-retention` uses the identical reference-definition grammar,
+while Core retains authored definitions and GFM emits used definitions. The
+report documents that distinction. Correctness of those outputs is owned by
+parity/regression, not by an AST assertion in the grammar corpus.
 
 ## Finite lexical substitution and repeated bindings (T7)
 
@@ -266,8 +264,8 @@ an inconsistent second label is rejected instead of overwritten in a map.
 T3 and T7 now provide whole declared-language counterparts for thirteen formerly
 split families: four numeral lists, two default lists, all three callout states,
 citation affixes, both caption placements, mixed definitions, specimen binding, and specimen resets. Prefix/key/suffix and caption/table fields all survive independently.
-Named containers use `:::name`, while `::: name` is the nameless grammar; native
-checks verify the actual name, not merely a DirectiveBlock node.
+Named containers use the `:::name` production; `::: name` belongs to the
+nameless grammar. The source encoding preserves that normative distinction.
 
 Specimen resets add a shared lexical nonterminal
 `Positive9 = [1-9][0-9]{0,8}`. The reset marker `(n@key)` is translated to an
@@ -277,8 +275,8 @@ uses the common first-marker rule: the first reset/ordered marker establishes
 the start, later authored numbers do not restart the group, blank lines preserve
 the group, and an outside paragraph separates it from the next group. Anonymous
 and duplicate labels are retained as declared repeated fields, rather than
-requiring the reference to use footnotes. Native checks assert both Core specimen
-starts (`5,null,null`) and the reference list start (`5`). The variable-reset
+requiring the reference to use footnotes. The declared group productions retain
+the first start (`5`) and subsequent authored reset markers. The variable-reset
 family exercises `999999999` as well as small starts. This proves the declared
 single-line-body reset grammar, not every unrestricted continuation shape.
 
@@ -336,8 +334,7 @@ one envelope instead. Its lossless pieces retain every occurrence of every value
 The catalog records each certificate's historical scenario IDs. The registry
 requires exactly the union of all 30 old scenarios and dispositions for every
 old structural domain, including the four previously unpaired families. A historical boundary is upgraded only by a new constructive grammar
-translation and matching native conformance witnesses. Old structural
-fixtures remain separate diagnostic controls.
+translation. Old structural fixtures remain separate diagnostic controls.
 
 The benchmark requests 12 and 24 generated derivation units. Each scale is
 expanded when necessary to enumerate every combination of finite grammar fields;
@@ -354,27 +351,28 @@ Run:
 
 ```sh
 pnpm benchmark:grammar --corpus-only --out build/benchmark-grammar
-pnpm audit:corpus-pairs
+node --test scripts/tests/grammar-corpus.test.mjs
 # Linux with the pinned compiler, oracles and Callgrind:
 pnpm benchmark:grammar --scale 2 --out build/benchmark-grammar
 ```
 
-The native audit runs Core on both encodings and the pinned reference on the
-common encoding. An identity input reuses its identical Core execution. Reference
-acceptance alone cannot attest to Core on the alternate encoding.
-It checks recursive meanings, literal fields, fixed task/formula states and
-boundary field counts against grammar-derived expectations. It also verifies
-that historical residual hosts really retain their affixes, dimensions, reset
-ordinals, captions, headless sections, row/column spans, footer, and empty/loose
-definitions. Merely recognizing a generic Table or mapping a scenario ID to a
-shared subset cannot pass that check. Tests separately
-check inverse laws, rejected syntax, independence, finite substitutions, repeated-binding rejection, lossless
-partitions, specification/element coverage and reporting boundaries. A native audit is finite evidence that our
-encodings match the implementations; it is not a substitute for T1–T7.
+The source-language checks validate all generated derivations, inverse laws,
+rejected source syntax, independent fields, finite substitutions, repeated
+bindings, lossless partitions and specification/element coverage. They run
+without building or executing Core, cmark or GFM. These checks exercise the
+formal constructions; T1–T7 establish the mathematical result beyond the finite
+samples.
+
+Pipeline responsibilities are orthogonal: parity/regression own native parsing
+correctness; this grammar layer owns source-language equivalence; the benchmark
+owns performance measurements and their provenance. It does not assert AST
+kinds, per-unit native multiplicity, field values or output equality. Multiple
+source units may legally compose into one native block. Correctness fixtures
+are neither benchmark acceptance gates nor inputs to the grammar identity.
 
 The artifact identity covers the grammar/generator/checker sources, entrypoint,
-oracle pins, both proof/coverage documents, syntax specifications, conformance
-fixtures and checked-in ledgers, plus the exact generated documents and
+oracle pins, both proof/coverage documents, syntax specifications and checked-in
+ledgers, plus the exact generated documents and
 proof records. The Callgrind report lists the concrete ratio per certificate
 and scale, retaining full hosts for boundary rows without certifying those host
 ratios. CI measures and archives this suite alongside the older diagnostic suite.

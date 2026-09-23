@@ -10,7 +10,6 @@ import { fileURLToPath } from "node:url";
 import { productionProofs } from "./pair-productions.mjs";
 import { pairReviews } from "./pair-review.mjs";
 import { featureGrammars, featureValues, finiteLexicons } from "./grammar-features.mjs";
-import { normalize, projectHtmlComments, parseAttributesDump } from "./upstream-cmark.mjs";
 import { validateFeatureCoverage } from "./grammar-coverage.mjs";
 
 export const grammarVersion = "grammar-corpus-v2";
@@ -30,15 +29,15 @@ export const normalForms = Object.freeze({
 });
 
 const direct = {
-    "insertion-strong": ["inline", "++", "**", "Insertion"],
-    "run-insertion": ["phrase", "++", "**", "Insertion"],
-    "run-mark": ["phrase", "==", "**", "Mark"],
-    "run-strike": ["phrase", "~~", "**", "Strikethrough"],
-    "run-super": ["word", "^", "*", "Superscript"],
-    "run-sub": ["word", "~", "*", "Subscript"],
-    "opaque-comment": ["phrase", "%%", "``", "Comment"],
-    "opaque-formula": ["phrase", "$", "`", "Formula"],
-    "opaque-display": ["phrase", "$$", "``", "Formula"]
+    "insertion-strong": ["inline", "++", "**"],
+    "run-insertion": ["phrase", "++", "**"],
+    "run-mark": ["phrase", "==", "**"],
+    "run-strike": ["phrase", "~~", "**"],
+    "run-super": ["word", "^", "*"],
+    "run-sub": ["word", "~", "*"],
+    "opaque-comment": ["phrase", "%%", "``"],
+    "opaque-formula": ["phrase", "$", "`"],
+    "opaque-display": ["phrase", "$$", "``"]
 };
 const directFrames = new Set(["task-value", "decimal-list"]);
 const additionalBoundaries = {
@@ -140,7 +139,7 @@ export const grammarCertificates = ids.map((id) => {
             : {}),
         ...(additionalBoundaries[id] ? { feature: additionalBoundaries[id] } : {}),
         ...(direct[id]
-            ? { dialectMarker: full[1], commonMarker: full[2], expectedKind: full[3], residual: null }
+            ? { dialectMarker: full[1], commonMarker: full[2], residual: null }
             : full
               ? { residual: null }
               : { residual: boundaryReason(id) })
@@ -302,7 +301,7 @@ function chainBody(seed, depth) {
  * No regexp extraction can silently lose a delimiter or a second field.
  */
 const slot = (name, grammar, source) => ({ name, grammar, source });
-function host(parts, kinds = []) {
+function host(parts) {
     const flat = parts.flat(Infinity);
     let source = "";
     const pieces = flat.map((part) => {
@@ -313,7 +312,7 @@ function host(parts, kinds = []) {
             ? { kind: "residual", start, end: Buffer.byteLength(source), source: value }
             : { kind: "slot", start, end: Buffer.byteLength(source), ...part };
     });
-    return { source, pieces, kinds };
+    return { source, pieces };
 }
 
 /** Finite product grammars. A field is a nonterminal, never a sample value.
@@ -333,11 +332,10 @@ export function productGrammar(id) {
         target = f("target"),
         anchor = f("anchor"),
         literal = f("literal", "phrase");
-    const pair = (dialect, common, a, r) => ({ dialect: dialect.flat(), common: common.flat(), kinds: [a, r] });
+    const pair = (dialect, common) => ({ dialect: dialect.flat(), common: common.flat() });
     const frame = (parts) => ["probe ", ...parts, " end\n\n"];
     if (id.startsWith("leaf-")) {
-        if (id === "leaf-directive")
-            return pair(["::", k, "[", b, "]\n\n"], ["[", b, "](/", k, ")\n\n"], ["DirectiveBlock"], ["Link"]);
+        if (id === "leaf-directive") return pair(["::", k, "[", b, "]\n\n"], ["[", b, "](/", k, ")\n\n"]);
         const [open, close] =
             id === "leaf-comment"
                 ? ["%%\n", "\n%%\n\n"]
@@ -346,21 +344,11 @@ export function productGrammar(id) {
                   : id === "leaf-promotion"
                     ? ["$$", "$$\n\n"]
                     : ["$$\n", "\n$$\n\n"];
-        return pair(
-            [open, literal, close],
-            ["```\n", literal, "\n```\n\n"],
-            [id === "leaf-comment" ? "Comment" : "FormulaBlock"],
-            ["CodeBlock"]
-        );
+        return pair([open, literal, close], ["```\n", literal, "\n```\n\n"]);
     }
     if (id === "record-span")
-        return pair(
-            frame(["[", b, "]{", k, '="', v, '"}']),
-            frame(["[", b, "](/", k, ' "', v, '")']),
-            ["Span"],
-            ["Link"]
-        );
-    if (id === "class-span") return pair(frame(["[]{.", v, "}"]), frame(["[](/", v, ")"]), ["Span"], ["Link"]);
+        return pair(frame(["[", b, "]{", k, '="', v, '"}']), frame(["[", b, "](/", k, ' "', v, '")']));
+    if (id === "class-span") return pair(frame(["[]{.", v, "}"]), frame(["[](/", v, ")"]));
     if (id.startsWith("cross-")) {
         const embed = id.includes("embed"),
             absent = id.endsWith("absent") || id === "cross-anchor" || id === "cross-local",
@@ -372,9 +360,7 @@ export function productGrammar(id) {
         ];
         return pair(
             frame([embed ? "![[" : "[[", ...fields, ...(absent ? [] : ["|", label]), "]]"]),
-            frame([embed ? "![](/" : "[](/", ...fields, ...(absent ? [] : [' "', label, '"']), ")"]),
-            [embed ? "CrossEmbedded" : "CrossLink"],
-            [embed ? "Embedded" : "Link"]
+            frame([embed ? "![](/" : "[](/", ...fields, ...(absent ? [] : [' "', label, '"']), ")"])
         );
     }
     if (id.startsWith("cite-"))
@@ -384,25 +370,19 @@ export function productGrammar(id) {
                 k,
                 id === "cite-normal" ? "]" : ""
             ]),
-            frame(["<https://", k, ">"]),
-            ["Citation"],
-            ["Link"]
+            frame(["<https://", k, ">"])
         );
     if (id === "inline-directive" || id === "empty-directive") {
         const label = id === "empty-directive" ? f("body", "empty") : b;
-        return pair(frame([":", k, "[", label, "]"]), frame(["[", label, "](/", k, ")"]), ["Directive"], ["Link"]);
+        return pair(frame([":", k, "[", label, "]"]), frame(["[", label, "](/", k, ")"]));
     }
     if (id.includes("container"))
         return pair(
             [...(id === "named-container" ? [":::", k, "\n"] : ["::: {}\n"]), b, "\n\n", t, "\n:::\n\n"],
-            [...(id === "named-container" ? ["> ", k, "\n>\n"] : []), "> ", b, "\n>\n> ", t, "\n\n"],
-            ["DirectiveBlock"],
-            ["Callout"]
+            [...(id === "named-container" ? ["> ", k, "\n>\n"] : []), "> ", b, "\n>\n> ", t, "\n\n"]
         );
-    if (id === "loose-definition")
-        return pair([literal, "\n\n: ", b, "\n\n"], ["- ", literal, "\n\n  ", b, "\n\n"], ["DefinitionList"], ["List"]);
-    if (id === "anchor")
-        return pair(["> ", b, "\n\n#", k, "#\n\n"], ["> ", b, "\n\n[", k, "]: /target\n\n"], ["Callout"], ["Callout"]);
+    if (id === "loose-definition") return pair([literal, "\n\n: ", b, "\n\n"], ["- ", literal, "\n\n  ", b, "\n\n"]);
+    if (id === "anchor") return pair(["> ", b, "\n\n#", k, "#\n\n"], ["> ", b, "\n\n[", k, "]: /target\n\n"]);
     throw new Error(`no product grammar: ${id}`);
 }
 
@@ -502,17 +482,14 @@ function metadataHost(id, p, side) {
         content: [b, "\n\n"]
     };
     return {
-        ...host(
-            [envelope.opening, members, envelope.closing, envelope.content],
-            side === "dialect" ? ["Metadata"] : ["CodeBlock"]
-        ),
+        ...host([envelope.opening, members, envelope.closing, envelope.content]),
         envelope
     };
 }
 
 function renderHosts(id, p) {
     if (isProduct(id)) {
-        const { dialect, common, kinds } = productGrammar(id);
+        const { dialect, common } = productGrammar(id);
         const values = {
             body: id === "empty-directive" ? "" : p.body,
             tail: p.tail,
@@ -525,14 +502,13 @@ function renderHosts(id, p) {
             ...featureValues(p),
             ...p.finiteValues
         };
-        return [dialect, common].map((grammar, i) =>
+        return [dialect, common].map((grammar) =>
             host(
                 grammar.map((part) =>
                     typeof part === "string"
                         ? part
                         : slot(part.name, part.grammar, encodeField(part, values[part.name]))
-                ),
-                kinds[i]
+                )
             )
         );
     }
@@ -542,7 +518,7 @@ function renderHosts(id, p) {
     const key = slot("key", "word", p.key);
     const target = slot("target", "word", p.target);
     const anchor = slot("anchor", "word", p.anchor);
-    const pair = (a, r, kinds, referenceKinds) => [host(a, kinds), host(r, referenceKinds)];
+    const pair = (a, r) => [host(a), host(r)];
     const literal = slot("literal", "phrase", p.words.join(" "));
     if (id.startsWith("metadata")) return [metadataHost(id, p, "dialect"), metadataHost(id, p, "common")];
     if (id === "image-dimensions")
@@ -554,9 +530,7 @@ function renderHosts(id, p) {
                 target,
                 ") end\n\n"
             ],
-            ["probe ![", literal, "](/", target, ") end\n\n"],
-            ["Embedded"],
-            ["Embedded"]
+            ["probe ![", literal, "](/", target, ") end\n\n"]
         );
     if (id === "multiline-matrix" || id === "headless-multiline") {
         const last = slot("last", "word", p.words[0]),
@@ -578,17 +552,13 @@ function renderHosts(id, p) {
                 full,
                 "\n"
             ],
-            fields.flatMap((field) => ["> ", field, "\n\n"]),
-            ["Table", "TableCell"],
-            ["Callout"]
+            fields.flatMap((field) => ["> ", field, "\n\n"])
         );
     }
     if (id === "embed-dimensions")
         return pair(
             ["See ![[", target, "|", literal, `|${p.start}x${p.start + 1}]] here.\n\n`],
-            ["See ![", literal, "](/", target, ") here.\n\n"],
-            ["CrossEmbedded"],
-            ["Embedded"]
+            ["See ![", literal, "](/", target, ") here.\n\n"]
         );
     if (id === "headless-matrix") {
         const width = Math.max(key.source.length, target.source.length, value.source.length, anchor.source.length) + 2;
@@ -607,9 +577,7 @@ function renderHosts(id, p) {
                 rule,
                 "\n"
             ],
-            ["| ", key, " | ", target, " |\n| --- | --- |\n| ", value, " | ", anchor, " |\n\n"],
-            ["Table"],
-            ["Table"]
+            ["| ", key, " | ", target, " |\n| --- | --- |\n| ", value, " | ", anchor, " |\n\n"]
         );
     }
     if (id === "sparse-grid") {
@@ -642,24 +610,14 @@ function renderHosts(id, p) {
                 rule("=", "="),
                 "\nTable:\n\n---\n\n"
             ],
-            [key, target, value, anchor, d, footer].flatMap((field) => ["> ", field, "\n\n"]),
-            ["Table"],
-            ["Callout"]
+            [key, target, value, anchor, d, footer].flatMap((field) => ["> ", field, "\n\n"])
         );
     }
-    if (id === "task-value")
-        return pair(
-            ["- [~] ", b, "\n- [~] ", t, "\n\n"],
-            ["- [x] ", b, "\n- [x] ", t, "\n\n"],
-            ["ListItem"],
-            ["ListItem"]
-        );
+    if (id === "task-value") return pair(["- [~] ", b, "\n- [~] ", t, "\n\n"], ["- [x] ", b, "\n- [x] ", t, "\n\n"]);
     if (id === "decimal-list")
         return pair(
             [`${p.start}. `, b, `\n${p.start + 1}. `, t, "\n\n"],
-            [`${p.start}. `, b, `\n${p.start + 1}. `, t, "\n\n"],
-            ["List"],
-            ["List"]
+            [`${p.start}. `, b, `\n${p.start + 1}. `, t, "\n\n"]
         );
     if (id === "grid-cell") {
         const width = Math.max(b.source.length, t.source.length) + 2;
@@ -679,9 +637,7 @@ function renderHosts(id, p) {
                 border,
                 "\n"
             ],
-            ["> ", b, "\n>\n> ", t, "\n\n"],
-            ["Table", "TableCell"],
-            ["Callout"]
+            ["> ", b, "\n>\n> ", t, "\n\n"]
         );
     }
     if (id === "simple-matrix") {
@@ -703,9 +659,7 @@ function renderHosts(id, p) {
                 anchor,
                 "\n\n"
             ],
-            ["| ", cells[0], " | ", cells[1], " |\n| :--- | :--- |\n| ", cells[2], " | ", cells[3], " |\n\n"],
-            ["Table"],
-            ["Table"]
+            ["| ", cells[0], " | ", cells[1], " |\n| :--- | :--- |\n| ", cells[2], " | ", cells[3], " |\n\n"]
         );
     }
     throw new Error(`no grammar host: ${id}`);
@@ -789,15 +743,12 @@ function composeHosts(id, rows, side) {
     if (id.startsWith("metadata")) {
         const rename = (part, i) => (typeof part === "string" ? part : { ...part, name: `${part.name}-${i}` });
         const envelope = rows[0][side].envelope;
-        return host(
-            [
-                envelope.opening,
-                rows.flatMap((row, i) => row[side].envelope.members.map((part) => rename(part, i))),
-                envelope.closing,
-                rows.flatMap((row, i) => row[side].envelope.content.map((part) => rename(part, i)))
-            ],
-            side === "dialect" ? ["Metadata"] : ["CodeBlock"]
-        );
+        return host([
+            envelope.opening,
+            rows.flatMap((row, i) => row[side].envelope.members.map((part) => rename(part, i))),
+            envelope.closing,
+            rows.flatMap((row, i) => row[side].envelope.content.map((part) => rename(part, i)))
+        ]);
     }
 
     return host(
@@ -807,8 +758,7 @@ function composeHosts(id, rows, side) {
                       piece.kind === "slot" ? slot(piece.name, piece.grammar, piece.source) : piece.source
                   )
                 : [row[side].source]
-        ),
-        rows[0][side].kinds
+        )
     );
 }
 
@@ -876,7 +826,7 @@ function grammarDescription(certificate, side) {
 
 // The grammar determines the finite enumeration, independently of requested
 // workload size. Repeated names are one binding; independent fields form a
-// Cartesian product. The same schedule feeds native audits and Callgrind.
+// Cartesian product. The same source schedule feeds the grammar checker and Callgrind.
 function finiteFields(id) {
     if (!isProduct(id)) return [];
     return [
@@ -918,13 +868,11 @@ export function instantiateGrammar(id, p) {
         const sides = [certificate.dialectMarker, certificate.commonMarker].map((marker) => {
             const payload = certificate.grammar === "inline" ? renderBody(sourceBody, marker) : sourceBody.join(" ");
             const source = `probe ${marker}${payload}${marker} end\n\n`;
-            return { source, kinds: [certificate.expectedKind], pieces: [] };
+            return { source, pieces: [] };
         });
         const decoded = sides.map((side, i) => recognizePairedDocument(id, i ? "common" : "dialect", side.source));
         assert.deepEqual(decoded[0], decoded[1]);
-        sides[1].kinds = [
-            id.startsWith("opaque-") ? "Code" : certificate.commonMarker.length === 1 ? "Emphasis" : "Strong"
-        ];
+
         return {
             id,
             certificate: certificate.certificate,
@@ -1255,14 +1203,14 @@ export function writeGrammarCorpus(directory, options) {
 }
 
 export function grammarSourceIdentity(root = fileURLToPath(new URL("../../", import.meta.url))) {
-    const library = fs
-        .readdirSync(path.join(root, "scripts/lib"), { recursive: true })
-        .filter((file) => file.endsWith(".mjs"))
-        .map((file) => `scripts/lib/${file.split(path.sep).join("/")}`);
     const files = [
-        ...library,
+        "scripts/lib/grammar-corpus.mjs",
+        "scripts/lib/grammar-features.mjs",
+        "scripts/lib/grammar-coverage.mjs",
+        "scripts/lib/element-inventory.mjs",
+        "scripts/lib/pair-productions.mjs",
+        "scripts/lib/pair-review.mjs",
         "scripts/benchmark-stages.mjs",
-        "scripts/audit-corpus-pairs.mjs",
         "scripts/init-environment.sh",
         "docs/architecture/benchmark-grammar-corpus.md",
         "docs/architecture/benchmark-grammar-coverage.md",
@@ -1272,11 +1220,7 @@ export function grammarSourceIdentity(root = fileURLToPath(new URL("../../", imp
         ...fs
             .readdirSync(path.join(root, "docs/specs/dialect"))
             .filter((file) => file.endsWith(".md"))
-            .map((file) => `docs/specs/dialect/${file}`),
-        ...fs
-            .readdirSync(path.join(root, "packages/markdown-core/tests/fixtures"))
-            .filter((file) => file.endsWith(".txt"))
-            .map((file) => `packages/markdown-core/tests/fixtures/${file}`)
+            .map((file) => `docs/specs/dialect/${file}`)
     ];
     return hash(
         files
@@ -1284,414 +1228,6 @@ export function grammarSourceIdentity(root = fileURLToPath(new URL("../../", imp
             .map((file) => `${file}\0${hash(fs.readFileSync(path.join(root, file)))}`)
             .join("\n")
     );
-}
-
-const allNodes = (root) => {
-    const result = [],
-        pending = [root];
-    while (pending.length) {
-        const node = pending.pop();
-        result.push(node);
-        pending.push(...node.children.toReversed());
-    }
-    return result;
-};
-const bodyMeaning = (body) => {
-    const result = [];
-    for (const [i, part] of body.entries()) {
-        if (i) {
-            if (result.at(-1)?.text !== undefined) result.at(-1).text += " ";
-            else result.push({ text: " " });
-        }
-        if (typeof part !== "string") result.push({ span: bodyMeaning(part) });
-        else if (result.at(-1)?.text !== undefined) result.at(-1).text += part;
-        else result.push({ text: part });
-    }
-    return result;
-};
-function inlineMeaning(nodes, kind) {
-    return nodes.map((node) => {
-        if (node.kind === "Text") return { text: node.fields.literal };
-        assert.equal(node.kind, kind, "unexpected production in native inline result");
-        return { span: inlineMeaning(node.children, kind) };
-    });
-}
-
-function auditDialectValues(proof, nodes) {
-    const of = (kind) => nodes.filter((node) => node.kind === kind);
-    const count = (kind, n = proof.units) =>
-        assert.equal(of(kind).length, n, `${proof.id}: residual host lost ${kind}`);
-    const fieldSource = (row, name) => {
-        const field = (row.fields ?? row.derivation[0]).find(([key]) => key === name)[1];
-        return field.source ?? encodeField(field, field.value);
-    };
-    if (proof.id.startsWith("attribute-")) {
-        const owner =
-            {
-                "attribute-code": "Code",
-                "attribute-heading": "Heading",
-                "attribute-fence": "CodeBlock",
-                "attribute-link": "Link",
-                "attribute-image": "Embedded",
-                "attribute-autolink": "Link",
-                "attribute-reference": "Link"
-            }[proof.id] ?? "Span";
-        count(owner);
-        for (const [i, node] of of(owner).entries()) {
-            const row = proof.rows[i],
-                value = (name) => fieldSource(row, name);
-            let classes = [],
-                records = [];
-            if (proof.id === "attribute-order") {
-                classes = [value("key"), value("value")];
-                records = [
-                    { name: value("target"), value: "first" },
-                    { name: value("target"), value: "second" }
-                ];
-            } else if (proof.id === "attribute-newline") classes = [value("key"), value("value")];
-            else if (proof.id === "attribute-heading") {
-                classes = [value("value")];
-                assert.equal(node.fields.anchor, value("key"));
-            } else if (proof.id === "attribute-reference") {
-                classes = ["base", value("value")];
-                assert.equal(node.fields.anchor, value("anchor"));
-            } else if (proof.id === "attribute-bare") {
-                classes = ["unnumbered"];
-                records = [{ name: value("key"), value: "true" }];
-            } else
-                records = [
-                    {
-                        name: value("key"),
-                        value:
-                            proof.id === "attribute-empty"
-                                ? ""
-                                : value("value") + (proof.id === "attribute-escaped-value" ? "&*" : "")
-                    }
-                ];
-            assert.deepEqual(
-                parseAttributesDump(node.fields.attributes),
-                { classes, records },
-                `${proof.id}: attribute value/ordering`
-            );
-        }
-    }
-    if (proof.id === "named-container") {
-        count("DirectiveBlock");
-        assert.deepEqual(
-            of("DirectiveBlock").map((node) => node.fields.name),
-            proof.rows.map((row) => row.derivation[0].find(([name]) => name === "key")[1].value)
-        );
-    } else if (
-        [
-            "alpha-list",
-            "upper-list",
-            "roman-list",
-            "upper-roman-list",
-            "default-list",
-            "enclosed-default-list"
-        ].includes(proof.id)
-    ) {
-        count("ListItem", 2 * proof.units);
-        const variant = {
-            "alpha-list": "alpha(lowercased=true)",
-            "upper-list": "alpha(lowercased=false)",
-            "roman-list": "roman(lowercased=true)",
-            "upper-roman-list": "roman(lowercased=false)",
-            "default-list": "default",
-            "enclosed-default-list": "default"
-        }[proof.id];
-        for (const list of of("List")) {
-            assert.equal(list.fields.start, "1");
-            assert.equal(list.fields.variant, variant);
-        }
-    } else if (proof.id === "callout") {
-        count("Callout");
-        for (const [i, node] of of("Callout").entries()) {
-            assert.equal(node.fields.variant, fieldSource(proof.rows[i], "key"));
-            const state = proof.rows[i].derivation[0].find(([key]) => key === "state")[1].value;
-            assert.equal(node.fields.collapsed, ["null", "true", "false"][state]);
-        }
-    } else if (proof.id.startsWith("metadata")) {
-        count("Metadata", 1);
-        if (proof.id === "metadata") {
-            const fields = of("Metadata")[0].fields;
-            for (const [name, value] of Object.entries({
-                time: 'scalar(number("9007199254740993"))',
-                state: "scalar(bool(true))",
-                comment: "scalar(null)",
-                authors: 'list([text("one"),number("2")])',
-                keywords: "list([])"
-            }))
-                assert.equal(fields[name], value);
-            assert.equal(
-                fields.date,
-                `scalar(text(${JSON.stringify(proof.rows[0].fields.find(([name]) => name === "value")[1].source)}))`
-            );
-        }
-        if (proof.id === "metadata-types") {
-            const values = {
-                name: `scalar(text(${JSON.stringify(fieldSource(proof.rows[0], "key"))}))`,
-                title: `scalar(text(${JSON.stringify(fieldSource(proof.rows[0], "value"))}))`,
-                subtitle: 'scalar(text(""))',
-                time: 'scalar(number("-1.50e+2"))',
-                date: "scalar(null)",
-                authors: 'list([text("one"),number("2")])',
-                keywords: 'list([text("one"),number("2")])',
-                abstract: "scalar(bool(false))",
-                state: "scalar(bool(true))",
-                comment: "scalar(null)"
-            };
-            for (const [key, value] of Object.entries(values))
-                assert.equal(of("Metadata")[0].fields[key], value, `metadata-types: ${key}`);
-        }
-        if (proof.id === "metadata-literal") {
-            for (const [key, value] of Object.entries({
-                abstract: fieldSource(proof.rows[0], "literal") + "\n\nliteral\n",
-                comment: fieldSource(proof.rows[0], "value") + "\n  indented\n"
-            }))
-                assert.equal(of("Metadata")[0].fields[key], `scalar(text(${JSON.stringify(value)}))`);
-        }
-    } else if (proof.id === "multiline-matrix" || proof.id === "headless-multiline") {
-        count("Table");
-        assert.equal(
-            of("TableHead").every((head) => head.children.length === 0),
-            proof.id === "headless-multiline"
-        );
-        assert.ok(of("TableCell").every((cell) => cell.children.every((child) => child.kind === "Paragraph")));
-        count("SoftBreak", 2 * proof.units);
-    } else if (proof.id === "specimen-groups") {
-        count("Specimen", 3 * proof.units);
-        assert.deepEqual(
-            of("Specimen").map((node) => node.fields.start),
-            proof.rows.flatMap(() => ["5", "null", "null"])
-        );
-    } else if (proof.id === "footnote-retention") {
-        count("Footnote", 3 * proof.units);
-    } else if (proof.id === "image-dimensions") {
-        count("Embedded");
-        assert.ok(of("Embedded").every((node) => node.fields.dimensions.startsWith("(width=")));
-    } else if (proof.id === "citation-affixes") {
-        for (const kind of ["CitationPrefix", "CitationSuffix"]) {
-            count(kind);
-            assert.ok(of(kind).every((node) => node.children.length > 0));
-        }
-    } else if (proof.id === "embed-dimensions") {
-        count("CrossEmbedded");
-        assert.deepEqual(
-            of("CrossEmbedded").map((node) => node.fields.dimensions),
-            proof.rows.map((row) => {
-                const match = /\|(\d+)x(\d+)\]\]/u.exec(row.dialect.source);
-                return `(width=${match[1]},height=${match[2]})`;
-            })
-        );
-    } else if (proof.id === "specimen-reset") {
-        count("Specimen");
-        assert.deepEqual(
-            of("Specimen").map((node) => node.fields.start),
-            proof.rows.map((row) => /\((\d+)@/u.exec(row.dialect.source)[1])
-        );
-    } else if (proof.id === "leading-caption" || proof.id === "trailing-caption") {
-        count("TableCaption");
-        assert.deepEqual(
-            of("TableCaption").map((node) => node.children.map((child) => child.fields.literal).join("")),
-            proof.rows.map((row) => fieldSource(row, "literal"))
-        );
-    } else if (proof.id === "headless-matrix") {
-        count("TableHead");
-        assert.ok(of("TableHead").every((node) => !node.children.length));
-        assert.ok(of("TableBody").every((node) => node.children.length === 2));
-    } else if (proof.id === "sparse-grid") {
-        count("TableCaption");
-        count("TableFoot");
-        assert.ok(of("TableCaption").every((node) => !node.children.length));
-        assert.ok(of("TableFoot").every((node) => node.children.length === 1));
-        assert.equal(of("TableCell").filter((node) => node.fields.colspan === "2").length, 2 * proof.units);
-        assert.equal(of("TableCell").filter((node) => node.fields.rowspan === "2").length, 3 * proof.units);
-        for (const row of proof.rows)
-            for (const [, field] of row.fields)
-                assert.ok(
-                    of("Text").some((node) => node.fields.literal === field.source),
-                    "sparse grid lost a cell value"
-                );
-    } else if (proof.id === "mixed-definitions") {
-        count("Definition", 3 * proof.units);
-        count("DefinitionBody", 4 * proof.units);
-        assert.equal(of("DefinitionBody").filter((node) => !node.children.length).length, proof.units);
-        assert.equal(of("Definition").filter((node) => node.fields.compact === "false").length, proof.units);
-    }
-}
-
-/** Native execution checks the grammar-derived expectations. It is not the
- * mathematical proof, and none of its output supplies a grammar definition.
- */
-export function auditGrammarCorpus(corpus, parse) {
-    let parses = 0;
-    for (const proof of corpus.proofs) {
-        const observed = {};
-        for (const side of ["dialect", "common"]) {
-            const entry = corpus.cases.find(
-                (item) =>
-                    item.name === proof.names[`${proof.scope === "boundary-grammar" ? "host" : "paired"}-${side}`] &&
-                    item.scale === proof.scale
-            );
-            const tree = parse(side === "dialect" ? "core" : entry.gfm ? "gfm" : "cmark", entry.text);
-            if (side === "common") projectHtmlComments(tree);
-            observed[side] = tree;
-            parses++;
-            // B is a real benchmark implementation too. The reference's
-            // acceptance alone cannot attest to Core on the alternate syntax.
-            // For identity inputs A already is that exact Core execution.
-            if (side === "common" && !proof.identity) {
-                const coreCommon = parse("core", entry.text);
-                parses++;
-                assert.deepEqual(
-                    normalize(coreCommon, "ours"),
-                    normalize(tree, "upstream"),
-                    `${proof.id}: Core/reference counterpart conformance`
-                );
-            }
-            const nodes = allNodes(tree);
-            if (side === "common" && ["specimen-reset", "specimen-groups"].includes(proof.id)) {
-                const lists = allNodes(normalize(tree, "upstream")).filter((node) => node.kind === "List");
-                assert.equal(lists.length, proof.units, "reference reset group count");
-                assert.deepEqual(
-                    lists.map((node) => node.fields.start),
-                    proof.rows.map((row) =>
-                        proof.id === "specimen-groups"
-                            ? "5"
-                            : row.derivation[0].find(([name]) => name === "reset")[1].value
-                    )
-                );
-            }
-            const forbidden = featureGrammars.get(proof.id)?.forbidden;
-            if (forbidden)
-                assert.ok(
-                    !nodes.some((node) => node.kind === forbidden),
-                    `${proof.id}: fallback committed ${forbidden}`
-                );
-            if (side === "dialect") auditDialectValues(proof, nodes);
-            const check = featureGrammars.get(proof.id)?.check;
-            if (check) {
-                const matched = nodes.filter((node) => node.kind === check.kind);
-                assert.equal(matched.length, proof.units, `${proof.id}: native construct count`);
-                for (const node of matched)
-                    for (const [key, value] of Object.entries(check.fields))
-                        assert.equal(node.fields[key], value, `${proof.id}: ${key}`);
-            }
-            for (const kind of proof.hosts[side].kinds)
-                assert.ok(
-                    nodes.some((node) => node.kind === kind),
-                    `${proof.id}/${side}: native host did not recognize ${kind}`
-                );
-            if (proof.scope === "paired-document-grammar") {
-                const derivations = recognizePairedDocument(proof.id, side, entry.text);
-                assert.equal(encodePairedDocument(proof.id, side, derivations), entry.text);
-                if (isProduct(proof.id)) {
-                    assert.deepEqual(
-                        derivations,
-                        proof.rows.flatMap((row) => row.derivation)
-                    );
-                } else if (directFrames.has(proof.id)) {
-                    const items = nodes.filter((node) => node.kind === "ListItem");
-                    assert.equal(items.length, derivations.length, `${proof.id}: lost list item`);
-                    for (const [i, item] of items.entries()) {
-                        assert.equal(item.children.length, 1);
-                        assert.equal(item.children[0].kind, "Paragraph");
-                        assert.deepEqual(
-                            inlineMeaning(item.children[0].children, "Strong"),
-                            bodyMeaning(derivations[i].body)
-                        );
-                        if (proof.id === "task-value")
-                            assert.equal(
-                                side === "dialect" ? item.fields.marker : item.fields.completed,
-                                side === "dialect" ? "~" : "true"
-                            );
-                    }
-                } else {
-                    assert.equal(tree.children.length, derivations.length);
-                    const kind =
-                        side === "dialect"
-                            ? proof.expectedKind
-                            : proof.id.startsWith("opaque-")
-                              ? "Code"
-                              : proof.commonMarker.length === 1
-                                ? "Emphasis"
-                                : "Strong";
-                    for (const [i, paragraph] of tree.children.entries()) {
-                        assert.equal(paragraph.kind, "Paragraph");
-                        assert.equal(paragraph.children.length, 3);
-                        const [before, node, after] = paragraph.children;
-                        assert.equal(before.kind, "Text");
-                        assert.equal(before.fields.literal, "probe ");
-                        assert.equal(after.kind, "Text");
-                        assert.equal(after.fields.literal, " end");
-                        assert.equal(node.kind, kind);
-                        const value = derivations[i];
-                        if (proof.id.startsWith("opaque-")) {
-                            assert.equal(node.fields.literal, value.join(" "));
-                            if (side === "dialect" && proof.expectedKind === "Formula")
-                                assert.equal(
-                                    node.fields.mode,
-                                    proof.id === "opaque-display" ? "standalone" : "embedded"
-                                );
-                        } else
-                            assert.deepEqual(
-                                inlineMeaning(node.children, kind),
-                                bodyMeaning(typeof value === "string" ? [value] : value)
-                            );
-                    }
-                }
-            } else {
-                const fields = proof.rows.flatMap((row) => row.fields.map(([, value]) => value));
-                const local = corpus.cases.find(
-                    (item) => item.name === proof.names[`boundary-${side}`] && item.scale === proof.scale
-                );
-                const decoded = recognizeBoundary(proof.id, local.text);
-                assert.equal(encodeBoundary(proof.id, decoded), local.text);
-                const result = parse(side === "dialect" ? "core" : "cmark", local.text);
-                parses++;
-                assert.equal(result.children.length, fields.length, `${proof.id}: boundary field count changed`);
-                for (const [i, paragraph] of result.children.entries()) {
-                    const field = fields[i];
-                    assert.equal(paragraph.kind, "Paragraph");
-                    if (field.grammar === "inline")
-                        assert.deepEqual(
-                            inlineMeaning(paragraph.children, "Strong"),
-                            bodyMeaning(recognizeBody(field.source))
-                        );
-                    else {
-                        assert.equal(paragraph.children.length, 1);
-                        const node = paragraph.children[0];
-                        assert.equal(node.kind, field.grammar === "empty" ? "Link" : "Code");
-                        if (field.grammar !== "empty") assert.equal(node.fields.literal, field.source);
-                        else assert.equal(node.children.length, 0);
-                    }
-                }
-            }
-        }
-        if (proof.outputDifference) {
-            assert.equal(proof.id, "footnote-retention", "unreviewed output projection");
-            assert.equal(allNodes(observed.dialect).filter((node) => node.kind === "Footnote").length, 3 * proof.units);
-            assert.equal(allNodes(observed.common).filter((node) => node.kind === "Footnote").length, proof.units);
-            assert.notDeepEqual(
-                normalize(observed.dialect, "ours"),
-                normalize(observed.common, "upstream"),
-                "declared output difference stopped reproducing"
-            );
-        } else if (proof.identity)
-            assert.deepEqual(
-                normalize(observed.dialect, "ours"),
-                normalize(observed.common, "upstream"),
-                `${proof.id}: same-input grammar conformance`
-            );
-    }
-    return {
-        certificates: corpus.certificates.length,
-        pairedDocument: corpus.certificates.filter((c) => c.scope === "paired-document-grammar").length,
-        boundary: corpus.certificates.filter((c) => c.scope === "boundary-grammar").length,
-        legacy: new Set(corpus.certificates.flatMap((c) => c.legacy)).size,
-        parses
-    };
 }
 
 export function grammarMarkdown(report) {
@@ -1747,7 +1283,7 @@ export function grammarMarkdown(report) {
         "",
         "### Grammar identity with different output work",
         "",
-        "The shared grammar does not require identical native output models. Core also computes automatic heading anchors and retains typed metadata on nodes. The following additional output difference is checked explicitly:"
+        "The shared grammar does not require identical native output models. Core also computes automatic heading anchors and retains typed metadata on nodes. The following documented output difference affects the interpretation of measurements:"
     );
     for (const c of g.certificates.filter((c) => c.outputDifference))
         lines.push(`- ${c.certificate}: ${c.outputDifference}`);

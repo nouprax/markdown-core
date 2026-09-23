@@ -20,6 +20,11 @@ pnpm benchmark:grammar --corpus-only --out build/benchmark-grammar
 pnpm benchmark:grammar --scale 2 --out build/benchmark-grammar
 ```
 
+The grammar checks run with `node --test scripts/tests/grammar-corpus.test.mjs`
+and verify source-language equivalence without native parsers. Native correctness
+is owned by parity and regression; benchmark admission does not depend on AST
+counts, output assertions or correctness-fixture hashes.
+
 The second command uses Linux Callgrind and the same pinned engines/toolchain
 as the older suite. Read `build/benchmark-grammar/stages.md`; exact documents,
 derivations, grammars and lossless boundary partitions accompany it in

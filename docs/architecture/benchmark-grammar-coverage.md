@@ -4,8 +4,8 @@ The benchmark's deliverable is a generated corpus with mathematical grammar
 certificates. [T1–T7](benchmark-grammar-corpus.md) establish equivalence on each
 declared language. [The machine ledger](../../packages/markdown-core/benchmarks/grammar-coverage.json)
 binds coverage to every syntax specification, its sections, the registered C
-elements and complete correctness-fixture inputs. Native AST similarity is
-never the proof.
+elements. Native AST similarity is never the proof. Parser correctness remains
+the responsibility of the existing parity and regression pipelines.
 
 “All features” has the following executable acceptance conditions:
 
@@ -14,23 +14,21 @@ never the proof.
    admitted merely because a node of its kind appeared incidentally elsewhere.
 2. Shared CommonMark/GFM syntax uses identical source and the identity proof.
    An extension counterpart retains all variable fields of its declared grammar,
-   with both inverse laws, complete consumption and native conformance checks.
+   with both inverse laws and complete source consumption.
 3. A boundary retains its complete host and an exhaustive byte partition, names
    the unmatched reference productions, and supplies a positive proof for the
    complete local field grammar. A local ratio never certifies a host ratio.
-4. The ledger binds every specification section and all source fixtures for that
-   feature by digest. A new specification, element, section, changed rule or
-   changed fixture fails CI until its disposition is reviewed. The fixture
-   registry includes rejection, limits and composition cases; those tests remain
-   correctness evidence and are not relabelled as mathematical proofs or as
-   separately measured benchmark documents.
-5. The generated source, grammar, normal form, proof identity, native checks and
+4. The ledger binds every specification section by digest. A new specification,
+   element, section or changed rule fails the grammar coverage check until its
+   disposition is reviewed. Correctness fixtures and native output assertions
+   remain in parity/regression; changing them does not change this proof identity.
+5. The generated source, grammar, normal form, proof identity and
    Callgrind reports travel together. Filtering a benchmark selects both sides
    and, for boundaries, both complete hosts. Missing halves fail reporting.
 6. Every measured scale enumerates the full Cartesian product of finite grammar
    fields, including all 26 canonical ordinal alternatives and all three callout
    states. Requested unit counts are lower bounds; they cannot truncate this
-   coverage. Native auditing and Callgrind consume the same generated documents.
+   coverage. Callgrind measures these generated documents.
 
 There are **30 specification features, 136 sections, 32 registered elements,
 185 certificates and 788 generated documents** at the default two scales.
@@ -60,7 +58,7 @@ all imaginable reference grammars. The ledger exposes that distinction.
 | Cross links/embeds | Absent/empty/raw labels, path/local/heading/block targets, embed forms and fallback; numeric dimensions remain a boundary. |
 | Anchors | Explicit IDs, last/empty ID, Unicode/duplicate/empty automatic bases and implicit references. |
 | Block IDs | Paragraph, list-item and standalone container declarations. |
-| Footnotes | GFM references, nested inline notes, cycles, duplicate/unused definitions, repeated calls and fallback. The GFM retention difference is checked and reported. |
+| Footnotes | GFM references, nested inline notes, cycles, duplicate/unused definitions, repeated calls and fallback. The GFM retention difference is documented for cost interpretation. |
 | Citations | Author/suppressed/normal modes, groups, independent prefix/key/suffix and rejected keys. |
 | Specimens | Definition/call equality, explicit nine-digit resets, anonymous/duplicate definitions and group reset suppression have constructive whole-language counterparts. |
 | Lists | Three bullets, decimal delimiters, tight/loose/nested/empty items; alpha/Roman canonical finite domains and default markers have constructive proofs. |
@@ -71,13 +69,19 @@ all imaginable reference grammars. The ledger exposes that distinction.
 | Directives | Inline label/attribute/both, Unicode names, leaf forms, named/nameless/unbraced/nested containers and fallback. |
 | Properties | All ten fields, text/number/bool/null/list distinctions, BOM, invalid-before-valid/duplicates, unknown fields and literal indentation in complete boundary hosts. |
 | Attributes | Quoted/unquoted/empty/bare values, ordered duplicates, escapes/entities/newline, IDs/classes and every documented owner category. |
-| Precedence | Nested block owners, literal islands, bracket/suffix and rejected-prefix cases; the complete conflicts fixtures remain bound to this review. |
+| Precedence | Nested block owners, literal islands, bracket/suffix and rejected-prefix cases; the declared source productions cover precedence interactions. |
 
 The precise restricted productions, including all punctuation, are in
 `grammar-corpus.json`; a table cell above does not broaden a certificate's domain.
 For example the Roman substitution is explicitly 1..26, and generated Word fields
 do not claim the full unrestricted Unicode key language. Boundary hosts retain
 the additional work rather than hiding it in a CommonMark paragraph ratio.
+
+The pipelines have separate acceptance rules. The grammar checker recognizes
+source bytes against the declared languages and verifies the inverse laws. The
+benchmark records measured instructions, input receipts and artifact provenance.
+Parity and regression test native parsing results. A native node census, output
+field comparison or fixture hash is not a benchmark admission criterion.
 
 The whole document cost still includes native allocation, construction and
 post-processing. Grammar equivalence alone does not establish equality of those
@@ -99,10 +103,10 @@ for (const [name, value] of [
 ]) fs.writeFileSync(`packages/markdown-core/benchmarks/${name}.json`, JSON.stringify(value, null, 4) + '\n');
 JS
 pnpm exec prettier --write packages/markdown-core/benchmarks/grammar-{corpus,coverage}.json
-pnpm audit:corpus-pairs
+node --test scripts/tests/grammar-corpus.test.mjs
 ```
 
 Regenerating a digest does not discharge a changed rule's proof obligation. Review
-the actual grammar, source examples and native assertions together. CI's snapshot
+the actual grammar, source examples and transformation proof together. CI's snapshot
 comparison makes the changed evidence visible rather than inferring mathematical
 coverage from fixture counts or output node counts.

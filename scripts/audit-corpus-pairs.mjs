@@ -1,6 +1,5 @@
-/** Grammar-corpus conformance, followed by the separate legacy structural audit.
- * Native execution checks grammar-derived expectations; the grammar proofs are
- * in benchmark-grammar-corpus.md, not inferred from native tree topology. */
+/** Reference audit: structural proof-domain trees and retained witnesses.
+ * Neither these checks nor the structural theorems certify equal parse effort. */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -10,8 +9,6 @@ import { equalProofTrees, proofTree, proofWorkload, structuralPair, validatePair
 import { productionProofs } from "./lib/pair-productions.mjs";
 import { boundarySource, pairReview } from "./lib/pair-review.mjs";
 import { parseCanonicalDump, parseUpstreamXml } from "./lib/upstream-cmark.mjs";
-import { buildGrammarCorpus, auditGrammarCorpus } from "./lib/grammar-corpus.mjs";
-import { validateFeatureCoverage } from "./lib/grammar-coverage.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const BENCHMARKS = path.join(root, "packages/markdown-core/benchmarks");
@@ -69,24 +66,6 @@ function main() {
     const cmark = oracle("cmark", "cmark", "CMARK_VERSION", "CMARK_COMMIT");
     const gfm = oracle("cmark-gfm", "cmark-gfm", "CMARK_GFM_VERSION", "CMARK_GFM_COMMIT");
     const GFM_EXTENSIONS = ["table", "strikethrough", "autolink", "tasklist", "footnotes"];
-    const grammarCorpus = buildGrammarCorpus();
-    const coverage = validateFeatureCoverage(root, grammarCorpus);
-    const grammarAudit = auditGrammarCorpus(grammarCorpus, (engine, input) => {
-        const binary = engine === "core" ? DUMP : engine === "gfm" ? gfm : cmark;
-        const args =
-            engine === "core"
-                ? []
-                : [...(engine === "gfm" ? GFM_EXTENSIONS.flatMap((extension) => ["-e", extension]) : []), "-t", "xml"];
-        const output = execFileSync(binary, args, {
-            input,
-            encoding: "utf8",
-            maxBuffer: 32 << 20,
-            timeout: 10000,
-            killSignal: "SIGKILL"
-        });
-        return engine === "core" ? parseCanonicalDump(output) : parseUpstreamXml(output);
-    });
-    process.stdout.write(`  grammar-certified corpus: ${JSON.stringify({ ...grammarAudit, coverage })}\n`);
     const manifest = JSON.parse(fs.readFileSync(path.join(BENCHMARKS, "corpus.json"), "utf8"));
     validatePairs(manifest);
     const cases = new Map((manifest.cases ?? []).map((entry) => [entry.name, entry]));
@@ -372,9 +351,7 @@ function main() {
         process.stderr.write(`corpus pair audit FAILED\n    ${failures.join("\n    ")}\n`);
         process.exit(1);
     }
-    process.stdout.write(
-        `corpus pair audit passed (${grammarAudit.certificates} grammar certificates; legacy structural contracts remain separate)\n`
-    );
+    process.stdout.write("corpus pair audit passed (structural contracts; 0 equal-optimal-effort certificates)\n");
 }
 
 main();
