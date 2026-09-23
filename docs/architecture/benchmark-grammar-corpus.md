@@ -339,7 +339,9 @@ old structural domain, including the four previously unpaired families. A histor
 translation and matching native conformance witnesses. Old structural
 fixtures remain separate diagnostic controls.
 
-The benchmark uses 12 and 24 generated derivation units. Word widths, independent
+The benchmark requests 12 and 24 generated derivation units. Each scale is
+expanded when necessary to enumerate every combination of finite grammar fields;
+the four ordinal families therefore use 26 and 52 units. Word widths, independent
 keys/values/targets/anchors, numbers of atoms, balanced branching and chain depth
 vary deterministically. Chains include depth 32 at scale two. `instantiateGrammar`
 also accepts independently chosen field values: the grammar is not restricted
