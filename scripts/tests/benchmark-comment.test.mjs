@@ -11,26 +11,42 @@ import { attributeSection, publish, readArchive, stageSection } from "../benchma
 const head = "a".repeat(40);
 const base = "b".repeat(40);
 function stageReport(ir) {
+    const names = {
+        "paired-dialect": "grammar-inline-links-paired-dialect",
+        "paired-common": "grammar-inline-links-paired-common"
+    };
+    const certificate = {
+        id: "inline-links",
+        certificate: "inline-links-grammar-v2",
+        scope: "paired-document-grammar"
+    };
+    const engine = (source, ast = 50) => ({
+        stages: { source_to_buffer: { cost: { Ir: source } }, buffer_to_ast: { cost: { Ir: ast } } },
+        parsePathIr: source + ast + 10,
+        outsideStagesIr: 10
+    });
     return {
         schemaVersion: 4,
         revision: base,
-        corpus: { digest: "c".repeat(64), cases: 1 },
+        corpus: { digest: "c".repeat(64), cases: 2 },
         pairingDigest: "d".repeat(64),
-        cases: [
-            {
-                case: "inline-links-flat",
-                scale: 1,
-                bytes: 32,
-                sha256: "e".repeat(64),
-                engines: {
-                    "markdown-core": {
-                        stages: { source_to_buffer: { cost: { Ir: ir } }, buffer_to_ast: { cost: { Ir: 50 } } },
-                        parsePathIr: ir + 60,
-                        outsideStagesIr: 10
-                    }
-                }
-            }
-        ]
+        grammarCorpus: {
+            identity: "d".repeat(64),
+            certificates: [certificate],
+            proofs: [{ ...certificate, scale: 1, units: 1, names }]
+        },
+        cases: ["dialect", "common"].map((side) => ({
+            case: names[`paired-${side}`],
+            side,
+            part: "paired",
+            certificate: certificate.certificate,
+            units: 1,
+            scale: 1,
+            bytes: 32,
+            sha256: "e".repeat(64),
+            gfm: false,
+            engines: { "markdown-core": engine(ir), ...(side === "common" ? { cmark: engine(50, 25) } : {}) }
+        }))
     };
 }
 const attributes = () => ({
@@ -43,11 +59,13 @@ const attributes = () => ({
 
 test("PR tables report numeric results, source regressions, and complete parse accounting", () => {
     const body = stageSection(stageReport(103), stageReport(100));
-    assert.match(body, /0\/1 passed/);
-    assert.match(body, /\| Source → buffer \| 100 \| 103 \| 1.0300× \|/);
-    assert.match(body, /\| Complete parse path \| 160 \| 163 \|/);
-    assert.match(body, /inline-links-flat/);
+    assert.match(body, /0\/2 passed/);
+    assert.match(body, /\| Source → buffer \| 200 \| 206 \| 1.0300× \|/);
+    assert.match(body, /\| Complete parse path \| 320 \| 326 \|/);
+    assert.match(body, /grammar-inline-links-paired-common/);
     assert.match(body, /Required when CI inputs require execution/);
+    assert.match(body, /inline-links-grammar-v2 \| whole \| 1 \| 32\/32 \| 1.0000× \| 2.0400× \| 2.0400×/);
+    assert.match(body, /Grammar:/);
     assert.match(attributeSection(attributes()), /2.0000×/);
 });
 
@@ -57,13 +75,31 @@ test("report projections reject corrupt counts, mismatched workloads and injecte
             r.schemaVersion = 3;
         },
         (r) => {
+            delete r.grammarCorpus;
+        },
+        (r) => {
+            r.pairingDigest = "f".repeat(64);
+        },
+        (r) => {
+            r.grammarCorpus.identity = "[untrusted](https://example.com)";
+        },
+        (r) => {
+            r.grammarCorpus.proofs[0].certificate = "@everyone";
+        },
+        (r) => {
+            r.grammarCorpus.proofs[0].scope = "boundary-grammar";
+        },
+        (r) => {
+            r.cases[1].engines.cmark.stages.buffer_to_ast.cost.Ir = -1;
+        },
+        (r) => {
             r.cases[0].case = "@everyone <script>";
         },
         (r) => {
             r.corpus.digest = "[click](https://example.com)";
         },
         (r) => {
-            r.corpus.cases = 2;
+            r.corpus.cases = 3;
         },
         (r) => {
             r.cases[0].scale = -1;
@@ -218,7 +254,7 @@ test("fork runs with empty PR metadata find the current PR through commit associ
     await state.publish();
     assert.equal(state.writes.length, 1);
     assert.equal(state.writes[0].issue_number, 9);
-    assert.match(state.writes[0].body, /0\/1 passed/);
+    assert.match(state.writes[0].body, /0\/2 passed/);
     assert.match(state.writes[0].body, /2.0000×/);
     assert.match(state.writes[0].body, /CI status: \*\*failure\*\*/);
     assert.match(state.writes[0].body, /runs\/42\/attempts\/1/);
@@ -329,7 +365,7 @@ test("a report for another baseline is unavailable even if the PR inputs match",
     state.inputs.base = state.pr.base.sha = state.current.base.sha = head;
     await state.publish();
     assert.match(state.writes[0].body, /Result unavailable/);
-    assert.doesNotMatch(state.writes[0].body, /0\/1 passed/);
+    assert.doesNotMatch(state.writes[0].body, /0\/2 passed/);
     assert.match(state.writes[0].body, /2.0000×/);
 });
 
@@ -476,7 +512,7 @@ test("a documentation push recovers a measurement whose old publisher lost the P
         assert.ok(body.includes(`Measured commit: \`${head}\``));
         assert.match(body, /Reused validation of identical execution inputs and integration base/);
         assert.match(body, /runs\/42\/attempts\/1/);
-        assert.match(body, /0\/1 passed/);
+        assert.match(body, /0\/2 passed/);
         assert.match(body, /2.0000×/);
         assert.equal(state.warnings.length, 0);
     }
@@ -499,7 +535,7 @@ test("successive skips publish the direct original measurement and update the sa
     assert.equal(state.writes[0].method, "update");
     assert.equal(state.writes[0].comment_id, 10);
     assert.match(state.writes[0].body, /<!-- run:80:1 -->/);
-    assert.match(state.writes[0].body, /0\/1 passed/);
+    assert.match(state.writes[0].body, /0\/2 passed/);
     assert.ok(state.reads.every((id) => [42, 60, 80].includes(id)));
 });
 
@@ -591,7 +627,7 @@ test("unavailable, superseded or mismatched original validation is explicit and 
         assert.equal(state.writes.length, 1);
         assert.match(state.writes[0].body, /original measurement.*is unavailable/);
         assert.match(state.writes[0].body, /Result unavailable/);
-        assert.doesNotMatch(state.writes[0].body, /0\/1 passed|2.0000×/);
+        assert.doesNotMatch(state.writes[0].body, /0\/2 passed|2.0000×/);
     }
 });
 
@@ -633,14 +669,14 @@ test("reuse reads each retained job's attempt and exposes missing original repor
     state.original.jobs[0].run_attempt = 2;
     state.original.artifacts[0].name = "benchmark-report-stages-2";
     await state.publish();
-    assert.match(state.writes[0].body, /0\/1 passed/);
+    assert.match(state.writes[0].body, /0\/2 passed/);
     assert.match(state.writes[0].body, /2.0000×/);
     assert.match(state.writes[0].body, /runs\/42\/attempts\/2/);
     state.writes.length = 0;
     state.original.artifacts[0].expired = true;
     await state.publish();
     assert.match(state.writes[0].body, /Result unavailable/);
-    assert.doesNotMatch(state.writes[0].body, /0\/1 passed/);
+    assert.doesNotMatch(state.writes[0].body, /0\/2 passed/);
     assert.match(state.writes[0].body, /2.0000×/);
 });
 
@@ -651,7 +687,7 @@ test("failed-job retries retain successful measurements but cannot reuse a faile
     state.artifacts[0].name = "benchmark-report-stages-2";
     // Attribute job and artifact still belong to attempt 1.
     await state.publish();
-    assert.match(state.writes[0].body, /0\/1 passed/);
+    assert.match(state.writes[0].body, /0\/2 passed/);
     assert.match(state.writes[0].body, /2.0000×/);
     assert.match(state.writes[0].body, /runs\/42\/attempts\/2/);
     assert.equal(state.warnings.length, 0);
@@ -659,7 +695,7 @@ test("failed-job retries retain successful measurements but cannot reuse a faile
     state.artifacts[0].name = "benchmark-report-stages-1";
     await state.publish();
     assert.match(state.writes[0].body, /Result unavailable/);
-    assert.doesNotMatch(state.writes[0].body, /0\/1 passed/);
+    assert.doesNotMatch(state.writes[0].body, /0\/2 passed/);
     assert.match(state.writes[0].body, /2.0000×/);
 });
 
@@ -669,7 +705,7 @@ test("skipped job names cannot substitute for the preflight's reuse evidence", a
     await state.publish();
     assert.equal(state.writes.length, 1);
     assert.match(state.writes[0].body, /Result unavailable/);
-    assert.doesNotMatch(state.writes[0].body, /0\/1 passed|2.0000×/);
+    assert.doesNotMatch(state.writes[0].body, /0\/2 passed|2.0000×/);
 });
 
 test("producer and publisher keep PR execution separate from write permissions", () => {

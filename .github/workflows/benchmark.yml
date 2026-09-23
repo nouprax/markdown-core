@@ -55,34 +55,28 @@ jobs:
                   if [ -z "$BASE_REVISION" ] || [ "$BASE_REVISION" = 0000000000000000000000000000000000000000 ]; then
                       BASE_REVISION=$(git rev-parse HEAD^)
                   fi
-                  node scripts/benchmark-stages.mjs --scale 2 --baseline-ref "$BASE_REVISION"
-                  node scripts/benchmark-stages.mjs --grammar-corpus --scale 2 --out build/benchmark-grammar --baseline-ref "$BASE_REVISION"
+                  node scripts/benchmark.mjs --scale 2 --out build/benchmark-grammar --baseline-ref "$BASE_REVISION"
             - name: Upload structured results for the PR comment
               if: ${{ always() }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
                   name: benchmark-report-stages-${{ github.run_attempt }}
                   path: |
-                      build/benchmark-stages/stages.json
-                      build/benchmark-stages/baseline/stages.json
+                      build/benchmark-grammar/stages.json
+                      build/benchmark-grammar/baseline/stages.json
                   if-no-files-found: warn
                   retention-days: 30
             - name: Upload the report and the raw dumps
               if: ${{ always() }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
-                  name: benchmark-stages-${{ github.sha }}-${{ github.run_attempt }}
+                  name: benchmark-${{ github.sha }}-${{ github.run_attempt }}
                   # The dumps are what a reviewer opens in kcachegrind when a
                   # stage total moves and the table does not say why, and the
                   # corpus is what they diff when the report's corpus digest
                   # moves instead -- the digest says two reports measured
                   # different documents, these say which ones.
                   path: |
-                      build/benchmark-stages/stages.md
-                      build/benchmark-stages/stages.json
-                      build/benchmark-stages/callgrind
-                      build/benchmark-stages/corpus
-                      build/benchmark-stages/effort
                       build/benchmark-grammar/stages.md
                       build/benchmark-grammar/stages.json
                       build/benchmark-grammar/callgrind
@@ -91,10 +85,6 @@ jobs:
                       build/benchmark-grammar/baseline/stages.json
                       build/benchmark-grammar/baseline/callgrind
                       build/benchmark-grammar/baseline/corpus
-                      build/benchmark-stages/baseline/stages.md
-                      build/benchmark-stages/baseline/stages.json
-                      build/benchmark-stages/baseline/callgrind
-                      build/benchmark-stages/baseline/corpus
                   if-no-files-found: error
                   retention-days: 30
 

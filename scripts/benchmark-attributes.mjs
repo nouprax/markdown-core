@@ -16,7 +16,7 @@
  *   {#lane .stage k="callgrind"}      <x id="lane" class="stage" k="callgrind">
  *
  * Neither implementation reads the other's spelling, which is why this is a
- * separate driver rather than a fourth engine in `benchmark-stages.mjs`: there
+ * separate driver rather than a fourth engine in `benchmark.mjs`: there
  * the whole point is that both engines get byte-identical files. Here they
  * cannot, so what makes it a comparison instead of two numbers is that both
  * baselines must RECOVER THE SAME ATTRIBUTES -- each writes a canonical census

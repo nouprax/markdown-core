@@ -8,9 +8,8 @@ complete examples per family. The default run emits 824 documents at two scales:
 hosts. The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
 30 syntax-guide features, 136 sections and 32 registered elements. Its explicit
 section mapping names certificates for 132 source-language sections and gives
-reviewed context-only dispositions for four sections. The historical
-30 scenarios and 43 structural domains remain accounted for, but their counts
-are no longer used as a claim of complete feature coverage.
+reviewed context-only dispositions for four sections. Certificates are registered
+directly from their source grammars and specification obligations.
 
 CommonMark/GFM features use the same input on both sides. Extensions use proved
 syntax translations or explicit local boundaries. These are grammar proofs;
@@ -333,10 +332,9 @@ one envelope instead. Its lossless pieces retain every occurrence of every value
 
 ## Concrete coverage, variation, and checks
 
-The catalog records each certificate's historical scenario IDs. The registry
-requires exactly the union of all 30 old scenarios and dispositions for every
-old structural domain, including the four previously unpaired families. A historical boundary is upgraded only by a new constructive grammar
-translation. Old structural fixtures remain separate diagnostic controls.
+The registry contains the source-grammar certificates themselves. The specification
+ledger requires an explicit disposition for each feature and section; no older
+AST pairing registry or scenario manifest participates in admission or generation.
 
 The benchmark requests 12 and 24 generated derivation units. Each scale is
 expanded when necessary to enumerate every combination of finite grammar fields;
@@ -352,10 +350,10 @@ hosts and residuals in `corpus/grammar-corpus.json`.
 Run:
 
 ```sh
-pnpm benchmark:grammar --corpus-only --out build/benchmark-grammar
+pnpm benchmark --corpus-only --out build/benchmark-grammar
 node --test scripts/tests/grammar-corpus.test.mjs
 # Linux with the pinned compiler, oracles and Callgrind:
-pnpm benchmark:grammar --scale 2 --out build/benchmark-grammar
+pnpm benchmark --scale 2 --out build/benchmark-grammar
 ```
 
 The source-language checks validate all generated derivations, inverse laws,

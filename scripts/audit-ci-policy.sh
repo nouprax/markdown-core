@@ -79,9 +79,9 @@ for required in \
 done
 
 node --test scripts/tests/ci-changes.test.mjs scripts/tests/callgrind.test.mjs \
-    scripts/tests/corpus-splits.test.mjs scripts/tests/corpus-pairs.test.mjs scripts/tests/grammar-corpus.test.mjs scripts/tests/effort-boundaries.test.mjs \
-    scripts/tests/benchmark-stages-cli.test.mjs scripts/tests/compile-identity.test.mjs \
-    scripts/tests/source-budget.test.mjs scripts/tests/report-performance.test.mjs \
+    scripts/tests/grammar-corpus.test.mjs \
+    scripts/tests/benchmark-cli.test.mjs scripts/tests/compile-identity.test.mjs \
+    scripts/tests/source-budget.test.mjs \
     scripts/tests/benchmark-comment.test.mjs
 
 # THE PERFORMANCE PIPELINE MEASURES WORK, NOT TIME. Every hosted-runner
@@ -109,7 +109,7 @@ for retired in \
         exit 1
     fi
 done
-if grep -Eq 'MarkdownCoreBenchmarks|kotlinBenchmark|jvmBenchmark|scripts/benchmark\.mjs|benchmark:(swift|kotlin|es|c-host)' \
+if grep -Eq 'MarkdownCoreBenchmarks|kotlinBenchmark|jvmBenchmark|benchmark:(swift|kotlin|es|c-host)' \
     Package.swift \
     package.json \
     packages/kotlin-markdown-core/build.gradle.kts \
@@ -122,9 +122,9 @@ fi
 # being one without failing: a stage that stops being read from the call graph,
 # an engine built with flags the other was not, a corpus only one side sees, or
 # a report that reaches a privileged context as text.
-test -x scripts/benchmark-stages.mjs
+test -x scripts/benchmark.mjs
 grep -Fq 'name: Benchmark' "$benchmark"
-grep -Fq 'node scripts/benchmark-stages.mjs' "$benchmark"
+grep -Fq 'node scripts/benchmark.mjs' "$benchmark"
 grep -Fq 'install --no-install-recommends --yes valgrind' "$benchmark"
 grep -Fq 'scripts/init-environment.sh --install oracle-cmark' "$benchmark"
 # Measurement executes PR code with read-only permissions; only the independent
@@ -137,21 +137,21 @@ fi
 # generated document, and the driver checks each engine's receipt against it.
 grep -Fq 'stage_runner.c markdown_core_stages.c' packages/markdown-core/benchmarks/CMakeLists.txt
 grep -Fq 'stage_runner.c cmark_stages.c' packages/markdown-core/benchmarks/CMakeLists.txt
-grep -Fq 'receiptBytes !== document.bytes' scripts/benchmark-stages.mjs
+grep -Fq 'receiptBytes !== document.bytes' scripts/benchmark.mjs
 for boundary in \
     'markdown_core_parse_document_with_setup' \
     'S_parse_source' \
     'S_finish_parse' \
     'cmark_parser_feed' \
     'cmark_parser_finish'; do
-    grep -Fq "$boundary" scripts/benchmark-stages.mjs || {
+    grep -Fq "$boundary" scripts/benchmark.mjs || {
         echo "the stage benchmark no longer names the $boundary boundary" >&2
         exit 1
     }
 done
 # A source regression cannot be hidden by total-stage or median improvements.
 grep -Fq -- '--baseline-ref "$BASE_REVISION"' "$benchmark"
-grep -Fq 'sourceBudget(cases, baseline.cases)' scripts/benchmark-stages.mjs
+grep -Fq 'sourceBudget(cases, baseline.cases)' scripts/benchmark.mjs
 
 # Both engines must be compiled from one pinned description, and the flags must
 # keep the boundaries out of line: -O3 alone folds S_finish_parse into its
@@ -162,8 +162,8 @@ grep -Fq 'sourceBudget(cases, baseline.cases)' scripts/benchmark-stages.mjs
 # measured at 2.1% of the source stage and 5.9% of the AST stage, which is a
 # build difference sitting inside a number meant to be about parsers.
 grep -Fq '"CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG -g -fno-inline-functions-called-once -fvisibility=hidden"' CMakePresets.json
-grep -Fq 'CMAKE_C_FLAGS_RELEASE' scripts/benchmark-stages.mjs
-grep -Fq 'verifyStageSymbols' scripts/benchmark-stages.mjs
+grep -Fq 'CMAKE_C_FLAGS_RELEASE' scripts/benchmark.mjs
+grep -Fq 'verifyStageSymbols' scripts/benchmark.mjs
 # The preset is not the whole description of a build. CMake initializes
 # CMAKE_C_FLAGS from CFLAGS and CMAKE_EXE_LINKER_FLAGS from LDFLAGS, once, at
 # first configure -- so a tree keeps an inherited -march=native or -static for
@@ -177,7 +177,7 @@ grep -Fq 'verifyStageSymbols' scripts/benchmark-stages.mjs
 # one file would have this policy turn red the day that sharing happened, which
 # is what it did. What the policy is about is that the description is complete,
 # not where the lines that build it live.
-benchmark_build_description=(scripts/benchmark-stages.mjs scripts/lib/compile-identity.mjs)
+benchmark_build_description=(scripts/benchmark.mjs scripts/lib/compile-identity.mjs)
 for cached in \
     'CMAKE_C_FLAGS' \
     'CMAKE_C_FLAGS_RELEASE' \
@@ -189,7 +189,7 @@ for cached in \
     }
 done
 for inherited in CFLAGS LDFLAGS; do
-    grep -Fq "process.env.$inherited" scripts/benchmark-stages.mjs || {
+    grep -Fq "process.env.$inherited" scripts/benchmark.mjs || {
         echo "the stage benchmark does not account for an inherited $inherited" >&2
         exit 1
     }
@@ -202,7 +202,7 @@ done
 # --enable-default-pie shows up there as `-fPIE [enabled]` and nowhere else the
 # report reads -- not in a version string, not on a recorded compile line.
 for probe in '--help=target' '--help=params' '--help=common'; do
-    grep -Fq -- "$probe" scripts/benchmark-stages.mjs || {
+    grep -Fq -- "$probe" scripts/benchmark.mjs || {
         echo "the stage benchmark does not ask the compiler for $probe" >&2
         exit 1
     }
@@ -211,42 +211,42 @@ done
 # compiles with what that file says while the compile line, the resolved target
 # and the compiler's banner all see only the path. Editing it between two runs
 # changes the objects and moves no digest here.
-grep -Fq 'refuseResponseFiles' scripts/benchmark-stages.mjs || {
+grep -Fq 'refuseResponseFiles' scripts/benchmark.mjs || {
     echo "the stage benchmark records a response file's path as though it were its contents" >&2
     exit 1
 }
 # The version line names a release, not a build of it: two compilers that print
 # the same line can carry different configure-time defaults and built-in specs,
 # and those reach the object file without reaching any compile line.
-grep -Fq 'compilerConfiguration' scripts/benchmark-stages.mjs || {
+grep -Fq 'compilerConfiguration' scripts/benchmark.mjs || {
     echo "the stage benchmark identifies the compiler by its version line alone" >&2
     exit 1
 }
 # Every probe that feeds a digest is asked twice and must agree. A digest that
 # moves between two identical probes makes every report incomparable and every
 # build tree foreign, and does it silently -- the counts stay plausible.
-grep -Fq 'function agreed(' scripts/benchmark-stages.mjs || {
+grep -Fq 'function agreed(' scripts/benchmark.mjs || {
     echo "the stage benchmark does not check that its identity probes reproduce" >&2
     exit 1
 }
 # An identity row that cannot be determined fails the run. Recording "unknown"
 # instead would make two hosts that could not answer compare as equal, which is
 # the one thing the identity exists to prevent.
-if grep -Eq '\breturn "unknown"|summary: "unknown"' scripts/benchmark-stages.mjs; then
+if grep -Eq '\breturn "unknown"|summary: "unknown"' scripts/benchmark.mjs; then
     echo "the stage benchmark records an undetermined identity row as unknown" >&2
     exit 1
 fi
 # The loader's inputs are not part of the identity because they are not allowed
 # into the measurement: an exported LD_PRELOAD or GLIBC_TUNABLES changes what
 # the parse stages execute while every row of the report stays as it was.
-grep -Fq 'measurementEnvironment' scripts/benchmark-stages.mjs || {
+grep -Fq 'measurementEnvironment' scripts/benchmark.mjs || {
     echo "the stage benchmark measures under the caller's environment" >&2
     exit 1
 }
 # Built, not filtered. A denylist has to name every variable that can reach into
 # a measurement -- the loader's, glibc's allocator controls, the locale -- and
 # the one nobody named is admitted silently.
-if grep -Fq '...process.env' scripts/benchmark-stages.mjs; then
+if grep -Fq '...process.env' scripts/benchmark.mjs; then
     echo "the stage benchmark hands the caller's whole environment to the measurement" >&2
     exit 1
 fi
@@ -254,21 +254,21 @@ fi
 # line: CPATH and C_INCLUDE_PATH add include directories that appear on no
 # compile line, so a header can be swapped under a build while the recorded
 # compile commands are character-for-character identical.
-grep -Fq 'buildEnvironment' scripts/benchmark-stages.mjs || {
+grep -Fq 'buildEnvironment' scripts/benchmark.mjs || {
     echo "the stage benchmark builds under the caller's environment" >&2
     exit 1
 }
 # The profiler reads rc files before its command line, so the options the driver
 # does not pass are the caller's unless HOME and the working directory are the
 # driver's own.
-grep -Fq 'measurementRoot' scripts/benchmark-stages.mjs || {
+grep -Fq 'measurementRoot' scripts/benchmark.mjs || {
     echo "the stage benchmark lets the caller's valgrindrc configure the measurement" >&2
     exit 1
 }
 # The oracle is the pinned commit only if nothing untracked is shadowing it: a
 # stray src/config.h is neither tracked nor ignored, and the source directory
 # precedes the build directory on the include path.
-grep -Fq -- '--untracked-files=all' scripts/benchmark-stages.mjs || {
+grep -Fq -- '--untracked-files=all' scripts/benchmark.mjs || {
     echo "the cmark oracle check ignores untracked files" >&2
     exit 1
 }
@@ -281,28 +281,28 @@ grep -Fq 'CMAKE_FIND_LIBRARY_SUFFIXES' packages/markdown-core/benchmarks/CMakeLi
 # The C library dispatches per routine on the CPU it detects, and those
 # instructions are inside the stage costs -- so the host's capabilities are part
 # of the identity, asked through valgrind because valgrind masks CPUID.
-grep -Fq 'dispatchIdentity' scripts/benchmark-stages.mjs || {
+grep -Fq 'dispatchIdentity' scripts/benchmark.mjs || {
     echo "the stage benchmark does not record what the C library dispatched on" >&2
     exit 1
 }
 # `valgrind` is a name PATH resolves too, and the measurement keeps that PATH.
 # A wrapper there can pass --version through and add an option only for
 # --tool=callgrind; --collect-atstart=no alone takes the summary to zero.
-grep -Fq 'profilerBinaries' scripts/benchmark-stages.mjs || {
+grep -Fq 'profilerBinaries' scripts/benchmark.mjs || {
     echo "the stage benchmark does not identify the profiler program that ran" >&2
     exit 1
 }
 # `gcc` is a name PATH resolves, and what it resolves to can be a wrapper that
 # answers every probe as the real driver would and injects an option only when
 # it compiles. compiledFlags drops the compiler token, so nothing else sees it.
-grep -Fq 'compilerBinaries' scripts/benchmark-stages.mjs || {
+grep -Fq 'compilerBinaries' scripts/benchmark.mjs || {
     echo "the stage benchmark does not identify the compiler program that ran" >&2
     exit 1
 }
 # `ldd --version` names a release, not the build of it that ran: a distribution
 # patch or a local rebuild keeps that line and changes the instructions inside
 # memcpy and strlen, which are inside the stage costs.
-grep -Fq 'loadedLibraries' scripts/benchmark-stages.mjs || {
+grep -Fq 'loadedLibraries' scripts/benchmark.mjs || {
     echo "the stage benchmark identifies the C library by its version line alone" >&2
     exit 1
 }
@@ -310,18 +310,18 @@ grep -Fq 'loadedLibraries' scripts/benchmark-stages.mjs || {
 # LD_PRELOAD says rather than what the measured child loads, and the child is
 # given neither.
 grep -Fq 'run("ldd", [runner], { env: measurementEnvironment(isolated), cwd: isolated })' \
-    scripts/benchmark-stages.mjs || {
+    scripts/benchmark.mjs || {
     echo "the stage benchmark asks ldd in the caller's environment, not the measurement's" >&2
     exit 1
 }
 # The toolchain is half the identity: the same binaries over different documents
 # also move every count. The report names the workload it measured by digest,
 # so an edited manifest or sample cannot be read as a parser change.
-grep -Fq 'corpusDigest' scripts/benchmark-stages.mjs || {
+grep -Fq 'corpusDigest' scripts/benchmark.mjs || {
     echo "the stage benchmark does not identify the corpus it measured" >&2
     exit 1
 }
-grep -Fq 'build/benchmark-stages/corpus' "$benchmark" || {
+grep -Fq 'build/benchmark-grammar/corpus' "$benchmark" || {
     echo "the stage benchmark does not publish the corpus its digest names" >&2
     exit 1
 }
@@ -329,7 +329,7 @@ grep -Fq 'build/benchmark-stages/corpus' "$benchmark" || {
 # containment is a question about where a path lands rather than how it is
 # spelled: a symlink into the profile tree reads as outside it, and the run
 # that follows deletes its own freshly built cmark archive.
-grep -Fq 'realPath' scripts/benchmark-stages.mjs || {
+grep -Fq 'realPath' scripts/benchmark.mjs || {
     echo "the stage benchmark compares build trees by spelling, not by where they land" >&2
     exit 1
 }
@@ -337,18 +337,18 @@ grep -Fq 'realPath' scripts/benchmark-stages.mjs || {
 # dozen call sites. A second copy of that path in the driver would let the two
 # drift: `cmake --preset` would build one tree while the cleanup, the symbol
 # checks and the runner paths read another, stale one.
-grep -Fq 'presetBinaryDir' scripts/benchmark-stages.mjs || {
+grep -Fq 'presetBinaryDir' scripts/benchmark.mjs || {
     echo "the stage benchmark does not take the profile build tree from the preset" >&2
     exit 1
 }
-if grep -Eq '"build/benchmark"|build/benchmark[^-]' scripts/benchmark-stages.mjs; then
+if grep -Eq '"build/benchmark"|build/benchmark[^-]' scripts/benchmark.mjs; then
     echo "the stage benchmark hard-codes the profile build tree the preset places" >&2
     exit 1
 fi
 # Both engines are rebuilt on every run. Nothing in a compiled binary says which
 # source produced it, so an option to reuse one is an option for the report to
 # state this commit's pins over another revision's instruction counts.
-if grep -Eq 'skip-build|options\.build' scripts/benchmark-stages.mjs; then
+if grep -Eq 'skip-build|options\.build' scripts/benchmark.mjs; then
     echo "the stage benchmark can reuse binaries it did not build" >&2
     exit 1
 fi

@@ -10,22 +10,21 @@ import { readElementInventory } from "./element-inventory.mjs";
 import { sectionDispositions } from "./grammar-sections.mjs";
 
 const digest = (value) => createHash("sha256").update(value).digest("hex");
-// The specification is the feature boundary. These links retain the earlier
-// proof families; newer families declare their owning specification directly.
+// The specification owns grammar certificates, with explicit cross-feature reuse.
 export const featureOwners = {
-    anchors: { elements: [], previous: [] },
-    attributes: { elements: ["ATTRIBUTES"], previous: ["record-span", "class-span"] },
-    base: { elements: ["DOCUMENT", "PARAGRAPH", "TEXT"], previous: [] },
-    "block-identifiers": { elements: [], previous: ["anchor"] },
-    "bracketed-spans": { elements: [], previous: ["record-span", "class-span"] },
-    callouts: { elements: ["CALLOUT"], previous: [] },
-    citations: { elements: ["CITATION"], previous: ["cite-author", "cite-suppress", "cite-normal"] },
-    code: { elements: ["CODE", "CODE_BLOCK"], previous: [] },
-    comments: { elements: ["COMMENT"], previous: ["opaque-comment", "leaf-comment"] },
-    conflicts: { elements: [], previous: [] },
+    anchors: { elements: [], certificates: [] },
+    attributes: { elements: ["ATTRIBUTES"], certificates: ["record-span", "class-span"] },
+    base: { elements: ["DOCUMENT", "PARAGRAPH", "TEXT"], certificates: [] },
+    "block-identifiers": { elements: [], certificates: ["anchor"] },
+    "bracketed-spans": { elements: [], certificates: ["record-span", "class-span"] },
+    callouts: { elements: ["CALLOUT"], certificates: [] },
+    citations: { elements: ["CITATION"], certificates: ["cite-author", "cite-suppress", "cite-normal"] },
+    code: { elements: ["CODE", "CODE_BLOCK"], certificates: [] },
+    comments: { elements: ["COMMENT"], certificates: ["opaque-comment", "leaf-comment"] },
+    conflicts: { elements: [], certificates: [] },
     "cross-links": {
         elements: ["CROSS_LINK"],
-        previous: [
+        certificates: [
             "cross-link",
             "cross-embed",
             "cross-link-absent",
@@ -37,31 +36,37 @@ export const featureOwners = {
             "embed-dimensions"
         ]
     },
-    "definition-lists": { elements: ["DEFINITION_LIST"], previous: ["loose-definition"] },
+    "definition-lists": { elements: ["DEFINITION_LIST"], certificates: ["loose-definition"] },
     directives: {
         elements: ["DIRECTIVE"],
-        previous: ["inline-directive", "empty-directive", "leaf-directive", "anonymous-container", "named-container"]
+        certificates: [
+            "inline-directive",
+            "empty-directive",
+            "leaf-directive",
+            "anonymous-container",
+            "named-container"
+        ]
     },
-    emphasis: { elements: ["EMPHASIS", "EMPHASIS_UNDERSCORE"], previous: [] },
-    footnotes: { elements: ["FOOTNOTE"], previous: [] },
+    emphasis: { elements: ["EMPHASIS", "EMPHASIS_UNDERSCORE"], certificates: [] },
+    footnotes: { elements: ["FOOTNOTE"], certificates: [] },
     formulas: {
         elements: ["FORMULA"],
-        previous: ["opaque-formula", "opaque-display", "leaf-formula", "leaf-fence", "leaf-promotion"]
+        certificates: ["opaque-formula", "opaque-display", "leaf-formula", "leaf-fence", "leaf-promotion"]
     },
-    headings: { elements: ["HEADING"], previous: [] },
-    html: { elements: ["HTML", "HTML_BLOCK"], previous: [] },
-    insertion: { elements: ["INSERTION"], previous: ["insertion-strong", "run-insertion"] },
-    "line-breaks": { elements: ["LINE_BREAK"], previous: [] },
-    "links-and-images": { elements: ["AUTOLINK", "LINK", "EMBEDDED"], previous: ["embed-dimensions"] },
-    lists: { elements: ["LIST"], previous: ["decimal-list"] },
-    marks: { elements: ["MARK"], previous: ["run-mark"] },
-    properties: { elements: [], previous: ["metadataempty", "metadata"] },
-    specimens: { elements: ["SPECIMEN"], previous: ["specimen-reset"] },
-    strikethrough: { elements: ["STRIKETHROUGH"], previous: ["run-strike"] },
-    "superscript-and-subscript": { elements: ["SUPERSCRIPT", "SUBSCRIPT"], previous: ["run-super", "run-sub"] },
-    tables: { elements: ["TABLE"], previous: ["grid-cell", "simple-matrix", "headless-matrix", "sparse-grid"] },
-    "task-lists": { elements: [], previous: ["task-value"] },
-    "thematic-breaks": { elements: ["THEMATIC_BREAK"], previous: [] }
+    headings: { elements: ["HEADING"], certificates: [] },
+    html: { elements: ["HTML", "HTML_BLOCK"], certificates: [] },
+    insertion: { elements: ["INSERTION"], certificates: ["insertion-strong", "run-insertion"] },
+    "line-breaks": { elements: ["LINE_BREAK"], certificates: [] },
+    "links-and-images": { elements: ["AUTOLINK", "LINK", "EMBEDDED"], certificates: ["embed-dimensions"] },
+    lists: { elements: ["LIST"], certificates: ["decimal-list"] },
+    marks: { elements: ["MARK"], certificates: ["run-mark"] },
+    properties: { elements: [], certificates: ["metadataempty", "metadata"] },
+    specimens: { elements: ["SPECIMEN"], certificates: ["specimen-reset"] },
+    strikethrough: { elements: ["STRIKETHROUGH"], certificates: ["run-strike"] },
+    "superscript-and-subscript": { elements: ["SUPERSCRIPT", "SUBSCRIPT"], certificates: ["run-super", "run-sub"] },
+    tables: { elements: ["TABLE"], certificates: ["grid-cell", "simple-matrix", "headless-matrix", "sparse-grid"] },
+    "task-lists": { elements: [], certificates: ["task-value"] },
+    "thematic-breaks": { elements: ["THEMATIC_BREAK"], certificates: [] }
 };
 
 /** Markdown headings outside fenced examples. Hash each complete section as
@@ -156,7 +161,7 @@ export function featureCoverage(root, corpus) {
         const owner = featureOwners[name];
         const ids = [
             ...new Set([
-                ...owner.previous,
+                ...owner.certificates,
                 ...corpus.certificates.filter((entry) => entry.feature === name).map((entry) => entry.id)
             ])
         ].sort();

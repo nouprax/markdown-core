@@ -7,7 +7,6 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
     buildGrammarCorpus,
-    historicalHosts,
     grammarCatalog,
     grammarCertificates,
     grammarNormalForm,
@@ -26,8 +25,6 @@ import {
     grammarEngines,
     validateGrammarCertificates
 } from "../lib/grammar-corpus.mjs";
-import { pairReviews } from "../lib/pair-review.mjs";
-import { productionProofs } from "../lib/pair-productions.mjs";
 import { featureGrammars, finiteLexicons } from "../lib/grammar-features.mjs";
 import {
     featureCoverage,
@@ -57,11 +54,6 @@ test("catalog is a complete reviewable corpus with exact grammar/proof/example p
     assert.equal(grammarCertificates.length, 194);
     assert.equal(full.length, 182);
     assert.equal(split.length, 12);
-    assert.deepEqual(new Set(grammarCertificates.flatMap((c) => c.legacy)), new Set(pairReviews.keys()));
-    assert.deepEqual(
-        new Set(grammarCertificates.map((c) => c.structuralPredecessor).filter(Boolean)),
-        new Set(["insertion-strong-v1", ...productionProofs.keys()])
-    );
     assert.deepEqual(
         JSON.parse(fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/grammar-corpus.json"))),
         grammarCatalog()
@@ -207,7 +199,7 @@ test("artifact identity binds proof text and source dependencies; corpus is dete
         assert.notEqual(a.identity, writeGrammarCorpus(path.join(directory, "c"), { units: 3, scale: 1 }).identity);
         const paths = [
             "scripts/lib",
-            "scripts/benchmark-stages.mjs",
+            "scripts/benchmark.mjs",
             "scripts/init-environment.sh",
             "packages/markdown-core/benchmarks/grammar-corpus.json",
             "packages/markdown-core/benchmarks/grammar-coverage.json",
@@ -258,8 +250,7 @@ test("the real benchmark CLI selects the entire certified pair, including bounda
         execFileSync(
             process.execPath,
             [
-                path.join(root, "scripts/benchmark-stages.mjs"),
-                "--grammar-corpus",
+                path.join(root, "scripts/benchmark.mjs"),
                 "--corpus-only",
                 "--quiet",
                 "--case",
@@ -285,7 +276,9 @@ test("the real benchmark CLI selects the entire certified pair, including bounda
 test("grammar reporting keeps the boundary ratio separate and rejects missing measured halves", () => {
     const corpus = buildGrammarCorpus({ units: 1, scale: 1 });
     const proofs = corpus.proofs.filter((p) => p.id === "grid-cell");
-    const stages = (ir) => ({ stages: { source_to_buffer: { ir }, buffer_to_ast: { ir } } });
+    const stages = (ir) => ({
+        stages: { source_to_buffer: { cost: { Ir: ir } }, buffer_to_ast: { cost: { Ir: ir } } }
+    });
     const cases = corpus.cases
         .filter((c) => c.id === "grid-cell")
         .map((c) => ({
@@ -298,21 +291,32 @@ test("grammar reporting keeps the boundary ratio separate and rejects missing me
     assert.match(output, /2\.000x/u);
     assert.doesNotMatch(output, /9\.000x/u);
     assert.match(output, /1800/u);
+    // Ratios require a complete certificate family, including its unpaired hosts.
+    for (const mutate of [
+        (r) => {
+            r.cases = r.cases.filter((c) => c.part !== "host" || c.side !== "common");
+        },
+        (r) => {
+            r.cases[0].side = r.cases[0].side === "common" ? "dialect" : "common";
+        },
+        (r) => {
+            r.cases.push({ ...r.cases[0], case: "unproved-document" });
+        },
+        (r) => {
+            r.cases.push(r.cases[0]);
+        },
+        (r) => {
+            r.grammarCorpus.proofs.push(r.grammarCorpus.proofs[0]);
+        }
+    ]) {
+        const broken = JSON.parse(JSON.stringify(report));
+        mutate(broken);
+        assert.throws(() => grammarMarkdown(broken));
+    }
     assert.throws(
         () => grammarMarkdown({ ...report, cases: cases.filter((c) => c.part !== "boundary" || c.side !== "common") }),
         /missing/u
     );
-});
-
-test("historical residual features have actual hosts and cannot pass through a shared subset label", () => {
-    assert.equal(Object.keys(historicalHosts).length, 8);
-    for (const [id, record] of Object.entries(historicalHosts)) {
-        const entry = grammarCertificates.find((c) => c.id === id);
-        assert.deepEqual(entry.legacy, [record.legacy]);
-        if (entry.scope === "boundary-grammar")
-            assert.notEqual(grammarUnit(id).dialect.source, grammarUnit(id).boundary.dialect);
-        else assert.ok(grammarUnit(id).derivation);
-    }
 });
 
 test("the complete syntax and element inventories fail closed when a feature, rule, or source changes", () => {

@@ -1,7 +1,7 @@
 /**
  * WHAT A CALLGRIND MEASUREMENT IS ISOLATED FROM, in one place.
  *
- * Two drivers measure under callgrind -- `benchmark-stages.mjs` for the
+ * Two drivers measure under callgrind -- `benchmark.mjs` for the
  * document parse and `benchmark-attributes.mjs` for the attribute grammar --
  * and the isolation below is load-bearing for both. It lives here rather than
  * in either of them because a second copy is a copy that drifts, and the

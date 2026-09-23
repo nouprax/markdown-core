@@ -511,7 +511,7 @@ test("Benchmark is a required reusable workflow with a single shared preflight",
     assert.deepEqual(Object.keys(benchmark.on).sort(), ["workflow_call", "workflow_dispatch"]);
     assert.deepEqual(Object.keys(benchmark.jobs).sort(), ["attributes", "stages"]);
     for (const [id, script] of [
-        ["stages", "benchmark-stages.mjs"],
+        ["stages", "benchmark.mjs"],
         ["attributes", "benchmark-attributes.mjs"]
     ]) {
         assert.equal(benchmark.jobs[id].if, undefined);

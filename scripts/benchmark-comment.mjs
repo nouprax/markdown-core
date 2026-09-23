@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { inputVersion, sameInputs, validationSource } from "./lib/ci-inputs.mjs";
+import { grammarComparisons } from "./lib/grammar-report.mjs";
 import { sourceBudget, SOURCE_IR_LIMIT } from "./lib/source-budget.mjs";
 
 const marker = "<!-- markdown-core-benchmark -->";
@@ -45,7 +46,8 @@ function stageCounts(report) {
         throw new Error("Invalid stage report");
     }
     digest(report.corpus.digest);
-    digest(report.pairingDigest);
+    digest(report.grammarCorpus?.identity);
+    if (report.pairingDigest !== report.grammarCorpus.identity) throw new Error("Grammar identity alias differs");
     if (report.corpus.cases !== report.cases.length) throw new Error("Incomplete stage report");
     const totals = [0, 0, 0, 0];
     for (const row of report.cases) {
@@ -70,7 +72,10 @@ function stageCounts(report) {
 export function stageSection(current, baseline) {
     const after = stageCounts(current);
     const before = stageCounts(baseline);
-    if (current.corpus.digest !== baseline.corpus.digest || current.pairingDigest !== baseline.pairingDigest) {
+    if (
+        current.corpus.digest !== baseline.corpus.digest ||
+        current.grammarCorpus.identity !== baseline.grammarCorpus.identity
+    ) {
         throw new Error("Benchmark identities differ");
     }
     const rows = sourceBudget(current.cases, baseline.cases);
@@ -106,8 +111,30 @@ export function stageSection(current, baseline) {
         "",
         "</details>",
         "",
-        `Corpus: \`${current.corpus.digest}\` · Pairing: \`${current.pairingDigest}\`.`,
+        `Corpus: \`${current.corpus.digest}\` · Grammar: \`${current.grammarCorpus.identity}\`.`,
         "Full reference comparisons, all workloads, toolchain identities and raw profiles are in the run artifacts."
+    );
+    const comparisons = grammarComparisons(current);
+    grammarComparisons(baseline);
+    const scale = Math.max(...comparisons.map((row) => row.scale));
+    lines.push(
+        "",
+        "<details><summary>Grammar-equivalent reference comparisons</summary>",
+        "",
+        "A = Core on dialect input; B = Core on common input; R = cmark/cmark-gfm on common input. " +
+            "Ir covers the two parse stages. Whole means the declared language; local excludes the unmatched host. " +
+            `Largest measured scale: ${scale}. No AST equivalence or equal native output cost is asserted.`,
+        "",
+        "| Certificate | Scope | Units | Bytes A/B | A/B | B/R | A/R |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+        ...comparisons
+            .filter((row) => row.scale === scale)
+            .map(
+                (row) =>
+                    `| ${row.certificate} | ${row.scope === "boundary-grammar" ? "local" : "whole"} | ${number(row.units)} | ${number(row.aBytes)}/${number(row.bBytes)} | ${ratio(row.aIr, row.bIr)} | ${ratio(row.bIr, row.rIr)} | ${ratio(row.aIr, row.rIr)} |`
+            ),
+        "",
+        "</details>"
     );
     return lines.join("\n");
 }

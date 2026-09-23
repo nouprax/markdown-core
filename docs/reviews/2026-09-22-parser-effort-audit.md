@@ -1,11 +1,16 @@
 # Parse-effort re-audit of all structural pairs
 
+> Historical report. The scenario suite and its commands were retired after PR #388.
+> Reproduction requires [the original implementation](https://github.com/nouprax/markdown-core/tree/bd0b2a8ed9d7e3842f564915cbc7e2c6b6b7be8f).
+> Current comparisons use the [grammar-certified corpus](../architecture/benchmark-grammar-corpus.md).
+
+
 **43 structural proofs; 0 certificates of equal full-parser optimal effort.**
 The previous AST/ownership proofs establish a commuting result mapping. They
 do not establish a cost-preserving correspondence of admissible parsers. This
 is a correction of the benchmark's proof target, not another owner mismatch.
 
-The [cost model](../architecture/benchmark-parser-effort.md) specifies input,
+The [cost model](https://github.com/nouprax/markdown-core/blob/bd0b2a8ed9d7e3842f564915cbc7e2c6b6b7be8f/docs/architecture/benchmark-parser-effort.md) specifies input,
 control, memory, storage and output work, the complete correctness/failure
 domain, and the two algorithm transformations sufficient to prove equal optima.
 A cost-preserving trace of two particular parsers is a weaker result. The current

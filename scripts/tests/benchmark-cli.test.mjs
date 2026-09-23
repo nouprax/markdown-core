@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const driver = path.join(root, "scripts/benchmark-stages.mjs");
+const driver = path.join(root, "scripts/benchmark.mjs");
 
 /**
  * The argument checks refuse before anything is built, so these run in
@@ -97,7 +97,9 @@ test("an unknown case is refused before anything is installed or built", () => {
  */
 for (const name of ["CFLAGS", "LDFLAGS"]) {
     test(`a response file in ${name} is refused`, () => {
-        const { status, message } = refuse(["--case", "block-heading"], { [name]: "@/tmp/profile.rsp" });
+        const { status, message } = refuse(["--case", "grammar-common-atx-1-paired-common"], {
+            [name]: "@/tmp/profile.rsp"
+        });
         assert.notEqual(status, 0);
         assert.match(message, new RegExp(`${name} names the response file @/tmp/profile.rsp`, "u"));
     });
@@ -111,7 +113,7 @@ for (const name of ["CFLAGS", "LDFLAGS"]) {
         ["escaped spaces", "@/tmp/flags\\ with\\ space.rsp"]
     ]) {
         test(`a response file in ${name} is refused when ${shape}`, () => {
-            const { status, message } = refuse(["--case", "block-heading"], { [name]: value });
+            const { status, message } = refuse(["--case", "grammar-common-atx-1-paired-common"], { [name]: value });
             assert.notEqual(status, 0);
             assert.match(message, new RegExp(`${name} names the response file @/tmp/`, "u"));
         });
@@ -126,7 +128,7 @@ for (const name of ["CFLAGS", "LDFLAGS"]) {
         ["-Xlinker", "-Xlinker @/tmp/link.rsp"]
     ]) {
         test(`a response file reached through ${shape} in ${name} is refused`, () => {
-            const { status, message } = refuse(["--case", "block-heading"], { [name]: value });
+            const { status, message } = refuse(["--case", "grammar-common-atx-1-paired-common"], { [name]: value });
             assert.notEqual(status, 0);
             assert.match(message, new RegExp(`${name} names the response file @/tmp/`, "u"));
         });
@@ -137,15 +139,20 @@ for (const name of ["CFLAGS", "LDFLAGS"]) {
      * and a check that refused it would be wrong rather than strict. */
     for (const placeholder of ["@loader_path", "@executable_path", "@rpath"]) {
         test(`${placeholder} in ${name} is not mistaken for a response file`, () => {
-            const { message } = refuse(["--case", "block-heading", "--out", "build/benchmark/nested"], {
-                [name]: `-Wl,-rpath,${placeholder}/../lib`
-            });
+            const { message } = refuse(
+                ["--case", "grammar-common-atx-1-paired-common", "--out", "build/benchmark/nested"],
+                {
+                    [name]: `-Wl,-rpath,${placeholder}/../lib`
+                }
+            );
             assert.match(message, /overlaps the profile build tree/u);
         });
     }
 
     test(`${name} that the shell cannot split is refused`, () => {
-        const { status, message } = refuse(["--case", "block-heading"], { [name]: "'@/tmp/unbalanced" });
+        const { status, message } = refuse(["--case", "grammar-common-atx-1-paired-common"], {
+            [name]: "'@/tmp/unbalanced"
+        });
         assert.notEqual(status, 0);
         assert.match(message, new RegExp(`${name} cannot be split into arguments`, "u"));
     });
@@ -154,16 +161,22 @@ for (const name of ["CFLAGS", "LDFLAGS"]) {
      * Homebrew include directory, and only a leading @ names a file. The
      * overlap refusal that follows shows the flags got past this check. */
     test(`an @ inside a path in ${name} is not mistaken for one`, () => {
-        const { message } = refuse(["--case", "block-heading", "--out", "build/benchmark/nested"], {
-            [name]: "-I/opt/homebrew/opt/llvm@17/include"
-        });
+        const { message } = refuse(
+            ["--case", "grammar-common-atx-1-paired-common", "--out", "build/benchmark/nested"],
+            {
+                [name]: "-I/opt/homebrew/opt/llvm@17/include"
+            }
+        );
         assert.match(message, /overlaps the profile build tree/u);
     });
 
     test(`ordinary flags in ${name} are not mistaken for one`, () => {
-        const { message } = refuse(["--case", "block-heading", "--out", "build/benchmark/nested"], {
-            [name]: "-DNDEBUG -O2"
-        });
+        const { message } = refuse(
+            ["--case", "grammar-common-atx-1-paired-common", "--out", "build/benchmark/nested"],
+            {
+                [name]: "-DNDEBUG -O2"
+            }
+        );
         assert.match(message, /overlaps the profile build tree/u);
     });
 }
@@ -174,57 +187,30 @@ test("an unknown flag is refused rather than ignored", () => {
     assert.match(message, /unknown argument: --jobs/u);
 });
 
-/**
- * The corpus a `--case` run builds is the closure of what it names, and the
- * direction of that closure is the meaning: a split's `with` half is measured
- * only against its `without`, so naming it builds both, and naming the
- * `without` builds the comparison it already has and no split. Written
- * without a compiler: `--corpus-only` is the corpus and nothing else.
- */
-test("--case builds the closure of what it names, in the direction the corpus defines it", () => {
-    const out = fs.mkdtempSync(path.join(os.tmpdir(), "stages-closure-"));
+test("selecting a grammar input includes its counterpart and complete boundary hosts", () => {
+    const out = fs.mkdtempSync(path.join(os.tmpdir(), "grammar-selection-"));
     try {
-        const documents = (args) => {
+        const documents = (name) => {
             const result = spawnSync(
                 process.execPath,
-                [driver, "--corpus-only", "--quiet", "--scale", "1", "--out", out, ...args],
+                [driver, "--corpus-only", "--quiet", "--scale", "1", "--out", out, "--case", name],
                 { encoding: "utf8", cwd: root }
             );
             assert.equal(result.status, 0, result.stderr);
-            const units = JSON.parse(fs.readFileSync(path.join(out, "units.json"), "utf8"));
-            return { names: Object.keys(units).sort(), units };
+            return JSON.parse(fs.readFileSync(path.join(out, "units.json"), "utf8"));
         };
-        const named = documents(["--case", "split-attributes-heading"]);
-        assert.deepEqual(named.names, [
-            "pair-ldirective-common",
-            "pair-ldirective-dialect",
-            "proof-leaf-directive-common",
-            "proof-leaf-directive-dialect",
-            "split-attributes-heading"
-        ]);
-        /* Both halves of the split to the same count, which is what makes
-         * their difference the remainder's. */
-        assert.equal(named.units["split-attributes-heading"], named.units["pair-ldirective-common"]);
-        const without = documents(["--case", "pair-ldirective-common"]);
-        assert.deepEqual(without.names, [
-            "pair-ldirective-common",
-            "pair-ldirective-dialect",
-            "proof-leaf-directive-common",
-            "proof-leaf-directive-dialect"
-        ]);
-        const boundary = documents(["--case", "boundary-caption-without"]);
-        assert.deepEqual(boundary.names, [
-            "boundary-caption-without",
-            "pair-caption-common",
-            "pair-caption-dialect",
-            "proof-simple-matrix-common",
-            "proof-simple-matrix-dialect"
-        ]);
-        assert.equal(boundary.units["boundary-caption-without"], boundary.units["pair-caption-dialect"]);
-        const input = fs.readFileSync(path.join(out, "corpus/pair-caption-dialect.x1.md"), "utf8");
-        const cut = fs.readFileSync(path.join(out, "corpus/boundary-caption-without.x1.md"), "utf8");
-        assert.equal(cut, input.replace(/^Table: Caption \d+\n/gmu, ""));
-        assert.ok(cut.includes("| h |\n| --- |\n| v |"));
+        const paired = ["grammar-insertion-strong-paired-common", "grammar-insertion-strong-paired-dialect"];
+        for (const name of paired) assert.deepEqual(Object.keys(documents(name)).sort(), paired);
+        const boundary = ["boundary-common", "boundary-dialect", "host-common", "host-dialect"].map(
+            (part) => `grammar-grid-cell-${part}`
+        );
+        for (const name of boundary) {
+            const units = documents(name);
+            assert.deepEqual(Object.keys(units).sort(), boundary);
+            assert.equal(new Set(Object.values(units)).size, 1);
+        }
+        assert.match(refuse(["--case", "block-heading"]).message, /no corpus case is named/u);
+        assert.match(refuse(["--grammar-corpus", "yes"]).message, /unknown argument/u);
     } finally {
         fs.rmSync(out, { recursive: true, force: true });
     }

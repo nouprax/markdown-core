@@ -7,9 +7,8 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { productionProofs } from "./pair-productions.mjs";
-import { pairReviews } from "./pair-review.mjs";
 import { featureGrammars, featureValues, finiteLexicons } from "./grammar-features.mjs";
+import { grammarComparisons } from "./grammar-report.mjs";
 import { validateFeatureCoverage } from "./grammar-coverage.mjs";
 
 export const grammarVersion = "grammar-corpus-v2";
@@ -40,93 +39,93 @@ const direct = {
     "opaque-display": ["phrase", "$$", "``"]
 };
 const directFrames = new Set(["task-value", "decimal-list"]);
-const additionalBoundaries = {
-    "metadata-types": "properties",
-    "metadata-literal": "properties",
-    "multiline-matrix": "tables",
-    "headless-multiline": "tables",
-    "image-dimensions": "links-and-images"
-};
-export const historicalHosts = {
-    "citation-affixes": {
-        legacy: "citegroup"
+// Declared whole-language products and local boundary obligations. These are
+// registered directly from their source grammars, independently of AST models.
+const builtinProducts = new Set([
+    "leaf-comment",
+    "leaf-formula",
+    "leaf-fence",
+    "leaf-promotion",
+    "record-span",
+    "cross-link",
+    "cross-embed",
+    "inline-directive",
+    "leaf-directive",
+    "anonymous-container",
+    "loose-definition",
+    "class-span",
+    "cite-author",
+    "cite-suppress",
+    "cite-normal",
+    "cross-link-absent",
+    "cross-embed-absent",
+    "cross-link-empty",
+    "cross-embed-empty",
+    "cross-anchor",
+    "cross-local",
+    "named-container",
+    "empty-directive",
+    "anchor"
+]);
+export const boundaryGrammars = {
+    "metadata-types": {
+        feature: "properties",
+        reason: "Envelope detection, typed member decoding and first-valid/unknown-member policy remain residual; every value and the following body are retained."
+    },
+    "metadata-literal": {
+        feature: "properties",
+        reason: "Envelope detection, typed member decoding and first-valid/unknown-member policy remain residual; every value and the following body are retained."
+    },
+    "multiline-matrix": {
+        feature: "tables",
+        reason: "Column-interval equality, physical-line segmentation and logical-row block parsing have no counterpart in the supplied GFM pipe-table grammar; all cell payloads are paired locally."
+    },
+    "headless-multiline": {
+        feature: "tables",
+        reason: "Column-interval equality, physical-line segmentation and logical-row block parsing have no counterpart in the supplied GFM pipe-table grammar; all cell payloads are paired locally."
+    },
+    "image-dimensions": {
+        feature: "links-and-images",
+        reason: "Positive bounded width/height recognition is absent from the pinned cmark image grammar; image label and destination are paired locally without attributing numeric validation to the reference."
     },
     "embed-dimensions": {
-        legacy: "embed",
         reason: "Numeric image width/height has no field in the supplied CommonMark image counterpart; target and label remain locally paired."
     },
-    "specimen-reset": {
-        legacy: "specimenstart"
-    },
-    "trailing-caption": {
-        legacy: "tcaption"
-    },
     "headless-matrix": {
-        legacy: "headless",
         reason: "Headless-row classification differs from the reference header rule; every cell value is retained in the local product."
     },
     "sparse-grid": {
-        legacy: "sparsegrid",
         reason: "Spans, sparse rows, footer and empty-caption recognition remain residual; all six independent cell fields are retained."
     },
-    "leading-caption": {
-        legacy: "caption"
+    "grid-cell": {
+        reason: "Geometry, column discovery, padding and cell source mapping remain residual; all cell contents enter the labelled local product."
     },
-    "mixed-definitions": {
-        legacy: "deflist"
+    "simple-matrix": {
+        reason: "Geometry, column discovery, padding and cell source mapping remain residual; all cell contents enter the labelled local product."
+    },
+    metadataempty: {
+        reason: "Envelope detection, typed member decoding and first-valid/unknown-member policy remain residual; every value and the following body are retained."
+    },
+    metadata: {
+        reason: "Envelope detection, typed member decoding and first-valid/unknown-member policy remain residual; every value and the following body are retained."
     }
 };
-const splitIds = new Set([
-    ...Object.keys(additionalBoundaries),
-    ...Object.keys(historicalHosts).filter((id) => historicalHosts[id].reason),
-    "grid-cell",
-    "simple-matrix",
-    "metadataempty",
-    "metadata"
-]);
-const isProduct = (id) => featureGrammars.has(id) || (!direct[id] && !directFrames.has(id) && !splitIds.has(id));
-
-const boundaryReason = (id) => {
-    if (historicalHosts[id]) return historicalHosts[id].reason;
-    if (id === "image-dimensions")
-        return "Positive bounded width/height recognition is absent from the pinned cmark image grammar; image label and destination are paired locally without attributing numeric validation to the reference.";
-    if (id === "multiline-matrix" || id === "headless-multiline")
-        return "Column-interval equality, physical-line segmentation and logical-row block parsing have no counterpart in the supplied GFM pipe-table grammar; all cell payloads are paired locally.";
-    if (id === "simple-matrix" || id === "grid-cell")
-        return "Geometry, column discovery, padding and cell source mapping remain residual; all cell contents enter the labelled local product.";
-    if (id.startsWith("metadata"))
-        return "Envelope detection, typed member decoding and first-valid/unknown-member policy remain residual; every value and the following body are retained.";
-    throw new Error(`missing boundary disposition: ${id}`);
-};
-
+const splitIds = new Set(Object.keys(boundaryGrammars));
+const isProduct = (id) => featureGrammars.has(id) || builtinProducts.has(id);
 const ids = [
-    ...new Set([
-        ...Object.keys(additionalBoundaries),
-        ...featureGrammars.keys(),
-        ...Object.keys(historicalHosts),
-        "insertion-strong",
-        ...[...productionProofs.keys()].map((id) => id.replace(/-v2$/u, "")),
-        "anchor",
-        "metadataempty",
-        "metadata",
-        "callout"
-    ])
-];
+    ...featureGrammars.keys(),
+    ...Object.keys(direct),
+    ...directFrames,
+    ...builtinProducts,
+    ...splitIds
+].sort();
 export const grammarCertificates = ids.map((id) => {
     const full = direct[id] || directFrames.has(id) || isProduct(id);
-    const legacy = [...pairReviews.values()]
-        .filter((review) => review.proofs.includes(`${id}-v2`) || review.id === id)
-        .map((review) => review.id);
-    if (id === "insertion-strong") legacy.push("runs");
-    if (historicalHosts[id]) legacy.push(historicalHosts[id].legacy);
     return Object.freeze({
         id,
         certificate: `${id}-grammar-v2`,
         scope: full ? "paired-document-grammar" : "boundary-grammar",
         grammar: direct[id]?.[0] ?? (directFrames.has(id) ? id : isProduct(id) ? "labelled-product" : "field-sequence"),
-        legacy,
-        structuralPredecessor:
-            id === "insertion-strong" ? "insertion-strong-v1" : productionProofs.has(`${id}-v2`) ? `${id}-v2` : null,
         ...(featureGrammars.has(id)
             ? {
                   feature: featureGrammars.get(id).feature,
@@ -137,27 +136,18 @@ export const grammarCertificates = ids.map((id) => {
                       : {})
               }
             : {}),
-        ...(additionalBoundaries[id] ? { feature: additionalBoundaries[id] } : {}),
+        ...(boundaryGrammars[id]?.feature ? { feature: boundaryGrammars[id].feature } : {}),
         ...(direct[id]
             ? { dialectMarker: full[1], commonMarker: full[2], residual: null }
             : full
               ? { residual: null }
-              : { residual: boundaryReason(id) })
+              : { residual: boundaryGrammars[id].reason })
     });
 });
 const byId = new Map(grammarCertificates.map((entry) => [entry.id, entry]));
 
 export function validateGrammarCertificates() {
-    assert.equal(
-        byId.size,
-        ids.length,
-        "structural domains, unpaired families and historical residual hosts all need a disposition"
-    );
-    for (const [id, residual] of Object.entries(historicalHosts)) {
-        assert.equal(byId.get(id).scope, featureGrammars.has(id) ? "paired-document-grammar" : "boundary-grammar");
-        assert.deepEqual(byId.get(id).legacy, [residual.legacy]);
-    }
-    assert.deepEqual(new Set(grammarCertificates.flatMap((entry) => entry.legacy)), new Set(pairReviews.keys()));
+    assert.equal(byId.size, ids.length, "each grammar must have exactly one certificate");
     for (const lexicons of Object.values(finiteLexicons)) {
         const length = Object.values(lexicons)[0].length;
         for (const tokens of Object.values(lexicons)) {
@@ -1019,8 +1009,6 @@ export function grammarCatalog() {
             id: proof.id,
             certificate: proof.certificate,
             scope: proof.scope,
-            legacy: proof.legacy,
-            structuralPredecessor: proof.structuralPredecessor,
             feature: proof.feature ?? null,
             facets: proof.facets ?? [],
             identity: proof.identity === true,
@@ -1208,10 +1196,9 @@ export function grammarSourceIdentity(root = fileURLToPath(new URL("../../", imp
         "scripts/lib/grammar-features.mjs",
         "scripts/lib/grammar-coverage.mjs",
         "scripts/lib/grammar-sections.mjs",
+        "scripts/lib/grammar-report.mjs",
         "scripts/lib/element-inventory.mjs",
-        "scripts/lib/pair-productions.mjs",
-        "scripts/lib/pair-review.mjs",
-        "scripts/benchmark-stages.mjs",
+        "scripts/benchmark.mjs",
         "scripts/init-environment.sh",
         "docs/architecture/benchmark-grammar-corpus.md",
         "docs/architecture/benchmark-grammar-coverage.md",
@@ -1233,14 +1220,10 @@ export function grammarSourceIdentity(root = fileURLToPath(new URL("../../", imp
 
 export function grammarMarkdown(report) {
     const g = report.grammarCorpus;
-    const ir = (item, engine) =>
-        item?.engines[engine]
-            ? Object.values(item.engines[engine].stages).reduce((sum, stage) => sum + stage.ir, 0)
-            : null;
     const lines = [
         "## Corpus certified by grammar equivalence",
         "",
-        `Grammar identity: \`${g.identity}\`. ${g.certificates.length} certificates cover all 30 historical scenarios: ${g.certificates.filter((c) => c.scope === "paired-document-grammar").length} paired document grammars and ${g.certificates.filter((c) => c.scope === "boundary-grammar").length} explicit boundary grammars.`,
+        `Grammar identity: \`${g.identity}\`. ${g.certificates.length} certificates cover the declared source grammars: ${g.certificates.filter((c) => c.scope === "paired-document-grammar").length} paired document grammars and ${g.certificates.filter((c) => c.scope === "boundary-grammar").length} explicit boundary grammars.`,
         ...(g.coverage
             ? [
                   "",
@@ -1257,25 +1240,9 @@ export function grammarMarkdown(report) {
         "| Certificate | Scope | Scale | Units | A/B bytes | A Ir | B Ir | R Ir | A/B | B/R | A/R | Core host Ir (residual included) |",
         "| --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
     ];
-    for (const proof of g.proofs) {
-        const part = proof.scope === "boundary-grammar" ? "boundary" : "paired";
-        const find = (name) => report.cases.find((item) => item.case === name && item.scale === proof.scale);
-        const a = find(proof.names[`${part}-dialect`]),
-            b = find(proof.names[`${part}-common`]);
-        if (!a && !b) continue;
-        assert.ok(a && b, "missing measured grammar counterpart");
-        const engine = b.gfm ? "cmark-gfm" : "cmark";
-        const left = ir(a, "markdown-core"),
-            common = ir(b, "markdown-core"),
-            right = ir(b, engine);
-        assert.ok(left > 0 && common > 0 && right > 0, "missing grammar measurement");
-        assert.equal(a.certificate, proof.certificate, "measurement belongs to another grammar");
-        assert.equal(b.certificate, proof.certificate, "measurement belongs to another grammar");
-        assert.equal(a.units, proof.units);
-        assert.equal(b.units, proof.units);
-        const hostCost = part === "boundary" ? ir(find(proof.names["host-dialect"]), "markdown-core") : null;
+    for (const row of grammarComparisons(report)) {
         lines.push(
-            `| ${proof.certificate} | ${proof.scope} | ${proof.scale} | ${proof.units} | ${a.bytes}/${b.bytes} | ${left} | ${common} | ${right} | ${(left / common).toFixed(3)}x | ${(common / right).toFixed(3)}x | ${(left / right).toFixed(3)}x | ${hostCost ?? "—"} |`
+            `| ${row.certificate} | ${row.scope} | ${row.scale} | ${row.units} | ${row.aBytes}/${row.bBytes} | ${row.aIr} | ${row.bIr} | ${row.rIr} | ${row.ab.toFixed(3)}x | ${row.br.toFixed(3)}x | ${row.ar.toFixed(3)}x | ${row.hostIr ?? "—"} |`
         );
     }
     lines.push("", "### Unmatched boundary obligations", "", "| Certificate | Residual |", "| --- | --- |");

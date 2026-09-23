@@ -186,8 +186,8 @@ its artifact-specific CTest tree.
 
 ## Benchmarks and external corpora
 
-`pnpm benchmark:stages` runs Markdown Core and the
-pinned cmark over byte-identical documents under callgrind and reports what
+`pnpm benchmark` runs Markdown Core and the pinned cmark/cmark-gfm
+on the grammar-certified corpus under Callgrind and reports what
 each engine spends on the two parse paths: source bytes into block buffers,
 and those buffers into an AST. cmark splits exactly those two paths across
 `cmark_parser_feed` and `cmark_parser_finish`, so the boundary is a real one on

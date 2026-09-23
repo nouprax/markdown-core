@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Stage benchmark: Markdown Core against cmark, one parse stage at a time.
+ * Grammar-equivalent parsing benchmark: Markdown Core against cmark/cmark-gfm.
  *
  * WHAT IS MEASURED. A parse has two paths worth optimizing separately: the
  * source bytes being read into the block buffers, and those buffers being
@@ -19,7 +19,8 @@
  * WHY cmark's FEED API. cmark splits the same two paths across two public
  * calls, so feeding the whole document and then finishing gives a boundary
  * that is the same boundary, not an approximation of one. Both engines get
- * byte-identical documents built from the same tracked corpus.
+ * the common encoding of each certified grammar pair. Shared syntax uses
+ * identical inputs; extension spellings have explicit reversible translations.
  *
  * WHY CALLGRIND. Instruction and data-reference counts do not depend on how
  * fast the machine was or what else was running on it, so a hosted runner is
@@ -42,11 +43,10 @@
  * instructions for one random memory access will look like an improvement
  * here. Dr/Dw are reported alongside for exactly that reason.
  *
- *   node scripts/benchmark-stages.mjs [--out DIR] [--case NAME]... [--scale N]
+ *   node scripts/benchmark.mjs [--out DIR] [--case NAME]... [--scale N]
  *                                     [--quiet] [--baseline-ref COMMIT]
  */
 
-import { Buffer } from "node:buffer";
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -62,17 +62,6 @@ import {
     sameCompileOptions
 } from "./lib/compile-identity.mjs";
 import { sourceBudget, SOURCE_IR_LIMIT } from "./lib/source-budget.mjs";
-import { caseClosure, splitWithCases } from "./lib/corpus-splits.mjs";
-import { boundarySource, pairReview } from "./lib/pair-review.mjs";
-import {
-    currentPairingIdentity,
-    pairRatios,
-    proofWorkload,
-    structuralPair,
-    validatePairs
-} from "./lib/corpus-pairs.mjs";
-import { effortModel } from "./lib/pair-effort.mjs";
-import { measureEffortBoundaries } from "./lib/measure-effort.mjs";
 import {
     buildGrammarCorpus,
     writeGrammarCorpus,
@@ -135,32 +124,13 @@ const STAGES = ["source_to_buffer", "buffer_to_ast"];
  * is a part of: parser creation, the two stages, and releasing the tree. */
 const ENGINE_ENTRY = "bench_parse_document";
 
-/* The remainder of a split, ALONE: the attribute runner `benchmark-attributes.mjs`
- * measures against lexbor, built in the same tree by the same flags as the
- * parser the split measures the remainder inside, read on the edge that
- * driver reads. The edge covers the scan, the decode and the release of each
- * list, so it is compared with the split's WHOLE-PATH marginal, which covers
- * release too, and not with the stages. */
-const ATTRIBUTE_RUNNER = {
-    runner: "packages/markdown-core/benchmarks/markdown_core_attribute_runner",
-    target: "markdown_core_attribute_runner",
-    caller: "main",
-    callee: "bench_parse_attributes"
-};
-/* Every binary a number in the report is read from, by the name the identity
- * table gives it. */
-const MEASURED_BINARIES = {
-    ...Object.fromEntries(Object.entries(ENGINES).map(([engine, definition]) => [engine, definition.runner])),
-    "attribute runner": ATTRIBUTE_RUNNER.runner,
-    "core effort runner": "packages/markdown-core/benchmarks/markdown_core_effort_runner",
-    "cmark effort runner": "packages/markdown-core/benchmarks/cmark_effort_runner"
-};
-/* How many copies of the remainder the alone measurement decodes: enough that
- * the runner's own setup and the receipt are noise against the lists. */
-const ALONE_LISTS = 4096;
+/* Every binary that contributes measured parse-stage instructions. */
+const MEASURED_BINARIES = Object.fromEntries(
+    Object.entries(ENGINES).map(([engine, definition]) => [engine, definition.runner])
+);
 
 function fail(message) {
-    console.error(`benchmark-stages: ${message}`);
+    console.error(`benchmark: ${message}`);
     process.exit(1);
 }
 
@@ -175,7 +145,7 @@ function run(command, args, options = {}) {
 
 function parseArguments(argv) {
     const options = {
-        out: path.join(root, argv.includes("--grammar-corpus") ? "build/benchmark-grammar" : "build/benchmark-stages"),
+        out: path.join(root, "build/benchmark-grammar"),
         cases: [],
         scale: 2,
         quiet: false,
@@ -188,8 +158,6 @@ function parseArguments(argv) {
             options.quiet = true;
         } else if (flag === "--corpus-only") {
             options.corpusOnly = true;
-        } else if (flag === "--grammar-corpus") {
-            options.grammarCorpus = true;
         } else if (!value) {
             fail(`${flag} needs a value`);
         } else if (flag === "--out") {
@@ -828,6 +796,7 @@ function buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir,
     run("git", ["archive", "--format=tar", `--output=${archive}`, revision]);
     run("tar", ["-xf", archive, "-C", source]);
     fs.unlinkSync(archive);
+    fs.rmSync(path.join(source, "packages/markdown-core/benchmarks"), { recursive: true, force: true });
     fs.cpSync(BENCHMARKS, path.join(source, "packages/markdown-core/benchmarks"), { recursive: true });
     fs.copyFileSync(path.join(root, "CMakePresets.json"), path.join(source, "CMakePresets.json"));
     const built = { ...profile, binaryDir: path.join(directory, "build") };
@@ -835,11 +804,10 @@ function buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir,
     verifyStageSymbols(built);
     verifyBuildProvenance(built, versions);
     const compiled = Object.fromEntries(
-        [
-            ["markdown-core", "libmarkdown-core-public-static"],
-            ["attribute runner", ATTRIBUTE_RUNNER.target],
-            ["core effort runner", "markdown_core_effort_runner"]
-        ].map(([engine, target]) => [engine, readCompiledFlags(source, built.binaryDir, target, fail)])
+        [["markdown-core", "libmarkdown-core-public-static"]].map(([engine, target]) => [
+            engine,
+            readCompiledFlags(source, built.binaryDir, target, fail)
+        ])
     );
     if (JSON.stringify(effectiveFlags(built.binaryDir)) !== JSON.stringify(effectiveFlags(profile.binaryDir))) {
         fail("baseline and current core use different effective build flags");
@@ -933,161 +901,8 @@ function verifyStageSymbols(profile) {
             }
         }
     }
-    /* The edge the remainder alone is read on, held the same way: a boundary
-     * folded into its caller is a missing number, not a smaller one. */
-    const symbols = symbolsOf("attribute runner", ATTRIBUTE_RUNNER.runner);
-    for (const name of [ATTRIBUTE_RUNNER.caller, ATTRIBUTE_RUNNER.callee]) {
-        if (!symbols.has(name)) {
-            fail(
-                `attribute runner: ${name} is absent from ${ATTRIBUTE_RUNNER.runner}, so the remainder alone cannot be read`
-            );
-        }
-    }
 }
 
-/**
- * A case built by repeating whole documents.
- *
- * Each sample is normalized to end in exactly one newline and the whole unit
- * gets a blank line after it, so that repeating a unit cannot merge the last
- * block of one copy into the first block of the next -- which would make the
- * document's structure, and so its cost, a non-linear function of the repeat
- * count and quietly ruin the scaling comparison.
- */
-function documentsUnit(entry) {
-    return (
-        entry.samples
-            .map((sample) => {
-                const file = path.join(BENCHMARKS, "samples", sample);
-                if (!fs.existsSync(file)) fail(`corpus.json names a missing sample: ${sample}`);
-                return `${fs.readFileSync(file, "utf8").replace(/\n*$/u, "")}\n`;
-            })
-            .join("") + "\n"
-    );
-}
-
-/**
- * A case built as ONE structure whose depth or run length is the scale.
- *
- * Repeating whole documents grows the number of independent blocks and nothing
- * else -- the blank line between copies is there precisely to keep them from
- * interacting. That makes the growth table blind in the dimension adversarial
- * inputs actually attack: a container nested D deep or a delimiter run of D
- * openers stays at its original D no matter how many copies are concatenated,
- * so work quadratic in D still reports linear growth in bytes.
- *
- * A chain case has no copies. Its single structure is `unit` repeated until the
- * document reaches its size, so D doubles when the document doubles and cost
- * quadratic in D shows up as a 4x growth ratio.
- */
-/**
- * A case generated from a numbered unit rather than from a sample file.
- *
- * Both halves of a LOGICAL ISOMORPH are built this way. The index keeps every
- * generated declaration distinct, which the pairing needs: a repeated literal
- * name would leave one side binding one identifier and the other binding
- * thousands, and those are not the same workload however alike they read.
- *
- * `{n}` is the index as written; `{n:K}` is the same index zero-padded to K
- * digits. A grid table establishes its columns by the positions of the `+`
- * characters in its border line and requires every row line to close its cells
- * at exactly those columns, so an index that gains a digit at ten, at a hundred
- * and at a thousand would silently stop the construct being recognised part way
- * through the document -- the case would still generate, and would measure a
- * paragraph. Any case whose construct is column-aligned uses the padded form.
- */
-function unitText(template, index) {
-    return template
-        .replaceAll(/\{n:(\d+)\}/gu, (_, width) => {
-            const written = String(index);
-            /* `padStart` never truncates, so an index past the declared width
-             * silently writes one character too many -- and a column-aligned
-             * construct stops closing at its border the moment that happens.
-             * The case still generates, the counts on the two sides still
-             * agree because both halves are built from the same index, and what
-             * gets measured is a paragraph. The reach audit cannot see it
-             * either: it reads the x1 documents, and the overflow arrives at a
-             * larger scale. So it is refused here, where the width is known. */
-            if (written.length > Number(width)) {
-                fail(
-                    `a generated unit writes index ${written} into {n:${width}}, which is ${width} digits wide. ` +
-                        `The placeholder exists to keep a column-aligned construct closing at its border, and an ` +
-                        `index that outgrows it breaks the construct silently. Widen the placeholder and the ` +
-                        `columns that depend on it`
-                );
-            }
-            return written.padStart(Number(width), "0");
-        })
-        .replaceAll("{n}", String(index));
-}
-
-function generatedText(generated, target) {
-    let text = "";
-    let units = 0;
-    /* The running total is carried, not recomputed. Measuring the whole
-     * accumulated document once per unit is quadratic in the document and, since
-     * `--scale N` builds every size up to N, cubic in the scale: on a 256 KiB
-     * target that is 395 ms of generation against 1.6 ms here, for byte-identical
-     * output. Each unit's own length is what the target is counted in. */
-    let bytes = 0;
-    while (bytes < target) {
-        const unit = unitText(generated.unit, units);
-        text += unit;
-        bytes += Buffer.byteLength(unit);
-        units += 1;
-    }
-    return { text: (generated.head ?? "") + text + (generated.tail ?? ""), length: units };
-}
-
-/**
- * A `head` exists for the one production that is recognised ONCE per document.
- * A properties envelope may only open a document, so its workload cannot scale
- * by repeating the construct -- it scales by the MEMBER LINES inside a single
- * envelope, which means the opening delimiter has to be emitted before the
- * repeated unit and the closing one after. Every other mode repeats a whole
- * construct and needs no head.
- */
-
-/**
- * The other half of a logical isomorph, generated to the SAME COUNT.
- *
- * Not to the same byte length. Two spellings of one construct are paired
- * because they express the same thing, and when one spelling needs more bytes
- * than the other, sizing both to a byte target gives them different numbers of
- * the construct -- a comparison of one document's size with another's, wearing
- * the name of a comparison of two grammars. The count comes from what the
- * partner's generator actually emitted, so nothing has to be counted back out
- * of the text by pattern.
- */
-function countedText(counted, units) {
-    let text = "";
-    for (let index = 0; index < units; index++) {
-        text += unitText(counted.unit, index);
-    }
-    return { text: (counted.head ?? "") + text + (counted.tail ?? ""), length: units };
-}
-
-function chainText(chain, target) {
-    const tail = chain.tail ?? "";
-    const unit = Buffer.byteLength(chain.unit);
-    const length = Math.max(1, Math.floor((target - Buffer.byteLength(tail)) / unit));
-    return { text: chain.unit.repeat(length) + tail, length };
-}
-
-/**
- * A flag string split the way the build will split it.
- *
- * CMake stores these verbatim and the compile line it generates is
- * interpreted, so a shell decides where one flag ends -- not whitespace.
- * `\'@/tmp/flags with space.rsp\'` is three whitespace-separated words and one
- * shell argument, and it is the argument the compiler reads. Splitting it here
- * any other way asks a different question than the build answers, which is the
- * same lesson the resolved-target probe records one screen up.
- *
- * The string reaches a shell either way, so asking adds no exposure the build
- * does not already have. A string the shell cannot split is refused: the build
- * would not be able to run it either.
- */
 function flagArguments(name) {
     const value = process.env[name] ?? "";
     if (!value.trim()) {
@@ -1157,30 +972,11 @@ function refuseResponseFiles() {
     }
 }
 
-function corpusManifest(options) {
-    if (options.grammarCorpus) {
-        const grammar = buildGrammarCorpus({ scale: 1 });
-        return { schemaVersion: 3, grammar: true, targetBytes: null, pairs: [], cases: grammar.cases };
-    }
-    const manifest = JSON.parse(fs.readFileSync(path.join(BENCHMARKS, "corpus.json"), "utf8"));
-    if (manifest.schemaVersion !== 3) fail(`unsupported corpus schema: ${manifest.schemaVersion}`);
-    validatePairs(manifest);
-    return manifest;
+function corpusManifest() {
+    return { cases: buildGrammarCorpus({ scale: 1 }).cases };
 }
 
-/**
- * Every requested name has to exist, not just one of them.
- *
- * A run filtered to `--case mixed-commonmark --case chain-braket-open` would
- * otherwise measure the first, drop the typo silently, and report an
- * experiment the caller did not ask for -- with the adversarial case they
- * wanted absent.
- *
- * Asked of the manifest before anything is installed or built, because that is
- * all it takes to answer. A typo told to go install an oracle, or told nothing
- * until two builds have run, is a correction the caller has to wait for and
- * then read past the wrong error to find.
- */
+/** Reject every unknown selection before installing or building either parser. */
 function refuseUnknownCases(options, manifest) {
     const named = new Set(manifest.cases.map((entry) => entry.name));
     const unknown = options.cases.filter((name) => !named.has(name));
@@ -1189,154 +985,39 @@ function refuseUnknownCases(options, manifest) {
     }
 }
 
-function buildCorpus(options, manifest) {
+function buildCorpus(options) {
     const directory = path.join(options.out, "corpus");
-    fs.mkdirSync(directory, { recursive: true });
-    if (manifest.grammar) {
-        const grammar = writeGrammarCorpus(directory, { scale: options.scale });
-        const selected = new Set(options.cases);
-        const families = new Set(grammar.cases.filter((entry) => selected.has(entry.name)).map((entry) => entry.id));
-        const documents = grammar.cases
-            .filter((entry) => !selected.size || families.has(entry.id))
-            .map((entry) => ({
-                ...documentMetadata(entry),
-                case: entry.name,
-                file: path.join(directory, `${entry.name}.x${entry.scale}.md`)
-            }));
-        return {
-            targetBytes: null,
-            digest: corpusDigest(documents),
-            documents,
-            grammarCorpus: {
-                version: grammar.version,
-                identity: grammar.identity,
-                coverage: grammar.coverage,
-                certificates: grammar.certificates,
-                proofs: grammar.proofs.map((proof) => {
-                    const summary = { ...proof };
-                    delete summary.rows;
-                    delete summary.hosts;
-                    return summary;
-                }),
-                artifact: "corpus/grammar-corpus.json"
-            }
-        };
-    }
-    /* A named case drags in what it is DEFINED AGAINST -- its pair, a split
-     * `with` its `without`, a counted case its generated match -- to a
-     * fixpoint. The rule is `caseClosure` in `lib/corpus-splits.mjs`, where
-     * the reach audit reads the same declarations, and its tests hold the
-     * direction: a pair half drags its other half, a `with` drags its
-     * `without`, and a `without` drags no `with`. */
-    const wanted = caseClosure(manifest, options.cases);
-    const selected = options.cases.length ? manifest.cases.filter((entry) => wanted.has(entry.name)) : manifest.cases;
-
-    const documents = [];
-    /* What each generated case actually emitted, so its partner is built to the
-     * same count rather than to a guess at one. */
-    const emitted = new Map();
-    const partnerUnits = (match, scale) => {
-        const key = `${match}|${scale}`;
-        if (!emitted.has(key)) {
-            fail(`a counted case pairs with ${match}, which must be a "generated" case declared before it`);
+    const grammar = writeGrammarCorpus(directory, { scale: options.scale });
+    const selected = new Set(options.cases);
+    const families = new Set(grammar.cases.filter((entry) => selected.has(entry.name)).map((entry) => entry.id));
+    const documents = grammar.cases
+        .filter((entry) => !selected.size || families.has(entry.id))
+        .map((entry) => ({
+            ...documentMetadata(entry),
+            case: entry.name,
+            file: path.join(directory, `${entry.name}.x${entry.scale}.md`)
+        }));
+    return {
+        targetBytes: null,
+        digest: corpusDigest(documents),
+        documents,
+        grammarCorpus: {
+            version: grammar.version,
+            identity: grammar.identity,
+            coverage: grammar.coverage,
+            certificates: grammar.certificates,
+            proofs: grammar.proofs.map((proof) => {
+                const summary = { ...proof };
+                delete summary.rows;
+                delete summary.hosts;
+                return summary;
+            }),
+            artifact: "corpus/grammar-corpus.json"
         }
-        return emitted.get(key);
     };
-    for (const entry of selected) {
-        const modes = [entry.samples, entry.chain, entry.counted, entry.generated, entry.boundary].filter(
-            Boolean
-        ).length;
-        if (modes !== 1) {
-            fail(
-                `corpus case ${entry.name} must name exactly one of "samples", "chain", "generated", "counted" or "boundary"`
-            );
-        }
-        const unit = entry.samples ? documentsUnit(entry) : null;
-        for (let scale = 1; scale <= options.scale; scale++) {
-            const target = (entry.targetBytes ?? manifest.targetBytes) * scale;
-            const built = entry.boundary
-                ? (() => {
-                      const source = documents.find((doc) => doc.case === entry.boundary.match && doc.scale === scale);
-                      if (!source) fail(`${entry.name}: boundary source must be generated first`);
-                      return {
-                          text: boundarySource(entry.boundary.cut, fs.readFileSync(source.file, "utf8")),
-                          length: source.units
-                      };
-                  })()
-                : entry.chain
-                  ? chainText(entry.chain, target)
-                  : entry.generated
-                    ? generatedText(entry.generated, target)
-                    : entry.counted
-                      ? countedText(entry.counted, partnerUnits(entry.counted.match, scale))
-                      : (() => {
-                            const repeats = Math.max(1, Math.ceil(target / Buffer.byteLength(unit)));
-                            return { text: unit.repeat(repeats), length: repeats };
-                        })();
-            if (entry.generated) emitted.set(`${entry.name}|${scale}`, built.length);
-            const file = path.join(directory, `${entry.name}.x${scale}.md`);
-            fs.writeFileSync(file, built.text);
-            documents.push({
-                case: entry.name,
-                ...(entry.boundary ? { boundary: entry.boundary } : {}),
-                dialect: entry.dialect,
-                gfm: entry.gfm === true,
-                /* The fields this case's tree carries that no reference builds.
-                 * `dialect` asserts what the SYNTAX is; this says what the
-                 * OUTPUT is, and reading the first as though it were the second
-                 * is what published a feature's price as a parsing ratio. */
-                carries: entry.carries ?? [],
-                /* What the growth table is varying. `documents` cases add
-                 * independent copies; a chain case grows one structure, and
-                 * WHICH dimension is not the same question as the shape --
-                 * chain-link-candidates grows a count of separately bounded
-                 * failures, not a depth, so a table that called it "structure"
-                 * alongside the nesting cases would invite exactly the reading
-                 * the case was renamed to prevent. */
-                growth: entry.chain
-                    ? (entry.scales ?? "structure")
-                    : (entry.generated ?? entry.counted)
-                      ? /* Named by the case, because a generated case scales
-                         * whatever its unit holds and that is not one thing:
-                         * the anchor pair scales declarations, the span pair
-                         * scales spans and links. A single label for the mode
-                         * would describe the anchor pair and misdescribe the
-                         * rest, in the one column that exists to say which
-                         * dimension grew. */
-                        ((entry.generated ?? entry.counted).scales ?? "constructs")
-                      : "documents",
-                scale,
-                units: built.length,
-                bytes: Buffer.byteLength(built.text),
-                /* The bytes actually parsed, not just how many there were. A
-                 * byte count does not distinguish two documents of one size. */
-                sha256: crypto.createHash("sha256").update(built.text).digest("hex"),
-                file
-            });
-        }
-    }
-    for (const pair of manifest.pairs.filter(structuralPair)) {
-        for (const dialect of documents.filter((entry) => entry.case === pair.case)) {
-            const common = documents.find((entry) => entry.case === pair.isomorph && entry.scale === dialect.scale);
-            if (!common) fail(`${pair.case}: proved pair is missing its other half`);
-            proofWorkload(pair, fs.readFileSync(dialect.file, "utf8"), fs.readFileSync(common.file, "utf8"));
-        }
-    }
-    return { targetBytes: manifest.targetBytes, digest: corpusDigest(documents), documents };
 }
 
-/**
- * One digest naming the whole workload a report measured.
- *
- * The toolchain table says what built the binaries; this says what they were
- * given. Both have to match before two reports can be compared, because an
- * edited `corpus.json`, an edited sample, or a change to how documents are
- * generated moves every count without touching either parser -- and a report
- * that recorded only byte counts cannot tell that apart from an optimization.
- *
- * Case name and scale are folded in beside the content, so a `--case`-filtered
- * run does not present itself as comparable to a full one.
- */
+/** Hash the exact generated documents selected for this measurement. */
 function corpusDigest(documents) {
     const digest = crypto.createHash("sha256");
     for (const document of documents) {
@@ -1567,164 +1248,6 @@ function measure(profile, engine, document, out) {
     };
 }
 
-/**
- * The remainder of a split with no host around it.
- *
- * The reference for a remainder measured in place is the same grammar
- * decoding the same bytes alone: what a host adds to that is the composition,
- * the seam between the host's scan and the list's, which is the number a
- * split exists to print. Alone is read through the attribute runner the lexbor
- * comparison uses, from the same build tree as the stage runner, on the edge
- * `scripts/benchmark-attributes.mjs` reads -- so the two drivers' numbers for
- * the list alone are one measurement, not two that happen to agree.
- */
-function measureAlone(profile, split, index, out) {
-    const input = path.join(out, "corpus", `split-${index}.alone.txt`);
-    fs.writeFileSync(input, `${split.bytes}\n`.repeat(ALONE_LISTS));
-    const dump = path.join(out, "callgrind", `attribute-runner.split-${index}.alone.out`);
-    fs.mkdirSync(path.dirname(dump), { recursive: true });
-    const isolated = measurementRoot(out, fail);
-    const stdout = run(
-        "valgrind",
-        [
-            "--tool=callgrind",
-            "--cache-sim=yes",
-            "--dump-instr=no",
-            ...CACHE,
-            `--callgrind-out-file=${dump}`,
-            "--quiet",
-            path.join(profile.binaryDir, ATTRIBUTE_RUNNER.runner),
-            "--input",
-            input
-        ],
-        { env: measurementEnvironment(isolated), cwd: isolated }
-    );
-    const receipt = /lists=(\d+) values=(\d+)/u.exec(stdout);
-    if (!receipt) fail(`the attribute runner produced no receipt for the remainder of split ${index} alone`);
-    const lists = Number(receipt[1]);
-    /* One list per copy, or the bytes are not one list and the number per
-     * list divides by the wrong count. */
-    if (lists !== ALONE_LISTS) {
-        fail(
-            `the attribute runner recovered ${lists} lists from ${ALONE_LISTS} copies of ${JSON.stringify(split.bytes)}, ` +
-                `so the remainder is not one attribute list`
-        );
-    }
-    const parsed = foldNames(parseCallgrind(fs.readFileSync(dump, "utf8")), (name) => name.replace(CLONE_SUFFIX, ""));
-    const edges = edgesBetween(parsed, ATTRIBUTE_RUNNER.caller, ATTRIBUTE_RUNNER.callee);
-    if (!edges.length) {
-        fail(
-            `attribute runner: no call edge ${ATTRIBUTE_RUNNER.caller} -> ${ATTRIBUTE_RUNNER.callee} in ${path.basename(dump)}`
-        );
-    }
-    const ir = edges.reduce((total, edge) => total + (costRecord(parsed, edge.cost).Ir ?? 0), 0);
-    return {
-        runner: ATTRIBUTE_RUNNER.runner,
-        entry: `${ATTRIBUTE_RUNNER.caller} -> ${ATTRIBUTE_RUNNER.callee}`,
-        lists,
-        values: Number(receipt[2]),
-        ir,
-        perList: ir / lists,
-        input: path.relative(out, input),
-        dump: path.relative(out, dump)
-    };
-}
-
-/**
- * Every split's rows, computed once and recorded in `stages.json` beside the
- * cases, so the markdown prints what the JSON holds and a number tracked
- * across runs is read from data rather than parsed back out of prose.
- *
- * A row is the remainder's cost IN one host, read as the difference between
- * two whole documents that differ by the remainder's bytes and nothing else
- * (`scripts/audit-corpus-reach.mjs` holds them to that), per list: over the
- * two stages, and over the whole parse path, which includes releasing what
- * the list built and the stages do not. Beside it: which stage the difference
- * fell in, read off the measurement rather than asserted from the grammar; the
- * whole document's cost with the list over without; the same marginal at the
- * next size over this one, which should not move, because a list costs what
- * it costs however many there are; and, once the remainder alone is measured,
- * the whole-path marginal over the alone cost -- what the host adds to
- * decoding the list, which is the composition.
- */
-function measureSplits(manifest, cases, profile, out) {
-    const engineOf = (document) => document.engines["markdown-core"];
-    const coreIr = (document) => STAGES.reduce((sum, stage) => sum + engineOf(document).stages[stage].ir, 0);
-    const at = (name, scale) =>
-        cases.find((item) => item.case === name && item.scale === scale && item.engines["markdown-core"]);
-    return (manifest.splits ?? []).map((split, index) => {
-        const hosts = (split.hosts ?? []).map((host) => {
-            const without = at(host.without, 1);
-            const carrier = at(host.with, 1);
-            /* Only where both halves were measured: a `--case` run that named
-             * the `without` alone has that document's own comparison to report
-             * and no split, and naming the `with` alone cannot happen, because
-             * the closure drags the `without` in. */
-            if (!without || !carrier) return { ...host, measured: null };
-            if (carrier.units !== without.units) {
-                fail(
-                    `${host.with} and ${host.without} are the two halves of a split but carry ${carrier.units} ` +
-                        `and ${without.units} units. The difference between them is the remainder only ` +
-                        `while both documents hold the same number of everything else`
-                );
-            }
-            const lists = carrier.units * host.each;
-            const perList = (coreIr(carrier) - coreIr(without)) / lists;
-            const byStage = Object.fromEntries(
-                STAGES.map((stage) => [
-                    stage,
-                    (engineOf(carrier).stages[stage].ir - engineOf(without).stages[stage].ir) / lists
-                ])
-            );
-            const landing = STAGES.reduce((best, stage) => (byStage[stage] > byStage[best] ? stage : best));
-            const without2 = at(host.without, 2);
-            const carrier2 = at(host.with, 2);
-            const growth =
-                without2 && carrier2 && carrier2.units === without2.units && perList > 0
-                    ? (coreIr(carrier2) - coreIr(without2)) / (carrier2.units * host.each) / perList
-                    : null;
-            return {
-                ...host,
-                measured: {
-                    lists,
-                    perList,
-                    wholePerList: (engineOf(carrier).parsePathIr - engineOf(without).parsePathIr) / lists,
-                    byStage,
-                    landing,
-                    ratio: coreIr(carrier) / coreIr(without),
-                    growth,
-                    inPlaceOverAlone: null
-                }
-            };
-        });
-        if (!hosts.some((host) => host.measured)) return { ...split, alone: null, hosts };
-        const alone = measureAlone(profile, split, index, out);
-        return {
-            ...split,
-            alone,
-            hosts: hosts.map((host) =>
-                host.measured
-                    ? {
-                          ...host,
-                          measured: { ...host.measured, inPlaceOverAlone: host.measured.wholePerList / alone.perList }
-                      }
-                    : host
-            )
-        };
-    });
-}
-
-/* The functions this document spent the most instructions IN, as opposed to
- * through.
- *
- * The per-stage breakdown beside this one is the stage entry's immediate
- * callees, which is one level deep: on a grid table it reads `S_process_line
- * 99.7%` and names no grammar at all. A ratio can say a case is expensive; only
- * this can say what is expensive about it, which is the step between noticing a
- * number and knowing what to change.
- *
- * Self cost, not inclusive: an inclusive ranking puts the drivers on top --
- * every line goes through `S_process_line` -- and buries the work. */
 function hotPaths(profile) {
     /* Callgrind collects from process start, so `profile.self` holds the whole
      * executable: the loader, reading the file, freeing the source buffer,
@@ -1778,32 +1301,9 @@ function derive(document, stage) {
     };
 }
 
-/** The share of each engine's parse path the two stages actually cover. */
-function coverage(report) {
-    const shares = [];
-    for (const entry of report.cases) {
-        for (const engine of Object.values(entry.engines)) {
-            if (engine.parsePathIr > 0) {
-                shares.push((engine.parsePathIr - engine.outsideStagesIr) / engine.parsePathIr);
-            }
-        }
-    }
-    if (!shares.length) return "an unknown share of";
-    /* Truncated, not rounded, at both ends: a split covering 99.998% of the
-     * path must not be reported as covering all of it, and a "covers at least"
-     * claim should err low. */
-    const percent = (value) => `${(Math.floor(value * 10000) / 100).toFixed(2)}%`;
-    return `${percent(Math.min(...shares))} to ${percent(Math.max(...shares))}`;
-}
-
-function ratio(head, base) {
-    if (!base) return "n/a";
-    return `${(head / base).toFixed(2)}x`;
-}
-
 export function markdownReport(report) {
-    if (report.schemaVersion !== 4 || !Array.isArray(report.pairs)) {
-        throw new Error("report schema 4 with explicit pairing contracts required");
+    if (report.schemaVersion !== 4 || !report.grammarCorpus) {
+        throw new Error("report schema 4 with a grammar corpus required");
     }
     const lines = [];
     lines.push("## Parse stage comparison", "");
@@ -1851,13 +1351,7 @@ export function markdownReport(report) {
         `| cmark-gfm only | \`${report.toolchain.compiled["cmark-gfm only"] || "(nothing)"}\` |`,
         `| C library dispatch | \`${report.toolchain.dispatch.slice(0, 16)}\` |`,
         `| Corpus | \`${report.corpus.digest.slice(0, 16)}\` (${report.corpus.cases} documents) |`,
-        `| Pairing contracts | \`${report.pairingDigest.slice(0, 16)}\` |`,
-        report.grammarCorpus
-            ? `| Report interpretation | ${report.grammarCorpus.version}: \`${report.grammarCorpus.identity}\` |`
-            : `| Report interpretation | ${effortModel}: \`${currentPairingIdentity(report.pairs)}\` |`,
-        "",
-        "The pairing-contract identity belongs to the original measurement; the report interpretation is recorded separately. " +
-            "A changed interpretation does not remeasure the parser or change its instruction counts.",
+        `| Grammar certificate identity | \`${report.grammarCorpus.identity}\` |`,
         "",
         "The measurement runs in an environment built rather than inherited: a path," +
             " a home, a temporary directory and the C locale, and nothing else. An" +
@@ -1908,7 +1402,7 @@ export function markdownReport(report) {
         "",
         "The last row is the workload rather than the build: one digest over every" +
             " document measured, content and all. An edited corpus manifest, an edited" +
-            " sample, or a change to how documents are generated moves every count" +
+            " grammar, or a change to how documents are generated moves every count" +
             " while the parsers stand still, and a byte count cannot tell two different" +
             " documents of one size apart. Each case carries its own document digest in" +
             " `stages.json`, so a corpus that moved can be narrowed to which cases" +
@@ -1916,602 +1410,7 @@ export function markdownReport(report) {
         ""
     );
 
-    if (report.grammarCorpus) return lines.join("\n") + "\n" + grammarMarkdown(report);
-
-    /* A ratio is only a comparison where both engines did the same job. */
-    const stageIr = (engines, engine) =>
-        engines[engine] ? STAGES.reduce((sum, stage) => sum + engines[engine].stages[stage].ir, 0) : null;
-    /* The pairing, and which cases exist only to be the other half of one. An
-     * isomorph is a CommonMark document written to match a dialect document,
-     * not a construct anyone writes, so it belongs in the pair table and not in
-     * the CommonMark median it would otherwise move. */
-    const declarations = report.pairs;
-    const paired = new Map(declarations.map((declaration) => [declaration.case, declaration]));
-    const isIsomorph = new Set(declarations.map((declaration) => declaration.isomorph));
-    const bySubstitution = new Set(declarations.filter((pair) => pair.substitution).map((pair) => pair.case));
-    /* And which cases exist only to be the `with` half of a split. Such a
-     * document is a host that already has a comparison, carrying a remainder
-     * that has none, so it is neither a comparison nor a bound: its number is
-     * the difference against its `without`, in "The remainder inside its
-     * hosts" below. Ranking it would put a document written to carry an
-     * unpairable production into the bound table as if that were its
-     * measurement, and into the median of a group it was never part of. */
-    const splits = report.splits ?? [];
-    const isSplitWith = splitWithCases(report);
-    /* What each ranked case IS to the report, decided once. The groups, the
-     * bound prose and the hot-path table all used to test the same flags in
-     * their own order, and the order is the meaning: a paired case is a pair
-     * whatever its `gfm` flag says, a split's `with` half is in no group, and
-     * a twin whose dialect half was not measured is in no group either. */
-    const roleOf = (item) => {
-        if (item.isomorph)
-            return item.isomorph.structural ? "pair" : item.isomorph.contract.review ? "reviewed" : "candidate";
-        if (item.boundary) return "boundary-base";
-        if (isSplitWith.has(item.case)) return "split-with";
-        if (item.gfm) return item.carries.length ? "unranked" : isIsomorph.has(item.case) ? "twin" : "gfm";
-        if (item.dialect === "commonmark" && !item.carries.length) {
-            return isIsomorph.has(item.case) ? "twin" : "commonmark";
-        }
-        return "bound";
-    };
-
-    const atScaleOne = new Map(report.cases.filter((item) => item.scale === 1).map((item) => [item.case, item]));
-    const ranked = report.cases
-        .filter((item) => item.scale === 1 && item.engines["markdown-core"])
-        .map((item) => {
-            const core = stageIr(item.engines, "markdown-core");
-            const cmarkIr = stageIr(item.engines, "cmark");
-            const gfmIr = stageIr(item.engines, "cmark-gfm");
-            /* Structural correspondence permits a diagnostic quotient, not an
-             * equal-effort claim. Recognition and full contracts may differ. */
-            const declaration = paired.get(item.case);
-            const twin = declaration ? atScaleOne.get(declaration.isomorph) : null;
-            /* The isomorph's OWN reference, not always cmark. A dialect
-             * construct can pair with a GFM production -- a task marker with a
-             * GFM task list item, a specimen with a GFM footnote definition --
-             * and use the engine that implements that reference production.
-             * Reading cmark there would divide by an engine
-             * that parsed the paired document as ordinary prose. */
-            const twinReference = twin?.gfm ? "cmark-gfm" : "cmark";
-            const twinCore = twin ? stageIr(twin.engines, "markdown-core") : null;
-            const twinCmark = twin ? stageIr(twin.engines, twinReference) : null;
-            if (twin && twin.units !== item.units) {
-                fail(
-                    `${item.case} and ${declaration.isomorph} are paired but carry ${item.units} and ` +
-                        `${twin.units} of the construct. A pair compares two spellings of one thing only ` +
-                        `while both documents hold the same number of it`
-                );
-            }
-            if (twin && bySubstitution.has(item.case) && twin.bytes !== item.bytes) {
-                /* The substitution is character for character, so the two
-                 * documents are the same length and the corpus repeats each of
-                 * them the same number of times. Different totals mean the pair
-                 * is no longer measuring one workload twice, and comparing the
-                 * sums would divide one document's cost by another's. */
-                fail(
-                    `${item.case} and ${declaration.isomorph} are paired but were measured at ` +
-                        `${item.bytes}/${twin.bytes} bytes over ${item.units}/${twin.units} copies`
-                );
-            }
-            const comparison = twin
-                ? pairRatios(declaration, {
-                      dialect: core,
-                      common: twinCore,
-                      reference: twinCmark,
-                      carries: twin.carries
-                  })
-                : null;
-            return {
-                ...item,
-                coreIr: core,
-                cmarkRatio: cmarkIr ? core / cmarkIr : null,
-                gfmRatio: gfmIr ? core / gfmIr : null,
-                /* Only where the other half was actually measured: a
-                 * `--case`-filtered run that named one side of a pair has no
-                 * comparison to report, and falls back to the bound rather than
-                 * printing a pair row of dashes. */
-                isomorph: twin
-                    ? {
-                          case: declaration.isomorph,
-                          contract: declaration.contract,
-                          ...comparison,
-                          /* How the pair was established, because it decides
-                           * which invariant held it: equal bytes under a marker
-                           * substitution, or an equal count of declarations in
-                           * two spellings of different length. */
-                          by: declaration.substitution ? "substitution" : declaration.counts ? "count" : "domain",
-                          reference: twinReference,
-                          /* Its own bytes, not this case's: a logical isomorph
-                           * is a different length by construction, so dividing
-                           * its cost by this document's size would be reading
-                           * one document's Ir over another document's bytes. */
-                          bytes: twin.bytes,
-                          units: twin.units,
-                          coreIr: twinCore,
-                          cmarkIr: twinCmark,
-                          /* Unmatched reference fields suppress A/B and B/R.
-                           * A/R remains arithmetic and gains no effort proof
-                           * from cancellation of the shared denominator. */
-                          contaminates: twin.carries,
-                          /* Cross-syntax total stage quotient inside Core. */
-                          grammar: comparison.grammar,
-                          /* Same-input implementation quotient on B. */
-                          shape: comparison.shape
-                      }
-                    : null,
-                // Descriptive quotient only; no theoretical-optimum assertion.
-                comparisonRatio: declaration
-                    ? (comparison?.quotient ?? null)
-                    : item.carries.length
-                      ? null
-                      : gfmIr
-                        ? core / gfmIr
-                        : item.dialect === "commonmark" && cmarkIr
-                          ? core / cmarkIr
-                          : null
-            };
-        })
-        .sort(
-            (left, right) =>
-                (right.comparisonRatio ?? right.cmarkRatio ?? 0) - (left.comparisonRatio ?? left.cmarkRatio ?? 0)
-        );
-
-    if (ranked.length) {
-        const median = (values) => {
-            const sorted = values.slice().sort((left, right) => left - right);
-            if (!sorted.length) return 0;
-            const middle = Math.floor(sorted.length / 2);
-            /* An even group has two middle values and neither one of them is the
-             * median; the CommonMark group has an even count, so taking the
-             * upper published a number that was not the median of anything. */
-            return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-        };
-        lines.push("### Ratio against the reference", "");
-        const paired = ranked.filter((item) => roleOf(item) === "pair");
-        const candidates = ranked.filter((item) => roleOf(item) === "candidate");
-        const reviewedWorkloads = ranked.filter((item) => roleOf(item) === "reviewed");
-        const diagnostics = [...candidates, ...reviewedWorkloads];
-        const bounded = ranked.filter((item) => roleOf(item) === "bound");
-        lines.push(
-            "Structural proofs establish output correspondence, not equal optimal parse effort.",
-            `Cost model: ${effortModel}. There are 0 certified equal-optimal-effort pairs; no equivalent-work median is published.`,
-            "CommonMark and GFM rows are empirical same-input comparisons. Cross-syntax pairs remain descriptive controls.",
-            "",
-            `This run contains ${paired.length} structural control(s) and ${candidates.length} candidate pair(s) and ${reviewedWorkloads.length} reviewed workload(s).`,
-            ""
-        );
-        if (bounded.length) {
-            lines.push(
-                "",
-                `The reference does not implement the remaining dialect features. cmark reads the document in` +
-                    ` \`${bounded[0].case}\` as ordinary prose, so its number there is the cost of` +
-                    " NOT having the feature. This is a feature-absent diagnostic," +
-                    " not a lower bound or evidence of removable overhead."
-            );
-        }
-        lines.push("", "");
-        /* Read off this run. Written as prose it froze at the numbers of the
-         * run that wrote it, so the sentence making the case for the
-         * distinction went on asserting them while the tables below reported
-         * something else. */
-        const pipe = ranked.find((item) => item.case === "block-table-pipe");
-        if (pipe && pipe.cmarkRatio !== null && pipe.gfmRatio !== null) {
-            lines.push(
-                `The pipe-table case is what the distinction is worth: **${pipe.cmarkRatio.toFixed(2)}x against` +
-                    ` cmark, ${pipe.gfmRatio.toFixed(2)}x against cmark-gfm**. The first number is almost` +
-                    " entirely this parser building a table while the reference reads paragraphs.",
-                ""
-            );
-        }
-        lines.push("| Group | Reference | Cases | Median | Worst |", "| --- | --- | ---: | ---: | --- |");
-        const groups = [
-            ["CommonMark", "cmark", ranked.filter((item) => roleOf(item) === "commonmark")],
-            [
-                /* A PAIRED case belongs to its pair's group whatever its own
-                 * `gfm` flag says, and the flag is tested after the pair rather
-                 * than before it. `pair-tcaption-dialect` is a pipe table, so it
-                 * carries the flag, and its quotient denominator is cmark on the
-                 * CommonMark half -- classifying it by the flag counted it twice
-                 * and let a cmark-derived ratio into the cmark-gfm median. */
-                "GFM extensions",
-                "cmark-gfm",
-                ranked.filter((item) => roleOf(item) === "gfm")
-            ],
-            ["Dialect-only (no reference)", "cmark, feature absent", bounded]
-        ];
-        for (const [label, reference, group] of groups) {
-            if (!group.length) continue;
-            const values = group
-                .map((item) => item.comparisonRatio ?? item.cmarkRatio)
-                .filter((value) => value !== null);
-            if (!values.length) continue;
-            const worst = group[0];
-            lines.push(
-                `| ${label} | \`${reference}\` | ${group.length} | ${median(values).toFixed(2)}x |` +
-                    ` ${(worst.comparisonRatio ?? worst.cmarkRatio).toFixed(2)}x \`${worst.case}\` |`
-            );
-        }
-        lines.push("");
-
-        if (diagnostics.length) {
-            lines.push(
-                reviewedWorkloads.length
-                    ? "### Reviewed pair diagnostics and remaining candidates"
-                    : "### Candidate pair diagnostics (equivalence unproved)",
-                "",
-                "These quotients retain the measured data without claiming equivalent work. A/B and B/R are",
-                "suppressed when B carries an unmatched field. A/R remains an arithmetic quotient, not Same-job.",
-                "Reviewed rows name a reconstruction or a measured boundary; pending rows remain explicitly unproved.",
-                "",
-                "| Dialect case | Paired input | A Ir | B Ir | R Ir | A/B | B/R | A/R | Review / obligation |",
-                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |"
-            );
-            for (const item of diagnostics) {
-                const pair = item.isomorph;
-                const q = (value) => (value === null ? "-" : `${value.toFixed(2)}x`);
-                lines.push(
-                    `| ${item.case} | ${pair.case} | ${item.coreIr} | ${pair.coreIr} | ${pair.cmarkIr} |` +
-                        ` ${q(pair.grammar)} | ${q(pair.shape)} | ${q(pair.quotient)} | ${pair.contract.review ? pairReview({ case: item.case, isomorph: pair.case, contract: pair.contract }).reason : pair.contract.pending} |`
-                );
-            }
-            lines.push("");
-        }
-
-        const reviewed = declarations
-            .filter((pair) => pair.contract.review)
-            .map((pair) => ({ pair, review: pairReview(pair) }));
-        const boundaryRows = reviewed.filter(
-            ({ pair, review }) => review.baseline && atScaleOne.has(pair.case) && atScaleOne.has(review.baseline)
-        );
-        if (boundaryRows.length) {
-            lines.push(
-                "### Reviewed corpus boundaries",
-                "",
-                "These are controlled whole-document interventions. Delta = Core(full) - Core(without),",
-                "including recognition/construction interaction and byte-length changes. It may be negative;",
-                "it is neither an isolated feature price nor a Same-job quotient. Reconstructed proof domains",
-                "are measured separately and their costs must not be subtracted from the original corpus.",
-                "",
-                "| Original | Boundary baseline | Full Ir | Without Ir | Delta Ir | Delta / original unit | Full/without bytes |",
-                "| --- | --- | ---: | ---: | ---: | ---: | ---: |"
-            );
-            for (const { pair, review } of boundaryRows) {
-                const full = atScaleOne.get(pair.case);
-                const base = atScaleOne.get(review.baseline);
-                if (full.units !== base.units) throw new Error(`${pair.case}: boundary unit count mismatch`);
-                const a = stageIr(full.engines, "markdown-core");
-                const b = stageIr(base.engines, "markdown-core");
-                if (a === null || b === null) continue;
-                lines.push(
-                    `| ${pair.case} | ${review.baseline} | ${a} | ${b} | ${a - b} | ${((a - b) / full.units).toFixed(2)} | ${full.bytes}/${base.bytes} |`
-                );
-            }
-            lines.push("");
-        }
-
-        const pairs = paired;
-        if (pairs.length) {
-            lines.push(
-                "### Structural controls (effort unproved)",
-                "",
-                "The proof applies to its declared sublanguage, not the entire dialect. The independent domain",
-                "recognizer checks the generated bytes; the pair audit compares complete ordered trees from",
-                "Core on both spellings and from the reference. Kind renaming is explicit, never universal erasure.",
-                "",
-                "Let A = Core(dialect), B = Core(paired), R = reference(paired), using total stage Ir.",
-                "A/B, B/R and A/R are descriptive quotients. Lowering B alone raises A/B and lowers B/R,",
-                "leaving A unchanged. A/B includes recognition and construction, not just lexical scanning.",
-                "A/R minus one is not the proportion of removable overhead. The effort gaps are listed below.",
-                "",
-                "| Dialect case | Paired input | Structural proof | Reference | A Ir | B Ir | R Ir | A/B | B/R | A/R |",
-                "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
-            );
-            for (const item of pairs) {
-                const pair = item.isomorph;
-                lines.push(
-                    `| ${item.case} | ${pair.case} | ${pair.contract.proof} | ${pair.reference} |` +
-                        ` ${item.coreIr} | ${pair.coreIr} | ${pair.cmarkIr} |` +
-                        ` ${ratio(item.coreIr, pair.coreIr)} | ${ratio(pair.coreIr, pair.cmarkIr)} | ${ratio(item.coreIr, pair.cmarkIr)} |`
-                );
-            }
-            lines.push("");
-            lines.push(
-                "### Parse-effort adjudication",
-                "",
-                "| Structural proof | Status | Missing cost obligation |",
-                "| --- | --- | --- |"
-            );
-            for (const item of pairs) {
-                const pair = item.isomorph;
-                lines.push(`| ${pair.contract.proof} | ${pair.effort.status} | ${pair.effort.reason} |`);
-            }
-            lines.push("");
-        }
-
-        /* THE REMAINDER INSIDE ITS HOSTS. A production proved unpairable is
-         * not always a construct of its own: an attribute list adds fields to
-         * the node its host built and no node itself, so there is no document
-         * that IS the list to pair or to bound -- the bound on `inline-span`
-         * was mostly the inline parser around it. The corpus splits it: the
-         * host without the list is a document with a comparison of its own,
-         * the list without a host is the attribute runner's job (against
-         * lexbor in `scripts/benchmark-attributes.mjs`, and alone here), and
-         * this prints the list IN PLACE, as the difference between two whole
-         * documents that differ by exactly the remainder's bytes.
-         *
-         * What makes the rows one comparison is that the remainder is the
-         * same bytes on every row and one grammar decodes them; the reference
-         * for a row is that grammar decoding the same bytes ALONE, and what a
-         * host adds to that is the composition -- the seam between the host's
-         * scan and the list's, which measuring the host alone (its pair) and
-         * the list alone (lexbor) each miss, and which a corpus split into a
-         * paired part and a bound part would never print. The numbers are
-         * computed in `measureSplits` and recorded in stages.json; this only
-         * renders them.
-         *
-         * Not the subtraction the README rejects. That drew a boundary INSIDE
-         * one measurement, through a call graph that does not carry it; this
-         * boundary is in the corpus, every instruction of both documents is
-         * counted, and `scripts/audit-corpus-reach.mjs` holds the two trees
-         * equal modulo the fields the remainder populates. */
-        const count = (value) => Math.round(value).toLocaleString("en-US");
-        for (const split of splits) {
-            const rows = split.hosts.filter((host) => host.measured);
-            if (!rows.length) continue;
-            const alone = split.alone;
-            const complete = rows.length === split.hosts.length;
-            const scaledRows = rows.some((host) => host.measured.growth !== null);
-            lines.push(
-                "### The remainder inside its hosts",
-                "",
-                `A production proved unpairable is not always a construct of its own. **${split.remainder}**` +
-                    " adds fields to the node its host built and no node itself, so there is no document" +
-                    " that IS the remainder to pair or to bound. The corpus splits it three ways: the host" +
-                    " without it is a document with a comparison of its own in the tables above, the" +
-                    " remainder without a host is the attribute runner's job -- against lexbor in" +
-                    " `scripts/benchmark-attributes.mjs`, and alone below -- and this table measures it" +
-                    ` IN PLACE: the same bytes, \`${split.bytes}\`, on every node of ${rows.length} host` +
-                    `${rows.length === 1 ? "" : "s"}${complete ? "" : ` (of ${split.hosts.length}; this run named a subset)`},` +
-                    " as the difference between two whole documents that `scripts/audit-corpus-reach.mjs`" +
-                    ` holds to the same tree modulo the ${split.varies.map((field) => `\`${field}\``).join(", ")}` +
-                    ` field${split.varies.length === 1 ? "" : "s"} it populates.`,
-                "",
-                `**Alone: ${count(alone.perList)} Ir per list** -- the same bytes decoded by the same grammar` +
-                    ` with no host around them, through \`${path.basename(alone.runner)}\` from the same build` +
-                    ` tree on ${alone.lists.toLocaleString("en-US")} copies, read on the edge` +
-                    ` \`${alone.entry}\`, which covers the scan, the decode and the release of each list.`,
-                "",
-                "`Ir per list` is the marginal over the two stages and `Whole path` the same marginal over" +
-                    " the whole parse path, which includes releasing what the list built; a change that" +
-                    " defers the list's work past a stage boundary widens the gap between the two." +
-                    " `In place / alone` is the whole-path marginal over the alone cost: what the host" +
-                    " adds to decoding the list, which is the composition, and the number a corpus split" +
-                    " into a paired part and a bound part would never print -- a host that gets cheaper" +
-                    " on its own while this rises has moved cost into the seam rather than removed it." +
-                    " `Lands in` is the stage the difference fell in, read off the measurement: which" +
-                    " parser this implementation reads the list with, not which the grammar assigns it" +
-                    " to. `With/without` is the whole document's stage cost with the list over without." +
-                    (scaledRows
-                        ? " `x2 / x1` is the marginal per list at the next size over this one, which" +
-                          " should not move: a list costs what it costs however many there are."
-                        : "") +
-                    " Each row names the site production the grammar gives its host, and the spread" +
-                    " between rows is that production first and this implementation's seam second." +
-                    " A cost both halves pay cancels here and shows in the host's own ratio above; and a" +
-                    " row is the remainder's cost at the corpus's unit shape -- per-extent work lands in" +
-                    " it in proportion to extent length over lists per extent -- so rows are compared" +
-                    " across runs at one corpus digest, not read as verdicts.",
-                "",
-                "| Host | Site | Without | With | Lists | Ir per list | Whole path | In place / alone |" +
-                    ` Lands in | With/without |${scaledRows ? " x2 / x1 |" : ""}`,
-                `| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: |${scaledRows ? " ---: |" : ""}`
-            );
-            for (const host of rows) {
-                const m = host.measured;
-                lines.push(
-                    `| ${host.host} | ${host.site} | ${host.without} | ${host.with} |` +
-                        ` ${m.lists.toLocaleString("en-US")} | ${count(m.perList)} | ${count(m.wholePerList)} |` +
-                        ` ${m.inPlaceOverAlone.toFixed(2)}x | \`${m.landing}\` | ${m.ratio.toFixed(2)}x |` +
-                        (scaledRows ? ` ${m.growth === null ? "-" : `${m.growth.toFixed(3)}x`} |` : "")
-                );
-            }
-            lines.push("");
-            /* The spread is a statement about the whole host set, so a run
-             * that named a subset does not print one: the dearest of three
-             * hosts is not the dearest host. */
-            if (complete && rows.length > 1) {
-                const most = rows.reduce((best, host) =>
-                    host.measured.wholePerList > best.measured.wholePerList ? host : best
-                );
-                const least = rows.reduce((best, host) =>
-                    host.measured.wholePerList < best.measured.wholePerList ? host : best
-                );
-                lines.push(
-                    `Spread, over the whole path: the dearest host (${most.host}, ${count(most.measured.wholePerList)} Ir` +
-                        ` per list, ${most.measured.inPlaceOverAlone.toFixed(2)}x alone) over the cheapest` +
-                        ` (${least.host}, ${count(least.measured.wholePerList)}, ${least.measured.inPlaceOverAlone.toFixed(2)}x)` +
-                        ` is **${(most.measured.wholePerList / least.measured.wholePerList).toFixed(2)}x**. The spread` +
-                        " is evidence, not a threshold: it names the host to open when it moves, and it is" +
-                        " comparable only with matching toolchain, environment, corpus and compile options.",
-                    ""
-                );
-            }
-            lines.push(
-                "What the split claims to hold constant, from `corpus.json`:",
-                "",
-                `- **${split.remainder}** -- ${split.claim}`,
-                ""
-            );
-        }
-
-        lines.push("### Where the cost is", "");
-        lines.push(
-            "The ratio says which case to look at. This says what to look at inside it:" +
-                " the functions the parse spent the most instructions IN, not through." +
-                " The per-stage breakdown below is one level deep and names the drivers" +
-                " -- on a grid table it reads `S_process_line`, which every line goes" +
-                " through -- so it cannot answer that question.",
-            "",
-            "Ranked by the displayed quotient. All cross-syntax quotients are diagnostics, not equal-effort ratios.",
-            ""
-        );
-        lines.push(
-            "| Case | Reference | Ratio | Core Ir/B | Dominant self cost |",
-            "| --- | --- | ---: | ---: | --- |"
-        );
-        for (const item of ranked
-            .filter((entry) => !["split-with", "boundary-base"].includes(roleOf(entry)))
-            .slice(0, 16)) {
-            const hot = (item.engines["markdown-core"].hotPaths ?? [])
-                .slice(0, 3)
-                .map((entry) => `\`${entry.name}\` ${(entry.share * 100).toFixed(1)}%`)
-                .join(", ");
-            const ratio = item.comparisonRatio ?? item.cmarkRatio;
-            /* Same precedence as the group table: the reference that produced
-             * the ratio, not the flag on the case. */
-            const reference = item.isomorph
-                ? `${item.isomorph.reference}, ${item.isomorph.structural ? "structural control" : "candidate quotient"}`
-                : item.gfm
-                  ? "cmark-gfm"
-                  : item.carries.length
-                    ? `(unmatched; tree carries ${item.carries.join(", ")})`
-                    : item.dialect === "commonmark"
-                      ? "cmark"
-                      : "(feature absent)";
-            lines.push(
-                `| ${item.case} | ${reference} | ${ratio === null ? "-" : `${ratio.toFixed(2)}x`} |` +
-                    ` ${(item.coreIr / item.bytes).toFixed(1)} | ${hot || "(not recorded)"} |`
-            );
-        }
-        lines.push("");
-    }
-
-    lines.push("### Cost per input byte", "");
-    lines.push(
-        "| Case | Dialect | Bytes | Stage | Core Ir/B | cmark Ir/B | Ir ratio |" +
-            " Core refs/B | cmark refs/B | Refs ratio |",
-        "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
-    );
-    for (const entry of report.cases.filter((item) => item.scale === 1)) {
-        for (const stage of STAGES) {
-            const core = entry.engines["markdown-core"]?.stages[stage];
-            const cmark = entry.engines.cmark?.stages[stage];
-            if (!core || !cmark) continue;
-            lines.push(
-                `| ${entry.case} | ${entry.dialect} | ${entry.bytes.toLocaleString("en-US")} | ${stage} |` +
-                    ` ${core.irPerByte.toFixed(1)} | ${cmark.irPerByte.toFixed(1)} |` +
-                    ` ${ratio(core.ir, cmark.ir)} |` +
-                    ` ${core.dataRefsPerByte.toFixed(1)} | ${cmark.dataRefsPerByte.toFixed(1)} |` +
-                    ` ${ratio(core.dataRefs, cmark.dataRefs)} |`
-            );
-        }
-    }
-    lines.push("");
-
-    /* The same facts as Ir/B, inverted into the unit an optimization target is
-     * usually stated in. Only the mixed cases: a per-sample throughput table
-     * is the first table again with the numbers turned upside down. */
-    const mixed = report.cases.filter((item) => item.scale === 1 && item.case.startsWith("mixed-"));
-    if (mixed.length) {
-        lines.push(
-            "### Throughput",
-            "",
-            "Input bytes per million instructions, over the concatenated corpus.",
-            "",
-            "| Case | Stage | Core B/MIr | cmark B/MIr |",
-            "| --- | --- | ---: | ---: |"
-        );
-        for (const entry of mixed) {
-            for (const stage of STAGES) {
-                const core = entry.engines["markdown-core"]?.stages[stage];
-                const cmark = entry.engines.cmark?.stages[stage];
-                if (!core || !cmark) continue;
-                lines.push(
-                    `| ${entry.case} | ${stage} | ${Math.round(core.bytesPerMegaIr).toLocaleString("en-US")} |` +
-                        ` ${Math.round(cmark.bytesPerMegaIr).toLocaleString("en-US")} |`
-                );
-            }
-        }
-        lines.push("");
-    }
-
-    const scaled = report.cases.filter((item) => item.scale > 1);
-    if (scaled.length) {
-        lines.push(
-            "### Growth against input size",
-            "",
-            "Each case is measured again at a larger size. A stage whose cost is linear in" +
-                " what was scaled reports a growth ratio equal to the BASELINE column; a" +
-                " stage quadratic in it reports the square. The baseline is the dimension" +
-                " the `scaled` column names, which is not always bytes: a generated or" +
-                " counted case is judged against its CONSTRUCT count, because `{n}` gains a" +
-                " digit as the document grows and doubling the byte target multiplies the" +
-                " count by 1.98 rather than 2 -- reading that against bytes would report" +
-                " perfectly linear per-construct work as a percent sublinear.",
-            "",
-            "The `scaled` column names the dimension that grew, taken from the corpus" +
-                " rather than from the case's shape: a chain case can grow a nesting depth," +
-                " a live stack depth, or a count of separately bounded failures, and those" +
-                " are not interchangeable readings of a linear result. `documents` cases add" +
-                " independent copies, so they scale breadth and hold depth fixed." +
-                " `structure` cases are a single nested container or delimiter run whose" +
-                " depth is the size, which is the dimension a copied document cannot" +
-                " reach.",
-            "",
-            "| Case | Scaled | Baseline | Stage | Core growth | cmark growth |",
-            "| --- | --- | ---: | --- | ---: | ---: |"
-        );
-        for (const entry of scaled) {
-            const base = report.cases.find((item) => item.case === entry.case && item.scale === 1);
-            if (!base) continue;
-            /* The baseline is the dimension the `scaled` column NAMES, which for a
-             * generated or counted case is the construct count and not the byte
-             * count. Those are not the same number: `{n}` gains a digit as the
-             * document grows, so doubling the byte target multiplies the count by
-             * 1.98 rather than 2, and judging per-construct linear work against a
-             * 2.00x byte ratio reports it as 0.8% to 1.6% sublinear -- an artefact
-             * of the index, in the one table that exists to find real
-             * sublinearity. `units` is the named dimension in every mode -- copies
-             * for a samples case, depth for a chain case, constructs for these --
-             * and for the first two it is exactly proportional to bytes, so
-             * reading it always is both uniform and correct. */
-            const byUnits = Boolean(entry.units && base.units);
-            const denominator = byUnits ? entry.units / base.units : entry.bytes / base.bytes;
-            const label = byUnits ? `${denominator.toFixed(3)}x units` : `${denominator.toFixed(2)}x bytes`;
-            for (const stage of STAGES) {
-                const core = entry.engines["markdown-core"]?.stages[stage];
-                const coreBase = base.engines["markdown-core"]?.stages[stage];
-                const cmark = entry.engines.cmark?.stages[stage];
-                const cmarkBase = base.engines.cmark?.stages[stage];
-                if (!core || !coreBase) continue;
-                /* A split's `with` half is read by no reference, and its growth
-                 * is still a question -- the list's cost per list should not
-                 * depend on how many there are -- so the row stands with a dash
-                 * where the reference column would be. */
-                lines.push(
-                    `| ${entry.case} | ${entry.growth} | ${label} |` +
-                        ` ${stage} | ${ratio(core.ir, coreBase.ir)} | ${cmark && cmarkBase ? ratio(cmark.ir, cmarkBase.ir) : "-"} |`
-                );
-            }
-        }
-        lines.push("");
-    }
-
-    lines.push(
-        `The two stages cover ${coverage(report)} of each engine's parse path across the` +
-            " corpus. The rest is parser allocation, dialect attachment and element" +
-            " discovery -- setup that no document-size argument applies to -- plus releasing" +
-            " the finished tree, which is not parsing either. Amortizing any of it into the" +
-            " stages would produce a number that looks like parsing and isn't.",
-        "",
-        "Ir counts executed instructions and Dr/Dw count data references. Neither prices a" +
-            " cache miss, a branch miss or a stall, so a change that trades instructions for" +
-            " random memory access improves these numbers without improving the parser.",
-        "",
-        `Per-stage call breakdowns and the raw callgrind dumps are in \`${report.artifacts}\`.`,
-        ""
-    );
-    return lines.join("\n");
+    return lines.join("\n") + "\n" + grammarMarkdown(report);
 }
 
 function main() {
@@ -2519,23 +1418,13 @@ function main() {
     /* What the arguments alone decide is settled before anything is installed,
      * configured or built: a mistyped case name is the caller's to fix either
      * way, and it costs them nothing to hear it now. */
-    const manifest = corpusManifest(options);
+    const manifest = corpusManifest();
     refuseUnknownCases(options, manifest);
-    /* The corpus is a function of the manifest and the tracked samples alone.
-     * Writing it needs no compiler, no valgrind and no reference engine, so
-     * whoever only wants the documents -- the corpus-reach audit does -- can
-     * have them without paying for a measurement they will not read. */
+    // Generating source documents does not require a compiler or native parser.
     if (options.corpusOnly) {
         fs.mkdirSync(options.out, { recursive: true });
-        const only = buildCorpus(options, manifest);
-        /* What each document was generated to HOLD, written beside it. The
-         * corpus-reach audit counts constructs in the parser's dump and has no
-         * other way to learn how many the generator emitted, so it could check
-         * that two sides agree with each other and never that either agrees
-         * with what was asked for. Both sides recognising the same SUBSET of
-         * their units, or a unit template quietly emitting two of the construct
-         * instead of one, passed. This is the generator's own arithmetic,
-         * published rather than re-derived. */
+        const only = buildCorpus(options);
+        // Counts are source-generation metadata for the selected workloads.
         fs.writeFileSync(
             path.join(options.out, "units.json"),
             `${JSON.stringify(
@@ -2610,16 +1499,7 @@ function main() {
             path.join(options.out, "cmark-gfm"),
             "libcmark-gfm-extensions_static",
             fail
-        ),
-        /* The attribute runner's own objects, because the remainder alone is
-         * read on an edge INTO the runner -- `bench_parse_attributes` is
-         * compiled into the executable, not into the archive -- so its
-         * translation units are measured ones and must carry the pinned flags
-         * like every other. The stage runners are not in that position: their
-         * edges are internal to the parse transaction. */
-        "attribute runner": readCompiledFlags(root, profile.binaryDir, ATTRIBUTE_RUNNER.target, fail),
-        "core effort runner": readCompiledFlags(root, profile.binaryDir, "markdown_core_effort_runner", fail),
-        "cmark effort runner": readCompiledFlags(root, profile.binaryDir, "cmark_effort_runner", fail)
+        )
     };
     /* Checked against EVERY measured object rather than their union: a pinned
      * flag missing from one translation unit is a hole a union would paper. */
@@ -2669,34 +1549,11 @@ function main() {
     const binaries = runnerIdentity(profile);
 
     const baseline = buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions);
-    // Independently admitted local problems; never fold their ratios into A/R.
-    if (!options.grammarCorpus)
-        measureEffortBoundaries({
-            root,
-            binaryDir: profile.binaryDir,
-            out: options.out,
-            pairs: manifest.pairs,
-            toolchain: versions,
-            cmark: { version: cmark.version, commit: cmark.commit }
-        });
-    const corpus = buildCorpus(options, manifest);
-    const splitWith = splitWithCases(manifest);
+    const corpus = buildCorpus(options);
     const cases = [];
     for (const document of corpus.documents) {
         const engines = {};
-        /* cmark is measured on every document as the CommonMark floor. cmark-gfm
-         * is measured only where it implements the case's constructs, because a
-         * reference that reads the document as paragraphs is not a second
-         * opinion, and paying callgrind for one would buy a number nobody can
-         * read. A split's `with` half gets no reference at all, by the same
-         * rule: its bytes hold a production no reference decodes, its number is
-         * the difference against its `without`, and a cmark reading of it
-         * would print a per-byte ratio for a document that is not a comparison. */
-        const applicable = options.grammarCorpus
-            ? grammarEngines(document)
-            : splitWith.has(document.case)
-              ? ["markdown-core"]
-              : Object.keys(ENGINES).filter((engine) => engine !== "cmark-gfm" || document.gfm === true);
+        const applicable = grammarEngines(document);
         for (const engine of applicable) {
             const measured = measure(profile, engine, document, options.out);
             if (measured.receiptBytes !== document.bytes) {
@@ -2755,15 +1612,10 @@ function main() {
          * report saying so. */
         cmarkGfm: { version: gfm.version, commit: gfm.commit },
         corpus: { targetBytes: corpus.targetBytes, cases: corpus.documents.length, digest: corpus.digest },
-        ...(corpus.grammarCorpus ? { grammarCorpus: corpus.grammarCorpus } : {}),
-        pairingDigest: currentPairingIdentity(manifest.pairs),
-        // Record the exact contracts beside the raw measurements.
-        pairs: manifest.pairs,
-        /* And the splits, which are neither: a remainder proved unpairable,
-         * measured inside every host that admits it as the difference between
-         * two whole documents -- with each host's numbers, and the remainder
-         * alone, recorded beside the declaration they came from. */
-        splits: measureSplits(manifest, cases, profile, options.out),
+        grammarCorpus: corpus.grammarCorpus,
+        // The deployed trusted PR publisher reads this schema-4 field. Its
+        // single source is now the grammar identity, not a separate registry.
+        pairingDigest: corpus.grammarCorpus.identity,
         artifacts: path.relative(root, options.out),
         cases
     };
@@ -2780,15 +1632,12 @@ function main() {
             },
             binaries: {
                 ...binaries,
-                "markdown-core": baseline.binaries["markdown-core"],
-                "attribute runner": baseline.binaries["attribute runner"],
-                "core effort runner": baseline.binaries["core effort runner"]
+                "markdown-core": baseline.binaries["markdown-core"]
             },
             cases: baseline.cases,
-            splits: measureSplits(manifest, baseline.cases, baseline.profile, baseline.directory),
             artifacts: path.relative(root, baseline.directory)
         };
-        fs.writeFileSync(path.join(baseline.directory, "stages.json"), `${JSON.stringify(previous, null, 4)}\n`);
+        fs.writeFileSync(path.join(baseline.directory, "stages.json"), `${JSON.stringify(previous)}\n`);
         fs.writeFileSync(path.join(baseline.directory, "stages.md"), `${markdownReport(previous)}\n`);
         report.sourceBudget = {
             baseline: baseline.revision,
@@ -2796,9 +1645,10 @@ function main() {
             rows: sourceBudget(cases, baseline.cases)
         };
     }
+    /* Keep machine-readable artifacts compact; stages.md is the human report. */
     const json = path.join(options.out, "stages.json");
     const markdown = path.join(options.out, "stages.md");
-    fs.writeFileSync(json, `${JSON.stringify(report, null, 4)}\n`);
+    fs.writeFileSync(json, `${JSON.stringify(report)}\n`);
     let rendered = markdownReport(report);
     if (report.sourceBudget) {
         const failed = report.sourceBudget.rows.filter((row) => !row.passed);
