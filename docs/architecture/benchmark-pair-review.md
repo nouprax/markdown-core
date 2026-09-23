@@ -4,9 +4,11 @@ This closes the **review** of all 30 former pairs. It does not certify their old
 counts as a proof, nor claim that every extension is globally unpairable.
 Eighteen entries have reconstructed reference workloads. Twelve entries have
 an explicit boundary intervention; some also have a proved restricted core.
-The old documents and their 30 drift witnesses remain unchanged. They never enter
-the formal median. Forty-two new production domains and the existing recursive
-insertion domain enter it under separate contracts.
+The old documents and their 30 drift witnesses remain unchanged. Forty-two new
+production domains and the existing recursive insertion domain are structural
+controls under separate contracts. None has an equal-optimal-effort certificate;
+the former formal median is withdrawn. The [effort re-audit](benchmark-parser-effort.md)
+applies to every entry below, including the ownership-corrected v2 pairs.
 
 ## Ownership correction (v2)
 

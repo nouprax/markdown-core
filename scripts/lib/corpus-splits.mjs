@@ -16,7 +16,7 @@
  */
 
 import { pairReview } from "./pair-review.mjs";
-import { provenPair } from "./corpus-pairs.mjs";
+import { structuralPair } from "./corpus-pairs.mjs";
 
 /** Every case that is one half of a declared workload pair. */
 export function pairHalves(manifest) {
@@ -35,7 +35,7 @@ export function pairHalves(manifest) {
  */
 export function publishesRatio(entry, manifest) {
     const pair = (manifest.pairs ?? []).find((pair) => pair.case === entry.name);
-    if (pair) return provenPair(pair);
+    if (pair) return structuralPair(pair);
     return (entry.dialect === "commonmark" || entry.gfm === true) && !(entry.carries ?? []).length;
 }
 

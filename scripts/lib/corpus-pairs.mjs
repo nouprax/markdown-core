@@ -1,20 +1,35 @@
 /**
  * Pairing contracts, independent of instruction counts and parser internals.
  * A sample substitution or a node census is evidence about a workload, not a
- * proof about a language. Only a registered, executable domain proof enables
- * an equivalent-work comparison. See the benchmark isomorphism contract.
+ * proof about a language. A registered domain proof establishes structure,
+ * never equal optimal parser effort. See benchmark-parser-effort.md.
  */
 import { createHash } from "node:crypto";
+import fs from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 
 import { productionProofs, productionTree, productionWorkload } from "./pair-productions.mjs";
 import { pairReview } from "./pair-review.mjs";
+import { effortReview, validateEffortReviews } from "./pair-effort.mjs";
 
 const SPAN_PROOF = "insertion-strong-v1";
 
 /** Interpretation is part of measurement identity even when corpus bytes stay unchanged. */
 export function pairingIdentity(pairs, proofText, checkerSource) {
     return createHash("sha256").update(JSON.stringify({ pairs, proofText, checkerSource })).digest("hex");
+}
+
+/** One identity definition for fresh measurements and explicit reinterpretations. */
+export function currentPairingIdentity(pairs) {
+    return pairingIdentity(
+        pairs,
+        ["benchmark-isomorphism.md", "benchmark-pair-review.md", "benchmark-parser-effort.md"].map((name) =>
+            fs.readFileSync(new URL(`../../docs/architecture/${name}`, import.meta.url), "utf8")
+        ),
+        ["corpus-pairs.mjs", "pair-productions.mjs", "pair-review.mjs", "pair-effort.mjs", "upstream-cmark.mjs"].map(
+            (name) => fs.readFileSync(new URL(name, import.meta.url), "utf8")
+        )
+    );
 }
 
 export function equalProofTrees(left, right) {
@@ -33,7 +48,7 @@ export function equalProofTrees(left, right) {
     return true;
 }
 
-export function provenPair(pair) {
+export function structuralPair(pair) {
     const contract = pair.contract;
     if (!contract || Object.keys(contract).length !== 1) throw new Error(`${pair.case}: one pairing contract required`);
     if (typeof contract.pending === "string" && contract.pending.trim()) return false;
@@ -46,6 +61,7 @@ export function provenPair(pair) {
 }
 
 export function validatePairs(manifest) {
+    validateEffortReviews([SPAN_PROOF, ...productionProofs.keys()]);
     if ("isomorphs" in manifest || "logicalIsomorphs" in manifest) throw new Error("use the single pairs registry");
     if (!Array.isArray(manifest.pairs)) throw new Error("pairs must be an array");
     const cases = new Map(manifest.cases.map((entry) => [entry.name, entry]));
@@ -77,7 +93,7 @@ export function validatePairs(manifest) {
             throw new Error(`${pair.case}: pair must name a dialect input and a reference-language input`);
         }
         if (
-            provenPair(pair) &&
+            structuralPair(pair) &&
             (reference.carries?.length ||
                 dialect.carries?.length ||
                 Boolean(reference.gfm) !== Boolean(productionProofs.get(pair.contract.proof)?.gfm))
@@ -88,15 +104,15 @@ export function validatePairs(manifest) {
     return manifest.pairs;
 }
 
-/** Algebraic quotients remain available for candidates, without a same-job claim. */
+/** All cross-syntax quotients are descriptive, including structural proofs. */
 export function pairRatios(pair, { dialect, common, reference, carries = [] }) {
-    const proven = provenPair(pair);
+    const structural = structuralPair(pair);
     return {
-        proven,
+        structural,
+        effort: effortReview(pair),
         grammar: common && !carries.length ? dialect / common : null,
         shape: common && reference && !carries.length ? common / reference : null,
-        quotient: reference ? dialect / reference : null,
-        sameJob: proven && reference ? dialect / reference : null
+        quotient: reference ? dialect / reference : null
     };
 }
 
@@ -172,7 +188,7 @@ export function spanLanguage(source, marker) {
 
 /** Both recognition and inverse mapping are checked on the actual measured bytes. */
 export function proofWorkload(pair, dialect, common) {
-    if (!provenPair(pair)) throw new Error(`${pair.case}: pending proof`);
+    if (!structuralPair(pair)) throw new Error(`${pair.case}: pending proof`);
     if (productionProofs.has(pair.contract.proof)) return productionWorkload(pair.contract.proof, dialect, common);
     const left = spanLanguage(dialect, "++");
     const right = spanLanguage(common, "**");
@@ -193,7 +209,7 @@ export function proofWorkload(pair, dialect, common) {
  * Scope coordinates and child-count printer metadata are outside this proof.
  */
 export function proofTree(pair, side, tree, expected, referenceHtml) {
-    if (!provenPair(pair)) throw new Error(`${pair.case}: pending proof`);
+    if (!structuralPair(pair)) throw new Error(`${pair.case}: pending proof`);
     if (!["dialect", "common", "reference"].includes(side)) throw new Error("unknown proof side");
     if (productionProofs.has(pair.contract.proof))
         return productionTree(pair.contract.proof, side, tree, expected, referenceHtml);

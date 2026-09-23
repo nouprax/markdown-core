@@ -1,12 +1,11 @@
-/** Reference audit: full proof-domain trees and retained candidate witnesses.
- * Counts and sample agreement detect workload drift but do not certify a
- * grammar isomorphism. Only the domain contracts authorize that claim. */
+/** Reference audit: structural proof-domain trees and retained witnesses.
+ * Neither these checks nor the structural theorems certify equal parse effort. */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { equalProofTrees, proofTree, proofWorkload, provenPair, validatePairs } from "./lib/corpus-pairs.mjs";
+import { equalProofTrees, proofTree, proofWorkload, structuralPair, validatePairs } from "./lib/corpus-pairs.mjs";
 import { productionProofs } from "./lib/pair-productions.mjs";
 import { boundarySource, pairReview } from "./lib/pair-review.mjs";
 import { parseCanonicalDump, parseUpstreamXml } from "./lib/upstream-cmark.mjs";
@@ -124,7 +123,7 @@ function main() {
 
     const failures = [];
     // A proof is checked against all three executions, not two censuses.
-    for (const pair of manifest.pairs.filter(provenPair)) {
+    for (const pair of manifest.pairs.filter(structuralPair)) {
         const scales = fs.readdirSync(corpus).filter((file) => file.startsWith(`${pair.case}.x`));
         if (!scales.length) fail(`${pair.case}: no generated proof workloads`);
         const trials = [...scales];
@@ -352,7 +351,7 @@ function main() {
         process.stderr.write(`corpus pair audit FAILED\n    ${failures.join("\n    ")}\n`);
         process.exit(1);
     }
-    process.stdout.write("corpus pair audit passed\n");
+    process.stdout.write("corpus pair audit passed (structural contracts; 0 equal-optimal-effort certificates)\n");
 }
 
 main();

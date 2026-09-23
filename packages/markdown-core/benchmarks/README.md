@@ -309,13 +309,21 @@ dimension grew. A stage whose cost is linear in what was scaled reports a
 growth ratio equal to the byte ratio; anything else is a complexity finding,
 which is a correctness question rather than a tuning one.
 
-## Isomorph pairs
+## Structural pairs and parser effort
 
-The [grammar isomorphism contract](../../../docs/architecture/benchmark-isomorphism.md)
-defines what makes a pair eligible for an equivalent-work comparison. A proof
+The [structural isomorphism contract](../../../docs/architecture/benchmark-isomorphism.md)
+defines output correspondence, not equal optimal parsing effort. A structural proof
 must name its language domain, reversible source transformation, abstract
 constructor/field mapping and composition argument. Concrete AST layouts may
 differ; equal node counts or one successful sample substitution are insufficient.
+
+The [parser-effort model](../../../docs/architecture/benchmark-parser-effort.md)
+requires the complete correctness domain, costed primitive operations and
+an optimum theorem, through bidirectional cost-preserving algorithm transformations
+or matching lower bounds and achievable upper bounds.
+All 43 current structural proofs are **unproved** against that stronger target.
+No equal-effort cohort or median is published. Equal cost for two selected
+recognizers would still be weaker than equality of the theoretical optima.
 
 The single `pairs` registry distinguishes registered proofs, completed reviews and
 pending proposals. The [30-pair review](../../../docs/architecture/benchmark-pair-review.md)
@@ -332,26 +340,27 @@ fields fail rather than being erased. Source-coordinate correctness remains a
 separate parser invariant.
 
 Candidate substitutions and node/field/state censuses remain regression
-witnesses. Their diagnostics stay visible, but they do not establish isomorphism
-or enter equivalent-work medians. `contract.review` names a completed
+witnesses. Their diagnostics stay visible, but they do not establish structural
+isomorphism or equal effort. `contract.review` names a completed
 adjudication; `contract.pending` is reserved for unresolved proposals. Neither is
 a proof of global impossibility. Twelve generated boundary baselines publish
 signed full-minus-without costs, including interactions and changed byte lengths,
-separately from the formal comparison.
+separately from the structural controls.
 
 ### Reading the factors
 
 Let A = Core(dialect), B = Core(paired input), R = reference(paired input),
 using total `source_to_buffer + buffer_to_ast` Ir at the paired workload sizes:
 
-- Grammar = A/B includes recognition and construction.
-- Shape = B/R measures Core against the reference on the paired input.
-- Same-job = A/R is an equivalent-work ratio only for a proved pairing.
+- A/B compares the two spellings in Core, including recognition and construction.
+- B/R compares implementations on the same paired input.
+- A/R is a descriptive cross-syntax quotient, never an equal-effort claim from an AST proof.
 
-The report prints absolute A, B and R. Candidate rows use arithmetic labels A/B,
-B/R and A/R, not a Same-job claim. When B carries a field with no reference
-counterpart, A/B and B/R remain suppressed. Lowering B alone lowers Shape and
-raises Grammar while leaving A unchanged: optimize actual costs, not one factor
+The report prints absolute A, B and R and each pair's missing cost obligation.
+The former Grammar/Shape/Same-job interpretation is superseded by these arithmetic
+labels. When B carries a field with no reference counterpart, A/B and B/R remain
+suppressed. Lowering B alone lowers B/R and raises A/B while leaving A unchanged:
+optimize actual costs, not one factor
 in isolation.
 
 The corpus's generation mechanisms remain independent of proof status: fixed
@@ -359,10 +368,12 @@ sample repetitions preserve their bytes, and `generated` / `counted` workloads
 match unit counts. Neither pair half enters the mixed aggregates. Case selection
 pulls in both halves and their sizing dependencies, including candidate pairs.
 
-Reports use schema 4 and record the exact pairing contracts. Earlier 30-pair
-medians use a different eligibility rule; a change of membership is not a parser
-speedup. The new samples also change the corpus digest, so remeasure both parser
-revisions under the same corpus/toolchain for before/after claims.
+Stage reports use schema 4 and record the exact pairing contracts. The census
+uses schema 2, removes `sameJob`, and separates original measurement identity
+from current interpretation identity. Both the old 30-pair and the later
+43-pair equivalent-work medians are withdrawn. Their raw counts remain evidence;
+changing the interpretation is not a parser speedup. Remeasure both revisions
+under the same corpus/toolchain for before/after claims.
 
 ### Scope and unmatched operations
 
@@ -396,18 +407,16 @@ reference builds it, and every case declares the ones its tree carries:
 "referenceless": { "anchor": "Neither reference derives or stores a per-block identifier. …" }
 ```
 
-A case carrying one cannot claim equivalent work on the same bytes. A pairing
-must supply a corresponding operation in the reference language and prove that
-mapping. `pair-anchor-dialect` retains diagnostic quotients while its binding
-is measured through a declaration/host boundary; its old count witness grants no
-Same-job status.
+A case carrying one lacks even matching output obligations on the same bytes.
+A structural pairing must supply a corresponding reference operation, but that
+alone proves no cost equality. `pair-anchor-dialect` retains diagnostic quotients
+while its binding is measured through a declaration/host boundary.
 
-A bound is still *ranked*, and separately: it sorts by its ratio against cmark
+A feature-absent diagnostic is still *ranked*, and separately: it sorts by its ratio against cmark
 on its own bytes, it is the `Dialect-only (no reference)` group and contributes
 to that group's median, and it is eligible for the cost table. What it never
-does is sit in a same-job group or a same-job median, because the number it
-carries is not one. Saying it is "not ranked" would be a second wrong reading of
-the same figure — the first was publishing it as a comparison.
+does is enter an equal-effort group or claim a lower bound. Missing a feature
+can change recognition of the remaining input; its quotient is diagnostic only.
 
 An unmatched field on the **paired-input** half inflates B. It cancels out of
 A/R, but it affects both A/B and B/R, so those two quotients are suppressed.

@@ -1,8 +1,13 @@
-# Benchmark grammar isomorphism
+# Benchmark structural isomorphism
 
-A formal pair compares a declared language of workloads through two grammars.
+A structural pair compares a declared language of workloads through two grammars.
 Its justification comes from those grammars, not the implementations' current
 node layout, a favorable measurement, a fixed example or equal node counts.
+
+This theorem proves a correspondence of results, **not equal parsing effort**.
+The separate [parser-effort contract](benchmark-parser-effort.md) defines the
+cost model and stronger obligations. All 43 current structural proofs remain
+unproved for equal full-parser optimal effort.
 
 The contract is narrower than equal application meaning. `Strong` and
 `Insertion` render differently but can be corresponding constructors. It is
@@ -40,7 +45,7 @@ has exactly one contract:
   and a checked structural projection for Core on both inputs and its reference.
 - `review`: a closed, registered adjudication of an old workload with reconstructed
   proof domains and, where needed, a source boundary intervention. The original
-  workload stays diagnostic and cannot enter a formal median.
+  workload stays diagnostic and cannot enter the structural-control table.
 - `pending`: the specific missing proof obligation. The workload continues to
   be measured and its existing substitution/count witnesses continue to run.
   Pending does not mean disproved or impossible. Prefer repairing the mapping
@@ -112,16 +117,17 @@ With A = Core(dialect), B = Core(reference-language input), and R = the
 reference on that input, all in total stage instructions:
 
 ```text
-Grammar = A/B        Shape = B/R        Same-job = A/R
+A/B = Core syntax quotient    B/R = same-input quotient    A/R = cross-syntax quotient
 ```
 
-Only proved-domain pairs enter the formal-pair summary. Candidate pairs retain
-their absolute A, B, R and diagnostic quotients in a separate table with the
-missing obligation. They do not enter equivalent-work medians or claim grammar
-states are formally compared. Unmatched fields on B still suppress A/B and B/R.
+Proved structural domains enter a descriptive control table with their missing
+effort obligations. Candidate pairs retain absolute A, B, R and diagnostic
+quotients separately. No current pair enters an equal-effort cohort or median.
+The former `sameJob` field is removed: the structural theorem never justified
+that interpretation. Unmatched fields on B still suppress A/B and B/R.
 
-The factors share B. Optimizing only B lowers Shape and raises Grammar without
-changing A. Grammar includes recognition and construction, not merely scanning.
+The factors share B. Optimizing only B lowers B/R and raises A/B without
+changing A. A/B includes recognition and construction, not merely scanning.
 Always examine absolute costs and the product, and keep distinct references
 and measurement identities separate.
 
@@ -136,11 +142,15 @@ whole-document interventions, including interactions, not isolated feature costs
 
 Reports before schema 4 used the former eligibility rule. Their instruction
 counts remain historical measurements; the old 30-pair median must not be
-compared with the new proved-domain median as a performance change. The new
+compared with another cohort's median as a performance change. The new
 insertion pair also changes the corpus digest. Remeasure both parser revisions
 on the same corpus and toolchain for a performance comparison.
 Schema 4 also records a pairing-identity digest over the registry, proof document
-and executable contract checkers, review/boundary definitions and XML adapter. This identity must match when comparing
+and executable contract checkers, review/boundary definitions and XML adapter.
+It now also covers the parser-effort model and all effort adjudications.
+Reinterpreted reports keep the old measurement digest and separately record the
+current interpretation digest; no new instruction measurement is implied.
+The measurement identity must match when comparing
 summaries: a changed proof status or mapping can change their membership even
 when every measured document's bytes are unchanged.
 
