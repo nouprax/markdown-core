@@ -3,7 +3,7 @@
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
 contains all 194 certificates, their concrete grammars, normal forms and two
-complete examples per family. The default run emits 824 documents at two scales:
+complete examples per family. The run emits 412 documents, each measured once:
 182 whole declared-language pairs and 12 local boundary pairs with complete
 hosts. The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
 30 syntax-guide features, 136 sections and 32 registered elements. Its explicit
@@ -71,7 +71,7 @@ calls count the authored caret in that limit, so their ASCII key domain is at
 most 999 bytes. A specimen or heading key paired with one of these labels takes
 the same bound; an unbounded Word would not prove a valid native counterpart.
 Repeated occurrences retain the same bound. The decoder rejects the first byte
-beyond it, and the default generated schedule reaches each bound at both scales.
+beyond it, and the generated schedule reaches each bound.
 These are syntax limits, distinct from an implementation's allocation failure.
 
 `Body` has a Word at both ends. Its nested atoms have a space before and after
@@ -336,11 +336,11 @@ The registry contains the source-grammar certificates themselves. The specificat
 ledger requires an explicit disposition for each feature and section; no older
 AST pairing registry or scenario manifest participates in admission or generation.
 
-The benchmark requests 12 and 24 generated derivation units. Each scale is
-expanded when necessary to enumerate every combination of finite grammar fields;
-the four ordinal families therefore use 26 and 52 units. Word widths, independent
+The benchmark requests 12 generated derivation units per family, expanded when
+necessary to enumerate every combination of finite grammar fields; the four
+ordinal families therefore use 26 units. Word widths, independent
 keys/values/targets/anchors, numbers of atoms, balanced branching and chain depth
-vary deterministically. Chains include depth 32 at scale two. `instantiateGrammar`
+vary deterministically. `instantiateGrammar`
 also accepts independently chosen field values: the grammar is not restricted
 to the generator's finite schedule or correlated counters. Two checked-in
 examples per family provide immediately reviewable source documents; the full
@@ -353,7 +353,7 @@ Run:
 pnpm benchmark --corpus-only --out build/benchmark-grammar
 node --test scripts/tests/grammar-corpus.test.mjs
 # Linux with the pinned compiler, oracles and Callgrind:
-pnpm benchmark --scale 2 --out build/benchmark-grammar
+pnpm benchmark --out build/benchmark-grammar
 ```
 
 The source-language checks validate all generated derivations, inverse laws,
@@ -373,9 +373,9 @@ are neither benchmark acceptance gates nor inputs to the grammar identity.
 The artifact identity covers the grammar/generator/checker sources, entrypoint,
 oracle pins, both proof/coverage documents, syntax specifications and checked-in
 ledgers, plus the exact generated documents and
-proof records. The Callgrind report lists the concrete ratio per certificate
-and scale, retaining full hosts for boundary rows without certifying those host
-ratios. CI measures and archives this suite alongside the older diagnostic suite.
+proof records. The Callgrind report lists one concrete comparison per certificate,
+retaining full hosts for boundary rows without certifying those host ratios.
+CI measures and archives only this parse corpus.
 
 To regenerate the checked-in example catalog after changing a grammar, run the
 following and review its grammar and example diff together with the proof:

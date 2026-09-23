@@ -4,7 +4,6 @@ import { sourceBudget } from "../lib/source-budget.mjs";
 
 const row = (name, ir, sha256 = "same-input") => ({
     case: name,
-    scale: 1,
     bytes: 100,
     sha256,
     engines: { "markdown-core": { stages: { source_to_buffer: { cost: { Ir: ir } } } } }

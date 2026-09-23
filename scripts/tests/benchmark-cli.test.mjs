@@ -23,59 +23,6 @@ function refuse(args, environment = {}) {
 }
 
 /**
- * --scale decides how many sizes of every case are measured, so a value that
- * is quietly read as a different number measures a different experiment than
- * the caller asked for, and the report does not say which.
- *
- * Number.parseInt reads leading digits and discards the rest, so the shape has
- * to be checked before the parse; and digits alone are not enough, because a
- * long enough run of them is Infinity and a large enough value is rounded to
- * one the caller did not name.
- */
-const MALFORMED = [
-    ["a trailing unit", "2x"],
-    ["a fraction", "1.5"],
-    ["exponent notation", "1e3"],
-    ["leading space", " 3"],
-    ["hexadecimal", "0x10"],
-    ["not a number at all", "abc"],
-    ["309 digits, which parses to Infinity", "9".repeat(309)],
-    ["one past the safe integers, which is rounded down", "9007199254740993"],
-    ["ten to the twentieth, exact as text but not countable", "1".padEnd(21, "0")]
-];
-
-for (const [what, value] of MALFORMED) {
-    test(`--scale refuses ${what}`, () => {
-        const { status, message } = refuse(["--scale", value]);
-        assert.notEqual(status, 0, `--scale ${value} was accepted`);
-        assert.match(message, /--scale must be a positive integer/u);
-    });
-}
-
-test("an empty --scale is a missing value rather than a malformed one", () => {
-    const { status, message } = refuse(["--scale", ""]);
-    assert.notEqual(status, 0);
-    assert.match(message, /--scale needs a value/u);
-});
-
-test("--scale refuses zero", () => {
-    const { status, message } = refuse(["--scale", "0"]);
-    assert.notEqual(status, 0);
-    assert.match(message, /--scale must be a positive integer/u);
-});
-
-test("--scale takes digits naming a number held exactly, leading zeros and all", () => {
-    for (const value of ["1", "2", "007", "64"]) {
-        const { message } = refuse(["--scale", value, "--case", "no-such-case-exists"]);
-        /* The run still refuses -- there is no such case, and on a machine
-         * without the pinned oracle it does not get that far. Which refusal it
-         * is depends on the machine, so the assertion is the one thing that
-         * does not: the scale was not what was rejected. */
-        assert.doesNotMatch(message, /--scale must be a positive integer/u, `--scale ${value} was refused`);
-    }
-});
-
-/**
  * A mistyped case name is answerable from the manifest alone, so it is
  * answered before the oracle, the toolchain or either build is looked at. A
  * checkout without the pinned cmark installed otherwise reports that instead,
@@ -97,7 +44,7 @@ test("an unknown case is refused before anything is installed or built", () => {
  */
 for (const name of ["CFLAGS", "LDFLAGS"]) {
     test(`a response file in ${name} is refused`, () => {
-        const { status, message } = refuse(["--case", "grammar-common-atx-1-paired-common"], {
+        const { status, message } = refuse(["--case", "common-atx-1-paired-common"], {
             [name]: "@/tmp/profile.rsp"
         });
         assert.notEqual(status, 0);
@@ -113,7 +60,7 @@ for (const name of ["CFLAGS", "LDFLAGS"]) {
         ["escaped spaces", "@/tmp/flags\\ with\\ space.rsp"]
     ]) {
         test(`a response file in ${name} is refused when ${shape}`, () => {
-            const { status, message } = refuse(["--case", "grammar-common-atx-1-paired-common"], { [name]: value });
+            const { status, message } = refuse(["--case", "common-atx-1-paired-common"], { [name]: value });
             assert.notEqual(status, 0);
             assert.match(message, new RegExp(`${name} names the response file @/tmp/`, "u"));
         });
@@ -128,7 +75,7 @@ for (const name of ["CFLAGS", "LDFLAGS"]) {
         ["-Xlinker", "-Xlinker @/tmp/link.rsp"]
     ]) {
         test(`a response file reached through ${shape} in ${name} is refused`, () => {
-            const { status, message } = refuse(["--case", "grammar-common-atx-1-paired-common"], { [name]: value });
+            const { status, message } = refuse(["--case", "common-atx-1-paired-common"], { [name]: value });
             assert.notEqual(status, 0);
             assert.match(message, new RegExp(`${name} names the response file @/tmp/`, "u"));
         });
@@ -139,18 +86,15 @@ for (const name of ["CFLAGS", "LDFLAGS"]) {
      * and a check that refused it would be wrong rather than strict. */
     for (const placeholder of ["@loader_path", "@executable_path", "@rpath"]) {
         test(`${placeholder} in ${name} is not mistaken for a response file`, () => {
-            const { message } = refuse(
-                ["--case", "grammar-common-atx-1-paired-common", "--out", "build/benchmark/nested"],
-                {
-                    [name]: `-Wl,-rpath,${placeholder}/../lib`
-                }
-            );
+            const { message } = refuse(["--case", "common-atx-1-paired-common", "--out", "build/benchmark/nested"], {
+                [name]: `-Wl,-rpath,${placeholder}/../lib`
+            });
             assert.match(message, /overlaps the profile build tree/u);
         });
     }
 
     test(`${name} that the shell cannot split is refused`, () => {
-        const { status, message } = refuse(["--case", "grammar-common-atx-1-paired-common"], {
+        const { status, message } = refuse(["--case", "common-atx-1-paired-common"], {
             [name]: "'@/tmp/unbalanced"
         });
         assert.notEqual(status, 0);
@@ -161,22 +105,16 @@ for (const name of ["CFLAGS", "LDFLAGS"]) {
      * Homebrew include directory, and only a leading @ names a file. The
      * overlap refusal that follows shows the flags got past this check. */
     test(`an @ inside a path in ${name} is not mistaken for one`, () => {
-        const { message } = refuse(
-            ["--case", "grammar-common-atx-1-paired-common", "--out", "build/benchmark/nested"],
-            {
-                [name]: "-I/opt/homebrew/opt/llvm@17/include"
-            }
-        );
+        const { message } = refuse(["--case", "common-atx-1-paired-common", "--out", "build/benchmark/nested"], {
+            [name]: "-I/opt/homebrew/opt/llvm@17/include"
+        });
         assert.match(message, /overlaps the profile build tree/u);
     });
 
     test(`ordinary flags in ${name} are not mistaken for one`, () => {
-        const { message } = refuse(
-            ["--case", "grammar-common-atx-1-paired-common", "--out", "build/benchmark/nested"],
-            {
-                [name]: "-DNDEBUG -O2"
-            }
-        );
+        const { message } = refuse(["--case", "common-atx-1-paired-common", "--out", "build/benchmark/nested"], {
+            [name]: "-DNDEBUG -O2"
+        });
         assert.match(message, /overlaps the profile build tree/u);
     });
 }
@@ -193,16 +131,16 @@ test("selecting a grammar input includes its counterpart and complete boundary h
         const documents = (name) => {
             const result = spawnSync(
                 process.execPath,
-                [driver, "--corpus-only", "--quiet", "--scale", "1", "--out", out, "--case", name],
+                [driver, "--corpus-only", "--quiet", "--out", out, "--case", name],
                 { encoding: "utf8", cwd: root }
             );
             assert.equal(result.status, 0, result.stderr);
             return JSON.parse(fs.readFileSync(path.join(out, "units.json"), "utf8"));
         };
-        const paired = ["grammar-insertion-strong-paired-common", "grammar-insertion-strong-paired-dialect"];
+        const paired = ["insertion-strong-paired-common", "insertion-strong-paired-dialect"];
         for (const name of paired) assert.deepEqual(Object.keys(documents(name)).sort(), paired);
         const boundary = ["boundary-common", "boundary-dialect", "host-common", "host-dialect"].map(
-            (part) => `grammar-grid-cell-${part}`
+            (part) => `grid-cell-${part}`
         );
         for (const name of boundary) {
             const units = documents(name);
@@ -211,6 +149,7 @@ test("selecting a grammar input includes its counterpart and complete boundary h
         }
         assert.match(refuse(["--case", "block-heading"]).message, /no corpus case is named/u);
         assert.match(refuse(["--grammar-corpus", "yes"]).message, /unknown argument/u);
+        assert.match(refuse(["--scale", "2"]).message, /unknown argument/u);
     } finally {
         fs.rmSync(out, { recursive: true, force: true });
     }

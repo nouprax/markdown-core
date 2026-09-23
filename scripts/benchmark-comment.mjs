@@ -42,19 +42,18 @@ const ratio = (after, before) => (before > 0 ? `${(after / before).toFixed(4)}×
 // These are projections of the existing report schemas, not Markdown supplied
 // by a PR. Only validated IDs, digests and numeric counts reach the comment.
 function stageCounts(report) {
-    if (report?.schemaVersion !== 4 || !Array.isArray(report.cases) || !report.cases.length) {
+    if (report?.schemaVersion !== 5 || !Array.isArray(report.cases) || !report.cases.length) {
         throw new Error("Invalid stage report");
     }
     digest(report.corpus.digest);
     digest(report.grammarCorpus?.identity);
-    if (report.pairingDigest !== report.grammarCorpus.identity) throw new Error("Grammar identity alias differs");
     if (report.corpus.cases !== report.cases.length) throw new Error("Incomplete stage report");
     const totals = [0, 0, 0, 0];
     for (const row of report.cases) {
         if (typeof row.case !== "string" || !/^[a-z0-9][a-z0-9-]{0,127}$/.test(row.case)) {
             throw new Error("Invalid benchmark case ID");
         }
-        if (!count(row.scale) || !count(row.bytes)) throw new Error("Empty benchmark workload");
+        if (!count(row.bytes)) throw new Error("Empty benchmark workload");
         digest(row.sha256);
         const engine = row.engines["markdown-core"];
         const values = [
@@ -83,7 +82,7 @@ export function stageSection(current, baseline) {
     const lines = [
         "### Parse stages",
         "",
-        `Baseline: \`${digest(baseline.revision, 40)}\`. ${number(rows.length)} document/scale workloads, measured in the same job.`,
+        `Baseline: \`${digest(baseline.revision, 40)}\`. ${number(rows.length)} document workloads, measured in the same job.`,
         "",
         "| Core instructions (Ir) | Base | PR | PR / base |",
         "| --- | ---: | ---: | ---: |"
@@ -99,14 +98,14 @@ export function stageSection(current, baseline) {
         "",
         "<details><summary>Largest source-stage ratios (up to 10 workloads)</summary>",
         "",
-        "| Case | Scale | Base Ir | PR Ir | PR / base |",
-        "| --- | ---: | ---: | ---: | ---: |",
+        "| Case | Base Ir | PR Ir | PR / base |",
+        "| --- | ---: | ---: | ---: |",
         ...[...rows]
             .sort((a, b) => b.ratio - a.ratio)
             .slice(0, 10)
             .map(
                 (row) =>
-                    `| ${row.case} | ${row.scale} | ${number(row.before)} | ${number(row.after)} | ${ratio(row.after, row.before)} |`
+                    `| ${row.case} | ${number(row.before)} | ${number(row.after)} | ${ratio(row.after, row.before)} |`
             ),
         "",
         "</details>",
@@ -116,23 +115,20 @@ export function stageSection(current, baseline) {
     );
     const comparisons = grammarComparisons(current);
     grammarComparisons(baseline);
-    const scale = Math.max(...comparisons.map((row) => row.scale));
     lines.push(
         "",
         "<details><summary>Grammar-equivalent reference comparisons</summary>",
         "",
         "A = Core on dialect input; B = Core on common input; R = cmark/cmark-gfm on common input. " +
             "Ir covers the two parse stages. Whole means the declared language; local excludes the unmatched host. " +
-            `Largest measured scale: ${scale}. No AST equivalence or equal native output cost is asserted.`,
+            "Each input is measured once. No AST equivalence or equal native output cost is asserted.",
         "",
         "| Certificate | Scope | Units | Bytes A/B | A/B | B/R | A/R |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
-        ...comparisons
-            .filter((row) => row.scale === scale)
-            .map(
-                (row) =>
-                    `| ${row.certificate} | ${row.scope === "boundary-grammar" ? "local" : "whole"} | ${number(row.units)} | ${number(row.aBytes)}/${number(row.bBytes)} | ${ratio(row.aIr, row.bIr)} | ${ratio(row.bIr, row.rIr)} | ${ratio(row.aIr, row.rIr)} |`
-            ),
+        ...comparisons.map(
+            (row) =>
+                `| ${row.certificate} | ${row.scope === "boundary-grammar" ? "local" : "whole"} | ${number(row.units)} | ${number(row.aBytes)}/${number(row.bBytes)} | ${ratio(row.aIr, row.bIr)} | ${ratio(row.bIr, row.rIr)} | ${ratio(row.aIr, row.rIr)} |`
+        ),
         "",
         "</details>"
     );

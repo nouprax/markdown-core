@@ -7,18 +7,17 @@
 export const SOURCE_IR_LIMIT = 1.02;
 
 export function sourceBudget(current, baseline) {
-    const key = (row) => `${row.case}\0${row.scale}`;
-    const indexed = new Map(baseline.map((row) => [key(row), row]));
+    const indexed = new Map(baseline.map((row) => [row.case, row]));
     if (baseline.length === 0 || indexed.size !== baseline.length || current.length !== baseline.length) {
         throw new Error("source budget requires equal, unique workloads");
     }
     const seen = new Set();
     return current.map((row) => {
-        const previous = indexed.get(key(row));
-        if (seen.has(key(row)) || !previous || row.sha256 !== previous.sha256 || row.bytes !== previous.bytes) {
-            throw new Error(`source budget input mismatch: ${row.case} x${row.scale}`);
+        const previous = indexed.get(row.case);
+        if (seen.has(row.case) || !previous || row.sha256 !== previous.sha256 || row.bytes !== previous.bytes) {
+            throw new Error(`source budget input mismatch: ${row.case}`);
         }
-        seen.add(key(row));
+        seen.add(row.case);
         const read = (entry) => entry.engines["markdown-core"].stages.source_to_buffer.cost.Ir;
         const before = read(previous);
         const after = read(row);
@@ -27,7 +26,6 @@ export function sourceBudget(current, baseline) {
         }
         return {
             case: row.case,
-            scale: row.scale,
             before,
             after,
             ratio: after / before,

@@ -8,9 +8,9 @@ and [feature ledger](../../../docs/architecture/benchmark-grammar-coverage.md)
 define their exact domains. Shared CommonMark/GFM features use identical input;
 extensions use reversible source-grammar transformations or local boundaries.
 
-The deterministic generator emits 824 documents at the default two scales.
+The deterministic generator emits 412 documents, each measured once.
 It varies independent fields, widths, repetition and recursion. Every finite
-lexical alternative is exercised at each scale. The catalog includes two
+lexical alternative is exercised in the generated input. The catalog includes two
 reviewable examples per certificate. There is no separate scenario manifest,
 AST-pair census, ownership model or legacy measurement mode.
 
@@ -22,18 +22,18 @@ pnpm benchmark --corpus-only
 
 # Linux with Callgrind and the pinned references.
 scripts/init-environment.sh --install oracle-cmark oracle-cmark-gfm
-pnpm benchmark --scale 2
+pnpm benchmark
 
 # Measure a whole family, including the selected input's counterpart/hosts.
-pnpm benchmark --case grammar-insertion-strong-paired-dialect
+pnpm benchmark --case insertion-strong-paired-dialect
 
 # Remeasure a full base revision with the current corpus and harness.
 pnpm benchmark --baseline-ref FULL_40_CHARACTER_COMMIT_SHA
 ```
 
-The driver uses this corpus by default. No mode flag is required. `--scale N` generates scales 1 through N; the generator supports
-1 through 16. `--out DIR` changes the output directory and `--quiet` suppresses
-per-document progress. A selected boundary includes its complete hosts as well
+The driver uses one fixed corpus. Each family starts with 12 derivation units,
+expanded as needed to enumerate its finite grammar alternatives. `--out DIR`
+changes the output directory and `--quiet` suppresses per-document progress. A selected boundary includes its complete hosts as well
 as both local inputs. Unknown names fail before builds begin.
 
 Outputs default to `build/benchmark-grammar`:
@@ -47,7 +47,7 @@ Outputs default to `build/benchmark-grammar`:
 
 CI measures this corpus once, uploads structured reports for its trusted PR
 publisher, and archives reports, inputs and raw profiles. The PR comment shows
-Core/base source regressions and A/B, B/R and A/R at the largest measured scale.
+Core/base source regressions and A/B, B/R and A/R for each certificate.
 Build trees and reference checkouts are not uploaded.
 
 ## Reading a comparison
@@ -103,8 +103,8 @@ environment. Compiler probes must agree on repeated reads. Response-file
 flags are rejected because their contents would otherwise escape the report's
 identity. `corpus.digest` binds the exact selected input bytes; grammar identity
 also binds the source-language definitions, proofs and coverage declarations.
-The schema-4 `pairingDigest` field is a serialized alias of grammar identity
-for the already deployed trusted publisher, not another proof registry.
+Schema 5 identifies each workload by its case name and byte digest; it has no
+scale dimension or separate pairing registry.
 
 With `--baseline-ref`, only engine source comes from the base revision. The
 current harness, corpus, preset and reference binaries are used on both sides.

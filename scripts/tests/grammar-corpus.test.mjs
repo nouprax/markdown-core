@@ -164,15 +164,17 @@ test("boundary splits keep every byte and every independent field, with measured
     }
 });
 
-test("scaled corpus repeats derivations, keeps metadata document-initial, and records exact normal forms", () => {
+test("one corpus contains unique inputs, repeats derivations, keeps metadata document-initial, and records exact normal forms", () => {
     const corpus = buildGrammarCorpus();
-    assert.equal(corpus.cases.length, 824);
+    assert.equal(corpus.cases.length, 412);
+    assert.equal(new Set(corpus.cases.map((c) => c.name)).size, corpus.cases.length);
+    for (const document of corpus.cases) {
+        assert.ok(!("scale" in document));
+        assert.ok(!document.name.startsWith("grammar-"));
+    }
     for (const proof of corpus.proofs) {
-        assert.ok(proof.units >= 12 * proof.scale);
-        assert.equal(
-            proof.units,
-            corpus.proofs.find((first) => first.id === proof.id && first.scale === 1).units * proof.scale
-        );
+        assert.ok(proof.units >= 12);
+        assert.ok(!("scale" in proof));
         if (proof.id.startsWith("metadata")) {
             assert.equal(proof.hosts.dialect.source.split("---\n").length - 1, 2);
             assert.equal(
@@ -187,16 +189,15 @@ test("scaled corpus repeats derivations, keeps metadata document-initial, and re
         }
     }
     assert.throws(() => buildGrammarCorpus({ units: 0 }));
-    assert.throws(() => buildGrammarCorpus({ scale: 1.5 }));
 });
 
 test("artifact identity binds proof text and source dependencies; corpus is deterministic", () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "grammar-corpus-"));
     try {
-        const a = writeGrammarCorpus(path.join(directory, "a"), { units: 2, scale: 1 });
-        const b = writeGrammarCorpus(path.join(directory, "b"), { units: 2, scale: 1 });
+        const a = writeGrammarCorpus(path.join(directory, "a"), { units: 2 });
+        const b = writeGrammarCorpus(path.join(directory, "b"), { units: 2 });
         assert.equal(a.identity, b.identity);
-        assert.notEqual(a.identity, writeGrammarCorpus(path.join(directory, "c"), { units: 3, scale: 1 }).identity);
+        assert.notEqual(a.identity, writeGrammarCorpus(path.join(directory, "c"), { units: 3 }).identity);
         const paths = [
             "scripts/lib",
             "scripts/benchmark.mjs",
@@ -227,16 +228,18 @@ test("artifact identity binds proof text and source dependencies; corpus is dete
     }
 });
 
-test("regeneration removes obsolete generated halves and scales from archived corpus", () => {
+test("regeneration removes superseded and former scale-suffixed inputs from archived corpus", () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "grammar-rerun-"));
     try {
-        writeGrammarCorpus(directory, { units: 1, scale: 2 });
+        writeGrammarCorpus(directory, { units: 1 });
         fs.writeFileSync(path.join(directory, "grammar-removed-boundary-dialect.x1.md"), "obsolete");
+        fs.writeFileSync(path.join(directory, "removed-boundary-common.md"), "obsolete");
+        fs.writeFileSync(path.join(directory, "grammar-grid-cell-boundary-common.x2.md"), "obsolete");
         fs.writeFileSync(path.join(directory, "notes.md"), "review notes");
-        const current = writeGrammarCorpus(directory, { units: 1, scale: 1 });
+        const current = writeGrammarCorpus(directory, { units: 1 });
         assert.deepEqual(
             fs.readdirSync(directory).sort(),
-            ["grammar-corpus.json", "notes.md", ...current.cases.map((item) => `${item.name}.x${item.scale}.md`)].sort()
+            ["grammar-corpus.json", "notes.md", ...current.cases.map((item) => `${item.name}.md`)].sort()
         );
         assert.equal(fs.readFileSync(path.join(directory, "notes.md"), "utf8"), "review notes");
     } finally {
@@ -254,7 +257,7 @@ test("the real benchmark CLI selects the entire certified pair, including bounda
                 "--corpus-only",
                 "--quiet",
                 "--case",
-                "grammar-grid-cell-boundary-dialect",
+                "grid-cell-boundary-dialect",
                 "--out",
                 directory
             ],
@@ -264,7 +267,7 @@ test("the real benchmark CLI selects the entire certified pair, including bounda
         assert.deepEqual(
             Object.keys(units).sort(),
             ["boundary-common", "boundary-dialect", "host-common", "host-dialect"]
-                .map((part) => `grammar-grid-cell-${part}`)
+                .map((part) => `grid-cell-${part}`)
                 .sort()
         );
         assert.ok(fs.existsSync(path.join(directory, "corpus/grammar-corpus.json")));
@@ -274,7 +277,7 @@ test("the real benchmark CLI selects the entire certified pair, including bounda
 });
 
 test("grammar reporting keeps the boundary ratio separate and rejects missing measured halves", () => {
-    const corpus = buildGrammarCorpus({ units: 1, scale: 1 });
+    const corpus = buildGrammarCorpus({ units: 1 });
     const proofs = corpus.proofs.filter((p) => p.id === "grid-cell");
     const stages = (ir) => ({
         stages: { source_to_buffer: { cost: { Ir: ir } }, buffer_to_ast: { cost: { Ir: ir } } }
@@ -320,7 +323,7 @@ test("grammar reporting keeps the boundary ratio separate and rejects missing me
 });
 
 test("the complete syntax and element inventories fail closed when a feature, rule, or source changes", () => {
-    const corpus = buildGrammarCorpus({ units: 1, scale: 1 });
+    const corpus = buildGrammarCorpus({ units: 1 });
     const coverage = validateFeatureCoverage(root, corpus);
     assert.equal(coverage.features, 30);
     assert.equal(coverage.elements, 32);
@@ -383,7 +386,7 @@ test("section coverage requires explicit proof links before a ledger can be rege
     );
     decisions.Formulas = { kind: "context", reason: "" };
     assert.throws(() => reviewedSections("formulas", sections, certificates, decisions), /context needs a reason/u);
-    const ledger = featureCoverage(root, buildGrammarCorpus({ units: 1, scale: 1 }));
+    const ledger = featureCoverage(root, buildGrammarCorpus({ units: 1 }));
     const all = ledger.features.flatMap((feature) => feature.sections);
     assert.equal(all.filter((section) => section.disposition.kind === "grammar").length, 132);
     assert.equal(all.filter((section) => section.disposition.kind === "context").length, 4);
@@ -403,7 +406,7 @@ test("shared features use the same source grammar and bytes", () => {
 });
 
 test("reference measurements are limited to the exact certified input side", () => {
-    for (const document of buildGrammarCorpus({ units: 1, scale: 1 }).cases) {
+    for (const document of buildGrammarCorpus({ units: 1 }).cases) {
         const engines = grammarEngines(document);
         if (document.side === "dialect" || document.part === "host") assert.deepEqual(engines, ["markdown-core"]);
         else assert.deepEqual(engines, ["markdown-core", document.gfm ? "cmark-gfm" : "cmark"]);
@@ -432,9 +435,9 @@ test("reference-label bounds are part of the grammar and generated at their exac
     }
 });
 
-test("every measured scale exhausts finite grammar alternatives even with one requested unit", () => {
+test("every input exhausts finite grammar alternatives even with one requested unit", () => {
     for (const units of [1, 12]) {
-        const corpus = buildGrammarCorpus({ units, scale: 2 });
+        const corpus = buildGrammarCorpus({ units });
         for (const proof of corpus.proofs) {
             const fields = (proof.normalForm.fields ?? []).filter((field) => finiteLexicons[field.grammar]);
             if (!fields.length) continue;
@@ -443,11 +446,9 @@ test("every measured scale exhausts finite grammar alternatives even with one re
             const tuples = proof.rows.map((row) =>
                 JSON.stringify(fields.map((field) => row.derivation[0].find(([name]) => name === field.name)[1].value))
             );
-            assert.equal(new Set(tuples).size, expected, `${proof.id} scale ${proof.scale}`);
+            assert.equal(new Set(tuples).size, expected, proof.id);
             for (const side of ["dialect", "common"]) {
-                const document = corpus.cases.find(
-                    (entry) => entry.id === proof.id && entry.scale === proof.scale && entry.side === side
-                );
+                const document = corpus.cases.find((entry) => entry.id === proof.id && entry.side === side);
                 assert.equal(recognizePairedDocument(proof.id, side, document.text).length, proof.rows.length);
             }
         }

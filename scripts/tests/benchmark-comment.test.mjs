@@ -12,8 +12,8 @@ const head = "a".repeat(40);
 const base = "b".repeat(40);
 function stageReport(ir) {
     const names = {
-        "paired-dialect": "grammar-inline-links-paired-dialect",
-        "paired-common": "grammar-inline-links-paired-common"
+        "paired-dialect": "inline-links-paired-dialect",
+        "paired-common": "inline-links-paired-common"
     };
     const certificate = {
         id: "inline-links",
@@ -26,14 +26,13 @@ function stageReport(ir) {
         outsideStagesIr: 10
     });
     return {
-        schemaVersion: 4,
+        schemaVersion: 5,
         revision: base,
         corpus: { digest: "c".repeat(64), cases: 2 },
-        pairingDigest: "d".repeat(64),
         grammarCorpus: {
             identity: "d".repeat(64),
             certificates: [certificate],
-            proofs: [{ ...certificate, scale: 1, units: 1, names }]
+            proofs: [{ ...certificate, units: 1, names }]
         },
         cases: ["dialect", "common"].map((side) => ({
             case: names[`paired-${side}`],
@@ -41,7 +40,6 @@ function stageReport(ir) {
             part: "paired",
             certificate: certificate.certificate,
             units: 1,
-            scale: 1,
             bytes: 32,
             sha256: "e".repeat(64),
             gfm: false,
@@ -62,7 +60,7 @@ test("PR tables report numeric results, source regressions, and complete parse a
     assert.match(body, /0\/2 passed/);
     assert.match(body, /\| Source → buffer \| 200 \| 206 \| 1.0300× \|/);
     assert.match(body, /\| Complete parse path \| 320 \| 326 \|/);
-    assert.match(body, /grammar-inline-links-paired-common/);
+    assert.match(body, /inline-links-paired-common/);
     assert.match(body, /Required when CI inputs require execution/);
     assert.match(body, /inline-links-grammar-v2 \| whole \| 1 \| 32\/32 \| 1.0000× \| 2.0400× \| 2.0400×/);
     assert.match(body, /Grammar:/);
@@ -72,13 +70,10 @@ test("PR tables report numeric results, source regressions, and complete parse a
 test("report projections reject corrupt counts, mismatched workloads and injected text", () => {
     for (const mutate of [
         (r) => {
-            r.schemaVersion = 3;
+            r.schemaVersion = 4;
         },
         (r) => {
             delete r.grammarCorpus;
-        },
-        (r) => {
-            r.pairingDigest = "f".repeat(64);
         },
         (r) => {
             r.grammarCorpus.identity = "[untrusted](https://example.com)";
@@ -102,7 +97,7 @@ test("report projections reject corrupt counts, mismatched workloads and injecte
             r.corpus.cases = 3;
         },
         (r) => {
-            r.cases[0].scale = -1;
+            r.cases[0].units = -1;
         },
         (r) => {
             r.cases[0].bytes = 33;

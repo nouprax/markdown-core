@@ -43,7 +43,7 @@
  * instructions for one random memory access will look like an improvement
  * here. Dr/Dw are reported alongside for exactly that reason.
  *
- *   node scripts/benchmark.mjs [--out DIR] [--case NAME]... [--scale N]
+ *   node scripts/benchmark.mjs [--out DIR] [--case NAME]...
  *                                     [--quiet] [--baseline-ref COMMIT]
  */
 
@@ -147,7 +147,6 @@ function parseArguments(argv) {
     const options = {
         out: path.join(root, "build/benchmark-grammar"),
         cases: [],
-        scale: 2,
         quiet: false,
         corpusOnly: false
     };
@@ -170,31 +169,11 @@ function parseArguments(argv) {
         } else if (flag === "--case") {
             options.cases.push(value);
             index++;
-        } else if (flag === "--scale") {
-            /* Digits and nothing else, naming a number JavaScript can hold
-             * exactly.
-             *
-             * Number.parseInt reads the leading digits of "2x", "1.5" and
-             * "1e3" and discards the rest, so those would quietly measure a
-             * different experiment than the one asked for. Digits alone are
-             * not enough either: 309 of them parse to Infinity and the range
-             * check below is happy with it, and 9007199254740993 comes back as
-             * ...992. Both must hold -- the value has to survive the round
-             * trip AND be a safe integer, since 10^20 survives the round trip
-             * and is neither exact nor a number this can count up to. */
-            const digits = /^\d+$/u.test(value) ? value.replace(/^0+(?=\d)/u, "") : null;
-            const scale = digits === null ? Number.NaN : Number(digits);
-            if (!Number.isSafeInteger(scale) || String(scale) !== digits) {
-                fail(`--scale must be a positive integer, not ${value}`);
-            }
-            options.scale = scale;
-            index++;
         } else {
             fail(`unknown argument: ${flag}`);
         }
     }
     if (options.corpusOnly && options.baselineRef) fail("--baseline-ref requires measurement");
-    if (options.scale < 1) fail("--scale must be a positive integer");
     return options;
 }
 
@@ -973,7 +952,7 @@ function refuseResponseFiles() {
 }
 
 function corpusManifest() {
-    return { cases: buildGrammarCorpus({ scale: 1 }).cases };
+    return { cases: buildGrammarCorpus().cases };
 }
 
 /** Reject every unknown selection before installing or building either parser. */
@@ -987,7 +966,7 @@ function refuseUnknownCases(options, manifest) {
 
 function buildCorpus(options) {
     const directory = path.join(options.out, "corpus");
-    const grammar = writeGrammarCorpus(directory, { scale: options.scale });
+    const grammar = writeGrammarCorpus(directory);
     const selected = new Set(options.cases);
     const families = new Set(grammar.cases.filter((entry) => selected.has(entry.name)).map((entry) => entry.id));
     const documents = grammar.cases
@@ -995,10 +974,9 @@ function buildCorpus(options) {
         .map((entry) => ({
             ...documentMetadata(entry),
             case: entry.name,
-            file: path.join(directory, `${entry.name}.x${entry.scale}.md`)
+            file: path.join(directory, `${entry.name}.md`)
         }));
     return {
-        targetBytes: null,
         digest: corpusDigest(documents),
         documents,
         grammarCorpus: {
@@ -1021,7 +999,7 @@ function buildCorpus(options) {
 function corpusDigest(documents) {
     const digest = crypto.createHash("sha256");
     for (const document of documents) {
-        digest.update(`${document.case}\u0000${document.scale}\u0000${document.bytes}\u0000${document.sha256}\n`);
+        digest.update(`${document.case}\u0000${document.bytes}\u0000${document.sha256}\n`);
     }
     return digest.digest("hex");
 }
@@ -1144,7 +1122,7 @@ function dispatchIdentity(profile, root) {
 
 function measure(profile, engine, document, out) {
     const definition = ENGINES[engine];
-    const dump = path.join(out, "callgrind", `${engine}.${document.case}.x${document.scale}.out`);
+    const dump = path.join(out, "callgrind", `${engine}.${document.case}.out`);
     fs.mkdirSync(path.dirname(dump), { recursive: true });
     const root = measurementRoot(out, fail);
     const stdout = run(
@@ -1428,11 +1406,7 @@ function main() {
         fs.writeFileSync(
             path.join(options.out, "units.json"),
             `${JSON.stringify(
-                Object.fromEntries(
-                    only.documents
-                        .filter((document) => document.scale === 1)
-                        .map((document) => [document.case, document.units])
-                ),
+                Object.fromEntries(only.documents.map((document) => [document.case, document.units])),
                 null,
                 4
             )}\n`
@@ -1550,6 +1524,8 @@ function main() {
 
     const baseline = buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions);
     const corpus = buildCorpus(options);
+    // Raw profiles describe only this run, including after renamed or removed inputs.
+    fs.rmSync(path.join(options.out, "callgrind"), { recursive: true, force: true });
     const cases = [];
     for (const document of corpus.documents) {
         const engines = {};
@@ -1572,7 +1548,7 @@ function main() {
                 )
             };
         }
-        if (!options.quiet) console.error(`measured ${document.case} x${document.scale}`);
+        if (!options.quiet) console.error(`measured ${document.case}`);
         const entry = { ...document, file: path.relative(options.out, document.file), engines };
         cases.push(entry);
         if (baseline) {
@@ -1601,7 +1577,7 @@ function main() {
     }
 
     const report = {
-        schemaVersion: 4,
+        schemaVersion: 5,
         toolchain: versions,
         /* The exact bytes measured, so a report's numbers trace to a binary. */
         binaries,
@@ -1611,11 +1587,8 @@ function main() {
          * it: a pin that moved changes those numbers with nothing else in the
          * report saying so. */
         cmarkGfm: { version: gfm.version, commit: gfm.commit },
-        corpus: { targetBytes: corpus.targetBytes, cases: corpus.documents.length, digest: corpus.digest },
+        corpus: { cases: corpus.documents.length, digest: corpus.digest },
         grammarCorpus: corpus.grammarCorpus,
-        // The deployed trusted PR publisher reads this schema-4 field. Its
-        // single source is now the grammar identity, not a separate registry.
-        pairingDigest: corpus.grammarCorpus.identity,
         artifacts: path.relative(root, options.out),
         cases
     };
@@ -1652,15 +1625,12 @@ function main() {
     let rendered = markdownReport(report);
     if (report.sourceBudget) {
         const failed = report.sourceBudget.rows.filter((row) => !row.passed);
-        rendered += `\n\n## Source-stage regression gate\n\nBase: ${report.sourceBudget.baseline}. Both revisions use this run's corpus, harness, toolchain and runtime libraries. Each document/scale must stay within ${((SOURCE_IR_LIMIT - 1) * 100).toFixed(0)}% of its baseline source_to_buffer Ir. ${report.sourceBudget.rows.length - failed.length}/${report.sourceBudget.rows.length} passed. AST improvements do not offset source regressions.\n`;
+        rendered += `\n\n## Source-stage regression gate\n\nBase: ${report.sourceBudget.baseline}. Both revisions use this run's corpus, harness, toolchain and runtime libraries. Each document must stay within ${((SOURCE_IR_LIMIT - 1) * 100).toFixed(0)}% of its baseline source_to_buffer Ir. ${report.sourceBudget.rows.length - failed.length}/${report.sourceBudget.rows.length} passed. AST improvements do not offset source regressions.\n`;
         if (failed.length)
             rendered +=
-                "\n| Case | Scale | Base Ir | Current Ir | Ratio |\n| --- | ---: | ---: | ---: | ---: |\n" +
+                "\n| Case | Base Ir | Current Ir | Ratio |\n| --- | ---: | ---: | ---: |\n" +
                 failed
-                    .map(
-                        (row) =>
-                            `| ${row.case} | ${row.scale} | ${row.before} | ${row.after} | ${row.ratio.toFixed(3)}x |`
-                    )
+                    .map((row) => `| ${row.case} | ${row.before} | ${row.after} | ${row.ratio.toFixed(3)}x |`)
                     .join("\n");
     }
     fs.writeFileSync(markdown, `${rendered}\n`);

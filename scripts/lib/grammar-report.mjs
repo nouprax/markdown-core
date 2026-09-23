@@ -35,9 +35,8 @@ export function grammarComparisons(report) {
         certificates.set(certificate.certificate, certificate);
     }
     const cases = new Map();
-    const key = (name, scale) => `${id(name)}\0${positive(scale)}`;
     for (const document of report.cases) {
-        const name = key(document.case, document.scale);
+        const name = id(document.case);
         assert.ok(!cases.has(name), "duplicate grammar measurement");
         cases.set(name, document);
     }
@@ -48,11 +47,11 @@ export function grammarComparisons(report) {
         const certificate = certificates.get(proof.certificate);
         assert.ok(certificate, "unknown grammar certificate");
         assert.equal(proof.scope, certificate.scope);
-        const proofKey = key(proof.certificate, proof.scale);
+        const proofKey = id(proof.certificate);
         assert.ok(!proofs.has(proofKey), "duplicate measured proof");
         proofs.add(proofKey);
         const part = proof.scope === "boundary-grammar" ? "boundary" : "paired";
-        const find = (name) => cases.get(key(proof.names[name], proof.scale));
+        const find = (name) => cases.get(id(proof.names[name]));
         const a = find(`${part}-dialect`),
             b = find(`${part}-common`);
         const hosts = part === "boundary" ? [find("host-dialect"), find("host-common")] : [];
@@ -64,7 +63,7 @@ export function grammarComparisons(report) {
             assert.equal(document.certificate, proof.certificate);
             assert.equal(document.units, positive(proof.units));
             positive(document.bytes);
-            const name = key(document.case, document.scale);
+            const name = id(document.case);
             assert.ok(!consumed.has(name), "measurement reused by another proof");
             consumed.add(name);
         }
@@ -76,7 +75,6 @@ export function grammarComparisons(report) {
         rows.push({
             certificate: certificate.certificate,
             scope: proof.scope,
-            scale: proof.scale,
             units: proof.units,
             aBytes: a.bytes,
             bBytes: b.bytes,

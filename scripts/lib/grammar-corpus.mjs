@@ -1000,7 +1000,7 @@ export function encodePairedDocument(id, side, derivations) {
 }
 
 export function grammarCatalog() {
-    const corpus = buildGrammarCorpus({ units: 2, scale: 1 });
+    const corpus = buildGrammarCorpus({ units: 2 });
     return {
         version: grammarVersion,
         normalForms,
@@ -1048,10 +1048,9 @@ export function grammarCatalog() {
     };
 }
 
-export function buildGrammarCorpus({ units = 12, scale = 2 } = {}) {
+export function buildGrammarCorpus({ units = 12 } = {}) {
     validateGrammarCertificates();
     assert.ok(Number.isSafeInteger(units) && units > 0 && units <= 1024);
-    assert.ok(Number.isSafeInteger(scale) && scale > 0 && scale <= 16);
     const cases = [],
         proofs = [];
     for (const certificate of grammarCertificates) {
@@ -1059,83 +1058,72 @@ export function buildGrammarCorpus({ units = 12, scale = 2 } = {}) {
             (count, field) => count * finiteLexicons[field.grammar][field.encoding].length,
             1
         );
-        for (let level = 1; level <= scale; level++) {
-            const rows = Array.from({ length: Math.max(units, alternatives) * level }, (_, index) =>
-                grammarUnit(certificate.id, index)
-            );
-            const bound = certificate.scope === "boundary-grammar";
-            const names = {};
-            const hosts = Object.fromEntries(
-                ["dialect", "common"].map((side) => [side, composeHosts(certificate.id, rows, side)])
-            );
-            for (const document of Object.values(hosts)) assert.equal(recomposeHost(document), document.source);
-            for (const side of ["dialect", "common"]) {
-                for (const part of bound ? ["host", "boundary"] : ["paired"]) {
-                    const name = `grammar-${certificate.id}-${part}-${side}`;
-                    names[`${part}-${side}`] = name;
-                    const text =
-                        part === "boundary" ? rows.map((row) => row.boundary[side]).join("") : hosts[side].source;
-                    cases.push({
-                        name,
-                        side,
-                        part,
-                        certificate: certificate.certificate,
-                        id: certificate.id,
-                        scale: level,
-                        units: rows.length,
-                        text,
-                        sha256: hash(text),
-                        bytes: Buffer.byteLength(text),
-                        dialect: side === "dialect" && part !== "boundary" ? "extended" : "commonmark",
-                        gfm:
-                            featureGrammars.get(certificate.id)?.gfm === true ||
-                            ([
-                                "task-value",
-                                "simple-matrix",
-                                "specimen-graph",
-                                "headless-matrix",
-                                "leading-caption",
-                                "trailing-caption"
-                            ].includes(certificate.id) &&
-                                part !== "boundary"),
-                        carries: [],
-                        growth: "grammar derivations"
-                    });
-                }
+        const rows = Array.from({ length: Math.max(units, alternatives) }, (_, index) =>
+            grammarUnit(certificate.id, index)
+        );
+        const bound = certificate.scope === "boundary-grammar";
+        const names = {};
+        const hosts = Object.fromEntries(
+            ["dialect", "common"].map((side) => [side, composeHosts(certificate.id, rows, side)])
+        );
+        for (const document of Object.values(hosts)) assert.equal(recomposeHost(document), document.source);
+        for (const side of ["dialect", "common"]) {
+            for (const part of bound ? ["host", "boundary"] : ["paired"]) {
+                const name = `${certificate.id}-${part}-${side}`;
+                names[`${part}-${side}`] = name;
+                const text = part === "boundary" ? rows.map((row) => row.boundary[side]).join("") : hosts[side].source;
+                cases.push({
+                    name,
+                    side,
+                    part,
+                    certificate: certificate.certificate,
+                    id: certificate.id,
+                    units: rows.length,
+                    text,
+                    sha256: hash(text),
+                    bytes: Buffer.byteLength(text),
+                    dialect: side === "dialect" && part !== "boundary" ? "extended" : "commonmark",
+                    gfm:
+                        featureGrammars.get(certificate.id)?.gfm === true ||
+                        ([
+                            "task-value",
+                            "simple-matrix",
+                            "specimen-graph",
+                            "headless-matrix",
+                            "leading-caption",
+                            "trailing-caption"
+                        ].includes(certificate.id) &&
+                            part !== "boundary")
+                });
             }
-            proofs.push({
-                ...certificate,
-                normalForm: grammarNormalForm(certificate.id, "dialect"),
-                scale: level,
-                units: rows.length,
-                names,
-                rows,
-                hosts,
-                grammars: {
-                    dialect: grammarDescription(certificate, "dialect"),
-                    common: grammarDescription(certificate, "common")
-                },
-                rewrite: bound
-                    ? [
-                          "lossless-slot-decomposition",
-                          "common-field-order",
-                          "shared-explicit-entry-envelope",
-                          "identity-grammar"
-                      ]
-                    : isProduct(certificate.id)
-                      ? [
-                            "inline-administrative-productions",
-                            "invertible-fixed-terminal-encoding",
-                            "label-preserving-product-permutation",
-                            "common-normal-form"
-                        ]
-                      : [
-                            "inline-administrative-productions",
-                            "rename-contextual-delimiter-terminals",
-                            "common-normal-form"
-                        ]
-            });
         }
+        proofs.push({
+            ...certificate,
+            normalForm: grammarNormalForm(certificate.id, "dialect"),
+            units: rows.length,
+            names,
+            rows,
+            hosts,
+            grammars: {
+                dialect: grammarDescription(certificate, "dialect"),
+                common: grammarDescription(certificate, "common")
+            },
+            rewrite: bound
+                ? [
+                      "lossless-slot-decomposition",
+                      "common-field-order",
+                      "shared-explicit-entry-envelope",
+                      "identity-grammar"
+                  ]
+                : isProduct(certificate.id)
+                  ? [
+                        "inline-administrative-productions",
+                        "invertible-fixed-terminal-encoding",
+                        "label-preserving-product-permutation",
+                        "common-normal-form"
+                    ]
+                  : ["inline-administrative-productions", "rename-contextual-delimiter-terminals", "common-normal-form"]
+        });
     }
     return { version: grammarVersion, normalForms, certificates: grammarCertificates, cases, proofs };
 }
@@ -1160,14 +1148,16 @@ export function writeGrammarCorpus(directory, options) {
     const corpus = buildGrammarCorpus(options);
     const coverage = validateFeatureCoverage(fileURLToPath(new URL("../../", import.meta.url)), corpus);
     fs.mkdirSync(directory, { recursive: true });
-    // This namespace belongs to the generator. A rerun with fewer scales or
-    // upgraded boundary certificates must not archive obsolete source halves.
-    const names = new Set(corpus.cases.map((item) => `${item.name}.x${item.scale}.md`));
+    // Generated input names own this namespace. Remove superseded halves and
+    // former scale-suffixed inputs before archiving a regenerated corpus.
+    const names = new Set(corpus.cases.map((item) => `${item.name}.md`));
     for (const name of fs.readdirSync(directory))
-        if (/^grammar-[a-z0-9-]+\.x[1-9][0-9]*\.md$/u.test(name) && !names.has(name))
+        if (
+            /^[a-z0-9-]+-(?:paired|boundary|host)-(?:dialect|common)(?:\.x[1-9][0-9]*)?\.md$/u.test(name) &&
+            !names.has(name)
+        )
             fs.unlinkSync(path.join(directory, name));
-    for (const item of corpus.cases)
-        fs.writeFileSync(path.join(directory, `${item.name}.x${item.scale}.md`), item.text);
+    for (const item of corpus.cases) fs.writeFileSync(path.join(directory, `${item.name}.md`), item.text);
     const identity = hash(
         JSON.stringify({
             sourceIdentity: grammarSourceIdentity(),
@@ -1237,12 +1227,12 @@ export function grammarMarkdown(report) {
         "",
         "A is Core on the dialect encoding, B is Core on the common encoding, and R is the pinned reference on the common encoding. All Ir totals below are source_to_buffer + buffer_to_ast. A/B includes the whole grammar/frame change; it is not a lexical-only attribution.",
         "",
-        "| Certificate | Scope | Scale | Units | A/B bytes | A Ir | B Ir | R Ir | A/B | B/R | A/R | Core host Ir (residual included) |",
-        "| --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+        "| Certificate | Scope | Units | A/B bytes | A Ir | B Ir | R Ir | A/B | B/R | A/R | Core host Ir (residual included) |",
+        "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
     ];
     for (const row of grammarComparisons(report)) {
         lines.push(
-            `| ${row.certificate} | ${row.scope} | ${row.scale} | ${row.units} | ${row.aBytes}/${row.bBytes} | ${row.aIr} | ${row.bIr} | ${row.rIr} | ${row.ab.toFixed(3)}x | ${row.br.toFixed(3)}x | ${row.ar.toFixed(3)}x | ${row.hostIr ?? "—"} |`
+            `| ${row.certificate} | ${row.scope} | ${row.units} | ${row.aBytes}/${row.bBytes} | ${row.aIr} | ${row.bIr} | ${row.rIr} | ${row.ab.toFixed(3)}x | ${row.br.toFixed(3)}x | ${row.ar.toFixed(3)}x | ${row.hostIr ?? "—"} |`
         );
     }
     lines.push("", "### Unmatched boundary obligations", "", "| Certificate | Residual |", "| --- | --- |");
