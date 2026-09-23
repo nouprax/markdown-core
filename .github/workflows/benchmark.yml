@@ -56,6 +56,7 @@ jobs:
                       BASE_REVISION=$(git rev-parse HEAD^)
                   fi
                   node scripts/benchmark-stages.mjs --scale 2 --baseline-ref "$BASE_REVISION"
+                  node scripts/benchmark-stages.mjs --grammar-corpus --scale 2 --out build/benchmark-grammar --baseline-ref "$BASE_REVISION"
             - name: Upload structured results for the PR comment
               if: ${{ always() }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -82,6 +83,14 @@ jobs:
                       build/benchmark-stages/callgrind
                       build/benchmark-stages/corpus
                       build/benchmark-stages/effort
+                      build/benchmark-grammar/stages.md
+                      build/benchmark-grammar/stages.json
+                      build/benchmark-grammar/callgrind
+                      build/benchmark-grammar/corpus
+                      build/benchmark-grammar/baseline/stages.md
+                      build/benchmark-grammar/baseline/stages.json
+                      build/benchmark-grammar/baseline/callgrind
+                      build/benchmark-grammar/baseline/corpus
                       build/benchmark-stages/baseline/stages.md
                       build/benchmark-stages/baseline/stages.json
                       build/benchmark-stages/baseline/callgrind

@@ -197,3 +197,7 @@ test("same-job baselines use their own Core profiles and the validated shared re
     fs.unlinkSync(coreProfile);
     assert.throws(() => summarizeArtifact(directory, true), /ENOENT/u);
 });
+
+test("grammar-certified cohorts cannot silently enter the legacy structural census", () => {
+    assert.throws(() => summarize({ grammarCorpus: {}, cases: [], pairs: [] }, () => assert.fail()), /grammar corpus/u);
+});

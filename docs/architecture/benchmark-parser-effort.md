@@ -1,5 +1,10 @@
 # Parser effort and the limits of structural pairs
 
+The new [grammar-certified corpus](benchmark-grammar-corpus.md) supplies positive
+syntax-translation equivalence proofs and runnable inputs. This document concerns
+the older structural cohort; its stronger full-native-parser optimum question
+is not the admission criterion for that grammar corpus.
+
 The existing 43 proofs establish semantic ownership/field correspondences on
 restricted input languages. **None establishes equal optimal parse effort for
 the complete parser contracts.** They are structural controls, not an

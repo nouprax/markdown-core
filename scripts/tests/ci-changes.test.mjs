@@ -81,6 +81,8 @@ test("only explicit prose paths are documentation", () => {
         "specs/oracles/remark/corpus.md",
         "packages/markdown-core/tests/fixtures/input.md",
         "docs/specs/canonical-ast.md",
+        "docs/architecture/benchmark-grammar-corpus.md",
+        "docs/architecture/benchmark-grammar-coverage.md",
         "docs/specs/canonical-ast.json",
         "docs/diagram.js",
         ".github/workflows/ci.yml",

@@ -19,7 +19,7 @@ differences and explains overlapping syntax.
 | Internal links | Target comes before the pipe, raw label after it. Labels are not parsed as Markdown. |
 | Heading links | Automatic anchors are generated, while cross-link targets stay raw; applications match them. |
 | Properties | One initial `---` envelope with ten known fields. Unsupported members, including `...`, are ignored. |
-| Attributes | One grammar at every site; bare names such as `{disabled}` fail. Ordered duplicate classes/records survive. |
+| Attributes | One grammar at every site; a bare name such as `{disabled}` records `disabled="true"`. Ordered duplicate classes/records survive. |
 | Colon containers | Named directives and nameless fenced divs share one model and one minimum closing-fence length. |
 | Formula brackets | Two authored backslashes open `\\(...\\)` or `\\[...\\]`; a single backslash remains a Markdown escape. |
 | Task markers | Exactly one Unicode scalar plus a following separator; the authored marker is retained. |

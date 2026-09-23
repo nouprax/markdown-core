@@ -1,0 +1,388 @@
+# A corpus certified by grammar equivalence
+
+The deliverable is the corpus, its generative grammars, and the proofs below.
+[The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
+contains all 194 certificates, their concrete grammars, normal forms and two
+complete examples per family. The default run emits 824 documents at two scales:
+182 whole declared-language pairs and 12 local boundary pairs with complete
+hosts. The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
+30 syntax-guide features, 136 sections and 32 registered elements. Its explicit
+section mapping names certificates for 132 source-language sections and gives
+reviewed context-only dispositions for four sections. The historical
+30 scenarios and 43 structural domains remain accounted for, but their counts
+are no longer used as a claim of complete feature coverage.
+
+CommonMark/GFM features use the same input on both sides. Extensions use proved
+syntax translations or explicit local boundaries. These are grammar proofs;
+AST ownership is not an admission criterion.
+## What equivalence means here
+
+Different punctuation gives different literal languages: `++a++` and `**a**`
+are not the same string. We prove equivalence **under an explicitly specified
+syntax translation**, rather than pretend their literal byte languages are equal.
+For each certificate, let `G_A`, `G_R` be its displayed concrete grammars, `N`
+its normal-form grammar, and `d_A`, `d_R` their decoding maps. The obligation is
+
+```
+d_A : L(G_A) <-> L(N)       d_R : L(G_R) <-> L(N)
+T = d_R^-1 o d_A           T^-1 = d_A^-1 o d_R
+```
+
+Each arrow is a bijection on the **entire declared language**, not merely on
+sample inputs. Equality of the two normal forms plus the inverse laws proves
+`T(L(G_A)) = L(G_R)`. Translating a derivation preserves every variable field,
+its type, multiplicity, order within that field, repetition count, and recursive
+structure. A labelled product may permute whole fields; its declaration records
+that permutation. Fixed punctuation is part of the concrete encodings, not an
+unreported variable. Neither native node ownership nor identical native ASTs
+is a hypothesis.
+
+The permitted constructions are typed lexical nonterminals, fixed terminal
+encodings, labelled products, repetition, and recursive delimiter substitution.
+There is no arbitrary enumeration of strings, parser-output matching, or
+instance-specific lookup table. The proof does not identify the *unrestricted*
+Markdown Core and CommonMark languages. Their published constructs contain
+alternatives deliberately excluded by these grammars. For example, Word fields are lowercase ASCII. UnicodeWord is a separate
+`[a-zé字]+` grammar; it is not silently treated as an ASCII URL word. Finite
+marker/state languages and repeated bindings have the separate T7 proof below.
+
+These certificates establish the grammar equivalence requested of the benchmark.
+They do not assert equal instruction counts, equal byte lengths for all frames,
+or an optimality theorem for the native implementations. Those are different
+claims. Reports preserve both byte counts and the actual native measurements;
+a fixed frame rewrite must not be described as free at runtime.
+
+## Common grammar and unique recognition (T1)
+
+`SP` is one ASCII space and `LF` one newline. The definitions are:
+
+```ebnf
+Word   = [a-z]+ ;
+AttributeKey = Word except 'id' and 'class' ;
+UnicodeWord = [a-zé字]+ ;
+Phrase = Word (SP Word)* ;
+Empty  = epsilon ;
+Body   = Word | Word SP (Atom SP)* Word ;
+Atom   = Word | OPEN Body CLOSE ;
+```
+
+A field annotated `source-bytes <= n` restricts that lexical language on **both**
+sides. Link reference labels are bounded by 1,000 source bytes. GFM footnote
+calls count the authored caret in that limit, so their ASCII key domain is at
+most 999 bytes. A specimen or heading key paired with one of these labels takes
+the same bound; an unbounded Word would not prove a valid native counterpart.
+Repeated occurrences retain the same bound. The decoder rejects the first byte
+beyond it, and the default generated schedule reaches each bound at both scales.
+These are syntax limits, distinct from an implementation's allocation failure.
+
+`Body` has a Word at both ends. Its nested atoms have a space before and after
+them. `OPEN` and `CLOSE` are the same fixed punctuation token (`**` normally,
+`++` in the recursive insertion side). Words contain neither punctuation nor
+spaces. Thus maximal Word scanning is unique; a space separates atoms, and a
+punctuation token after a space starts a nested atom. Immediately after the
+last Word without an intervening space, that token ends the enclosing atom.
+The end of the outer Body is supplied by its enclosing production. Induction
+on nesting depth establishes a unique derivation and both decode/encode inverse
+laws. The one-Word alternative and the multi-atom alternative are disjoint by
+presence of a space. Phrase is similarly uniquely split at spaces; Empty has
+one derivation.
+
+The independent `recognizeBody` consumes bytes, checks both Word endpoints and
+EOF, and reconstructs this derivation. It does not trust the generator's tree.
+`renderBody` is its inverse on all finite Body derivations. Finite tests exercise
+these laws and reject malformed strings; the induction, not the tests, extends
+the result to arbitrary Word length, number of siblings and finite depth.
+
+## Contextual delimiter equivalence (T2)
+
+Nine certificates use:
+
+```ebnf
+Document  = Paragraph+ ;
+Paragraph = 'probe ' OPEN Payload CLOSE ' end' LF LF ;
+```
+
+| Certificate | Payload | A token | R token |
+| --- | --- | --- | --- |
+| insertion-strong | Body | `++` | `**` |
+| run-insertion | Phrase | `++` | `**` |
+| run-mark | Phrase | `==` | `**` |
+| run-strike | Phrase | `~~` | `**` |
+| run-super | Word | `^` | `*` |
+| run-sub | Word | `~` | `*` |
+| opaque-comment | Phrase | `%%` | two backticks |
+| opaque-formula | Phrase | `$` | one backtick |
+| opaque-display | Phrase | `$$` | two backticks |
+
+Expand Paragraph, identify corresponding OPEN/CLOSE terminal roles, and apply
+T1 to Payload. Replacing a role's token preserves its position and width. For
+Body apply that substitution recursively. By induction it has an inverse, and
+paragraph concatenation extends the bijection to every Document. This is a
+contextual grammar substitution, not a global replacement of `+` everywhere in
+Markdown. The grammar excludes adjacent delimiter runs, escapes, punctuation
+in words and intraword delimiters. All openers follow a space and precede a
+letter; all closers follow a letter and precede a space. Nested delimiters have
+the same property. Opaque phrases contain no backticks, newlines or boundary
+spaces; code-span newline/padding rules therefore introduce no alternate value.
+
+## Labelled product equivalence (T3)
+
+The original product families below and the additional feature productions in
+`scripts/lib/grammar-features.mjs` are complete concrete grammar pairs over their
+declared domains. Identical productions use T6; products with repeated bindings
+or finite lexical substitutions use T7.
+Their exact productions (including all whitespace and punctuation) are in the
+catalog's `grammars` entries and in `productGrammar`. In the table `B=Body`,
+`P=Phrase`, `W=Word`, `K=AttributeKey`, and `E=Empty`.
+
+| Certificate | Normal-form Unit fields | Concrete frame substitution |
+| --- | --- | --- |
+| leaf-comment | literal:P | comment fence / code fence |
+| leaf-formula | literal:P | formula fence / code fence |
+| leaf-fence | literal:P | formula info fence / plain code fence |
+| leaf-promotion | literal:P | standalone formula / code fence |
+| record-span | body:B, key:K, value:W | attribute envelope / link destination and title |
+| class-span | value:W | class envelope / link destination |
+| cross-link | label:P, target:W | cross-link envelope / link destination and title |
+| cross-embed | label:P, target:W | embedded cross envelope / image destination and title |
+| cross-link-absent | target:W | absent cross label / destination only |
+| cross-embed-absent | target:W | absent embedded label / image destination only |
+| cross-link-empty | label:E, target:W | empty cross label / empty title |
+| cross-embed-empty | label:E, target:W | empty embedded label / empty image title |
+| cross-anchor | anchor:W, target:W | cross target and anchor / destination components |
+| cross-local | anchor:W | local cross anchor / local destination component |
+| cite-author | key:W | author citation / autolink |
+| cite-suppress | key:W | suppressed citation / autolink |
+| cite-normal | key:W | bracketed citation / autolink |
+| inline-directive | body:B, key:W | directive label / link label and destination |
+| empty-directive | body:E, key:W | empty directive / empty link label |
+| leaf-directive | body:B, key:W | directive block / link paragraph |
+| anonymous-container | body:B, tail:B | anonymous fence / quoted paragraphs |
+| named-container | body:B, key:W, tail:B | named fence / quoted name and paragraphs |
+| loose-definition | body:B, literal:P | definition term and body / loose list paragraphs |
+| anchor | body:B, key:W | quote and anchor declaration / quote and reference declaration |
+
+For either side, write a production as
+`Unit = c0 F1 c1 ... Fk ck`, where each `ci` is an exact literal and each
+`Fi` is a distinct labelled nonterminal. Its normalization is the product of
+those labelled nonterminals, ordered by label. The grammar checker verifies
+that the two label/type sets are identical and contain no repeated labels.
+For the independent-field T3 case, inline administrative productions, apply the fixed frame encoding, and apply
+the recorded field permutation. The result on both sides is literally the
+same labelled product grammar. `Document = Unit+` on both sides.
+
+Here is why normalization is invertible, rather than arbitrary erasure of
+punctuation. A Word ends at a nonletter; Phrase contains only letters and single
+spaces; Body contains only letters, spaces and balanced `**` tokens. Every
+field in the catalog is terminated by punctuation outside that field's
+alphabet or by LF. There are no adjacent undelimited fields. Empty fields are
+statically declared. Consequently each frame has a unique field segmentation;
+T1 supplies unique decoding inside each field. The initial literal or initial
+field followed by its unique terminator fixes the unit start; the exact final
+literal fixes its end. Repeating this argument gives unique Document splitting,
+including frames with internal blank lines. Encoding inserts the same literals
+and field positions, recovering every byte. Hence `encode(decode(x))=x`, and
+independence of the labelled field domains gives the other inverse law.
+
+This also proves the translations with a different field order, such as
+`::key[body]` versus `[body](/key)`: decoding gives the same **labelled** product,
+without equating a parser's block and inline ownership. Cases with an absent
+label and those with an empty label have separate certificates and normal
+forms; absence is never silently turned into an empty variable.
+
+The standalone source recognizer compiles these literal/nonterminal productions,
+then uses T1 recognizers on every captured field and requires complete input
+consumption. It compares both decoded Documents without executing a native parser.
+Native output correctness belongs to the parity and regression suites.
+
+## List frame equivalence (T4)
+
+`task-value` and `decimal-list` use a common Body grammar and:
+
+```ebnf
+Document = Item (LF* Item)* LF+ ;
+Item     = Prefix Body LF ;
+```
+
+For task-value the Prefix terminals are `- [~] ` and `- [x] ` respectively.
+Normalizing the contextual marker yields the same Item production; both task
+states are one fixed alternative in their respective grammars. Other task
+states are outside this pair. For decimal-list both Prefix productions are
+`Decimal '. '`, with `Decimal = [1-9][0-9]{0,8}`; translation is identity.
+The decimal spelling is retained as a string, including all its digits.
+Bodies contain no LF, so line/item boundaries and all blank lines are unique.
+T1 and induction on item count give the two inverse laws. The recognizer must
+retain blank-line multiplicities: ignoring them would prove only a quotient
+of this grammar, not its language bijection.
+
+## Identity grammar (T6)
+
+For shared syntax `G_A = G_R` literally: every production, lexical nonterminal,
+context guard and terminal is the same. Set `T = id`. Then both inverse laws and
+`T(L(G_A)) = L(G_R)` follow immediately, for all derivations of that grammar.
+No alternate heading, HTML, hard-break, entity or escape spelling is necessary.
+The catalog marks these certificates `identity: true`, the generator emits equal
+bytes, and the checker compares the productions and independently decodes both.
+
+Native output differences affect performance interpretation without changing
+source grammar identity. A quote's node name, automatic heading anchors, source
+positions and emitted definition retention are output-model questions. For
+example `footnote-retention` uses the identical reference-definition grammar,
+while Core retains authored definitions and GFM emits used definitions. The
+report documents that distinction. Correctness of those outputs is owned by
+parity/regression, not by an AST assertion in the grammar corpus.
+
+## Finite lexical substitution and repeated bindings (T7)
+
+A finite lexical grammar is an explicit injective table `e : D -> Tokens`. The
+catalog records **every** token, not just the generated examples. All encodings
+for one type have the same domain. For Ordinal, `D = {1,...,26}`; the five tables
+are decimal, lower/upper ASCII letters, and canonical lower/upper Roman spellings.
+For State, `D = {plain,closed,open}`; encodings are the callout suffixes
+`epsilon,-,+` and the link-title words `plain,closed,open`. Distinctness of all
+entries proves bijectivity onto each finite lexical language. Compose their
+inverses with T3's frame substitution. Token length need not be equal.
+
+In the four ordered-list productions, an initial `a)`, `(A)`, `i.` or `I)` fixes
+the source variant; the reference begins with `1.`. The second marker is the
+variable ordinal. Thus `i` inside an established alpha list does not accidentally
+select a fresh Roman list. The two default-marker families now map to fixed `1.`
+or `1)` markers: there is no unmatched variable start on only one side. The
+canonical Roman domain is explicitly 1..26. Noncanonical numerals and the entire
+999,999,999-valued language are **not** proved equivalent to decimal conversion.
+
+For repeated bindings, let the distinct fields be `x_1,...,x_n`, and let a frame
+mention a field several times. Its language includes the equality constraint
+that all occurrences decode to the same value. Decoding first segments every
+occurrence, checks those equalities, and retains the labelled tuple once.
+Encoding substitutes that value at every declared occurrence. Therefore each
+encoded occurrence is recovered, and the tuple is recovered in the other
+direction. The occurrence count may differ between encodings; it is a recorded
+fixed part of the grammar transformation, not a deleted variable or a claim of
+zero copying cost. This covers reference-label reuse, specimen definition/call
+bindings and inherited attributes. Equality constraints are checked from bytes;
+an inconsistent second label is rejected instead of overwritten in a map.
+
+T3 and T7 now provide whole declared-language counterparts for thirteen formerly
+split families: four numeral lists, two default lists, all three callout states,
+citation affixes, both caption placements, mixed definitions, specimen binding, and specimen resets. Prefix/key/suffix and caption/table fields all survive independently.
+Named containers use the `:::name` production; `::: name` belongs to the
+nameless grammar. The source encoding preserves that normative distinction.
+
+Specimen resets add a shared lexical nonterminal
+`Positive9 = [1-9][0-9]{0,8}`. The reset marker `(n@key)` is translated to an
+ordered-list start `n.` plus a reference definition/call carrying the same key.
+Both spellings recognize the same bounded decimal field. The group certificate
+uses the common first-marker rule: the first reset/ordered marker establishes
+the start, later authored numbers do not restart the group, blank lines preserve
+the group, and an outside paragraph separates it from the next group. Anonymous
+and duplicate labels are retained as declared repeated fields, rather than
+requiring the reference to use footnotes. The declared group productions retain
+the first start (`5`) and subsequent authored reset markers. The variable-reset
+family exercises `999999999` as well as small starts. This proves the declared
+single-line-body reset grammar, not every unrestricted continuation shape.
+
+## Boundary corpus and its limits (T5)
+
+Twelve families retain local proofs:
+
+| Families | Residual outside the certified local grammar |
+| --- | --- |
+| grid-cell, simple-matrix, headless-matrix, sparse-grid | Column geometry, interval equality, padding, spans, sparse rows and footer grammar. |
+| multiline-matrix, headless-multiline | Physical-line segmentation and logical-row block parsing, including the required second row. |
+| metadataempty, metadata, metadata-types, metadata-literal | Initial envelope, typed members, ten fields, first-valid retention, recovery and literal indentation. |
+| embed-dimensions, image-dimensions | Bounded positive numeric dimensions and suffix selection. |
+
+The concrete CommonMark/GFM counterparts lack these productions. For example,
+cmark's image label has no bounded integer nonterminal, a GFM pipe table has no
+span/column-interval predicate, and metadata has no typed member production in CommonMark. Erasing those constraints is not an equivalence
+transformation. A table's independently varying cells do not eliminate its width
+equations. Metadata scalar/list/null alternatives cannot be replaced by an opaque
+code block and called the same member grammar.
+
+These identify exact failures of the supplied reference grammars, **not universal
+impossibility theorems about every conceivable encoding or parser**. Their local
+positive proofs are complete; their residuals are explicitly outside those
+proofs. The feature ledger must not label these hosts whole-grammar certified.
+
+Each host is partitioned as an ordered sequence of residual literal byte ranges
+and named typed slots. Extents are contiguous, disjoint and exhaustive; joining
+them must recover the exact host. Both sides must yield the same labelled slot
+set and values. Repeated occurrences of a specimen key must agree; the equality
+check and binding work remain in the residual. That key is decoded once in the
+local product, not deceptively charged once for each original occurrence.
+
+Each field is re-embedded with the **same explicit parser entry grammar** on
+both sides: Body as a paragraph, Word/Phrase inside a one-backtick code span,
+and Empty as `[](/empty)`. The local Unit is the certificate's exact ordered
+field sequence, not an arbitrary union of fields. By T1 each embedding is
+invertible within its fixed field type. The identity between the two resulting
+Unit productions extends by repetition to a Document bijection. This is T5,
+a proof of local grammar equivalence over arbitrary fields, with source witnesses
+and lossless host residuals. The extra entry frame is measured on both sides.
+It is **not** a claim that the native parser exposes that interior operation as
+a standalone function, or that host cost equals boundary cost plus a subtraction.
+
+Metadata hosts have one initial envelope containing all generated members,
+followed by their bodies. The typed metadata host retains the original large
+integer, boolean, null, mixed author list and empty keyword list as explicit
+residual bytes, alongside varying date members. Unknown-member hosts vary their
+keys independently. Repeating a document-initial envelope in the middle of
+a document would not remain a metadata scenario. The corpus explicitly composes
+one envelope instead. Its lossless pieces retain every occurrence of every value.
+
+## Concrete coverage, variation, and checks
+
+The catalog records each certificate's historical scenario IDs. The registry
+requires exactly the union of all 30 old scenarios and dispositions for every
+old structural domain, including the four previously unpaired families. A historical boundary is upgraded only by a new constructive grammar
+translation. Old structural fixtures remain separate diagnostic controls.
+
+The benchmark requests 12 and 24 generated derivation units. Each scale is
+expanded when necessary to enumerate every combination of finite grammar fields;
+the four ordinal families therefore use 26 and 52 units. Word widths, independent
+keys/values/targets/anchors, numbers of atoms, balanced branching and chain depth
+vary deterministically. Chains include depth 32 at scale two. `instantiateGrammar`
+also accepts independently chosen field values: the grammar is not restricted
+to the generator's finite schedule or correlated counters. Two checked-in
+examples per family provide immediately reviewable source documents; the full
+run materializes every `.md`, its digest, grammars, derivations, partitioned
+hosts and residuals in `corpus/grammar-corpus.json`.
+
+Run:
+
+```sh
+pnpm benchmark:grammar --corpus-only --out build/benchmark-grammar
+node --test scripts/tests/grammar-corpus.test.mjs
+# Linux with the pinned compiler, oracles and Callgrind:
+pnpm benchmark:grammar --scale 2 --out build/benchmark-grammar
+```
+
+The source-language checks validate all generated derivations, inverse laws,
+rejected source syntax, independent fields, finite substitutions, repeated
+bindings, lossless partitions and specification/element coverage. They run
+without building or executing Core, cmark or GFM. These checks exercise the
+formal constructions; T1–T7 establish the mathematical result beyond the finite
+samples.
+
+Pipeline responsibilities are orthogonal: parity/regression own native parsing
+correctness; this grammar layer owns source-language equivalence; the benchmark
+owns performance measurements and their provenance. It does not assert AST
+kinds, per-unit native multiplicity, field values or output equality. Multiple
+source units may legally compose into one native block. Correctness fixtures
+are neither benchmark acceptance gates nor inputs to the grammar identity.
+
+The artifact identity covers the grammar/generator/checker sources, entrypoint,
+oracle pins, both proof/coverage documents, syntax specifications and checked-in
+ledgers, plus the exact generated documents and
+proof records. The Callgrind report lists the concrete ratio per certificate
+and scale, retaining full hosts for boundary rows without certifying those host
+ratios. CI measures and archives this suite alongside the older diagnostic suite.
+
+To regenerate the checked-in example catalog after changing a grammar, run the
+following and review its grammar and example diff together with the proof:
+
+```sh
+node --input-type=module -e 'import fs from "node:fs"; import {grammarCatalog} from "./scripts/lib/grammar-corpus.mjs"; fs.writeFileSync("packages/markdown-core/benchmarks/grammar-corpus.json", JSON.stringify(grammarCatalog(), null, 4) + "\n");'
+pnpm exec prettier --write packages/markdown-core/benchmarks/grammar-corpus.json
+```
