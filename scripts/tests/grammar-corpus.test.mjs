@@ -226,6 +226,23 @@ test("artifact identity binds proof text and source dependencies; corpus is dete
     }
 });
 
+test("regeneration removes obsolete generated halves and scales from archived corpus", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "grammar-rerun-"));
+    try {
+        writeGrammarCorpus(directory, { units: 1, scale: 2 });
+        fs.writeFileSync(path.join(directory, "grammar-removed-boundary-dialect.x1.md"), "obsolete");
+        fs.writeFileSync(path.join(directory, "notes.md"), "review notes");
+        const current = writeGrammarCorpus(directory, { units: 1, scale: 1 });
+        assert.deepEqual(
+            fs.readdirSync(directory).sort(),
+            ["grammar-corpus.json", "notes.md", ...current.cases.map((item) => `${item.name}.x${item.scale}.md`)].sort()
+        );
+        assert.equal(fs.readFileSync(path.join(directory, "notes.md"), "utf8"), "review notes");
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
 test("the real benchmark CLI selects the entire certified pair, including boundary hosts", () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "grammar-cli-"));
     try {

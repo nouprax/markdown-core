@@ -1224,6 +1224,12 @@ export function writeGrammarCorpus(directory, options) {
     const corpus = buildGrammarCorpus(options);
     const coverage = validateFeatureCoverage(fileURLToPath(new URL("../../", import.meta.url)), corpus);
     fs.mkdirSync(directory, { recursive: true });
+    // This namespace belongs to the generator. A rerun with fewer scales or
+    // upgraded boundary certificates must not archive obsolete source halves.
+    const names = new Set(corpus.cases.map((item) => `${item.name}.x${item.scale}.md`));
+    for (const name of fs.readdirSync(directory))
+        if (/^grammar-[a-z0-9-]+\.x[1-9][0-9]*\.md$/u.test(name) && !names.has(name))
+            fs.unlinkSync(path.join(directory, name));
     for (const item of corpus.cases)
         fs.writeFileSync(path.join(directory, `${item.name}.x${item.scale}.md`), item.text);
     const identity = hash(
