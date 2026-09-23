@@ -7188,6 +7188,64 @@ static void table_open_gate_admits_only_possible_tables(test_batch_runner *runne
     markdown_core_node_free(break_root);
     markdown_core_strbuf_free(&breaks);
 
+    /* NOR DOES A SEGMENTED RULE. Two or more dash runs open a headless simple
+     * or multiline table, and each begins its body on the very next line, so
+     * `- - -` and `--- ---` above a blank line are rules and nothing is
+     * captured. The same rules with a row below them stay tables. */
+    static const char *const rules[] = {"- - -", "--- ---"};
+    for (size_t r = 0; r < sizeof(rules) / sizeof(*rules); r++) {
+        markdown_core_strbuf segmented = MARKDOWN_CORE_BUF_INIT();
+        markdown_core_strbuf_puts(&segmented, "prose\n\n");
+        for (size_t i = 0; i < 256; i++) {
+            markdown_core_strbuf_puts(&segmented, rules[r]);
+            markdown_core_strbuf_puts(&segmented, "\n\nab cd\n\n");
+        }
+        inline_work segmented_work = {0};
+        markdown_core_node *segmented_root = markdown_core_parse_document_with_setup(
+            (char *)segmented.ptr, segmented.size, measure_inline_work, &segmented_work);
+        OK(runner, segmented_root != NULL, "segmented rules followed by blanks parse: rule=%zu", r);
+        INT_EQ(runner, count_kind(segmented_root, MARKDOWN_CORE_NODE_THEMATIC_BREAK), 256,
+               "as thematic breaks: rule=%zu", r);
+        INT_EQ(runner, count_kind(segmented_root, MARKDOWN_CORE_NODE_TABLE), 0, "and no table: rule=%zu", r);
+        INT_EQ(runner, segmented_work.table_separator_scans, 0,
+               "a segmented rule with a blank below it captures no line: rule=%zu", r);
+        markdown_core_node_free(segmented_root);
+        markdown_core_strbuf_free(&segmented);
+
+        markdown_core_strbuf headless = MARKDOWN_CORE_BUF_INIT();
+        markdown_core_strbuf_puts(&headless, rules[r]);
+        markdown_core_strbuf_puts(&headless, "\nab  cd\n");
+        markdown_core_strbuf_puts(&headless, rules[r]);
+        markdown_core_strbuf_puts(&headless, "\n");
+        markdown_core_node *headless_root = markdown_core_parse_document((char *)headless.ptr, (size_t)headless.size);
+        INT_EQ(runner, count_kind(headless_root, MARKDOWN_CORE_NODE_TABLE), 1,
+               "the same rule with a row below it is a headless table: rule=%zu", r);
+        markdown_core_node_free(headless_root);
+        markdown_core_strbuf_free(&headless);
+    }
+
+    /* A SEPARATOR IS ITS LINE'S TAIL. The line under a header must end in the
+     * separator a container prefix leaves behind, so dashes among words are
+     * not one: prose whose second line hyphenates two words captures no line,
+     * and a separator under a quote marker still opens its table. */
+    markdown_core_strbuf hyphens = MARKDOWN_CORE_BUF_INIT();
+    for (size_t i = 0; i < 256; i++) {
+        markdown_core_strbuf_puts(&hyphens, "alpha beta gamma\nwell-known and so-called words\n\n");
+    }
+    inline_work hyphen_work = {0};
+    markdown_core_node *hyphen_root =
+        markdown_core_parse_document_with_setup((char *)hyphens.ptr, hyphens.size, measure_inline_work, &hyphen_work);
+    OK(runner, hyphen_root != NULL, "hyphenated prose parses");
+    INT_EQ(runner, count_kind(hyphen_root, MARKDOWN_CORE_NODE_PARAGRAPH), 256, "as paragraphs");
+    INT_EQ(runner, hyphen_work.table_separator_scans, 0, "dashes among words capture no line");
+    markdown_core_node_free(hyphen_root);
+    markdown_core_strbuf_free(&hyphens);
+
+    static const char quoted[] = "> Right  Left\n> -----  ----\n> 12     12\n";
+    markdown_core_node *quoted_root = markdown_core_parse_document(quoted, sizeof(quoted) - 1);
+    INT_EQ(runner, count_kind(quoted_root, MARKDOWN_CORE_NODE_TABLE), 1, "a quoted separator still opens its table");
+    markdown_core_node_free(quoted_root);
+
     static const char multiline[] = "-------------\n"
                                     "Right  Left\n"
                                     "-----  ----\n"
