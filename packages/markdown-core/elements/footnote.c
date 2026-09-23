@@ -7,9 +7,9 @@
 #include "inline_internal.h"
 #include "block_internal.h"
 
-static bool markdown_core_inline_footnote_label_is_defined(markdown_core_parser *parser,
-                                                           markdown_core_inline_state *inline_state,
-                                                           bufsize_t label_start, bufsize_t after_close);
+static const markdown_core_map_record *
+markdown_core_inline_footnote_definition(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                         bufsize_t label_start, bufsize_t after_close);
 static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
                                                                    bracket *opener, bufsize_t after_close);
 static bool markdown_core_footnote_scan(markdown_core_parser *parser, block_start_context *context, block_start *start);
@@ -64,21 +64,23 @@ done:
     memset(collection, 0, sizeof(*collection));
 }
 
-static bool markdown_core_inline_footnote_label_is_defined(markdown_core_parser *parser,
-                                                           markdown_core_inline_state *inline_state,
-                                                           bufsize_t label_start, bufsize_t after_close) {
+/* The definition record a call's label names, or NULL when the document
+ * defines no such label. The record's key IS the call's normal form -- the
+ * lookup matched it byte for byte -- so the call takes its id from there
+ * rather than normalizing the same label a second time. */
+static const markdown_core_map_record *
+markdown_core_inline_footnote_definition(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                         bufsize_t label_start, bufsize_t after_close) {
     markdown_core_chunk label;
-    bool defined;
 
     if (after_close - label_start < 2) {
-        return false;
+        return NULL;
     }
     /* A borrowed slice of the block's own content: `markdown_core_chunk_dup`
      * aliases, so the only allocation in here is the map's own normalization,
      * and that one reports itself through the map's sticky flag. */
     label = markdown_core_chunk_dup(&inline_state->input, label_start + 1, after_close - label_start - 2);
-    defined = markdown_core_map_lookup(parser->footnote_defs, &label) != NULL;
-    return defined;
+    return markdown_core_map_lookup(parser->footnote_defs, &label);
 }
 
 static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
@@ -218,8 +220,11 @@ bool markdown_core_footnote_close_reference(markdown_core_parser *parser, markdo
         bool caret_written = opener->position < inline_state->input.len &&
                              inline_state->input.data[opener->position] == '^' &&
                              (literal->len > 1 || opener->inl_text->next->next);
-        if (caret_written &&
-            markdown_core_inline_footnote_label_is_defined(parser, inline_state, opener->position, initial_pos)) {
+        const markdown_core_map_record *definition =
+            caret_written
+                ? markdown_core_inline_footnote_definition(parser, inline_state, opener->position, initial_pos)
+                : NULL;
+        if (definition) {
             if (!markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_CITE)) {
                 return false;
             }
@@ -235,19 +240,19 @@ bool markdown_core_footnote_close_reference(markdown_core_parser *parser, markdo
                 markdown_core_inline_pop_bracket(inline_state);
                 return true;
             }
-            markdown_core_chunk label =
-                markdown_core_chunk_dup(&inline_state->input, opener->position + 1, initial_pos - opener->position - 2);
-            int lost = 0;
-            unsigned char *id = normalize_map_label(&label, &lost);
+            /* The call's id is its label's normal form: the key the lookup
+             * matched, copied rather than computed again. */
+            unsigned char *id = markdown_core_alloc(1, (size_t)definition->label_len + 1);
             if (!id) {
                 inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
                 markdown_core_parser_release_node(parser, fnref);
                 markdown_core_inline_pop_bracket(inline_state);
                 return true;
             }
+            memcpy(id, definition->label, (size_t)definition->label_len + 1);
             markdown_core_chunk *value = &fnref->as.cite->citations->as.citation->value;
             value->data = id;
-            value->len = (bufsize_t)strlen((const char *)id);
+            value->len = definition->label_len;
             value->alloc = 1;
 
             markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
@@ -327,9 +332,10 @@ static bool markdown_core_footnote_open(markdown_core_parser *parser, markdown_c
         markdown_core_chunk_free(&c);
         return false;
     }
-    (*container)->as.footnote->id.data = id;
-    (*container)->as.footnote->id.len = (bufsize_t)strlen((const char *)id);
-    (*container)->as.footnote->id.alloc = 1;
+    markdown_core_chunk *normal = &(*container)->as.footnote->id;
+    normal->data = id;
+    normal->len = (bufsize_t)strlen((const char *)id);
+    normal->alloc = 1;
     if (!markdown_core_parser_register_definition(parser, &parser->footnotes, *container, NULL, NULL)) {
         markdown_core_chunk_free(&c);
         return false;
@@ -348,7 +354,7 @@ static bool markdown_core_footnote_open(markdown_core_parser *parser, markdown_c
      * one was freed with everything written in it (D11). A set of
      * labels owns no node and picks no winner, so order decides
      * nothing left to get wrong. */
-    markdown_core_footnote_definition_create(parser->footnote_defs, &c);
+    markdown_core_footnote_definition_create(parser->footnote_defs, normal);
     markdown_core_chunk_free(&c);
 
     (*container)->internal_offset = matched;

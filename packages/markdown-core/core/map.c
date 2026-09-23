@@ -208,8 +208,8 @@ static int index_map(markdown_core_map *map) {
      * inputs. Explicit definitions precede implicit heading declarations;
      * within either class the first authored occurrence wins. */
     for (record = map->records; record; record = record->next) {
-        bufsize_t length = (bufsize_t)strlen((char *)record->label);
-        markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&map->index, record->label, length);
+        markdown_core_key_index_slot *slot =
+            markdown_core_key_index_entry(&map->index, record->label, record->label_len);
         if (!slot) {
             markdown_core_key_index_free(&map->index);
             return 0;

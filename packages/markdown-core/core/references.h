@@ -36,7 +36,9 @@ markdown_core_map *markdown_core_reference_map_new(void);
 markdown_core_map_record *markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label,
                                                          struct markdown_core_resource *resource);
 markdown_core_map *markdown_core_footnote_definition_map_new(void);
-void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label);
+/* Declares the footnote label whose normal form is `id`: the definition has
+ * already normalized it to name itself, and the set is keyed by that value. */
+void markdown_core_footnote_definition_create(markdown_core_map *map, const markdown_core_chunk *id);
 
 #ifdef __cplusplus
 }

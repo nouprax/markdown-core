@@ -21,6 +21,8 @@ struct markdown_core_map_record {
     struct markdown_core_resource *resource;
     uint64_t source_key;
     bool implicit;
+    /* The normalized label and its length; the bytes are NUL-terminated. */
+    bufsize_t label_len;
     unsigned char label[];
 };
 
