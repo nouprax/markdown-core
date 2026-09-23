@@ -15,9 +15,13 @@
 extern "C" {
 #endif
 
+/* The most bytes a buffer's content may hold. A write that would take the
+ * content past it poisons the buffer, whatever room the allocation has. */
+#define MARKDOWN_CORE_STRBUF_LIMIT ((bufsize_t)(INT32_MAX / 2))
+
 /* Every buffer carries a sticky `oom` poison bit: when growth fails (either
- * the allocator returned NULL or the 2 GiB size limit was hit), the bit is
- * set, the previous contents stay valid and NUL-terminated, and every later
+ * the allocator returned NULL or MARKDOWN_CORE_STRBUF_LIMIT was hit), the bit
+ * is set, the previous contents stay valid and NUL-terminated, and every later
  * mutation becomes a no-op.  Consumers observe the loss at the boundaries --
  * markdown_core_strbuf_detach returns NULL for a poisoned buffer -- so
  * allocation failure degrades into a reported parse failure instead of

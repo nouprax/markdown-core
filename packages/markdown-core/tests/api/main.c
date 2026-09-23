@@ -6479,6 +6479,48 @@ static void reference_label_normal_form(test_batch_runner *runner) {
     markdown_core_strbuf_free(&normal);
 }
 
+/* A PROJECTION'S CONTENT STOPS AT THE BUFFER LIMIT, not at its allocation.
+ * Growth oversizes a buffer by half, so near MARKDOWN_CORE_STRBUF_LIMIT the
+ * allocation reaches past the limit. The label and anchor projections write
+ * through a cursor, and a cursor bounded by the allocation alone let an image
+ * that appending would have refused land past the limit, unpoisoned: a
+ * 400 MiB label of U+0390, which folds from two bytes to six, reached that
+ * state. The content below the limit is forged -- only the page the
+ * projections write is touched -- because building such a label costs
+ * gigabytes. */
+static void image_cursor_stops_at_buffer_limit(test_batch_runner *runner) {
+    const bufsize_t limit = MARKDOWN_CORE_STRBUF_LIMIT;
+    static const char fold[] = "\xCE\xB9\xCC\x88\xCC\x81";
+    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT();
+    markdown_core_strbuf_grow(&buf, limit / 3 * 2 + 64);
+    OK(runner, !buf.oom && buf.asize - 1 > limit, "the allocation reaches past the limit");
+    if (buf.oom) {
+        markdown_core_strbuf_free(&buf);
+        return;
+    }
+
+    buf.size = limit - 6;
+    buf.ptr[buf.size] = '\0';
+    markdown_core_utf8proc_normalize_label(&buf, (const uint8_t *)"\xCE\x90", 2);
+    OK(runner, !buf.oom && buf.size == limit, "a fold that ends exactly at the limit lands");
+    OK(runner, memcmp(buf.ptr + limit - 6, fold, 6) == 0 && buf.ptr[limit] == 0, "folded and terminated");
+
+    buf.size = limit - 5;
+    buf.ptr[buf.size] = '\0';
+    markdown_core_utf8proc_normalize_label(&buf, (const uint8_t *)"\xCE\x90", 2);
+    OK(runner, buf.oom, "a fold one byte past the limit poisons the buffer");
+    OK(runner, buf.size == limit - 5 && buf.ptr[buf.size] == 0, "and leaves its content as it was");
+
+    buf.oom = 0;
+    buf.size = limit - 1;
+    buf.ptr[buf.size] = '\0';
+    markdown_core_utf8proc_anchor(&buf, (const uint8_t *)"AB", 2);
+    OK(runner, buf.oom, "an anchor one byte past the limit poisons the buffer");
+    OK(runner, buf.size == limit && buf.ptr[limit - 1] == 'a' && buf.ptr[limit] == 0,
+       "at the byte where appending it would have been refused");
+    markdown_core_strbuf_free(&buf);
+}
+
 static void reference_definition_lifetime(test_batch_runner *runner) {
     const char source[] = "- a\n\n[ref]: /x\n\n#list#\n\n[ref]\n";
     bool retained_at_anchor = false;
@@ -9175,6 +9217,7 @@ int main(void) {
     block_identifier_ownership(runner);
     reference_definition_lifetime(runner);
     reference_label_normal_form(runner);
+    image_cursor_stops_at_buffer_limit(runner);
     attribute_linear_work(runner);
     attribute_recognition_is_memoised(runner);
     attribute_values_are_one_arena(runner);

@@ -105,8 +105,8 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
             view_end = tmp->content_map.first + tmp->content_map.count;
             view_offset += tmp->as.literal->len;
         }
-        /* The bound every literal buffer shares (buffer.c). */
-        if (length > (size_t)(INT32_MAX / 2)) {
+        /* The bound every literal buffer shares. */
+        if (length > (size_t)MARKDOWN_CORE_STRBUF_LIMIT) {
             return MARKDOWN_CORE_FINISH_FAILED;
         }
         if (view) {

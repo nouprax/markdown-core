@@ -41,7 +41,7 @@ void markdown_core_strbuf_init(markdown_core_strbuf *buf, bufsize_t initial_size
  * then wrote `add` bytes past the end of a buffer that had not grown. Test
  * against the room the cap leaves, BEFORE adding, so the sum never happens. */
 static MARKDOWN_CORE_INLINE void S_strbuf_grow_by(markdown_core_strbuf *buf, bufsize_t add) {
-    if (add < 0 || add > (bufsize_t)(INT32_MAX / 2) - buf->size) {
+    if (add < 0 || add > MARKDOWN_CORE_STRBUF_LIMIT - buf->size) {
         buf->oom = 1;
         return;
     }
@@ -67,7 +67,7 @@ void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size)
 
     /* Both the size cap and allocator failure poison the buffer instead of
      * aborting; existing contents stay valid and later writes are no-ops. */
-    if (target_size > (bufsize_t)(INT32_MAX / 2)) {
+    if (target_size > MARKDOWN_CORE_STRBUF_LIMIT) {
         buf->oom = 1;
         return;
     }

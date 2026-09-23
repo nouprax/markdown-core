@@ -136,28 +136,16 @@ void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf) {
  * literal into its image one character at a time. Each writes straight into
  * `buf` through a local cursor `out` and limit `end` instead of appending
  * character by character, and checks before every character that the room
- * left holds that character's image, whose exact length it knows. When it
- * does not, the cursor is handed here to reserve for the rest of the literal
- * at once -- an upper bound the caller states -- clamped to what a buffer may
- * hold (buffer.c), because the bound can exceed that limit while the image
- * itself fits: only an image that does not fit poisons the buffer, at exactly
- * the byte where appending it would have.
- * Returns the cursor in the grown buffer, whose room ends at S_image_end, or
- * NULL when the buffer is poisoned. The cursor stays a local of its caller:
- * bytes written through it cannot alias it, so it lives in a register. */
-static uint8_t *S_reserve_image(markdown_core_strbuf *buf, uint8_t *out, size_t need, size_t bound) {
-    const size_t limit = (size_t)(INT32_MAX / 2);
-    buf->size = (bufsize_t)(out - buf->ptr);
-    size_t target = (size_t)buf->size + (bound > need ? bound : need);
-    if (target > limit && (size_t)buf->size + need <= limit) {
-        target = limit;
-    }
-    markdown_core_strbuf_grow(buf, target > (size_t)INT32_MAX ? INT32_MAX : (bufsize_t)target);
-    return buf->oom ? NULL : buf->ptr + buf->size;
-}
-
-/* The end of the reserved room; one byte is kept for the terminator. */
-static inline uint8_t *S_image_end(const markdown_core_strbuf *buf) { return buf->ptr + buf->asize - 1; }
+ * left holds that character's image, whose exact length it knows. The room
+ * ends at the allocation or at MARKDOWN_CORE_STRBUF_LIMIT, whichever is
+ * nearer: the allocation is oversized past the limit, and the content may not
+ * follow it there. When the room is short, the cursor is handed here, which
+ * poisons the buffer when the character's image would take the content past
+ * the limit -- the byte where appending it would have been refused -- and
+ * otherwise reserves for the rest of the literal at once, an upper bound the
+ * caller states, clamped to the limit because the bound can pass it while the
+ * image itself fits. The cursor stays a local of its caller: bytes written
+ * through it cannot alias it, so it lives in a register. */
 
 /* The image written so far becomes the buffer's content. A buffer that never
  * reserved has had nothing written into it. */
@@ -166,6 +154,26 @@ static inline void S_finish_image(markdown_core_strbuf *buf, uint8_t *out) {
         buf->size = (bufsize_t)(out - buf->ptr);
         buf->ptr[buf->size] = '\0';
     }
+}
+
+/* The end of the room: one byte of the allocation is kept for the
+ * terminator, and the content never passes the limit. */
+static inline uint8_t *S_image_end(const markdown_core_strbuf *buf) {
+    return buf->ptr + (buf->asize - 1 < MARKDOWN_CORE_STRBUF_LIMIT ? buf->asize - 1 : MARKDOWN_CORE_STRBUF_LIMIT);
+}
+
+/* Returns the cursor in the grown buffer, whose room ends at S_image_end, or
+ * NULL when the buffer is poisoned. What was written before stays the
+ * buffer's terminated content either way. */
+static uint8_t *S_reserve_image(markdown_core_strbuf *buf, uint8_t *out, size_t need, size_t bound) {
+    S_finish_image(buf, out);
+    size_t room = (size_t)(MARKDOWN_CORE_STRBUF_LIMIT - buf->size);
+    if (need > room) {
+        buf->oom = 1;
+        return NULL;
+    }
+    markdown_core_strbuf_grow(buf, buf->size + (bufsize_t)(bound < room ? bound : room));
+    return buf->oom ? NULL : buf->ptr + buf->size;
 }
 
 #include "case_fold.inc"
