@@ -2172,8 +2172,9 @@ export function markdownReport(report) {
                 "### Parse-effort adjudication",
                 "",
                 "Alphabet-renaming obstructions rule out only whole-domain byte permutations preserving ordered owners; they do not prove unequal optimal costs.",
+                "They are supplementary checks, not admission conditions for equivalence through formal grammar rewrites.",
                 "",
-                "| Structural proof | Full optimum | Alphabet renaming | Missing cost obligation |",
+                "| Structural proof | Full optimum | Optional alphabet-map check | Missing cost obligation |",
                 "| --- | --- | --- | --- |"
             );
             for (const item of pairs) {

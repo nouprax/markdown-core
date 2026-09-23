@@ -8,15 +8,99 @@ quotients. The former `sameJob` interpretation and equivalent-work median are
 withdrawn. The 30 historical workloads and 12 boundary interventions do not
 acquire stronger status through those proofs.
 
+## Target: equivalence of parsing problems through grammar rewrites
+
+The target is mathematical equality of optimal parsing effort established by
+equivalent formal grammar descriptions. It is **not** a requirement to preserve
+the ordered ownership tree of either implementation, to keep derivation trees
+isomorphic, or to find a global byte permutation between whole dialects.
+Those are narrower proof routes; their failure cannot reject this target.
+
+Write a grammar together with its terminal interpretation, disambiguation,
+semantic observations, failure behavior and cost model. The intended proof is
+a checked chain of specification rewrites to a common parsing problem:
+
+```text
+G_A  <=>  H_1  <=> ... <=>  N  <=> ... <=>  H_2  <=>  G_B
+                    common problem under M
+```
+
+Renaming nonterminals, expanding or eliminating administrative productions,
+factoring productions and changing a recursive presentation are permitted
+when their individual side conditions and semantic correspondence are proved.
+There is no node-for-node condition on the intermediate derivations. In
+particular, grammar-only helper nodes are not required output or unavoidable
+allocations. Native AST allocation/ownership is an implementation or additional
+output-contract concern, not a definition of syntax effort.
+
+**Same-problem theorem.** For fixed, statically known grammars on the same input
+representation, suppose the rewrite chain proves the same complete observable
+parsing relation, failure contract and machine M. Then a program satisfies one
+specification exactly when it satisfies the other: the sets of admissible
+algorithms are identical. The infima of their costs are therefore equal for
+every input and positive weight vector. This needs neither a correspondence
+between implementation traces nor a bijection between derivation nodes.
+The result concerns the problem optimum; selected parsers can differ in cost.
+
+For example, these two specifications both recognize exactly `ab`, return the
+same pair of terminal values, and reject every other string:
+
+```text
+G_A: S -> 'a' 'b'       { return pair(a, b) }
+G_B: S -> A B           { return pair(A, B) }
+     A -> 'a'           { return a }
+     B -> 'b'           { return b }
+```
+
+Inlining the two pure administrative productions changes the derivation tree,
+but not the problem. With the same D/O/E/M, its optimum is exactly unchanged.
+Charging an unavoidable parse-time step or AST allocation for each written
+production would incorrectly make this optimum depend on grammar notation.
+
+For **different source spellings**, the proof additionally needs the terminal
+interpretations and input correspondence. Substituting terminal names in BNF
+alone does not prove equal raw-byte recognition costs. For `++...++` and
+`**...**`, specify the marker recognizers and their contextual obligations,
+then prove the common grammar problem and equal effort of the realizations
+under M. The correspondence may be context-sensitive. A global alphabet swap
+is not required. A runtime source converter, if used, contributes cost; a
+static grammar rewrite does not become a per-document conversion pass.
+
+**Grammar meaning matters.** Preserve recognition, ambiguity resolution,
+payload interpretation, state/semantic actions and rejection, as applicable.
+Language equality alone suffices only for a pure recognizer with the same
+input and failure contract. CFG alternatives, ordered PEG choice and semantic
+predicates cannot be interchanged without proving their side conditions. See
+[Ford's PEG semantics](https://bford.info/pub/lang/peg.pdf).
+[Value-preserving grammar transformations](https://aclanthology.org/J99-4004/)
+also support weighted interpretations, but a minimum derivation weight is not
+automatically the work of finding that derivation. A cost proof must include
+recognition, unsuccessful alternatives and disambiguation, or establish the
+same admissible algorithm class directly as above. Matching normal forms of
+AST shape, production counts or hand-assigned weights is not that proof.
+
+**Scope and boundary composition.** A grammar-level certificate covers the
+complete problem at its declared interface; it need not make Core's entire
+feature inventory globally isomorphic to cmark's. A whole-document claim must
+cover all of that document problem's recognition and semantic obligations,
+including boundary discovery and interactions. If only a normalized token or
+local grammar problem is proved equivalent, name that boundary and account
+for lexical preparation, unmatched grammar and output realization separately.
+Do not transfer a restricted-grammar promise to an unmodified general parser
+or relabel its whole native Ir as a measurement of the proved local problem.
+
 ## The problem that must be specified
 
 A parse problem is a tuple `(D, O, E, M)`:
 
 - `D` is the complete correctness domain, including malformed inputs, enclosing
   contexts, feature settings and the validity information supplied to the parser.
-- `O` specifies ordered owners, fields, literal bytes, normalization, binding
-  edges and source coordinates. Default values and metadata cannot disappear
-  merely because the structural projection does not print them.
+- `O` specifies the required semantic observations. For a grammar-level problem
+  this is an abstract semantic interface, independent of administrative
+  derivations and native AST layouts. A complete native-output contract also
+  includes its required owners, fields, literals, normalization, bindings and
+  source coordinates; those extra obligations cannot disappear merely because
+  a structural projection does not print them. State which problem is proved.
 - `E` specifies recognition failure, resource failure and observable lifecycle
   behavior, including which input/storage may be borrowed and for how long.
 - `M` is the machine and cost model below, including allowed operations and
@@ -24,8 +108,10 @@ A parse problem is a tuple `(D, O, E, M)`:
   supplied for free to one side.
 
 A parser in the admissible class must meet this contract for every input in D,
-not only for the measured successful examples. Promising that an input consists
-of fixed templates is a different problem from parsing arbitrary Markdown.
+not only for the measured successful examples. For a grammar boundary, D is that
+boundary's complete domain; a claim about the full native parser must discharge
+its broader contract too. Promising that an input consists of fixed templates
+is a different problem from parsing arbitrary Markdown.
 Proving a property of a restricted recognizer cannot silently confer that
 promise on a measured general parser. A source substitution is not free merely
 because the benchmark generator performed it before measurement.
@@ -59,9 +145,9 @@ does not establish equality of these optima. Callgrind Ir is a separate machine
 measurement; it is not an evaluation of this abstract vector or a measured
 distance from the optimum.
 
-## Sufficient theorem for equal optimal effort
+## Another sufficient theorem: program transformations
 
-Specify source/output bijections T/F and **two compiler transformations** U/V
+One sufficient construction uses source/output bijections T/F and **two compiler transformations** U/V
 between the admissible parser classes. They must preserve correctness and
 failure behavior over the complete domains and must satisfy, for every
 admissible P and Q and every corresponding input:
@@ -88,7 +174,7 @@ A bisimulation between two selected parsers proves their traces have
 equal cost; without a result about the admissible classes it does not prove
 equality of the optimal costs.
 
-One possible route is a literal alphabet/constructor renaming under which the
+One optional, much narrower route is a literal alphabet/constructor renaming under which the
 entire machine instruction set and parser contract are conjugate without added
 operations. This is a conditional theorem, not a certificate for `++`/`**`.
 Character classes, arithmetic on byte values, other productions using those
@@ -98,8 +184,9 @@ For all six current delimiter proof domains, the
 global byte permutation taking the extension's marker to `*` while preserving
 ordered owners. Four finite inverse-image certificates cover the complete map
 class, including permutations that change other bytes. This rules out that
-sufficient route; it does not prove unequal optima or exclude more general
-program transformations.
+sufficient route; it does not prove unequal optima, exclude grammar rewrites or
+more general program transformations, or impose an admission requirement on
+the target theorem. Its topology condition belongs only to that optional route.
 
 ## Re-audit of the current corpus
 
@@ -108,17 +195,17 @@ program transformations.
 Every current optimum status is **unproved**, not "proved unequal" or "unpairable".
 The six delimiter records additionally carry a separate, scoped
 `alphabetRenaming: refuted` adjudication. Never promote that negative mapping
-result into an optimal-cost inequality.
+result into an optimal-cost inequality or a reason to reject grammar equivalence.
 Adding a manifest boolean, equal trees/bytes or a successful trace cannot admit
 an equal-effort result. A new certificate requires a valid optimum theorem
-(algorithm-class reductions or matching lower/upper bounds) and its checked
+(equivalent parsing problems, algorithm-class reductions or matching lower/upper bounds) and its checked
 domain/cost machinery; there is deliberately no self-certifying flag.
 
 The audit distinguishes these recurring gaps:
 
 | Family | What the structural proof omits from an effort theorem |
 | --- | --- |
-| Recursive insertion and fixed span runs | Global byte renaming is refuted by complete inverse-image certificates; other full-contract reductions or matching optimal bounds remain open |
+| Recursive insertion and fixed span runs | A grammar-rewrite proof must cover marker realization, contextual decisions, disambiguation and failure; optional global byte-renaming counterexamples do not decide this proof |
 | Opaque and promoted leaves | Closer rules, padding/LF normalization, line/fence decisions and phase transitions |
 | Task markers and nondecimal lists | Complete marker languages, value conversion, field representations and continuation |
 | Attribute/cross-link/citation fields | Different validation, delimiter, normalization and derived-value work |

@@ -260,6 +260,7 @@ test("reports publish structural quotients but no equal-effort median, including
     assert.match(report, /\| insertion-strong-v1 \| unproved \|/);
     assert.match(report, /\| insertion-strong-v1 \| unproved \| refuted: plus-to-star-v1 \|/);
     assert.match(report, /they do not prove unequal optimal costs/);
+    assert.match(report, /not admission conditions for equivalence through formal grammar rewrites/);
     assert.match(report, /Candidate pair diagnostics \(equivalence unproved\)/);
     assert.match(report, /No structural mapping/);
     assert.match(report, /\| Pairing contracts \| `fixture-identity` \|/);

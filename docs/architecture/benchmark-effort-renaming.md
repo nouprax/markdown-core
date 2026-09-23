@@ -1,5 +1,12 @@
 # Whole-parser alphabet-renaming obstructions
 
+This is a supplementary result about one optional map class, **not** the target
+definition or an admission test for grammar-level optimal-effort equivalence.
+The [grammar-rewrite target](benchmark-parser-effort.md#target-equivalence-of-parsing-problems-through-grammar-rewrites)
+allows changes in derivation structure and native AST realization. A failed
+topology-preserving alphabet map does not obstruct that target. These
+certificates must not replace work on equivalence of the parsing problems.
+
 The [optimal-effort theorem](benchmark-parser-effort.md) admits a full grammar
 conjugacy as one possible proof route. For the six current delimiter proof
 domains, **no global byte permutation carrying their marker to `*` can preserve

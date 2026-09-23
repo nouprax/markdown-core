@@ -33,22 +33,22 @@ const production = (names, category, reason) =>
 review(
     ["insertion-strong-v1"],
     "marker-correspondence",
-    "Recursive isolated runs have matching token extents and trees. Whole-domain byte renaming is refuted by plus-to-star-v1; other program reductions or matching optimal bounds remain unproved."
+    "The recursive grammar needs an equivalent-problem proof covering marker realization, contextual decisions, disambiguation and failure. Neither AST-owner correspondence nor a global byte permutation is a required grammar-equivalence criterion."
 );
 production(
     ["run-insertion", "run-mark"],
     "marker-correspondence",
-    "Single-marker preimages refute every whole-domain byte renaming to asterisk with an ordered-owner bijection. The finite certificate does not decide optimal effort under more general program transformations."
+    "Equivalent grammar rewrites must preserve marker recognition, flanking/residue decisions and failure under the declared cost model. The optional alphabet-map obstruction does not decide grammar-level optimal effort."
 );
 production(
     ["run-strike", "run-sub"],
     "marker-correspondence",
-    "Tilde fence preimages refute every whole-domain byte renaming to asterisk with an ordered-owner bijection (tilde-to-star-v1). Context-sensitive transformations and optimal bounds remain unproved."
+    "Equivalent grammar rewrites must account for run widths, body restrictions, fence context and failure. The optional alphabet-map obstruction is not a grammar-equivalence admission condition."
 );
 production(
     ["run-super"],
     "marker-correspondence",
-    "Double-caret preimages refute every whole-domain byte renaming to asterisk with an ordered-owner bijection (caret-to-star-v1). Context-sensitive transformations and optimal bounds remain unproved."
+    "Equivalent grammar rewrites must account for empty scripts, raw-space invalidation, escapes and inline-footnote precedence. Different derivation/AST shapes alone do not decide optimal parsing effort."
 );
 production(
     ["opaque-comment", "opaque-formula", "opaque-display"],
