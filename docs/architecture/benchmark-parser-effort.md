@@ -93,13 +93,22 @@ entire machine instruction set and parser contract are conjugate without added
 operations. This is a conditional theorem, not a certificate for `++`/`**`.
 Character classes, arithmetic on byte values, other productions using those
 characters, invalid inputs, context and source coordinates must all map too.
-The full Markdown grammars currently measured have no such established map.
+For all six current delimiter proof domains, the
+[whole-domain renaming audit](benchmark-effort-renaming.md) now refutes every
+global byte permutation taking the extension's marker to `*` while preserving
+ordered owners. Four finite inverse-image certificates cover the complete map
+class, including permutations that change other bytes. This rules out that
+sufficient route; it does not prove unequal optima or exclude more general
+program transformations.
 
 ## Re-audit of the current corpus
 
 `scripts/lib/pair-effort.mjs` records an explicit adjudication for each of the
 43 structural proofs. Registry validation rejects missing and stale entries.
-Every current status is **unproved**, not "proved unequal" or "unpairable".
+Every current optimum status is **unproved**, not "proved unequal" or "unpairable".
+The six delimiter records additionally carry a separate, scoped
+`alphabetRenaming: refuted` adjudication. Never promote that negative mapping
+result into an optimal-cost inequality.
 Adding a manifest boolean, equal trees/bytes or a successful trace cannot admit
 an equal-effort result. A new certificate requires a valid optimum theorem
 (algorithm-class reductions or matching lower/upper bounds) and its checked
@@ -109,7 +118,7 @@ The audit distinguishes these recurring gaps:
 
 | Family | What the structural proof omits from an effort theorem |
 | --- | --- |
-| Recursive insertion and fixed span runs | Full-context flanking, residues, rejection and coordinate obligations; the fixed-run `***` terminator also conflicts with a global alphabet swap |
+| Recursive insertion and fixed span runs | Global byte renaming is refuted by complete inverse-image certificates; other full-contract reductions or matching optimal bounds remain open |
 | Opaque and promoted leaves | Closer rules, padding/LF normalization, line/fence decisions and phase transitions |
 | Task markers and nondecimal lists | Complete marker languages, value conversion, field representations and continuation |
 | Attribute/cross-link/citation fields | Different validation, delimiter, normalization and derived-value work |

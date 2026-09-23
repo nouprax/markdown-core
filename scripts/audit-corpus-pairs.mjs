@@ -9,6 +9,7 @@ import { equalProofTrees, proofTree, proofWorkload, structuralPair, validatePair
 import { productionProofs } from "./lib/pair-productions.mjs";
 import { boundarySource, pairReview } from "./lib/pair-review.mjs";
 import { parseCanonicalDump, parseUpstreamXml } from "./lib/upstream-cmark.mjs";
+import { auditRenamingObstructions } from "./lib/effort-renaming.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const BENCHMARKS = path.join(root, "packages/markdown-core/benchmarks");
@@ -65,6 +66,19 @@ function main() {
     if (!fs.existsSync(DUMP)) fail(`this parser is not built; run: pnpm build:c`);
     const cmark = oracle("cmark", "cmark", "CMARK_VERSION", "CMARK_COMMIT");
     const gfm = oracle("cmark-gfm", "cmark-gfm", "CMARK_GFM_VERSION", "CMARK_GFM_COMMIT");
+    const obstructions = auditRenamingObstructions((engine, input) => {
+        const output = execFileSync(engine === "core" ? DUMP : cmark, engine === "core" ? [] : ["-t", "xml"], {
+            input,
+            encoding: "utf8",
+            timeout: 10000,
+            killSignal: "SIGKILL",
+            maxBuffer: 1 << 20
+        });
+        return engine === "core" ? parseCanonicalDump(output) : parseUpstreamXml(output);
+    });
+    for (const receipt of obstructions) {
+        process.stdout.write(`  whole-domain renaming obstruction: ${JSON.stringify(receipt)}\n`);
+    }
     const GFM_EXTENSIONS = ["table", "strikethrough", "autolink", "tasklist", "footnotes"];
     const manifest = JSON.parse(fs.readFileSync(path.join(BENCHMARKS, "corpus.json"), "utf8"));
     validatePairs(manifest);

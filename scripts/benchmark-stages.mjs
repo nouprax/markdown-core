@@ -2171,12 +2171,17 @@ export function markdownReport(report) {
             lines.push(
                 "### Parse-effort adjudication",
                 "",
-                "| Structural proof | Status | Missing cost obligation |",
-                "| --- | --- | --- |"
+                "Alphabet-renaming obstructions rule out only whole-domain byte permutations preserving ordered owners; they do not prove unequal optimal costs.",
+                "",
+                "| Structural proof | Full optimum | Alphabet renaming | Missing cost obligation |",
+                "| --- | --- | --- | --- |"
             );
             for (const item of pairs) {
                 const pair = item.isomorph;
-                lines.push(`| ${pair.contract.proof} | ${pair.effort.status} | ${pair.effort.reason} |`);
+                const renaming = pair.effort.alphabetRenaming;
+                lines.push(
+                    `| ${pair.contract.proof} | ${pair.effort.status} | ${renaming ? `refuted: ${renaming.certificate}` : "not adjudicated"} | ${pair.effort.reason} |`
+                );
             }
             lines.push("");
         }

@@ -23,12 +23,20 @@ export function pairingIdentity(pairs, proofText, checkerSource) {
 export function currentPairingIdentity(pairs) {
     return pairingIdentity(
         pairs,
-        ["benchmark-isomorphism.md", "benchmark-pair-review.md", "benchmark-parser-effort.md"].map((name) =>
-            fs.readFileSync(new URL(`../../docs/architecture/${name}`, import.meta.url), "utf8")
-        ),
-        ["corpus-pairs.mjs", "pair-productions.mjs", "pair-review.mjs", "pair-effort.mjs", "upstream-cmark.mjs"].map(
-            (name) => fs.readFileSync(new URL(name, import.meta.url), "utf8")
-        )
+        [
+            "benchmark-isomorphism.md",
+            "benchmark-pair-review.md",
+            "benchmark-parser-effort.md",
+            "benchmark-effort-renaming.md"
+        ].map((name) => fs.readFileSync(new URL(`../../docs/architecture/${name}`, import.meta.url), "utf8")),
+        [
+            "corpus-pairs.mjs",
+            "pair-productions.mjs",
+            "pair-review.mjs",
+            "pair-effort.mjs",
+            "effort-renaming.mjs",
+            "upstream-cmark.mjs"
+        ].map((name) => fs.readFileSync(new URL(name, import.meta.url), "utf8"))
     );
 }
 

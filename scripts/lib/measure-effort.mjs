@@ -38,6 +38,7 @@ export function boundaryIdentity(root) {
     const files = [
         "docs/architecture/benchmark-effort-boundaries.md",
         "docs/architecture/benchmark-parser-effort.md",
+        "docs/architecture/benchmark-effort-renaming.md",
         "scripts/benchmark-stages.mjs",
         ...library,
         "packages/markdown-core/benchmarks/effort_runner.h",

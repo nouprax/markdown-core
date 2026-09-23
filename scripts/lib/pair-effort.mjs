@@ -2,11 +2,14 @@
  * No existing pair has a full-parser optimal-effort certificate. These records
  * identify missing obligations, not proofs that such a certificate is impossible.
  */
+import { renamingReview, validateRenamingProofs } from "./effort-renaming.mjs";
+
 export const effortModel = "parser-effort-v1";
 const reviews = new Map();
 function review(ids, category, reason) {
     for (const id of ids) {
         if (reviews.has(id)) throw new Error(`duplicate effort review: ${id}`);
+        const alphabetRenaming = renamingReview(id);
         reviews.set(
             id,
             Object.freeze({
@@ -14,7 +17,8 @@ function review(ids, category, reason) {
                 status: "unproved",
                 scope: "full-parser-optimum",
                 category,
-                reason
+                reason,
+                ...(alphabetRenaming ? { alphabetRenaming } : {})
             })
         );
     }
@@ -29,12 +33,22 @@ const production = (names, category, reason) =>
 review(
     ["insertion-strong-v1"],
     "marker-correspondence",
-    "Recursive isolated runs have matching token extents and trees. No bidirectional cost-preserving simulation covers full-grammar flanking, residue rules, contextual rejection and source-position obligations."
+    "Recursive isolated runs have matching token extents and trees. Whole-domain byte renaming is refuted by plus-to-star-v1; other program reductions or matching optimal bounds remain unproved."
 );
 production(
-    ["run-insertion", "run-mark", "run-strike", "run-super", "run-sub"],
+    ["run-insertion", "run-mark"],
     "marker-correspondence",
-    "Equal-width isolated markers are a candidate local correspondence, not a cost theorem. Fixed payloads exclude interacting runs, escapes and context; the shared *** terminator also prevents a global marker-alphabet bijection for the strong substitutions."
+    "Single-marker preimages refute every whole-domain byte renaming to asterisk with an ordered-owner bijection. The finite certificate does not decide optimal effort under more general program transformations."
+);
+production(
+    ["run-strike", "run-sub"],
+    "marker-correspondence",
+    "Tilde fence preimages refute every whole-domain byte renaming to asterisk with an ordered-owner bijection (tilde-to-star-v1). Context-sensitive transformations and optimal bounds remain unproved."
+);
+production(
+    ["run-super"],
+    "marker-correspondence",
+    "Double-caret preimages refute every whole-domain byte renaming to asterisk with an ordered-owner bijection (caret-to-star-v1). Context-sensitive transformations and optimal bounds remain unproved."
 );
 production(
     ["opaque-comment", "opaque-formula", "opaque-display"],
@@ -135,4 +149,5 @@ export function validateEffortReviews(proofs) {
     const expected = new Set(proofs);
     if (expected.size !== reviews.size || [...expected].some((id) => !reviews.has(id)))
         throw new Error("parse-effort reviews must cover exactly the registered structural proofs");
+    validateRenamingProofs(proofs);
 }
