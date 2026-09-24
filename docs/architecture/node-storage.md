@@ -42,7 +42,8 @@ Resources are slots too. A resource is the destination, title and definition
 attributes a `Link` or `Embedded` reads, shared by every occurrence that
 resolves to one definition. It is taken from a second pool of the parse, and
 `slab.h` is the one mechanism both pools use. The last of its holders releases
-it: the map record, the heading that declares it, or an occurrence. Its slot
+it: the map record, the attribute value of the heading that declares it, or
+an occurrence. Its slot
 never goes back to a pool; it drops its slab hold. So the tree keeps its
 resource slabs as it keeps its node slabs.
 
@@ -138,7 +139,9 @@ for allocation failure. Either failure leaves the original kind and all owned
 values intact. A successful conversion releases node-valued fields through the
 same iterative destruction walk used for ordinary tree destruction. The
 element's opaque state belongs to the node and element, so it survives a
-kind conversion.
+kind conversion. So does the attribute value, with everything it holds: an
+anchor that borrows a resource's destination keeps the resource through the
+value, never through the record the conversion releases.
 
 HTML blocks keep their recognition state and eventual literal in distinct
 fields of one data record throughout parsing. Converting a closed HTML comment

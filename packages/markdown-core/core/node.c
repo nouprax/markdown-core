@@ -329,12 +329,6 @@ static void free_node_as(markdown_core_node *node) {
         markdown_core_resource_release(node->as.link->resource);
         node->as.link->resource = NULL;
         break;
-    case MARKDOWN_CORE_NODE_HEADING:
-        /* The anchor may borrow the resource's destination; the attributes
-         * are released before the record, so nothing reads it after this. */
-        markdown_core_resource_release(node->as.heading->resource);
-        node->as.heading->resource = NULL;
-        break;
     default:
         break;
     }

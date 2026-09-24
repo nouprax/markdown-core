@@ -46,11 +46,6 @@ typedef struct {
 typedef struct {
     int level;
     bool setext;
-    /* The resource of the implicit reference this heading declares, held for
-     * as long as the heading is; NULL when its text cannot be a label. An
-     * anchor the parser computed is stored once, as that resource's `#anchor`
-     * destination, and the heading's anchor borrows the bytes after the `#`. */
-    struct markdown_core_resource *resource;
 } markdown_core_heading;
 
 /* The title has one private inline parsing root throughout its lifetime.

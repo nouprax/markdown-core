@@ -232,8 +232,8 @@ static void append_anchor_suffix(markdown_core_strbuf *base, size_t ordinal) {
  * declares. The destination is the anchor after a `#`, so a computed anchor
  * is built there once: `base` holds `#` and the anchor, the resource keeps
  * that as its destination, and the heading's anchor borrows the bytes after
- * the `#` from the resource it holds (node.h). Only a heading with no
- * implicit reference owns a copy of its computed anchor. */
+ * the `#`, its attribute value holding the resource (attributes.h). Only a
+ * heading with no implicit reference owns a copy of its computed anchor. */
 void markdown_core_block_finalize_heading_anchors(markdown_core_parser *parser,
                                                   markdown_core_heading_collection *headings,
                                                   anchor_registry *registry) {
@@ -242,7 +242,7 @@ void markdown_core_block_finalize_heading_anchors(markdown_core_parser *parser,
     for (size_t i = 0; i < headings->count && !parser->error; i++) {
         markdown_core_node *node = headings->values[i].node;
         markdown_core_chunk *anchor = &node->attributes.anchor;
-        markdown_core_resource *resource = node->as.heading->resource;
+        markdown_core_resource *resource = headings->values[i].resource;
         markdown_core_strbuf_clear(&base);
         markdown_core_strbuf_putc(&base, '#');
         if (!anchor->len) {
@@ -280,6 +280,8 @@ void markdown_core_block_finalize_heading_anchors(markdown_core_parser *parser,
                     break;
                 }
                 *anchor = (markdown_core_chunk){resource->url.data + 1, resource->url.len - 1, 0};
+                markdown_core_resource_retain(resource);
+                node->attributes.anchor_owner = resource;
             } else {
                 *anchor = (markdown_core_chunk){base.ptr + 1, base.size - 1, 0};
                 if (!markdown_core_chunk_to_cstr(anchor)) {
@@ -349,10 +351,7 @@ void markdown_core_prepare_heading(markdown_core_parser *parser, markdown_core_h
                     record->implicit = true;
                     record->source_key =
                         ((uint64_t)(uint32_t)heading->node->start_line << 32) | (uint32_t)heading->node->start_column;
-                    /* The map holds the resource and so does the heading,
-                     * whose anchor will borrow its destination. */
-                    markdown_core_resource_retain(record->resource);
-                    heading->node->as.heading->resource = record->resource;
+                    heading->resource = record->resource;
                 }
             }
         }

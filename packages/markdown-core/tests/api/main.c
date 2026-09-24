@@ -2767,10 +2767,10 @@ static void heading_anchor_shares_its_reference_destination(test_batch_runner *r
     }
     markdown_core_node *heading = first_of_kind(document->root, MARKDOWN_CORE_NODE_HEADING);
     markdown_core_node *link = first_of_kind(document->root, MARKDOWN_CORE_NODE_LINK);
-    OK(runner, heading && link && heading->as.heading->resource && link->as.link->resource,
-       "the heading and a link resolved to it both hold a resource");
-    if (heading && link && heading->as.heading->resource) {
-        markdown_core_resource *resource = heading->as.heading->resource;
+    OK(runner, heading && link && heading->attributes.anchor_owner && link->as.link->resource,
+       "the heading's anchor and a link resolved to it both hold a resource");
+    if (heading && link && heading->attributes.anchor_owner) {
+        markdown_core_resource *resource = heading->attributes.anchor_owner;
         OK(runner, link->as.link->resource == resource, "the link reads through the heading's own resource");
         OK(runner, resource->holders >= 3, "the heading and both links hold it after the map is gone: %zu",
            resource->holders);
@@ -2782,9 +2782,40 @@ static void heading_anchor_shares_its_reference_destination(test_batch_runner *r
     }
     markdown_core_node *second = heading ? heading->next ? heading->next->next : NULL : NULL;
     OK(runner,
-       second && second->kind == MARKDOWN_CORE_NODE_HEADING && !second->as.heading->resource &&
+       second && second->kind == MARKDOWN_CORE_NODE_HEADING && !second->attributes.anchor_owner &&
            second->attributes.anchor.alloc,
        "a heading whose text cannot be a label owns its anchor");
+    markdown_core_document_free(document);
+}
+
+/* THE HOLD IS THE ANCHOR'S, NOT THE HEADING'S: a kind change keeps a node's
+ * attribute value and releases only its old kind's record, so a heading made
+ * into a paragraph keeps a borrowed anchor readable -- here after the parse,
+ * with no link and no map left holding the destination it borrows. */
+static void borrowed_anchor_survives_a_kind_change(test_batch_runner *runner) {
+    const char *source = "# Lone heading {.kept}\n";
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    OK(runner, document != NULL, "lone heading document parses");
+    if (!document) {
+        return;
+    }
+    markdown_core_node *heading = first_of_kind(document->root, MARKDOWN_CORE_NODE_HEADING);
+    markdown_core_resource *owner = heading ? heading->attributes.anchor_owner : NULL;
+    OK(runner, owner && owner->holders == 1, "the anchor's value is the one holder of its destination");
+    if (!heading || !owner) {
+        markdown_core_document_free(document);
+        return;
+    }
+    INT_EQ(runner, markdown_core_node_set_kind(heading, MARKDOWN_CORE_NODE_PARAGRAPH), MARKDOWN_CORE_NODE_SET_KIND_OK,
+           "the heading becomes a paragraph");
+    OK(runner, heading->attributes.anchor_owner == owner && owner->holders == 1,
+       "the paragraph's value still holds the destination");
+    markdown_core_optional_string anchor = markdown_core_node_anchor(heading);
+    OK(runner,
+       anchor.has_value && anchor.value.length == 12 && !memcmp(anchor.value.data, "lone-heading", 12) &&
+           anchor.value.data == owner->url.data + 1,
+       "the paragraph's anchor still reads the destination's bytes");
+    INT_EQ(runner, (int)markdown_core_node_attribute_class_count(heading), 1, "its authored class stays too");
     markdown_core_document_free(document);
 }
 
@@ -9593,6 +9624,7 @@ int main(void) {
     node_slots_come_from_slabs_and_go_back_to_the_pool(runner);
     resource_slots_come_from_slabs_and_outlive_the_pool(runner);
     heading_anchor_shares_its_reference_destination(runner);
+    borrowed_anchor_survives_a_kind_change(runner);
     map_records_are_carved_from_its_blocks(runner);
     properties_values(runner);
     properties_source_boundaries(runner);

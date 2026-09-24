@@ -4,6 +4,7 @@
 #include "attributes.h"
 #include "../core/attributes.h"
 #include "houdini.h"
+#include "node.h"
 #include "markdown_core_ctype.h"
 #include "utf8.h"
 #include <stdint.h>
@@ -329,14 +330,15 @@ bufsize_t markdown_core_attributes_end(markdown_core_attribute_parser *p, bufsiz
 /* RELEASES WHAT THE VALUE OWNS, AND NOTHING FOR A VALUE THAT OWNS NOTHING.
  * Every node carries a value and most carry an empty one -- no Text node has
  * attributes -- and the node's release visits each of them, so the empty value
- * is the common call. A value owns its one block and, when a consumer replaced
- * it, its anchor. */
+ * is the common call. A value owns its one block, its hold on the resource a
+ * computed anchor borrows from and, when a consumer replaced it, its anchor. */
 void markdown_core_attributes_free(markdown_core_attributes *v) {
     if (!markdown_core_attributes_owns(v)) {
         return;
     }
     markdown_core_chunk_free(&v->anchor);
     markdown_core_free(v->storage);
+    markdown_core_resource_release(v->anchor_owner);
     memset(v, 0, sizeof(*v));
 }
 
@@ -604,9 +606,9 @@ static int lay_out(markdown_core_attribute_parser *p, bufsize_t anchor, bufsize_
     memcpy(text, w->strings.ptr, strings);
     value->storage = storage;
     value->records = records ? record : NULL;
-    value->record_count = records;
+    value->record_count = (uint32_t)records;
     value->classes = classes ? class : NULL;
-    value->class_count = classes;
+    value->class_count = (uint32_t)classes;
     for (size_t i = 0; i < w->member_count; i++) {
         const struct markdown_core_attribute_member *member = &w->members[i];
         markdown_core_chunk staged = {text + member->value, member->value_length, 0};
