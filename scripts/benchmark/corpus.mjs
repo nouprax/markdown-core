@@ -1353,8 +1353,13 @@ export function grammarMarkdown(report) {
         lines.push(
             `| ${row.certificate} | ${row.construct} | ${row.units} | ${row.bytes} | ${row.bIr} | ${row.cIr ?? "—"} | ${row.cIr === null ? "—" : `${row.bc.toFixed(3)}x`} | ${row.cIr === null ? "—" : row.excess.toFixed(0)} |`
         );
-    lines.push("", "Certificates without a byte-neutral control report B only:", "");
-    for (const c of g.certificates.filter((c) => c.uncontrolled)) lines.push(`- ${c.certificate}: ${c.uncontrolled}`);
+    // A note about a measurement names only rows this report measured.
+    const uncontrolled = new Set(rejections.filter((row) => row.cIr === null).map((row) => row.certificate));
+    if (uncontrolled.size) {
+        lines.push("", "Certificates without a byte-neutral control report B only:", "");
+        for (const c of g.certificates.filter((c) => uncontrolled.has(c.certificate)))
+            lines.push(`- ${c.certificate}: ${c.uncontrolled}`);
+    }
     lines.push("", "### Unmatched boundary obligations", "", "| Certificate | Residual |", "| --- | --- |");
     for (const c of g.certificates.filter((c) => c.residual)) lines.push(`| ${c.certificate} | ${c.residual} |`);
     lines.push(

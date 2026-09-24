@@ -300,6 +300,8 @@ test("grammar reporting keeps the boundary ratio separate and rejects missing me
     assert.match(output, /2\.000x/u);
     assert.doesNotMatch(output, /9\.000x/u);
     assert.match(output, /1800/u);
+    // A selection that measured no rejection makes no claim about one.
+    assert.doesNotMatch(output, /report B only|fallback-noninitial-metadata/u);
     // Ratios require a complete certificate family, including its unpaired hosts.
     for (const mutate of [
         (r) => {
