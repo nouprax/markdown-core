@@ -8,7 +8,7 @@ and [feature ledger](../../../docs/architecture/benchmark-grammar-coverage.md)
 define their exact domains. Shared CommonMark/GFM features use identical input;
 extensions use reversible source-grammar transformations or local boundaries.
 
-The deterministic generator emits 412 documents, each measured once.
+The deterministic generator emits 424 documents, each measured once.
 It varies independent fields, widths, repetition and recursion. Every finite
 lexical alternative is exercised in the generated input. The catalog includes two
 reviewable examples per certificate. There is no separate scenario manifest,
@@ -47,7 +47,8 @@ Outputs default to `build/benchmark-grammar`:
 
 CI measures this corpus once, uploads structured reports for its trusted PR
 publisher, and archives reports, inputs and raw profiles. The PR comment shows
-Core/base source regressions and A/B, B/R and A/R for each certificate.
+Core/base source regressions, A/B, B/R and A/R for each reference comparison,
+and B/C for each rejection certificate.
 Build trees and reference checkouts are not uploaded.
 
 ## Reading a comparison
@@ -64,6 +65,14 @@ cover only the certified local grammar in its explicit entry envelope.
 no reference is run on those hosts and their cost is not a certified ratio.
 Local and host costs are not additive. Grammar equivalence does not assert
 equal native ASTs, output work, or globally optimal instruction counts.
+
+A certificate built around a construct that no reference implements, such as a
+rejected superscript, has no R. Its B is Core rejecting a construct that the
+reference never attempts. It is reported in a separate table against C, which is
+Core on the `paired-control` input: the same document with the trigger bytes
+replaced by letters. B/C and (B − C) per unit measure what the rejection costs
+Core. See
+[rejection certificates](../../../docs/architecture/benchmark-grammar-corpus.md#rejection-certificates).
 
 The source-language proof checks run in
 `node --test scripts/benchmark/tests/corpus.test.mjs`. Native parser correctness

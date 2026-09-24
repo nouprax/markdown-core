@@ -168,6 +168,8 @@
             "facets": ["extended-ordered-markers", "variant-context", "canonical-numerals"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T7",
             "normalForm": {
                 "repetition": "+",
@@ -296,6 +298,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -383,6 +387,8 @@
             "facets": ["last-id", "empty-id-clears"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -463,6 +469,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -573,6 +581,8 @@
             "facets": ["angle-autolink-site"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -671,6 +681,8 @@
             "facets": ["bare-names", "boolean-record", "unnumbered"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -733,6 +745,8 @@
             "facets": ["code-site"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -831,6 +845,8 @@
             "facets": ["record-values", "quote-forms"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -935,6 +951,8 @@
             "facets": ["empty-values"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -997,6 +1015,8 @@
             "facets": ["double-quote-escapes", "entities", "single-quote-literals"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -1077,6 +1097,8 @@
             "facets": ["fence-site"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -1175,6 +1197,8 @@
             "facets": ["heading-site", "closing-hashes"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -1279,6 +1303,8 @@
             "facets": ["occurrence-site", "image-site"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -1401,6 +1427,8 @@
             "facets": ["occurrence-site", "link-site"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -1523,6 +1551,8 @@
             "facets": ["single-line-ending", "class-splitting"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -1603,6 +1633,8 @@
             "facets": ["duplicate-records", "ordered-classes", "adjacent-members"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T7",
             "normalForm": {
                 "repetition": "+",
@@ -1701,6 +1733,8 @@
             "facets": ["definition-site", "inheritance", "occurrence-order", "anchor-override"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T7",
             "normalForm": {
                 "repetition": "+",
@@ -1842,6 +1876,8 @@
             "facets": ["record-values", "quote-forms"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -1946,6 +1982,8 @@
             "facets": ["record-values", "quote-forms"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -2050,6 +2088,8 @@
             "facets": ["standalone-id", "list-container"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -2137,6 +2177,8 @@
             "facets": ["standalone-id", "table-container"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -2236,6 +2278,8 @@
             "facets": ["escaped-id", "fallback"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -2298,6 +2342,8 @@
             "facets": ["list-item-suffix", "standalone-list-id"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -2404,6 +2450,8 @@
             "facets": ["paragraph-suffix", "anchor-declaration"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -2491,6 +2539,8 @@
             "facets": ["custom-type", "case", "three-collapse-states", "title"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T7",
             "normalForm": {
                 "repetition": "+",
@@ -2595,6 +2645,8 @@
             "facets": ["prefix", "suffix", "key"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -2693,6 +2745,8 @@
             "facets": ["groups", "modes", "semicolons"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -2773,6 +2827,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -2835,6 +2891,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -2897,6 +2955,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -2959,6 +3019,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -3021,6 +3083,8 @@
             "facets": ["empty-percent-comment", "adjacent-delimiters"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -3083,6 +3147,8 @@
             "facets": ["unicode-lowercase", "collisions", "empty-base"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -3145,6 +3211,8 @@
             "facets": ["angle-url", "angle-email"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -3225,6 +3293,8 @@
             "facets": ["atx-levels", "closing-hashes", "inline-content"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -3293,6 +3363,8 @@
             "facets": ["atx-levels", "closing-hashes", "inline-content"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -3361,6 +3433,8 @@
             "facets": ["atx-levels", "closing-hashes", "inline-content"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -3429,6 +3503,8 @@
             "facets": ["atx-levels", "closing-hashes", "inline-content"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -3497,6 +3573,8 @@
             "facets": ["atx-levels", "closing-hashes", "inline-content"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -3565,6 +3643,8 @@
             "facets": ["atx-levels", "closing-hashes", "inline-content"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -3633,6 +3713,8 @@
             "facets": ["bullet-markers", "tight-lists", "nesting"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -3743,6 +3825,8 @@
             "facets": ["bullet-markers", "tight-lists", "nesting"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -3853,6 +3937,8 @@
             "facets": ["bullet-markers", "tight-lists", "nesting"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -3963,6 +4049,8 @@
             "facets": ["fenced-code", "info-string", "opaque-content"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -4025,6 +4113,8 @@
             "facets": ["fenced-code", "info-string", "opaque-content"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -4087,6 +4177,8 @@
             "facets": ["line-normalization"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -4167,6 +4259,8 @@
             "facets": ["code-span", "delimiter-length", "padding", "opaque-content"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -4247,6 +4341,8 @@
             "facets": ["emphasis", "strong", "nesting", "flanking"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -4345,6 +4441,8 @@
             "facets": ["emphasis", "strong", "nesting", "flanking"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -4443,6 +4541,8 @@
             "facets": ["named-entities", "decimal-entities", "hex-entities", "invalid-entities"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -4523,6 +4623,8 @@
             "facets": ["line-endings", "unicode"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -4609,6 +4711,8 @@
             "facets": ["line-endings", "unicode"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -4695,6 +4799,8 @@
             "facets": ["line-endings", "unicode"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -4781,6 +4887,8 @@
             "facets": ["punctuation-escapes", "non-punctuation-backslashes"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -4861,6 +4969,8 @@
             "facets": ["hard-breaks", "source-ranges"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -4971,6 +5081,8 @@
             "facets": ["hard-breaks", "source-ranges"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -5081,6 +5193,8 @@
             "facets": ["html-block-types", "opaque-content", "termination"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -5143,6 +5257,8 @@
             "facets": ["html-block-types", "opaque-content", "termination"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -5205,6 +5321,8 @@
             "facets": ["html-comments", "block-comments"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -5267,6 +5385,8 @@
             "facets": ["html-block-types", "opaque-content", "termination"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -5329,6 +5449,8 @@
             "facets": ["html-block-types", "opaque-content", "termination"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -5391,6 +5513,8 @@
             "facets": ["html-block-types", "opaque-content", "termination"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -5453,6 +5577,8 @@
             "facets": ["html-block-types", "opaque-content", "termination"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -5515,6 +5641,8 @@
             "facets": ["images", "formatted-alt"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -5619,6 +5747,8 @@
             "facets": ["indented-code", "blank-lines"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -5699,6 +5829,8 @@
             "facets": ["html-comments", "inline-comments"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -5761,6 +5893,8 @@
             "facets": ["tags", "attributes", "inline-boundaries"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -5847,6 +5981,8 @@
             "facets": ["direct-links", "destinations", "titles"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -5951,6 +6087,8 @@
             "facets": ["loose-lists", "empty-items", "continuation"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -6061,6 +6199,8 @@
             "facets": ["decimal-delimiters", "decimal-start"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -6171,6 +6311,8 @@
             "facets": ["paragraphs", "blank-lines", "literal-punctuation"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -6281,6 +6423,8 @@
             "facets": ["plain-quotes", "nested-quotes", "lazy-continuation"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -6409,6 +6553,8 @@
             "facets": ["reference-forms", "forward-resolution", "label-normalization"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -6508,6 +6654,8 @@
             "facets": ["duplicate-definitions", "first-definition"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -6607,6 +6755,8 @@
             "facets": ["reference-forms", "forward-resolution", "label-normalization"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -6730,6 +6880,8 @@
             "facets": ["reference-forms", "forward-resolution", "label-normalization"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -6829,6 +6981,8 @@
             "facets": ["setext", "multiline", "block-precedence"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -6939,6 +7093,8 @@
             "facets": ["setext", "multiline", "block-precedence"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -7049,6 +7205,8 @@
             "facets": ["soft-breaks"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -7159,6 +7317,8 @@
             "facets": ["tab-stops", "indented-content"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -7245,6 +7405,8 @@
             "facets": ["markers", "spacing", "block-precedence"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -7355,6 +7517,8 @@
             "facets": ["markers", "spacing", "block-precedence"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -7465,6 +7629,8 @@
             "facets": ["markers", "spacing", "block-precedence"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -7575,6 +7741,12 @@
             "facets": ["unresolved-references", "bracket-fallback"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": {
+                "construct": "reference-link",
+                "implementedBy": ["cmark", "cmark-gfm"],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -7643,6 +7815,8 @@
             "facets": ["block-containers", "inline-composition"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -7729,6 +7903,8 @@
             "facets": ["literal-ownership", "inline-precedence"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -7809,6 +7985,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -7889,6 +8067,8 @@
             "facets": ["block-target", "raw-anchor"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -7969,6 +8149,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -8049,6 +8231,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -8111,6 +8295,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -8191,6 +8377,8 @@
             "facets": ["pipe-table", "escaped-label-separator"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -8295,6 +8483,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -8375,6 +8565,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -8437,6 +8629,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -8517,6 +8711,8 @@
             "facets": ["pipe-table", "escaped-label-separator"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -8621,6 +8817,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -8683,6 +8881,8 @@
             "facets": ["opaque-label", "empty-path"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -8763,6 +8963,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T4",
             "normalForm": {
                 "repetition": "+",
@@ -8851,6 +9053,8 @@
             "facets": ["automatic-markers", "fixed-start"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -8961,6 +9165,8 @@
             "facets": ["multiple-blocks", "nested-content"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -9089,6 +9295,8 @@
             "facets": ["attribute-only", "part-anchor"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -9169,6 +9377,8 @@
             "facets": ["label-and-attributes"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -9273,6 +9483,8 @@
             "facets": ["leaf-without-parts"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -9335,6 +9547,8 @@
             "facets": ["nested-containers", "minimum-closer", "longer-closer"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -9439,6 +9653,8 @@
             "facets": ["nameless-unbraced", "trailing-colons"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -9525,6 +9741,8 @@
             "facets": ["unicode-names", "raw-name"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -9611,6 +9829,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T5",
             "normalForm": {
                 "repetition": "+",
@@ -9843,6 +10063,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -9923,6 +10145,8 @@
             "facets": ["automatic-markers", "fixed-start"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -10033,6 +10257,12 @@
             "facets": ["fallback", "rejected-prefix"],
             "identity": true,
             "outputDifference": null,
+            "reference": null,
+            "rejection": {
+                "construct": "attribute-block",
+                "implementedBy": [],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -10045,7 +10275,8 @@
             },
             "grammars": {
                 "dialect": "Document = Unit+ ; Unit = \"probe \" \"[\" body:inline \"]{=broken}\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe \" \"[\" body:inline \"]{=broken}\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "common": "Document = Unit+ ; Unit = \"probe \" \"[\" body:inline \"]{=broken}\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "control": "Document = Unit+ ; Unit = \"probe \" \"[\" body:inline \"]q=broken}\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -10058,6 +10289,7 @@
                 {
                     "dialect": "probe [b **uu mbmb qbqb** ac]{=broken} end\n\n",
                     "common": "probe [b **uu mbmb qbqb** ac]{=broken} end\n\n",
+                    "control": "probe [b **uu mbmb qbqb** ac]q=broken} end\n\n",
                     "derivation": [
                         [
                             [
@@ -10073,6 +10305,7 @@
                 {
                     "dialect": "probe [lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc]{=broken} end\n\n",
                     "common": "probe [lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc]{=broken} end\n\n",
+                    "control": "probe [lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc]q=broken} end\n\n",
                     "derivation": [
                         [
                             [
@@ -10101,6 +10334,12 @@
             "facets": ["fallback", "rejected-prefix"],
             "identity": true,
             "outputDifference": null,
+            "reference": null,
+            "rejection": {
+                "construct": "citation",
+                "implementedBy": [],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -10113,7 +10352,8 @@
             },
             "grammars": {
                 "dialect": "Document = Unit+ ; Unit = \"probe \" \"@-\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe \" \"@-\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "common": "Document = Unit+ ; Unit = \"probe \" \"@-\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "control": "Document = Unit+ ; Unit = \"probe \" \"q-\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -10126,6 +10366,7 @@
                 {
                     "dialect": "probe @-nd end\n\n",
                     "common": "probe @-nd end\n\n",
+                    "control": "probe q-nd end\n\n",
                     "derivation": [
                         [
                             [
@@ -10141,6 +10382,7 @@
                 {
                     "dialect": "probe @-od end\n\n",
                     "common": "probe @-od end\n\n",
+                    "control": "probe q-od end\n\n",
                     "derivation": [
                         [
                             [
@@ -10163,6 +10405,12 @@
             "facets": ["fallback", "rejected-prefix"],
             "identity": true,
             "outputDifference": null,
+            "reference": null,
+            "rejection": {
+                "construct": "percent-comment",
+                "implementedBy": [],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -10175,7 +10423,8 @@
             },
             "grammars": {
                 "dialect": "Document = Unit+ ; Unit = \"probe \" \"%%\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe \" \"%%\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "common": "Document = Unit+ ; Unit = \"probe \" \"%%\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "control": "Document = Unit+ ; Unit = \"probe \" \"qq\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -10188,6 +10437,7 @@
                 {
                     "dialect": "probe %%b **uu mbmb qbqb** ac end\n\n",
                     "common": "probe %%b **uu mbmb qbqb** ac end\n\n",
+                    "control": "probe qqb **uu mbmb qbqb** ac end\n\n",
                     "derivation": [
                         [
                             [
@@ -10203,6 +10453,7 @@
                 {
                     "dialect": "probe %%lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc end\n\n",
                     "common": "probe %%lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc end\n\n",
+                    "control": "probe qqlblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc end\n\n",
                     "derivation": [
                         [
                             [
@@ -10231,6 +10482,12 @@
             "facets": ["fallback", "rejected-prefix"],
             "identity": true,
             "outputDifference": null,
+            "reference": null,
+            "rejection": {
+                "construct": "cross-link",
+                "implementedBy": [],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -10243,7 +10500,8 @@
             },
             "grammars": {
                 "dialect": "Document = Unit+ ; Unit = \"probe \" \"[[\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe \" \"[[\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "common": "Document = Unit+ ; Unit = \"probe \" \"[[\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "control": "Document = Unit+ ; Unit = \"probe \" \"[q\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -10256,6 +10514,7 @@
                 {
                     "dialect": "probe [[nd end\n\n",
                     "common": "probe [[nd end\n\n",
+                    "control": "probe [qnd end\n\n",
                     "derivation": [
                         [
                             [
@@ -10271,6 +10530,7 @@
                 {
                     "dialect": "probe [[od end\n\n",
                     "common": "probe [[od end\n\n",
+                    "control": "probe [qod end\n\n",
                     "derivation": [
                         [
                             [
@@ -10293,6 +10553,12 @@
             "facets": ["fallback", "rejected-prefix"],
             "identity": true,
             "outputDifference": null,
+            "reference": null,
+            "rejection": {
+                "construct": "inline-directive",
+                "implementedBy": [],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -10305,7 +10571,8 @@
             },
             "grammars": {
                 "dialect": "Document = Unit+ ; Unit = \"probe \" \":\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe \" \":\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "common": "Document = Unit+ ; Unit = \"probe \" \":\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "control": "Document = Unit+ ; Unit = \"probe \" \"q\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -10318,6 +10585,7 @@
                 {
                     "dialect": "probe :nd end\n\n",
                     "common": "probe :nd end\n\n",
+                    "control": "probe qnd end\n\n",
                     "derivation": [
                         [
                             [
@@ -10333,6 +10601,7 @@
                 {
                     "dialect": "probe :od end\n\n",
                     "common": "probe :od end\n\n",
+                    "control": "probe qod end\n\n",
                     "derivation": [
                         [
                             [
@@ -10355,6 +10624,12 @@
             "facets": ["fallback", "rejected-prefix"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": {
+                "construct": "footnote-reference",
+                "implementedBy": ["cmark-gfm"],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -10417,6 +10692,12 @@
             "facets": ["fallback", "rejected-prefix"],
             "identity": true,
             "outputDifference": null,
+            "reference": null,
+            "rejection": {
+                "construct": "inline-formula",
+                "implementedBy": [],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -10429,7 +10710,8 @@
             },
             "grammars": {
                 "dialect": "Document = Unit+ ; Unit = \"probe \" \"$\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe \" \"$\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "common": "Document = Unit+ ; Unit = \"probe \" \"$\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "control": "Document = Unit+ ; Unit = \"probe \" \"q\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -10442,6 +10724,7 @@
                 {
                     "dialect": "probe $b **uu mbmb qbqb** ac end\n\n",
                     "common": "probe $b **uu mbmb qbqb** ac end\n\n",
+                    "control": "probe qb **uu mbmb qbqb** ac end\n\n",
                     "derivation": [
                         [
                             [
@@ -10457,6 +10740,7 @@
                 {
                     "dialect": "probe $lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc end\n\n",
                     "common": "probe $lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc end\n\n",
+                    "control": "probe qlblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc end\n\n",
                     "derivation": [
                         [
                             [
@@ -10485,6 +10769,12 @@
             "facets": ["fallback", "rejected-prefix"],
             "identity": true,
             "outputDifference": null,
+            "reference": null,
+            "rejection": {
+                "construct": "grid-table",
+                "implementedBy": [],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -10497,7 +10787,8 @@
             },
             "grammars": {
                 "dialect": "Document = Unit+ ; Unit = \"+---+\\n|\" key:word \"\\n+---+\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"+---+\\n|\" key:word \"\\n+---+\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "common": "Document = Unit+ ; Unit = \"+---+\\n|\" key:word \"\\n+---+\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "control": "Document = Unit+ ; Unit = \"q---q\\n|\" key:word \"\\nq---q\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -10510,6 +10801,7 @@
                 {
                     "dialect": "+---+\n|nd\n+---+\n\n",
                     "common": "+---+\n|nd\n+---+\n\n",
+                    "control": "q---q\n|nd\nq---q\n\n",
                     "derivation": [
                         [
                             [
@@ -10525,6 +10817,7 @@
                 {
                     "dialect": "+---+\n|od\n+---+\n\n",
                     "common": "+---+\n|od\n+---+\n\n",
+                    "control": "q---q\n|od\nq---q\n\n",
                     "derivation": [
                         [
                             [
@@ -10547,6 +10840,12 @@
             "facets": ["dimension-fallback", "leading-zero"],
             "identity": true,
             "outputDifference": null,
+            "reference": null,
+            "rejection": {
+                "construct": "image-dimensions",
+                "implementedBy": [],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -10563,7 +10862,8 @@
             },
             "grammars": {
                 "dialect": "Document = Unit+ ; Unit = \"probe \" \"![\" key:word \"|01x20](/\" target:word \")\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe \" \"![\" key:word \"|01x20](/\" target:word \")\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "common": "Document = Unit+ ; Unit = \"probe \" \"![\" key:word \"|01x20](/\" target:word \")\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "control": "Document = Unit+ ; Unit = \"probe \" \"![\" key:word \"q01x20](/\" target:word \")\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -10576,6 +10876,7 @@
                 {
                     "dialect": "probe ![nd|01x20](/h) end\n\n",
                     "common": "probe ![nd|01x20](/h) end\n\n",
+                    "control": "probe ![ndq01x20](/h) end\n\n",
                     "derivation": [
                         [
                             [
@@ -10598,6 +10899,7 @@
                 {
                     "dialect": "probe ![od|01x20](/ss) end\n\n",
                     "common": "probe ![od|01x20](/ss) end\n\n",
+                    "control": "probe ![odq01x20](/ss) end\n\n",
                     "derivation": [
                         [
                             [
@@ -10627,6 +10929,12 @@
             "facets": ["fallback", "rejected-prefix"],
             "identity": true,
             "outputDifference": null,
+            "reference": null,
+            "rejection": {
+                "construct": "insertion",
+                "implementedBy": [],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -10639,7 +10947,8 @@
             },
             "grammars": {
                 "dialect": "Document = Unit+ ; Unit = \"probe \" \"++\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe \" \"++\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "common": "Document = Unit+ ; Unit = \"probe \" \"++\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "control": "Document = Unit+ ; Unit = \"probe \" \"qq\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -10652,6 +10961,7 @@
                 {
                     "dialect": "probe ++b **uu mbmb qbqb** ac end\n\n",
                     "common": "probe ++b **uu mbmb qbqb** ac end\n\n",
+                    "control": "probe qqb **uu mbmb qbqb** ac end\n\n",
                     "derivation": [
                         [
                             [
@@ -10667,6 +10977,7 @@
                 {
                     "dialect": "probe ++lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc end\n\n",
                     "common": "probe ++lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc end\n\n",
+                    "control": "probe qqlblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc end\n\n",
                     "derivation": [
                         [
                             [
@@ -10695,6 +11006,12 @@
             "facets": ["fallback", "rejected-prefix"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": {
+                "construct": "ordered-list-marker",
+                "implementedBy": ["cmark", "cmark-gfm"],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -10763,6 +11080,12 @@
             "facets": ["fallback", "rejected-prefix"],
             "identity": true,
             "outputDifference": null,
+            "reference": null,
+            "rejection": {
+                "construct": "mark",
+                "implementedBy": [],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -10775,7 +11098,8 @@
             },
             "grammars": {
                 "dialect": "Document = Unit+ ; Unit = \"probe \" \"==\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe \" \"==\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "common": "Document = Unit+ ; Unit = \"probe \" \"==\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "control": "Document = Unit+ ; Unit = \"probe \" \"qq\" body:inline \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -10788,6 +11112,7 @@
                 {
                     "dialect": "probe ==b **uu mbmb qbqb** ac end\n\n",
                     "common": "probe ==b **uu mbmb qbqb** ac end\n\n",
+                    "control": "probe qqb **uu mbmb qbqb** ac end\n\n",
                     "derivation": [
                         [
                             [
@@ -10803,6 +11128,7 @@
                 {
                     "dialect": "probe ==lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc end\n\n",
                     "common": "probe ==lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc end\n\n",
+                    "control": "probe qqlblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc end\n\n",
                     "derivation": [
                         [
                             [
@@ -10831,6 +11157,12 @@
             "facets": ["document-initial-only", "envelope-fallback"],
             "identity": true,
             "outputDifference": null,
+            "reference": null,
+            "rejection": {
+                "construct": "metadata-envelope",
+                "implementedBy": [],
+                "uncontrolled": "The rejected envelope delimiter --- is itself shared syntax, a thematic break or setext underline in both parsers; no same-width letter substitution removes the envelope attempt without also removing that shared work."
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -10911,6 +11243,12 @@
             "facets": ["fallback", "rejected-prefix"],
             "identity": true,
             "outputDifference": null,
+            "reference": null,
+            "rejection": {
+                "construct": "superscript",
+                "implementedBy": [],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -10927,7 +11265,8 @@
             },
             "grammars": {
                 "dialect": "Document = Unit+ ; Unit = \"probe \" \"^\" key:word \" \" value:word \"^\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe \" \"^\" key:word \" \" value:word \"^\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "common": "Document = Unit+ ; Unit = \"probe \" \"^\" key:word \" \" value:word \"^\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "control": "Document = Unit+ ; Unit = \"probe \" \"q\" key:word \" \" value:word \"q\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -10940,6 +11279,7 @@
                 {
                     "dialect": "probe ^nd rbrb^ end\n\n",
                     "common": "probe ^nd rbrb^ end\n\n",
+                    "control": "probe qnd rbrbq end\n\n",
                     "derivation": [
                         [
                             [
@@ -10962,6 +11302,7 @@
                 {
                     "dialect": "probe ^od ececec^ end\n\n",
                     "common": "probe ^od ececec^ end\n\n",
+                    "control": "probe qod ecececq end\n\n",
                     "derivation": [
                         [
                             [
@@ -10991,6 +11332,12 @@
             "facets": ["fallback", "rejected-prefix"],
             "identity": true,
             "outputDifference": null,
+            "reference": null,
+            "rejection": {
+                "construct": "bracketed-span",
+                "implementedBy": [],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -11003,7 +11350,8 @@
             },
             "grammars": {
                 "dialect": "Document = Unit+ ; Unit = \"probe \" \"[\" body:inline \"]{\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
-                "common": "Document = Unit+ ; Unit = \"probe \" \"[\" body:inline \"]{\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+                "common": "Document = Unit+ ; Unit = \"probe \" \"[\" body:inline \"]{\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "control": "Document = Unit+ ; Unit = \"probe \" \"[\" body:inline \"]q\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = [a-z]+ ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ; Empty = epsilon ; UnicodeWord = [a-zé字]+ ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
             },
             "rewrite": [
                 "inline-administrative-productions",
@@ -11016,6 +11364,7 @@
                 {
                     "dialect": "probe [b **uu mbmb qbqb** ac]{ end\n\n",
                     "common": "probe [b **uu mbmb qbqb** ac]{ end\n\n",
+                    "control": "probe [b **uu mbmb qbqb** ac]q end\n\n",
                     "derivation": [
                         [
                             [
@@ -11031,6 +11380,7 @@
                 {
                     "dialect": "probe [lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc]{ end\n\n",
                     "common": "probe [lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc]{ end\n\n",
+                    "control": "probe [lblblb **agag ububububub ok** vc **qiqi ybybybyb apap** tctctc]q end\n\n",
                     "derivation": [
                         [
                             [
@@ -11059,6 +11409,12 @@
             "facets": ["fallback", "rejected-prefix"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": {
+                "construct": "strikethrough",
+                "implementedBy": ["cmark-gfm"],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -11127,6 +11483,12 @@
             "facets": ["required-separator", "invalid-marker"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": {
+                "construct": "task-list-marker",
+                "implementedBy": ["cmark-gfm"],
+                "uncontrolled": null
+            },
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -11225,6 +11587,8 @@
             "facets": ["nested-inline-notes", "generated-identities"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -11323,6 +11687,8 @@
             "facets": ["unused-definitions", "duplicate-definitions", "repeated-calls"],
             "identity": true,
             "outputDifference": "Core retains all authored definitions; GFM emits only the first used definition of each normalized ID. Grammar identity does not identify their output work.",
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -11489,6 +11855,8 @@
             "facets": ["backtick-dollar"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -11551,6 +11919,8 @@
             "facets": ["backslash-brackets", "placement"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -11613,6 +11983,8 @@
             "facets": ["bracket-blocks", "block-trimming"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -11675,6 +12047,8 @@
             "facets": ["backslash-brackets", "placement"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -11737,6 +12111,8 @@
             "facets": ["bare-url", "bare-email", "punctuation-trimming"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -11835,6 +12211,8 @@
             "facets": ["reference-notes", "forward-resolution", "definition-bodies"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -11922,6 +12300,8 @@
             "facets": ["definition-blocks", "continuation-indentation"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -12051,6 +12431,8 @@
             "facets": ["self-reference", "semantic-cycles"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -12138,6 +12520,8 @@
             "facets": ["short-rows", "extra-cells", "escaped-pipes", "code-pipes"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -12236,6 +12620,8 @@
             "facets": ["pipe-tables", "alignment", "inline-cells"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -12382,6 +12768,8 @@
             "facets": ["pairs", "inline-content"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -12450,6 +12838,8 @@
             "facets": ["standard-markers", "opening-content"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -12518,6 +12908,8 @@
             "facets": ["standard-markers", "opening-content"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -12586,6 +12978,8 @@
             "facets": ["standard-markers", "opening-content"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -12654,6 +13048,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T5",
             "normalForm": {
                 "repetition": "+",
@@ -12970,6 +13366,8 @@
             "facets": ["explicit-anchor", "attribute-override"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -13057,6 +13455,8 @@
             "facets": ["implicit-references", "forward-resolution"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T7",
             "normalForm": {
                 "repetition": "+",
@@ -13120,6 +13520,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T5",
             "normalForm": {
                 "repetition": "+",
@@ -13524,6 +13926,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T5",
             "normalForm": {
                 "repetition": "+",
@@ -14216,6 +14620,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T5",
             "normalForm": {
                 "repetition": "+",
@@ -14448,6 +14854,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -14534,6 +14942,8 @@
             "facets": ["inline-notes", "inline-body"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -14602,6 +15012,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T2",
             "normalForm": {
                 "repetition": "+",
@@ -14640,6 +15052,8 @@
             "facets": ["captions", "leading-caption"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -14738,6 +15152,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -14800,6 +15216,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -14886,6 +15304,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -14948,6 +15368,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -15010,6 +15432,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -15072,6 +15496,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -15158,6 +15584,8 @@
             "facets": ["formatted-content"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -15226,6 +15654,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T5",
             "normalForm": {
                 "repetition": "+",
@@ -15530,6 +15960,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T5",
             "normalForm": {
                 "repetition": "+",
@@ -15884,6 +16316,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T5",
             "normalForm": {
                 "repetition": "+",
@@ -16238,6 +16672,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T5",
             "normalForm": {
                 "repetition": "+",
@@ -16616,6 +17052,8 @@
             "facets": ["multiple-definitions", "loose-definitions", "empty-definitions"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -16816,6 +17254,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T5",
             "normalForm": {
                 "repetition": "+",
@@ -17508,6 +17948,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -17636,6 +18078,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T2",
             "normalForm": {
                 "repetition": "+",
@@ -17672,6 +18116,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T2",
             "normalForm": {
                 "repetition": "+",
@@ -17708,6 +18154,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T2",
             "normalForm": {
                 "repetition": "+",
@@ -17744,6 +18192,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -17848,6 +18298,8 @@
             "facets": ["extended-ordered-markers", "variant-context", "canonical-numerals"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T7",
             "normalForm": {
                 "repetition": "+",
@@ -17976,6 +18428,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T2",
             "normalForm": {
                 "repetition": "+",
@@ -18012,6 +18466,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T2",
             "normalForm": {
                 "repetition": "+",
@@ -18048,6 +18504,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T2",
             "normalForm": {
                 "repetition": "+",
@@ -18084,6 +18542,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T2",
             "normalForm": {
                 "repetition": "+",
@@ -18120,6 +18580,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T2",
             "normalForm": {
                 "repetition": "+",
@@ -18156,6 +18618,8 @@
             "facets": ["empty-superscript"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -18218,6 +18682,8 @@
             "facets": ["escaped-space", "nbsp"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -18298,6 +18764,8 @@
             "facets": ["formatted-body"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -18360,6 +18828,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T5",
             "normalForm": {
                 "repetition": "+",
@@ -18776,6 +19246,8 @@
             "facets": ["empty-spans", "classes"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -18838,6 +19310,8 @@
             "facets": ["nested-content", "attribute-precedence"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -18924,6 +19398,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T5",
             "normalForm": {
                 "repetition": "+",
@@ -19764,6 +20240,8 @@
             "facets": ["labelled-definitions", "references", "binding"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T7",
             "normalForm": {
                 "repetition": "+",
@@ -19851,6 +20329,8 @@
             "facets": ["anonymous-definitions", "duplicate-definitions", "group-reset-suppression"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T7",
             "normalForm": {
                 "repetition": "+",
@@ -19980,6 +20460,8 @@
             "facets": ["explicit-reset", "positive-nine-digit-start", "binding"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T7",
             "normalForm": {
                 "repetition": "+",
@@ -20085,6 +20567,8 @@
             "facets": ["heading-body", "first-block"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -20153,6 +20637,8 @@
             "facets": ["nested-tasks", "ordered-task"],
             "identity": true,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T6",
             "normalForm": {
                 "repetition": "+",
@@ -20263,6 +20749,8 @@
             "facets": ["unicode-marker", "authored-marker"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -20331,6 +20819,8 @@
             "facets": [],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T4",
             "normalForm": {
                 "repetition": "+",
@@ -20419,6 +20909,8 @@
             "facets": ["captions", "trailing-caption"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark-gfm",
+            "rejection": null,
             "theorem": "T3",
             "normalForm": {
                 "repetition": "+",
@@ -20517,6 +21009,8 @@
             "facets": ["extended-ordered-markers", "variant-context", "canonical-numerals"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T7",
             "normalForm": {
                 "repetition": "+",
@@ -20645,6 +21139,8 @@
             "facets": ["extended-ordered-markers", "variant-context", "canonical-numerals"],
             "identity": false,
             "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
             "theorem": "T7",
             "normalForm": {
                 "repetition": "+",

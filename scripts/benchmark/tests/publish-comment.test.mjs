@@ -12,41 +12,63 @@ import { markdownReport } from "../run.mjs";
 
 const head = "a".repeat(40);
 const base = "b".repeat(40);
-function stageReport(ir) {
-    const names = {
-        "paired-dialect": "inline-links-paired-dialect",
-        "paired-common": "inline-links-paired-common"
-    };
+function stageReport(ir, { rejection = false } = {}) {
     const certificate = {
         id: "inline-links",
         certificate: "inline-links-grammar-v2",
-        scope: "paired-document-grammar"
+        scope: "paired-document-grammar",
+        reference: "cmark"
+    };
+    const rejected = {
+        id: "inline-marks",
+        certificate: "inline-marks-grammar-v2",
+        scope: "paired-document-grammar",
+        reference: null,
+        rejects: "mark"
     };
     const engine = (source, ast = 50) => ({
         stages: { source_to_buffer: { cost: { Ir: source } }, buffer_to_ast: { cost: { Ir: ast } } },
         parsePathIr: source + ast + 10,
         outsideStagesIr: 10
     });
+    const names = (owner, sides) =>
+        Object.fromEntries(sides.map((side) => [`paired-${side}`, `${owner.id}-paired-${side}`]));
+    const document = (owner, side, engines) => ({
+        case: `${owner.id}-paired-${side}`,
+        side,
+        part: "paired",
+        certificate: owner.certificate,
+        units: 1,
+        bytes: 32,
+        sha256: "e".repeat(64),
+        engines
+    });
+    const cases = [
+        document(certificate, "dialect", { "markdown-core": engine(ir) }),
+        document(certificate, "common", { "markdown-core": engine(ir), cmark: engine(50, 25) }),
+        ...(rejection
+            ? [
+                  document(rejected, "dialect", { "markdown-core": engine(ir) }),
+                  document(rejected, "common", { "markdown-core": engine(ir) }),
+                  document(rejected, "control", { "markdown-core": engine(ir - 50) })
+              ]
+            : [])
+    ];
     return {
         schemaVersion: 5,
         revision: base,
-        corpus: { digest: "c".repeat(64), cases: 2 },
+        corpus: { digest: "c".repeat(64), cases: cases.length },
         grammarCorpus: {
             identity: "d".repeat(64),
-            certificates: [certificate],
-            proofs: [{ ...certificate, units: 1, names }]
+            certificates: [certificate, ...(rejection ? [rejected] : [])],
+            proofs: [
+                { ...certificate, units: 1, names: names(certificate, ["dialect", "common"]) },
+                ...(rejection
+                    ? [{ ...rejected, units: 1, names: names(rejected, ["dialect", "common", "control"]) }]
+                    : [])
+            ]
         },
-        cases: ["dialect", "common"].map((side) => ({
-            case: names[`paired-${side}`],
-            side,
-            part: "paired",
-            certificate: certificate.certificate,
-            units: 1,
-            bytes: 32,
-            sha256: "e".repeat(64),
-            gfm: false,
-            engines: { "markdown-core": engine(ir), ...(side === "common" ? { cmark: engine(50, 25) } : {}) }
-        }))
+        cases
     };
 }
 const attributes = () => ({
@@ -67,6 +89,33 @@ test("PR tables report numeric results, source regressions, and complete parse a
     assert.match(body, /inline-links-grammar-v2 \| whole \| 1 \| 32\/32 \| 1.0000× \| 2.0400× \| 2.0400×/);
     assert.match(body, /Grammar:/);
     assert.match(attributeSection(attributes()), /2.0000×/);
+});
+
+test("Core-only rejections are reported against their control, apart from reference comparisons", () => {
+    const body = stageSection(stageReport(103, { rejection: true }), stageReport(100, { rejection: true }));
+    const start = body.indexOf("<summary>Grammar-equivalent reference comparisons");
+    const equivalences = body.slice(start, body.indexOf("</details>", start));
+    assert.match(equivalences, /inline-links-grammar-v2/);
+    assert.doesNotMatch(equivalences, /inline-marks/);
+    assert.match(body, /<summary>Rejection of constructs only Core implements/);
+    assert.match(body, /\| inline-marks-grammar-v2 \| mark \| 1 \| 1\.4854× \| 50 \|/);
+    assert.doesNotMatch(stageSection(stageReport(103), stageReport(100)), /Rejection of constructs/);
+    for (const mutate of [
+        (r) => {
+            r.grammarCorpus.certificates[1].rejects = "@everyone";
+        },
+        (r) => {
+            r.cases[3].engines.cmark = r.cases[1].engines.cmark;
+        },
+        (r) => {
+            r.cases.pop();
+            r.corpus.cases--;
+        }
+    ]) {
+        const report = stageReport(103, { rejection: true });
+        mutate(report);
+        assert.throws(() => stageSection(report, stageReport(100, { rejection: true })));
+    }
 });
 
 test("the measured report schema renders both the Markdown artifact and PR comparison", () => {

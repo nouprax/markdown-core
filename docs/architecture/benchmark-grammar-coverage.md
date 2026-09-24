@@ -34,7 +34,7 @@ the responsibility of the existing parity and regression pipelines.
    coverage. Callgrind measures these generated documents.
 
 There are **30 specification features, 136 sections, 32 registered elements,
-194 certificates and 412 generated documents**, each measured once.
+194 certificates and 424 generated documents**, each measured once.
 Of the 136 sections, **132 link to grammar certificates and four are explicitly
 context-only** (automatic-anchor output, anchor ownership, and two navigation
 introductions). Cross-feature links reuse the same certificate; a documentation
