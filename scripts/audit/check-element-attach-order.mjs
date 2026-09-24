@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-/** The parser selects the complete immutable core registry at exactly one
- * transaction boundary. Every descriptor occurs once and table is last.
- * Private setup probes can extend a snapshot; production parsing must not
- * rebuild a per-call registration list or choose a different dialect. */
+/** The parse transaction selects the complete core dialect at exactly one
+ * site, as the start of every instance's dialect. Every descriptor occurs once
+ * and table is last. Private setup probes can extend an instance's dialect
+ * through its builder; production parsing must not register anything or
+ * choose a different dialect. */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -31,7 +32,7 @@ failures.push(
 if (fs.readdirSync(path.join(pkg, "core")).some((file) => file.endsWith(".re"))) {
     failures.push("generated lexical grammar belongs to elements, not core");
 }
-const ATTACH = "markdown_core_parser_attach_element";
+const ATTACH = "markdown_core_dialect_builder_attach";
 
 /** Every `*.c` under `core/` and `elements/` — the shipped library, no tests. */
 function librarySources() {
@@ -70,9 +71,10 @@ function endOfArguments(source, open) {
     return -1;
 }
 
-// (1) One attach site. The function's own definition is not a call: its
-// argument list is followed by the body's `{`. Prototypes live in headers,
-// which this audit does not read.
+// (1) No attach call in the shipped library: only a private setup extends a
+// dialect. The function's own definition is not a call: its argument list is
+// followed by the body's `{`. Prototypes live in headers, which this audit
+// does not read.
 const sites = [];
 for (const file of librarySources()) {
     const source = read(file);
@@ -85,7 +87,7 @@ for (const file of librarySources()) {
 }
 for (const site of sites) {
     failures.push(
-        `${site.file}: ${ATTACH} is called from ${site.function}; the fixed dialect must borrow its registry`
+        `${site.file}: ${ATTACH} is called from ${site.function}; production dialects are the core dialect alone`
     );
 }
 
@@ -115,7 +117,7 @@ if (
     dialectAttachSites[0].file !== "core/blocks.c" ||
     dialectAttachSites[0].function !== "markdown_core_parse_document_with_setup"
 ) {
-    failures.push("the sole engine parse transaction must select the complete immutable dialect registry");
+    failures.push("the sole engine parse transaction must select the complete core dialect");
 }
 
 // (2) The shared inventory proves every descriptor has exactly one position.
@@ -137,5 +139,5 @@ if (failures.length) {
     process.stderr.write(`element attach order audit FAILED\n  ${failures.join("\n  ")}\n`);
     process.exit(1);
 }
-process.stdout.write("  one immutable registry selection site; no production attachment calls.\n");
+process.stdout.write("  one core dialect selection site; no production attachment calls.\n");
 process.stdout.write("element attach order audit passed.\n");

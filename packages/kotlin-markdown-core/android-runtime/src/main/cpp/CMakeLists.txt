@@ -14,6 +14,7 @@ add_library(
     "${MARKDOWN_CORE_CORE_DIR}/markdown_core.c"
     "${MARKDOWN_CORE_CORE_DIR}/node.c"
     "${MARKDOWN_CORE_CORE_DIR}/iterator.c"
+    "${MARKDOWN_CORE_CORE_DIR}/dialect.c"
     "${MARKDOWN_CORE_CORE_DIR}/blocks.c"
     "${MARKDOWN_CORE_CORE_DIR}/inlines.c"
     "${MARKDOWN_CORE_CORE_DIR}/utf8.c"

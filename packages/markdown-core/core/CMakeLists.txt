@@ -11,6 +11,7 @@ set(HEADERS
     markdown-core.h
     markdown-core-element-api.h
     parser.h
+    dialect.h
     buffer.h
     node.h
     iterator.h
@@ -32,6 +33,7 @@ set(LIBRARY_SOURCES
     markdown_core.c
     node.c
     iterator.c
+    dialect.c
     blocks.c
     inlines.c
     utf8.c

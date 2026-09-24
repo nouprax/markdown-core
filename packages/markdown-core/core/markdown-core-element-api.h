@@ -46,6 +46,10 @@ typedef struct {
  */
 typedef struct markdown_core_inline_state markdown_core_inline_state;
 
+/** The dialect of one parser instance while its setup extends it
+ * (dialect.h). Setup is the only code that holds one. */
+typedef struct markdown_core_dialect_builder markdown_core_dialect_builder;
+
 /** A delimiter names its RULE, not a byte.
  *
  * It used to carry an `unsigned char delim_char`, and three separate things
@@ -234,7 +238,7 @@ typedef int (*markdown_core_accepts_lines_func)(const markdown_core_element *ele
  * needs the whole finished root is a pass.
  *
  * One element declares one or the other, never both: an element that needs
- * both shapes has two concerns, and `markdown_core_parser_attach_element`
+ * both shapes has two concerns, and `markdown_core_dialect_builder_attach`
  * refuses the descriptor.
  */
 
@@ -301,8 +305,6 @@ typedef markdown_core_finish_result (*markdown_core_finish_step_func)(const mark
 typedef int (*markdown_core_postprocess_func)(const markdown_core_element *element, markdown_core_parser *parser,
                                               markdown_core_node *root);
 
-typedef int (*markdown_core_ispunct_func)(char c);
-
 typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_element *element, markdown_core_node *node);
 
 typedef void (*markdown_core_opaque_free_func)(const markdown_core_element *element, markdown_core_node *node);
@@ -318,11 +320,6 @@ typedef void (*markdown_core_opaque_free_func)(const markdown_core_element *elem
  * descriptor, so "carries no mutable state" is a fact the compiler checks
  * rather than a convention.
  */
-
-/** See the documentation for 'markdown_core_element'
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_parser_set_backslash_ispunct_func(markdown_core_parser *parser, markdown_core_ispunct_func func);
 
 /** Return the index of the line currently being parsed, starting with 1.
  */
@@ -540,19 +537,23 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
 MARKDOWN_CORE_EXPORT
 void markdown_core_parser_advance_offset(markdown_core_parser *parser, const char *input, int count, int columns);
 
-/** Attach 'element' to 'parser' as part of the complete element table.
+/** Register 'element' after every element 'builder' already holds.
  *  See the documentation for markdown_core_element for more information.
  *
- *  Returns 'true' if the 'element' was successfully attached,
- *  'false' otherwise: on allocation failure, for a descriptor the
- *  registration rule refuses -- one that declares both a finish step and a
- *  postprocess pass (see the two shapes above), or where a step is asked
- *  without a step, or one kind as both an exit and a scope kind -- and once
- *  the registry holds 255 elements (the block-start projection lists a
- *  family's owners by byte), with the registry left as it was.
+ *  Returns 'true' if the 'element' was registered, 'false' otherwise: on
+ *  allocation failure, for a descriptor the registration rule refuses -- one
+ *  that declares both a finish step and a postprocess pass (see the two
+ *  shapes above), or where a step is asked without a step, or one kind as
+ *  both an exit and a scope kind, or only part of the document lifecycle --
+ *  and once the dialect holds 255 elements (the block-start projection
+ *  lists a family's owners by byte), with the builder left as it was.
  */
-MARKDOWN_CORE_EXPORT
-int markdown_core_parser_attach_element(markdown_core_parser *parser, const markdown_core_element *element);
+int markdown_core_dialect_builder_attach(markdown_core_dialect_builder *builder, const markdown_core_element *element);
+
+/** The elements 'builder' holds, in registration order; their number in
+ *  '*count'. The view is valid until the next registration. */
+const markdown_core_element *const *markdown_core_dialect_builder_elements(const markdown_core_dialect_builder *builder,
+                                                                           size_t *count);
 
 typedef enum {
     MARKDOWN_CORE_NODE_SET_KIND_OK,

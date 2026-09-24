@@ -85,10 +85,11 @@ struct markdown_core_inline_state {
     bufsize_t backtick_capacity;
     bool scanned_for_backticks;
     bool no_link_openers;
-    /* Borrowed from the owning parser (or the immutable core defaults when
-     * there is no parser, e.g. reference parsing). */
-    const int8_t *special_chars;
-    const int8_t *skip_chars;
+    /* The owning parser's sealed dialect, which the scan reads its byte
+     * tables and delimiter owners from. NULL with no parser: that state is a
+     * reference definition's cursor (markdown_core_parse_reference_inline),
+     * which reads no table, as it pushes no delimiter. */
+    const markdown_core_dialect *dialect;
     /* Sticky allocation-failure flag, copied to the parser after the inline
      * pass so a lossy parse is reported instead of silently truncated. */
     markdown_core_parse_error error;

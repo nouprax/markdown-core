@@ -50,7 +50,7 @@ static bool markdown_core_block_definition_marker(markdown_core_chunk *input, in
  * at most -- begins, once its container prefix is stripped, with a marker.
  * A container continuation strips nothing but indentation and the bytes its
  * element declares (`container_prefix_bytes`, projected to one table in
- * `parser->container_prefix`: quote markers, today), so when a marker is
+ * the dialect's `container_prefix`: quote markers, today), so when a marker is
  * there the raw bytes before it are all in that table: walking over them
  * lands on the byte the stripped line would show first, and a raw line made
  * of nothing else is blank once stripped (or a bare quote opener, which the
@@ -64,7 +64,7 @@ static bool definition_next_lines_admit(markdown_core_parser *parser) {
     const unsigned char *cursor = parser->lookahead_cursor, *end = parser->lookahead_end;
     for (int line = 0; line < 2 && cursor && cursor < end; line++) {
         const unsigned char *at = cursor;
-        while (at < end && parser->container_prefix[*at]) {
+        while (at < end && parser->dialect->container_prefix[*at]) {
             /* A declared prefix byte that is also a marker byte -- a
              * container whose continuation strips ':' or '~' -- cannot be
              * told from the marker here; only the transaction can, so the

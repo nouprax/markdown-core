@@ -5,6 +5,7 @@
 #include "references.h"
 #include "node.h"
 #include "buffer.h"
+#include "dialect.h"
 #include "../elements/heading_state.h"
 
 #ifdef __cplusplus
@@ -21,130 +22,6 @@ typedef enum {
 } markdown_core_parse_error;
 
 #define MAX_LINK_LABEL_LENGTH 1000
-
-/* The block-start hook families, in the order a line consults them.
- *
- * They are separate families rather than one list because the ORDER BETWEEN
- * them is grammar: every `scan` owner wins over every `open` owner on the same
- * line, and `interrupt` runs between the two so a dash-led table can take a
- * line a thematic break or list already matched. Merging them would change
- * which element claims an ambiguous line. */
-typedef enum {
-    MARKDOWN_CORE_BLOCK_HOOK_SCAN,
-    MARKDOWN_CORE_BLOCK_HOOK_INTERRUPT,
-    MARKDOWN_CORE_BLOCK_HOOK_OPEN,
-    MARKDOWN_CORE_BLOCK_HOOK_PARAGRAPH,
-    MARKDOWN_CORE_BLOCK_HOOK_PROBE,
-    MARKDOWN_CORE_BLOCK_HOOK_COUNT
-} markdown_core_block_hook;
-
-/* THE INLINE-CONTENT HOOK FAMILIES, projected for the same reason and with one
- * difference: a block hook family is asked per LINE and can be gated on the
- * line's first byte, while these three are asked once per inline-content NODE
- * and have nothing to gate on. So they get the projection and not the gate
- * maps.
- *
- * Each of the three was a scan of every attached element looking for the few
- * that declare the hook, run per inline-content node: `init` from
- * `markdown_core_inline_state_from_buf`, `finish` from
- * `markdown_core_inline_finish_inlines`, `dispose` from
- * `markdown_core_inline_clear_inlines`. With thirty core elements and one
- * declarer for `init` and for `finish`, that is ninety iterations per node to
- * find six calls.
- *
- * Order inside a family is descriptor order, which is what the scan gave, so a
- * projected family calls the same hooks on the same states in the same
- * sequence. */
-typedef enum {
-    MARKDOWN_CORE_INLINE_HOOK_INIT,
-    MARKDOWN_CORE_INLINE_HOOK_FINISH,
-    MARKDOWN_CORE_INLINE_HOOK_DISPOSE,
-    MARKDOWN_CORE_INLINE_HOOK_COUNT
-} markdown_core_inline_hook;
-
-/* THE FINISH STEPS, projected by EVENT and KIND.
- *
- * The finish walk delivers two events per node, and a step declares the kinds
- * it is ASKED AT (their EXIT, once the subtree is complete) and the kinds
- * whose EXTENT it tracks (their ENTER and EXIT), so the natural key of the
- * dispatch is (event, kind): a Text's EXIT reaches autolink, a Paragraph's
- * EXIT reaches formula, a Link's ENTER and EXIT reach autolink, and a Text's
- * ENTER or a List's EXIT reach nothing. The projection is one table with a
- * pointer per key to a terminated list of steps in descriptor order, NULL for
- * a key nothing declared, built once per parse beside the block and
- * inline-content families and gated, once the tree is complete, on the kinds
- * the parse produced (element.h, `finish_acts_on_kinds`). One load decides
- * the common case.
- *
- * Kinds are indexed by class then ordinal, so a block and an inline kind that
- * collide once masked keep separate keys. A kind outside the table -- an
- * extension kind numbered at or past MARKDOWN_CORE_NODE_KIND_COUNT -- shares
- * one key, and registration refuses a step declared at such a kind, so that
- * key is never written and such a node's events dispatch to nothing. */
-#define MARKDOWN_CORE_FINISH_KIND_COUNT (2 * MARKDOWN_CORE_NODE_KIND_COUNT)
-#define MARKDOWN_CORE_FINISH_KEY_COUNT (2 * (MARKDOWN_CORE_FINISH_KIND_COUNT + 1))
-
-static inline size_t markdown_core_finish_kind_index(markdown_core_node_type kind) {
-    size_t ordinal = (size_t)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
-    if (ordinal >= MARKDOWN_CORE_NODE_KIND_COUNT) {
-        return MARKDOWN_CORE_FINISH_KIND_COUNT;
-    }
-    return MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind) ? MARKDOWN_CORE_NODE_KIND_COUNT + ordinal : ordinal;
-}
-
-static inline size_t markdown_core_finish_key(markdown_core_event_type event, markdown_core_node_type kind) {
-    return 2 * markdown_core_finish_kind_index(kind) + (event == MARKDOWN_CORE_EVENT_EXIT);
-}
-
-/* The kind index of the one kind the engine's own step, text consolidation,
- * acts at. A constant, so the walk compares the index it computed anyway. */
-#define MARKDOWN_CORE_FINISH_TEXT_INDEX                                                                                \
-    (MARKDOWN_CORE_NODE_KIND_COUNT + ((size_t)MARKDOWN_CORE_NODE_TEXT & MARKDOWN_CORE_NODE_VALUE_MASK))
-
-/* One projected step: the element, and which of the walk's per-root state
- * words is its own. An element that declared several kinds appears under each
- * of them with the same slot, so its state is one fact per root. A list ends
- * at an entry whose element is NULL.
- *
- * THE GATE IS READ AT THE EVENT. A step that declares the kinds it acts on is
- * asked at an EXIT of a kind it declared it is asked at only once the parse
- * has produced one of the kinds it acts on -- the same fact a pass is gated
- * on, read when the event comes rather than before the walk, because the walk
- * parses inline content as it goes and a kind's first node may be made after
- * the walk began. `acts_on` is that declaration as a set, and `gated` says
- * whether the test is worth making: it is false for an entry at a kind the
- * step acts on (a node of that kind is being exited, so the parse produced
- * one), for a step that declared nothing, and for a scope-kind entry (the
- * ENTER and EXIT that bound an extent are delivered whenever the extent is
- * walked, so the state the step keeps for the extent is always in step). */
-typedef struct markdown_core_finish_step_entry {
-    const markdown_core_element *element;
-    size_t slot;
-    markdown_core_node_kind_set acts_on;
-    bool gated;
-} markdown_core_finish_step_entry;
-
-/* WHAT THE FINISH WALK ASKS OF A KIND, answered once per parse per kind and
- * read as one record per event (see walk_owned_trees in blocks.c), so that
- * the walk's common path reads no descriptor. Each flag is a fact of the
- * kind's structure element: PARSES, the kind may hold inline content the walk
- * parses at its ENTER (it declares `inline_content`, or a
- * `contains_inlines_func` the walk then asks about the node); DEFERRED, the
- * content was parsed before the walk (a heading's, by the document's
- * preparation); FIELDS, the kind can own a field root through its own record
- * (`markdown_core_kind_owns_fields`, element.h -- a subtree an element owns
- * is found through the node's `element`, which the walk tests beside this).
- * `complete` is the element's `complete_inline`, NULL for a kind whose
- * element declares none. The out-of-table index answers nothing. */
-enum {
-    MARKDOWN_CORE_FINISH_KIND_PARSES = 1u << 0,
-    MARKDOWN_CORE_FINISH_KIND_DEFERRED = 1u << 1,
-    MARKDOWN_CORE_FINISH_KIND_FIELDS = 1u << 2
-};
-typedef struct markdown_core_finish_kind {
-    void (*complete)(struct markdown_core_parser *, markdown_core_node *, int);
-    uint8_t flags;
-} markdown_core_finish_kind;
 
 /* Immutable runs map logical content bytes to authored byte intervals.
  * Blocks append runs as lines arrive; transformed cells and decoded inline
@@ -230,7 +107,12 @@ struct markdown_core_parser {
     markdown_core_heading_collection headings;
     markdown_core_source_order source_order;
     anchor_registry anchors;
-    const markdown_core_element *document_structure, *text_structure;
+    /* The sealed dialect this instance parses with (dialect.h), which
+     * shares the instance's allocation (blocks.c, markdown_core_instance),
+     * and the context its setup was given. The context is the caller's; the
+     * engine only carries it to element hooks. */
+    const markdown_core_dialect *dialect;
+    void *context;
     /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
     struct markdown_core_node *root;
     /* The active block grammar boundary. The document and mapped cell inputs
@@ -310,7 +192,7 @@ struct markdown_core_parser {
     size_t bracket_work;
     /* Elements the inline-content hook dispatch EXAMINED, counted one per
      * element per family per inline-content node. The projection's whole claim
-     * is that this grows with the declarers and not with the registry, and
+     * is that this grows with the declarers and not with the dialect, and
      * nothing else can see the difference: a dispatch that went back to
      * scanning every attached element would build the identical tree. So the
      * invariant is asserted on this counter rather than on output. */
@@ -435,67 +317,10 @@ struct markdown_core_parser {
     int lookahead_chain_alloc;
     /* Element-owned scratch for sequential table recognition transactions. */
     struct markdown_core_table_workspace *table_workspace;
-    /* Borrow the fixed immutable dialect registry. Private setup callers may
-     * extend it before parsing; only that replacement buffer is owned here. */
-    const markdown_core_element *const *elements;
-    const markdown_core_element **element_allocation;
-    size_t element_count;
-    /* Each byte's inline owners, by precedence and then descriptor order,
-     * projected with the hook families after setup; the list lives in
-     * `block_hook_allocation`. Each token visits only its possible owners;
-     * offsets include an end sentinel. */
-    size_t inline_dispatch_offsets[257];
-    const markdown_core_element **inline_dispatch;
-    /* The same idea one phase earlier: each block-start hook family projected
-     * to the elements that implement it, in descriptor order, once per parse.
-     * A line asks four of these families in turn, so without the projection a
-     * line pays the whole registry four times to reach the one to four owners
-     * that can answer -- `try_interrupting_block` has a single implementer and
-     * was reached by walking every element attached to the parser.
-     *
-     * Order inside a family IS the grammar: the first owner that claims a line
-     * wins it, which is why heading precedes thematic break (setext `---`) and
-     * thematic break precedes list (`***`). The projection therefore preserves
-     * descriptor order rather than grouping by anything else. */
-    const markdown_core_element **block_hooks[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
-    size_t block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
-    /* The one block behind the block families, the inline-content families,
-     * the inline dispatch lists and the finish steps. */
-    void *block_hook_allocation;
-    /* Each family's declared gates projected to one list of owners per key
-     * (a first non-space byte, no byte, or an indented line), in the family's
-     * own order, so a line reads the owners its key names rather than asking
-     * every owner (see S_gate_candidates). A NULL table means the family
-     * declared nothing and every owner is asked, which is the behaviour a
-     * gate replaces. */
-    uint8_t *block_gate_lists[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
-    /* Every byte a container continuation may strip ahead of a line's own
-     * first byte: indentation, and each element's `container_prefix_bytes`,
-     * projected with the hooks. A question asked of a later line from raw
-     * source walks these to land on the byte the stripped line would show
-     * first (see definition_next_lines_admit). */
-    bool container_prefix[256];
-    /* The inline-content families, projected from the same registry and in the
-     * same descriptor order. Zero counts before the projection runs, which is
-     * why it runs unconditionally on the one path that creates a parser. */
-    const markdown_core_element **inline_hooks[MARKDOWN_CORE_INLINE_HOOK_COUNT];
-    size_t inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     /* Delimiter entries removed from an inline parse, kept for the next push
      * (see `markdown_core_inline_push_delimiter_entry`); linked through `next`
      * and released with the parser. */
     struct delimiter *free_delimiters;
-    /* The finish steps by key (see `markdown_core_finish_key`): each entry
-     * points into the same allocation as the block and inline-content
-     * families, at a list terminated by a NULL element, or is NULL when
-     * nothing declared the key. The lists are projected when the parser is
-     * set up; each entry carries its gate (markdown_core_finish_step_entry),
-     * which the walk reads at the event. `finish_step_slots` is how many
-     * state words the walk keeps per root: one per element that declares a
-     * step. `finish_kinds` is the walk's per-kind record, by kind index
-     * (markdown_core_finish_kind), projected beside the lists. */
-    markdown_core_finish_step_entry *finish_dispatch[MARKDOWN_CORE_FINISH_KEY_COUNT];
-    size_t finish_step_slots;
-    markdown_core_finish_kind finish_kinds[MARKDOWN_CORE_FINISH_KIND_COUNT + 1];
     /* WHICH KINDS THIS PARSE PRODUCED, recorded where they are produced.
      *
      * Every node creation and every `set_kind` that a parse performs writes
@@ -510,16 +335,6 @@ struct markdown_core_parser {
      * Every production creation site goes through `markdown_core_parser_note_kind`;
      * `scripts/audit/check-parser-kind-record.mjs` holds that. */
     markdown_core_node_kind_set kinds_created;
-    markdown_core_ispunct_func backslash_ispunct;
-    /* Inline byte tables for this parser, projected with the hook families:
-     * the text terminators, flanking-transparent bytes and start predicates
-     * of the attached inline elements. Parser-local so concurrent parsers
-     * with different element sets never observe each other's characters. */
-    const markdown_core_element *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
-    markdown_core_delimiter_rule delimiter_chars[256];
-    bool (*inline_start_predicates[256])(markdown_core_inline_state *, bufsize_t);
-    int8_t special_chars[256];
-    int8_t skip_chars[256];
     /* The content-to-source map (see markdown_core_line_mark). It is read while the
      * parse is still running -- the block phase reads it as blocks close and
      * the inline phase reads it before the transaction returns -- and it is
@@ -844,7 +659,7 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
                                           struct markdown_core_block_reader *reader);
 
 /* Schedule an already owned node's mapped content for the ordinary block
- * parser. No nested parse transaction, document, registry or C recursion. */
+ * parser. No nested parse transaction, document, dialect or C recursion. */
 void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser);
 bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_node *owner);
 /* Project a byte column in the active input to its original source column.
@@ -879,12 +694,16 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
                                               markdown_core_node *definition, markdown_core_node *citation,
                                               markdown_core_node **inline_owner);
 
-/* The engine has one parse operation. `setup`, when present, configures the
- * fresh parser after the complete dialect is attached, before any source is
- * read. Tests may add instrumentation; no caller selects the language.
- * Returning false aborts the transaction. The
- * parser never escapes this call and is destroyed before it returns. */
-typedef bool (*markdown_core_parser_setup_func)(markdown_core_parser *parser, void *context);
+/* The engine has one parse operation. `setup`, when present, extends the
+ * dialect this instance will parse with: it receives the builder, already
+ * holding the complete core dialect, and never the parser, so what it
+ * registers is sealed before any source is read and fixed for the instance's
+ * lifetime (dialect.h). `context` is handed to setup and carried on the
+ * parser for element hooks. Tests add instrumentation this way; no caller
+ * selects the language. Returning false aborts the transaction. The parser
+ * and its dialect never escape this call and are released before it
+ * returns. */
+typedef bool (*markdown_core_parser_setup_func)(markdown_core_dialect_builder *builder, void *context);
 markdown_core_node *markdown_core_parse_document_with_setup(const char *source, size_t length,
                                                             markdown_core_parser_setup_func setup, void *context);
 

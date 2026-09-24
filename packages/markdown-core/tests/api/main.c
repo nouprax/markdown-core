@@ -29,6 +29,7 @@
 #include "iterator.h"
 #include "element.h"
 #include "markdown-core-elements.h"
+#include "document.h"
 
 #include <markdown_core.h>
 
@@ -265,16 +266,28 @@ typedef struct probe_setup {
     size_t count;
 } probe_setup;
 
-static bool attach_probes(markdown_core_parser *parser, void *context) {
+static bool attach_probes(markdown_core_dialect_builder *builder, void *context) {
     const probe_setup *setup = (const probe_setup *)context;
     size_t i;
 
     for (i = 0; i < setup->count; i++) {
-        if (!markdown_core_parser_attach_element(parser, setup->elements[i])) {
+        if (!markdown_core_dialect_builder_attach(builder, setup->elements[i])) {
             return false;
         }
     }
     return true;
+}
+
+/* A test reaches its live instance the way registration allows: by registering
+ * a document-lifecycle owner. `owner` becomes a copy of the core document
+ * element, so it keeps every document hook, with `init_document` replaced;
+ * that hook begins the core lifecycle itself before doing anything else. */
+static bool attach_document_owner(markdown_core_dialect_builder *builder, markdown_core_element *owner,
+                                  const char *name, void (*init_document)(markdown_core_parser *)) {
+    *owner = MARKDOWN_CORE_ELEMENT_DOCUMENT;
+    owner->name = name;
+    owner->init_document = init_document;
+    return markdown_core_dialect_builder_attach(builder, owner);
 }
 
 static markdown_core_node *parse_with_probes(const char *source, size_t length,
@@ -1666,7 +1679,7 @@ static markdown_core_node *observe_dispatch(const markdown_core_element *self, m
                                             markdown_core_inline_state *inline_state) {
     (void)parent;
     (void)character;
-    dispatch_observation *observation = parser->root->user_data;
+    dispatch_observation *observation = parser->context;
     if (observation->count + 1 < sizeof(observation->calls)) {
         observation->calls[observation->count++] = self->name[0];
     }
@@ -1676,7 +1689,8 @@ static markdown_core_node *observe_dispatch(const markdown_core_element *self, m
     return NULL;
 }
 
-static bool attach_dispatch_observers(markdown_core_parser *parser, void *context) {
+static bool attach_dispatch_observers(markdown_core_dialect_builder *builder, void *context) {
+    (void)context;
     /* Attach the fallback first, repeat a set member, and include a disjoint
      * scanner. These are grammar/ordering contracts, independent of the index. */
     static const markdown_core_element fallback = {.name = "fallback-observer",
@@ -1690,14 +1704,14 @@ static bool attach_dispatch_observers(markdown_core_parser *parser, void *contex
         .name = "consume-observer", .match_inline = observe_dispatch, .terminates_text = "!", .dispatch = "!"};
     static const markdown_core_element disjoint = {
         .name = "unrelated-observer", .match_inline = observe_dispatch, .terminates_text = "?", .dispatch = "?"};
-    parser->root->user_data = context;
-    return markdown_core_parser_attach_element(parser, &fallback) &&
-           markdown_core_parser_attach_element(parser, &decline) &&
-           markdown_core_parser_attach_element(parser, &consume) &&
-           markdown_core_parser_attach_element(parser, &disjoint);
+    return markdown_core_dialect_builder_attach(builder, &fallback) &&
+           markdown_core_dialect_builder_attach(builder, &decline) &&
+           markdown_core_dialect_builder_attach(builder, &consume) &&
+           markdown_core_dialect_builder_attach(builder, &disjoint);
 }
 
-static bool attach_precedence_observers(markdown_core_parser *parser, void *context) {
+static bool attach_precedence_observers(markdown_core_dialect_builder *builder, void *context) {
+    (void)context;
     /* Precedences past both ends of the named range, a tie at one of them
      * attached apart, and the named values, all attached out of order. Every
      * owner declines without consuming, so each is asked exactly once. */
@@ -1728,12 +1742,12 @@ static bool attach_precedence_observers(markdown_core_parser *parser, void *cont
                                                 .match_inline = observe_dispatch,
                                                 .terminates_text = "%",
                                                 .dispatch = "%"};
-    parser->root->user_data = context;
-    return markdown_core_parser_attach_element(parser, &late) &&
-           markdown_core_parser_attach_element(parser, &fallback) &&
-           markdown_core_parser_attach_element(parser, &later) &&
-           markdown_core_parser_attach_element(parser, &ordinary) &&
-           markdown_core_parser_attach_element(parser, &token) && markdown_core_parser_attach_element(parser, &early);
+    return markdown_core_dialect_builder_attach(builder, &late) &&
+           markdown_core_dialect_builder_attach(builder, &fallback) &&
+           markdown_core_dialect_builder_attach(builder, &later) &&
+           markdown_core_dialect_builder_attach(builder, &ordinary) &&
+           markdown_core_dialect_builder_attach(builder, &token) &&
+           markdown_core_dialect_builder_attach(builder, &early);
 }
 
 /* A declared block-start gate is a PROMISE ABOUT A NEGATIVE: the dispatcher
@@ -1773,7 +1787,7 @@ static int count_postprocess_present(const markdown_core_element *element, markd
 static const markdown_core_node_type OBSERVER_ABSENT_KINDS[] = {MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_NONE};
 static const markdown_core_node_type OBSERVER_PRESENT_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
 
-static bool attach_postprocess_observers(markdown_core_parser *parser, void *context) {
+static bool attach_postprocess_observers(markdown_core_dialect_builder *builder, void *context) {
     /* One pass declares a kind this document cannot contain, the other a kind
      * every paragraph of prose contains. */
     static const markdown_core_element absent = {.name = "postprocess-absent-observer",
@@ -1783,8 +1797,8 @@ static bool attach_postprocess_observers(markdown_core_parser *parser, void *con
                                                   .postprocess_func = count_postprocess_present,
                                                   .finish_acts_on_kinds = OBSERVER_PRESENT_KINDS};
     (void)context;
-    return markdown_core_parser_attach_element(parser, &absent) &&
-           markdown_core_parser_attach_element(parser, &present);
+    return markdown_core_dialect_builder_attach(builder, &absent) &&
+           markdown_core_dialect_builder_attach(builder, &present);
 }
 
 /* A postprocess pass is a whole-tree walk, so a pass that cannot match anything
@@ -1844,7 +1858,7 @@ static markdown_core_finish_result count_step_present(const markdown_core_elemen
 
 static const markdown_core_node_type STEP_AT_PARAGRAPH[] = {MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_NONE};
 
-static bool attach_step_observers(markdown_core_parser *parser, void *context) {
+static bool attach_step_observers(markdown_core_dialect_builder *builder, void *context) {
     /* Both steps are asked at a Paragraph's EXIT; one acts on a kind this
      * document cannot contain, the other on the Text every paragraph holds. */
     static const markdown_core_element absent = {.name = "step-absent-observer",
@@ -1856,8 +1870,8 @@ static bool attach_step_observers(markdown_core_parser *parser, void *context) {
                                                   .finish_acts_on_kinds = OBSERVER_PRESENT_KINDS,
                                                   .finish_exit_kinds = STEP_AT_PARAGRAPH};
     (void)context;
-    return markdown_core_parser_attach_element(parser, &absent) &&
-           markdown_core_parser_attach_element(parser, &present);
+    return markdown_core_dialect_builder_attach(builder, &absent) &&
+           markdown_core_dialect_builder_attach(builder, &present);
 }
 
 static void finish_step_skips_absent_kinds(test_batch_runner *runner) {
@@ -1884,7 +1898,7 @@ static void finish_step_skips_absent_kinds(test_batch_runner *runner) {
 static const markdown_core_node_type OBSERVER_LATE_KINDS[] = {MARKDOWN_CORE_NODE_CODE, MARKDOWN_CORE_NODE_NONE};
 static const markdown_core_node_type SCOPE_AT_LINK[] = {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_NONE};
 
-static bool attach_late_step_observers(markdown_core_parser *parser, void *context) {
+static bool attach_late_step_observers(markdown_core_dialect_builder *builder, void *context) {
     static const markdown_core_element late = {.name = "step-late-observer",
                                                .finish_step = count_step_absent,
                                                .finish_acts_on_kinds = OBSERVER_LATE_KINDS,
@@ -1894,7 +1908,8 @@ static bool attach_late_step_observers(markdown_core_parser *parser, void *conte
                                                  .finish_acts_on_kinds = OBSERVER_ABSENT_KINDS,
                                                  .finish_scope_kinds = SCOPE_AT_LINK};
     (void)context;
-    return markdown_core_parser_attach_element(parser, &late) && markdown_core_parser_attach_element(parser, &scoped);
+    return markdown_core_dialect_builder_attach(builder, &late) &&
+           markdown_core_dialect_builder_attach(builder, &scoped);
 }
 
 static void finish_step_gate_opens_when_its_kind_is_made(test_batch_runner *runner) {
@@ -1925,13 +1940,16 @@ typedef struct {
     const char *first_bad_element;
 } gate_sweep;
 
-/* Sweep the registry the engine itself selected, from inside setup, rather
- * than selecting a second copy of the dialect: only the parse transaction may
- * do that, and audit-element-attach-order holds the line. */
-static bool sweep_block_gates(markdown_core_parser *parser, void *context) {
-    gate_sweep *sweep = context;
-    const markdown_core_element *const *elements = parser->elements;
-    size_t element_count = parser->element_count;
+/* Sweep the dialect the engine itself selected and sealed, from inside the
+ * instance -- a document owner's lifecycle begins it -- rather than selecting
+ * a second copy of the dialect: only the parse transaction may do that, and
+ * audit-element-attach-order holds the line. The probe parser each hook is
+ * asked with reads that same sealed dialect. */
+static void sweep_block_gates(markdown_core_parser *parser) {
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.init_document(parser);
+    gate_sweep *sweep = parser->context;
+    const markdown_core_element *const *elements = parser->dialect->elements;
+    size_t element_count = parser->dialect->element_count;
 
     /* A byte the gate does not admit must be one the hook rejects, whatever
      * container it is asked in and whether or not a paragraph is open: a scan
@@ -1966,7 +1984,7 @@ static bool sweep_block_gates(markdown_core_parser *parser, void *context) {
                 line[3] = '\n';
                 for (size_t c = 0; c < sizeof(containers) / sizeof(*containers); c++) {
                     for (int paragraph = 0; paragraph < 2; paragraph++) {
-                        markdown_core_parser probe = {0};
+                        markdown_core_parser probe = {.dialect = parser->dialect};
                         markdown_core_node *parent = markdown_core_node_new(containers[c]);
                         markdown_core_chunk input = {line, blank ? 1 : 4, 0};
                         bool claimed = false;
@@ -2003,7 +2021,12 @@ static bool sweep_block_gates(markdown_core_parser *parser, void *context) {
             }
         }
     }
-    return true;
+}
+
+static bool begin_with_block_gate_sweep(markdown_core_dialect_builder *builder, void *context) {
+    static markdown_core_element document;
+    (void)context;
+    return attach_document_owner(builder, &document, "block-gate-sweeper", sweep_block_gates);
 }
 
 typedef struct {
@@ -2012,10 +2035,10 @@ typedef struct {
     size_t without_hook;
 } kind_set_sweep;
 
-static bool sweep_postprocess_kind_sets(markdown_core_parser *parser, void *context) {
+static bool sweep_postprocess_kind_sets(markdown_core_dialect_builder *builder, void *context) {
     kind_set_sweep *sweep = context;
-    const markdown_core_element *const *elements = parser->elements;
-    size_t element_count = parser->element_count;
+    size_t element_count;
+    const markdown_core_element *const *elements = markdown_core_dialect_builder_elements(builder, &element_count);
 
     for (size_t i = 0; i < element_count; i++) {
         const markdown_core_element *element = elements[i];
@@ -2080,8 +2103,8 @@ static void postprocess_kind_sets_are_well_formed(test_batch_runner *runner) {
 static void block_gate_admits_every_opener(test_batch_runner *runner) {
     gate_sweep sweep = {0, 0, -1, NULL};
     static const char probe_source[] = "probe\n";
-    markdown_core_node *probe_doc =
-        markdown_core_parse_document_with_setup(probe_source, sizeof(probe_source) - 1, sweep_block_gates, &sweep);
+    markdown_core_node *probe_doc = markdown_core_parse_document_with_setup(probe_source, sizeof(probe_source) - 1,
+                                                                            begin_with_block_gate_sweep, &sweep);
     size_t gated = sweep.gated, violations = sweep.violations;
     int first_bad_byte = sweep.first_bad_byte;
     const char *first_bad_element = sweep.first_bad_element;
@@ -2700,8 +2723,11 @@ static void node_reuse_initializes_the_active_record(test_batch_runner *runner) 
     payload_probe_disarm();
 }
 
-static bool inspect_lazy_block_content(markdown_core_parser *parser, void *context) {
-    test_batch_runner *runner = context;
+/* Run from the instance's own beginning -- a document owner's lifecycle --
+ * because what it measures is the fresh parser's storage. */
+static void inspect_lazy_block_content(markdown_core_parser *parser) {
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.init_document(parser);
+    test_batch_runner *runner = parser->context;
     OK(runner, parser->root->content.ptr == markdown_core_strbuf__initbuf,
        "the document has no allocated content buffer");
     const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_THEMATIC_BREAK,
@@ -2759,12 +2785,17 @@ static bool inspect_lazy_block_content(markdown_core_parser *parser, void *conte
         }
         markdown_core_parser_release_node(parser, node);
     }
-    return true;
+}
+
+static bool begin_with_lazy_block_inspection(markdown_core_dialect_builder *builder, void *context) {
+    static markdown_core_element document;
+    (void)context;
+    return attach_document_owner(builder, &document, "lazy-block-inspector", inspect_lazy_block_content);
 }
 
 static void block_content_storage_follows_writes(test_batch_runner *runner) {
     payload_probe_arm();
-    markdown_core_node *root = markdown_core_parse_document_with_setup("", 0, inspect_lazy_block_content, runner);
+    markdown_core_node *root = markdown_core_parse_document_with_setup("", 0, begin_with_lazy_block_inspection, runner);
     OK(runner, root != NULL, "probing empty block storage preserves the parse");
     markdown_core_node_free(root);
     INT_EQ(runner, payload_live, 0, "lazy content and parser resources are released");
@@ -3078,7 +3109,7 @@ static markdown_core_node *conversion_match_inline(const markdown_core_element *
     (void)character;
     (void)inline_state;
     parent->element = element;
-    parent->user_data = parser->root->user_data;
+    parent->user_data = parser->context;
     return NULL;
 }
 
@@ -3089,10 +3120,19 @@ static const markdown_core_element CONVERSION_POLICY = {
     .dispatch = "!",
 };
 
-static bool configure_conversion_policy(markdown_core_parser *parser, void *context) {
+/* The root's policy is set as the instance begins, by a document owner that
+ * begins the core document's lifecycle first. */
+static void begin_conversion_policy(markdown_core_parser *parser) {
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.init_document(parser);
     parser->root->element = &CONVERSION_POLICY;
-    parser->root->user_data = context;
-    return markdown_core_parser_attach_element(parser, &CONVERSION_POLICY);
+    parser->root->user_data = parser->context;
+}
+
+static bool configure_conversion_policy(markdown_core_dialect_builder *builder, void *context) {
+    static markdown_core_element document;
+    (void)context;
+    return attach_document_owner(builder, &document, "conversion-policy-document", begin_conversion_policy) &&
+           markdown_core_dialect_builder_attach(builder, &CONVERSION_POLICY);
 }
 
 static void kind_conversion_containment(test_batch_runner *runner) {
@@ -4084,8 +4124,8 @@ typedef struct {
 static int record_inline_work(const markdown_core_element *element, markdown_core_parser *parser,
                               markdown_core_node *root) {
     (void)element;
-    inline_work *work = root->user_data;
-    if (!work) {
+    inline_work *work = parser->context;
+    if (root != parser->root || !work) {
         return 1;
     }
     work->finish_events = parser->finish_walk_events;
@@ -4156,13 +4196,12 @@ static int record_inline_work(const markdown_core_element *element, markdown_cor
         work->footnotes_owned &=
             note->kind == MARKDOWN_CORE_NODE_FOOTNOTE && note->parent == NULL && note->as.footnote->id.data != NULL;
     }
-    root->user_data = NULL;
     return 1;
 }
 static const markdown_core_element WORK_RECORDER = {.name = "work-recorder", .postprocess_func = record_inline_work};
-static bool measure_inline_work(markdown_core_parser *parser, void *context) {
-    parser->root->user_data = context;
-    return markdown_core_parser_attach_element(parser, &WORK_RECORDER);
+static bool measure_inline_work(markdown_core_dialect_builder *builder, void *context) {
+    (void)context;
+    return markdown_core_dialect_builder_attach(builder, &WORK_RECORDER);
 }
 
 /* Depth and width vary independently. Construction transfers disjoint
@@ -4777,7 +4816,7 @@ static int remove_footnotes(const markdown_core_element *element, markdown_core_
     if (root->kind != MARKDOWN_CORE_NODE_DOCUMENT) {
         return 1;
     }
-    footnote_postprocess_probe *probe = root->user_data;
+    footnote_postprocess_probe *probe = parser->context;
     probe->index_released =
         parser->footnotes.values == NULL && parser->footnotes.count == 0 && parser->footnotes.last_inline == NULL;
     probe->resolved = true;
@@ -4788,14 +4827,13 @@ static int remove_footnotes(const markdown_core_element *element, markdown_core_
         markdown_core_node_free(note);
         probe->removed++;
     }
-    root->user_data = NULL;
     return 1;
 }
 
-static bool observe_footnote_removal(markdown_core_parser *parser, void *context) {
+static bool observe_footnote_removal(markdown_core_dialect_builder *builder, void *context) {
+    (void)context;
     static const markdown_core_element probe = {.name = "remove-footnotes", .postprocess_func = remove_footnotes};
-    parser->root->user_data = context;
-    return markdown_core_parser_attach_element(parser, &probe);
+    return markdown_core_dialect_builder_attach(builder, &probe);
 }
 
 static void footnote_postprocessing(test_batch_runner *runner) {
@@ -6423,17 +6461,17 @@ static markdown_core_node *observe_definition_before_anchor(const markdown_core_
     (void)indented;
     if (length - parser->first_nonspace >= 6 && memcmp(input + parser->first_nonspace, "#list#", 6) == 0) {
         markdown_core_node *previous = parent->last_child;
-        *(bool *)parser->root->user_data = previous && previous->kind == MARKDOWN_CORE_NODE_PARAGRAPH &&
-                                           !(previous->flags & MARKDOWN_CORE_NODE__OPEN) && previous->content.size == 0;
+        *(bool *)parser->context = previous && previous->kind == MARKDOWN_CORE_NODE_PARAGRAPH &&
+                                   !(previous->flags & MARKDOWN_CORE_NODE__OPEN) && previous->content.size == 0;
     }
     return NULL;
 }
 
-static bool observe_reference_definition_lifetime(markdown_core_parser *parser, void *context) {
+static bool observe_reference_definition_lifetime(markdown_core_dialect_builder *builder, void *context) {
+    (void)context;
     static const markdown_core_element observer = {.name = "reference-definition-lifetime",
                                                    .try_opening_block = observe_definition_before_anchor};
-    parser->root->user_data = context;
-    return markdown_core_parser_attach_element(parser, &observer);
+    return markdown_core_dialect_builder_attach(builder, &observer);
 }
 
 /* THE REFERENCE-LABEL NORMAL FORM is one pass (utf8.c) that folds, trims and
@@ -6539,7 +6577,6 @@ static void reference_definition_lifetime(test_batch_runner *runner) {
            marker && marker->next && marker->next->first_child &&
                marker->next->first_child->kind == MARKDOWN_CORE_NODE_LINK && !marker->next->next,
            "the definition resolves links without leaking a paragraph into the completed tree");
-        root->user_data = NULL;
         markdown_core_node_free(root);
     }
 }
@@ -7129,40 +7166,40 @@ typedef struct {
     bool indentation;
 } container_prefix_sweep;
 
-/* The table is projected after setup, with the hooks, so it is read at the
- * finish, from a pass, like the work counters. */
+/* The table is projected when the instance's dialect is sealed, so it is read
+ * from inside the instance, from a pass, like the work counters. */
 static int record_container_prefix(const markdown_core_element *element, markdown_core_parser *parser,
                                    markdown_core_node *root) {
     (void)element;
-    container_prefix_sweep *sweep = root->user_data;
+    container_prefix_sweep *sweep = parser->context;
+    const markdown_core_dialect *dialect = parser->dialect;
     bool expected[256] = {false};
-    if (!sweep) {
+    if (root != parser->root || !sweep) {
         return 1;
     }
-    root->user_data = NULL;
     expected[' '] = expected['\t'] = true;
-    for (size_t i = 0; i < parser->element_count; i++) {
-        const char *bytes = parser->elements[i]->container_prefix_bytes;
+    for (size_t i = 0; i < dialect->element_count; i++) {
+        const char *bytes = dialect->elements[i]->container_prefix_bytes;
         if (!bytes) {
             continue;
         }
         sweep->declared++;
         for (const unsigned char *c = (const unsigned char *)bytes; *c; c++) {
             expected[*c] = true;
-            sweep->missing += !parser->container_prefix[*c];
+            sweep->missing += !dialect->container_prefix[*c];
         }
     }
-    sweep->indentation = parser->container_prefix[' '] && parser->container_prefix['\t'];
+    sweep->indentation = dialect->container_prefix[' '] && dialect->container_prefix['\t'];
     for (int byte = 0; byte < 256; byte++) {
-        sweep->extra += parser->container_prefix[byte] && !expected[byte];
+        sweep->extra += dialect->container_prefix[byte] && !expected[byte];
     }
     return 1;
 }
 static const markdown_core_element CONTAINER_PREFIX_RECORDER = {.name = "container-prefix-recorder",
                                                                 .postprocess_func = record_container_prefix};
-static bool sweep_container_prefix(markdown_core_parser *parser, void *context) {
-    parser->root->user_data = context;
-    return markdown_core_parser_attach_element(parser, &CONTAINER_PREFIX_RECORDER);
+static bool sweep_container_prefix(markdown_core_dialect_builder *builder, void *context) {
+    (void)context;
+    return markdown_core_dialect_builder_attach(builder, &CONTAINER_PREFIX_RECORDER);
 }
 
 /* The bytes the definition key walks over are not the key's own list: they
@@ -7189,11 +7226,11 @@ static void container_prefix_is_projected_from_the_elements(test_batch_runner *r
  * container silently parse as prose. */
 static const markdown_core_element COLON_PREFIX_CONTAINER = {.name = "colon-prefix", .container_prefix_bytes = ":"};
 static const markdown_core_element TILDE_PREFIX_CONTAINER = {.name = "tilde-prefix", .container_prefix_bytes = "~"};
-static bool attach_marker_prefix_containers(markdown_core_parser *parser, void *context) {
-    parser->root->user_data = context;
-    return markdown_core_parser_attach_element(parser, &COLON_PREFIX_CONTAINER) &&
-           markdown_core_parser_attach_element(parser, &TILDE_PREFIX_CONTAINER) &&
-           markdown_core_parser_attach_element(parser, &WORK_RECORDER);
+static bool attach_marker_prefix_containers(markdown_core_dialect_builder *builder, void *context) {
+    (void)context;
+    return markdown_core_dialect_builder_attach(builder, &COLON_PREFIX_CONTAINER) &&
+           markdown_core_dialect_builder_attach(builder, &TILDE_PREFIX_CONTAINER) &&
+           markdown_core_dialect_builder_attach(builder, &WORK_RECORDER);
 }
 static void a_prefix_byte_that_is_a_marker_byte_hands_the_line_to_the_transaction(test_batch_runner *runner) {
     static const char *const sources[] = {"Term\n: body\n", "Term\n~ body\n", "> Term\n> : body\n"};
@@ -7209,30 +7246,121 @@ static void a_prefix_byte_that_is_a_marker_byte_hands_the_line_to_the_transactio
     }
 }
 
-/* THE REGISTRY IS BOUNDED WHERE THE PROJECTION NEEDS IT TO BE. The block-start
+/* EACH INSTANCE PARSES WITH ITS OWN SEALED DIALECT. A setup extends only
+ * the dialect of the instance it configures, and that dialect is sealed
+ * before the instance reads a byte: an instance begun from inside another,
+ * with a different setup, asks only the elements its own setup registered,
+ * and the outer instance's dialect is exactly what its setup sealed, before
+ * and after. Nothing about a dialect is process state. */
+typedef struct instance_marks {
+    size_t marked_a, marked_b;
+    size_t core, registered_before, registered_after;
+    const markdown_core_element *last_before, *last_after;
+    struct instance_marks *inner;
+    bool inner_parsed;
+} instance_marks;
+
+static markdown_core_node *mark_percent_a(const markdown_core_element *element, markdown_core_parser *parser,
+                                          markdown_core_node *parent, unsigned char character,
+                                          markdown_core_inline_state *inline_state) {
+    (void)element;
+    (void)parent;
+    (void)character;
+    (void)inline_state;
+    ((instance_marks *)parser->context)->marked_a++;
+    return NULL;
+}
+static markdown_core_node *mark_percent_b(const markdown_core_element *element, markdown_core_parser *parser,
+                                          markdown_core_node *parent, unsigned char character,
+                                          markdown_core_inline_state *inline_state) {
+    (void)element;
+    (void)parent;
+    (void)character;
+    (void)inline_state;
+    ((instance_marks *)parser->context)->marked_b++;
+    return NULL;
+}
+static const markdown_core_element PERCENT_MARKER_A = {
+    .name = "percent-a-marker", .match_inline = mark_percent_a, .terminates_text = "%", .dispatch = "%"};
+static const markdown_core_element PERCENT_MARKER_B = {
+    .name = "percent-b-marker", .match_inline = mark_percent_b, .terminates_text = "%", .dispatch = "%"};
+
+static bool register_inner_instance(markdown_core_dialect_builder *builder, void *context) {
+    (void)context;
+    return markdown_core_dialect_builder_attach(builder, &PERCENT_MARKER_B);
+}
+
+static void begin_outer_instance(markdown_core_parser *parser) {
+    static const char inner_source[] = "inner % text\n";
+    instance_marks *outer = parser->context;
+    const markdown_core_dialect *dialect = parser->dialect;
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.init_document(parser);
+    outer->registered_before = dialect->element_count;
+    outer->last_before = dialect->elements[dialect->element_count - 1];
+    markdown_core_node *inner = markdown_core_parse_document_with_setup(inner_source, sizeof(inner_source) - 1,
+                                                                        register_inner_instance, outer->inner);
+    outer->inner_parsed = inner != NULL;
+    markdown_core_node_free(inner);
+    outer->registered_after = parser->dialect->element_count;
+    outer->last_after = parser->dialect->elements[parser->dialect->element_count - 1];
+}
+
+static bool register_outer_instance(markdown_core_dialect_builder *builder, void *context) {
+    static markdown_core_element document;
+    markdown_core_dialect_builder_elements(builder, &((instance_marks *)context)->core);
+    return attach_document_owner(builder, &document, "outer-instance", begin_outer_instance) &&
+           markdown_core_dialect_builder_attach(builder, &PERCENT_MARKER_A);
+}
+
+static void each_instance_parses_with_its_own_dialect(test_batch_runner *runner) {
+    static const char source[] = "outer % text\n";
+    instance_marks inner = {0}, outer = {0}, none = {0};
+    outer.inner = &inner;
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, register_outer_instance, &outer);
+    OK(runner, root != NULL && outer.inner_parsed, "an instance with another setup parses inside this one");
+    INT_EQ(runner, (int)outer.marked_a, 1, "the outer instance asks the element its setup registered");
+    INT_EQ(runner, (int)outer.marked_b, 0, "and never the one the inner instance's setup registered");
+    INT_EQ(runner, (int)inner.marked_b, 1, "the inner instance asks its own");
+    INT_EQ(runner, (int)inner.marked_a, 0, "and never the outer one's");
+    INT_EQ(runner, (int)outer.registered_before, (int)outer.core + 2,
+           "the outer dialect is the core dialect and what its setup registered");
+    INT_EQ(runner, (int)outer.registered_after, (int)outer.registered_before,
+           "and the inner instance leaves it as it was sealed");
+    OK(runner, outer.last_before == &PERCENT_MARKER_A && outer.last_after == &PERCENT_MARKER_A,
+       "with the same element last, before and after");
+    markdown_core_node_free(root);
+
+    root = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, NULL, &none);
+    OK(runner, root != NULL && none.marked_a == 0 && none.marked_b == 0,
+       "an instance without setup registers neither marker, whatever ran before it");
+    markdown_core_node_free(root);
+}
+
+/* THE DIALECT IS BOUNDED WHERE THE PROJECTION NEEDS IT TO BE. The block-start
  * projection lists a family's owners by byte, so the attachment API refuses
  * the element that would make an owner index or a count not fit, leaving the
- * registry as it was; without that bound a release build would wrap the byte
+ * dialect as it was; without that bound a release build would wrap the byte
  * and dispatch to the wrong owner. */
-static const markdown_core_element REGISTRY_FILLER = {.name = "registry-filler"};
+static const markdown_core_element DIALECT_FILLER = {.name = "dialect-filler"};
 typedef struct {
     size_t attached, count, refused_again;
-} registry_fill;
-static bool fill_the_registry(markdown_core_parser *parser, void *context) {
-    registry_fill *fill = context;
-    while (markdown_core_parser_attach_element(parser, &REGISTRY_FILLER)) {
+} dialect_fill;
+static bool fill_the_dialect(markdown_core_dialect_builder *builder, void *context) {
+    dialect_fill *fill = context;
+    while (markdown_core_dialect_builder_attach(builder, &DIALECT_FILLER)) {
         fill->attached++;
     }
-    fill->count = parser->element_count;
-    fill->refused_again = !markdown_core_parser_attach_element(parser, &REGISTRY_FILLER);
+    markdown_core_dialect_builder_elements(builder, &fill->count);
+    fill->refused_again = !markdown_core_dialect_builder_attach(builder, &DIALECT_FILLER);
     return true;
 }
-static void the_registry_refuses_the_element_the_projection_could_not_index(test_batch_runner *runner) {
-    registry_fill fill = {0, 0, 0};
+static void the_dialect_refuses_the_element_the_projection_could_not_index(test_batch_runner *runner) {
+    dialect_fill fill = {0, 0, 0};
     static const char probe_source[] = "- item\n\nTerm\n: body\n";
     markdown_core_node *root =
-        markdown_core_parse_document_with_setup(probe_source, sizeof(probe_source) - 1, fill_the_registry, &fill);
-    OK(runner, root != NULL, "the document parses with the registry full");
+        markdown_core_parse_document_with_setup(probe_source, sizeof(probe_source) - 1, fill_the_dialect, &fill);
+    OK(runner, root != NULL, "the document parses with the dialect full");
     OK(runner, fill.attached >= 1, "attachment succeeded up to the bound: %zu attached", fill.attached);
     INT_EQ(runner, (int)fill.count, MARKDOWN_CORE_ELEMENT_LIMIT, "and stopped exactly at the bound");
     OK(runner, fill.refused_again, "every attachment past it is refused");
@@ -7429,7 +7557,7 @@ static void table_open_gate_admits_only_possible_tables(test_batch_runner *runne
 /* THE INLINE-HOOK PROJECTION'S WORK INVARIANT.
  *
  * Three inline-content hooks used to be found by scanning the whole element
- * registry once per inline-content node. They are projected now, so the
+ * dialect once per inline-content node. They are projected now, so the
  * dispatch examines the elements that DECLARED each hook and no others.
  *
  * Nothing about the output can tell those two apart: a dispatch that went back
@@ -7441,20 +7569,20 @@ static void table_open_gate_admits_only_possible_tables(test_batch_runner *runne
  *
  * The adversarial shape is the one that defeats the scan: attach elements that
  * declare NO inline hook at all. Under the scan the work grows with the
- * registry, so attaching 32 of them multiplies it; under the projection they
+ * dialect, so attaching 32 of them multiplies it; under the projection they
  * are not in any family's list and the count cannot move. The second assertion
  * is the load-bearing one; the first is there so the invariant cannot be
  * satisfied by a counter that never fires. */
 static const markdown_core_element INLINE_HOOK_BYSTANDER = {0};
 
-static bool attach_inline_hook_bystanders(markdown_core_parser *parser, void *context) {
-    parser->root->user_data = context;
+static bool attach_inline_hook_bystanders(markdown_core_dialect_builder *builder, void *context) {
+    (void)context;
     for (size_t i = 0; i < 32; i++) {
-        if (!markdown_core_parser_attach_element(parser, &INLINE_HOOK_BYSTANDER)) {
+        if (!markdown_core_dialect_builder_attach(builder, &INLINE_HOOK_BYSTANDER)) {
             return false;
         }
     }
-    return markdown_core_parser_attach_element(parser, &WORK_RECORDER);
+    return markdown_core_dialect_builder_attach(builder, &WORK_RECORDER);
 }
 
 static void inline_hook_projection_ignores_non_owners(test_batch_runner *runner) {
@@ -7746,8 +7874,9 @@ static void observe_token_error(markdown_core_inline_state *state) {
     }
 }
 static const markdown_core_element ERROR_OBSERVER = {.name = "error-observer", .dispose_inline = observe_token_error};
-static bool configure_error_observer(markdown_core_parser *parser, void *context) {
-    return configure_conversion_policy(parser, context) && markdown_core_parser_attach_element(parser, &ERROR_OBSERVER);
+static bool configure_error_observer(markdown_core_dialect_builder *builder, void *context) {
+    return configure_conversion_policy(builder, context) &&
+           markdown_core_dialect_builder_attach(builder, &ERROR_OBSERVER);
 }
 static int reject_additional_paragraph(const markdown_core_element *element, markdown_core_node *node,
                                        markdown_core_node_type kind) {
@@ -7760,10 +7889,15 @@ static int reject_additional_paragraph(const markdown_core_element *element, mar
 }
 static const markdown_core_element LEAD_POLICY = {.name = "lead-policy",
                                                   .can_contain_func = reject_additional_paragraph};
-static bool configure_lead_policy(markdown_core_parser *parser, void *context) {
+static void begin_lead_policy(markdown_core_parser *parser) {
+    MARKDOWN_CORE_ELEMENT_DOCUMENT.init_document(parser);
     parser->root->element = &LEAD_POLICY;
-    parser->root->user_data = context;
-    return true;
+    parser->root->user_data = parser->context;
+}
+static bool configure_lead_policy(markdown_core_dialect_builder *builder, void *context) {
+    static markdown_core_element document;
+    (void)context;
+    return attach_document_owner(builder, &document, "lead-policy-document", begin_lead_policy);
 }
 static void rejected_token_allocation_failures(test_batch_runner *runner) {
     const char *source = "! `code`\n";
@@ -7834,7 +7968,7 @@ typedef struct {
  * producer still parses and constructs the document afterwards. */
 static bool probe_table_transactions(markdown_core_parser *parser, block_start_context *context, block_start *start) {
     (void)start;
-    table_transaction_probe *probe = parser->root->user_data;
+    table_transaction_probe *probe = parser->context;
     if (probe->entered) {
         return false;
     }
@@ -7876,9 +8010,9 @@ static bool probe_table_transactions(markdown_core_parser *parser, block_start_c
 static const markdown_core_element TABLE_TRANSACTION_PROBE = {
     .name = "table-transaction-probe", .scan_block_start = probe_table_transactions, .scan_block_gate = {.bytes = "T"}};
 
-static bool configure_table_transaction_probe(markdown_core_parser *parser, void *context) {
-    parser->root->user_data = context;
-    return markdown_core_parser_attach_element(parser, &TABLE_TRANSACTION_PROBE);
+static bool configure_table_transaction_probe(markdown_core_dialect_builder *builder, void *context) {
+    (void)context;
+    return markdown_core_dialect_builder_attach(builder, &TABLE_TRANSACTION_PROBE);
 }
 
 /* After a caption's blank, only the first nonblank line is a candidate.
@@ -8422,7 +8556,7 @@ static int postprocess_reads_its_root(const markdown_core_element *element, mark
 
 static const markdown_core_node_type CITE_DELETE_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
 
-static bool attach_delete_then_read(markdown_core_parser *parser, void *context) {
+static bool attach_delete_then_read(markdown_core_dialect_builder *builder, void *context) {
     static const markdown_core_element deleter = {.name = "cite-deleter",
                                                   .postprocess_func = postprocess_deletes_cites,
                                                   .finish_acts_on_kinds = CITE_DELETE_KINDS};
@@ -8430,8 +8564,8 @@ static bool attach_delete_then_read(markdown_core_parser *parser, void *context)
                                                  .postprocess_func = postprocess_reads_its_root,
                                                  .finish_acts_on_kinds = CITE_DELETE_KINDS};
     (void)context;
-    return markdown_core_parser_attach_element(parser, &deleter) &&
-           markdown_core_parser_attach_element(parser, &reader);
+    return markdown_core_dialect_builder_attach(builder, &deleter) &&
+           markdown_core_dialect_builder_attach(builder, &reader);
 }
 
 static void a_pass_may_free_the_roots_a_later_pass_reads(test_batch_runner *runner) {
@@ -8482,11 +8616,12 @@ static int postprocess_records_b(const markdown_core_element *element, markdown_
     return 1;
 }
 
-static bool attach_two_recorders(markdown_core_parser *parser, void *context) {
+static bool attach_two_recorders(markdown_core_dialect_builder *builder, void *context) {
     static const markdown_core_element first = {.name = "phase-a", .postprocess_func = postprocess_records_a};
     static const markdown_core_element second = {.name = "phase-b", .postprocess_func = postprocess_records_b};
     (void)context;
-    return markdown_core_parser_attach_element(parser, &first) && markdown_core_parser_attach_element(parser, &second);
+    return markdown_core_dialect_builder_attach(builder, &first) &&
+           markdown_core_dialect_builder_attach(builder, &second);
 }
 
 static void finish_stage_runs_every_phase_at_each_root(test_batch_runner *runner) {
@@ -8647,7 +8782,7 @@ typedef struct {
 } completion_probe;
 
 static void observe_completed_text(markdown_core_parser *parser, markdown_core_node *node) {
-    completion_probe *probe = parser->root->user_data;
+    completion_probe *probe = parser->context;
     if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
         probe->uncompleted += (node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) != 0;
         probe->spaces += node->as.literal->len == 2 && !memcmp(node->as.literal->data, "\xc2\xa0", 2);
@@ -8657,14 +8792,15 @@ static void observe_completed_text(markdown_core_parser *parser, markdown_core_n
     }
 }
 
-static bool configure_completion_probe(markdown_core_parser *parser, void *context) {
+/* The observer is the document lifecycle's, so the probe registers a document
+ * owner that keeps the core document's hooks and wraps that one. */
+static bool configure_completion_probe(markdown_core_dialect_builder *builder, void *context) {
     completion_probe *probe = context;
-    probe->document = *parser->document_structure;
+    probe->document = MARKDOWN_CORE_ELEMENT_DOCUMENT;
+    probe->document.name = "completion-probe-document";
     probe->observe = probe->document.observe_inline;
     probe->document.observe_inline = observe_completed_text;
-    parser->document_structure = &probe->document;
-    parser->root->user_data = probe;
-    return true;
+    return markdown_core_dialect_builder_attach(builder, &probe->document);
 }
 
 static void absorbed_text_completes_before_observation(test_batch_runner *runner) {
@@ -8840,12 +8976,12 @@ static int consolidate_document_again(const markdown_core_element *element, mark
     return markdown_core_consolidate_text_nodes_with_parser(parser, root);
 }
 
-static bool attach_control_then_recorder(markdown_core_parser *parser, void *context) {
+static bool attach_control_then_recorder(markdown_core_dialect_builder *builder, void *context) {
+    (void)context;
     static const markdown_core_element control = {.name = "consolidate-again",
                                                   .postprocess_func = consolidate_document_again};
-    parser->root->user_data = context;
-    return markdown_core_parser_attach_element(parser, &control) &&
-           markdown_core_parser_attach_element(parser, &WORK_RECORDER);
+    return markdown_core_dialect_builder_attach(builder, &control) &&
+           markdown_core_dialect_builder_attach(builder, &WORK_RECORDER);
 }
 
 static void a_whole_root_pass_costs_one_traversal(test_batch_runner *runner) {
@@ -8875,7 +9011,7 @@ static void a_whole_root_pass_costs_one_traversal(test_batch_runner *runner) {
 }
 
 /* A descriptor declares a LOCAL step or a GLOBAL pass, never both; the one
- * that declares both is refused at attachment, with the registry untouched, so
+ * that declares both is refused at attachment, with the dialect untouched, so
  * the parse that tried to attach it reports the refusal rather than running
  * an element whose two hooks have no contract between them. */
 static markdown_core_finish_result no_op_finish_step(const markdown_core_element *element, markdown_core_parser *parser,
@@ -8895,34 +9031,34 @@ typedef struct {
     int attached;
 } attach_probe;
 
-static bool attach_step_and_pass(markdown_core_parser *parser, void *context) {
+static bool attach_step_and_pass(markdown_core_dialect_builder *builder, void *context) {
     static const markdown_core_element both = {
         .name = "step-and-pass", .finish_step = no_op_finish_step, .postprocess_func = postprocess_records_a};
     attach_probe *probe = context;
-    probe->before = parser->element_count;
-    probe->attached = markdown_core_parser_attach_element(parser, &both);
-    probe->after = parser->element_count;
+    markdown_core_dialect_builder_elements(builder, &probe->before);
+    probe->attached = markdown_core_dialect_builder_attach(builder, &both);
+    markdown_core_dialect_builder_elements(builder, &probe->after);
     return probe->attached != 0;
 }
 
-static bool attach_overlapping_step(markdown_core_parser *parser, void *context) {
+static bool attach_overlapping_step(markdown_core_dialect_builder *builder, void *context) {
     static const markdown_core_element overlapping = {.name = "step-exit-and-scope",
                                                       .finish_step = no_op_finish_step,
                                                       .finish_exit_kinds = STEP_AT_PARAGRAPH,
                                                       .finish_scope_kinds = STEP_AT_PARAGRAPH};
     attach_probe *probe = context;
-    probe->before = parser->element_count;
-    probe->attached = markdown_core_parser_attach_element(parser, &overlapping);
-    probe->after = parser->element_count;
+    markdown_core_dialect_builder_elements(builder, &probe->before);
+    probe->attached = markdown_core_dialect_builder_attach(builder, &overlapping);
+    markdown_core_dialect_builder_elements(builder, &probe->after);
     return probe->attached != 0;
 }
 
-static bool attach_kindless_step(markdown_core_parser *parser, void *context) {
+static bool attach_kindless_step(markdown_core_dialect_builder *builder, void *context) {
     static const markdown_core_element kindless = {.name = "step-at-no-kind", .finish_step = no_op_finish_step};
     attach_probe *probe = context;
-    probe->before = parser->element_count;
-    probe->attached = markdown_core_parser_attach_element(parser, &kindless);
-    probe->after = parser->element_count;
+    markdown_core_dialect_builder_elements(builder, &probe->before);
+    probe->attached = markdown_core_dialect_builder_attach(builder, &kindless);
+    markdown_core_dialect_builder_elements(builder, &probe->after);
     return probe->attached != 0;
 }
 
@@ -8932,14 +9068,27 @@ static const markdown_core_node_type STEP_AT_OUT_OF_TABLE_KIND[] = {
     (markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_INLINE | (MARKDOWN_CORE_NODE_KIND_COUNT + 8)),
     MARKDOWN_CORE_NODE_NONE};
 
-static bool attach_out_of_table_step(markdown_core_parser *parser, void *context) {
+static bool attach_out_of_table_step(markdown_core_dialect_builder *builder, void *context) {
     static const markdown_core_element outside = {.name = "step-outside-the-table",
                                                   .finish_step = no_op_finish_step,
                                                   .finish_exit_kinds = STEP_AT_OUT_OF_TABLE_KIND};
     attach_probe *probe = context;
-    probe->before = parser->element_count;
-    probe->attached = markdown_core_parser_attach_element(parser, &outside);
-    probe->after = parser->element_count;
+    markdown_core_dialect_builder_elements(builder, &probe->before);
+    probe->attached = markdown_core_dialect_builder_attach(builder, &outside);
+    markdown_core_dialect_builder_elements(builder, &probe->after);
+    return probe->attached != 0;
+}
+
+static void begin_nothing(markdown_core_parser *parser) { (void)parser; }
+
+/* An element that declares the document lifecycle is asked for all of it: the
+ * engine calls every hook but `observe_inline` on the owner without asking. */
+static bool attach_partial_document(markdown_core_dialect_builder *builder, void *context) {
+    static const markdown_core_element partial = {.name = "partial-document", .init_document = begin_nothing};
+    attach_probe *probe = context;
+    markdown_core_dialect_builder_elements(builder, &probe->before);
+    probe->attached = markdown_core_dialect_builder_attach(builder, &partial);
+    markdown_core_dialect_builder_elements(builder, &probe->after);
     return probe->attached != 0;
 }
 
@@ -8949,7 +9098,7 @@ static void an_element_declares_one_finish_shape(test_batch_runner *runner) {
     markdown_core_node *doc =
         markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_step_and_pass, &probe);
     INT_EQ(runner, probe.attached, 0, "a descriptor with both a finish step and a postprocess pass is refused");
-    INT_EQ(runner, (int)probe.after, (int)probe.before, "and the registry is left as it was");
+    INT_EQ(runner, (int)probe.after, (int)probe.before, "and the dialect is left as it was");
     OK(runner, doc == NULL, "so the parse whose setup tried to attach it reports the refusal");
     if (doc) {
         markdown_core_node_free(doc);
@@ -8957,7 +9106,7 @@ static void an_element_declares_one_finish_shape(test_batch_runner *runner) {
     probe = (attach_probe){0, 0, -1};
     doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_overlapping_step, &probe);
     INT_EQ(runner, probe.attached, 0, "a step declaring one kind as both an exit kind and a scope kind is refused");
-    INT_EQ(runner, (int)probe.after, (int)probe.before, "with the registry left as it was");
+    INT_EQ(runner, (int)probe.after, (int)probe.before, "with the dialect left as it was");
     OK(runner, doc == NULL, "and the parse reports that refusal too");
     if (doc) {
         markdown_core_node_free(doc);
@@ -8965,7 +9114,7 @@ static void an_element_declares_one_finish_shape(test_batch_runner *runner) {
     probe = (attach_probe){0, 0, -1};
     doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_kindless_step, &probe);
     INT_EQ(runner, probe.attached, 0, "a step asked at no kind, which would never be called, is refused");
-    INT_EQ(runner, (int)probe.after, (int)probe.before, "with the registry left as it was");
+    INT_EQ(runner, (int)probe.after, (int)probe.before, "with the dialect left as it was");
     OK(runner, doc == NULL, "and the parse reports the refusal");
     if (doc) {
         markdown_core_node_free(doc);
@@ -8974,7 +9123,16 @@ static void an_element_declares_one_finish_shape(test_batch_runner *runner) {
     doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_out_of_table_step, &probe);
     INT_EQ(runner, probe.attached, 0,
            "a step at a kind the dispatch table cannot index is refused rather than asked at every such node");
-    INT_EQ(runner, (int)probe.after, (int)probe.before, "with the registry left as it was");
+    INT_EQ(runner, (int)probe.after, (int)probe.before, "with the dialect left as it was");
+    OK(runner, doc == NULL, "and the parse reports the refusal");
+    if (doc) {
+        markdown_core_node_free(doc);
+    }
+    probe = (attach_probe){0, 0, -1};
+    doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_partial_document, &probe);
+    INT_EQ(runner, probe.attached, 0,
+           "an element declaring only part of the document lifecycle is refused before it could own it");
+    INT_EQ(runner, (int)probe.after, (int)probe.before, "with the dialect left as it was");
     OK(runner, doc == NULL, "and the parse reports the refusal");
     if (doc) {
         markdown_core_node_free(doc);
@@ -9242,7 +9400,8 @@ int main(void) {
     definition_gate_reads_the_prefix_not_the_line(runner);
     container_prefix_is_projected_from_the_elements(runner);
     a_prefix_byte_that_is_a_marker_byte_hands_the_line_to_the_transaction(runner);
-    the_registry_refuses_the_element_the_projection_could_not_index(runner);
+    the_dialect_refuses_the_element_the_projection_could_not_index(runner);
+    each_instance_parses_with_its_own_dialect(runner);
     citation_linear_work(runner);
     cross_link_linear_work(runner);
     inline_footnote_linear_work(runner);
