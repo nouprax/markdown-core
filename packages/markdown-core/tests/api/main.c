@@ -5528,7 +5528,8 @@ static void attribute_linear_work(test_batch_runner *runner) {
                 markdown_core_strbuf_puts(&source, cases[c].unit);
             }
             markdown_core_strbuf_puts(&source, cases[c].suffix);
-            markdown_core_attribute_parser parser = {.data = source.ptr, .length = source.size};
+            markdown_core_attribute_scratch scratch = {0};
+            markdown_core_attribute_parser parser = {.data = source.ptr, .length = source.size, .scratch = &scratch};
             size_t attempts = 0;
             for (bufsize_t at = 0; at < source.size; at++) {
                 if (source.ptr[at] != '{') {
@@ -5543,12 +5544,10 @@ static void attribute_linear_work(test_batch_runner *runner) {
                     INT_EQ(runner, end, source.size, "complete container consumed");
                     INT_EQ(runner, value.class_count, count * (c == 1 ? 2 : 1), "class occurrences retained");
                     INT_EQ(runner, value.record_count, count * (c == 1 ? 2 : 1), "duplicate records retained");
-                    OK(runner,
-                       value.class_capacity <= 2 * value.class_count && value.record_capacity <= 2 * value.record_count,
-                       "attribute vector storage is linear in retained values");
+                    OK(runner, value.storage != NULL, "the retained values live in the value's one block");
                 } else {
                     INT_EQ(runner, end, -1, "failed candidate never advances caller");
-                    OK(runner, !value.classes && !value.records && !value.anchor.data,
+                    OK(runner, !value.classes && !value.records && !value.anchor.data && !value.storage,
                        "no partial attribute value escapes");
                 }
                 markdown_core_attributes_free(&value);
@@ -5556,6 +5555,7 @@ static void attribute_linear_work(test_batch_runner *runner) {
             OK(runner, parser.work <= 12 * (size_t)source.size + attempts,
                "attribute work is linear: case=%zu size=%d work=%zu", c, source.size, parser.work);
             markdown_core_attribute_parser_free(&parser);
+            markdown_core_attribute_scratch_free(&scratch);
             markdown_core_strbuf_free(&source);
         }
     }
@@ -5640,43 +5640,54 @@ static void attribute_recognition_is_memoised(test_batch_runner *runner) {
     }
 }
 
-/* THE STRINGS OF A VALUE ARE ONE ALLOCATION. A container's parse used to cost
- * an allocation per anchor, class, name and value; now its strings are
- * interned in one arena sized from the container, and the only allocations
- * that grow with the member count are the two vectors, which double. So the
- * count is logarithmic in the members, and everything is released with the
- * value. The negative control is the per-string copy this replaced, which
- * costs at least three allocations per member here. */
-static void attribute_values_are_one_arena(test_batch_runner *runner) {
+/* A VALUE IS ONE ALLOCATION. A container is read into its extent's scratch
+ * and then laid out -- records, classes and every string they name -- in one
+ * block at its exact size, so a value costs one allocation whatever its
+ * members. The scratch grows with the largest container the extent reads and
+ * is reused by the next one, so reading the second container of an extent
+ * allocates the value and nothing else. The negative control is the arena this
+ * replaced: two vectors and an arena, at least three allocations per value and
+ * more as they doubled, plus a decode buffer made and freed per parse. */
+static void attribute_values_are_one_allocation(test_batch_runner *runner) {
     for (size_t count = 8; count <= 8192; count *= 4) {
         markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        markdown_core_strbuf_puts(&source, "{");
-        for (size_t i = 0; i < count; i++) {
-            markdown_core_strbuf_puts(&source, "k=v .c ");
+        for (size_t container = 0; container < 2; container++) {
+            markdown_core_strbuf_puts(&source, "{#anchor ");
+            for (size_t i = 0; i < count; i++) {
+                markdown_core_strbuf_puts(&source, "k=v .c ");
+            }
+            markdown_core_strbuf_puts(&source, "} ");
         }
-        markdown_core_strbuf_puts(&source, "}");
-        markdown_core_attribute_parser parser = {.data = source.ptr, .length = source.size};
-        markdown_core_attributes value = {0};
-        bufsize_t end = 0;
-        size_t doublings = 0;
-        for (size_t capacity = 8; capacity < count; capacity *= 2) {
-            doublings++;
+        size_t growth = 0;
+        for (size_t capacity = 8; capacity < 16 * count; capacity += capacity / 2) {
+            growth++;
         }
+        markdown_core_attribute_scratch scratch = {0};
+        markdown_core_attribute_parser parser = {.data = source.ptr, .length = source.size, .scratch = &scratch};
+        markdown_core_attributes first = {0}, second = {0};
+        bufsize_t end = 0, again = 0;
         payload_probe_arm();
-        int valid = markdown_core_attributes_parse(&parser, 0, &value, &end);
-        size_t allocations = payload_allocations;
-        payload_probe_disarm();
-        OK(runner, valid && value.record_count == count && value.class_count == count, "the container parses");
-        OK(runner, allocations <= 6 + 2 * doublings,
-           "a value's strings are one allocation, its vectors double: members=%zu allocations=%zu", count, allocations);
+        int read = markdown_core_attributes_parse(&parser, 0, &first, &end);
+        size_t warming = payload_allocations;
+        int reread = markdown_core_attributes_parse(&parser, end + 1, &second, &again);
+        size_t value_allocations = payload_allocations - warming;
+        OK(runner, read && reread && second.record_count == count && second.class_count == count,
+           "both containers parse");
+        OK(runner, warming <= 4 + 2 * growth, "the extent's scratch grows geometrically: members=%zu allocations=%zu",
+           count, warming);
+        INT_EQ(runner, (int)value_allocations, 1, "a value read with warm scratch is one allocation: members=%zu",
+               count);
         OK(runner,
-           value.arena != NULL && !value.anchor.alloc && !value.classes[0].alloc && !value.records[0].name.alloc,
-           "the strings live in the value's arena and own nothing themselves");
-        payload_counting = 1;
-        markdown_core_attributes_free(&value);
+           second.storage != NULL && !second.anchor.alloc && !second.classes[0].alloc &&
+               !second.records[0].name.alloc && second.anchor.len == 6 && second.anchor.data[6] == 0,
+           "the strings live in the value's block, NUL-terminated, and own nothing themselves");
+        markdown_core_attributes_free(&first);
+        markdown_core_attributes_free(&second);
         markdown_core_attribute_parser_free(&parser);
-        payload_counting = 0;
-        INT_EQ(runner, payload_live, 0, "freeing the value releases every allocation");
+        markdown_core_attribute_scratch_free(&scratch);
+        payload_probe_disarm();
+        INT_EQ(runner, (int)payload_live, 0,
+               "freeing the values, the parser and its scratch releases every allocation");
         markdown_core_strbuf_free(&source);
     }
 }
@@ -5824,13 +5835,16 @@ static void delimiter_entries_are_pooled_across_inline_containers(test_batch_run
 /* Every node's release visits its attribute value, and most values are empty. */
 static void releasing_an_empty_attribute_value_makes_no_allocator_call(test_batch_runner *runner) {
     static const char container[] = "{#a .b k=v}";
-    markdown_core_attribute_parser parser = {.data = (const unsigned char *)container, .length = sizeof(container) - 1};
+    markdown_core_attribute_scratch scratch = {0};
+    markdown_core_attribute_parser parser = {
+        .data = (const unsigned char *)container, .length = sizeof(container) - 1, .scratch = &scratch};
     markdown_core_attributes value = {0};
     markdown_core_attributes empty = {0};
     bufsize_t end = 0;
     payload_probe_arm();
     OK(runner, markdown_core_attributes_parse(&parser, 0, &value, &end), "the container parses");
     markdown_core_attribute_parser_free(&parser);
+    markdown_core_attribute_scratch_free(&scratch);
     size_t releases = payload_releases;
     markdown_core_attributes_free(&empty);
     INT_EQ(runner, (int)payload_releases, (int)releases, "an empty value is released without entering the allocator");
@@ -8370,7 +8384,8 @@ static void directive_recognition_survives_construction(test_batch_runner *runne
         markdown_core_strbuf_puts(&source, "::: ");
         markdown_core_strbuf_puts(&source, attributes[i]);
         markdown_core_strbuf_puts(&source, "\nbody\n:::\n");
-        markdown_core_attribute_parser recognized = {.data = source.ptr, .length = source.size};
+        markdown_core_attribute_scratch scratch = {0};
+        markdown_core_attribute_parser recognized = {.data = source.ptr, .length = source.size, .scratch = &scratch};
         markdown_core_attributes value = {0};
         bufsize_t end;
         OK(runner, markdown_core_attributes_end(&recognized, 4) != 0, "the envelope is recognized");
@@ -8384,6 +8399,7 @@ static void directive_recognition_survives_construction(test_batch_runner *runne
         markdown_core_node_free(root);
         markdown_core_attributes_free(&value);
         markdown_core_attribute_parser_free(&recognized);
+        markdown_core_attribute_scratch_free(&scratch);
         markdown_core_strbuf_free(&source);
     }
 }
@@ -9378,7 +9394,7 @@ int main(void) {
     image_cursor_stops_at_buffer_limit(runner);
     attribute_linear_work(runner);
     attribute_recognition_is_memoised(runner);
-    attribute_values_are_one_arena(runner);
+    attribute_values_are_one_allocation(runner);
     source_entries_order_by_the_key_bytes_that_differ(runner);
     delimiter_entries_are_pooled_across_inline_containers(runner);
     releasing_an_empty_attribute_value_makes_no_allocator_call(runner);

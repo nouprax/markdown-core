@@ -1,6 +1,7 @@
 #ifndef MARKDOWN_CORE_ATTRIBUTES_H
 #define MARKDOWN_CORE_ATTRIBUTES_H
 
+#include "buffer.h"
 #include "chunk.h"
 
 typedef struct {
@@ -8,30 +9,51 @@ typedef struct {
     markdown_core_chunk value;
 } markdown_core_record;
 
-/* One normalized value. Empty anchor bytes mean no anchor. The vectors retain
- * every occurrence; capacity is private construction state, never semantics.
+/* One normalized value. Empty anchor bytes mean no anchor. The lists retain
+ * every occurrence.
  *
- * The strings a parse produced live in ONE arena, `arena`, and the chunks
- * that name them carry no allocation of their own. A chunk that does carry
- * one (`alloc` set) owns its bytes itself: a consumer that replaces the anchor
- * with a string it made, or an element that builds a value by hand, works as
- * it always did, and `markdown_core_attributes_free` frees each such chunk,
- * the vectors and the arena. Every string in the arena is NUL-terminated. */
+ * A VALUE IS ONE ALLOCATION. Its records, its classes and every string they
+ * and the anchor name live in `storage`, laid out once the whole container
+ * has been read, and they begin and end with the value: no chunk in it owns
+ * anything of its own. The anchor is the one member a consumer may replace
+ * with a string it made (a chunk with `alloc` set), and the release frees
+ * such an anchor beside `storage`. Every string in `storage` is
+ * NUL-terminated. */
 typedef struct markdown_core_attribute_value {
     markdown_core_chunk anchor;
     markdown_core_chunk *classes;
-    size_t class_count, class_capacity;
+    size_t class_count;
     markdown_core_record *records;
-    size_t record_count, record_capacity;
-    unsigned char *arena;
+    size_t record_count;
+    void *storage;
 } markdown_core_attributes;
+
+/* THE WORKSPACE A CONTAINER IS READ INTO before it is laid out as a value
+ * (`markdown_core_attributes_parse`): its decoded strings, each
+ * NUL-terminated, and each class and record as offsets into them, in source
+ * order. A parse call clears it, fills it and lays it out, and leaves nothing
+ * in it that the next call reads; parse calls do not nest. So one workspace
+ * serves every reader of a parse transaction, nested extents included: the
+ * transaction owns it (parser.h), it grows to the largest container the
+ * document holds, and the value's one allocation is made at its exact size.
+ * Valid zeroed; what it needs is established on first use. */
+typedef struct markdown_core_attribute_scratch {
+    markdown_core_strbuf strings;
+    struct markdown_core_attribute_member {
+        bufsize_t name, name_length; /* name < 0 for a class */
+        bufsize_t value, value_length;
+    } *members;
+    size_t member_count, member_capacity;
+} markdown_core_attribute_scratch;
 
 /* A recogniser belongs to one immutable input extent. It walks forward from
  * each candidate brace it is asked about and memoises, by position, the
  * answer for every member boundary and every `=` it passes, so overlapping
  * candidates cannot repeatedly scan that extent (elements/attributes.c states
- * the memo's encoding and why its walks tile the extent). Values are
- * allocated and decoded only after recognition succeeds. */
+ * the memo's encoding and why its walks tile the extent). Values are decoded
+ * only after recognition succeeds, into `scratch`, which the recogniser
+ * borrows from whoever owns the parse: required by
+ * `markdown_core_attributes_parse`, never touched by recognition. */
 typedef struct {
     const unsigned char *data;
     bufsize_t length;
@@ -39,6 +61,7 @@ typedef struct {
         bufsize_t end;
         bufsize_t assignment_end;
     } *ends;
+    markdown_core_attribute_scratch *scratch;
     size_t work;
     int oom;
 } markdown_core_attribute_parser;
@@ -48,10 +71,17 @@ typedef struct {
  * the first test a release makes, shared with the node release that makes
  * it in place before calling. */
 static MARKDOWN_CORE_INLINE bool markdown_core_attributes_owns(const markdown_core_attributes *value) {
-    return value->classes || value->records || value->arena || value->anchor.alloc;
+    return value->storage || value->anchor.alloc;
 }
 void markdown_core_attributes_free(markdown_core_attributes *value);
+/* A value holding one class, `bytes`, and nothing else: the value an element
+ * makes when its syntax names a class without an attribute container. The
+ * caller supplies an empty value. Returns 0 on allocation failure, leaving it
+ * empty. */
+int markdown_core_attributes_single_class(markdown_core_attributes *value, const unsigned char *bytes,
+                                          bufsize_t length);
 void markdown_core_attribute_parser_free(markdown_core_attribute_parser *parser);
+void markdown_core_attribute_scratch_free(markdown_core_attribute_scratch *scratch);
 /* Recognition only: no values are decoded until the owner commits. Zero
  * denotes a malformed candidate. The memo is shared for the whole extent. */
 bufsize_t markdown_core_attributes_end(markdown_core_attribute_parser *parser, bufsize_t start);

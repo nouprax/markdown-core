@@ -18,7 +18,8 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     bufsize_t pos;
     markdown_core_strbuf *node_content = &b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
-    markdown_core_attribute_parser attributes = {.data = chunk.data, .length = chunk.len};
+    markdown_core_attribute_parser attributes = {
+        .data = chunk.data, .length = chunk.len, .scratch = &parser->attribute_scratch};
     while (chunk.len && chunk.data[0] == '[') {
         int line = b->start_line, column = b->start_column;
         markdown_core_parser_content_place(parser, &b->content_map, (bufsize_t)(chunk.data - node_content->ptr), &line,
