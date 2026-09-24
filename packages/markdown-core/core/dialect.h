@@ -234,30 +234,29 @@ typedef struct markdown_core_dialect {
 /* What sealing a builder takes, counted from its element list alone: how
  * many element pointers, finish step entries and gate-table bytes follow the
  * struct, and the counts that place each projection among them. */
-typedef struct markdown_core_dialect_layout {
+typedef struct markdown_core_dialect_sizes {
     size_t block_totals[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     bool gated[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     size_t inline_totals[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     size_t inline_dispatch_offsets[257];
     size_t finish_key_counts[MARKDOWN_CORE_FINISH_KEY_COUNT];
     size_t pointers, steps, gate_bytes;
-} markdown_core_dialect_layout;
+} markdown_core_dialect_sizes;
 
 /* Begin a builder from the `count` elements of `elements`, which it borrows. */
 void markdown_core_dialect_builder_init(markdown_core_dialect_builder *builder,
                                         const markdown_core_element *const *elements, size_t count);
 
-/* Measure what sealing `builder` takes into `layout`. Returns the bytes that
+/* Measure what sealing `builder` takes into `sizes`. Returns the bytes that
  * must follow the struct in the storage it is sealed into. */
-size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builder,
-                                     markdown_core_dialect_layout *layout);
+size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builder, markdown_core_dialect_sizes *sizes);
 
-/* Seal `builder`, as `layout` measured it, into `dialect`: zeroed storage
+/* Seal `builder`, as `sizes` measured it, into `dialect`: zeroed storage
  * aligned for the struct and followed by the measured bytes. It cannot fail
  * and copies what it keeps, so the builder is unchanged and still owns what
  * it did. */
-void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder,
-                                const markdown_core_dialect_layout *layout, markdown_core_dialect *dialect);
+void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, const markdown_core_dialect_sizes *sizes,
+                                markdown_core_dialect *dialect);
 
 /* Release whatever the builder owns. */
 void markdown_core_dialect_builder_dispose(markdown_core_dialect_builder *builder);

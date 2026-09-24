@@ -217,5 +217,5 @@ element that declares it:
 An element declares all of the document lifecycle or none of it, because the
 engine calls those hooks on the owner without asking. A setup that needs a
 different document lifecycle registers an owner; it does not patch the parser.
-Sealing happens at the setup boundary, before the source stage, so it is
-outside both benchmark stages.
+Sealing happens at the setup boundary, before the source stage. It is not
+parsing, and no benchmark figure includes it.

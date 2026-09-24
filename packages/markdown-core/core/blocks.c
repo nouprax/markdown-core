@@ -170,16 +170,16 @@ typedef struct markdown_core_instance {
  * instance's own allocation before anything else runs, and the setup's
  * context. The builder is only read. */
 static markdown_core_parser *S_parser_new(const markdown_core_dialect_builder *builder, void *context) {
-    markdown_core_dialect_layout layout;
+    markdown_core_dialect_sizes sizes;
     markdown_core_instance *instance;
     markdown_core_parser *parser;
     markdown_core_node *document;
 
-    instance = markdown_core_alloc(1, sizeof(*instance) + markdown_core_dialect_measure(builder, &layout));
+    instance = markdown_core_alloc(1, sizeof(*instance) + markdown_core_dialect_measure(builder, &sizes));
     if (!instance) {
         return NULL;
     }
-    markdown_core_dialect_seal(builder, &layout, &instance->dialect);
+    markdown_core_dialect_seal(builder, &sizes, &instance->dialect);
     parser = &instance->parser;
     parser->dialect = &instance->dialect;
     parser->context = context;

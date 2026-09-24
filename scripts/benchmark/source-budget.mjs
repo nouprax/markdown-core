@@ -1,9 +1,9 @@
 /* A per-document source-stage guard. A cheaper AST stage or a median cannot
  * hide a source regression. The 2% allowance is a review budget, not timing
  * noise or a claim about elapsed performance; both revisions run in one job.
- * This gate sees only work inside source_to_buffer. Moving work into setup
- * can pass it while increasing complete parse cost: review parsePathIr and
- * outsideStagesIr alongside this budget, including tiny inputs. */
+ * This gate sees only work inside source_to_buffer, and no report figure sees
+ * parser creation: work moved there passes it without making parsing cheaper.
+ * Such a move is caught in review, not here. */
 export const SOURCE_IR_LIMIT = 1.02;
 
 export function sourceBudget(current, baseline) {

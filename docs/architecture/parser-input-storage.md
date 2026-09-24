@@ -62,11 +62,11 @@ and stripping line endings again. Debug/ASan asserts the invariant.
 Source-column projection checks the root-input identity in a header inline;
 only mapped cell input enters the out-of-line mapping operation. The same
 wrapper serves all producers, including the driver's per-line finalization.
-Initial workspace allocation is outside `source_to_buffer`, while growth
-remains inside it. Comparisons must
-therefore include the report's `parsePathIr` and `outsideStagesIr` as well as
-the two stages: moving the first reservation to initialization is not a
-whole-parse saving.
+Parser creation reserves the current line and the line index at fixed sizes.
+Every allocation proportional to the input happens as a stage grows them. The
+benchmark measures only the two stages, so it cannot see work moved into
+creation. Keeping input-proportional reservation out of initialization is an
+invariant for review to hold; no number will report a breach.
 
 Index lookups are constant time once a line exists. Extension advances each
 raw byte once; a span boundary may add one word probe before byte resolution.

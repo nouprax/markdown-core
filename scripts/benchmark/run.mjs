@@ -4,10 +4,14 @@
  *
  * WHAT IS MEASURED. A parse has two paths worth optimizing separately: the
  * source bytes being read into the block buffers, and those buffers being
- * turned into an AST. Everything around them -- allocating the parser,
- * attaching the fixed dialect, discovering elements, and releasing the tree --
- * is fixed cost that no document-size argument applies to, so it is excluded
- * rather than amortized into a number that looks like parsing.
+ * turned into an AST. Those two stages are all this benchmark measures.
+ * Everything around them -- allocating the parser, sealing its dialect,
+ * discovering elements, and releasing the tree -- is fixed cost that no
+ * document-size argument applies to and that is not parsing, so no figure in
+ * the report includes it: not a remainder, not a whole-call total, not a
+ * ranking of hot functions. The consequence is on review: work moved out of a
+ * stage into parser creation makes that stage cheaper without making parsing
+ * cheaper, and no number here will show it.
  *
  *   source_to_buffer   markdown-core  markdown_core_parse_document_with_setup
  *                                       -> S_parse_source
@@ -119,10 +123,6 @@ const ENGINES = {
 };
 
 const STAGES = ["source_to_buffer", "buffer_to_ast"];
-
-/* The harness entry both runners publish, and so the whole parse path a stage
- * is a part of: parser creation, the two stages, and releasing the tree. */
-const ENGINE_ENTRY = "bench_parse_document";
 
 /* Every binary that contributes measured parse-stage instructions. */
 const MEASURED_BINARIES = Object.fromEntries(
@@ -1219,64 +1219,12 @@ function measure(profile, engine, document, out) {
             breakdown: callees.slice(0, 8)
         };
     }
-    /* What excluding setup, discovery and release actually excluded. Reading
-     * it keeps the exclusion auditable: a claim that fixed cost is small is a
-     * measurement, and a stage split that has quietly stopped covering the
-     * parse shows up here as a growing remainder rather than not at all. */
-    const whole = edgesBetween(profileByName, "main", ENGINE_ENTRY);
-    if (!whole.length) fail(`${engine}: no call edge main -> ${ENGINE_ENTRY} in ${path.basename(dump)}`);
-    const parsePathIr = whole.reduce((total, edge) => total + (costRecord(profileByName, edge.cost).Ir ?? 0), 0);
-
     return {
         rootChildren: Number(receipt[2]),
         receiptBytes: Number(receipt[1]),
-        parsePathIr,
-        outsideStagesIr: STAGES.reduce((total, stage) => total - stages[stage].cost.Ir, parsePathIr),
         stages,
-        hotPaths: hotPaths(profileByName),
         dump
     };
-}
-
-function hotPaths(profile) {
-    /* Callgrind collects from process start, so `profile.self` holds the whole
-     * executable: the loader, reading the file, freeing the source buffer,
-     * printing the receipt. Ranking that and printing it beside a parse cost is
-     * a claim about the parse made from a measurement of the program -- the
-     * same mistake as counting the serializer. Measured it is under 1% here,
-     * which is exactly why it would have gone unnoticed.
-     *
-     * So the ranking is restricted to what the parse entry can reach. A leaf
-     * shared with the rest of the program, `free` being the obvious one, is
-     * still counted whole; this narrows the claim rather than making it exact. */
-    const callees = new Map();
-    for (const edge of profile.edges.values()) {
-        const from = baseName(edge.caller);
-        if (!callees.has(from)) callees.set(from, new Set());
-        callees.get(from).add(baseName(edge.callee));
-    }
-    const reachable = new Set();
-    const pending = [baseName(ENGINE_ENTRY)];
-    while (pending.length) {
-        const name = pending.pop();
-        if (reachable.has(name)) continue;
-        reachable.add(name);
-        for (const callee of callees.get(name) ?? []) pending.push(callee);
-    }
-    const totals = new Map();
-    let whole = 0;
-    for (const [name, cost] of profile.self) {
-        const ir = costRecord(profile, cost).Ir ?? 0;
-        if (!ir) continue;
-        const fn = baseName(name);
-        if (!reachable.has(fn)) continue;
-        totals.set(fn, (totals.get(fn) ?? 0) + ir);
-        whole += ir;
-    }
-    return [...totals.entries()]
-        .sort((left, right) => right[1] - left[1])
-        .slice(0, 8)
-        .map(([name, ir]) => ({ name, ir, share: whole ? ir / whole : 0 }));
 }
 
 function derive(document, stage) {
@@ -1292,8 +1240,8 @@ function derive(document, stage) {
 }
 
 export function markdownReport(report) {
-    if (report.schemaVersion !== 6 || !report.grammarCorpus) {
-        throw new Error("report schema 6 with a grammar corpus required");
+    if (report.schemaVersion !== 7 || !report.grammarCorpus) {
+        throw new Error("report schema 7 with a grammar corpus required");
     }
     const lines = [];
     lines.push("## Parse stage comparison", "");
@@ -1548,10 +1496,7 @@ function main() {
                 fail(`${engine}: ${document.case} saw ${measured.receiptBytes} bytes, expected ${document.bytes}`);
             }
             engines[engine] = {
-                parsePathIr: measured.parsePathIr,
-                outsideStagesIr: measured.outsideStagesIr,
                 rootChildren: measured.rootChildren,
-                hotPaths: measured.hotPaths,
                 stages: Object.fromEntries(
                     STAGES.map((stage) => [
                         stage,
@@ -1572,10 +1517,7 @@ function main() {
                 engines: {
                     ...engines,
                     "markdown-core": {
-                        parsePathIr: measured.parsePathIr,
-                        outsideStagesIr: measured.outsideStagesIr,
                         rootChildren: measured.rootChildren,
-                        hotPaths: measured.hotPaths,
                         stages: Object.fromEntries(
                             STAGES.map((stage) => [
                                 stage,
@@ -1588,10 +1530,11 @@ function main() {
         }
     }
 
-    /* Schema 6: certificates carry their reference (null for a construct only
-     * Core implements), and rejection certificates may add a control side. */
+    /* Schema 7: each engine records the two stages and nothing around them.
+     * Certificates carry their reference (null for a construct only Core
+     * implements), and rejection certificates may add a control side. */
     const report = {
-        schemaVersion: 6,
+        schemaVersion: 7,
         toolchain: versions,
         /* The exact bytes measured, so a report's numbers trace to a binary. */
         binaries,

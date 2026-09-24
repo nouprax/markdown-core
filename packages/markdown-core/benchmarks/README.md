@@ -87,11 +87,22 @@ establishes grammar equivalence.
 | `source_to_buffer` | `markdown_core_parse_document_with_setup → S_parse_source` | `bench_parse_document → cmark_parser_feed` |
 | `buffer_to_ast` | `markdown_core_parse_document_with_setup → S_finish_parse` | `bench_parse_document → cmark_parser_finish` |
 
-Ratios use the sum of these two stages. Parser setup and release remain visible
-as `outsideStagesIr` beside the full `parsePathIr`; they are not silently
-amortized into parsing. Raw profiles preserve hot functions and stage edges.
-Callgrind calling contexts separate source reading from nested source work
-entered during AST construction.
+These two stages are everything the benchmark measures, and ratios use their
+sum. Creating the parser (allocating it, sealing its dialect, discovering
+elements) and releasing the tree are not parsing. They are fixed costs that
+no document-size argument applies to, so no figure in the report includes
+them: not as a remainder, not as a whole-call total, and not in a ranking of
+hot functions.
+
+The price of that boundary is paid in review. Work moved out of a stage into
+parser creation makes the stage cheaper without making parsing cheaper, and no
+number here shows it. Creation makes only fixed-size reservations; anything
+proportional to the input is allocated or grown inside a stage. A change that
+breaks that has to be caught by reading it.
+
+Raw profiles preserve stage edges and the functions beneath them. Callgrind
+calling contexts separate source reading from nested source work entered
+during AST construction.
 
 Ir counts executed instructions, not elapsed time. It does not price cache
 misses or dependency stalls. Data references and the pinned cache geometry
@@ -112,15 +123,17 @@ environment. Compiler probes must agree on repeated reads. Response-file
 flags are rejected because their contents would otherwise escape the report's
 identity. `corpus.digest` binds the exact selected input bytes; grammar identity
 also binds the source-language definitions, proofs and coverage declarations.
-Schema 5 identifies each workload by its case name and byte digest; it has no
-scale dimension or separate pairing registry.
+Schema 7 records the two stages for each engine and nothing around them. It
+identifies each workload by its case name and byte digest; it has no scale
+dimension or separate pairing registry.
 
 With `--baseline-ref`, only engine source comes from the base revision. The
 current harness, corpus, preset and reference binaries are used on both sides.
 Each document's `source_to_buffer` Ir must be at most 1.02 times its baseline.
 AST improvements and aggregate medians cannot hide a source-stage regression.
-This gate does not replace inspection of complete parse cost and allocation
-behavior.
+The gate sees only `source_to_buffer`. It does not replace reviewing
+allocation behavior, or reviewing whether a change moves work into parser
+creation.
 
 ## The attribute grammar, against lexbor
 
