@@ -38,34 +38,40 @@ const digest = (value, length = 64) => {
 };
 const number = (value) => count(value).toLocaleString("en-US");
 const ratio = (after, before) => (before > 0 ? `${(after / before).toFixed(4)}×` : "n/a");
+// The letters a workload's words are spelled with (corpus.mjs), by name.
+const alphabetNames = { ascii: "ASCII", utf8: "UTF-8" };
 
 // These are projections of the existing report schemas, not Markdown supplied
 // by a PR. Only validated IDs, digests and numeric counts reach the comment.
+// The two stages summed over every workload, and both stages summed over
+// each alphabet's workloads.
 function stageCounts(report) {
-    if (report?.schemaVersion !== 7 || !Array.isArray(report.cases) || !report.cases.length) {
+    if (report?.schemaVersion !== 8 || !Array.isArray(report.cases) || !report.cases.length) {
         throw new Error("Invalid stage report");
     }
     digest(report.corpus.digest);
     digest(report.grammarCorpus?.identity);
     if (report.corpus.cases !== report.cases.length) throw new Error("Incomplete stage report");
     const totals = [0, 0];
+    const alphabets = Object.fromEntries(Object.keys(alphabetNames).map((name) => [name, 0]));
     for (const row of report.cases) {
         if (typeof row.case !== "string" || !/^[a-z0-9][a-z0-9-]{0,127}$/.test(row.case)) {
             throw new Error("Invalid benchmark case ID");
         }
+        if (!Object.hasOwn(alphabetNames, row.alphabet)) throw new Error("Invalid benchmark alphabet");
         if (!count(row.bytes)) throw new Error("Empty benchmark workload");
         digest(row.sha256);
         const engine = row.engines["markdown-core"];
-        [engine.stages.source_to_buffer.cost.Ir, engine.stages.buffer_to_ast.cost.Ir]
-            .map(count)
-            .forEach((value, i) => (totals[i] = count(totals[i] + value)));
+        const stages = [engine.stages.source_to_buffer.cost.Ir, engine.stages.buffer_to_ast.cost.Ir].map(count);
+        stages.forEach((value, i) => (totals[i] = count(totals[i] + value)));
+        alphabets[row.alphabet] = count(alphabets[row.alphabet] + stages[0] + stages[1]);
     }
-    return totals;
+    return { totals, alphabets };
 }
 
 export function stageSection(current, baseline) {
-    const after = stageCounts(current);
-    const before = stageCounts(baseline);
+    const { totals: after, alphabets: afterAlphabets } = stageCounts(current);
+    const { totals: before, alphabets: beforeAlphabets } = stageCounts(baseline);
     if (
         current.corpus.digest !== baseline.corpus.digest ||
         current.grammarCorpus.identity !== baseline.grammarCorpus.identity
@@ -85,7 +91,12 @@ export function stageSection(current, baseline) {
     [
         ["Source → buffer", before[0], after[0]],
         ["Buffer → AST", before[1], after[1]],
-        ["Both stages", count(before[0] + before[1]), count(after[0] + after[1])]
+        ["Both stages", count(before[0] + before[1]), count(after[0] + after[1])],
+        ...Object.entries(alphabetNames).map(([alphabet, name]) => [
+            `Both stages, ${name} documents`,
+            beforeAlphabets[alphabet],
+            afterAlphabets[alphabet]
+        ])
     ].forEach(([name, base, head]) =>
         lines.push(`| ${name} | ${number(base)} | ${number(head)} | ${ratio(head, base)} |`)
     );
@@ -123,11 +134,11 @@ export function stageSection(current, baseline) {
             "Ir covers the two parse stages. Whole means the declared language; local excludes the unmatched host. " +
             "Each input is measured once. No AST equivalence or equal native output cost is asserted.",
         "",
-        "| Certificate | Scope | Units | Bytes A/B | A/B | B/R | A/R |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+        "| Certificate | Alphabet | Scope | Units | Bytes A/B | A/B | B/R | A/R |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
         ...equivalences.map(
             (row) =>
-                `| ${row.certificate} | ${row.scope === "boundary-grammar" ? "local" : "whole"} | ${number(row.units)} | ${number(row.aBytes)}/${number(row.bBytes)} | ${ratio(row.aIr, row.bIr)} | ${ratio(row.bIr, row.rIr)} | ${ratio(row.aIr, row.rIr)} |`
+                `| ${row.certificate} | ${alphabetNames[row.alphabet]} | ${row.scope === "boundary-grammar" ? "local" : "whole"} | ${number(row.units)} | ${number(row.aBytes)}/${number(row.bBytes)} | ${ratio(row.aIr, row.bIr)} | ${ratio(row.bIr, row.rIr)} | ${ratio(row.aIr, row.rIr)} |`
         ),
         "",
         "</details>"
@@ -140,11 +151,11 @@ export function stageSection(current, baseline) {
             "No reference implements these constructs, so none is measured. B = Core on the common input; " +
                 "C = Core on its control, the same input with the rejected construct's trigger bytes replaced by letters of the same width.",
             "",
-            "| Certificate | Rejects | Units | B/C | (B − C) Ir per unit |",
-            "| --- | --- | ---: | ---: | ---: |",
+            "| Certificate | Alphabet | Rejects | Units | B/C | (B − C) Ir per unit |",
+            "| --- | --- | --- | ---: | ---: | ---: |",
             ...rejections.map(
                 (row) =>
-                    `| ${row.certificate} | ${row.construct} | ${number(row.units)} | ${row.cIr === null ? "no control" : ratio(row.bIr, row.cIr)} | ${row.cIr === null ? "—" : Math.round(row.excess).toLocaleString("en-US")} |`
+                    `| ${row.certificate} | ${alphabetNames[row.alphabet]} | ${row.construct} | ${number(row.units)} | ${row.cIr === null ? "no control" : ratio(row.bIr, row.cIr)} | ${row.cIr === null ? "—" : Math.round(row.excess).toLocaleString("en-US")} |`
             ),
             "",
             "</details>"
@@ -153,23 +164,29 @@ export function stageSection(current, baseline) {
 }
 
 export function attributeSection(report) {
-    if (report?.schemaVersion !== 1) throw new Error("Invalid attribute report");
+    if (report?.schemaVersion !== 2) throw new Error("Invalid attribute report");
     const lines = [
         "### Attribute grammar",
         "",
-        "| Engine | Lists | Values | Instructions (Ir) | Data reads | Data writes |",
-        "| --- | ---: | ---: | ---: | ---: | ---: |"
+        "| Names and values | Engine | Lists | Values | Instructions (Ir) | Data reads | Data writes |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: |"
     ];
-    for (const name of ["markdown-core", "lexbor"]) {
-        const row = report.baselines[name];
-        const values = [row.lists, row.values, row.ir, row.dataReads, row.dataWrites];
-        if (values.some((value) => !count(value))) throw new Error("Empty attribute measurement");
-        lines.push(`| ${name} | ${values.map(number).join(" | ")} |`);
+    const ratios = [];
+    for (const [alphabet, name] of Object.entries(alphabetNames)) {
+        const baselines = report.alphabets?.[alphabet]?.baselines;
+        if (!baselines) throw new Error("Missing attribute alphabet");
+        for (const engine of ["markdown-core", "lexbor"]) {
+            const row = baselines[engine];
+            const values = [row.lists, row.values, row.ir, row.dataReads, row.dataWrites];
+            if (values.some((value) => !count(value))) throw new Error("Empty attribute measurement");
+            lines.push(`| ${name} | ${engine} | ${values.map(number).join(" | ")} |`);
+        }
+        const ours = baselines["markdown-core"];
+        const theirs = baselines.lexbor;
+        if (ours.lists !== theirs.lists || ours.values !== theirs.values) throw new Error("Attribute census differs");
+        ratios.push(`${name} **${ratio(ours.ir, theirs.ir)}**`);
     }
-    const ours = report.baselines["markdown-core"];
-    const theirs = report.baselines.lexbor;
-    if (ours.lists !== theirs.lists || ours.values !== theirs.values) throw new Error("Attribute census differs");
-    lines.push("", `Core / lexbor instructions: **${ratio(ours.ir, theirs.ir)}** on the same recovered attributes.`);
+    lines.push("", `Core / lexbor instructions on the same recovered attributes: ${ratios.join(", ")}.`);
     return lines.join("\n");
 }
 

@@ -24,6 +24,9 @@ const instructions = (document, engine) => {
 };
 
 const references = new Set(["cmark", "cmark-gfm"]);
+/* The letters a certificate's documents spell their words with (corpus.mjs):
+ * each certificate is measured once in each. */
+const alphabets = new Set(["ascii", "utf8"]);
 
 /** Equivalences compare Core with a reference on the same common input. A
  * certificate built around a construct no reference implements has no such
@@ -58,7 +61,8 @@ export function grammarComparisons(report) {
         const certificate = certificates.get(proof.certificate);
         assert.ok(certificate, "unknown grammar certificate");
         assert.equal(proof.scope, certificate.scope);
-        const proofKey = id(proof.certificate);
+        assert.ok(alphabets.has(proof.alphabet), "unknown grammar alphabet");
+        const proofKey = `${id(proof.certificate)} ${proof.alphabet}`;
         assert.ok(!proofs.has(proofKey), "duplicate measured proof");
         proofs.add(proofKey);
         const part = proof.scope === "boundary-grammar" ? "boundary" : "paired";
@@ -86,6 +90,7 @@ export function grammarComparisons(report) {
             assert.equal(document.side, side);
             assert.equal(document.part, kind);
             assert.equal(document.certificate, proof.certificate);
+            assert.equal(document.alphabet, proof.alphabet);
             assert.equal(document.units, positive(proof.units));
             positive(document.bytes);
             assert.deepEqual(
@@ -105,6 +110,7 @@ export function grammarComparisons(report) {
             const cIr = c ? instructions(c, "markdown-core") : null;
             rejections.push({
                 certificate: certificate.certificate,
+                alphabet: proof.alphabet,
                 construct: certificate.rejects,
                 units: proof.units,
                 bytes: b.bytes,
@@ -119,6 +125,7 @@ export function grammarComparisons(report) {
             rIr = instructions(b, reference);
         equivalences.push({
             certificate: certificate.certificate,
+            alphabet: proof.alphabet,
             scope: proof.scope,
             units: proof.units,
             aBytes: a.bytes,

@@ -7,6 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+    alphabets,
     buildGrammarCorpus,
     grammarCatalog,
     grammarCertificates,
@@ -164,8 +165,13 @@ test("boundary splits keep every byte and every independent field, with measured
 
 test("one corpus contains unique inputs, repeats derivations, keeps metadata document-initial, and records exact normal forms", () => {
     const corpus = buildGrammarCorpus();
-    assert.equal(corpus.cases.length, 424);
-    assert.equal(corpus.cases.filter((c) => c.side === "control").length, 12);
+    // Every certificate once per alphabet.
+    assert.equal(corpus.cases.length, 848);
+    for (const alphabet of ["ascii", "utf8"]) {
+        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet).length, 424);
+        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet && c.side === "control").length, 12);
+        assert.equal(corpus.proofs.filter((p) => p.alphabet === alphabet).length, 194);
+    }
     assert.equal(new Set(corpus.cases.map((c) => c.name)).size, corpus.cases.length);
     for (const document of corpus.cases) {
         assert.ok(!("scale" in document));
@@ -188,6 +194,53 @@ test("one corpus contains unique inputs, repeats derivations, keeps metadata doc
         }
     }
     assert.throws(() => buildGrammarCorpus({ units: 0 }));
+});
+
+test("a UTF-8 document is its ASCII twin with every Word letter respelled, and ASCII-only fields stay ASCII", () => {
+    const corpus = buildGrammarCorpus();
+    const respell = (text) =>
+        [...text]
+            .map((letter) => {
+                const at = alphabets.utf8.indexOf(letter);
+                return at < 0 ? letter : alphabets.ascii[at];
+            })
+            .join("");
+    const byName = new Map(corpus.cases.map((c) => [c.name, c]));
+    // A field bounded in bytes holds fewer UTF-8 letters at its limit.
+    const bounded = new Set(
+        corpus.proofs.filter((p) => (p.normalForm.fields ?? []).some((f) => f.maxBytes)).map((p) => p.id)
+    );
+    // A certificate whose every field admits only ASCII or a finite token set
+    // has nothing to respell; its twin is the same document.
+    const unspelled = new Set(
+        corpus.proofs
+            .filter((p) =>
+                (p.normalForm.fields ?? [{ grammar: p.grammar }]).every((f) =>
+                    ["ascii-word", "ordinal", "state", "positive9", "empty"].includes(f.grammar)
+                )
+            )
+            .map((p) => p.id)
+    );
+    let compared = 0;
+    for (const document of corpus.cases.filter((c) => c.alphabet === "utf8")) {
+        const twin = byName.get(document.name.replace(`${document.id}-utf8-`, `${document.id}-`));
+        assert.equal(twin?.alphabet, "ascii", document.name);
+        if (unspelled.has(document.id)) assert.equal(document.text, twin.text, document.name);
+        else assert.ok(document.bytes > twin.bytes, `${document.name} spells no Word in UTF-8`);
+        if (bounded.has(document.id)) continue;
+        assert.equal(respell(document.text), twin.text, document.name);
+        compared++;
+    }
+    assert.ok(compared > 350, `${compared} documents compared`);
+    let asciiFields = 0;
+    for (const proof of corpus.proofs.filter((p) => p.alphabet === "utf8"))
+        for (const host of Object.values(proof.hosts))
+            for (const piece of host.pieces)
+                if (piece.kind === "slot" && piece.grammar === "ascii-word") {
+                    assert.match(piece.source, /^[a-z]+$/u, proof.id);
+                    asciiFields++;
+                }
+    assert.ok(asciiFields > 0);
 });
 
 test("artifact identity binds proof text and source dependencies; corpus is deterministic", () => {
@@ -340,7 +393,7 @@ test("rejection certificates report Core against its control and never against a
         stages: { source_to_buffer: { cost: { Ir: ir } }, buffer_to_ast: { cost: { Ir: ir } } }
     });
     const cases = corpus.cases
-        .filter((c) => families.includes(c.id))
+        .filter((c) => families.includes(c.id) && c.alphabet === "ascii")
         .map((c) => ({
             ...c,
             case: c.name,
@@ -359,7 +412,7 @@ test("rejection certificates report Core against its control and never against a
         grammarCorpus: {
             identity: "test",
             certificates: corpus.certificates,
-            proofs: corpus.proofs.filter((p) => families.includes(p.id))
+            proofs: corpus.proofs.filter((p) => families.includes(p.id) && p.alphabet === "ascii")
         },
         cases
     };
@@ -378,11 +431,11 @@ test("rejection certificates report Core against its control and never against a
     const output = grammarMarkdown(report);
     assert.match(
         output,
-        /\| fallback-script-grammar-v2 \| superscript \| 1 \| \d+ \| 600 \| 300 \| 2\.000x \| 300 \|/u
+        /\| fallback-script-grammar-v2 \| ascii \| superscript \| 1 \| \d+ \| 600 \| 300 \| 2\.000x \| 300 \|/u
     );
     assert.match(
         output,
-        /\| fallback-noninitial-metadata-grammar-v2 \| metadata-envelope \| 1 \| \d+ \| 600 \| — \| — \| — \|/u
+        /\| fallback-noninitial-metadata-grammar-v2 \| ascii \| metadata-envelope \| 1 \| \d+ \| 600 \| — \| — \| — \|/u
     );
     assert.match(output, /- fallback-noninitial-metadata-grammar-v2: The rejected envelope delimiter/u);
     assert.doesNotMatch(output, /fallback-script-grammar-v2 \| paired-document-grammar/u);

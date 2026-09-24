@@ -14,18 +14,61 @@ import { validateFeatureCoverage } from "./coverage.mjs";
 export const grammarVersion = "grammar-corpus-v2";
 export const hash = (value) => createHash("sha256").update(value).digest("hex");
 
+/* THE LETTERS A WORD IS SPELLED WITH. Every certificate is generated once per
+ * alphabet. The grammar is the same; only the letters its Word nonterminal is
+ * spelled with differ. ASCII documents keep the historical [a-z]. UTF-8
+ * documents spell every Word with letters of two, three and four bytes in
+ * turn -- Cyrillic, CJK and CJK Extension B, each a Unicode letter that is
+ * neither punctuation nor white space and folds to itself -- so work a parser
+ * does per character is measured beyond ASCII. A position whose own grammar
+ * admits only ASCII letters (a block identifier, a callout type, an email
+ * local part) is declared AsciiWord and keeps [a-z] in every alphabet. */
+const utf8Letters = Array.from({ length: 26 }, (_, i) =>
+    String.fromCodePoint([0x430, 0x4e00, 0x20000][i % 3] + Math.floor(i / 3))
+);
+export const alphabets = Object.freeze({
+    ascii: Object.freeze([..."abcdefghijklmnopqrstuvwxyz"]),
+    utf8: Object.freeze(utf8Letters)
+});
+const letterClass = `a-z${utf8Letters.join("")}`;
+const wordSource = `[${letterClass}]+`;
+/* The UTF-8 letters are three ranges, one per width, and Letter says so. */
+const utf8Ranges = [0, 1, 2].map((width) => {
+    const run = utf8Letters.filter((_, i) => i % 3 === width);
+    run.forEach((letter, i) => assert.equal(letter.codePointAt(0), run[0].codePointAt(0) + i, "a range has no gaps"));
+    return `[${run[0]}-${run.at(-1)}]`;
+});
+const letterForm = `Letter = [a-z] | ${utf8Ranges.join(" | ")} ;`;
+
 // Normal forms are grammars, not shapes learned from native output.
 export const normalForms = Object.freeze({
-    word: "Word = [a-z]+ ;",
-    "attribute-key": "AttributeKey = Word except 'id' and 'class' ; Word = [a-z]+ ;",
+    word: `Word = Letter+ ; ${letterForm}`,
+    "ascii-word": "AsciiWord = [a-z]+ ;",
+    "attribute-key": `AttributeKey = Word except 'id' and 'class' ; Word = Letter+ ; ${letterForm}`,
     positive9: "Positive9 = [1-9][0-9]{0,8} ;",
-    phrase: "Phrase = Word (SP Word)* ; Word = [a-z]+ ;",
-    inline: "Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = [a-z]+ ;",
+    phrase: `Phrase = Word (SP Word)* ; Word = Letter+ ; ${letterForm}`,
+    inline: `Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = Letter+ ; ${letterForm}`,
     empty: "Empty = epsilon ;",
-    unicode: "UnicodeWord = [a-zé字]+ ;",
+    unicode: `UnicodeWord = (Letter | 'é' | '字')+ ; ${letterForm}`,
     ordinal: "Ordinal = 1 | 2 | ... | 26 ;",
     state: "State = plain | closed | open ;"
 });
+const wordPattern = new RegExp(`^${wordSource}$`, "u");
+const wordAt = new RegExp(wordSource, "uy");
+const phrasePattern = new RegExp(`^${wordSource}(?: ${wordSource})*$`, "u");
+const unicodePattern = new RegExp(`^[${letterClass}é字]+$`, "u");
+/* A generated value spells its words in one alphabet. */
+const inAlphabet = (text, letters) => [...text].every((letter) => letters.includes(letter));
+/* A value where the grammar admits only ASCII: each letter becomes the ASCII
+ * letter at its position in its alphabet, so an ASCII value is unchanged and
+ * a UTF-8 one keeps its shape. */
+const spellAscii = (text) =>
+    [...text]
+        .map((letter) => {
+            const at = alphabets.utf8.indexOf(letter);
+            return at < 0 ? letter : alphabets.ascii[at];
+        })
+        .join("");
 
 const direct = {
     "insertion-strong": ["inline", "++", "**"],
@@ -268,7 +311,7 @@ export function renderBody(body, marker = "**") {
     return body
         .map((part) => {
             if (typeof part === "string") {
-                assert.match(part, /^[a-z]+$/u);
+                assert.match(part, wordPattern);
                 return part;
             }
             return marker + renderBody(part, marker) + marker;
@@ -292,7 +335,8 @@ export function recognizeBody(source, marker = "**") {
                 at += marker.length;
             } else {
                 const start = at;
-                while (at < source.length && source.charCodeAt(at) >= 97 && source.charCodeAt(at) <= 122) at++;
+                wordAt.lastIndex = at;
+                if (wordAt.test(source)) at = wordAt.lastIndex;
                 assert.ok(at > start, `expected Word at ${at}`);
                 result.push(source.slice(start, at));
             }
@@ -310,11 +354,15 @@ export function recognizeBody(source, marker = "**") {
 export function recognizeValue(grammar, source) {
     if (grammar === "inline") return recognizeBody(source);
     if (grammar === "word") {
+        assert.match(source, wordPattern);
+        return source;
+    }
+    if (grammar === "ascii-word") {
         assert.match(source, /^[a-z]+$/u);
         return source;
     }
     if (grammar === "attribute-key") {
-        assert.match(source, /^[a-z]+$/u);
+        assert.match(source, wordPattern);
         assert.ok(!["id", "class"].includes(source), "reserved attribute key outside record grammar");
         return source;
     }
@@ -323,7 +371,7 @@ export function recognizeValue(grammar, source) {
         return source;
     }
     if (grammar === "phrase") {
-        assert.match(source, /^[a-z]+(?: [a-z]+)*$/u);
+        assert.match(source, phrasePattern);
         return source.split(" ");
     }
     if (grammar === "empty") {
@@ -331,47 +379,62 @@ export function recognizeValue(grammar, source) {
         return "";
     }
     if (grammar === "unicode") {
-        assert.match(source, /^[a-zé字]+$/u);
+        assert.match(source, unicodePattern);
         return source;
     }
     throw new Error(`unknown grammar ${grammar}`);
 }
 
-function word(index, width = 1) {
+function word(index, width = 1, letters = alphabets.ascii) {
     let result = "";
     do {
-        result += String.fromCharCode(97 + (index % 26));
+        result += letters[index % 26];
         index = Math.floor(index / 26);
     } while (index);
     return result.repeat(width);
 }
-function bodyAt(seed, depth) {
-    const first = word(seed * 17 + 3, 1 + (seed % 4));
-    const last = word(seed * 29 + 13, 1 + (seed % 3));
+function bodyAt(seed, depth, letters) {
+    const first = word(seed * 17 + 3, 1 + (seed % 4), letters);
+    const last = word(seed * 29 + 13, 1 + (seed % 3), letters);
     return depth
-        ? [first, bodyAt(seed + 7, depth - 1), word(seed + 71), bodyAt(seed + 11, depth - 1), last]
-        : [first, word(seed + 37, 1 + (seed % 5)), last];
+        ? [
+              first,
+              bodyAt(seed + 7, depth - 1, letters),
+              word(seed + 71, 1, letters),
+              bodyAt(seed + 11, depth - 1, letters),
+              last
+          ]
+        : [first, word(seed + 37, 1 + (seed % 5), letters), last];
 }
-function parameters(index) {
+function parameters(index, letters = alphabets.ascii) {
     // Independent fields and varying lengths; no repeated six-digit placeholder.
     return {
-        key: word(index + 91),
-        target: word(index * 11 + 7, 1 + (index % 3)),
-        value: word(index * 13 + 43, 2 + (index % 7)),
-        anchor: word(index * 19 + 37),
-        body: index % 3 === 0 ? chainBody(index + 1, 2 ** (Math.floor(index / 3) % 6)) : bodyAt(index + 1, index % 4),
-        tail: bodyAt(index + 23, (index + 1) % 3),
-        words: [word(index * 7 + 1, 1 + (index % 11)), word(index * 31 + 17), word(index + 99, 1 + (index % 5))],
+        key: word(index + 91, 1, letters),
+        target: word(index * 11 + 7, 1 + (index % 3), letters),
+        value: word(index * 13 + 43, 2 + (index % 7), letters),
+        anchor: word(index * 19 + 37, 1, letters),
+        body:
+            index % 3 === 0
+                ? chainBody(index + 1, 2 ** (Math.floor(index / 3) % 6), letters)
+                : bodyAt(index + 1, index % 4, letters),
+        tail: bodyAt(index + 23, (index + 1) % 3, letters),
+        words: [
+            word(index * 7 + 1, 1 + (index % 11), letters),
+            word(index * 31 + 17, 1, letters),
+            word(index + 99, 1 + (index % 5), letters)
+        ],
         mode: index % 3,
         start: 1 + (index % finiteLexicons.ordinal.decimal.length),
         reset: String(index % 3 === 2 ? 999999999 : index + 1)
     };
 }
-function chainBody(seed, depth) {
-    let result = bodyAt(seed, 0);
-    for (let i = 0; i < depth; i++) result = [word(seed + i), result, word(seed + i + 51)];
+function chainBody(seed, depth, letters) {
+    let result = bodyAt(seed, 0, letters);
+    for (let i = 0; i < depth; i++) result = [word(seed + i, 1, letters), result, word(seed + i + 51, 1, letters)];
     return result;
 }
+/* A grid column is a character: geometry counts scalars, not UTF-16 units. */
+const columns = (text) => [...text].length;
 
 /** A host is a lossless sequence of literal residuals and named grammar slots.
  * No regexp extraction can silently lose a delimiter or a second field.
@@ -401,7 +464,8 @@ export function productGrammar(id) {
     const b = f("body", "inline"),
         t = f("tail", "inline"),
         k = {
-            ...f("key", id === "record-span" ? "attribute-key" : "word"),
+            // An anchor's `#key#` is a block identifier, which admits only ASCII.
+            ...f("key", id === "record-span" ? "attribute-key" : id === "anchor" ? "ascii-word" : "word"),
             ...(id === "anchor" ? { maxBytes: 1000 } : {})
         },
         v = f("value"),
@@ -472,16 +536,18 @@ function fieldPattern(field) {
             .join("|");
     assert.ok(!finiteLexicons[field.grammar], "finite field needs a declared encoding");
     return ["word", "attribute-key"].includes(field.grammar)
-        ? "[a-z]+"
-        : field.grammar === "positive9"
-          ? "[1-9][0-9]{0,8}"
-          : field.grammar === "unicode"
-            ? "[a-zé字]+"
-            : field.grammar === "phrase"
-              ? "[a-z]+(?: [a-z]+)*"
-              : field.grammar === "inline"
-                ? "[a-z* ]+"
-                : "";
+        ? wordSource
+        : field.grammar === "ascii-word"
+          ? "[a-z]+"
+          : field.grammar === "positive9"
+            ? "[1-9][0-9]{0,8}"
+            : field.grammar === "unicode"
+              ? `[${letterClass}é字]+`
+              : field.grammar === "phrase"
+                ? `${wordSource}(?: ${wordSource})*`
+                : field.grammar === "inline"
+                  ? `[${letterClass}* ]+`
+                  : "";
 }
 function decodeField(field, source) {
     if (field.maxBytes !== undefined) {
@@ -582,7 +648,14 @@ function renderHosts(id, p) {
                 productGrammar(id)[side].map((part) =>
                     typeof part === "string"
                         ? part
-                        : slot(part.name, part.grammar, encodeField(part, values[part.name]))
+                        : slot(
+                              part.name,
+                              part.grammar,
+                              encodeField(
+                                  part,
+                                  part.grammar === "ascii-word" ? spellAscii(values[part.name]) : values[part.name]
+                              )
+                          )
                 )
             )
         );
@@ -611,10 +684,10 @@ function renderHosts(id, p) {
         const last = slot("last", "word", p.words[0]),
             footer = slot("footer", "word", p.words[1]);
         const fields = [key, target, value, anchor, last, footer];
-        const width = Math.max(...fields.map((f) => f.source.length)) + 3;
+        const width = Math.max(...fields.map((f) => columns(f.source))) + 3;
         const full = "-".repeat(width * 2 + 2) + "\n",
             segmented = "-".repeat(width) + "  " + "-".repeat(width) + "\n";
-        const line = (a, b) => [a, " ".repeat(width + 2 - a.source.length), b, "\n"];
+        const line = (a, b) => [a, " ".repeat(width + 2 - columns(a.source)), b, "\n"];
         return pair(
             [
                 ...(id === "multiline-matrix"
@@ -636,17 +709,18 @@ function renderHosts(id, p) {
             ["See ![", literal, "](/", target, ") here.\n\n"]
         );
     if (id === "headless-matrix") {
-        const width = Math.max(key.source.length, target.source.length, value.source.length, anchor.source.length) + 2;
+        const width =
+            Math.max(columns(key.source), columns(target.source), columns(value.source), columns(anchor.source)) + 2;
         const rule = "-".repeat(width) + "  " + "-".repeat(width) + "\n";
         return pair(
             [
                 rule,
                 key,
-                " ".repeat(width - key.source.length + 2),
+                " ".repeat(width - columns(key.source) + 2),
                 target,
                 "\n",
                 value,
-                " ".repeat(width - value.source.length + 2),
+                " ".repeat(width - columns(value.source) + 2),
                 anchor,
                 "\n",
                 rule,
@@ -658,10 +732,10 @@ function renderHosts(id, p) {
     if (id === "sparse-grid") {
         const d = slot("last", "word", p.words[0]),
             footer = slot("footer", "word", p.words[1]);
-        const width = Math.max(...[key, target, value, anchor, d, footer].map((x) => x.source.length)) + 2;
+        const width = Math.max(...[key, target, value, anchor, d, footer].map((x) => columns(x.source))) + 2;
         const rule = (left, right) => `+${left.repeat(width)}+${right.repeat(width)}+\n`;
-        const cell = (field) => [" ", field, " ".repeat(width - field.source.length - 1)];
-        const spanning = (field) => ["| ", field, " ".repeat(2 * width - field.source.length), "|\n"];
+        const cell = (field) => [" ", field, " ".repeat(width - columns(field.source) - 1)];
+        const spanning = (field) => ["| ", field, " ".repeat(2 * width - columns(field.source)), "|\n"];
         return pair(
             [
                 rule("-", "-"),
@@ -695,19 +769,19 @@ function renderHosts(id, p) {
             [`${p.start}. `, b, `\n${p.start + 1}. `, t, "\n\n"]
         );
     if (id === "grid-cell") {
-        const width = Math.max(b.source.length, t.source.length) + 2;
+        const width = Math.max(columns(b.source), columns(t.source)) + 2;
         const border = `+${"-".repeat(width)}+\n`;
         return pair(
             [
                 border,
                 "| ",
                 b,
-                " ".repeat(width - b.source.length - 1),
+                " ".repeat(width - columns(b.source) - 1),
                 "|\n",
                 `|${" ".repeat(width)}|\n`,
                 "| ",
                 t,
-                " ".repeat(width - t.source.length - 1),
+                " ".repeat(width - columns(t.source) - 1),
                 "|\n",
                 border,
                 "\n"
@@ -717,12 +791,12 @@ function renderHosts(id, p) {
     }
     if (id === "simple-matrix") {
         const cells = [key, target, value, anchor];
-        const w = Math.max(key.source.length, value.source.length, 4) + 2;
-        const z = Math.max(target.source.length, anchor.source.length, 4) + 2;
+        const w = Math.max(columns(key.source), columns(value.source), 4) + 2;
+        const z = Math.max(columns(target.source), columns(anchor.source), 4) + 2;
         return pair(
             [
                 key,
-                " ".repeat(w - key.source.length + 2),
+                " ".repeat(w - columns(key.source) + 2),
                 target,
                 "\n",
                 "-".repeat(w),
@@ -730,7 +804,7 @@ function renderHosts(id, p) {
                 "-".repeat(z),
                 "\n",
                 value,
-                " ".repeat(w - value.source.length + 2),
+                " ".repeat(w - columns(value.source) + 2),
                 anchor,
                 "\n\n"
             ],
@@ -913,8 +987,8 @@ function finiteFields(id) {
     ];
 }
 
-export function grammarUnit(id, index = 0) {
-    const p = parameters(index);
+export function grammarUnit(id, index = 0, letters = alphabets.ascii) {
+    const p = parameters(index, letters);
     let ordinal = index;
     p.finiteValues = {};
     for (const field of finiteFields(id)) {
@@ -925,8 +999,21 @@ export function grammarUnit(id, index = 0) {
     if (isProduct(id) && index % 12 === 11) {
         for (const field of grammarNormalForm(id, "dialect").fields)
             if (field.maxBytes) {
-                const value = field.name + p[field.name];
-                p[field.name] = value.repeat(Math.ceil(field.maxBytes / value.length)).slice(0, field.maxBytes);
+                // As long as the bound allows, never splitting a character.
+                // The field's name spelled in the document's alphabet, and the
+                // whole value in ASCII where the field's grammar admits only that.
+                const name = [...field.name].map((letter) => letters[letter.charCodeAt(0) - 97]).join("");
+                const spelled = name + p[field.name];
+                const characters = [...(field.grammar === "ascii-word" ? spellAscii(spelled) : spelled)];
+                let value = "",
+                    bytes = 0;
+                for (let at = 0; ; at++) {
+                    const next = characters[at % characters.length];
+                    if (bytes + Buffer.byteLength(next) > field.maxBytes) break;
+                    value += next;
+                    bytes += Buffer.byteLength(next);
+                }
+                p[field.name] = value;
             }
     }
     return instantiateGrammar(id, p);
@@ -1107,60 +1194,67 @@ export function encodePairedDocument(id, side, derivations) {
 
 export function grammarCatalog() {
     const corpus = buildGrammarCorpus({ units: 2 });
+    /* A certificate is one grammar whatever its alphabet; its examples show
+     * the ASCII documents and the alphabets are listed once. */
     return {
         version: grammarVersion,
         normalForms,
+        alphabets,
         finiteLexicons,
-        certificates: corpus.proofs.map((proof) => ({
-            id: proof.id,
-            certificate: proof.certificate,
-            scope: proof.scope,
-            feature: proof.feature ?? null,
-            facets: proof.facets ?? [],
-            identity: proof.identity === true,
-            outputDifference: proof.outputDifference ?? null,
-            reference: proof.reference,
-            rejection:
-                proof.rejects === undefined
-                    ? null
-                    : {
-                          construct: proof.rejects,
-                          implementedBy: [...rejectedConstructs[proof.rejects]],
-                          uncontrolled: proof.uncontrolled ?? null
-                      },
-            theorem:
-                proof.scope === "boundary-grammar"
-                    ? "T5"
-                    : proof.identity
-                      ? "T6"
-                      : isProduct(proof.id)
-                        ? productGrammar(proof.id).dialect.some((part) => part.encoding) ||
-                          ["dialect", "common"].some((side) => {
-                              const fields = productGrammar(proof.id)[side].filter((part) => typeof part !== "string");
-                              return new Set(fields.map((field) => field.name)).size !== fields.length;
+        certificates: corpus.proofs
+            .filter((proof) => proof.alphabet === "ascii")
+            .map((proof) => ({
+                id: proof.id,
+                certificate: proof.certificate,
+                scope: proof.scope,
+                feature: proof.feature ?? null,
+                facets: proof.facets ?? [],
+                identity: proof.identity === true,
+                outputDifference: proof.outputDifference ?? null,
+                reference: proof.reference,
+                rejection:
+                    proof.rejects === undefined
+                        ? null
+                        : {
+                              construct: proof.rejects,
+                              implementedBy: [...rejectedConstructs[proof.rejects]],
+                              uncontrolled: proof.uncontrolled ?? null
+                          },
+                theorem:
+                    proof.scope === "boundary-grammar"
+                        ? "T5"
+                        : proof.identity
+                          ? "T6"
+                          : isProduct(proof.id)
+                            ? productGrammar(proof.id).dialect.some((part) => part.encoding) ||
+                              ["dialect", "common"].some((side) => {
+                                  const fields = productGrammar(proof.id)[side].filter(
+                                      (part) => typeof part !== "string"
+                                  );
+                                  return new Set(fields.map((field) => field.name)).size !== fields.length;
+                              })
+                                ? "T7"
+                                : "T3"
+                            : directFrames.has(proof.id)
+                              ? "T4"
+                              : "T2",
+                normalForm: proof.normalForm,
+                grammars: proof.grammars,
+                rewrite: proof.rewrite,
+                residual: proof.residual,
+                examples: proof.rows.slice(0, 2).map((row) => ({
+                    dialect: row.dialect.source,
+                    common: row.common.source,
+                    ...(row.control ? { control: row.control.source } : {}),
+                    ...(row.derivation
+                        ? { derivation: row.derivation }
+                        : {
+                              fields: row.fields,
+                              boundary: row.boundary,
+                              partitions: { dialect: row.dialect.pieces, common: row.common.pieces }
                           })
-                            ? "T7"
-                            : "T3"
-                        : directFrames.has(proof.id)
-                          ? "T4"
-                          : "T2",
-            normalForm: proof.normalForm,
-            grammars: proof.grammars,
-            rewrite: proof.rewrite,
-            residual: proof.residual,
-            examples: proof.rows.slice(0, 2).map((row) => ({
-                dialect: row.dialect.source,
-                common: row.common.source,
-                ...(row.control ? { control: row.control.source } : {}),
-                ...(row.derivation
-                    ? { derivation: row.derivation }
-                    : {
-                          fields: row.fields,
-                          boundary: row.boundary,
-                          partitions: { dialect: row.dialect.pieces, common: row.common.pieces }
-                      })
+                }))
             }))
-        }))
     };
 }
 
@@ -1169,64 +1263,83 @@ export function buildGrammarCorpus({ units = 12 } = {}) {
     assert.ok(Number.isSafeInteger(units) && units > 0 && units <= 1024);
     const cases = [],
         proofs = [];
-    for (const certificate of grammarCertificates) {
-        const alternatives = finiteFields(certificate.id).reduce(
-            (count, field) => count * finiteLexicons[field.grammar][field.encoding].length,
-            1
-        );
-        const rows = Array.from({ length: Math.max(units, alternatives) }, (_, index) =>
-            grammarUnit(certificate.id, index)
-        );
-        const bound = certificate.scope === "boundary-grammar";
-        const sides = sidesOf(certificate.id);
-        const names = {};
-        const hosts = Object.fromEntries(sides.map((side) => [side, composeHosts(certificate.id, rows, side)]));
-        for (const document of Object.values(hosts)) assert.equal(recomposeHost(document), document.source);
-        for (const side of sides) {
-            for (const part of bound ? ["host", "boundary"] : ["paired"]) {
-                const name = `${certificate.id}-${part}-${side}`;
-                names[`${part}-${side}`] = name;
-                const text = part === "boundary" ? rows.map((row) => row.boundary[side]).join("") : hosts[side].source;
-                cases.push({
-                    name,
-                    side,
-                    part,
-                    certificate: certificate.certificate,
-                    id: certificate.id,
-                    units: rows.length,
-                    text,
-                    sha256: hash(text),
-                    bytes: Buffer.byteLength(text),
-                    dialect: side === "dialect" && part !== "boundary" ? "extended" : "commonmark"
-                });
+    /* Every certificate once per alphabet. ASCII documents keep the names they
+     * have always had; a UTF-8 document's name carries its alphabet. */
+    for (const [alphabet, letters] of Object.entries(alphabets))
+        for (const certificate of grammarCertificates) {
+            const alternatives = finiteFields(certificate.id).reduce(
+                (count, field) => count * finiteLexicons[field.grammar][field.encoding].length,
+                1
+            );
+            const rows = Array.from({ length: Math.max(units, alternatives) }, (_, index) =>
+                grammarUnit(certificate.id, index, letters)
+            );
+            const bound = certificate.scope === "boundary-grammar";
+            const sides = sidesOf(certificate.id);
+            const names = {};
+            const hosts = Object.fromEntries(sides.map((side) => [side, composeHosts(certificate.id, rows, side)]));
+            for (const document of Object.values(hosts)) {
+                assert.equal(recomposeHost(document), document.source);
+                for (const piece of document.pieces)
+                    if (piece.kind === "slot" && ["word", "attribute-key", "phrase", "inline"].includes(piece.grammar))
+                        assert.ok(
+                            inAlphabet(piece.source.replace(/[ *]/gu, ""), letters),
+                            `${certificate.id}: a ${alphabet} field spelled outside its alphabet`
+                        );
             }
+            const prefix = alphabet === "ascii" ? certificate.id : `${certificate.id}-${alphabet}`;
+            for (const side of sides) {
+                for (const part of bound ? ["host", "boundary"] : ["paired"]) {
+                    const name = `${prefix}-${part}-${side}`;
+                    names[`${part}-${side}`] = name;
+                    const text =
+                        part === "boundary" ? rows.map((row) => row.boundary[side]).join("") : hosts[side].source;
+                    cases.push({
+                        name,
+                        side,
+                        part,
+                        certificate: certificate.certificate,
+                        id: certificate.id,
+                        alphabet,
+                        units: rows.length,
+                        text,
+                        sha256: hash(text),
+                        bytes: Buffer.byteLength(text),
+                        dialect: side === "dialect" && part !== "boundary" ? "extended" : "commonmark"
+                    });
+                }
+            }
+            proofs.push({
+                ...certificate,
+                alphabet,
+                normalForm: grammarNormalForm(certificate.id, "dialect"),
+                units: rows.length,
+                names,
+                rows,
+                hosts,
+                grammars: Object.fromEntries(sides.map((side) => [side, grammarDescription(certificate, side)])),
+                rewrite: bound
+                    ? [
+                          "lossless-slot-decomposition",
+                          "common-field-order",
+                          "shared-explicit-entry-envelope",
+                          "identity-grammar"
+                      ]
+                    : isProduct(certificate.id)
+                      ? [
+                            "inline-administrative-productions",
+                            "invertible-fixed-terminal-encoding",
+                            "label-preserving-product-permutation",
+                            "common-normal-form"
+                        ]
+                      : [
+                            "inline-administrative-productions",
+                            "rename-contextual-delimiter-terminals",
+                            "common-normal-form"
+                        ]
+            });
         }
-        proofs.push({
-            ...certificate,
-            normalForm: grammarNormalForm(certificate.id, "dialect"),
-            units: rows.length,
-            names,
-            rows,
-            hosts,
-            grammars: Object.fromEntries(sides.map((side) => [side, grammarDescription(certificate, side)])),
-            rewrite: bound
-                ? [
-                      "lossless-slot-decomposition",
-                      "common-field-order",
-                      "shared-explicit-entry-envelope",
-                      "identity-grammar"
-                  ]
-                : isProduct(certificate.id)
-                  ? [
-                        "inline-administrative-productions",
-                        "invertible-fixed-terminal-encoding",
-                        "label-preserving-product-permutation",
-                        "common-normal-form"
-                    ]
-                  : ["inline-administrative-productions", "rename-contextual-delimiter-terminals", "common-normal-form"]
-        });
-    }
-    return { version: grammarVersion, normalForms, certificates: grammarCertificates, cases, proofs };
+    return { version: grammarVersion, normalForms, alphabets, certificates: grammarCertificates, cases, proofs };
 }
 
 export function documentMetadata(item) {
@@ -1329,15 +1442,32 @@ export function grammarMarkdown(report) {
         "",
         "Boundary rows measure the same explicit standalone entry envelope on both sides. Original hosts and lossless residuals are archived separately. The local ratio excludes the unmatched host grammar and is not additive with it.",
         "",
-        "A is Core on the dialect encoding, B is Core on the common encoding, and R is the pinned reference on the common encoding. All Ir totals below are source_to_buffer + buffer_to_ast. A/B includes the whole grammar/frame change; it is not a lexical-only attribution.",
+        "Every certificate is measured in two alphabets: ASCII documents spell each Word with [a-z], and UTF-8 documents with letters of two, three and four bytes in turn. The grammar and every syntax byte are the same; fields whose own grammar admits only ASCII keep [a-z] in both.",
         "",
-        "| Certificate | Scope | Units | A/B bytes | A Ir | B Ir | R Ir | A/B | B/R | A/R | Core host Ir (residual included) |",
-        "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+        "A is Core on the dialect encoding, B is Core on the common encoding, and R is the pinned reference on the common encoding. All Ir totals below are source_to_buffer + buffer_to_ast. A/B includes the whole grammar/frame change; it is not a lexical-only attribution.",
+        ""
     ];
     const { equivalences, rejections } = grammarComparisons(report);
+    const geomean = (values) => Math.exp(values.reduce((sum, value) => sum + Math.log(value), 0) / values.length);
+    lines.push(
+        "| Alphabet | Certificates | A/B geomean | B/R geomean | A/R geomean |",
+        "| --- | ---: | ---: | ---: | ---: |"
+    );
+    for (const alphabet of Object.keys(alphabets)) {
+        const rows = equivalences.filter((row) => row.alphabet === alphabet);
+        if (rows.length)
+            lines.push(
+                `| ${alphabet} | ${rows.length} | ${geomean(rows.map((row) => row.ab)).toFixed(3)}x | ${geomean(rows.map((row) => row.br)).toFixed(3)}x | ${geomean(rows.map((row) => row.ar)).toFixed(3)}x |`
+            );
+    }
+    lines.push(
+        "",
+        "| Certificate | Alphabet | Scope | Units | A/B bytes | A Ir | B Ir | R Ir | A/B | B/R | A/R | Core host Ir (residual included) |",
+        "| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+    );
     for (const row of equivalences) {
         lines.push(
-            `| ${row.certificate} | ${row.scope} | ${row.units} | ${row.aBytes}/${row.bBytes} | ${row.aIr} | ${row.bIr} | ${row.rIr} | ${row.ab.toFixed(3)}x | ${row.br.toFixed(3)}x | ${row.ar.toFixed(3)}x | ${row.hostIr ?? "—"} |`
+            `| ${row.certificate} | ${row.alphabet} | ${row.scope} | ${row.units} | ${row.aBytes}/${row.bBytes} | ${row.aIr} | ${row.bIr} | ${row.rIr} | ${row.ab.toFixed(3)}x | ${row.br.toFixed(3)}x | ${row.ar.toFixed(3)}x | ${row.hostIr ?? "—"} |`
         );
     }
     lines.push(
@@ -1346,12 +1476,12 @@ export function grammarMarkdown(report) {
         "",
         "These certificates are built around a construct whose prefix Core rejects and no pinned reference implements. Their grammar is shared, but a reference on the same bytes has nothing to reject, so none is measured. C is Core on the control: the same production and fields with the rejected construct's trigger bytes replaced by letters of the same width. B − C is the work those bytes start in Core.",
         "",
-        "| Certificate | Rejects | Units | Bytes | B Ir | C Ir | B/C | (B − C)/unit |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
+        "| Certificate | Alphabet | Rejects | Units | Bytes | B Ir | C Ir | B/C | (B − C)/unit |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
     );
     for (const row of rejections)
         lines.push(
-            `| ${row.certificate} | ${row.construct} | ${row.units} | ${row.bytes} | ${row.bIr} | ${row.cIr ?? "—"} | ${row.cIr === null ? "—" : `${row.bc.toFixed(3)}x`} | ${row.cIr === null ? "—" : row.excess.toFixed(0)} |`
+            `| ${row.certificate} | ${row.alphabet} | ${row.construct} | ${row.units} | ${row.bytes} | ${row.bIr} | ${row.cIr ?? "—"} | ${row.cIr === null ? "—" : `${row.bc.toFixed(3)}x`} | ${row.cIr === null ? "—" : row.excess.toFixed(0)} |`
         );
     // A note about a measurement names only rows this report measured.
     const uncontrolled = new Set(rejections.filter((row) => row.cIr === null).map((row) => row.certificate));
