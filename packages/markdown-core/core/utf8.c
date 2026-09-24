@@ -7,86 +7,9 @@
 #include "markdown_core_ctype.h"
 #include "utf8.h"
 
-static const int8_t utf8proc_utf8class[256] = {
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0};
-
 static void encode_unknown(markdown_core_strbuf *buf) {
     static const uint8_t repl[] = {239, 191, 189};
     markdown_core_strbuf_put(buf, repl, 3);
-}
-
-static int utf8proc_charlen(const uint8_t *str, bufsize_t str_len) {
-    int length, i;
-
-    if (!str_len) {
-        return 0;
-    }
-
-    length = utf8proc_utf8class[str[0]];
-
-    if (!length) {
-        return -1;
-    }
-
-    if (str_len >= 0 && (bufsize_t)length > str_len) {
-        return -str_len;
-    }
-
-    for (i = 1; i < length; i++) {
-        if ((str[i] & 0xC0) != 0x80) {
-            return -i;
-        }
-    }
-
-    return length;
-}
-
-int markdown_core_utf8proc_iterate_general(const uint8_t *str, bufsize_t str_len, int32_t *dst) {
-    int length;
-    int32_t uc = -1;
-
-    *dst = -1;
-    length = utf8proc_charlen(str, str_len);
-    if (length < 0) {
-        return -1;
-    }
-
-    switch (length) {
-    case 1:
-        uc = str[0];
-        break;
-    case 2:
-        uc = ((str[0] & 0x1F) << 6) + (str[1] & 0x3F);
-        if (uc < 0x80) {
-            uc = -1;
-        }
-        break;
-    case 3:
-        uc = ((str[0] & 0x0F) << 12) + ((str[1] & 0x3F) << 6) + (str[2] & 0x3F);
-        if (uc < 0x800 || (uc >= 0xD800 && uc < 0xE000)) {
-            uc = -1;
-        }
-        break;
-    case 4:
-        uc = ((str[0] & 0x07) << 18) + ((str[1] & 0x3F) << 12) + ((str[2] & 0x3F) << 6) + (str[3] & 0x3F);
-        if (uc < 0x10000 || uc >= 0x110000) {
-            uc = -1;
-        }
-        break;
-    }
-
-    if (uc < 0) {
-        return -1;
-    }
-
-    *dst = uc;
-    return length;
 }
 
 /* The length of a scalar's UTF-8 encoding, for a scalar below 0x110000. */

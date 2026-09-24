@@ -800,9 +800,17 @@ static bool table_source_columns(table_source *source, size_t index) {
     source->parser->table_geometry_lines++;
     line->byte_offset = workspace->bytes_count;
     int *bytes = workspace->bytes + line->byte_offset;
+    /* The line's extent is read once: every position stored below is an
+     * `int`, which the compiler must otherwise assume could be the line's own
+     * length and reload it for every character. */
+    const unsigned char *data = line->data;
+    const int end = line->length;
     for (int byte = line->offset, column = 0;;) {
-        if (byte == line->length) {
-            bytes[column] = byte;
+        /* A character's width comes from its first byte alone, so on input
+         * that is not UTF-8 the last one can claim bytes past the end. The
+         * walk stops there all the same, and the end is where it stops. */
+        if (byte >= end) {
+            bytes[column] = end;
             line->columns = column;
             line->columns_ready = true;
             workspace->bytes_count += (size_t)column + 1;
@@ -812,17 +820,15 @@ static bool table_source_columns(table_source *source, size_t index) {
             markdown_core_parser_fail(source->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return false;
         }
-        if (line->data[byte] == '\t') {
+        if (data[byte] == '\t') {
             int spaces = 4 - column % 4;
             while (spaces--) {
                 bytes[column++] = byte;
             }
             byte++;
         } else {
-            int32_t scalar;
-            int width = markdown_core_utf8proc_step(line->data + byte, line->length - byte, &scalar);
             bytes[column++] = byte;
-            byte += width;
+            byte += markdown_core_utf8proc_width(data[byte]);
         }
     }
 }
