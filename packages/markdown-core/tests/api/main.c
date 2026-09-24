@@ -6531,21 +6531,21 @@ static void reference_label_normal_form(test_batch_runner *runner) {
     markdown_core_strbuf_free(&normal);
 }
 
-/* A PROJECTION'S CONTENT STOPS AT THE BUFFER LIMIT, not at its allocation.
- * Growth oversizes a buffer by half, so near MARKDOWN_CORE_STRBUF_LIMIT the
- * allocation reaches past the limit. The label and anchor projections write
- * through a cursor, and a cursor bounded by the allocation alone let an image
- * that appending would have refused land past the limit, unpoisoned: a
+/* A PROJECTION'S CONTENT STOPS AT THE BUFFER LIMIT. The label and anchor
+ * projections write through a cursor bounded by the allocation, and when
+ * growth oversized a buffer by half past MARKDOWN_CORE_STRBUF_LIMIT, an image
+ * that appending would have refused landed past the limit, unpoisoned: a
  * 400 MiB label of U+0390, which folds from two bytes to six, reached that
- * state. The content below the limit is forged -- only the page the
- * projections write is touched -- because building such a label costs
- * gigabytes. */
+ * state. Growth now stops at the limit and its terminator, so the room every
+ * writer sees -- the cursor and the inline append alike -- ends at the limit.
+ * The content below the limit is forged -- only the page the projections
+ * write is touched -- because building such a label costs gigabytes. */
 static void image_cursor_stops_at_buffer_limit(test_batch_runner *runner) {
     const bufsize_t limit = MARKDOWN_CORE_STRBUF_LIMIT;
     static const char fold[] = "\xCE\xB9\xCC\x88\xCC\x81";
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT();
     markdown_core_strbuf_grow(&buf, limit / 3 * 2 + 64);
-    OK(runner, !buf.oom && buf.asize - 1 > limit, "the allocation reaches past the limit");
+    OK(runner, !buf.oom && buf.asize - 1 == limit, "growth near the limit stops at the limit and its terminator");
     if (buf.oom) {
         markdown_core_strbuf_free(&buf);
         return;
@@ -6570,6 +6570,29 @@ static void image_cursor_stops_at_buffer_limit(test_batch_runner *runner) {
     OK(runner, buf.oom, "an anchor one byte past the limit poisons the buffer");
     OK(runner, buf.size == limit && buf.ptr[limit - 1] == 'a' && buf.ptr[limit] == 0,
        "at the byte where appending it would have been refused");
+
+    /* The inline append reads the same room: an append that fits it fits the
+     * limit, one that does not is refused, and a poisoned buffer takes none,
+     * whatever room it has. */
+    buf.oom = 0;
+    buf.size = limit - 1;
+    buf.ptr[buf.size] = '\0';
+    markdown_core_strbuf_putc(&buf, 'x');
+    OK(runner, !buf.oom && buf.size == limit && buf.ptr[limit - 1] == 'x' && buf.ptr[limit] == 0,
+       "a byte appended at the last place the limit allows lands");
+    markdown_core_strbuf_putc(&buf, 'y');
+    OK(runner, buf.oom && buf.size == limit && buf.ptr[limit] == 0, "a byte past the limit poisons the buffer");
+    buf.oom = 0;
+    buf.size = limit - 2;
+    buf.ptr[buf.size] = '\0';
+    markdown_core_strbuf_put(&buf, (const unsigned char *)"abc", 3);
+    OK(runner, buf.oom && buf.size == limit - 2 && buf.ptr[buf.size] == 0,
+       "a run past the limit poisons the buffer and leaves its content");
+    buf.size = 10;
+    buf.ptr[buf.size] = '\0';
+    markdown_core_strbuf_putc(&buf, 'z');
+    markdown_core_strbuf_put(&buf, (const unsigned char *)"zz", 2);
+    OK(runner, buf.oom && buf.size == 10 && buf.ptr[10] == 0, "a poisoned buffer takes no append, whatever its room");
     markdown_core_strbuf_free(&buf);
 }
 

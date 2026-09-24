@@ -73,10 +73,15 @@ void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size)
     }
 
     /* Oversize the buffer by 50% to guarantee amortized linear time
-     * complexity on append operations. */
+     * complexity on append operations, but never past the content limit and
+     * its terminator: room beyond it could never be written, and the inline
+     * append (buffer.h) reads "fits the room" as "fits the limit". */
     bufsize_t new_size = target_size + target_size / 2;
     new_size += 1;
     new_size = (new_size + 7) & ~7;
+    if (new_size > MARKDOWN_CORE_STRBUF_LIMIT + 1) {
+        new_size = MARKDOWN_CORE_STRBUF_LIMIT + 1;
+    }
 
     unsigned char *new_ptr = (unsigned char *)markdown_core_realloc(buf->asize ? buf->ptr : NULL, new_size);
     if (!new_ptr) {
@@ -142,20 +147,7 @@ void markdown_core_strbuf_sets(markdown_core_strbuf *buf, const char *string) {
     markdown_core_strbuf_set(buf, (const unsigned char *)string, string ? (bufsize_t)strlen(string) : 0);
 }
 
-void markdown_core_strbuf_putc(markdown_core_strbuf *buf, int c) {
-    S_strbuf_grow_by(buf, 1);
-    if (buf->oom) {
-        return;
-    }
-    buf->ptr[buf->size++] = (unsigned char)(c & 0xFF);
-    buf->ptr[buf->size] = '\0';
-}
-
-void markdown_core_strbuf_put(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len) {
-    if (len <= 0) {
-        return;
-    }
-
+void markdown_core_strbuf_put_grown(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len) {
     S_strbuf_grow_by(buf, len);
     if (buf->oom) {
         return;
