@@ -425,10 +425,10 @@ static void S_project_finish_steps(markdown_core_dialect *dialect, const size_t 
  * `MARKDOWN_CORE_BLOCK_GATE_KEYS * (owners + 1)` bytes. An ungated owner is
  * on every byte's list; an indented line is decided by the indent bound
  * alone. */
-static void S_project_gate_lists(markdown_core_dialect *dialect, const markdown_core_dialect_layout *layout,
+static void S_project_gate_lists(markdown_core_dialect *dialect, const markdown_core_dialect_sizes *sizes,
                                  uint8_t *tables) {
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
-        if (!layout->gated[hook]) {
+        if (!sizes->gated[hook]) {
             continue;
         }
         size_t owners = dialect->block_hook_counts[hook];
@@ -467,59 +467,58 @@ static void S_project_gate_lists(markdown_core_dialect *dialect, const markdown_
  * list alone. A family is gated when any of its owners declares a gate: the
  * first declaration is what turns gating on, so an element that declares
  * nothing is never skipped. */
-size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builder,
-                                     markdown_core_dialect_layout *layout) {
+size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builder, markdown_core_dialect_sizes *sizes) {
     const markdown_core_element *const *elements = builder->elements;
     size_t count = builder->element_count;
 
-    memset(layout, 0, sizeof(*layout));
-    layout->pointers = count;
+    memset(sizes, 0, sizeof(*sizes));
+    sizes->pointers = count;
     for (size_t i = 0; i < count; i++) {
         for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
             if (S_element_implements(elements[i], (markdown_core_block_hook)hook)) {
-                layout->block_totals[hook]++;
-                layout->pointers++;
+                sizes->block_totals[hook]++;
+                sizes->pointers++;
                 if (S_element_gate(elements[i], (markdown_core_block_hook)hook).bytes) {
-                    layout->gated[hook] = true;
+                    sizes->gated[hook] = true;
                 }
             }
         }
         for (size_t hook = 0; hook < MARKDOWN_CORE_INLINE_HOOK_COUNT; hook++) {
             if (S_element_implements_inline(elements[i], (markdown_core_inline_hook)hook)) {
-                layout->inline_totals[hook]++;
-                layout->pointers++;
+                sizes->inline_totals[hook]++;
+                sizes->pointers++;
             }
         }
-        layout->steps += S_count_finish_keys(elements[i], layout->finish_key_counts);
+        sizes->steps += S_count_finish_keys(elements[i], sizes->finish_key_counts);
     }
-    layout->pointers += S_count_inline_dispatch(elements, count, layout->inline_dispatch_offsets);
+    sizes->pointers += S_count_inline_dispatch(elements, count, sizes->inline_dispatch_offsets);
     for (size_t key = 0; key < MARKDOWN_CORE_FINISH_KEY_COUNT; key++) {
-        layout->steps += layout->finish_key_counts[key] != 0; /* the terminator */
+        sizes->steps += sizes->finish_key_counts[key] != 0; /* the terminator */
     }
     /* A family with no declared gate keeps no table and every owner is asked. */
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
-        if (layout->gated[hook]) {
-            layout->gate_bytes += MARKDOWN_CORE_BLOCK_GATE_KEYS * (layout->block_totals[hook] + 1);
+        if (sizes->gated[hook]) {
+            sizes->gate_bytes += MARKDOWN_CORE_BLOCK_GATE_KEYS * (sizes->block_totals[hook] + 1);
         }
     }
-    return layout->pointers * sizeof(const markdown_core_element *) +
-           layout->steps * sizeof(markdown_core_finish_step_entry) + layout->gate_bytes;
+    return sizes->pointers * sizeof(const markdown_core_element *) +
+           sizes->steps * sizeof(markdown_core_finish_step_entry) + sizes->gate_bytes;
 }
 
 /* SEAL: every table the dialect decides, projected once, into the storage
- * the layout was measured for. The tail after the struct holds the
+ * `sizes` was measured for. The tail after the struct holds the
  * element-pointer lists (the element list itself, the block families, the
  * inline-content families, the inline dispatch), then the finish step
  * entries, then the gate tables. The first two regions are pointer-aligned
  * and start where the one before ends; the tables are bytes. The element list
  * is copied rather than taken, so the dialect owns nothing apart from its
  * storage and the builder still owns what it did. */
-void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder,
-                                const markdown_core_dialect_layout *layout, markdown_core_dialect *dialect) {
+void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, const markdown_core_dialect_sizes *sizes,
+                                markdown_core_dialect *dialect) {
     size_t count = builder->element_count;
     const markdown_core_element **entries = (const markdown_core_element **)(dialect + 1);
-    markdown_core_finish_step_entry *step_entries = (markdown_core_finish_step_entry *)(entries + layout->pointers);
-    uint8_t *tables = (uint8_t *)(step_entries + layout->steps);
+    markdown_core_finish_step_entry *step_entries = (markdown_core_finish_step_entry *)(entries + sizes->pointers);
+    uint8_t *tables = (uint8_t *)(step_entries + sizes->steps);
 
     if (count) {
         memcpy(entries, builder->elements, count * sizeof(*entries));
@@ -544,7 +543,7 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder,
 
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
         dialect->block_hooks[hook] = entries + at;
-        dialect->block_hook_counts[hook] = layout->block_totals[hook];
+        dialect->block_hook_counts[hook] = sizes->block_totals[hook];
         for (size_t i = 0; i < count; i++) {
             if (S_element_implements(dialect->elements[i], (markdown_core_block_hook)hook)) {
                 entries[at++] = dialect->elements[i];
@@ -553,18 +552,18 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder,
     }
     for (size_t hook = 0; hook < MARKDOWN_CORE_INLINE_HOOK_COUNT; hook++) {
         dialect->inline_hooks[hook] = entries + at;
-        dialect->inline_hook_counts[hook] = layout->inline_totals[hook];
+        dialect->inline_hook_counts[hook] = sizes->inline_totals[hook];
         for (size_t i = 0; i < count; i++) {
             if (S_element_implements_inline(dialect->elements[i], (markdown_core_inline_hook)hook)) {
                 entries[at++] = dialect->elements[i];
             }
         }
     }
-    memcpy(dialect->inline_dispatch_offsets, layout->inline_dispatch_offsets, sizeof(dialect->inline_dispatch_offsets));
+    memcpy(dialect->inline_dispatch_offsets, sizes->inline_dispatch_offsets, sizeof(dialect->inline_dispatch_offsets));
     S_project_inline_dispatch(dialect, entries + at);
     at += dialect->inline_dispatch_offsets[256];
-    assert(at == layout->pointers);
+    assert(at == sizes->pointers);
 
-    S_project_finish_steps(dialect, layout->finish_key_counts, step_entries);
-    S_project_gate_lists(dialect, layout, tables);
+    S_project_finish_steps(dialect, sizes->finish_key_counts, step_entries);
+    S_project_gate_lists(dialect, sizes, tables);
 }
