@@ -73,10 +73,6 @@ static const char *S_element_rejection(const markdown_core_element *element) {
     return NULL;
 }
 
-/* Not `const` itself, so its zeros take no space in the image. */
-static markdown_core_dialect S_empty_dialect;
-const markdown_core_dialect *const markdown_core_empty_dialect = &S_empty_dialect;
-
 void markdown_core_dialect_builder_init(markdown_core_dialect_builder *builder,
                                         const markdown_core_element *const *elements, size_t count) {
 #ifndef NDEBUG

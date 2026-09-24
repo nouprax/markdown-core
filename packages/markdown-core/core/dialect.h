@@ -243,11 +243,6 @@ typedef struct markdown_core_dialect_layout {
     size_t pointers, steps, gate_bytes;
 } markdown_core_dialect_layout;
 
-/* The dialect of an inline scan that belongs to no instance -- a reference
- * definition read on its own: it registers nothing, so no byte ends a text
- * run, starts a delimiter or has an owner. Zeroed storage, never written. */
-extern const markdown_core_dialect *const markdown_core_empty_dialect;
-
 /* Begin a builder from the `count` elements of `elements`, which it borrows. */
 void markdown_core_dialect_builder_init(markdown_core_dialect_builder *builder,
                                         const markdown_core_element *const *elements, size_t count);

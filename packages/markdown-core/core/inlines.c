@@ -118,13 +118,13 @@ void markdown_core_inline_state_from_buf(markdown_core_parser *parser, int line_
                                          markdown_core_inline_state *inline_state, markdown_core_chunk *chunk,
                                          markdown_core_map *refmap) {
     memset(inline_state, 0, sizeof(*inline_state));
-    inline_state->dialect = parser ? parser->dialect : markdown_core_empty_dialect;
     inline_state->input = *chunk;
     inline_state->line = line_number;
     inline_state->owner_parser = parser;
     inline_state->refmap = refmap;
     inline_state->text_end = -1;
     if (parser) {
+        inline_state->dialect = parser->dialect;
         const markdown_core_element *const *owners = parser->dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_INIT];
         size_t count = parser->dialect->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_INIT];
         for (size_t i = 0; i < count; i++) {
