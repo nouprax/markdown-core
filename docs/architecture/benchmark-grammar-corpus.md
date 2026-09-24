@@ -3,9 +3,9 @@
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
 contains all 194 certificates, their concrete grammars, normal forms and two
-complete examples per family. The run emits 412 documents, each measured once:
-182 whole declared-language pairs and 12 local boundary pairs with complete
-hosts. The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
+complete examples per family. The run emits 424 documents, each measured once:
+182 whole declared-language pairs, 12 local boundary pairs with complete hosts,
+and 12 controls for [rejection certificates](#rejection-certificates). The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
 30 syntax-guide features, 136 sections and 32 registered elements. Its explicit
 section mapping names certificates for 132 source-language sections and gives
 reviewed context-only dispositions for four sections. Certificates are registered
@@ -50,6 +50,17 @@ They do not assert equal instruction counts, equal byte lengths for all frames,
 or an optimality theorem for the native implementations. Those are different
 claims. Reports preserve both byte counts and the actual native measurements;
 a fixed frame rewrite must not be described as free at runtime.
+
+A B/R ratio compares two implementations of the same parsing work. Grammar
+equivalence alone does not make it one. The reference must also implement every
+construct the certificate is built around. An extension certificate meets this
+because its extension syntax appears only in A, while B and R parse the same
+CommonMark translation. A shared (T6) certificate meets it because both parsers
+implement the shared construct. Some checks Core makes on shared input belong to
+its own language, for example looking for a block identifier at the end of every
+paragraph. They count in B/R. A certificate built around a construct only Core
+implements does not meet the premise. It is never reported as a reference
+comparison; see [Rejection certificates](#rejection-certificates).
 
 ## Common grammar and unique recognition (T1)
 
@@ -330,6 +341,63 @@ keys independently. Repeating a document-initial envelope in the middle of
 a document would not remain a metadata scenario. The corpus explicitly composes
 one envelope instead. Its lossless pieces retain every occurrence of every value.
 
+## Rejection certificates
+
+Some shared-grammar certificates are built around a construct that the owning
+rule rejects: `probe ^k v^ end` opens a superscript, fails, and falls back to
+text. The grammar is shared and T6 holds. Each such certificate declares the
+construct it `rejects`. A closed table in `features.mjs` records which pinned
+references implement each construct:
+
+| Rejected construct | Implemented by | Certificates |
+| --- | --- | --- |
+| Ordered-list marker (nine-digit limit) | cmark, cmark-gfm | fallback-list-limit |
+| Reference link | cmark, cmark-gfm | common-unresolved-reference |
+| Strikethrough | cmark-gfm | fallback-strike |
+| Footnote reference | cmark-gfm | fallback-footnote |
+| Task-list marker | cmark-gfm | fallback-task-separator |
+| Superscript, insertion, mark, inline formula, percent comment, cross link, inline directive, attribute block, grid table, citation, bracketed span, image dimensions, metadata envelope | none | the other thirteen `fallback-*` certificates |
+
+When the certificate's reference implements the construct, B and R both attempt
+and reject the same prefix. Such a certificate is an ordinary equivalence.
+Strikethrough and footnote references exist only in cmark-gfm, so their
+certificates use cmark-gfm as the reference. The generator refuses a certificate
+whose reference does not implement its rejected construct.
+
+When no reference implements the construct, B is Core attempting and rejecting
+it, and R has nothing to reject. For example, on `39ca971` the AST stage of
+`fallback-script` cost Core 73,085 Ir and cmark 19,150 Ir. Replacing only its
+`^` bytes by `q` brought Core to 24,924 Ir. About 2K Ir per rejected `^` is work
+cmark does not do at all. It is not a slower implementation of shared work.
+These certificates therefore get no reference measurement and no B/R.
+
+Instead, each declares a **control**: the same production, with the same fields
+and frame, in which the trigger bytes of the rejected construct are replaced by
+letters. The generator checks every control:
+
+- the field sequence is the same;
+- every fixed terminal keeps its width;
+- every change turns ASCII punctuation into a lowercase letter, and at least one
+  byte changes;
+- each control document decodes, under the same normal form, to the same
+  derivation.
+
+Core alone measures the control, `<id>-paired-control`. The report lists B, C,
+B/C and (B − C) per unit, which is the work the trigger bytes start in Core. A
+trigger byte can also be shared syntax. For example, the second `[` of `[[` is
+also a link opener in both parsers. In that case the difference includes that
+shared work too.
+
+`fallback-noninitial-metadata` has no byte-neutral control. Its rejected envelope
+delimiter `---` is also a thematic break or setext underline in both parsers, so
+no letter substitution can remove the envelope attempt by itself. The
+certificate records that reason in the same form as a boundary residual, and the
+report shows B only.
+
+`block-id-escaped` is not a rejection certificate. In `probe \#k# end` the
+marker is not at the end of the paragraph, so the block-identifier rule has no
+candidate to reject.
+
 ## Concrete coverage, variation, and checks
 
 The registry contains the source-grammar certificates themselves. The specification
@@ -375,6 +443,7 @@ oracle pins, both proof/coverage documents, syntax specifications and checked-in
 ledgers, plus the exact generated documents and
 proof records. The Callgrind report lists one concrete comparison per certificate,
 retaining full hosts for boundary rows without certifying those host ratios.
+Rejection certificates are listed in a separate table, against their controls.
 CI measures and archives only this parse corpus.
 
 To regenerate the checked-in example catalog after changing a grammar, run the

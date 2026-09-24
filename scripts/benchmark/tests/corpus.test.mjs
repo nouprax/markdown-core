@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -23,10 +24,12 @@ import {
     grammarSourceIdentity,
     grammarMarkdown,
     grammarEngines,
+    validateControl,
     validateGrammarCertificates
 } from "../corpus.mjs";
-import { featureGrammars, finiteLexicons } from "../features.mjs";
+import { featureGrammars, finiteLexicons, rejectedConstructs } from "../features.mjs";
 import { featureCoverage, validateFeatureCoverage, specificationSections, reviewedSections } from "../coverage.mjs";
+import { grammarComparisons } from "../report.mjs";
 import { sectionDispositions } from "../sections.mjs";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
@@ -161,7 +164,8 @@ test("boundary splits keep every byte and every independent field, with measured
 
 test("one corpus contains unique inputs, repeats derivations, keeps metadata document-initial, and records exact normal forms", () => {
     const corpus = buildGrammarCorpus();
-    assert.equal(corpus.cases.length, 412);
+    assert.equal(corpus.cases.length, 424);
+    assert.equal(corpus.cases.filter((c) => c.side === "control").length, 12);
     assert.equal(new Set(corpus.cases.map((c) => c.name)).size, corpus.cases.length);
     for (const document of corpus.cases) {
         assert.ok(!("scale" in document));
@@ -286,13 +290,18 @@ test("grammar reporting keeps the boundary ratio separate and rejects missing me
         .map((c) => ({
             ...c,
             case: c.name,
-            engines: { "markdown-core": stages(c.part === "host" ? 900 : 200), cmark: stages(100) }
+            engines: {
+                "markdown-core": stages(c.part === "host" ? 900 : 200),
+                ...(grammarEngines(c).includes("cmark") ? { cmark: stages(100) } : {})
+            }
         }));
     const report = { grammarCorpus: { identity: "test", certificates: corpus.certificates, proofs }, cases };
     const output = grammarMarkdown(report);
     assert.match(output, /2\.000x/u);
     assert.doesNotMatch(output, /9\.000x/u);
     assert.match(output, /1800/u);
+    // A selection that measured no rejection makes no claim about one.
+    assert.doesNotMatch(output, /report B only|fallback-noninitial-metadata/u);
     // Ratios require a complete certificate family, including its unpaired hosts.
     for (const mutate of [
         (r) => {
@@ -309,6 +318,9 @@ test("grammar reporting keeps the boundary ratio separate and rejects missing me
         },
         (r) => {
             r.grammarCorpus.proofs.push(r.grammarCorpus.proofs[0]);
+        },
+        (r) => {
+            r.cases.find((c) => c.part === "host" && c.side === "common").engines.cmark = stages(100);
         }
     ]) {
         const broken = JSON.parse(JSON.stringify(report));
@@ -319,6 +331,164 @@ test("grammar reporting keeps the boundary ratio separate and rejects missing me
         () => grammarMarkdown({ ...report, cases: cases.filter((c) => c.part !== "boundary" || c.side !== "common") }),
         /missing/u
     );
+});
+
+test("rejection certificates report Core against its control and never against a reference", () => {
+    const corpus = buildGrammarCorpus({ units: 1 });
+    const families = ["fallback-script", "fallback-noninitial-metadata", "fallback-strike"];
+    const stages = (ir) => ({
+        stages: { source_to_buffer: { cost: { Ir: ir } }, buffer_to_ast: { cost: { Ir: ir } } }
+    });
+    const cases = corpus.cases
+        .filter((c) => families.includes(c.id))
+        .map((c) => ({
+            ...c,
+            case: c.name,
+            engines: Object.fromEntries(
+                grammarEngines(c).map((engine) => [
+                    engine,
+                    stages(engine !== "markdown-core" ? 100 : c.side === "control" ? 150 : 300)
+                ])
+            )
+        }));
+    assert.deepEqual(
+        cases.filter((c) => Object.keys(c.engines).length > 1).map((c) => [c.case, Object.keys(c.engines)]),
+        [["fallback-strike-paired-common", ["markdown-core", "cmark-gfm"]]]
+    );
+    const report = {
+        grammarCorpus: {
+            identity: "test",
+            certificates: corpus.certificates,
+            proofs: corpus.proofs.filter((p) => families.includes(p.id))
+        },
+        cases
+    };
+    const { equivalences, rejections } = grammarComparisons(report);
+    assert.deepEqual(
+        equivalences.map((row) => [row.certificate, row.reference, row.br]),
+        [["fallback-strike-grammar-v2", "cmark-gfm", 3]]
+    );
+    assert.deepEqual(
+        rejections.map((row) => [row.certificate, row.construct, row.bIr, row.cIr, row.bc, row.excess]),
+        [
+            ["fallback-noninitial-metadata-grammar-v2", "metadata-envelope", 600, null, null, null],
+            ["fallback-script-grammar-v2", "superscript", 600, 300, 2, 300]
+        ]
+    );
+    const output = grammarMarkdown(report);
+    assert.match(
+        output,
+        /\| fallback-script-grammar-v2 \| superscript \| 1 \| \d+ \| 600 \| 300 \| 2\.000x \| 300 \|/u
+    );
+    assert.match(
+        output,
+        /\| fallback-noninitial-metadata-grammar-v2 \| metadata-envelope \| 1 \| \d+ \| 600 \| — \| — \| — \|/u
+    );
+    assert.match(output, /- fallback-noninitial-metadata-grammar-v2: The rejected envelope delimiter/u);
+    assert.doesNotMatch(output, /fallback-script-grammar-v2 \| paired-document-grammar/u);
+    for (const mutate of [
+        // A reference measured on a construct it does not implement.
+        (r) => {
+            r.cases.find((c) => c.case === "fallback-script-paired-common").engines.cmark = stages(100);
+        },
+        // A missing control.
+        (r) => {
+            r.cases = r.cases.filter((c) => c.side !== "control");
+        },
+        // A control whose width differs from the input it controls.
+        (r) => {
+            r.cases.find((c) => c.side === "control").bytes++;
+        },
+        // A controlled rejection presented as uncontrolled, and the reverse.
+        (r) => {
+            r.grammarCorpus.certificates.find((c) => c.id === "fallback-script").uncontrolled = "x".repeat(41);
+        },
+        (r) => {
+            delete r.grammarCorpus.certificates.find((c) => c.id === "fallback-noninitial-metadata").uncontrolled;
+        },
+        // A rejection certificate presented as a reference comparison.
+        (r) => {
+            r.grammarCorpus.certificates.find((c) => c.id === "fallback-script").reference = "cmark";
+        }
+    ]) {
+        const broken = JSON.parse(JSON.stringify(report));
+        mutate(broken);
+        assert.throws(() => grammarComparisons(broken));
+    }
+});
+
+test("a certificate compares with a reference only when that reference implements its rejected construct", () => {
+    validateGrammarCertificates();
+    const certificates = new Map(grammarCertificates.map((c) => [c.id, c]));
+    const coreOnly = grammarCertificates.filter((c) => c.reference === null).map((c) => c.id);
+    assert.deepEqual(coreOnly.toSorted(), [
+        "fallback-attributes",
+        "fallback-citation",
+        "fallback-comment",
+        "fallback-cross-link",
+        "fallback-directive",
+        "fallback-formula",
+        "fallback-grid",
+        "fallback-image-dimensions",
+        "fallback-insertion",
+        "fallback-mark",
+        "fallback-noninitial-metadata",
+        "fallback-script",
+        "fallback-span"
+    ]);
+    for (const [id, reference] of [
+        ["fallback-strike", "cmark-gfm"],
+        ["fallback-footnote", "cmark-gfm"],
+        ["fallback-task-separator", "cmark-gfm"],
+        ["fallback-list-limit", "cmark"],
+        ["common-unresolved-reference", "cmark"]
+    ]) {
+        assert.equal(certificates.get(id).reference, reference, id);
+        assert.ok(rejectedConstructs[certificates.get(id).rejects].includes(reference), id);
+    }
+    // An escaped marker is not a candidate the block-identifier rule rejects.
+    assert.equal(certificates.get("block-id-escaped").rejects, undefined);
+    assert.equal(certificates.get("block-id-escaped").reference, "cmark");
+    for (const certificate of grammarCertificates) {
+        if (certificate.facets?.includes("rejected-prefix")) assert.ok(certificate.rejects, certificate.id);
+        if (certificate.reference !== null) continue;
+        assert.deepEqual(rejectedConstructs[certificate.rejects], [], certificate.id);
+        for (const document of buildGrammarCorpus({ units: 1 }).cases.filter((c) => c.id === certificate.id))
+            assert.deepEqual(grammarEngines(document), ["markdown-core"], document.name);
+    }
+    assert.equal(certificates.get("fallback-noninitial-metadata").uncontrolled.length > 40, true);
+});
+
+test("a control keeps every field and frame byte and replaces only trigger punctuation with letters", () => {
+    const controlled = grammarCertificates.filter((c) => featureGrammars.get(c.id)?.control);
+    assert.equal(controlled.length, 12);
+    for (const certificate of controlled) {
+        const production = featureGrammars.get(certificate.id);
+        assert.ok(validateControl(production.common, production.control) > 0);
+        assert.deepEqual(grammarNormalForm(certificate.id, "control"), grammarNormalForm(certificate.id, "common"));
+        for (const row of [grammarUnit(certificate.id, 3), instantiateGrammar(certificate.id, fresh())]) {
+            assert.equal(Buffer.byteLength(row.control.source), Buffer.byteLength(row.common.source));
+            const decoded = recognizePairedDocument(certificate.id, "control", row.control.source);
+            assert.deepEqual(decoded, row.derivation);
+            assert.equal(encodePairedDocument(certificate.id, "control", row.derivation), row.control.source);
+            assert.throws(() => recognizePairedDocument(certificate.id, "control", row.common.source));
+        }
+    }
+    for (const id of ["fallback-strike", "record-span", "fallback-noninitial-metadata"])
+        assert.throws(() => recognizePairedDocument(id, "control", "probe x end\n\n"));
+    const field = { name: "key", grammar: "word" };
+    const production = ["probe ^", field, "^ end\n\n"];
+    assert.equal(validateControl(production, ["probe q", field, "q end\n\n"]), 2);
+    for (const [control, message] of [
+        [["probe ^", field, "^ end\n\n"], /must replace a trigger/u],
+        [["probe q", { ...field, grammar: "phrase" }, "q end\n\n"], /changes a field/u],
+        [["probe qq", field, "q end\n\n"], /width/u],
+        [["probe q", "key", "q end\n\n"], /terminal into a field|changes a field/u],
+        [["probe q", field], /shape/u],
+        [["probeq^", field, "^ end\n\n"], /only punctuation/u],
+        [["probe 1", field, "^ end\n\n"], /only letters/u]
+    ])
+        assert.throws(() => validateControl(production, control), message);
 });
 
 test("the complete syntax and element inventories fail closed when a feature, rule, or source changes", () => {
@@ -405,12 +575,18 @@ test("shared features use the same source grammar and bytes", () => {
 });
 
 test("reference measurements are limited to the exact certified input side", () => {
+    const certificates = new Map(grammarCertificates.map((c) => [c.id, c]));
     for (const document of buildGrammarCorpus({ units: 1 }).cases) {
         const engines = grammarEngines(document);
-        if (document.side === "dialect" || document.part === "host") assert.deepEqual(engines, ["markdown-core"]);
-        else assert.deepEqual(engines, ["markdown-core", document.gfm ? "cmark-gfm" : "cmark"]);
+        const reference = certificates.get(document.id).reference;
+        if (document.side !== "common" || document.part === "host" || reference === null)
+            assert.deepEqual(engines, ["markdown-core"]);
+        else assert.deepEqual(engines, ["markdown-core", reference]);
     }
-    assert.throws(() => grammarEngines({ side: "common", part: "unknown" }));
+    assert.throws(() => grammarEngines({ id: "insertion-strong", side: "common", part: "unknown" }));
+    assert.throws(() => grammarEngines({ id: "insertion-strong", side: "control", part: "paired" }));
+    assert.throws(() => grammarEngines({ id: "grid-cell", side: "common", part: "paired" }));
+    assert.throws(() => grammarEngines({ id: "unknown-certificate", side: "common", part: "paired" }));
 });
 
 test("reference-label bounds are part of the grammar and generated at their exact limits", () => {

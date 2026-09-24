@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { featureGrammars, featureValues, finiteLexicons } from "./features.mjs";
+import { featureGrammars, featureValues, finiteLexicons, rejectedConstructs } from "./features.mjs";
 import { grammarComparisons } from "./report.mjs";
 import { validateFeatureCoverage } from "./coverage.mjs";
 
@@ -39,6 +39,8 @@ const direct = {
     "opaque-display": ["phrase", "$$", "``"]
 };
 const directFrames = new Set(["task-value", "decimal-list"]);
+// Built-in paired grammars whose common encoding is GFM syntax.
+const gfmFrames = new Set(["task-value"]);
 // Declared whole-language products and local boundary obligations. These are
 // registered directly from their source grammars, independently of AST models.
 const builtinProducts = new Set([
@@ -112,6 +114,20 @@ export const boundaryGrammars = {
 };
 const splitIds = new Set(Object.keys(boundaryGrammars));
 const isProduct = (id) => featureGrammars.has(id) || builtinProducts.has(id);
+// Every certificate has its two encodings. A rejection certificate whose
+// construct only Core implements may add a control, which only Core measures.
+const sidesOf = (id) => (featureGrammars.get(id)?.control ? ["dialect", "common", "control"] : ["dialect", "common"]);
+// The reference that measures a certificate's counterpart. Boundary units are
+// CommonMark entry frames. A certificate built around a construct no reference
+// implements has no counterpart to measure: its B/R would compare Core's
+// rejection work with a parser that has nothing to reject.
+function referenceOf(id, scope) {
+    const rejects = featureGrammars.get(id)?.rejects;
+    if (rejects !== undefined && !rejectedConstructs[rejects]?.length) return null;
+    return scope === "paired-document-grammar" && (featureGrammars.get(id)?.gfm === true || gfmFrames.has(id))
+        ? "cmark-gfm"
+        : "cmark";
+}
 const ids = [
     ...featureGrammars.keys(),
     ...Object.keys(direct),
@@ -121,19 +137,22 @@ const ids = [
 ].sort();
 export const grammarCertificates = ids.map((id) => {
     const full = direct[id] || directFrames.has(id) || isProduct(id);
+    const scope = full ? "paired-document-grammar" : "boundary-grammar";
+    const feature = featureGrammars.get(id);
     return Object.freeze({
         id,
         certificate: `${id}-grammar-v2`,
-        scope: full ? "paired-document-grammar" : "boundary-grammar",
+        scope,
         grammar: direct[id]?.[0] ?? (directFrames.has(id) ? id : isProduct(id) ? "labelled-product" : "field-sequence"),
-        ...(featureGrammars.has(id)
+        reference: referenceOf(id, scope),
+        ...(feature
             ? {
-                  feature: featureGrammars.get(id).feature,
-                  facets: featureGrammars.get(id).facets,
-                  identity: featureGrammars.get(id).identity === true,
-                  ...(featureGrammars.get(id).outputDifference
-                      ? { outputDifference: featureGrammars.get(id).outputDifference }
-                      : {})
+                  feature: feature.feature,
+                  facets: feature.facets,
+                  identity: feature.identity === true,
+                  ...(feature.outputDifference ? { outputDifference: feature.outputDifference } : {}),
+                  ...(feature.rejects !== undefined ? { rejects: feature.rejects } : {}),
+                  ...(feature.uncontrolled !== undefined ? { uncontrolled: feature.uncontrolled } : {})
               }
             : {}),
         ...(boundaryGrammars[id]?.feature ? { feature: boundaryGrammars[id].feature } : {}),
@@ -155,10 +174,43 @@ export function validateGrammarCertificates() {
             assert.equal(new Set(tokens).size, length, "finite substitution must be injective");
         }
     }
+    const rejected = new Set();
     for (const entry of grammarCertificates) {
+        const production = featureGrammars.get(entry.id);
+        if (entry.rejects === undefined) {
+            assert.ok(["cmark", "cmark-gfm"].includes(entry.reference), `${entry.id}: missing reference`);
+            assert.ok(
+                !production?.control && entry.uncontrolled === undefined,
+                `${entry.id}: only a rejection certificate declares a control`
+            );
+        } else {
+            const implementers = rejectedConstructs[entry.rejects];
+            assert.ok(implementers, `${entry.id}: unknown rejected construct ${entry.rejects}`);
+            assert.equal(entry.scope, "paired-document-grammar");
+            rejected.add(entry.rejects);
+            if (implementers.length) {
+                assert.ok(
+                    implementers.includes(entry.reference),
+                    `${entry.id}: ${entry.reference} does not implement ${entry.rejects}`
+                );
+                assert.ok(
+                    !production.control && entry.uncontrolled === undefined,
+                    `${entry.id}: an equivalence has its reference, not a control`
+                );
+            } else {
+                assert.equal(entry.reference, null);
+                assert.ok(
+                    Boolean(production.control) !== (entry.uncontrolled !== undefined),
+                    `${entry.id}: a Core-only rejection needs a control or the reason it has none`
+                );
+                if (production.control) validateControl(production.common, production.control);
+                else assert.ok(entry.uncontrolled.length > 40);
+            }
+        }
         if (entry.scope === "paired-document-grammar") {
             if (isProduct(entry.id)) {
-                assert.deepEqual(grammarNormalForm(entry.id, "dialect"), grammarNormalForm(entry.id, "common"));
+                for (const side of sidesOf(entry.id).slice(1))
+                    assert.deepEqual(grammarNormalForm(entry.id, "dialect"), grammarNormalForm(entry.id, side));
                 if (entry.identity)
                     assert.deepEqual(
                         productGrammar(entry.id).dialect,
@@ -173,6 +225,40 @@ export function validateGrammarCertificates() {
             for (const marker of [entry.dialectMarker, entry.commonMarker]) assert.match(marker, /^([^a-z\s])\1?$/u);
         } else assert.ok(entry.residual.length > 40);
     }
+    assert.deepEqual(
+        rejected,
+        new Set(Object.keys(rejectedConstructs)),
+        "every rejected construct needs a certificate"
+    );
+}
+
+/** A control keeps its production's fields and frame and replaces only trigger
+ * bytes: ASCII punctuation in fixed terminals becomes a letter, byte for byte.
+ * What Core does on the control and not on the certificate's input is the work
+ * those bytes start. */
+export function validateControl(production, control) {
+    assert.equal(control.length, production.length, "a control changes the production's shape");
+    let substituted = 0;
+    for (const [i, part] of production.entries()) {
+        if (typeof part !== "string") {
+            assert.deepEqual(control[i], part, "a control changes a field");
+            continue;
+        }
+        assert.equal(typeof control[i], "string", "a control changes a terminal into a field");
+        assert.equal(control[i].length, part.length, "a control changes a terminal's width");
+        for (let at = 0; at < part.length; at++)
+            if (control[i][at] !== part[at]) {
+                assert.match(
+                    part[at],
+                    /^[\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]$/u,
+                    "a control replaces only punctuation"
+                );
+                assert.match(control[i][at], /^[a-z]$/u, "a control substitutes only letters");
+                substituted++;
+            }
+    }
+    assert.ok(substituted > 0, "a control must replace a trigger byte");
+    return substituted;
 }
 
 export function renderBody(body, marker = "**") {
@@ -419,7 +505,7 @@ function encodeField(field, value) {
     return field.grammar === "inline" ? renderBody(value) : field.grammar === "phrase" ? value.join(" ") : value;
 }
 export function recognizeProduct(id, side, source) {
-    assert.ok(["dialect", "common"].includes(side));
+    assert.ok(sidesOf(id).includes(side));
     const grammar = productGrammar(id)[side];
     const fields = grammar.filter((part) => typeof part !== "string");
     const pattern = new RegExp(
@@ -479,7 +565,6 @@ function metadataHost(id, p, side) {
 
 function renderHosts(id, p) {
     if (isProduct(id)) {
-        const { dialect, common } = productGrammar(id);
         const values = {
             body: id === "empty-directive" ? "" : p.body,
             tail: p.tail,
@@ -492,9 +577,9 @@ function renderHosts(id, p) {
             ...featureValues(p),
             ...p.finiteValues
         };
-        return [dialect, common].map((grammar) =>
+        return sidesOf(id).map((side) =>
             host(
-                grammar.map((part) =>
+                productGrammar(id)[side].map((part) =>
                     typeof part === "string"
                         ? part
                         : slot(part.name, part.grammar, encodeField(part, values[part.name]))
@@ -754,7 +839,7 @@ function composeHosts(id, rows, side) {
 
 export function grammarNormalForm(id, side) {
     const c = byId.get(id);
-    assert.ok(c && ["dialect", "common"].includes(side));
+    assert.ok(c && sidesOf(id).includes(side));
     if (isProduct(id)) {
         const fields = productGrammar(id)[side].filter((part) => typeof part !== "string");
         const bindings = new Map();
@@ -872,15 +957,36 @@ export function instantiateGrammar(id, p) {
             derivation: decoded[0]
         };
     }
-    const [dialect, common] = renderHosts(id, p);
-    for (const document of [dialect, common]) assert.equal(recomposeHost(document), document.source);
+    const [dialect, common, control] = renderHosts(id, p);
+    for (const document of [dialect, common, ...(control ? [control] : [])])
+        assert.equal(recomposeHost(document), document.source);
     if (directFrames.has(id) || isProduct(id)) {
         if (certificate.identity)
             assert.equal(dialect.source, common.source, "identity certificate changed source bytes");
         const a = recognizePairedDocument(id, "dialect", dialect.source),
             b = recognizePairedDocument(id, "common", common.source);
         assert.deepEqual(a, b);
-        return { id, certificate: certificate.certificate, scope: certificate.scope, dialect, common, derivation: a };
+        if (control) {
+            assert.equal(
+                Buffer.byteLength(control.source),
+                Buffer.byteLength(common.source),
+                "a control changed the document's width"
+            );
+            assert.deepEqual(
+                recognizePairedDocument(id, "control", control.source),
+                b,
+                "a control changed the derivation"
+            );
+        }
+        return {
+            id,
+            certificate: certificate.certificate,
+            scope: certificate.scope,
+            dialect,
+            common,
+            ...(control ? { control } : {}),
+            derivation: a
+        };
     }
     const left = fieldsOf(dialect),
         right = fieldsOf(common);
@@ -911,7 +1017,7 @@ export function recomposeHost(document) {
 export function recognizePairedDocument(id, side, source) {
     const c = byId.get(id);
     assert.ok(c && c.scope === "paired-document-grammar", "not a paired-document certificate");
-    assert.ok(["dialect", "common"].includes(side));
+    assert.ok(sidesOf(id).includes(side));
     if (isProduct(id)) return recognizeProduct(id, side, source);
     if (directFrames.has(id)) {
         assert.ok(source.endsWith("\n\n"));
@@ -953,7 +1059,7 @@ export function recognizePairedDocument(id, side, source) {
 /** The inverse translation is executable and accepts decoded derivations,
  * independently of the deterministic benchmark schedule. */
 export function encodePairedDocument(id, side, derivations) {
-    assert.ok(["dialect", "common"].includes(side) && derivations.length > 0);
+    assert.ok(byId.has(id) && sidesOf(id).includes(side) && derivations.length > 0);
     const c = byId.get(id);
     assert.ok(c?.scope === "paired-document-grammar");
     let text;
@@ -1013,6 +1119,15 @@ export function grammarCatalog() {
             facets: proof.facets ?? [],
             identity: proof.identity === true,
             outputDifference: proof.outputDifference ?? null,
+            reference: proof.reference,
+            rejection:
+                proof.rejects === undefined
+                    ? null
+                    : {
+                          construct: proof.rejects,
+                          implementedBy: [...rejectedConstructs[proof.rejects]],
+                          uncontrolled: proof.uncontrolled ?? null
+                      },
             theorem:
                 proof.scope === "boundary-grammar"
                     ? "T5"
@@ -1036,6 +1151,7 @@ export function grammarCatalog() {
             examples: proof.rows.slice(0, 2).map((row) => ({
                 dialect: row.dialect.source,
                 common: row.common.source,
+                ...(row.control ? { control: row.control.source } : {}),
                 ...(row.derivation
                     ? { derivation: row.derivation }
                     : {
@@ -1062,12 +1178,11 @@ export function buildGrammarCorpus({ units = 12 } = {}) {
             grammarUnit(certificate.id, index)
         );
         const bound = certificate.scope === "boundary-grammar";
+        const sides = sidesOf(certificate.id);
         const names = {};
-        const hosts = Object.fromEntries(
-            ["dialect", "common"].map((side) => [side, composeHosts(certificate.id, rows, side)])
-        );
+        const hosts = Object.fromEntries(sides.map((side) => [side, composeHosts(certificate.id, rows, side)]));
         for (const document of Object.values(hosts)) assert.equal(recomposeHost(document), document.source);
-        for (const side of ["dialect", "common"]) {
+        for (const side of sides) {
             for (const part of bound ? ["host", "boundary"] : ["paired"]) {
                 const name = `${certificate.id}-${part}-${side}`;
                 names[`${part}-${side}`] = name;
@@ -1082,18 +1197,7 @@ export function buildGrammarCorpus({ units = 12 } = {}) {
                     text,
                     sha256: hash(text),
                     bytes: Buffer.byteLength(text),
-                    dialect: side === "dialect" && part !== "boundary" ? "extended" : "commonmark",
-                    gfm:
-                        featureGrammars.get(certificate.id)?.gfm === true ||
-                        ([
-                            "task-value",
-                            "simple-matrix",
-                            "specimen-graph",
-                            "headless-matrix",
-                            "leading-caption",
-                            "trailing-caption"
-                        ].includes(certificate.id) &&
-                            part !== "boundary")
+                    dialect: side === "dialect" && part !== "boundary" ? "extended" : "commonmark"
                 });
             }
         }
@@ -1104,10 +1208,7 @@ export function buildGrammarCorpus({ units = 12 } = {}) {
             names,
             rows,
             hosts,
-            grammars: {
-                dialect: grammarDescription(certificate, "dialect"),
-                common: grammarDescription(certificate, "common")
-            },
+            grammars: Object.fromEntries(sides.map((side) => [side, grammarDescription(certificate, side)])),
             rewrite: bound
                 ? [
                       "lossless-slot-decomposition",
@@ -1135,12 +1236,15 @@ export function documentMetadata(item) {
 }
 
 /** Only the certified counterpart has a reference measurement. Parsing an
- * extension host as ordinary CommonMark would manufacture an unrelated floor. */
+ * extension host as ordinary CommonMark would manufacture an unrelated floor,
+ * and a construct no reference implements has no counterpart to measure. */
 export function grammarEngines(document) {
-    assert.ok(["dialect", "common"].includes(document.side));
-    assert.ok(["paired", "boundary", "host"].includes(document.part));
-    return document.side === "common" && document.part !== "host"
-        ? ["markdown-core", document.gfm ? "cmark-gfm" : "cmark"]
+    const certificate = byId.get(document.id);
+    assert.ok(certificate, "unknown grammar certificate");
+    assert.ok(sidesOf(certificate.id).includes(document.side));
+    assert.ok((certificate.scope === "boundary-grammar" ? ["boundary", "host"] : ["paired"]).includes(document.part));
+    return document.side === "common" && document.part !== "host" && certificate.reference
+        ? ["markdown-core", certificate.reference]
         : ["markdown-core"];
 }
 
@@ -1153,7 +1257,7 @@ export function writeGrammarCorpus(directory, options) {
     const names = new Set(corpus.cases.map((item) => `${item.name}.md`));
     for (const name of fs.readdirSync(directory))
         if (
-            /^[a-z0-9-]+-(?:paired|boundary|host)-(?:dialect|common)(?:\.x[1-9][0-9]*)?\.md$/u.test(name) &&
+            /^[a-z0-9-]+-(?:paired|boundary|host)-(?:dialect|common|control)(?:\.x[1-9][0-9]*)?\.md$/u.test(name) &&
             !names.has(name)
         )
             fs.unlinkSync(path.join(directory, name));
@@ -1213,7 +1317,7 @@ export function grammarMarkdown(report) {
     const lines = [
         "## Corpus certified by grammar equivalence",
         "",
-        `Grammar identity: \`${g.identity}\`. ${g.certificates.length} certificates cover the declared source grammars: ${g.certificates.filter((c) => c.scope === "paired-document-grammar").length} paired document grammars and ${g.certificates.filter((c) => c.scope === "boundary-grammar").length} explicit boundary grammars.`,
+        `Grammar identity: \`${g.identity}\`. ${g.certificates.length} certificates cover the declared source grammars: ${g.certificates.filter((c) => c.scope === "paired-document-grammar").length} paired document grammars and ${g.certificates.filter((c) => c.scope === "boundary-grammar").length} explicit boundary grammars. ${g.certificates.filter((c) => c.reference === null).length} of the paired grammars are built around a construct only Core implements; they are reported as rejection work, not as reference comparisons.`,
         ...(g.coverage
             ? [
                   "",
@@ -1230,10 +1334,31 @@ export function grammarMarkdown(report) {
         "| Certificate | Scope | Units | A/B bytes | A Ir | B Ir | R Ir | A/B | B/R | A/R | Core host Ir (residual included) |",
         "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
     ];
-    for (const row of grammarComparisons(report)) {
+    const { equivalences, rejections } = grammarComparisons(report);
+    for (const row of equivalences) {
         lines.push(
             `| ${row.certificate} | ${row.scope} | ${row.units} | ${row.aBytes}/${row.bBytes} | ${row.aIr} | ${row.bIr} | ${row.rIr} | ${row.ab.toFixed(3)}x | ${row.br.toFixed(3)}x | ${row.ar.toFixed(3)}x | ${row.hostIr ?? "—"} |`
         );
+    }
+    lines.push(
+        "",
+        "### Rejection of constructs only Core implements",
+        "",
+        "These certificates are built around a construct whose prefix Core rejects and no pinned reference implements. Their grammar is shared, but a reference on the same bytes has nothing to reject, so none is measured. C is Core on the control: the same production and fields with the rejected construct's trigger bytes replaced by letters of the same width. B − C is the work those bytes start in Core.",
+        "",
+        "| Certificate | Rejects | Units | Bytes | B Ir | C Ir | B/C | (B − C)/unit |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
+    );
+    for (const row of rejections)
+        lines.push(
+            `| ${row.certificate} | ${row.construct} | ${row.units} | ${row.bytes} | ${row.bIr} | ${row.cIr ?? "—"} | ${row.cIr === null ? "—" : `${row.bc.toFixed(3)}x`} | ${row.cIr === null ? "—" : row.excess.toFixed(0)} |`
+        );
+    // A note about a measurement names only rows this report measured.
+    const uncontrolled = new Set(rejections.filter((row) => row.cIr === null).map((row) => row.certificate));
+    if (uncontrolled.size) {
+        lines.push("", "Certificates without a byte-neutral control report B only:", "");
+        for (const c of g.certificates.filter((c) => uncontrolled.has(c.certificate)))
+            lines.push(`- ${c.certificate}: ${c.uncontrolled}`);
     }
     lines.push("", "### Unmatched boundary obligations", "", "| Certificate | Residual |", "| --- | --- |");
     for (const c of g.certificates.filter((c) => c.residual)) lines.push(`| ${c.certificate} | ${c.residual} |`);

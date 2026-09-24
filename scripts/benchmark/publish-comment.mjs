@@ -42,7 +42,7 @@ const ratio = (after, before) => (before > 0 ? `${(after / before).toFixed(4)}×
 // These are projections of the existing report schemas, not Markdown supplied
 // by a PR. Only validated IDs, digests and numeric counts reach the comment.
 function stageCounts(report) {
-    if (report?.schemaVersion !== 5 || !Array.isArray(report.cases) || !report.cases.length) {
+    if (report?.schemaVersion !== 6 || !Array.isArray(report.cases) || !report.cases.length) {
         throw new Error("Invalid stage report");
     }
     digest(report.corpus.digest);
@@ -113,7 +113,7 @@ export function stageSection(current, baseline) {
         `Corpus: \`${current.corpus.digest}\` · Grammar: \`${current.grammarCorpus.identity}\`.`,
         "Full reference comparisons, all workloads, toolchain identities and raw profiles are in the run artifacts."
     );
-    const comparisons = grammarComparisons(current);
+    const { equivalences, rejections } = grammarComparisons(current);
     grammarComparisons(baseline);
     lines.push(
         "",
@@ -125,13 +125,30 @@ export function stageSection(current, baseline) {
         "",
         "| Certificate | Scope | Units | Bytes A/B | A/B | B/R | A/R |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
-        ...comparisons.map(
+        ...equivalences.map(
             (row) =>
                 `| ${row.certificate} | ${row.scope === "boundary-grammar" ? "local" : "whole"} | ${number(row.units)} | ${number(row.aBytes)}/${number(row.bBytes)} | ${ratio(row.aIr, row.bIr)} | ${ratio(row.bIr, row.rIr)} | ${ratio(row.aIr, row.rIr)} |`
         ),
         "",
         "</details>"
     );
+    if (rejections.length)
+        lines.push(
+            "",
+            "<details><summary>Rejection of constructs only Core implements</summary>",
+            "",
+            "No reference implements these constructs, so none is measured. B = Core on the common input; " +
+                "C = Core on its control, the same input with the rejected construct's trigger bytes replaced by letters of the same width.",
+            "",
+            "| Certificate | Rejects | Units | B/C | (B − C) Ir per unit |",
+            "| --- | --- | ---: | ---: | ---: |",
+            ...rejections.map(
+                (row) =>
+                    `| ${row.certificate} | ${row.construct} | ${number(row.units)} | ${row.cIr === null ? "no control" : ratio(row.bIr, row.cIr)} | ${row.cIr === null ? "—" : Math.round(row.excess).toLocaleString("en-US")} |`
+            ),
+            "",
+            "</details>"
+        );
     return lines.join("\n");
 }
 

@@ -39,24 +39,47 @@ const labelBounds = {
     "specimen-reset": { key: 1000 },
     "specimen-groups": { key: 1000 }
 };
+// The constructs rejection certificates are built around, each with the pinned
+// references that implement it. A reference ratio compares two implementations
+// of the same work only when the reference has the construct the certificate
+// exercises; an empty list marks a construct only Core has.
+export const rejectedConstructs = Object.freeze({
+    "ordered-list-marker": Object.freeze(["cmark", "cmark-gfm"]),
+    "reference-link": Object.freeze(["cmark", "cmark-gfm"]),
+    strikethrough: Object.freeze(["cmark-gfm"]),
+    "footnote-reference": Object.freeze(["cmark-gfm"]),
+    "task-list-marker": Object.freeze(["cmark-gfm"]),
+    insertion: Object.freeze([]),
+    mark: Object.freeze([]),
+    "inline-formula": Object.freeze([]),
+    "percent-comment": Object.freeze([]),
+    "cross-link": Object.freeze([]),
+    "inline-directive": Object.freeze([]),
+    "attribute-block": Object.freeze([]),
+    superscript: Object.freeze([]),
+    "grid-table": Object.freeze([]),
+    citation: Object.freeze([]),
+    "bracketed-span": Object.freeze([]),
+    "image-dimensions": Object.freeze([]),
+    "metadata-envelope": Object.freeze([])
+});
+
+// A control, when declared, is a third production of the same fields.
 function pair(id, feature, facets, dialect, common, options = {}) {
-    if (feature === "attributes") {
-        const restrict = (part) =>
-            typeof part !== "string" && (part.name === "key" || (id === "attribute-order" && part.name === "target"))
-                ? { ...part, grammar: "attribute-key" }
-                : part;
-        dialect = dialect.map(restrict);
-        common = common.map(restrict);
+    const productions = { dialect, common, ...(options.control ? { control: options.control } : {}) };
+    for (const [name, parts] of Object.entries(productions)) {
+        productions[name] = parts.map((part) => {
+            if (typeof part === "string") return part;
+            if (
+                feature === "attributes" &&
+                (part.name === "key" || (id === "attribute-order" && part.name === "target"))
+            )
+                part = { ...part, grammar: "attribute-key" };
+            if (labelBounds[id]?.[part.name]) part = { ...part, maxBytes: labelBounds[id][part.name] };
+            return part;
+        });
     }
-    if (labelBounds[id]) {
-        const bound = (part) =>
-            typeof part !== "string" && labelBounds[id][part.name]
-                ? { ...part, maxBytes: labelBounds[id][part.name] }
-                : part;
-        dialect = dialect.map(bound);
-        common = common.map(bound);
-    }
-    entries.push({ id, feature, facets, dialect, common, ...options });
+    entries.push({ id, feature, facets, ...options, ...productions });
 }
 function shared(id, feature, facets, parts, options = {}) {
     pair(id, feature, facets, parts, parts, { identity: true, ...options });
@@ -204,7 +227,8 @@ shared(
     "common-unresolved-reference",
     "links-and-images",
     ["unresolved-references", "bracket-fallback"],
-    inline("[", b, "][missing]")
+    inline("[", b, "][missing]"),
+    { rejects: "reference-link" }
 );
 shared(
     "common-angle-autolink",
@@ -653,34 +677,56 @@ pair(
 
 // Negative productions have infinite variable fields too. The owning rule's
 // rejected prefix is fixed; the same source language measures fallback work.
-for (const [id, feature, parts] of [
-    ["insertion", "insertion", inline("++", b)],
-    ["mark", "marks", inline("==", b)],
-    ["strike", "strikethrough", inline("~~", b)],
-    ["formula", "formulas", inline("$", b)],
-    ["comment", "comments", inline("%%", b)],
-    ["cross-link", "cross-links", inline("[[", k)],
-    ["directive", "directives", inline(":", k)],
-    ["attributes", "attributes", inline("[", b, "]{=broken}")],
-    ["script", "superscript-and-subscript", inline("^", k, " ", v, "^")],
-    ["list-limit", "lists", ["1234567890. ", b, "\n\n"]],
-    ["footnote", "footnotes", inline("[^", k, "]")],
-    ["grid", "tables", ["+---+\n|", k, "\n+---+\n\n"]],
-    ["citation", "citations", inline("@-", k)],
-    ["span", "bracketed-spans", inline("[", b, "]{")]
+// Each names the construct it rejects. When no reference implements it, the
+// certificate declares a control: the same production with the trigger bytes
+// replaced by letters of the same width, so Core's rejection work is measured
+// against Core rather than against a parser with nothing to reject.
+for (const [id, feature, rejects, parts, options] of [
+    ["insertion", "insertion", "insertion", inline("++", b), { control: inline("qq", b) }],
+    ["mark", "marks", "mark", inline("==", b), { control: inline("qq", b) }],
+    ["strike", "strikethrough", "strikethrough", inline("~~", b), { gfm: true }],
+    ["formula", "formulas", "inline-formula", inline("$", b), { control: inline("q", b) }],
+    ["comment", "comments", "percent-comment", inline("%%", b), { control: inline("qq", b) }],
+    ["cross-link", "cross-links", "cross-link", inline("[[", k), { control: inline("[q", k) }],
+    ["directive", "directives", "inline-directive", inline(":", k), { control: inline("q", k) }],
+    [
+        "attributes",
+        "attributes",
+        "attribute-block",
+        inline("[", b, "]{=broken}"),
+        { control: inline("[", b, "]q=broken}") }
+    ],
+    [
+        "script",
+        "superscript-and-subscript",
+        "superscript",
+        inline("^", k, " ", v, "^"),
+        { control: inline("q", k, " ", v, "q") }
+    ],
+    ["list-limit", "lists", "ordered-list-marker", ["1234567890. ", b, "\n\n"], {}],
+    ["footnote", "footnotes", "footnote-reference", inline("[^", k, "]"), { gfm: true }],
+    ["grid", "tables", "grid-table", ["+---+\n|", k, "\n+---+\n\n"], { control: ["q---q\n|", k, "\nq---q\n\n"] }],
+    ["citation", "citations", "citation", inline("@-", k), { control: inline("q-", k) }],
+    ["span", "bracketed-spans", "bracketed-span", inline("[", b, "]{"), { control: inline("[", b, "]q") }]
 ])
-    shared(`fallback-${id}`, feature, ["fallback", "rejected-prefix"], parts);
+    shared(`fallback-${id}`, feature, ["fallback", "rejected-prefix"], parts, { rejects, ...options });
 shared(
     "fallback-image-dimensions",
     "links-and-images",
     ["dimension-fallback", "leading-zero"],
-    inline("![", k, "|01x20](/", target, ")")
+    inline("![", k, "|01x20](/", target, ")"),
+    { rejects: "image-dimensions", control: inline("![", k, "q01x20](/", target, ")") }
 );
 shared(
     "fallback-noninitial-metadata",
     "properties",
     ["document-initial-only", "envelope-fallback"],
-    ["probe\n\n---\n", k, ": ", v, "\n---\n\n"]
+    ["probe\n\n---\n", k, ": ", v, "\n---\n\n"],
+    {
+        rejects: "metadata-envelope",
+        uncontrolled:
+            "The rejected envelope delimiter --- is itself shared syntax, a thematic break or setext underline in both parsers; no same-width letter substitution removes the envelope attempt without also removing that shared work."
+    }
 );
 pair(
     "attribute-bare",
@@ -740,7 +786,7 @@ shared(
     "task-lists",
     ["required-separator", "invalid-marker"],
     ["- [x]\n- [x]", k, "\n- [] ", v, "\n- [ab] ", target, "\n\n"],
-    { gfm: true }
+    { gfm: true, rejects: "task-list-marker" }
 );
 shared("task-nested", "task-lists", ["nested-tasks", "ordered-task"], ["1. [ ] ", b, "\n   - [x] ", t, "\n\n"], {
     gfm: true
