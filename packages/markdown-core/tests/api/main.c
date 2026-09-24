@@ -5678,6 +5678,57 @@ static void attribute_unclosed_quote_is_unquoted(test_batch_runner *runner) {
     }
 }
 
+/* A REFUSED ALLOCATION FAILS THE READ, WHEREVER IT FALLS. A container is
+ * staged into the scratch before it is laid out, and every path that stages
+ * -- the `-` member, `#` and `.` runs, a bare name's `true`, a record's name,
+ * a decoded value, a split class run, the member list, the value's block --
+ * can be refused. Each is refused in turn, with a fresh scratch so the first
+ * refusal falls on an empty buffer: the read fails with its loss reported,
+ * publishes nothing, reads nothing it did not stage, and leaks nothing. */
+static void attribute_reads_refuse_every_allocation(test_batch_runner *runner) {
+    static const char *const containers[] = {
+        "{class}",
+        "{id}",
+        "{-}",
+        "{#a}",
+        "{.b}",
+        "{k=v}",
+        "{k=\"a &amp; b\"}",
+        "{class=\"a b\"}",
+        "{x=\"}",
+        "{#a .b - k=v bare class=\"c d\" id=e j=\"x\\\"y\"}",
+    };
+    for (size_t c = 0; c < sizeof(containers) / sizeof(*containers); c++) {
+        for (size_t fail_at = 1;; fail_at++) {
+            markdown_core_attribute_scratch scratch = {0};
+            markdown_core_attribute_parser parser = {.data = (const unsigned char *)containers[c],
+                                                     .length = (bufsize_t)strlen(containers[c]),
+                                                     .scratch = &scratch};
+            markdown_core_attributes value = {0};
+            bufsize_t end = -1;
+            payload_probe_arm();
+            payload_fail_at = fail_at;
+            int read = markdown_core_attributes_parse(&parser, 0, &value, &end);
+            bool refused = payload_allocations >= fail_at;
+            payload_fail_at = 0;
+            if (refused) {
+                OK(runner, !read && parser.oom && end == -1 && !value.storage && !value.anchor.data,
+                   "a refused allocation fails the read and publishes nothing: %s at %zu", containers[c], fail_at);
+            } else {
+                OK(runner, read && !parser.oom, "the read succeeds with no refusal: %s", containers[c]);
+            }
+            markdown_core_attributes_free(&value);
+            markdown_core_attribute_parser_free(&parser);
+            markdown_core_attribute_scratch_free(&scratch);
+            INT_EQ(runner, (int)payload_live, 0, "a refused read leaks nothing: %s at %zu", containers[c], fail_at);
+            payload_probe_disarm();
+            if (!refused) {
+                break;
+            }
+        }
+    }
+}
+
 /* A VALUE IS ONE ALLOCATION. A container is read into its extent's scratch
  * and then laid out -- records, classes and every string they name -- in one
  * block at its exact size, so a value costs one allocation whatever its
@@ -9456,6 +9507,7 @@ int main(void) {
     attribute_linear_work(runner);
     attribute_recognition_is_memoised(runner);
     attribute_unclosed_quote_is_unquoted(runner);
+    attribute_reads_refuse_every_allocation(runner);
     attribute_values_are_one_allocation(runner);
     source_entries_order_by_the_key_bytes_that_differ(runner);
     delimiter_entries_are_pooled_across_inline_containers(runner);

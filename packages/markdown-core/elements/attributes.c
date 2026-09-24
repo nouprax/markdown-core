@@ -366,12 +366,16 @@ void markdown_core_attribute_scratch_free(markdown_core_attribute_scratch *w) {
 /* STAGING. A container's strings are staged in the scratch as they are read
  * -- a name or `#`/`.` run as written, a value as decoded -- each followed by
  * a NUL, and its classes and records as offsets into them. Offsets rather
- * than pointers, because the strings move as they grow. */
+ * than pointers, because the strings move as they grow.
+ *
+ * A staged string is read only once it is known to be there: `stage` returns
+ * -1 when the scratch could not take it, its buffer is then poisoned, and the
+ * read fails before anything reads the bytes that were not written. */
 static bufsize_t stage(markdown_core_attribute_scratch *w, const unsigned char *bytes, bufsize_t length) {
     bufsize_t offset = w->strings.size;
     markdown_core_strbuf_put(&w->strings, bytes, length);
     markdown_core_strbuf_putc(&w->strings, 0);
-    return offset;
+    return w->strings.oom ? -1 : offset;
 }
 
 static int add_member(markdown_core_attribute_scratch *w, bufsize_t name, bufsize_t name_length, bufsize_t value,
@@ -417,7 +421,8 @@ static int add_record(markdown_core_attribute_scratch *w, bufsize_t *anchor, buf
     if (length == 5 && memcmp(name, "class", 5) == 0) {
         return add_class_run(w, value, size);
     }
-    return add_member(w, stage(w, name, length), length, value, size);
+    bufsize_t staged = stage(w, name, length);
+    return staged >= 0 && add_member(w, staged, length, value, size);
 }
 
 /* DECODE A VALUE INTO THE SCRATCH, ONE WALK. A value's bytes are its own
@@ -525,7 +530,8 @@ static int read_container(markdown_core_attribute_parser *p, bufsize_t start, bu
             continue;
         }
         if (s[at] == '-' && member_boundary(s, finish, at + 1)) {
-            if (!add_member(w, -1, 0, stage(w, (const unsigned char *)"unnumbered", 10), 10)) {
+            bufsize_t staged = stage(w, (const unsigned char *)"unnumbered", 10);
+            if (staged < 0 || !add_member(w, -1, 0, staged, 10)) {
                 return 0;
             }
             at++;
@@ -536,6 +542,9 @@ static int read_container(markdown_core_attribute_parser *p, bufsize_t start, bu
             bufsize_t from = at;
             at = scan_name(p, finish, at);
             bufsize_t staged = stage(w, s + from, at - from);
+            if (staged < 0) {
+                return 0;
+            }
             if (marker == '#') {
                 *anchor = staged;
                 *anchor_length = at - from;
@@ -549,8 +558,8 @@ static int read_container(markdown_core_attribute_parser *p, bufsize_t start, bu
         bufsize_t name_length = at - name, value = w->strings.size;
         if (at >= finish - 1 || s[at] != '=') {
             /* A bare name: recognition admitted it only at a member boundary. */
-            if (!add_record(w, anchor, anchor_length, s + name, name_length, stage(w, (const unsigned char *)"true", 4),
-                            4)) {
+            bufsize_t staged = stage(w, (const unsigned char *)"true", 4);
+            if (staged < 0 || !add_record(w, anchor, anchor_length, s + name, name_length, staged, 4)) {
                 return 0;
             }
             continue;
@@ -560,11 +569,12 @@ static int read_container(markdown_core_attribute_parser *p, bufsize_t start, bu
         at = after ? after : decode_unquoted(p, at, finish);
         bufsize_t size = w->strings.size - value;
         markdown_core_strbuf_putc(&w->strings, 0);
-        if (!add_record(w, anchor, anchor_length, s + name, name_length, value, size)) {
+        /* A value that lost bytes to a refused allocation is not read. */
+        if (w->strings.oom || !add_record(w, anchor, anchor_length, s + name, name_length, value, size)) {
             return 0;
         }
     }
-    return !w->strings.oom;
+    return 1;
 }
 
 /* LAY OUT the scratch as the value: one block, its records, then its
