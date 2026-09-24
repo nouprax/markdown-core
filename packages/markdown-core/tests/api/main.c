@@ -5640,6 +5640,44 @@ static void attribute_recognition_is_memoised(test_batch_runner *runner) {
     }
 }
 
+/* A QUOTE-LED VALUE WITH NO CLOSER IS THE UNQUOTED VALUE THAT STARTS WITH
+ * THE QUOTE, whatever the scratch holds when it is read. The reader decodes a
+ * quote-led value as quoted and gives back what it staged when the container
+ * ends first; the first member of a container read into a fresh scratch has
+ * nothing staged before it, and one with no byte after its quote stages
+ * nothing at all, so the scratch is still the empty sentinel there. */
+static void attribute_unclosed_quote_is_unquoted(test_batch_runner *runner) {
+    static const struct {
+        const char *container, *name, *value;
+        size_t records;
+    } cases[] = {
+        {"{x=\"}", "x", "\"", 1},         {"{x='}", "x", "'", 1},       {"{x=\"a}", "x", "\"a", 1},
+        {"{x=\"a\\\"}", "x", "\"a\"", 1}, {"{a=1 x=\"}", "x", "\"", 2}, {"{#i .c x='\"}", "x", "'\"", 1},
+        {"{x=\" y=1}", "y", "1", 2},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        markdown_core_attribute_scratch scratch = {0};
+        markdown_core_attribute_parser parser = {.data = (const unsigned char *)cases[i].container,
+                                                 .length = (bufsize_t)strlen(cases[i].container),
+                                                 .scratch = &scratch};
+        markdown_core_attributes value = {0};
+        bufsize_t end = 0;
+        int read = markdown_core_attributes_parse(&parser, 0, &value, &end);
+        const markdown_core_record *last = read && value.record_count ? &value.records[value.record_count - 1] : NULL;
+        OK(runner,
+           read && end == parser.length && value.record_count == cases[i].records && last &&
+               last->name.len == (bufsize_t)strlen(cases[i].name) &&
+               memcmp(last->name.data, cases[i].name, (size_t)last->name.len) == 0 &&
+               last->value.len == (bufsize_t)strlen(cases[i].value) &&
+               memcmp(last->value.data, cases[i].value, (size_t)last->value.len) == 0 &&
+               last->value.data[last->value.len] == 0,
+           "a quote with no closer reads as the unquoted value it starts: %s", cases[i].container);
+        markdown_core_attributes_free(&value);
+        markdown_core_attribute_parser_free(&parser);
+        markdown_core_attribute_scratch_free(&scratch);
+    }
+}
+
 /* A VALUE IS ONE ALLOCATION. A container is read into its extent's scratch
  * and then laid out -- records, classes and every string they name -- in one
  * block at its exact size, so a value costs one allocation whatever its
@@ -9417,6 +9455,7 @@ int main(void) {
     image_cursor_stops_at_buffer_limit(runner);
     attribute_linear_work(runner);
     attribute_recognition_is_memoised(runner);
+    attribute_unclosed_quote_is_unquoted(runner);
     attribute_values_are_one_allocation(runner);
     source_entries_order_by_the_key_bytes_that_differ(runner);
     delimiter_entries_are_pooled_across_inline_containers(runner);

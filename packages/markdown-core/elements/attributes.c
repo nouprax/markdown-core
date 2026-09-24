@@ -473,8 +473,10 @@ static bufsize_t decode_quoted(markdown_core_attribute_parser *p, bufsize_t open
             markdown_core_strbuf_putc(&w->strings, s[at++]);
         }
     }
-    w->strings.size = mark;
-    w->strings.ptr[mark] = 0;
+    /* Nothing kept. Through the buffer, which writes a terminator only where
+     * it wrote bytes: a value read first into a fresh scratch has staged none,
+     * and the scratch is then still the shared empty sentinel. */
+    markdown_core_strbuf_truncate(&w->strings, mark);
     return 0;
 }
 
