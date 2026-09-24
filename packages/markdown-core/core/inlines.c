@@ -748,23 +748,6 @@ static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inli
     return inline_state->input.len;
 }
 
-void markdown_core_inlines_reset_special_chars(markdown_core_parser *parser) {
-    memset(parser->special_chars, 0, sizeof(parser->special_chars));
-    memset(parser->skip_chars, 0, sizeof(parser->skip_chars));
-}
-void markdown_core_inlines_add_text_terminator(markdown_core_parser *parser, unsigned char c) {
-    parser->special_chars[c] = 1;
-}
-void markdown_core_inlines_remove_text_terminator(markdown_core_parser *parser, unsigned char c) {
-    parser->special_chars[c] = 0;
-}
-void markdown_core_inlines_add_flanking_transparent(markdown_core_parser *parser, unsigned char c) {
-    parser->skip_chars[c] = 1;
-}
-void markdown_core_inlines_remove_flanking_transparent(markdown_core_parser *parser, unsigned char c) {
-    parser->skip_chars[c] = 0;
-}
-
 static markdown_core_node *try_elements(markdown_core_parser *parser, markdown_core_node *parent, unsigned char c,
                                         markdown_core_inline_state *inline_state) {
     markdown_core_node *res = NULL;

@@ -1697,6 +1697,45 @@ static bool attach_dispatch_observers(markdown_core_parser *parser, void *contex
            markdown_core_parser_attach_element(parser, &disjoint);
 }
 
+static bool attach_precedence_observers(markdown_core_parser *parser, void *context) {
+    /* Precedences past both ends of the named range, a tie at one of them
+     * attached apart, and the named values, all attached out of order. Every
+     * owner declines without consuming, so each is asked exactly once. */
+    static const markdown_core_element late = {.name = "y-late-observer",
+                                               .inline_precedence = (markdown_core_inline_precedence)2,
+                                               .match_inline = observe_dispatch,
+                                               .terminates_text = "%",
+                                               .dispatch = "%"};
+    static const markdown_core_element fallback = {.name = "fallback-observer",
+                                                   .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
+                                                   .match_inline = observe_dispatch,
+                                                   .terminates_text = "%",
+                                                   .dispatch = "%"};
+    static const markdown_core_element later = {.name = "z-late-observer",
+                                                .inline_precedence = (markdown_core_inline_precedence)2,
+                                                .match_inline = observe_dispatch,
+                                                .terminates_text = "%",
+                                                .dispatch = "%%"};
+    static const markdown_core_element ordinary = {
+        .name = "default-observer", .match_inline = observe_dispatch, .terminates_text = "%", .dispatch = "%"};
+    static const markdown_core_element token = {.name = "token-observer",
+                                                .inline_precedence = MARKDOWN_CORE_INLINE_TOKEN,
+                                                .match_inline = observe_dispatch,
+                                                .terminates_text = "%",
+                                                .dispatch = "%"};
+    static const markdown_core_element early = {.name = "early-observer",
+                                                .inline_precedence = (markdown_core_inline_precedence)-2,
+                                                .match_inline = observe_dispatch,
+                                                .terminates_text = "%",
+                                                .dispatch = "%"};
+    parser->root->user_data = context;
+    return markdown_core_parser_attach_element(parser, &late) &&
+           markdown_core_parser_attach_element(parser, &fallback) &&
+           markdown_core_parser_attach_element(parser, &later) &&
+           markdown_core_parser_attach_element(parser, &ordinary) &&
+           markdown_core_parser_attach_element(parser, &token) && markdown_core_parser_attach_element(parser, &early);
+}
+
 /* A declared block-start gate is a PROMISE ABOUT A NEGATIVE: the dispatcher
  * skips the hook for every byte the gate leaves out, so a byte wrongly left out
  * is not a slow parse, it is a construct that silently stops existing. Nothing
@@ -2088,6 +2127,23 @@ static void inline_dispatch_ownership(test_batch_runner *runner) {
         STR_EQ(runner, markdown_core_node_get_literal(code), "!", "dispatch does not inspect an opaque token body");
         STR_EQ(runner, markdown_core_node_get_literal(code->next), "  tail",
                "consumed input is not offered to fallbacks");
+    }
+    markdown_core_node_free(root);
+}
+
+/* The dispatch order is a function of every precedence value a descriptor
+ * can hold, not only the three named ones: an owner outside that range is
+ * asked in its place, and never leaves its reserved slot empty. */
+static void inline_dispatch_orders_every_precedence(test_batch_runner *runner) {
+    const char source[] = "a % b\n";
+    dispatch_observation observation = {0};
+    markdown_core_node *root =
+        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_precedence_observers, &observation);
+    OK(runner, root != NULL, "owners at unnamed precedences complete the parse");
+    STR_EQ(runner, observation.calls, "etdfyz", "owners are asked in ascending precedence, ties in descriptor order");
+    if (root) {
+        STR_EQ(runner, markdown_core_node_get_literal(root->first_child->first_child), "a % b",
+               "a byte every owner declines stays text");
     }
     markdown_core_node_free(root);
 }
@@ -6380,6 +6436,91 @@ static bool observe_reference_definition_lifetime(markdown_core_parser *parser, 
     return markdown_core_parser_attach_element(parser, &observer);
 }
 
+/* THE REFERENCE-LABEL NORMAL FORM is one pass (utf8.c) that folds, trims and
+ * collapses whitespace runs; these are the cases each former pass owned, and
+ * the one the single reservation rests on: U+0390 folds two bytes to six, so a
+ * label of nothing else is exactly three times its length. */
+static void reference_label_normal_form(test_batch_runner *runner) {
+    static const struct {
+        const char *label, *normal;
+    } cases[] = {
+        {"  Foo\t\tBAR \n baz  ", "foo bar baz"},
+        {"\r\nA\r\n", "a"},
+        {"Stra\xC3\x9F"
+         "e \xE1\xBA\x9E",
+         "strasse ss"},
+        {"\xE2\x84\xAA", "k"},
+        {"\xCE\x90\xCE\x90", "\xCE\xB9\xCC\x88\xCC\x81\xCE\xB9\xCC\x88\xCC\x81"},
+        {"A\xC3 B\xFF", "a\xC3 b\xFF"},
+        {"\x0B\x0C", "\x0B\x0C"},
+    };
+    markdown_core_strbuf normal = MARKDOWN_CORE_BUF_INIT();
+    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
+        markdown_core_chunk label = markdown_core_chunk_literal(cases[i].label);
+        OK(runner, normalize_map_label_into(&normal, &label), "label %zu has a normal form", i);
+        STR_EQ(runner, (const char *)normal.ptr, cases[i].normal, "label %zu normalizes in one pass", i);
+    }
+    markdown_core_chunk blank = markdown_core_chunk_literal(" \t\n ");
+    OK(runner, !normalize_map_label_into(&normal, &blank), "a whitespace-only label has no normal form");
+    INT_EQ(runner, normal.size, 0, "and leaves the buffer empty");
+
+    markdown_core_strbuf widest = MARKDOWN_CORE_BUF_INIT();
+    for (size_t i = 0; i < 999; i++) {
+        markdown_core_strbuf_puts(&widest, "\xCE\x90");
+    }
+    markdown_core_chunk label = {widest.ptr, widest.size, 0};
+    OK(runner, normalize_map_label_into(&normal, &label), "the widest fold has a normal form");
+    INT_EQ(runner, normal.size, 3 * widest.size, "and it is exactly three times the label");
+    OK(runner,
+       normal.ptr[normal.size] == 0 && memcmp(normal.ptr, "\xCE\xB9\xCC\x88\xCC\x81", 6) == 0 &&
+           memcmp(normal.ptr + normal.size - 6, "\xCE\xB9\xCC\x88\xCC\x81", 6) == 0,
+       "every character folded, terminated");
+    markdown_core_strbuf_free(&widest);
+    markdown_core_strbuf_free(&normal);
+}
+
+/* A PROJECTION'S CONTENT STOPS AT THE BUFFER LIMIT, not at its allocation.
+ * Growth oversizes a buffer by half, so near MARKDOWN_CORE_STRBUF_LIMIT the
+ * allocation reaches past the limit. The label and anchor projections write
+ * through a cursor, and a cursor bounded by the allocation alone let an image
+ * that appending would have refused land past the limit, unpoisoned: a
+ * 400 MiB label of U+0390, which folds from two bytes to six, reached that
+ * state. The content below the limit is forged -- only the page the
+ * projections write is touched -- because building such a label costs
+ * gigabytes. */
+static void image_cursor_stops_at_buffer_limit(test_batch_runner *runner) {
+    const bufsize_t limit = MARKDOWN_CORE_STRBUF_LIMIT;
+    static const char fold[] = "\xCE\xB9\xCC\x88\xCC\x81";
+    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT();
+    markdown_core_strbuf_grow(&buf, limit / 3 * 2 + 64);
+    OK(runner, !buf.oom && buf.asize - 1 > limit, "the allocation reaches past the limit");
+    if (buf.oom) {
+        markdown_core_strbuf_free(&buf);
+        return;
+    }
+
+    buf.size = limit - 6;
+    buf.ptr[buf.size] = '\0';
+    markdown_core_utf8proc_normalize_label(&buf, (const uint8_t *)"\xCE\x90", 2);
+    OK(runner, !buf.oom && buf.size == limit, "a fold that ends exactly at the limit lands");
+    OK(runner, memcmp(buf.ptr + limit - 6, fold, 6) == 0 && buf.ptr[limit] == 0, "folded and terminated");
+
+    buf.size = limit - 5;
+    buf.ptr[buf.size] = '\0';
+    markdown_core_utf8proc_normalize_label(&buf, (const uint8_t *)"\xCE\x90", 2);
+    OK(runner, buf.oom, "a fold one byte past the limit poisons the buffer");
+    OK(runner, buf.size == limit - 5 && buf.ptr[buf.size] == 0, "and leaves its content as it was");
+
+    buf.oom = 0;
+    buf.size = limit - 1;
+    buf.ptr[buf.size] = '\0';
+    markdown_core_utf8proc_anchor(&buf, (const uint8_t *)"AB", 2);
+    OK(runner, buf.oom, "an anchor one byte past the limit poisons the buffer");
+    OK(runner, buf.size == limit && buf.ptr[limit - 1] == 'a' && buf.ptr[limit] == 0,
+       "at the byte where appending it would have been refused");
+    markdown_core_strbuf_free(&buf);
+}
+
 static void reference_definition_lifetime(test_batch_runner *runner) {
     const char source[] = "- a\n\n[ref]: /x\n\n#list#\n\n[ref]\n";
     bool retained_at_anchor = false;
@@ -7187,6 +7328,64 @@ static void table_open_gate_admits_only_possible_tables(test_batch_runner *runne
     INT_EQ(runner, break_work.table_geometry_lines, 0, "and builds no column geometry");
     markdown_core_node_free(break_root);
     markdown_core_strbuf_free(&breaks);
+
+    /* NOR DOES A SEGMENTED RULE. Two or more dash runs open a headless simple
+     * or multiline table, and each begins its body on the very next line, so
+     * `- - -` and `--- ---` above a blank line are rules and nothing is
+     * captured. The same rules with a row below them stay tables. */
+    static const char *const rules[] = {"- - -", "--- ---"};
+    for (size_t r = 0; r < sizeof(rules) / sizeof(*rules); r++) {
+        markdown_core_strbuf segmented = MARKDOWN_CORE_BUF_INIT();
+        markdown_core_strbuf_puts(&segmented, "prose\n\n");
+        for (size_t i = 0; i < 256; i++) {
+            markdown_core_strbuf_puts(&segmented, rules[r]);
+            markdown_core_strbuf_puts(&segmented, "\n\nab cd\n\n");
+        }
+        inline_work segmented_work = {0};
+        markdown_core_node *segmented_root = markdown_core_parse_document_with_setup(
+            (char *)segmented.ptr, segmented.size, measure_inline_work, &segmented_work);
+        OK(runner, segmented_root != NULL, "segmented rules followed by blanks parse: rule=%zu", r);
+        INT_EQ(runner, count_kind(segmented_root, MARKDOWN_CORE_NODE_THEMATIC_BREAK), 256,
+               "as thematic breaks: rule=%zu", r);
+        INT_EQ(runner, count_kind(segmented_root, MARKDOWN_CORE_NODE_TABLE), 0, "and no table: rule=%zu", r);
+        INT_EQ(runner, segmented_work.table_separator_scans, 0,
+               "a segmented rule with a blank below it captures no line: rule=%zu", r);
+        markdown_core_node_free(segmented_root);
+        markdown_core_strbuf_free(&segmented);
+
+        markdown_core_strbuf headless = MARKDOWN_CORE_BUF_INIT();
+        markdown_core_strbuf_puts(&headless, rules[r]);
+        markdown_core_strbuf_puts(&headless, "\nab  cd\n");
+        markdown_core_strbuf_puts(&headless, rules[r]);
+        markdown_core_strbuf_puts(&headless, "\n");
+        markdown_core_node *headless_root = markdown_core_parse_document((char *)headless.ptr, (size_t)headless.size);
+        INT_EQ(runner, count_kind(headless_root, MARKDOWN_CORE_NODE_TABLE), 1,
+               "the same rule with a row below it is a headless table: rule=%zu", r);
+        markdown_core_node_free(headless_root);
+        markdown_core_strbuf_free(&headless);
+    }
+
+    /* A SEPARATOR IS ITS LINE'S TAIL. The line under a header must end in the
+     * separator a container prefix leaves behind, so dashes among words are
+     * not one: prose whose second line hyphenates two words captures no line,
+     * and a separator under a quote marker still opens its table. */
+    markdown_core_strbuf hyphens = MARKDOWN_CORE_BUF_INIT();
+    for (size_t i = 0; i < 256; i++) {
+        markdown_core_strbuf_puts(&hyphens, "alpha beta gamma\nwell-known and so-called words\n\n");
+    }
+    inline_work hyphen_work = {0};
+    markdown_core_node *hyphen_root =
+        markdown_core_parse_document_with_setup((char *)hyphens.ptr, hyphens.size, measure_inline_work, &hyphen_work);
+    OK(runner, hyphen_root != NULL, "hyphenated prose parses");
+    INT_EQ(runner, count_kind(hyphen_root, MARKDOWN_CORE_NODE_PARAGRAPH), 256, "as paragraphs");
+    INT_EQ(runner, hyphen_work.table_separator_scans, 0, "dashes among words capture no line");
+    markdown_core_node_free(hyphen_root);
+    markdown_core_strbuf_free(&hyphens);
+
+    static const char quoted[] = "> Right  Left\n> -----  ----\n> 12     12\n";
+    markdown_core_node *quoted_root = markdown_core_parse_document(quoted, sizeof(quoted) - 1);
+    INT_EQ(runner, count_kind(quoted_root, MARKDOWN_CORE_NODE_TABLE), 1, "a quoted separator still opens its table");
+    markdown_core_node_free(quoted_root);
 
     static const char multiline[] = "-------------\n"
                                     "Right  Left\n"
@@ -9017,6 +9216,8 @@ int main(void) {
     image_dimension_linear_work(runner);
     block_identifier_ownership(runner);
     reference_definition_lifetime(runner);
+    reference_label_normal_form(runner);
+    image_cursor_stops_at_buffer_limit(runner);
     attribute_linear_work(runner);
     attribute_recognition_is_memoised(runner);
     attribute_values_are_one_arena(runner);
@@ -9146,6 +9347,7 @@ int main(void) {
     postprocess_kind_sets_are_well_formed(runner);
     block_gate_admits_every_opener(runner);
     inline_dispatch_ownership(runner);
+    inline_dispatch_orders_every_precedence(runner);
     no_node_is_its_own_ancestor(runner);
     iterator_contract_is_total(runner);
 

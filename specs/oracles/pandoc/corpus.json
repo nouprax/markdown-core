@@ -88,6 +88,16 @@
             "input": "-------------------------------------------------------------\n Centered   Default           Right Left\n  Header    Aligned         Aligned Aligned\n----------- ------- --------------- -------------------------\n   First    row                12.0 Example of a row that\n                                    spans multiple lines.\n\n  Second    row                 5.0 Here's another one.\n-------------------------------------------------------------\n\nTable: Here's the caption.\n"
         },
         {
+            "id": "multiline-table-headless-body-after-blank",
+            "from": "markdown_strict+multiline_tables",
+            "input": "- - -\n\na b c\n\n-----\n"
+        },
+        {
+            "id": "multiline-table-headless-wide-body-after-blank",
+            "from": "markdown_strict+multiline_tables",
+            "input": "--- ---\n\nab cd\n\n-------\n"
+        },
+        {
             "id": "grid-table-block-cells",
             "from": "markdown_strict+grid_tables+table_captions",
             "input": ": Sample grid table.\n\n+---------------+---------------+--------------------+\n| Fruit         | Price         | Advantages         |\n+===============+===============+====================+\n| Bananas       | $1.34         | - built-in wrapper |\n|               |               | - bright color     |\n+---------------+---------------+--------------------+\n"

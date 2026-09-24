@@ -1353,7 +1353,12 @@ static bool table_parse_multiline(table_source *source, size_t start, table_cand
         if (delimiter == start + 1 || delimiter >= source->count || count < 2) {
             goto failed;
         }
-    } else if ((count = table_dash_count(source, start)) < 2) {
+    } else if ((count = table_dash_count(source, start)) < 2 || !table_source_get(source, start + 1) ||
+               source->lines[start + 1].blanks) {
+        /* A headless table's body starts on the line after its opening
+         * separator, as Pandoc's `multilineRow` requires: a blank line there
+         * leaves the dashes a rule and what follows ordinary blocks. Rows are
+         * separated by blank lines only once the body has begun. */
         goto failed;
     }
     if (table_search_absent(source, delimiter, TABLE_NO_CLOSING_BOUNDARY)) {
@@ -2033,52 +2038,76 @@ static size_t table_dash_count_raw(const unsigned char *data, bufsize_t from, bu
     return result < 0 ? 0 : count;
 }
 
-/* Container continuation only strips a prefix. It cannot add or split a dash
- * run, so the raw next physical line bounds the stripped line's run count. */
-static size_t table_dash_runs_anywhere(const unsigned char *data, const unsigned char *end, size_t stop) {
+/* A separator line is the raw successor's SUFFIX. Container continuation only
+ * strips a prefix -- indentation and container markers, never a byte of the
+ * separator alphabet other than indentation -- so the stripped line a
+ * recognizer reads is a suffix of the physical line, and when that stripped
+ * line is a separator every one of its dash runs lies in the physical line's
+ * longest trailing run of separator bytes. Counting there, backwards from the
+ * line's end, is therefore a necessary condition; a prose line fails it at its
+ * last letter instead of being read to its end, and a line whose dashes sit
+ * among words (`well-known and so-called`) is no separator at all. The pipe
+ * delimiter row (`[|]? :?-+:? ([|] :?-+:?)* [|]?`) adds `|` and `:` to the
+ * simple separator's dashes and blanks. */
+static size_t table_trailing_dash_runs(const unsigned char *start, const unsigned char *end, bool pipe) {
     size_t runs = 0;
-    while (data < end && runs < stop) {
-        if (*data == '-') {
-            runs++;
-            while (data < end && *data == '-') {
-                data++;
-            }
-            continue;
+    bool dash = false;
+    while (end > start) {
+        unsigned char c = end[-1];
+        if (c == '-') {
+            runs += !dash;
+            dash = true;
+        } else if (c == ' ' || c == '\t' || (pipe && (c == '|' || c == ':'))) {
+            dash = false;
+        } else {
+            break;
         }
-        data++;
+        end--;
     }
     return runs;
 }
 
-/* One necessary-condition predicate for every candidate entry. A grid starts
- * with '+', a headerless table with at least two dash runs. A full boundary
- * requires a nonblank physical successor. Otherwise only a headed simple or
- * pipe table remains, requiring respectively two dash runs or one. A true
- * result grants no grammar or containment decision; the ordinary recognizer
- * still owns it. Read the indexed physical extent so CR, CRLF and EOF agree
- * with the source driver, without replaying container continuation. Keep this
- * predicate in its caller: all arguments are already-loaded source geometry,
- * not a separate per-candidate out-of-line operation. */
+/* One necessary-condition predicate for every candidate entry. Every opener
+ * needs a nonblank physical successor: a grid's next row or border, the first
+ * body row of a headless table (which follows its separator directly), the
+ * header of a full-boundary multiline table, or the separator under a
+ * header. A blank or missing successor rules each out, and so the rest of
+ * the predicate is asked only of a successor with a byte on it. A grid then
+ * starts with '+', a headerless table has at least two dash runs, and a
+ * single run may be a full boundary whose separator comes after its header.
+ * Otherwise only a headed simple or pipe table remains, and the successor
+ * must be its separator: respectively two dash runs or one, counted as the
+ * suffix rule above allows. A true result grants no grammar or containment
+ * decision; the ordinary recognizer still owns it. Read the indexed physical
+ * extent so CR, CRLF and EOF agree with the source driver, without replaying
+ * container continuation. Keep this predicate in its caller: all arguments
+ * are already-loaded source geometry, not a separate per-candidate
+ * out-of-line operation. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_grammar_admits(markdown_core_parser *parser,
                                                                                  const unsigned char *input, int length,
                                                                                  int first, size_t runs, int next_line,
                                                                                  const unsigned char *cursor,
                                                                                  bool pipe) {
-    if ((first < length && input[first] == '+') || runs >= 2) {
-        return true;
-    }
     if (!cursor || cursor >= parser->lookahead_end) {
         return false;
     }
-    if (runs == 1) {
-        while (cursor < parser->lookahead_end && (*cursor == ' ' || *cursor == '\t')) {
-            cursor++;
-        }
-        return cursor < parser->lookahead_end && !markdown_core_is_line_end((char)*cursor);
-    }
     markdown_core_input_line *line = markdown_core_parser_source_line(parser, next_line);
+    if (!line) {
+        return false;
+    }
+    const unsigned char *end = parser->input_source + line->end;
+    const unsigned char *byte = cursor;
+    while (byte < end && (*byte == ' ' || *byte == '\t')) {
+        byte++;
+    }
+    if (byte == end) {
+        return false;
+    }
+    if ((first < length && input[first] == '+') || runs >= 1) {
+        return true;
+    }
     size_t required = pipe ? 1u : 2u;
-    return line && table_dash_runs_anywhere(cursor, parser->input_source + line->end, required) >= required;
+    return table_trailing_dash_runs(byte, end, pipe) >= required;
 }
 
 /* Admission and recognition have separate lifetimes. A top-level opener

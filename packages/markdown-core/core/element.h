@@ -109,7 +109,9 @@ typedef struct markdown_core_block_gate {
 
 struct markdown_core_element {
     /* Negative/zero/positive precedence separates protected tokens, ordinary
-     * alternatives, and literal fallbacks without a second dispatch algorithm. */
+     * alternatives, and literal fallbacks without a second dispatch algorithm.
+     * A byte's owners are asked in ascending precedence -- any value, not only
+     * the named ones -- and equal precedences in descriptor order. */
     markdown_core_inline_precedence inline_precedence;
     markdown_core_node *(*parse_text)(markdown_core_parser *, markdown_core_inline_state *, bufsize_t);
     void (*init_inline)(markdown_core_inline_state *);

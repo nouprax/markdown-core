@@ -91,10 +91,10 @@ static inline bool markdown_core_text_needs_consolidation(const markdown_core_no
  * that follows `cur` into it (literal, source runs, end position), advancing
  * `iter` over each absorbed sibling's ENTER and EXIT and then re-establishing
  * `cur`'s EXIT so the lookahead names a survivor; and drop `cur` itself if it
- * owns no bytes. `scratch` is the caller's buffer for the concatenation, so a
- * walk allocates it once and not once per run. Region sets are kept in step
- * when `parser` is given: the survivor takes the runs the nodes it absorbed
- * owned (requirement 11b); the public entry point passes no parser.
+ * owns no bytes. The merged literal is allocated once, at the run's summed
+ * length. Region sets are kept in step when `parser` is given: the survivor
+ * takes the runs the nodes it absorbed owned (requirement 11b); the public
+ * entry point passes no parser.
  *
  * CONSUMED when `cur` was freed, FAILED on allocation failure (the tree is
  * consistent: every absorbed operand was unlinked before it was freed), and
@@ -109,7 +109,6 @@ static inline bool markdown_core_text_needs_consolidation(const markdown_core_no
 typedef void (*markdown_core_complete_node_func)(struct markdown_core_parser *, markdown_core_node *, int);
 markdown_core_finish_result markdown_core_consolidate_text_step(struct markdown_core_parser *parser,
                                                                 markdown_core_iter *iter, markdown_core_node *cur,
-                                                                markdown_core_strbuf *scratch,
                                                                 markdown_core_complete_node_func complete, int depth);
 
 /* The step applied at every Text EXIT of a walk over `root`.

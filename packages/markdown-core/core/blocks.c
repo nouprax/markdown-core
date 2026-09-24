@@ -212,8 +212,6 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     S_clear_normalized_lines(parser);
     markdown_core_free(parser->input_lines);
     markdown_core_free(parser->input_facts);
-    markdown_core_free(parser->inline_dispatch);
-    parser->inline_dispatch = NULL;
     markdown_core_free(parser->block_hook_allocation);
     parser->block_hook_allocation = NULL;
     if (parser->root) {
@@ -276,7 +274,6 @@ static markdown_core_parser *S_parser_new(void) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 
-    markdown_core_inlines_reset_special_chars(parser);
     return parser;
 }
 
@@ -758,101 +755,6 @@ markdown_core_node *markdown_core_parser_add_child_validated(markdown_core_parse
     return child;
 }
 
-/* Project all three independent byte sets before inline parsing. Dispatch
- * retains every candidate in descriptor order, including overlapping owners.
- * The flattened index allocates once per parse, never once per token. */
-void markdown_core_manage_elements_special_characters(markdown_core_parser *parser, int add) {
-    size_t next[256];
-
-    markdown_core_free(parser->inline_dispatch);
-    parser->inline_dispatch = NULL;
-    memset(parser->inline_dispatch_offsets, 0, sizeof(parser->inline_dispatch_offsets));
-
-    for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
-        const markdown_core_element *element = parser->elements[element_index];
-        if (!element->match_inline && !element->insert_inline_from_delim) {
-            continue;
-        }
-        const unsigned char *c;
-
-        if (add && element->match_inline) {
-            bool seen[256] = {false};
-            for (c = (const unsigned char *)element->dispatch; c && *c; c++) {
-                if (!seen[*c]) {
-                    parser->inline_dispatch_offsets[*c + 1]++;
-                    seen[*c] = true;
-                }
-            }
-        }
-
-        for (c = (const unsigned char *)element->terminates_text; c && *c; c++) {
-            if (add) {
-                if (!parser->special_chars[*c]) {
-                    parser->inline_start_predicates[*c] = element->is_inline_start;
-                } else if (parser->inline_start_predicates[*c] != element->is_inline_start) {
-                    parser->inline_start_predicates[*c] = NULL;
-                }
-                markdown_core_inlines_add_text_terminator(parser, *c);
-            } else {
-                parser->inline_start_predicates[*c] = NULL;
-                markdown_core_inlines_remove_text_terminator(parser, *c);
-            }
-        }
-        for (c = (const unsigned char *)element->flanking_transparent; c && *c; c++) {
-            if (add) {
-                markdown_core_inlines_add_flanking_transparent(parser, *c);
-            } else {
-                markdown_core_inlines_remove_flanking_transparent(parser, *c);
-            }
-        }
-    }
-
-    if (!add || parser->error) {
-        return;
-    }
-    for (size_t c = 0; c < 256; c++) {
-        parser->inline_dispatch_offsets[c + 1] += parser->inline_dispatch_offsets[c];
-        next[c] = parser->inline_dispatch_offsets[c];
-    }
-    size_t count = parser->inline_dispatch_offsets[256];
-    if (!count) {
-        return;
-    }
-    parser->inline_dispatch = markdown_core_alloc(count, sizeof(*parser->inline_dispatch));
-    if (!parser->inline_dispatch) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
-    for (size_t element_index = 0; element_index < parser->element_count; element_index++) {
-        const markdown_core_element *element = parser->elements[element_index];
-        if (!element->match_inline && !element->insert_inline_from_delim) {
-            continue;
-        }
-        bool seen[256] = {false};
-        if (!element->match_inline) {
-            continue;
-        }
-        for (const unsigned char *c = (const unsigned char *)element->dispatch; c && *c; c++) {
-            if (!seen[*c]) {
-                parser->inline_dispatch[next[*c]++] = element;
-                seen[*c] = true;
-            }
-        }
-    }
-    for (size_t c = 0; c < 256; c++) {
-        size_t first = parser->inline_dispatch_offsets[c], end = parser->inline_dispatch_offsets[c + 1];
-        for (size_t i = first + 1; i < end; i++) {
-            const markdown_core_element *element = parser->inline_dispatch[i];
-            size_t at = i;
-            while (at > first && parser->inline_dispatch[at - 1]->inline_precedence > element->inline_precedence) {
-                parser->inline_dispatch[at] = parser->inline_dispatch[at - 1];
-                at--;
-            }
-            parser->inline_dispatch[at] = element;
-        }
-    }
-}
-
 /* THE INLINE PARSER'S OWN FIELD PARSE. A token that owns fields -- a
  * citation's affixes, a directive's label -- has them parsed by the parse
  * that made it, before it scans on (complete_inline_token in inlines.c), so
@@ -953,9 +855,6 @@ typedef struct {
      * whether its fields are the walk's to parse. */
     int script_depth;
     bool parses;
-    /* Consolidation's buffer, allocated once for the walk rather than once
-     * per merged run. */
-    markdown_core_strbuf scratch;
 } owned_tree_walk;
 
 static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
@@ -1129,11 +1028,7 @@ static int record_finish_root(finish_roots *record, markdown_core_node *root) {
  * nothing and is not counted. */
 static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *root, bool parses, tree_phase_func finish,
                             void *context, finish_roots *record, int record_initial) {
-    owned_tree_walk walk = {.parser = parser,
-                            .slots = parser->finish_step_slots,
-                            .script_depth = 0,
-                            .parses = parses,
-                            .scratch = MARKDOWN_CORE_BUF_INIT()};
+    owned_tree_walk walk = {.parser = parser, .slots = parser->finish_step_slots, .script_depth = 0, .parses = parses};
     finish_count count = {0, 0, 0};
     void (*const observe)(markdown_core_parser *, markdown_core_node *) = parser->document_structure->observe_inline;
     const markdown_core_finish_kind *const kinds = parser->finish_kinds;
@@ -1185,8 +1080,8 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
                  * them safe. */
                 result = MARKDOWN_CORE_FINISH_CONTINUE;
                 if (index == MARKDOWN_CORE_FINISH_TEXT_INDEX && markdown_core_text_needs_consolidation(node)) {
-                    result = markdown_core_consolidate_text_step(parser, iter, node, &walk.scratch,
-                                                                 complete_consolidated_text, frame->script_depth);
+                    result = markdown_core_consolidate_text_step(parser, iter, node, complete_consolidated_text,
+                                                                 frame->script_depth);
                 }
                 if (result == MARKDOWN_CORE_FINISH_CONTINUE && dispatch[2 * index + 1]) {
                     result =
@@ -1257,7 +1152,6 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
         }
     }
     flush_finish_count(parser, &count);
-    markdown_core_strbuf_free(&walk.scratch);
     markdown_core_free(walk.frames);
     markdown_core_free(walk.states);
     return !parser->error;
@@ -2153,6 +2047,103 @@ static int S_gate_key(const markdown_core_chunk *input, int first, int indent) {
     return first < input->len ? (int)(unsigned char)input->data[first] : BLOCK_GATE_KEY_NONE;
 }
 
+/* THE INLINE BYTE TABLES, projected with everything else the registry
+ * decides. A byte ends a text run when an inline owner says so
+ * (`terminates_text`), is looked through by flanking when one declares it
+ * (`flanking_transparent`), and is offered to the owners that list it in
+ * `dispatch`. These are properties of the attached elements alone, so they
+ * are derived once, after setup, beside the block and finish projections --
+ * never per inline pass. They used to be installed around the inline pass and
+ * cleared after it, the shape cmark-gfm needs because its tables are process
+ * globals; here they are the parser's and die with it.
+ *
+ * Counts the dispatch entries per byte into `inline_dispatch_offsets` (as
+ * running totals) and returns their sum, which the caller lays out in the
+ * projection's one block. */
+static bool S_declared_earlier(const unsigned char *bytes, const unsigned char *at) {
+    /* A byte written twice in one declaration is one declaration. The
+     * declarations are a handful of bytes, so the check is the scan itself. */
+    for (const unsigned char *p = bytes; p < at; p++) {
+        if (*p == *at) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static size_t S_project_inline_bytes(markdown_core_parser *parser) {
+    memset(parser->special_chars, 0, sizeof(parser->special_chars));
+    memset(parser->skip_chars, 0, sizeof(parser->skip_chars));
+    memset(parser->inline_start_predicates, 0, sizeof(parser->inline_start_predicates));
+    memset(parser->inline_dispatch_offsets, 0, sizeof(parser->inline_dispatch_offsets));
+    parser->inline_dispatch = NULL;
+    for (size_t i = 0; i < parser->element_count; i++) {
+        const markdown_core_element *element = parser->elements[i];
+        if (!element->match_inline && !element->insert_inline_from_delim) {
+            continue;
+        }
+        const unsigned char *bytes = (const unsigned char *)element->dispatch;
+        for (const unsigned char *c = bytes; element->match_inline && c && *c; c++) {
+            if (!S_declared_earlier(bytes, c)) {
+                parser->inline_dispatch_offsets[*c + 1]++;
+            }
+        }
+        /* A byte several owners terminate keeps a start predicate only while
+         * they all agree on it; disagreement leaves the byte unconditional. */
+        for (const unsigned char *c = (const unsigned char *)element->terminates_text; c && *c; c++) {
+            if (!parser->special_chars[*c]) {
+                parser->inline_start_predicates[*c] = element->is_inline_start;
+            } else if (parser->inline_start_predicates[*c] != element->is_inline_start) {
+                parser->inline_start_predicates[*c] = NULL;
+            }
+            parser->special_chars[*c] = 1;
+        }
+        for (const unsigned char *c = (const unsigned char *)element->flanking_transparent; c && *c; c++) {
+            parser->skip_chars[*c] = 1;
+        }
+    }
+    for (size_t c = 0; c < 256; c++) {
+        parser->inline_dispatch_offsets[c + 1] += parser->inline_dispatch_offsets[c];
+    }
+    return parser->inline_dispatch_offsets[256];
+}
+
+/* Fill each byte's owners into `entries` in the order `try_elements` asks
+ * them: by ascending precedence, and within one precedence in descriptor
+ * order. The owners are ordered once -- a stable insertion by precedence over
+ * the elements with an inline matcher -- and then emitted, so every byte's
+ * list inherits that order with no per-byte sort. The ordering is total over
+ * the field's values, not only the named ones, so every entry
+ * `S_project_inline_bytes` counted is written. */
+static void S_project_inline_dispatch(markdown_core_parser *parser, const markdown_core_element **entries) {
+    const markdown_core_element *owners[MARKDOWN_CORE_ELEMENT_LIMIT];
+    size_t count = 0;
+    assert(parser->element_count <= MARKDOWN_CORE_ELEMENT_LIMIT);
+    for (size_t i = 0; i < parser->element_count; i++) {
+        const markdown_core_element *element = parser->elements[i];
+        if (!element->match_inline) {
+            continue;
+        }
+        size_t at = count++;
+        while (at > 0 && owners[at - 1]->inline_precedence > element->inline_precedence) {
+            owners[at] = owners[at - 1];
+            at--;
+        }
+        owners[at] = element;
+    }
+    size_t next[256];
+    memcpy(next, parser->inline_dispatch_offsets, sizeof(next));
+    parser->inline_dispatch = entries;
+    for (size_t i = 0; i < count; i++) {
+        const unsigned char *bytes = (const unsigned char *)owners[i]->dispatch;
+        for (const unsigned char *c = bytes; c && *c; c++) {
+            if (!S_declared_earlier(bytes, c)) {
+                entries[next[*c]++] = owners[i];
+            }
+        }
+    }
+}
+
 /* Project the registry into one list per block-start hook family, in
  * descriptor order, once per parse. Built after setup has attached everything,
  * because an extension element must appear in the same families as a core one.
@@ -2245,7 +2236,7 @@ static void S_project_finish_kinds(markdown_core_parser *parser) {
 static void S_project_block_hooks(markdown_core_parser *parser) {
     size_t totals[MARKDOWN_CORE_BLOCK_HOOK_COUNT] = {0};
     size_t inline_totals[MARKDOWN_CORE_INLINE_HOOK_COUNT] = {0};
-    size_t total = 0, step_total = 0;
+    size_t total = 0, step_total = 0, dispatch_total;
 
     markdown_core_free(parser->block_hook_allocation);
     parser->block_hook_allocation = NULL;
@@ -2257,6 +2248,7 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
     memset(parser->finish_dispatch, 0, sizeof(parser->finish_dispatch));
     parser->finish_step_slots = 0;
     S_project_finish_kinds(parser);
+    dispatch_total = S_project_inline_bytes(parser);
     /* What a container continuation may strip, as one table over the byte:
      * indentation, which every continuation strips, and the bytes each
      * container element declares for its own. */
@@ -2291,6 +2283,8 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
         }
         total += inline_totals[hook];
     }
+    /* The inline dispatch lists live in the same block, after the families. */
+    total += dispatch_total;
     /* The finish steps by key: a count per key, then each declared key's list
      * laid out in descriptor order with a terminator, then the table. */
     size_t key_counts[MARKDOWN_CORE_FINISH_KEY_COUNT] = {0};
@@ -2332,6 +2326,8 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
     size_t step_bytes = step_total * sizeof(markdown_core_finish_step_entry);
     void *block = markdown_core_alloc(1, pointer_bytes + step_bytes + table_bytes);
     if (!block) {
+        /* No byte names an owner the projection could not store. */
+        memset(parser->inline_dispatch_offsets, 0, sizeof(parser->inline_dispatch_offsets));
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
@@ -2412,6 +2408,8 @@ static void S_project_block_hooks(markdown_core_parser *parser) {
             }
         }
     }
+    S_project_inline_dispatch(parser, entries + at);
+    at += dispatch_total;
 
     if (!table_bytes) {
         return;
@@ -3135,10 +3133,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     finalize_document(parser);
     S_parse_block_inputs(parser);
     if (!parser->error) {
-        markdown_core_manage_elements_special_characters(parser, true);
-        if (!parser->error) {
-            parser->document_structure->prepare_document(parser);
-        }
+        parser->document_structure->prepare_document(parser);
     }
     if (parser->error) {
         goto failed;
@@ -3181,7 +3176,6 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     if (!S_apply_tree_phase(parser, parser->root, S_check_root, NULL, passes_declared ? &record : NULL)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
-    markdown_core_manage_elements_special_characters(parser, false);
 
     finish_phases phases = {NULL, 0};
     if (!parser->error && parser->element_count) {

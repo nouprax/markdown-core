@@ -5,26 +5,35 @@
 extern "C" {
 #endif
 
-#include "markdown-core-export.h"
+#include <stdint.h>
 
 /** Locale-independent versions of functions from ctype.h.
  * We want markdown_core to behave the same no matter what the system locale.
+ *
+ * Each predicate is one load from the shared class table, so it is defined
+ * here, where every caller -- most of them walking a buffer byte by byte --
+ * can see it, rather than behind a call into another translation unit that
+ * costs more to reach than to evaluate. None of them is part of the exported
+ * surface.
  */
 
-MARKDOWN_CORE_EXPORT
-int markdown_core_isspace(char c);
+/* 1 = space, 2 = punct, 3 = digit, 4 = alpha, 0 = other. */
+extern const uint8_t markdown_core_ctype_class[256];
 
-MARKDOWN_CORE_EXPORT
-int markdown_core_ispunct(char c);
+/* A "whitespace" character as the spec defines it: space, tab, LF, CR. */
+static inline int markdown_core_isspace(char c) { return markdown_core_ctype_class[(uint8_t)c] == 1; }
 
-MARKDOWN_CORE_EXPORT
-int markdown_core_isalnum(char c);
+/* An ASCII punctuation character. */
+static inline int markdown_core_ispunct(char c) { return markdown_core_ctype_class[(uint8_t)c] == 2; }
 
-MARKDOWN_CORE_EXPORT
-int markdown_core_isdigit(char c);
+static inline int markdown_core_isalnum(char c) {
+    uint8_t result = markdown_core_ctype_class[(uint8_t)c];
+    return result == 3 || result == 4;
+}
 
-MARKDOWN_CORE_EXPORT
-int markdown_core_isalpha(char c);
+static inline int markdown_core_isdigit(char c) { return markdown_core_ctype_class[(uint8_t)c] == 3; }
+
+static inline int markdown_core_isalpha(char c) { return markdown_core_ctype_class[(uint8_t)c] == 4; }
 
 #ifdef __cplusplus
 }
