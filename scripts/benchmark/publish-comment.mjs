@@ -42,7 +42,7 @@ const ratio = (after, before) => (before > 0 ? `${(after / before).toFixed(4)}×
 // These are projections of the existing report schemas, not Markdown supplied
 // by a PR. Only validated IDs, digests and numeric counts reach the comment.
 function stageCounts(report) {
-    if (report?.schemaVersion !== 5 || !Array.isArray(report.cases) || !report.cases.length) {
+    if (report?.schemaVersion !== 6 || !Array.isArray(report.cases) || !report.cases.length) {
         throw new Error("Invalid stage report");
     }
     digest(report.corpus.digest);

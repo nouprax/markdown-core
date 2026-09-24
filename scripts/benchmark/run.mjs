@@ -1292,8 +1292,8 @@ function derive(document, stage) {
 }
 
 export function markdownReport(report) {
-    if (report.schemaVersion !== 5 || !report.grammarCorpus) {
-        throw new Error("report schema 5 with a grammar corpus required");
+    if (report.schemaVersion !== 6 || !report.grammarCorpus) {
+        throw new Error("report schema 6 with a grammar corpus required");
     }
     const lines = [];
     lines.push("## Parse stage comparison", "");
@@ -1588,8 +1588,10 @@ function main() {
         }
     }
 
+    /* Schema 6: certificates carry their reference (null for a construct only
+     * Core implements), and rejection certificates may add a control side. */
     const report = {
-        schemaVersion: 5,
+        schemaVersion: 6,
         toolchain: versions,
         /* The exact bytes measured, so a report's numbers trace to a binary. */
         binaries,

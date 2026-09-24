@@ -55,7 +55,7 @@ function stageReport(ir, { rejection = false } = {}) {
             : [])
     ];
     return {
-        schemaVersion: 5,
+        schemaVersion: 6,
         revision: base,
         corpus: { digest: "c".repeat(64), cases: cases.length },
         grammarCorpus: {
@@ -147,13 +147,13 @@ test("the measured report schema renders both the Markdown artifact and PR compa
     for (const output of [artifact, comment]) {
         assert.doesNotMatch(output, /\| Scale \|/);
     }
-    assert.throws(() => markdownReport({ ...report, schemaVersion: 4 }), /report schema 5/);
+    assert.throws(() => markdownReport({ ...report, schemaVersion: 5 }), /report schema 6/);
 });
 
 test("report projections reject corrupt counts, mismatched workloads and injected text", () => {
     for (const mutate of [
         (r) => {
-            r.schemaVersion = 4;
+            r.schemaVersion = 5;
         },
         (r) => {
             delete r.grammarCorpus;
