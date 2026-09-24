@@ -27,9 +27,7 @@ function stageReport(ir, { rejection = false } = {}) {
         rejects: "mark"
     };
     const engine = (source, ast = 50) => ({
-        stages: { source_to_buffer: { cost: { Ir: source } }, buffer_to_ast: { cost: { Ir: ast } } },
-        parsePathIr: source + ast + 10,
-        outsideStagesIr: 10
+        stages: { source_to_buffer: { cost: { Ir: source } }, buffer_to_ast: { cost: { Ir: ast } } }
     });
     const names = (owner, sides) =>
         Object.fromEntries(sides.map((side) => [`paired-${side}`, `${owner.id}-paired-${side}`]));
@@ -55,7 +53,7 @@ function stageReport(ir, { rejection = false } = {}) {
             : [])
     ];
     return {
-        schemaVersion: 6,
+        schemaVersion: 7,
         revision: base,
         corpus: { digest: "c".repeat(64), cases: cases.length },
         grammarCorpus: {
@@ -79,11 +77,13 @@ const attributes = () => ({
     }
 });
 
-test("PR tables report numeric results, source regressions, and complete parse accounting", () => {
+test("PR tables report the two stages, their sum and source regressions, and nothing outside them", () => {
     const body = stageSection(stageReport(103), stageReport(100));
     assert.match(body, /0\/2 passed/);
     assert.match(body, /\| Source → buffer \| 200 \| 206 \| 1.0300× \|/);
-    assert.match(body, /\| Complete parse path \| 320 \| 326 \|/);
+    assert.match(body, /\| Buffer → AST \| 100 \| 100 \| 1.0000× \|/);
+    assert.match(body, /\| Both stages \| 300 \| 306 \| 1.0200× \|/);
+    assert.doesNotMatch(body, /parse path|Outside/i);
     assert.match(body, /inline-links-paired-common/);
     assert.match(body, /Required when CI inputs require execution/);
     assert.match(body, /inline-links-grammar-v2 \| whole \| 1 \| 32\/32 \| 1.0000× \| 2.0400× \| 2.0400×/);
@@ -147,13 +147,13 @@ test("the measured report schema renders both the Markdown artifact and PR compa
     for (const output of [artifact, comment]) {
         assert.doesNotMatch(output, /\| Scale \|/);
     }
-    assert.throws(() => markdownReport({ ...report, schemaVersion: 5 }), /report schema 6/);
+    assert.throws(() => markdownReport({ ...report, schemaVersion: 6 }), /report schema 7/);
 });
 
 test("report projections reject corrupt counts, mismatched workloads and injected text", () => {
     for (const mutate of [
         (r) => {
-            r.schemaVersion = 5;
+            r.schemaVersion = 6;
         },
         (r) => {
             delete r.grammarCorpus;
@@ -186,10 +186,10 @@ test("report projections reject corrupt counts, mismatched workloads and injecte
             r.cases[0].bytes = 33;
         },
         (r) => {
-            r.cases[0].engines["markdown-core"].parsePathIr = NaN;
+            r.cases[0].engines["markdown-core"].stages.buffer_to_ast.cost.Ir = NaN;
         },
         (r) => {
-            r.cases[0].engines["markdown-core"].parsePathIr = 0;
+            delete r.cases[0].engines["markdown-core"].stages.buffer_to_ast;
         },
         (r) => {
             r.cases[0].engines["markdown-core"].stages.source_to_buffer.cost.Ir = "100";

@@ -42,13 +42,13 @@ const ratio = (after, before) => (before > 0 ? `${(after / before).toFixed(4)}×
 // These are projections of the existing report schemas, not Markdown supplied
 // by a PR. Only validated IDs, digests and numeric counts reach the comment.
 function stageCounts(report) {
-    if (report?.schemaVersion !== 6 || !Array.isArray(report.cases) || !report.cases.length) {
+    if (report?.schemaVersion !== 7 || !Array.isArray(report.cases) || !report.cases.length) {
         throw new Error("Invalid stage report");
     }
     digest(report.corpus.digest);
     digest(report.grammarCorpus?.identity);
     if (report.corpus.cases !== report.cases.length) throw new Error("Incomplete stage report");
-    const totals = [0, 0, 0, 0];
+    const totals = [0, 0];
     for (const row of report.cases) {
         if (typeof row.case !== "string" || !/^[a-z0-9][a-z0-9-]{0,127}$/.test(row.case)) {
             throw new Error("Invalid benchmark case ID");
@@ -56,14 +56,9 @@ function stageCounts(report) {
         if (!count(row.bytes)) throw new Error("Empty benchmark workload");
         digest(row.sha256);
         const engine = row.engines["markdown-core"];
-        const values = [
-            engine.stages.source_to_buffer.cost.Ir,
-            engine.stages.buffer_to_ast.cost.Ir,
-            engine.outsideStagesIr,
-            engine.parsePathIr
-        ].map(count);
-        if (values[0] + values[1] + values[2] !== values[3]) throw new Error("Inconsistent parse counts");
-        values.forEach((value, i) => (totals[i] = count(totals[i] + value)));
+        [engine.stages.source_to_buffer.cost.Ir, engine.stages.buffer_to_ast.cost.Ir]
+            .map(count)
+            .forEach((value, i) => (totals[i] = count(totals[i] + value)));
     }
     return totals;
 }
@@ -87,12 +82,17 @@ export function stageSection(current, baseline) {
         "| Core instructions (Ir) | Base | PR | PR / base |",
         "| --- | ---: | ---: | ---: |"
     ];
-    ["Source → buffer", "Buffer → AST", "Outside the two stages", "Complete parse path"].forEach((name, i) =>
-        lines.push(`| ${name} | ${number(before[i])} | ${number(after[i])} | ${ratio(after[i], before[i])} |`)
+    [
+        ["Source → buffer", before[0], after[0]],
+        ["Buffer → AST", before[1], after[1]],
+        ["Both stages", count(before[0] + before[1]), count(after[0] + after[1])]
+    ].forEach(([name, base, head]) =>
+        lines.push(`| ${name} | ${number(base)} | ${number(head)} | ${ratio(head, base)} |`)
     );
     lines.push(
         "",
-        "Totals sum this finite workload; they are not elapsed time or a general speedup claim.",
+        "Totals sum this finite workload; they are not elapsed time or a general speedup claim. " +
+            "Parser creation and release are not parsing and are in no figure here.",
         "",
         `Source budget (+${((SOURCE_IR_LIMIT - 1) * 100).toFixed(0)}% per document): **${number(rows.length - failures.length)}/${number(rows.length)} passed**, ${number(failures.length)} exceeded. Required when CI inputs require execution.`,
         "",

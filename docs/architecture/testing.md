@@ -191,10 +191,9 @@ on the grammar-certified corpus under Callgrind and reports what
 each engine spends on the two parse paths: source bytes into block buffers,
 and those buffers into an AST. cmark splits exactly those two paths across
 `cmark_parser_feed` and `cmark_parser_finish`, so the boundary is a real one on
-both sides. Parser allocation and tree release are outside both stages: they are
-fixed cost that no document-size argument applies to. Grammar setup is not
-measured at all: sealing Core's dialect and attaching cmark-gfm's extensions are
-initialization, so the profiler does not count inside them anywhere. The contract is in the
+both sides. Parser allocation, dialect attachment, element discovery, and tree
+release are not parsing. They are fixed costs that no document-size argument
+applies to, and no benchmark figure includes them. The contract is in the
 [benchmark README](../../packages/markdown-core/benchmarks/README.md).
 
 Instruction and data-reference counts do not depend on how fast the machine was

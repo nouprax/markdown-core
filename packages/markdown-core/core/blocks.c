@@ -175,13 +175,10 @@ static markdown_core_parser *S_parser_new(const markdown_core_dialect_builder *b
     markdown_core_parser *parser;
     markdown_core_node *document;
 
-    /* Uninitialized: sealing defines the dialect and its tables, so only the
-     * parse state is zeroed here. */
-    instance = markdown_core_realloc(NULL, sizeof(*instance) + markdown_core_dialect_measure(builder, &layout));
+    instance = markdown_core_alloc(1, sizeof(*instance) + markdown_core_dialect_measure(builder, &layout));
     if (!instance) {
         return NULL;
     }
-    memset(&instance->parser, 0, sizeof(instance->parser));
     markdown_core_dialect_seal(builder, &layout, &instance->dialect);
     parser = &instance->parser;
     parser->dialect = &instance->dialect;

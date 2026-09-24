@@ -463,13 +463,6 @@ static void S_project_gate_lists(markdown_core_dialect *dialect, const markdown_
     }
 }
 
-/* The bytes a layout's tables take after the struct: its pointers, its finish
- * steps and its gate tables. Measuring reports them and sealing defines them. */
-static size_t S_layout_tail(const markdown_core_dialect_layout *layout) {
-    return layout->pointers * sizeof(const markdown_core_element *) +
-           layout->steps * sizeof(markdown_core_finish_step_entry) + layout->gate_bytes;
-}
-
 /* MEASURE: what sealing the builder's dialect takes, counted from its element
  * list alone. A family is gated when any of its owners declares a gate: the
  * first declaration is what turns gating on, so an element that declares
@@ -509,7 +502,8 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
             layout->gate_bytes += MARKDOWN_CORE_BLOCK_GATE_KEYS * (layout->block_totals[hook] + 1);
         }
     }
-    return S_layout_tail(layout);
+    return layout->pointers * sizeof(const markdown_core_element *) +
+           layout->steps * sizeof(markdown_core_finish_step_entry) + layout->gate_bytes;
 }
 
 /* SEAL: every table the dialect decides, projected once, into the storage
@@ -523,10 +517,6 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
 void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder,
                                 const markdown_core_dialect_layout *layout, markdown_core_dialect *dialect) {
     size_t count = builder->element_count;
-    /* Every byte of the storage is the dialect's, so sealing starts it from
-     * zero rather than asking whoever allocated it to: the tables below set
-     * only their true entries, and gate lists count up from an empty one. */
-    memset(dialect, 0, sizeof(*dialect) + S_layout_tail(layout));
     const markdown_core_element **entries = (const markdown_core_element **)(dialect + 1);
     markdown_core_finish_step_entry *step_entries = (markdown_core_finish_step_entry *)(entries + layout->pointers);
     uint8_t *tables = (uint8_t *)(step_entries + layout->steps);

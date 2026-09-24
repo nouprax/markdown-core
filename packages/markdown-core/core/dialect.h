@@ -252,12 +252,10 @@ void markdown_core_dialect_builder_init(markdown_core_dialect_builder *builder,
 size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builder,
                                      markdown_core_dialect_layout *layout);
 
-/* Seal `builder`, as `layout` measured it, into `dialect`: storage aligned
- * for the struct and followed by the measured bytes. Sealing defines every
- * one of those bytes, so the storage need not be initialized and all the work
- * of establishing the dialect happens inside this call. It cannot fail and
- * copies what it keeps, so the builder is unchanged and still owns what it
- * did. */
+/* Seal `builder`, as `layout` measured it, into `dialect`: zeroed storage
+ * aligned for the struct and followed by the measured bytes. It cannot fail
+ * and copies what it keeps, so the builder is unchanged and still owns what
+ * it did. */
 void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder,
                                 const markdown_core_dialect_layout *layout, markdown_core_dialect *dialect);
 
