@@ -1214,31 +1214,10 @@ static inline const unsigned char *S_input_line_content(markdown_core_parser *pa
     return facts->normalized ? facts->normalized->bytes : S_normalize_input_line(parser, line, facts, *length);
 }
 
-/* Search the one physical span alphabet: NUL, CR and LF. A bounded memcpy
- * probes a whole word without alignment/aliasing assumptions or an overread.
- * The unsigned zero-byte test answers only whether a boundary exists, so it
- * is endian-independent; bytes then resolve the first boundary and the tail.
- * Each successful word step consumes eight bytes. A boundary can cause at
- * most one extra word probe before byte resolution, keeping work linear even
- * for inputs consisting entirely of delimiters or NUL. */
+/* Search the one physical span alphabet: NUL, CR and LF. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const
     unsigned char *S_source_span_end(const unsigned char *cursor, const unsigned char *end) {
-    const uint64_t ones = UINT64_C(0x0101010101010101);
-    const uint64_t highs = UINT64_C(0x8080808080808080);
-    while ((size_t)(end - cursor) >= sizeof(uint64_t)) {
-        uint64_t word;
-        memcpy(&word, cursor, sizeof(word));
-        uint64_t cr = word ^ (ones * '\r');
-        uint64_t lf = word ^ (ones * '\n');
-        if ((((word - ones) & ~word) | ((cr - ones) & ~cr) | ((lf - ones) & ~lf)) & highs) {
-            break;
-        }
-        cursor += sizeof(word);
-    }
-    while (cursor < end && !markdown_core_is_line_end(*cursor) && *cursor != 0) {
-        cursor++;
-    }
-    return cursor;
+    return markdown_core_find_byte3(cursor, end, '\0', '\r', '\n');
 }
 
 /* The sole physical-line scanner for root and mapped inputs. Grammar facts

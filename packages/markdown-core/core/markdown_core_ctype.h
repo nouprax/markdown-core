@@ -6,6 +6,9 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include <string.h>
+
+#include "config.h"
 
 /** Locale-independent versions of functions from ctype.h.
  * We want markdown_core to behave the same no matter what the system locale.
@@ -41,5 +44,42 @@ static inline int markdown_core_isalpha(char c) { return markdown_core_ctype_cla
 
 /* Source-line boundaries use ASCII CR/LF in every syntax scanner. */
 static inline int markdown_core_is_line_end(unsigned char c) { return c == '\n' || c == '\r'; }
+
+/* THE FIRST OF THREE BYTES in [cursor, end), or `end` when none occurs.
+ *
+ * Scanners that stop only at a few ASCII bytes -- the physical span alphabet
+ * NUL, CR and LF; a link label's `[`, `]` and `\` -- ask this rather than
+ * testing each byte; `cursor` must not be past `end`. A bounded memcpy
+ * probes a whole word without alignment or aliasing assumptions and never
+ * reads past `end`. The unsigned zero-byte test on the word XOR each target
+ * answers only whether one occurs, so it is endian-independent; bytes then
+ * resolve the first occurrence and the tail.
+ * Each word that holds none consumes eight bytes, and an occurrence costs at
+ * most one extra word probe before byte resolution, so work stays linear
+ * even for input made entirely of the targets.
+ *
+ * Nothing here depends on what the other bytes are. In UTF-8 every byte of a
+ * multi-byte character is at or above 0x80, so no part of one is ever an
+ * ASCII target, and a word of any script is skipped at the same cost. Inlining
+ * is explicit so the three targets fold into constants at every call. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const
+    unsigned char *markdown_core_find_byte3(const unsigned char *cursor, const unsigned char *end, unsigned char a,
+                                            unsigned char b, unsigned char c) {
+    const uint64_t ones = UINT64_C(0x0101010101010101);
+    const uint64_t highs = UINT64_C(0x8080808080808080);
+    while ((size_t)(end - cursor) >= sizeof(uint64_t)) {
+        uint64_t word;
+        memcpy(&word, cursor, sizeof(word));
+        uint64_t xa = word ^ (ones * a), xb = word ^ (ones * b), xc = word ^ (ones * c);
+        if ((((xa - ones) & ~xa) | ((xb - ones) & ~xb) | ((xc - ones) & ~xc)) & highs) {
+            break;
+        }
+        cursor += sizeof(word);
+    }
+    while (cursor < end && *cursor != a && *cursor != b && *cursor != c) {
+        cursor++;
+    }
+    return cursor;
+}
 
 #endif
