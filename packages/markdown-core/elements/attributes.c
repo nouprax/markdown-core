@@ -338,7 +338,9 @@ void markdown_core_attributes_free(markdown_core_attributes *v) {
     }
     markdown_core_chunk_free(&v->anchor);
     markdown_core_free(v->storage);
-    markdown_core_resource_release(v->anchor_owner);
+    if (v->anchor_owner) {
+        markdown_core_resource_release(v->anchor_owner);
+    }
     memset(v, 0, sizeof(*v));
 }
 
@@ -580,9 +582,11 @@ static int read_container(markdown_core_attribute_parser *p, bufsize_t start, bu
 }
 
 /* LAY OUT the scratch as the value: one block, its records, then its
- * classes, then the staged strings, each chunk pointing into the block. */
+ * classes, then the staged strings, each chunk pointing into the block. The
+ * value is written once, whole, when it is complete; a refused allocation
+ * leaves `result` as it was. */
 static int lay_out(markdown_core_attribute_parser *p, bufsize_t anchor, bufsize_t anchor_length,
-                   markdown_core_attributes *value) {
+                   markdown_core_attributes *result) {
     markdown_core_attribute_scratch *const w = p->scratch;
     size_t classes = 0, records = 0, strings = (size_t)w->strings.size;
     for (size_t i = 0; i < w->member_count; i++) {
@@ -594,21 +598,17 @@ static int lay_out(markdown_core_attribute_parser *p, bufsize_t anchor, bufsize_
     }
     size_t bytes = records * sizeof(markdown_core_record) + classes * sizeof(markdown_core_chunk) + strings;
     if (!bytes) {
+        *result = (markdown_core_attributes){0};
         return 1;
     }
     void *storage = markdown_core_realloc(NULL, bytes);
     if (!storage) {
         return 0;
     }
-    markdown_core_record *record = storage;
-    markdown_core_chunk *class = (markdown_core_chunk *)(record + records);
+    markdown_core_record *const first_record = storage, *record = first_record;
+    markdown_core_chunk *const first_class = (markdown_core_chunk *)(record + records), *class = first_class;
     unsigned char *text = (unsigned char *)(class + classes);
     memcpy(text, w->strings.ptr, strings);
-    value->storage = storage;
-    value->records = records ? record : NULL;
-    value->record_count = (uint32_t)records;
-    value->classes = classes ? class : NULL;
-    value->class_count = (uint32_t)classes;
     for (size_t i = 0; i < w->member_count; i++) {
         const struct markdown_core_attribute_member *member = &w->members[i];
         markdown_core_chunk staged = {text + member->value, member->value_length, 0};
@@ -618,9 +618,14 @@ static int lay_out(markdown_core_attribute_parser *p, bufsize_t anchor, bufsize_
             *record++ = (markdown_core_record){{text + member->name, member->name_length, 0}, staged};
         }
     }
-    if (anchor >= 0) {
-        value->anchor = (markdown_core_chunk){text + anchor, anchor_length, 0};
-    }
+    *result = (markdown_core_attributes){
+        .anchor = anchor >= 0 ? (markdown_core_chunk){text + anchor, anchor_length, 0} : (markdown_core_chunk){0},
+        .classes = classes ? first_class : NULL,
+        .records = records ? first_record : NULL,
+        .class_count = (uint32_t)classes,
+        .record_count = (uint32_t)records,
+        .storage = storage,
+    };
     return 1;
 }
 
@@ -664,13 +669,11 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
         return 0;
     }
     assert(p->scratch);
-    markdown_core_attributes value = {0};
-    if (!read_container(p, start, finish, &anchor, &anchor_length) || !lay_out(p, anchor, anchor_length, &value)) {
+    if (!read_container(p, start, finish, &anchor, &anchor_length) || !lay_out(p, anchor, anchor_length, result)) {
         p->oom = 1;
         return 0;
     }
     p->work += (size_t)(finish - start);
-    *result = value;
     *end = finish;
     return 1;
 }
