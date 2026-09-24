@@ -87,9 +87,28 @@ establishes grammar equivalence.
 | `source_to_buffer` | `markdown_core_parse_document_with_setup → S_parse_source` | `bench_parse_document → cmark_parser_feed` |
 | `buffer_to_ast` | `markdown_core_parse_document_with_setup → S_finish_parse` | `bench_parse_document → cmark_parser_finish` |
 
-Ratios use the sum of these two stages. Parser setup and release remain visible
-as `outsideStagesIr` beside the full `parsePathIr`; they are not silently
-amortized into parsing. Raw profiles preserve hot functions and stage edges.
+Ratios use the sum of these two stages. Creating the parser's state and
+releasing the tree remain visible as `outsideStagesIr` beside the full
+`parsePathIr`; they are not silently amortized into parsing.
+
+Grammar setup is not measured at all. It covers two things:
+
+- Core's builder assembly, and measuring and sealing its dialect;
+- cmark-gfm's extension registration and attachment.
+
+Both are initialization, fixed before the first byte. Each engine names the
+calls that do this setup, and Callgrind is told not to count inside them
+(`--toggle-collect`). Nothing below a setup call, down to a shared C library
+leaf, reaches any stage, `parsePathIr`, hot path or raw profile. Sealing defines
+every byte of the dialect's storage, so its zeroing is inside the seal call too.
+
+Before measuring, each runner is profiled once with setup counted, and the
+declaration is checked against that profile. The check fails if a declared call
+is missing, is outside the parse entry, is also made from somewhere else, or
+reaches another setup call; that profile is then deleted. A measured profile
+that still carries cost inside a setup call fails too.
+
+Raw profiles preserve hot functions and stage edges.
 Callgrind calling contexts separate source reading from nested source work
 entered during AST construction.
 

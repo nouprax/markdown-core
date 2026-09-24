@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { ENGINES, assertSetupUncounted, verifySetup } from "../run.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const driver = path.join(root, "scripts/benchmark/run.mjs");
@@ -158,4 +159,123 @@ test("selecting a grammar input includes its counterpart and complete boundary h
 test("baseline selection requires an exact revision and a real measurement", () => {
     assert.match(refuse(["--baseline-ref", "main"]).message, /full commit SHA/u);
     assert.match(refuse(["--baseline-ref", "a".repeat(40), "--corpus-only"]).message, /requires measurement/u);
+});
+
+/**
+ * A profile shaped like the Core runner's under `--separate-callers=1`, with
+ * setup counted: each node named `callee'caller`, the dialect built and sealed
+ * inside the parse entry.
+ */
+function coreProfile({ counted = true, extra = [] } = {}) {
+    const node = (callee, caller) => `${callee}'${caller}`;
+    const entry = node("bench_parse_document", "main");
+    const facade = node("markdown_core_parse_document_with_setup", "bench_parse_document");
+    const parserNew = node("S_parser_new", "markdown_core_parse_document_with_setup");
+    const seal = node("markdown_core_dialect_seal", "S_parser_new");
+    const self = new Map([
+        [entry, [10]],
+        [facade, [20]],
+        [parserNew, [30]],
+        [node("S_parse_source.part.0", "markdown_core_parse_document_with_setup"), [300]],
+        [node("S_finish_parse", "markdown_core_parse_document_with_setup"), [200]],
+        ...(counted
+            ? [
+                  [node("markdown_core_core_elements", "markdown_core_parse_document_with_setup"), [4]],
+                  [node("markdown_core_dialect_builder_init", "markdown_core_parse_document_with_setup"), [6]],
+                  [node("markdown_core_dialect_builder_dispose", "markdown_core_parse_document_with_setup"), [17]],
+                  [node("markdown_core_dialect_measure", "S_parser_new"), [40]],
+                  [seal, [50]],
+                  [node("memset", "markdown_core_dialect_seal"), [100]]
+              ]
+            : [])
+    ]);
+    const edge = (caller, callee, ir) => [`${caller}\0${callee}`, { caller, callee, calls: 1, cost: [ir] }];
+    const edges = new Map([
+        edge("main", entry, 1),
+        edge(entry, facade, 1),
+        edge(facade, parserNew, 1),
+        edge(facade, node("S_parse_source.part.0", "markdown_core_parse_document_with_setup"), 300),
+        edge(facade, node("S_finish_parse", "markdown_core_parse_document_with_setup"), 200),
+        ...(counted
+            ? [
+                  edge(facade, node("markdown_core_core_elements", "markdown_core_parse_document_with_setup"), 4),
+                  edge(
+                      facade,
+                      node("markdown_core_dialect_builder_init", "markdown_core_parse_document_with_setup"),
+                      6
+                  ),
+                  edge(
+                      facade,
+                      node("markdown_core_dialect_builder_dispose", "markdown_core_parse_document_with_setup"),
+                      17
+                  ),
+                  edge(parserNew, node("markdown_core_dialect_measure", "S_parser_new"), 40),
+                  edge(parserNew, seal, 150),
+                  edge(seal, node("memset", "markdown_core_dialect_seal"), 100)
+              ]
+            : []),
+        ...extra.map(([caller, callee]) => edge(caller, callee, 1))
+    ]);
+    return { events: ["Ir"], self, edges };
+}
+
+test("the Core setup declaration holds against a profile that counted setup", () => {
+    verifySetup(coreProfile(), ENGINES["markdown-core"].setup);
+});
+
+test("a setup declaration that is missing, outside the entry, shared or nested fails", () => {
+    const setup = ENGINES["markdown-core"].setup;
+    assert.throws(() => verifySetup(coreProfile({ counted: false }), setup), /no setup call/u);
+    assert.throws(
+        () => verifySetup(coreProfile({ extra: [["main", "free'main"]] }), [{ caller: "main", callee: "free" }]),
+        /outside bench_parse_document/u
+    );
+    // A toggle excludes every entry into the function, so a parse-time caller would lose parse work.
+    assert.throws(
+        () =>
+            verifySetup(
+                coreProfile({
+                    extra: [
+                        [
+                            "S_finish_parse'markdown_core_parse_document_with_setup",
+                            "markdown_core_dialect_measure'S_finish_parse"
+                        ]
+                    ]
+                }),
+                setup
+            ),
+        /also entered from S_finish_parse/u
+    );
+    // A nested toggle would switch counting back on inside the outer call.
+    const nested = [
+        ["markdown_core_dialect_seal'S_parser_new", "helper'markdown_core_dialect_seal"],
+        ["helper'markdown_core_dialect_seal", "inner_setup'helper"]
+    ];
+    assert.throws(
+        () =>
+            verifySetup(coreProfile({ extra: nested }), [
+                { caller: "S_parser_new", callee: "markdown_core_dialect_seal" },
+                { caller: "helper", callee: "inner_setup" }
+            ]),
+        /setup call markdown_core_dialect_seal reaches setup call inner_setup/u
+    );
+});
+
+test("a measured profile must carry no cost inside a setup call", () => {
+    const setup = ENGINES["markdown-core"].setup;
+    assertSetupUncounted(coreProfile({ counted: false }), setup);
+    assert.throws(() => assertSetupUncounted(coreProfile(), setup), /setup function markdown_core_\w+ was counted/u);
+});
+
+test("every engine declares its grammar setup, and Core's names are functions it defines", () => {
+    assert.deepEqual(Object.keys(ENGINES).toSorted(), ["cmark", "cmark-gfm", "markdown-core"]);
+    for (const definition of Object.values(ENGINES)) assert.ok(Array.isArray(definition.setup));
+    assert.deepEqual(ENGINES.cmark.setup, []);
+    const sources = ["core/blocks.c", "core/dialect.c", "elements/core-elements.c"]
+        .map((file) => fs.readFileSync(path.join(root, "packages/markdown-core", file), "utf8"))
+        .join("\n");
+    for (const { caller, callee } of ENGINES["markdown-core"].setup) {
+        for (const name of [caller, callee])
+            assert.match(sources, new RegExp(`\\b${name}\\([^;]*\\)\\s*\\{`, "u"), name);
+    }
 });

@@ -9,6 +9,13 @@
  * is fixed cost that no document-size argument applies to, so it is excluded
  * rather than amortized into a number that looks like parsing.
  *
+ * Grammar setup is not measured at all. The dialect an instance is sealed with,
+ * and the extensions a reference parser is given, are fixed before the first
+ * byte and never change during the parse: that is initialization, not parsing.
+ * Each engine names the calls that do it (`setup` below) and the profiler does
+ * not count inside them, so no figure in any report or raw profile includes
+ * them -- not a stage, not the parse path, not a hot path.
+ *
  *   source_to_buffer   markdown-core  markdown_core_parse_document_with_setup
  *                                       -> S_parse_source
  *                      cmark          cmark_parser_feed
@@ -91,20 +98,32 @@ const PROFILE_PRESET = "benchmark";
  * not the plain name the stage boundary is written as. */
 const CLONE_SUFFIX = /(\.(constprop|isra|part|cold|lto_priv|localalias)\.?\d*)+$/u;
 
-const ENGINES = {
+export const ENGINES = {
     "markdown-core": {
         runner: "packages/markdown-core/benchmarks/markdown_core_stage_runner",
         stages: {
             source_to_buffer: { caller: "markdown_core_parse_document_with_setup", callee: "S_parse_source" },
             buffer_to_ast: { caller: "markdown_core_parse_document_with_setup", callee: "S_finish_parse" }
-        }
+        },
+        /* The builder assembled from the core elements, then the dialect
+         * measured and sealed into the instance. Sealing defines every byte of
+         * the dialect's storage, so its zeroing is inside the seal call too. */
+        setup: [
+            { caller: "markdown_core_parse_document_with_setup", callee: "markdown_core_core_elements" },
+            { caller: "markdown_core_parse_document_with_setup", callee: "markdown_core_dialect_builder_init" },
+            { caller: "markdown_core_parse_document_with_setup", callee: "markdown_core_dialect_builder_dispose" },
+            { caller: "S_parser_new", callee: "markdown_core_dialect_measure" },
+            { caller: "S_parser_new", callee: "markdown_core_dialect_seal" }
+        ]
     },
     cmark: {
         runner: "packages/markdown-core/benchmarks/cmark_stage_runner",
         stages: {
             source_to_buffer: { caller: "bench_parse_document", callee: "cmark_parser_feed" },
             buffer_to_ast: { caller: "bench_parse_document", callee: "cmark_parser_finish" }
-        }
+        },
+        /* cmark has one fixed grammar and nothing to attach. */
+        setup: []
     },
     /* Same stage split, same API, same codebase -- and it implements tables,
      * strikethrough, bare autolinks, task lists and footnotes, so for those
@@ -114,14 +133,21 @@ const ENGINES = {
         stages: {
             source_to_buffer: { caller: "bench_parse_document", callee: "cmark_parser_feed" },
             buffer_to_ast: { caller: "bench_parse_document", callee: "cmark_parser_finish" }
-        }
+        },
+        /* Registering the core extensions, then finding and attaching each. */
+        setup: [
+            { caller: "bench_parse_document", callee: "cmark_gfm_core_extensions_ensure_registered" },
+            { caller: "bench_parse_document", callee: "cmark_find_syntax_extension" },
+            { caller: "bench_parse_document", callee: "cmark_parser_attach_syntax_extension" }
+        ]
     }
 };
 
 const STAGES = ["source_to_buffer", "buffer_to_ast"];
 
 /* The harness entry both runners publish, and so the whole parse path a stage
- * is a part of: parser creation, the two stages, and releasing the tree. */
+ * is a part of: parser creation, the two stages, and releasing the tree. The
+ * engine's grammar setup is inside it but never counted. */
 const ENGINE_ENTRY = "bench_parse_document";
 
 /* Every binary that contributes measured parse-stage instructions. */
@@ -1132,11 +1158,16 @@ function dispatchIdentity(profile, root) {
     return crypto.createHash("sha256").update(features.join("\n")).digest("hex");
 }
 
-function measure(profile, engine, document, out) {
+/* One run of an engine's runner over a document under callgrind, with names
+ * folded. The engine's grammar setup is not counted: collection is switched off
+ * inside each declared setup call, so nothing below one -- a PLT stub or a C
+ * library leaf included -- reaches any cost, any edge or the dump. Only the
+ * check that the declaration itself is right counts it (`countSetup`), and that
+ * profile is never reported. */
+function profileRun(profile, engine, document, dump, { countSetup = false } = {}) {
     const definition = ENGINES[engine];
-    const dump = path.join(out, "callgrind", `${engine}.${document.case}.out`);
     fs.mkdirSync(path.dirname(dump), { recursive: true });
-    const root = measurementRoot(out, fail);
+    const root = measurementRoot(path.dirname(path.dirname(dump)), fail);
     const stdout = run(
         "valgrind",
         [
@@ -1150,6 +1181,10 @@ function measure(profile, engine, document, out) {
              * includes the AST stage's nested work. The totals were always read
              * from the edge and so were right; the breakdown was not. */
             "--separate-callers=1",
+            /* Every `--toggle-collect` also turns collection off at start, so
+             * `--collect-atstart=yes` has to come after them. */
+            ...(countSetup ? [] : definition.setup.map(({ callee }) => `--toggle-collect=${callee}`)),
+            "--collect-atstart=yes",
             ...CACHE,
             `--callgrind-out-file=${dump}`,
             "--quiet",
@@ -1161,16 +1196,45 @@ function measure(profile, engine, document, out) {
          * directory that exists to hold no configuration. */
         { env: measurementEnvironment(root), cwd: root }
     );
-
-    const receipt = /bytes=(\d+) root_children=(\d+)/u.exec(stdout);
-    if (!receipt) fail(`${engine}: ${document.case} produced no receipt`);
-
     const parsed = parseCallgrind(fs.readFileSync(dump, "utf8"));
     const profileByName = foldNames(parsed, (name) => {
         const context = name.indexOf("'");
         if (context < 0) return name.replace(CLONE_SUFFIX, "");
         return name.slice(0, context).replace(CLONE_SUFFIX, "") + name.slice(context);
     });
+    return { stdout, profileByName };
+}
+
+/* A toggle that never fires leaves setup counted, and a setup call nested in
+ * another switches counting back on inside it. So before any measurement
+ * relies on the declaration, each runner is profiled once WITH setup counted
+ * and the declaration is checked against that profile, which is then deleted. */
+function verifyRunnerSetup(profile, engine, document, out) {
+    const { setup } = ENGINES[engine];
+    if (!setup.length) return;
+    const dump = path.join(out, "callgrind", `${engine}.setup-check.out`);
+    const { profileByName } = profileRun(profile, engine, document, dump, { countSetup: true });
+    try {
+        verifySetup(profileByName, setup);
+    } catch (error) {
+        fail(`${engine}: ${error.message} in ${path.basename(dump)}`);
+    }
+    fs.rmSync(dump, { force: true });
+}
+
+function measure(profile, engine, document, out) {
+    const definition = ENGINES[engine];
+    const dump = path.join(out, "callgrind", `${engine}.${document.case}.out`);
+    const { stdout, profileByName } = profileRun(profile, engine, document, dump);
+
+    const receipt = /bytes=(\d+) root_children=(\d+)/u.exec(stdout);
+    if (!receipt) fail(`${engine}: ${document.case} produced no receipt`);
+    try {
+        assertSetupUncounted(profileByName, definition.setup);
+    } catch (error) {
+        fail(`${engine}: ${error.message} in ${path.basename(dump)}`);
+    }
+
     const stages = {};
     for (const stage of STAGES) {
         const boundary = definition.stages[stage];
@@ -1219,10 +1283,11 @@ function measure(profile, engine, document, out) {
             breakdown: callees.slice(0, 8)
         };
     }
-    /* What excluding setup, discovery and release actually excluded. Reading
-     * it keeps the exclusion auditable: a claim that fixed cost is small is a
-     * measurement, and a stage split that has quietly stopped covering the
-     * parse shows up here as a growing remainder rather than not at all. */
+    /* What the stages leave out of the parse: creating the parser's state and
+     * releasing the tree. Reading it keeps the exclusion auditable -- a claim
+     * that fixed cost is small is a measurement, and a stage split that has
+     * quietly stopped covering the parse shows up here as a growing remainder
+     * rather than not at all. Grammar setup is not in it: it was never counted. */
     const whole = edgesBetween(profileByName, "main", ENGINE_ENTRY);
     if (!whole.length) fail(`${engine}: no call edge main -> ${ENGINE_ENTRY} in ${path.basename(dump)}`);
     const parsePathIr = whole.reduce((total, edge) => total + (costRecord(profileByName, edge.cost).Ir ?? 0), 0);
@@ -1236,6 +1301,69 @@ function measure(profile, engine, document, out) {
         hotPaths: hotPaths(profileByName),
         dump
     };
+}
+
+const baseFunction = (name) => baseName(name).replace(CLONE_SUFFIX, "");
+
+/* Base function name -> the base function names it calls. */
+function callGraph(profile) {
+    const graph = new Map();
+    for (const edge of profile.edges.values()) {
+        const from = baseFunction(edge.caller);
+        if (!graph.has(from)) graph.set(from, new Set());
+        graph.get(from).add(baseFunction(edge.callee));
+    }
+    return graph;
+}
+
+function reachableFrom(graph, start) {
+    const reachable = new Set();
+    const pending = [start];
+    while (pending.length) {
+        const name = pending.pop();
+        if (reachable.has(name)) continue;
+        reachable.add(name);
+        for (const callee of graph.get(name) ?? []) pending.push(callee);
+    }
+    return reachable;
+}
+
+/**
+ * Check an engine's setup declaration against a profile that counted setup.
+ *
+ * Each declared call must be made, inside the parse entry, from its declared
+ * caller and no other -- a toggle excludes every entry into the function, so a
+ * second caller would lose parse work -- and no setup call may reach another,
+ * whose toggle would switch counting back on inside it.
+ */
+export function verifySetup(profile, setup) {
+    const graph = callGraph(profile);
+    const parse = reachableFrom(graph, ENGINE_ENTRY);
+    const callees = new Set(setup.map((edge) => edge.callee));
+    for (const { caller, callee } of setup) {
+        if (!edgesBetween(profile, caller, callee).length) throw new Error(`no setup call ${caller} -> ${callee}`);
+        if (!parse.has(caller)) throw new Error(`setup call ${caller} -> ${callee} is outside ${ENGINE_ENTRY}`);
+        for (const edge of profile.edges.values()) {
+            if (baseFunction(edge.callee) === callee && baseFunction(edge.caller) !== caller) {
+                throw new Error(`setup function ${callee} is also entered from ${baseFunction(edge.caller)}`);
+            }
+        }
+        for (const inner of reachableFrom(graph, callee)) {
+            if (inner !== callee && callees.has(inner)) {
+                throw new Error(`setup call ${callee} reaches setup call ${inner}`);
+            }
+        }
+    }
+}
+
+/** A measured profile carries no cost inside a setup call: its toggle fired. */
+export function assertSetupUncounted(profile, setup) {
+    const callees = new Set(setup.map((edge) => edge.callee));
+    for (const [name, cost] of profile.self) {
+        if (callees.has(baseFunction(name)) && (costRecord(profile, cost).Ir ?? 0) > 0) {
+            throw new Error(`setup function ${baseFunction(name)} was counted`);
+        }
+    }
 }
 
 function hotPaths(profile) {
@@ -1538,6 +1666,8 @@ function main() {
     const corpus = buildCorpus(options);
     // Raw profiles describe only this run, including after renamed or removed inputs.
     fs.rmSync(path.join(options.out, "callgrind"), { recursive: true, force: true });
+    for (const engine of Object.keys(ENGINES)) verifyRunnerSetup(profile, engine, corpus.documents[0], options.out);
+    if (baseline) verifyRunnerSetup(baseline.profile, "markdown-core", corpus.documents[0], baseline.directory);
     const cases = [];
     for (const document of corpus.documents) {
         const engines = {};
