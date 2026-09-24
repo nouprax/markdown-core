@@ -31,9 +31,13 @@ fi
 grep -q 'typedef struct markdown_core_element markdown_core_element;' \
     packages/markdown-core/core/markdown-core.h \
     || fail "the parser-element descriptor does not use markdown_core_element"
-grep -q 'markdown_core_parser_attach_element' \
+grep -q 'markdown_core_dialect_builder_attach' \
     packages/markdown-core/core/markdown-core-element-api.h \
     || fail "the parser-element attachment API was not renamed coherently"
+if grep -R -n -E 'markdown_core_parser_attach_element|markdown_core_parser_set_backslash_ispunct_func' \
+    packages/markdown-core --exclude-dir=build; then
+    fail "an element registers through the dialect builder, never through a parser"
+fi
 if grep -R -n 'markdown_core_map_entry' packages/markdown-core --exclude-dir=build; then
     fail "the retired map-entry type still exists"
 fi

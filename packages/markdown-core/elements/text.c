@@ -5,8 +5,9 @@
 #define advance(inline_state) ((inline_state)->pos += 1)
 
 static int any_element_dispatches(markdown_core_parser *parser, unsigned char c) {
-    for (size_t i = parser->inline_dispatch_offsets[c]; i < parser->inline_dispatch_offsets[c + 1]; i++) {
-        if (parser->inline_dispatch[i] != &MARKDOWN_CORE_ELEMENT_TEXT) {
+    const markdown_core_dialect *dialect = parser->dialect;
+    for (size_t i = dialect->inline_dispatch_offsets[c]; i < dialect->inline_dispatch_offsets[c + 1]; i++) {
+        if (dialect->inline_dispatch[i] != &MARKDOWN_CORE_ELEMENT_TEXT) {
             return 1;
         }
     }
@@ -50,7 +51,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, markdo
         }
         return escaped;
     }
-    if ((parser->backslash_ispunct ? parser->backslash_ispunct : markdown_core_ispunct)(nextchar)) {
+    if (markdown_core_ispunct(nextchar)) {
         if (nextchar == '\\' && !any_element_dispatches(parser, '\\')) {
             bufsize_t end = start;
             while (end + 1 < inline_state->input.len && inline_state->input.data[end] == '\\' &&

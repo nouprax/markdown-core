@@ -11,6 +11,7 @@ const core = [
     "markdown_core.c",
     "node.c",
     "iterator.c",
+    "dialect.c",
     "blocks.c",
     "inlines.c",
     "utf8.c",

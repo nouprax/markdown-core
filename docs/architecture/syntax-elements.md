@@ -74,7 +74,7 @@ create another parser or transfer AST ownership. Citation, bracket and heading
 state records live beside their grammar owners. Inline state resources are released
 through their owners' disposal hooks, including on allocation failure.
 
-The immutable registry projects node kinds to element structure descriptors separately
+A fixed kind table maps node kinds to element structure descriptors separately
 from scanner precedence. Structure follows a node's current kind; its existing
 `element` pointer continues to own opaque payload and containment callbacks,
 including across kind conversion. A containment policy cannot suppress the
@@ -95,7 +95,7 @@ There are two kinds of integration, chosen by lifecycle:
   invoked by its existing owner does not rediscover syntax in a tree pass.
 
 Block recognition returns a typed candidate and its committed-open callback.
-The registry orders all openers; the engine has no reserved recognition slot
+The dialect's element order ranks all openers; the engine has no reserved recognition slot
 for inherited grammar. Streaming parsing and lookahead ask the same operation.
 Definition terms have a fallback hook after ordinary elements and tables
 decline. Table owns its dash-led interruption rule. Elements also declare
@@ -107,7 +107,7 @@ Inline descriptors declare protected-token, ordinary-alternative or literal-
 fallback precedence. One ordered dispatch loop handles all three. Its byte index
 is built once per parse, preserving candidate order and set membership without
 walking unrelated descriptors for each token. Inline state lifecycle and block
-alternative lists likewise include only participating descriptors, in registry
+alternative lists likewise include only participating descriptors, in element
 order. A successful
 alternative may consume input without emitting a node, as bracket commitment
 does. Ordinary elements, including test probes, still run before the literal
@@ -118,7 +118,7 @@ descriptor; the engine has no built-in byte table.
 
 Parsed delimiters declare consumed widths, lexical run limit, body grammar,
 ambiguity rule and resulting node kind. The engine projects these declarations
-by rule and default byte once when attaching the dialect. Two syntax owners
+by rule and default byte once, when the dialect is sealed. Two syntax owners
 cannot overwrite the same rule or default byte. Shared dispatch is distinct:
 the double-tilde scanner selects Strikethrough before Subscript can select a
 single tilde; Footnote claims `^[` before Superscript. All parsed delimiters,
@@ -137,10 +137,10 @@ the existing parsed range; none reparses bracket contents. Heading suspension,
 field completion, ordinary whitespace boundaries and source positions use
 the same services as ordinary inline parsing.
 
-The parser owns descriptor lists and temporary indices; the AST owns nodes,
-resources and independent field roots. Allocation failures remain sticky on
-the one parse transaction. Disposal releases every descriptor projection even
-if attachment failed partway through. Element code uses the same source
+The sealed dialect owns descriptor lists and projections; the parser owns
+temporary indices; the AST owns nodes, resources and independent field roots.
+Allocation failures remain sticky on the one parse transaction. A refused or
+failed registration leaves the dialect builder as it was. Element code uses the same source
 mapping, indentation and lookahead services, preserving their linear-work
 invariants.
 
@@ -176,14 +176,46 @@ calls and spelling dispatch in either engine. The source-list
 audit compares CMake, both Swift manifests, Android CMake and the ES/Wasm
 build, so moving an implementation cannot leave a binding on an old source.
 
-### Registry lifetime
+### Dialect lifetime
 
-Every parse borrows the same immutable, contiguous core descriptor table.
-Hook presence on each descriptor is the authority for participation; there
-are no separately owned block, inline, or lifecycle membership lists. The
-byte dispatch index is the one runtime projection, stably ordered by inline
-precedence within each byte. It is built once before inline parsing.
-Private setup extensions acquire a contiguous snapshot before replacing the
-borrowed table. They use the same readers and dispatch construction as the
-fixed dialect; failed allocation preserves the previous registry. No global
-initialization cache or lock is needed.
+Each parser instance parses with one dialect: the element list, in order, and
+every table projected from it. The engine writes no construct's grammar of its
+own; the dialect is only the elements and their projections.
+
+A dialect has two types for its two states. The parse transaction starts a
+builder (`markdown_core_dialect_builder`) from the complete core dialect. A
+private setup (`markdown_core_parse_document_with_setup`) receives only that
+builder, never the parser, and may register further elements under the one
+registration rule. The transaction then seals the builder into a
+`markdown_core_dialect`. Sealing projects every table once:
+
+- the block-start families and their gate lists;
+- the container prefix;
+- the inline-content families;
+- the inline byte tables and the precedence-ordered dispatch;
+- the finish-step dispatch and its per-kind records;
+- the text, document and delimiter owners.
+
+The parser holds only a `const` pointer to the sealed dialect. Nothing
+reachable from a running instance can register an element or write a
+projection, so the dialect is fixed for the instance's lifetime by the types.
+The dialect begins and ends with its instance, so it has no allocation of its
+own. Sealing is two steps: the transaction measures the builder, allocates the
+parser and the dialect's tables as one block, and seals into that block before
+the parser starts. The sealed dialect copies its element list, so the builder
+is released before the parse and the instance is released as one block.
+Instances in one process may seal different dialects, and nothing about a
+dialect is process state, so no global initialization cache or lock is needed.
+
+A role the whole dialect has one owner for belongs to the last registered
+element that declares it:
+
+- the text scanner (`parse_text`);
+- each delimiter rule;
+- the document lifecycle.
+
+An element declares all of the document lifecycle or none of it, because the
+engine calls those hooks on the owner without asking. A setup that needs a
+different document lifecycle registers an owner; it does not patch the parser.
+Sealing happens at the setup boundary, before the source stage, so it is
+outside both benchmark stages.

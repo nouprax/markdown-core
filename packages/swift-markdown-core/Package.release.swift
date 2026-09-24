@@ -34,6 +34,7 @@ let package = Package(
                 "core/markdown_core.c",
                 "core/node.c",
                 "core/iterator.c",
+                "core/dialect.c",
                 "core/blocks.c",
                 "core/inlines.c",
                 "core/utf8.c",
