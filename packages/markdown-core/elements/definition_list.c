@@ -110,7 +110,7 @@ static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, 
         parser->definition_list_work += term.len;
         markdown_core_attribute_parser attributes = {
             .data = term.data, .length = term.len, .scratch = &parser->attribute_scratch};
-        bool reference = markdown_core_parse_reference_inline(&term, NULL, &attributes, 0) != 0;
+        bool reference = markdown_core_parse_reference_inline(parser, &term, NULL, &attributes, 0) != 0;
         parser->attribute_work += attributes.work;
         if (attributes.oom) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);

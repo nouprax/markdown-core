@@ -243,6 +243,56 @@ markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markd
     return markdown_core_key_index_lookup(&map->index, map->label_buffer.ptr, map->label_buffer.size);
 }
 
+/* THE MAP'S RECORD STORAGE. A record lives exactly as long as its map -- none
+ * is ever freed alone -- so records are carved one after another from blocks
+ * the map owns, and the blocks go when the map does. A block starts small, so
+ * a map that holds a few headings' records costs one small allocation, and
+ * doubles up to a cap, so a document with many definitions pays for its
+ * records in a few allocations rather than one each. A record larger than
+ * the next block gets a block of its own size. */
+struct markdown_core_map_block {
+    union {
+        markdown_core_map_block *next;
+        long double alignment;
+        int64_t integer_alignment;
+    } head;
+};
+
+#define MAP_BLOCK_MIN_BYTES ((size_t)1024)
+#define MAP_BLOCK_MAX_BYTES ((size_t)16 * 1024)
+
+void *markdown_core_map_carve(markdown_core_map *map, size_t size) {
+    const size_t align = sizeof(markdown_core_map_block);
+    if (size > SIZE_MAX - align) {
+        return NULL;
+    }
+    size = (size + align - 1) / align * align;
+    if (!map->blocks || map->block_size - map->block_used < size) {
+        size_t capacity = map->block_size ? map->block_size * 2 : MAP_BLOCK_MIN_BYTES;
+        if (capacity > MAP_BLOCK_MAX_BYTES) {
+            capacity = MAP_BLOCK_MAX_BYTES;
+        }
+        if (capacity < size) {
+            capacity = size;
+        }
+        if (capacity > SIZE_MAX - sizeof(markdown_core_map_block)) {
+            return NULL;
+        }
+        markdown_core_map_block *block =
+            (markdown_core_map_block *)markdown_core_realloc(NULL, sizeof(markdown_core_map_block) + capacity);
+        if (!block) {
+            return NULL;
+        }
+        block->head.next = map->blocks;
+        map->blocks = block;
+        map->block_size = capacity;
+        map->block_used = 0;
+    }
+    void *storage = (unsigned char *)(map->blocks + 1) + map->block_used;
+    map->block_used += size;
+    return storage;
+}
+
 void markdown_core_map_free(markdown_core_map *map) {
     markdown_core_map_record *record;
 
@@ -250,14 +300,15 @@ void markdown_core_map_free(markdown_core_map *map) {
         return;
     }
 
-    record = map->records;
-    while (record) {
-        markdown_core_map_record *next = record->next;
-        /* The map's holder goes; a resource some node still reads through
-         * stays with that node, which is how the tree outlives the parser. */
+    /* The map's holder goes; a resource some node still reads through stays
+     * with that node, which is how the tree outlives the parser. */
+    for (record = map->records; record; record = record->next) {
         markdown_core_resource_release(record->resource);
-        markdown_core_free(record);
-        record = next;
+    }
+    while (map->blocks) {
+        markdown_core_map_block *next = map->blocks->head.next;
+        markdown_core_free(map->blocks);
+        map->blocks = next;
     }
 
     markdown_core_key_index_free(&map->index);

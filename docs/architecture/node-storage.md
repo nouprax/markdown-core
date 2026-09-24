@@ -5,29 +5,29 @@ state, and a union of typed node data pointers. Every union arm is a pointer;
 adding fields to one kind cannot enlarge the common node. A kind with no
 kind-specific fields has no data record. Field-bearing kinds own a
 record containing their ordinary typed fields. Construction places the node
-and its record together in one cell, with the typed pointer referring directly
-to that record; a record larger than the cell's record space is owned apart
-from the cell through `node_data_allocation`. Kind conversion uses the same
+and its record together in one slot, with the typed pointer referring directly
+to that record; a record larger than the slot's record space is owned apart
+from the slot through `node_data_allocation`. Kind conversion uses the same
 capacity and ownership rule. A C99 union provides scalar alignment
-for the node and the record; the cell's header before them is padded to the
+for the node and the record; the slot's header before them is padded to the
 same alignment, and that padding is included in measured memory costs.
 
-## Cells, slabs and the pool
+## Slots, slabs and the pool
 
-A node's storage is a fixed-size cell: a header naming the slab it came from,
-the node, and room for its kind's record. A parse takes cells from slabs --
-one allocation holding many cells -- through a pool the parser owns, and a
-caller with no parse takes one cell from the allocator; the header says which,
+A node's storage is a fixed-size slot: a header naming the slab it came from,
+the node, and room for its kind's record. A parse takes slots from slabs --
+one allocation holding many slots -- through a pool the parser owns, and a
+caller with no parse takes one slot from the allocator; the header says which,
 and nothing else about the storage is visible through the node.
 
-A slab lives while anything holds it: every cell taken from it, and the pool
-while that slab is the one it takes cells from. A cell released during the
+A slab lives while anything holds it: every slot taken from it, and the pool
+while that slab is the one it takes slots from. A slot released during the
 parse goes back to the pool and is handed out again, initialized, before another
-cell is taken from a slab, so the storage a parse holds is bounded by its peak
-live node count rather than by how many nodes it made. A cell released with no
+slot is taken from a slab, so the storage a parse holds is bounded by its peak
+live node count rather than by how many nodes it made. A slot released with no
 pool drops its hold, and the slab is freed with its last one -- by whichever
 release that turns out to be. Disposing the pool drops the holds the pool
-itself has (its released cells, its current slab) and nothing else, so the
+itself has (its released slots, its current slab) and nothing else, so the
 finished tree keeps its slabs, and a subtree unlinked from a parsed document
 outlives the document like a hand-built one: `markdown_core_node_free` releases
 either. What a retained subtree keeps alive is its slabs, not its nodes. The
@@ -38,16 +38,28 @@ Why: a node's chunk was larger than the C library's fast-path size classes, so
 every release of one walked the allocator's merge path, and releasing the
 finished tree cost more than a third of parsing it.
 
+Resources are slots too. A resource is the destination, title and definition
+attributes a `Link` or `Embedded` reads, shared by every occurrence that
+resolves to one definition. It is taken from a second pool of the parse, and
+`slab.h` is the one mechanism both pools use. The last of its holders releases
+it: the map record, the heading that declares it, or an occurrence. Its slot
+never goes back to a pool; it drops its slab hold. So the tree keeps its
+resource slabs as it keeps its node slabs.
+
+Reference-map records are not slots. Every record lives exactly as long as
+its map, so records are carved from blocks the map owns and freed with it,
+rather than allocated one each.
+
 All block, inline, and manual construction uses the same node constructor.
-It takes one cell for the node and its kind's record, establishes defaults,
+It takes one slot for the node and its kind's record, establishes defaults,
 and only then exposes the node. Failure releases all acquired storage; a slab
 that cannot be allocated refuses the node and leaves the pool usable.
 Node data and its strings use the library's allocator.
 
 Initialization clears the whole node and exactly the active inline record
 (including the alignment gap before it). Spare record capacity has no live
-object and is not read or initialized. Records larger than the cell's capacity
-are separately zero-allocated. Fresh, recycled and standalone cells use this
+object and is not read or initialized. Records larger than the slot's capacity
+are separately zero-allocated. Fresh, recycled and standalone slots use this
 same constructor; the pool's slab header remains outside object initialization.
 
 An empty node's content borrows the strbuf sentinel. Creating a block does not
@@ -110,14 +122,14 @@ regression inputs vary nesting depth and autolink count independently.
 
 Kind conversion preserves node identity and tree links. After containment
 validation, it reserves an external replacement before releasing the old
-fields if the new record exceeds cell capacity. A record that fits already
+fields if the new record exceeds slot capacity. A record that fits already
 has storage: the conversion releases the old fields, zeroes the new active
-record in the cell, establishes defaults and commits the new kind. These last
+record in the slot, establishes defaults and commits the new kind. These last
 operations cannot fail and never overwrite a still-live old field. The old
-record is freed only when it was external; cell storage stays with the node.
+record is freed only when it was external; slot storage stays with the node.
 The typed view and allocation ownership are explicit: `as` points to the
 current record, while `node_data_allocation` owns whichever record is not in
-the cell, if any, because it exceeds the cell's record space. Ownership is
+the slot, if any, because it exceeds the slot's record space. Ownership is
 never inferred by comparing potentially adjacent
 addresses.
 `markdown_core_node_set_kind` distinguishes containment rejection from allocation
@@ -143,9 +155,9 @@ allocation work, and memory independently of the deterministic layout tests.
 Tests protect the pointer-sized union, constructor allocation failures,
 transactional kind conversion, containment rejection in parser conversions,
 owned subtree release, whole-parse OOM propagation, and the pool's claims in
-allocator counts: one allocation per slab of many cells, a released cell
+allocator counts: one allocation per slab of many slots, a released slot
 reused before a slab is touched, a refused slab refusing only the node, and a
-slab freed by the last of its cells after the pool is gone. Platform builds verify
+slab freed by the last of its slots after the pool is gone. Platform builds verify
 native alignment, and sanitizer suites exercise the same ownership paths.
 
 Link reference definitions are recognized during block parsing so paragraph

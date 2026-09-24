@@ -148,10 +148,11 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     parser->lookahead_chain_flags = NULL;
     parser->lookahead_chain_alloc = 0;
 
-    /* Last, after every release above: the cells the parse gave back, and the
-     * slab it was taking from. The finished tree, returned before this, holds
-     * its own slabs. */
+    /* Last, after every release above: the slots the parse gave back, and the
+     * slabs it was taking from. The finished tree, returned before this, holds
+     * its own slabs, for its nodes and for the resources they read through. */
     markdown_core_node_pool_dispose(&parser->nodes);
+    markdown_core_slab_pool_dispose(&parser->resources);
 }
 
 /* ONE INSTANCE'S FIXED STATE: the parser and the dialect sealed for it,

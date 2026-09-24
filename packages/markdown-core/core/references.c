@@ -21,7 +21,7 @@ static markdown_core_map_record *record_create(markdown_core_map *map, const uns
     /* All declarations precede lookup, including virtual heading records. */
     assert(!map->prepared);
 
-    record = markdown_core_alloc(1, sizeof(*record) + (size_t)key_len + 1);
+    record = markdown_core_map_carve(map, sizeof(*record) + (size_t)key_len + 1);
     if (!record) {
         map->oom = 1;
         markdown_core_resource_release(resource);
@@ -32,6 +32,7 @@ static markdown_core_map_record *record_create(markdown_core_map *map, const uns
     record->label_len = key_len;
     record->resource = resource;
     record->source_key = map->size;
+    record->implicit = false;
     record->next = map->records;
 
     map->records = record;

@@ -26,8 +26,9 @@ markdown_core_optional_chunk markdown_core_clean_title(markdown_core_chunk *titl
  * definition produces no node (M2): it is consumed, and every reference that
  * resolves to it is the `Link` or `Embedded` it names. A NULL refmap performs the
  * same recognition without registering or allocating a definition resource. */
-bufsize_t markdown_core_parse_reference_inline(markdown_core_chunk *input, markdown_core_map *refmap,
-                                               markdown_core_attribute_parser *attributes, uint64_t source_key);
+bufsize_t markdown_core_parse_reference_inline(markdown_core_parser *parser, markdown_core_chunk *input,
+                                               markdown_core_map *refmap, markdown_core_attribute_parser *attributes,
+                                               uint64_t source_key);
 
 void markdown_core_inline_pop_bracket(markdown_core_inline_state *inline_state);
 markdown_core_node *markdown_core_inline_handle_close_bracket(markdown_core_parser *parser,

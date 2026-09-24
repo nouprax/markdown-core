@@ -8,7 +8,6 @@
 typedef struct {
     markdown_core_node *node;
     markdown_core_inline_state *pending;
-    markdown_core_resource *resource;
 } markdown_core_heading_parse;
 
 typedef struct {

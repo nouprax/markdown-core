@@ -25,7 +25,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
         markdown_core_parser_content_place(parser, &b->content_map, (bufsize_t)(chunk.data - node_content->ptr), &line,
                                            &column);
         uint64_t source_key = ((uint64_t)(uint32_t)line << 32) | (uint32_t)column;
-        pos = markdown_core_parse_reference_inline(&chunk, parser->refmap, &attributes, source_key);
+        pos = markdown_core_parse_reference_inline(parser, &chunk, parser->refmap, &attributes, source_key);
         if (!pos) {
             break;
         }
@@ -273,8 +273,9 @@ static bool reference_tail(markdown_core_inline_state *inline_state, markdown_co
     return markdown_core_inline_skip_line_end(inline_state);
 }
 
-bufsize_t markdown_core_parse_reference_inline(markdown_core_chunk *input, markdown_core_map *refmap,
-                                               markdown_core_attribute_parser *attributes, uint64_t source_key) {
+bufsize_t markdown_core_parse_reference_inline(markdown_core_parser *parser, markdown_core_chunk *input,
+                                               markdown_core_map *refmap, markdown_core_attribute_parser *attributes,
+                                               uint64_t source_key) {
     markdown_core_inline_state inline_state;
     markdown_core_resource *resource;
     int lost = 0;
@@ -353,7 +354,7 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_chunk *input, markd
     {
         markdown_core_chunk clean_url = markdown_core_clean_url(&url, &lost);
         markdown_core_optional_chunk clean_title = markdown_core_clean_title(&title, &lost);
-        resource = lost ? NULL : markdown_core_resource_new(clean_url, clean_title);
+        resource = lost ? NULL : markdown_core_resource_new(&parser->resources, clean_url, clean_title);
         if (!resource) {
             markdown_core_chunk_free(&clean_url);
             markdown_core_optional_chunk_free(&clean_title);
@@ -494,7 +495,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
         markdown_core_resource_retain(record->resource);
         inl->as.link->resource = record->resource;
     } else if (inl) {
-        inl->as.link->resource = markdown_core_resource_new(url, title);
+        inl->as.link->resource = markdown_core_resource_new(&parser->resources, url, title);
         if (!inl->as.link->resource) {
             markdown_core_parser_release_node(parser, inl);
             inl = NULL;
