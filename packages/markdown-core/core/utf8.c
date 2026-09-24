@@ -99,22 +99,37 @@ static uint8_t *S_reserve_image(markdown_core_strbuf *buf, uint8_t *out, size_t 
 }
 
 #include "case_fold.inc"
+#include "case_fold_index.inc"
 
-/* The fold table's entry for `c`, or NULL when it folds to itself. */
-static const uint32_t *S_case_fold_entry(int32_t c) {
-    size_t low = 0, high = CF_TABLE_SIZE;
-    while (low < high) {
-        size_t mid = low + (high - low) / 2;
-        int32_t code = (int32_t)CF_CODE_POINT(cf_table[mid]);
-        if (c < code) {
-            high = mid;
-        } else if (c > code) {
-            low = mid + 1;
-        } else {
-            return &cf_table[mid];
-        }
+/* The fold table's entry for `c`, below CF_MAX, or NULL when it folds to
+ * itself. Two dependent loads through the generated index, for every
+ * character whatever its script: it used to be a binary search of the
+ * 1,559-entry table, about eleven probes that ASCII never paid and every
+ * other character did (#405). */
+static inline const uint32_t *S_case_fold_entry(int32_t c) {
+    uint16_t number = cf_leaves[cf_pages[c >> CF_LEAF_BITS]][c & ((1 << CF_LEAF_BITS) - 1)];
+    return number ? &cf_table[number - 1] : NULL;
+}
+
+/* One to seven bytes -- a character of two or more, or its fold -- in two
+ * fixed-size moves that may overlap, reading and writing only those bytes. A
+ * memcpy whose length is the character's was a library call per character. */
+static inline void S_copy_image(uint8_t *out, const uint8_t *in, size_t n) {
+    if (n >= 4) {
+        uint32_t head, tail;
+        memcpy(&head, in, 4);
+        memcpy(&tail, in + n - 4, 4);
+        memcpy(out, &head, 4);
+        memcpy(out + n - 4, &tail, 4);
+    } else if (n >= 2) {
+        uint16_t head, tail;
+        memcpy(&head, in, 2);
+        memcpy(&tail, in + n - 2, 2);
+        memcpy(out, &head, 2);
+        memcpy(out + n - 2, &tail, 2);
+    } else {
+        *out = *in;
     }
-    return NULL;
 }
 
 /* THE REFERENCE-LABEL NORMAL FORM, in one pass: case fold, then drop leading
@@ -166,10 +181,10 @@ void markdown_core_utf8proc_normalize_label(markdown_core_strbuf *dest, const ui
             if (char_len == 1) {
                 *out++ = str[0] >= 'A' && str[0] <= 'Z' ? (uint8_t)(str[0] + ('a' - 'A')) : str[0];
             } else if (entry) {
-                memcpy(out, cf_repl + CF_REPL_IDX(*entry), CF_REPL_SIZE(*entry));
+                S_copy_image(out, cf_repl + CF_REPL_IDX(*entry), CF_REPL_SIZE(*entry));
                 out += CF_REPL_SIZE(*entry);
             } else {
-                memcpy(out, str, (size_t)char_len);
+                S_copy_image(out, str, (size_t)char_len);
                 out += char_len;
             }
         }
