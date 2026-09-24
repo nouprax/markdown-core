@@ -358,8 +358,8 @@ void markdown_core_heading_begin_inlines(markdown_core_parser *parser, markdown_
         while (line > 0 && !markdown_core_is_line_end(inline_state->input.data[line - 1])) {
             line--;
         }
-        inline_state->attributes =
-            (markdown_core_attribute_parser){.data = inline_state->input.data, .length = inline_state->input.len};
+        inline_state->attributes = (markdown_core_attribute_parser){
+            .data = inline_state->input.data, .length = inline_state->input.len, .scratch = &parser->attribute_scratch};
         inline_state->heading_attributes_start =
             markdown_core_attributes_tail(&inline_state->attributes, line, inline_state->input.len);
         if (inline_state->heading_attributes_start >= 0) {

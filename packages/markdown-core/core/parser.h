@@ -321,6 +321,9 @@ struct markdown_core_parser {
      * (see `markdown_core_inline_push_delimiter_entry`); linked through `next`
      * and released with the parser. */
     struct delimiter *free_delimiters;
+    /* The workspace every attribute value of the parse is read into before
+     * it is laid out (core/attributes.h); released with the parser. */
+    markdown_core_attribute_scratch attribute_scratch;
     /* WHICH KINDS THIS PARSE PRODUCED, recorded where they are produced.
      *
      * Every node creation and every `set_kind` that a parse performs writes

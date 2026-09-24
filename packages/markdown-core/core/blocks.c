@@ -137,6 +137,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
         parser->free_delimiters = entry->next;
         markdown_core_free(entry);
     }
+    markdown_core_attribute_scratch_free(&parser->attribute_scratch);
 
     /* The block-start lookahead's chain and resume cache are parser state of
      * the same kind: indexed by open containers and source lines, owned by no

@@ -33,7 +33,10 @@ int bench_parse_attributes(const char *source, size_t length, attribute_receipt 
      * over a line: the index exists so overlapping failed candidates cannot
      * rescan an extent, and giving each list its own would measure a parser
      * this repository does not ship. */
-    markdown_core_attribute_parser parser = {.data = (const unsigned char *)source, .length = (bufsize_t)length};
+    /* The scratch a document parse would lend every reader: one for the run. */
+    markdown_core_attribute_scratch scratch = {0};
+    markdown_core_attribute_parser parser = {
+        .data = (const unsigned char *)source, .length = (bufsize_t)length, .scratch = &scratch};
     bufsize_t at = 0;
 
     while (at < (bufsize_t)length) {
@@ -73,10 +76,8 @@ int bench_parse_attributes(const char *source, size_t length, attribute_receipt 
     }
     /* Read before the free, because allocation failure is sticky and a
      * recovery that ran out of memory recovered less than it reports. */
-    if (parser.oom) {
-        markdown_core_attribute_parser_free(&parser);
-        return 1;
-    }
+    int failed = parser.oom;
     markdown_core_attribute_parser_free(&parser);
-    return 0;
+    markdown_core_attribute_scratch_free(&scratch);
+    return failed;
 }

@@ -103,11 +103,41 @@ void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *da
 MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_sets(markdown_core_strbuf *buf, const char *string);
 
-MARKDOWN_CORE_EXPORT
-void markdown_core_strbuf_putc(markdown_core_strbuf *buf, int c);
+/* The append that needs growth, or meets a poisoned buffer: the half of
+ * `markdown_core_strbuf_put` that is not inline. It grows, poisons, or does
+ * nothing, as the buffer's contract says. */
+void markdown_core_strbuf_put_grown(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len);
 
-MARKDOWN_CORE_EXPORT
-void markdown_core_strbuf_put(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len);
+/* APPEND, WITH THE COMMON CASE INLINE. Growth oversizes by half, so most
+ * appends fit the room the buffer already has, and those are a copy and a
+ * terminator, here at the call. An append that does not fit, or meets a
+ * poisoned buffer, takes the call above. Room never reaches past the content
+ * limit -- `markdown_core_strbuf_grow` caps the allocation at the limit and
+ * its terminator -- so fitting the room is fitting the limit, and one
+ * comparison decides both. */
+static MARKDOWN_CORE_INLINE void markdown_core_strbuf_put(markdown_core_strbuf *buf, const unsigned char *data,
+                                                          bufsize_t len) {
+    if (len <= 0) {
+        return;
+    }
+    if (len < buf->asize - buf->size && !buf->oom) {
+        memmove(buf->ptr + buf->size, data, (size_t)len);
+        buf->size += len;
+        buf->ptr[buf->size] = '\0';
+        return;
+    }
+    markdown_core_strbuf_put_grown(buf, data, len);
+}
+
+static MARKDOWN_CORE_INLINE void markdown_core_strbuf_putc(markdown_core_strbuf *buf, int c) {
+    unsigned char byte = (unsigned char)(c & 0xFF);
+    if (buf->size + 1 < buf->asize && !buf->oom) {
+        buf->ptr[buf->size++] = byte;
+        buf->ptr[buf->size] = '\0';
+        return;
+    }
+    markdown_core_strbuf_put_grown(buf, &byte, 1);
+}
 
 MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_puts(markdown_core_strbuf *buf, const char *string);
