@@ -721,12 +721,17 @@ static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inli
     // The caller has already established that the first byte is literal.
     // The dialect is sealed, so its tables are read through one local.
     const markdown_core_dialect *const dialect = inline_state->dialect;
+    const unsigned char *const data = inline_state->input.data;
+    const bufsize_t len = inline_state->input.len;
     bufsize_t n = inline_state->pos;
-    while (n < inline_state->input.len) {
-        unsigned char c = inline_state->input.data[n];
-        if (!dialect->special_chars[c]) {
-            n++;
-        } else if (dialect->inline_start_predicates[c] && !dialect->inline_start_predicates[c](inline_state, n)) {
+    while (n < len) {
+        /* Text runs to the next byte an inline element terminates it at. */
+        n = markdown_core_scan_to_class(dialect->special_chars, MARKDOWN_CORE_TEXT_END, data, n, len);
+        if (n >= len) {
+            break;
+        }
+        unsigned char c = data[n];
+        if (dialect->inline_start_predicates[c] && !dialect->inline_start_predicates[c](inline_state, n)) {
             n++;
         } else if (delimiter_rule_for_byte(inline_state, c) != MARKDOWN_CORE_DELIM_RULE_NONE) {
             const delimiter_run *run = scan_delimiter(inline_state, n, delimiter_rule_for_byte(inline_state, c));

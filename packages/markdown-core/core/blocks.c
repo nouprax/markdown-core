@@ -1215,10 +1215,13 @@ static inline const unsigned char *S_input_line_content(markdown_core_parser *pa
     return facts->normalized ? facts->normalized->bytes : S_normalize_input_line(parser, line, facts, *length);
 }
 
-/* Search the one physical span alphabet: NUL, CR and LF. */
+/* The one physical span alphabet: NUL, CR and LF end a span. */
+enum { SPAN_END = 1 };
+static const uint8_t SPAN_BYTES[256] = {['\0'] = SPAN_END, ['\r'] = SPAN_END, ['\n'] = SPAN_END};
+
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const
     unsigned char *S_source_span_end(const unsigned char *cursor, const unsigned char *end) {
-    return markdown_core_find_byte3(cursor, end, '\0', '\r', '\n');
+    return cursor + markdown_core_scan_to_class(SPAN_BYTES, SPAN_END, cursor, 0, (bufsize_t)(end - cursor));
 }
 
 /* The sole physical-line scanner for root and mapped inputs. Grammar facts

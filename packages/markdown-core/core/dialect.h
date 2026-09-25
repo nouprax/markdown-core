@@ -185,6 +185,10 @@ struct markdown_core_dialect_builder {
  * `parse_text` and each delimiter rule belongs to the last element that
  * declares it. The core dialect has one of each; a setup that registers
  * another replaces the earlier one for its instance. */
+/* The class of a byte that ends a run of inline text, in the dialect's
+ * `special_chars` table. */
+enum { MARKDOWN_CORE_TEXT_END = 1 };
+
 typedef struct markdown_core_dialect {
     const markdown_core_element *const *elements;
     size_t element_count;
@@ -218,9 +222,11 @@ typedef struct markdown_core_dialect {
     size_t inline_dispatch_offsets[257];
     const markdown_core_element *const *inline_dispatch;
     /* The inline byte tables: the text terminators, flanking-transparent
-     * bytes and start predicates of the registered inline elements. */
+     * bytes and start predicates of the registered inline elements. A text
+     * terminator has the class MARKDOWN_CORE_TEXT_END, which the text scan
+     * stops at (markdown_core_scan_to_class). */
     bool (*inline_start_predicates[256])(markdown_core_inline_state *, bufsize_t);
-    int8_t special_chars[256];
+    uint8_t special_chars[256];
     int8_t skip_chars[256];
     /* The finish steps by key (see `markdown_core_finish_key`): a list
      * terminated by a NULL element, or NULL when nothing declared the key.

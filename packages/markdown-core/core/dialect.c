@@ -282,7 +282,7 @@ static void S_project_inline_bytes(markdown_core_dialect *dialect) {
             } else if (dialect->inline_start_predicates[*c] != element->is_inline_start) {
                 dialect->inline_start_predicates[*c] = NULL;
             }
-            dialect->special_chars[*c] = 1;
+            dialect->special_chars[*c] = MARKDOWN_CORE_TEXT_END;
         }
         for (const unsigned char *c = (const unsigned char *)element->flanking_transparent; c && *c; c++) {
             dialect->skip_chars[*c] = 1;
