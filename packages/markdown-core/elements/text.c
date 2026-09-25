@@ -170,8 +170,10 @@ markdown_core_node *markdown_core_text_parse(markdown_core_parser *parser, markd
      * The DECODER is entered only where the character could be whitespace at
      * all. Every non-ASCII member of the set `markdown_core_utf8proc_is_space`
      * matches -- U+00A0, U+1680, U+2000-200A, U+202F, U+205F, U+3000 -- leads
-     * with 0xC2, 0xE1, 0xE2 or 0xE3. CJK starts at 0xE4 and the astral planes
-     * at 0xF0, so those are walked back on byte tests alone.
+     * with 0xC2, 0xE1, 0xE2 or 0xE3, which the generator of its Unicode table
+     * (scripts/tooling/generate-unicode-categories.mjs) asserts. CJK starts at
+     * 0xE4 and the astral planes at 0xF0, so those are walked back on byte
+     * tests alone.
      *
      * The `lead > pos` bound keeps a malformed run of continuation bytes in
      * range. What such input PARSES to is not defined -- the header says Markdown
