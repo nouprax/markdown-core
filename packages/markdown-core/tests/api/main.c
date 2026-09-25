@@ -2866,6 +2866,7 @@ static void unicode_classes_are_unicode_17(test_batch_runner *runner) {
                  {'!', 0, 1, 1, 0, 0},    {'$', 0, 1, 1, 0, 0},      {'a', 0, 0, 0, 1, 0},    {'7', 0, 0, 0, 0, 1},
                  {0xA7, 0, 1, 1, 0, 0},   {0x166D, 0, 0, 1, 0, 0},   {0x1B4E, 0, 1, 1, 0, 0}, {0x2FFC, 0, 0, 1, 0, 0},
                  {0x4E00, 0, 0, 0, 1, 0}, {0x20000, 0, 0, 0, 1, 0},  {0x0661, 0, 0, 0, 0, 1}, {0x2167, 0, 0, 0, 0, 1},
+                 {'~', 0, 1, 1, 0, 0},    {0x7F, 0, 0, 0, 0, 0},     {0x80, 0, 0, 0, 0, 0},   {0xA0, 1, 0, 0, 0, 0},
                  {0xD800, 0, 0, 0, 0, 0}, {0x110000, 0, 0, 0, 0, 0}, {-1, 0, 0, 0, 0, 0}};
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         int32_t scalar = cases[i].scalar;
@@ -2877,6 +2878,13 @@ static void unicode_classes_are_unicode_17(test_batch_runner *runner) {
                !!markdown_core_utf8proc_is_number(scalar) == cases[i].number,
            "U+%04X has its Unicode 17 classes", (unsigned)scalar);
     }
+    /* ASCII is read without its page because its block is laid first. */
+    int ascii_staged = 1;
+    for (int32_t scalar = 0; scalar < 0x80; scalar++) {
+        ascii_staged &= markdown_core_utf8proc_classes(scalar) ==
+                        markdown_core_unicode_blocks[markdown_core_unicode_pages[scalar >> 8] + (scalar & 255)];
+    }
+    OK(runner, ascii_staged, "ASCII's classes are its page's block");
     /* U+1B4E BALINESE INVERTED CARIK SIAKI became punctuation in Unicode 16,
      * so it keeps `a**` from opening strong emphasis, as a quote would. */
     const char *source = "a**\xE1\xAD\x8E"

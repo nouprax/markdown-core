@@ -12,8 +12,8 @@ promised to remain compatible between releases.
   169 characters added to P since those tables are now punctuation, 861
   added to P or S now count as CommonMark punctuation for emphasis flanking,
   and U+166D, which Unicode moved from P to S, is no longer punctuation for
-  autolink host names and table captions. Every class is one two-load
-  lookup, whatever the script.
+  autolink host names and table captions. Classifying a character is one
+  load for ASCII and two for any other character, whatever its script.
 
 - Split a `class=` attribute value where HTML splits a `class` attribute: at
   tab, line feed, form feed, carriage return and space. Vertical tab and

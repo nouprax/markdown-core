@@ -266,19 +266,17 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
             after_char = 10;
         }
     }
-    bool left_flanking =
-        !markdown_core_utf8proc_is_space(after_char) &&
-        (!markdown_core_utf8proc_is_punctuation_or_symbol(after_char) || markdown_core_utf8proc_is_space(before_char) ||
-         markdown_core_utf8proc_is_punctuation_or_symbol(before_char));
-    bool right_flanking =
-        !markdown_core_utf8proc_is_space(before_char) &&
-        (!markdown_core_utf8proc_is_punctuation_or_symbol(before_char) || markdown_core_utf8proc_is_space(after_char) ||
-         markdown_core_utf8proc_is_punctuation_or_symbol(after_char));
+    const uint8_t before = markdown_core_utf8proc_classes(before_char);
+    const uint8_t after = markdown_core_utf8proc_classes(after_char);
+    const bool space_before = before & MARKDOWN_CORE_UNICODE_SPACE;
+    const bool space_after = after & MARKDOWN_CORE_UNICODE_SPACE;
+    const bool punct_before = before & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL;
+    const bool punct_after = after & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL;
+    bool left_flanking = !space_after && (!punct_after || space_before || punct_before);
+    bool right_flanking = !space_before && (!punct_before || space_after || punct_after);
     if (spec->punctuation_bound) {
-        run.can_open =
-            left_flanking && (!right_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(before_char));
-        run.can_close =
-            right_flanking && (!left_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(after_char));
+        run.can_open = left_flanking && (!right_flanking || punct_before);
+        run.can_close = right_flanking && (!left_flanking || punct_after);
     } else {
         run.can_open = left_flanking;
         run.can_close = right_flanking;
@@ -1033,15 +1031,15 @@ int markdown_core_inline_state_scan_delimiters(markdown_core_inline_state *inlin
         after_char = 10;
     }
 
-    *punct_before = markdown_core_utf8proc_is_punctuation_or_symbol(before_char);
-    *punct_after = markdown_core_utf8proc_is_punctuation_or_symbol(after_char);
-    space_before = markdown_core_utf8proc_is_space(before_char) != 0;
-    space_after = markdown_core_utf8proc_is_space(after_char) != 0;
+    const uint8_t before = markdown_core_utf8proc_classes(before_char);
+    const uint8_t after = markdown_core_utf8proc_classes(after_char);
+    *punct_before = (before & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL) != 0;
+    *punct_after = (after & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL) != 0;
+    space_before = before & MARKDOWN_CORE_UNICODE_SPACE;
+    space_after = after & MARKDOWN_CORE_UNICODE_SPACE;
 
-    *left_flanking = numdelims > 0 && !markdown_core_utf8proc_is_space(after_char) &&
-                     !(*punct_after && !space_before && !*punct_before);
-    *right_flanking = numdelims > 0 && !markdown_core_utf8proc_is_space(before_char) &&
-                      !(*punct_before && !space_after && !*punct_after);
+    *left_flanking = numdelims > 0 && !space_after && !(*punct_after && !space_before && !*punct_before);
+    *right_flanking = numdelims > 0 && !space_before && !(*punct_before && !space_after && !*punct_after);
 
     return numdelims;
 }

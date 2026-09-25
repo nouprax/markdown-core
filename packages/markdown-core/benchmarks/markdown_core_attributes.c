@@ -5,8 +5,9 @@
  * consumer reaches it only through a span, a heading or a link, each of which
  * brings a whole inline parse along. Measuring the attribute grammar through
  * one of those measures the inline parser, which is the mistake the stage
- * report already warns about -- `inline-span` reads 4.46x and the largest
- * single cost in it is `utf8proc_is_letter`, not the attribute scan.
+ * report already warns about -- `inline-span` read 4.46x when this runner was
+ * written, and the largest single cost in it was the Unicode letter test (then
+ * a range bisection), not the attribute scan.
  *
  * Reaching in is a property of THIS FILE and not of the product: the parser
  * has no measurement mode and no benchmark-only path, and the entry points
