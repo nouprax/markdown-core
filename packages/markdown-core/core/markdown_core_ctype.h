@@ -59,11 +59,12 @@ static inline int markdown_core_is_line_end(unsigned char c) { return c == '\n' 
  * costs only its own bytes. Eight bytes are decided per bound check, so a
  * long run pays that check once per eight. In UTF-8 every byte of a
  * multi-byte character is at or above 0x80, so a table that names only ASCII
- * bytes skips text of any script at the same cost. Inlining is explicit so
- * the table and the stops fold into each call. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
-    markdown_core_scan_to_class(const uint8_t classes[256], uint8_t stops, const unsigned char *data, bufsize_t at,
-                                bufsize_t end) {
+ * bytes skips text of any script at the same cost. Where the compiler inlines
+ * it, the table and the stops fold into the call. Inlining is not forced: the
+ * attribute grammar scans in four places, and forcing four unrolled copies
+ * into it made it too large to inline into its own callers. */
+static inline bufsize_t markdown_core_scan_to_class(const uint8_t classes[256], uint8_t stops,
+                                                    const unsigned char *data, bufsize_t at, bufsize_t end) {
     for (; end - at >= 8; at += 8) {
         if (classes[data[at]] & stops) {
             return at;
