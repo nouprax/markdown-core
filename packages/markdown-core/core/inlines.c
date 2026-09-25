@@ -266,19 +266,17 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
             after_char = 10;
         }
     }
-    bool left_flanking =
-        !markdown_core_utf8proc_is_space(after_char) &&
-        (!markdown_core_utf8proc_is_punctuation_or_symbol(after_char) || markdown_core_utf8proc_is_space(before_char) ||
-         markdown_core_utf8proc_is_punctuation_or_symbol(before_char));
-    bool right_flanking =
-        !markdown_core_utf8proc_is_space(before_char) &&
-        (!markdown_core_utf8proc_is_punctuation_or_symbol(before_char) || markdown_core_utf8proc_is_space(after_char) ||
-         markdown_core_utf8proc_is_punctuation_or_symbol(after_char));
+    const uint8_t before = markdown_core_utf8proc_classes(before_char);
+    const uint8_t after = markdown_core_utf8proc_classes(after_char);
+    const bool space_before = before & MARKDOWN_CORE_UNICODE_SPACE;
+    const bool space_after = after & MARKDOWN_CORE_UNICODE_SPACE;
+    const bool punct_before = before & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL;
+    const bool punct_after = after & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL;
+    bool left_flanking = !space_after && (!punct_after || space_before || punct_before);
+    bool right_flanking = !space_before && (!punct_before || space_after || punct_after);
     if (spec->punctuation_bound) {
-        run.can_open =
-            left_flanking && (!right_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(before_char));
-        run.can_close =
-            right_flanking && (!left_flanking || markdown_core_utf8proc_is_punctuation_or_symbol(after_char));
+        run.can_open = left_flanking && (!right_flanking || punct_before);
+        run.can_close = right_flanking && (!left_flanking || punct_after);
     } else {
         run.can_open = left_flanking;
         run.can_close = right_flanking;
@@ -721,12 +719,17 @@ static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inli
     // The caller has already established that the first byte is literal.
     // The dialect is sealed, so its tables are read through one local.
     const markdown_core_dialect *const dialect = inline_state->dialect;
+    const unsigned char *const data = inline_state->input.data;
+    const bufsize_t len = inline_state->input.len;
     bufsize_t n = inline_state->pos;
-    while (n < inline_state->input.len) {
-        unsigned char c = inline_state->input.data[n];
-        if (!dialect->special_chars[c]) {
-            n++;
-        } else if (dialect->inline_start_predicates[c] && !dialect->inline_start_predicates[c](inline_state, n)) {
+    while (n < len) {
+        /* Text runs to the next byte an inline element terminates it at. */
+        n = markdown_core_scan_to_class(dialect->special_chars, MARKDOWN_CORE_TEXT_END, data, n, len);
+        if (n >= len) {
+            break;
+        }
+        unsigned char c = data[n];
+        if (dialect->inline_start_predicates[c] && !dialect->inline_start_predicates[c](inline_state, n)) {
             n++;
         } else if (delimiter_rule_for_byte(inline_state, c) != MARKDOWN_CORE_DELIM_RULE_NONE) {
             const delimiter_run *run = scan_delimiter(inline_state, n, delimiter_rule_for_byte(inline_state, c));
@@ -1028,15 +1031,15 @@ int markdown_core_inline_state_scan_delimiters(markdown_core_inline_state *inlin
         after_char = 10;
     }
 
-    *punct_before = markdown_core_utf8proc_is_punctuation_or_symbol(before_char);
-    *punct_after = markdown_core_utf8proc_is_punctuation_or_symbol(after_char);
-    space_before = markdown_core_utf8proc_is_space(before_char) != 0;
-    space_after = markdown_core_utf8proc_is_space(after_char) != 0;
+    const uint8_t before = markdown_core_utf8proc_classes(before_char);
+    const uint8_t after = markdown_core_utf8proc_classes(after_char);
+    *punct_before = (before & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL) != 0;
+    *punct_after = (after & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL) != 0;
+    space_before = before & MARKDOWN_CORE_UNICODE_SPACE;
+    space_after = after & MARKDOWN_CORE_UNICODE_SPACE;
 
-    *left_flanking = numdelims > 0 && !markdown_core_utf8proc_is_space(after_char) &&
-                     !(*punct_after && !space_before && !*punct_before);
-    *right_flanking = numdelims > 0 && !markdown_core_utf8proc_is_space(before_char) &&
-                      !(*punct_before && !space_after && !*punct_after);
+    *left_flanking = numdelims > 0 && !space_after && !(*punct_after && !space_before && !*punct_before);
+    *right_flanking = numdelims > 0 && !space_before && !(*punct_before && !space_after && !*punct_after);
 
     return numdelims;
 }

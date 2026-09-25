@@ -119,27 +119,28 @@ markdown_core_optional_chunk markdown_core_clean_title(markdown_core_chunk *titl
     return markdown_core_optional_chunk_present(markdown_core_chunk_buf_detach(&buf));
 }
 
+/* The only bytes that decide where a link label ends: the brackets, and the
+ * backslash that may escape one. */
+enum { LABEL_STOP = 1 };
+static const uint8_t LABEL_BYTES[256] = {['['] = LABEL_STOP, [']'] = LABEL_STOP, ['\\'] = LABEL_STOP};
+
 /* Where a link label written at `data` ends: the first unescaped `[` or `]`,
  * or `length` when there is none. Past MAX_LINK_LABEL_LENGTH the answer is
  * only that it is too long, so the search stops there and the length it
- * returns exceeds the maximum.
- *
- * The only bytes that decide anything are the brackets and the backslash
- * that may escape one, so the label is searched for those three a word at a
- * time, whatever script the rest of it is in. A backslash escapes the
- * punctuation character after it, which is stepped over with it. */
+ * returns exceeds the maximum. A backslash escapes the punctuation character
+ * after it, which is stepped over with it; every other byte, of any script,
+ * is skipped by the class scan. */
 bufsize_t markdown_core_inline_reference_label_length(const unsigned char *data, bufsize_t length) {
-    const unsigned char *input_end = data + length;
-    const unsigned char *end = length <= MAX_LINK_LABEL_LENGTH ? input_end : data + MAX_LINK_LABEL_LENGTH + 1;
-    const unsigned char *cursor = data;
-    while (cursor < end) {
-        cursor = markdown_core_find_byte3(cursor, end, '[', ']', '\\');
-        if (cursor == end || *cursor != '\\') {
+    const bufsize_t end = length <= MAX_LINK_LABEL_LENGTH ? length : MAX_LINK_LABEL_LENGTH + 1;
+    bufsize_t at = 0;
+    while (at < end) {
+        at = markdown_core_scan_to_class(LABEL_BYTES, LABEL_STOP, data, at, end);
+        if (at == end || data[at] != '\\') {
             break;
         }
-        cursor += cursor + 1 < input_end && markdown_core_ispunct((char)cursor[1]) ? 2 : 1;
+        at += at + 1 < length && markdown_core_ispunct((char)data[at + 1]) ? 2 : 1;
     }
-    return (bufsize_t)(cursor - data);
+    return at;
 }
 
 int markdown_core_inline_link_label(markdown_core_inline_state *inline_state, markdown_core_chunk *raw_label) {

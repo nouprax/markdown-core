@@ -1215,10 +1215,36 @@ static inline const unsigned char *S_input_line_content(markdown_core_parser *pa
     return facts->normalized ? facts->normalized->bytes : S_normalize_input_line(parser, line, facts, *length);
 }
 
-/* Search the one physical span alphabet: NUL, CR and LF. */
+/* THE END OF A PHYSICAL SPAN: the first NUL, CR or LF at or after `cursor`,
+ * or `end`. This alphabet belongs to the input contract (markdown_core.h), not
+ * to a grammar: no dialect changes it, and this is the one scan that reads
+ * every byte of every input. So it does not go through a class table
+ * (markdown_core_scan_to_class, one load per byte), but compares a machine
+ * word at a time against its three bytes and steps bytewise only through the
+ * word that holds the boundary. (x - ones) & ~x & highs flags a word that
+ * holds a zero byte; a word holds CR or LF when the word XOR that byte
+ * repeated holds a zero. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const
     unsigned char *S_source_span_end(const unsigned char *cursor, const unsigned char *end) {
-    return markdown_core_find_byte3(cursor, end, '\0', '\r', '\n');
+    const uint64_t ones = UINT64_C(0x0101010101010101);
+    const uint64_t highs = UINT64_C(0x8080808080808080);
+    while ((size_t)(end - cursor) >= sizeof(uint64_t)) {
+        uint64_t word;
+        memcpy(&word, cursor, sizeof(word));
+        const uint64_t cr = word ^ (ones * '\r');
+        const uint64_t lf = word ^ (ones * '\n');
+        if ((((word - ones) & ~word) | ((cr - ones) & ~cr) | ((lf - ones) & ~lf)) & highs) {
+            break;
+        }
+        cursor += sizeof(word);
+    }
+    for (; cursor < end; cursor++) {
+        const unsigned char byte = *cursor;
+        if (byte == '\0' || byte == '\r' || byte == '\n') {
+            break;
+        }
+    }
+    return cursor;
 }
 
 /* The sole physical-line scanner for root and mapped inputs. Grammar facts

@@ -2854,6 +2854,50 @@ static void class_runs_split_on_ascii_white_space(test_batch_runner *runner) {
     markdown_core_document_free(document);
 }
 
+/* THE UNICODE CLASSES ARE UNICODE 17'S. One table answers every predicate,
+ * so these pin the version: characters P and S gained after the older tables
+ * the punctuation predicates once used, one that left P for S, and the
+ * values that are not scalars at all. */
+static void unicode_classes_are_unicode_17(test_batch_runner *runner) {
+    static const struct {
+        int32_t scalar;
+        int space, punctuation, punctuation_or_symbol, letter, number;
+    } cases[] = {{0x20, 1, 0, 0, 0, 0},   {0x0B, 0, 0, 0, 0, 0},     {0x85, 0, 0, 0, 0, 0},   {0x3000, 1, 0, 0, 0, 0},
+                 {'!', 0, 1, 1, 0, 0},    {'$', 0, 1, 1, 0, 0},      {'a', 0, 0, 0, 1, 0},    {'7', 0, 0, 0, 0, 1},
+                 {0xA7, 0, 1, 1, 0, 0},   {0x166D, 0, 0, 1, 0, 0},   {0x1B4E, 0, 1, 1, 0, 0}, {0x2FFC, 0, 0, 1, 0, 0},
+                 {0x4E00, 0, 0, 0, 1, 0}, {0x20000, 0, 0, 0, 1, 0},  {0x0661, 0, 0, 0, 0, 1}, {0x2167, 0, 0, 0, 0, 1},
+                 {'~', 0, 1, 1, 0, 0},    {0x7F, 0, 0, 0, 0, 0},     {0x80, 0, 0, 0, 0, 0},   {0xA0, 1, 0, 0, 0, 0},
+                 {0xD800, 0, 0, 0, 0, 0}, {0x110000, 0, 0, 0, 0, 0}, {-1, 0, 0, 0, 0, 0}};
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        int32_t scalar = cases[i].scalar;
+        OK(runner,
+           !!markdown_core_utf8proc_is_space(scalar) == cases[i].space &&
+               !!markdown_core_utf8proc_is_punctuation(scalar) == cases[i].punctuation &&
+               !!markdown_core_utf8proc_is_punctuation_or_symbol(scalar) == cases[i].punctuation_or_symbol &&
+               !!markdown_core_utf8proc_is_letter(scalar) == cases[i].letter &&
+               !!markdown_core_utf8proc_is_number(scalar) == cases[i].number,
+           "U+%04X has its Unicode 17 classes", (unsigned)scalar);
+    }
+    /* ASCII is read without its page because its block is laid first. */
+    int ascii_staged = 1;
+    for (int32_t scalar = 0; scalar < 0x80; scalar++) {
+        ascii_staged &= markdown_core_utf8proc_classes(scalar) ==
+                        markdown_core_unicode_blocks[markdown_core_unicode_pages[scalar >> 8] + (scalar & 255)];
+    }
+    OK(runner, ascii_staged, "ASCII's classes are its page's block");
+    /* U+1B4E BALINESE INVERTED CARIK SIAKI became punctuation in Unicode 16,
+     * so it keeps `a**` from opening strong emphasis, as a quote would. */
+    const char *source = "a**\xE1\xAD\x8E"
+                         "foo\xE1\xAD\x8E**b\n";
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    OK(runner, document != NULL, "flanking document parses");
+    if (document) {
+        OK(runner, first_of_kind(document->root, MARKDOWN_CORE_NODE_STRONG) == NULL,
+           "Unicode 17 punctuation decides flanking");
+        markdown_core_document_free(document);
+    }
+}
+
 /* A MAP'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of definitions is a
  * few block allocations rather than one each, and the blocks go with the map. */
 static void map_records_are_carved_from_its_blocks(test_batch_runner *runner) {
@@ -9661,6 +9705,7 @@ int main(void) {
     heading_anchor_shares_its_reference_destination(runner);
     borrowed_anchor_survives_a_kind_change(runner);
     class_runs_split_on_ascii_white_space(runner);
+    unicode_classes_are_unicode_17(runner);
     map_records_are_carved_from_its_blocks(runner);
     properties_values(runner);
     properties_source_boundaries(runner);

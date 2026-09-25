@@ -149,27 +149,72 @@ static inline int markdown_core_utf8proc_step(const uint8_t *str, bufsize_t len,
     return 1;
 }
 
-/* Anything in the Zs class, plus LF, CR, TAB, FF.
+/* THE UNICODE CLASSES THE GRAMMAR ASKS ABOUT, one bit each, from Unicode 17
+ * (docs/specs/dialect.md). A scalar may have several: every ASCII
+ * punctuation character is punctuation, and those whose category is S are
+ * symbols too. */
+enum {
+    /* Zs, and tab, LF, form feed and CR: CommonMark's Unicode whitespace. */
+    MARKDOWN_CORE_UNICODE_SPACE = 1 << 0,
+    /* P, and every ASCII punctuation character. */
+    MARKDOWN_CORE_UNICODE_PUNCTUATION = 1 << 1,
+    MARKDOWN_CORE_UNICODE_SYMBOL = 1 << 2,
+    MARKDOWN_CORE_UNICODE_LETTER = 1 << 3,
+    MARKDOWN_CORE_UNICODE_NUMBER = 1 << 4,
+    /* A Unicode punctuation character as CommonMark 0.31 defines it: P or S. */
+    MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL = MARKDOWN_CORE_UNICODE_PUNCTUATION | MARKDOWN_CORE_UNICODE_SYMBOL
+};
+
+/* The staged class table unicode_categories.inc defines, generated from
+ * Unicode 17 by scripts/tooling/generate-unicode-categories.mjs: `pages` holds
+ * the offset in `blocks` of each run of 256 scalars' classes. Hidden: every
+ * lookup is inline in the library's own code, which addresses the table
+ * PC-relative instead of through the global offset table. */
+MARKDOWN_CORE_ATTRIBUTE((visibility("hidden"))) extern const uint16_t markdown_core_unicode_pages[];
+MARKDOWN_CORE_ATTRIBUTE((visibility("hidden"))) extern const uint8_t markdown_core_unicode_blocks[];
+
+/* The classes of a scalar, 0 for none and for anything that is not a scalar.
  *
- * Eleven comparisons on a scalar: no state, no table, no allocation. It was an
- * out-of-line call in another translation unit, which at nineteen call sites
- * cost more to reach than to evaluate. Nothing outside this library ever named
- * it -- not the export map, not a test, not a benchmark -- so there is no
- * second definition to drift from this one. */
-static inline int markdown_core_utf8proc_is_space(int32_t uc) {
-    return (uc == 9 || uc == 10 || uc == 12 || uc == 13 || uc == 32 || uc == 160 || uc == 5760 ||
-            (uc >= 8192 && uc <= 8202) || uc == 8239 || uc == 8287 || uc == 12288);
+ * Every scalar's classes are blocks[pages[s >> 8] + (s & 255)]. The first
+ * page, which holds ASCII, is the one whose offset is known without reading
+ * it: the generator lays its block first, at offset 0, and asserts so. A
+ * one-byte character is therefore one load, and every other scalar two dependent
+ * loads whatever its script. Inlined after the decoder, the page test is the
+ * decoder's own branch on the character's width, so it costs nothing there.
+ *
+ * Each predicate below is this lookup and one test; a caller asking two
+ * questions of one scalar classifies it once and tests the bits. */
+static inline uint8_t markdown_core_utf8proc_classes(int32_t uc) {
+    const uint32_t scalar = (uint32_t)uc;
+    if (scalar < 0x80) {
+        return markdown_core_unicode_blocks[scalar];
+    }
+    if (scalar >= 0x110000) {
+        return 0;
+    }
+    return markdown_core_unicode_blocks[(size_t)markdown_core_unicode_pages[scalar >> 8] + (scalar & 255)];
 }
 
-MARKDOWN_CORE_EXPORT
-int markdown_core_utf8proc_is_punctuation(int32_t uc);
+static inline int markdown_core_utf8proc_is_space(int32_t uc) {
+    return markdown_core_utf8proc_classes(uc) & MARKDOWN_CORE_UNICODE_SPACE;
+}
 
-MARKDOWN_CORE_EXPORT
-int markdown_core_utf8proc_is_punctuation_or_symbol(int32_t uc);
+/* Punctuation as CommonMark 0.29 and GFM define it: ASCII punctuation and P. */
+static inline int markdown_core_utf8proc_is_punctuation(int32_t uc) {
+    return markdown_core_utf8proc_classes(uc) & MARKDOWN_CORE_UNICODE_PUNCTUATION;
+}
 
-int markdown_core_utf8proc_is_letter(int32_t uc);
-int markdown_core_utf8proc_is_number(int32_t uc);
-int markdown_core_utf8proc_is_mark(int32_t uc);
+static inline int markdown_core_utf8proc_is_punctuation_or_symbol(int32_t uc) {
+    return markdown_core_utf8proc_classes(uc) & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL;
+}
+
+static inline int markdown_core_utf8proc_is_letter(int32_t uc) {
+    return markdown_core_utf8proc_classes(uc) & MARKDOWN_CORE_UNICODE_LETTER;
+}
+
+static inline int markdown_core_utf8proc_is_number(int32_t uc) {
+    return markdown_core_utf8proc_classes(uc) & MARKDOWN_CORE_UNICODE_NUMBER;
+}
 
 /* THE WIDTH OF AN ALPHANUMERIC CHARACTER at `str`, or 0 when the character
  * there is not one (or `len` is 0). "Alphanumeric" is what Pandoc's grammar

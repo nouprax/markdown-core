@@ -6,9 +6,9 @@ extern "C" {
 #endif
 
 #include <stdint.h>
-#include <string.h>
 
 #include "config.h"
+#include "markdown-core.h"
 
 /** Locale-independent versions of functions from ctype.h.
  * We want markdown_core to behave the same no matter what the system locale.
@@ -45,41 +45,56 @@ static inline int markdown_core_isalpha(char c) { return markdown_core_ctype_cla
 /* Source-line boundaries use ASCII CR/LF in every syntax scanner. */
 static inline int markdown_core_is_line_end(unsigned char c) { return c == '\n' || c == '\r'; }
 
-/* THE FIRST OF THREE BYTES in [cursor, end), or `end` when none occurs.
+/* THE FIRST BYTE OF A CLASS A SCAN STOPS AT: the index of the first byte of
+ * data[at, end) whose class meets `stops`, or `end` when none does; `at` must
+ * not be past `end`.
  *
- * Scanners that stop only at a few ASCII bytes -- the physical span alphabet
- * NUL, CR and LF; a link label's `[`, `]` and `\` -- ask this rather than
- * testing each byte; `cursor` must not be past `end`. A bounded memcpy
- * probes a whole word without alignment or aliasing assumptions and never
- * reads past `end`. The unsigned zero-byte test on the word XOR each target
- * answers only whether one occurs, so it is endian-independent; bytes then
- * resolve the first occurrence and the tail.
- * Each word that holds none consumes eight bytes, and an occurrence costs at
- * most one extra word probe before byte resolution, so work stays linear
- * even for input made entirely of the targets.
+ * A scanner that runs until one of the bytes it tells apart names those bytes
+ * once, as a table of 256 class masks, and says which classes stop it. A
+ * table may give a byte several classes for several scans, as the attribute
+ * grammar's does; a byte whose class meets `stops` ends this one.
  *
- * Nothing here depends on what the other bytes are. In UTF-8 every byte of a
- * multi-byte character is at or above 0x80, so no part of one is ever an
- * ASCII target, and a word of any script is skipped at the same cost. Inlining
- * is explicit so the three targets fold into constants at every call. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const
-    unsigned char *markdown_core_find_byte3(const unsigned char *cursor, const unsigned char *end, unsigned char a,
-                                            unsigned char b, unsigned char c) {
-    const uint64_t ones = UINT64_C(0x0101010101010101);
-    const uint64_t highs = UINT64_C(0x8080808080808080);
-    while ((size_t)(end - cursor) >= sizeof(uint64_t)) {
-        uint64_t word;
-        memcpy(&word, cursor, sizeof(word));
-        uint64_t xa = word ^ (ones * a), xb = word ^ (ones * b), xc = word ^ (ones * c);
-        if ((((xa - ones) & ~xa) | ((xb - ones) & ~xb) | ((xc - ones) & ~xc)) & highs) {
-            break;
+ * Each byte is decided by one table load and one test, however many bytes
+ * stop the scan, and the scan returns at the first stop, so a short run
+ * costs only its own bytes. Eight bytes are decided per bound check, so a
+ * long run pays that check once per eight. In UTF-8 every byte of a
+ * multi-byte character is at or above 0x80, so a table that names only ASCII
+ * bytes skips text of any script at the same cost. Where the compiler inlines
+ * it, the table and the stops fold into the call. Inlining is not forced: the
+ * attribute grammar scans in four places, and forcing four unrolled copies
+ * into it made it too large to inline into its own callers. */
+static inline bufsize_t markdown_core_scan_to_class(const uint8_t classes[256], uint8_t stops,
+                                                    const unsigned char *data, bufsize_t at, bufsize_t end) {
+    for (; end - at >= 8; at += 8) {
+        if (classes[data[at]] & stops) {
+            return at;
         }
-        cursor += sizeof(word);
+        if (classes[data[at + 1]] & stops) {
+            return at + 1;
+        }
+        if (classes[data[at + 2]] & stops) {
+            return at + 2;
+        }
+        if (classes[data[at + 3]] & stops) {
+            return at + 3;
+        }
+        if (classes[data[at + 4]] & stops) {
+            return at + 4;
+        }
+        if (classes[data[at + 5]] & stops) {
+            return at + 5;
+        }
+        if (classes[data[at + 6]] & stops) {
+            return at + 6;
+        }
+        if (classes[data[at + 7]] & stops) {
+            return at + 7;
+        }
     }
-    while (cursor < end && *cursor != a && *cursor != b && *cursor != c) {
-        cursor++;
+    while (at < end && !(classes[data[at]] & stops)) {
+        at++;
     }
-    return cursor;
+    return at;
 }
 
 #endif

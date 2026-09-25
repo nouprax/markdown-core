@@ -10,9 +10,9 @@
 #include <string.h>
 
 /* THE BYTES THE GRAMMAR TELLS APART, as one table. Every scan below runs
- * until a byte of the classes that end it, so a byte costs one load whatever
- * the number of bytes that could end the run; a byte not listed is an
- * ordinary byte of whatever is being read. */
+ * until a byte of the classes that end it (markdown_core_scan_to_class), so a
+ * byte costs one load whatever the number of bytes that could end the run; a
+ * byte not listed is an ordinary byte of whatever is being read. */
 enum {
     BYTE_SPACE = 1 << 0,     /* space, tab */
     BYTE_NEWLINE = 1 << 1,   /* LF, CR */
@@ -135,10 +135,7 @@ static bufsize_t quote_close(markdown_core_attribute_parser *p, bufsize_t open) 
     bufsize_t n = p->length, at = open + 1;
     unsigned char quote = s[open];
     while (at < n) {
-        bufsize_t run = at;
-        while (run < n && !(BYTE_CLASS[s[run]] & (BYTE_QUOTE | BYTE_ESCAPE | BYTE_NEWLINE))) {
-            run++;
-        }
+        bufsize_t run = markdown_core_scan_to_class(BYTE_CLASS, BYTE_QUOTE | BYTE_ESCAPE | BYTE_NEWLINE, s, at, n);
         p->work += (size_t)(run - at);
         at = run;
         if (at >= n) {
@@ -176,10 +173,7 @@ static bufsize_t unquoted_end(markdown_core_attribute_parser *p, bufsize_t at, b
     const unsigned char *s = p->data;
     bufsize_t n = p->length;
     while (at < n) {
-        bufsize_t run = at;
-        while (run < n && !(BYTE_CLASS[s[run]] & (BYTE_VALUE_END | BYTE_ESCAPE | BYTE_ASSIGN))) {
-            run++;
-        }
+        bufsize_t run = markdown_core_scan_to_class(BYTE_CLASS, BYTE_VALUE_END | BYTE_ESCAPE | BYTE_ASSIGN, s, at, n);
         p->work += (size_t)(run - at);
         at = run;
         if (at >= n) {
@@ -444,10 +438,8 @@ static bufsize_t decode_quoted(markdown_core_attribute_parser *p, bufsize_t open
     const bufsize_t limit = finish - 1, mark = w->strings.size;
     bufsize_t at = open + 1;
     while (at < limit) {
-        bufsize_t run = at;
-        while (run < limit && !(BYTE_CLASS[s[run]] & (BYTE_QUOTE | BYTE_ESCAPE | BYTE_REFERENCE | BYTE_NEWLINE))) {
-            run++;
-        }
+        bufsize_t run = markdown_core_scan_to_class(
+            BYTE_CLASS, BYTE_QUOTE | BYTE_ESCAPE | BYTE_REFERENCE | BYTE_NEWLINE, s, at, limit);
         p->work += (size_t)(run - at);
         markdown_core_strbuf_put(&w->strings, s + at, run - at);
         at = run;
@@ -491,10 +483,7 @@ static bufsize_t decode_unquoted(markdown_core_attribute_parser *p, bufsize_t at
     const unsigned char *s = p->data;
     const bufsize_t limit = finish - 1;
     while (at < limit) {
-        bufsize_t run = at;
-        while (run < limit && !(BYTE_CLASS[s[run]] & (BYTE_VALUE_END | BYTE_ESCAPE))) {
-            run++;
-        }
+        bufsize_t run = markdown_core_scan_to_class(BYTE_CLASS, BYTE_VALUE_END | BYTE_ESCAPE, s, at, limit);
         p->work += (size_t)(run - at);
         markdown_core_strbuf_put(&w->strings, s + at, run - at);
         at = run;

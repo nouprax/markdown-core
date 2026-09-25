@@ -4,9 +4,10 @@
  *
  * `{#lane .stage k="callgrind"}` has no reference. cmark reads it as text and
  * cmark-gfm reads it as text, so the stage benchmark can only bound it -- and
- * the bound it reports, 4.46x on `inline-span`, is mostly the inline parser
- * around the attributes rather than the attributes. The largest single self
- * cost in that case is `utf8proc_is_letter` at 23.1%.
+ * the bound it reported, 4.46x on `inline-span` when this driver was written,
+ * was mostly the inline parser around the attributes rather than the
+ * attributes. The largest single self cost in that case was the Unicode letter
+ * test (then a range bisection), at 23.1%.
  *
  * An HTML start tag's attribute list is the same job: a bracketed run split
  * into an identifier, a class run and key/value records, with quoting and
