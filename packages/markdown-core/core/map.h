@@ -44,8 +44,15 @@ typedef struct markdown_core_key_index {
     size_t size;
 } markdown_core_key_index;
 
+/* Storage records are carved from; see markdown_core_map_carve. */
+typedef struct markdown_core_map_block markdown_core_map_block;
+
 struct markdown_core_map {
     markdown_core_map_record *records;
+    /* The blocks records are carved from, newest first, and how much of the
+     * newest is used. They go with the map. */
+    markdown_core_map_block *blocks;
+    size_t block_used, block_size;
     markdown_core_key_index index;
     size_t size;
     int prepared;
@@ -72,6 +79,9 @@ int markdown_core_key_index_insert(markdown_core_key_index *index, const unsigne
                                    void *value, int replace, void **existing);
 void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len);
 markdown_core_map *markdown_core_map_new(void);
+/* `size` bytes of storage aligned for any record, owned by the map, or NULL
+ * when it cannot be allocated. */
+void *markdown_core_map_carve(markdown_core_map *map, size_t size);
 void markdown_core_map_free(markdown_core_map *map);
 markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label);
 

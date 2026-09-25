@@ -216,6 +216,13 @@
             "why": "The attribute member grammar is the dialect's own, stated in attributes.md: a name is taken as written, like an HTML start tag's, and a bare member is recorded with the value `true`. remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
         },
         {
+            "id": "shared-attributes-class-html-whitespace",
+            "input": ":n{class=\"a b c\u000bv\ff\" .a class=tail}\n",
+            "authority": "docs/specs/dialect/attributes.md",
+            "summary": "A class= value splits only at tab, LF, form feed, CR and space, as HTML splits a class attribute, so NBSP, EN QUAD and a vertical tab stay inside a class; remark splits at every white space character.",
+            "why": "The attribute member grammar is the dialect's own, stated in attributes.md: class= splits where HTML splits a class attribute and reads bytes to do it. remark supplies evidence for the directive envelope and attachment position, not for the member grammar."
+        },
+        {
             "id": "shared-attributes-unmatched-quote-fallback",
             "input": ":invalid{=value}\n:open{title=\"value}\n",
             "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",

@@ -65,7 +65,8 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
         // `elements.txt` records both spellings of one construct on one line
         // disagreeing about it three columns apart.
         markdown_core_chunk destination = markdown_core_clean_autolink(inline_state, &url, is_email);
-        link->as.link->resource = markdown_core_resource_new(destination, markdown_core_optional_chunk_absent());
+        link->as.link->resource = markdown_core_resource_new(&inline_state->owner_parser->resources, destination,
+                                                             markdown_core_optional_chunk_absent());
         if (!link->as.link->resource) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
             markdown_core_chunk_free(&destination);
@@ -356,7 +357,8 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
     {
         markdown_core_chunk url = markdown_core_chunk_buf_detach(&buf);
         node->as.link->resource =
-            url.data ? markdown_core_resource_new(url, markdown_core_optional_chunk_absent()) : NULL;
+            url.data ? markdown_core_resource_new(&parser->resources, url, markdown_core_optional_chunk_absent())
+                     : NULL;
         if (!node->as.link->resource) {
             markdown_core_chunk_free(&url);
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -427,7 +429,8 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     }
 
     markdown_core_chunk url = markdown_core_chunk_dup(chunk, max_rewind - rewind, (bufsize_t)(link_end + rewind));
-    node->as.link->resource = markdown_core_resource_new(url, markdown_core_optional_chunk_absent());
+    node->as.link->resource =
+        markdown_core_resource_new(&parser->resources, url, markdown_core_optional_chunk_absent());
     if (!node->as.link->resource) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
@@ -708,7 +711,8 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
         {
             markdown_core_chunk url = markdown_core_chunk_buf_detach(&buf);
             link_node->as.link->resource =
-                url.data ? markdown_core_resource_new(url, markdown_core_optional_chunk_absent()) : NULL;
+                url.data ? markdown_core_resource_new(&parser->resources, url, markdown_core_optional_chunk_absent())
+                         : NULL;
             if (!link_node->as.link->resource) {
                 markdown_core_chunk_free(&url);
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);

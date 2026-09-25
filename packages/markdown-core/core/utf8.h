@@ -16,43 +16,90 @@ void markdown_core_utf8proc_normalize_label(markdown_core_strbuf *dest, const ui
 MARKDOWN_CORE_EXPORT
 void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf);
 
-/* The general decoder. Callers do not name this one: they name
- * `markdown_core_utf8proc_iterate` below, which settles the single-byte case
- * itself and delegates everything else here. */
-MARKDOWN_CORE_EXPORT
-int markdown_core_utf8proc_iterate_general(const uint8_t *str, bufsize_t str_len, int32_t *dst);
-
-/* DECODE ONE CHARACTER, with the single-byte case where the compiler can see
- * it.
+/* DECODE ONE CHARACTER, whatever its width, where the compiler can see it.
  *
- * This is not an "ASCII path" -- this parser is UTF-8 and nothing else. It is
- * the one-byte branch of UTF-8 itself: a byte below 0x80 can be neither a
- * continuation byte (0x80-0xBF) nor a lead byte (0xC2+), so it is always a
- * complete one-byte scalar equal to its own value. utf8.c's own class table
- * says exactly that -- `utf8proc_utf8class[0..127]` is all 1s -- and the
- * switch in the general decoder then takes `case 1: uc = str[0]`. Identical
- * bit for bit, so this is not a fast path with its own semantics; it is the
- * same answer, reached without an out-of-line call.
+ * Returns the width of the well-formed character that starts at `str` and
+ * writes its scalar through `dst`, or returns -1 and writes -1 when none
+ * starts there: an empty or negative range, a continuation byte, a lead byte
+ * no well-formed sequence begins with (0xC0, 0xC1, 0xF5 and up), a sequence
+ * cut short by the range or by a byte that does not continue it, an overlong
+ * form, a surrogate, or a scalar past U+10FFFF. `bufsize_t` is a SIGNED
+ * int32_t, which is why the range test is `len > 0` before any byte is read.
+ *
+ * Every width is decoded here, inline. The one-byte case is not a fast path
+ * beside a general decoder: a byte below 0x80 is a complete scalar equal to
+ * its own value, which is the first line of UTF-8's definition. The longer
+ * forms take their payload from the lead byte and six bits from each
+ * continuation byte, one byte at a time, so a character costs what its bytes
+ * do. They used to be decoded by an out-of-line function, which charged every
+ * character of a non-ASCII script a call on top of its bytes; at 44, 58 and
+ * 70 instructions for two-, three- and four-byte characters it was most of
+ * what a heading anchor cost outside ASCII (#405).
  *
  * Decoding is NOT skippable in general. `markdown_core_utf8proc_is_space`
  * matches the Zs class, every non-control member of which (160, 5760,
- * 8192-8202, 8239, 8287, 12288) is at or above 128. What this removes is the
- * CALL on the bytes where the encoding has already settled the answer, which
- * is most of them.
- *
- * `bufsize_t` is a SIGNED int32_t, so the guard is `> 0`: a zero or negative
- * length falls through to the general decoder, which returns -1 and writes -1
- * through `dst`. Reading str[0] first would be a read out of bounds.
- *
- * The inline wrapper carries the name the callers use, rather than the general
- * decoder carrying it and a `_fast` variant sitting beside it. A call site
- * cannot then be written, or left behind by a rename, that misses this. */
-static inline int markdown_core_utf8proc_iterate(const uint8_t *str, bufsize_t str_len, int32_t *dst) {
-    if (str_len > 0 && str[0] < 0x80) {
-        *dst = (int32_t)str[0];
+ * 8192-8202, 8239, 8287, 12288) is at or above 128. Walks that only need to
+ * know where a character ends read its width off the lead byte instead
+ * (`markdown_core_utf8proc_width`). */
+static inline int markdown_core_utf8proc_iterate(const uint8_t *str, bufsize_t len, int32_t *dst) {
+    uint32_t lead, scalar, least;
+    int width;
+    if (len <= 0) {
+        *dst = -1;
+        return -1;
+    }
+    lead = str[0];
+    if (lead < 0x80) {
+        *dst = (int32_t)lead;
         return 1;
     }
-    return markdown_core_utf8proc_iterate_general(str, str_len, dst);
+    if (lead < 0xC2 || lead > 0xF4) {
+        *dst = -1;
+        return -1;
+    }
+    width = lead < 0xE0 ? 2 : lead < 0xF0 ? 3 : 4;
+    least = width == 2 ? 0x80 : width == 3 ? 0x800 : 0x10000;
+    if (width > len) {
+        *dst = -1;
+        return -1;
+    }
+    scalar = lead & (0x7Fu >> width);
+    for (int i = 1; i < width; i++) {
+        uint32_t next = str[i];
+        if ((next & 0xC0) != 0x80) {
+            *dst = -1;
+            return -1;
+        }
+        scalar = (scalar << 6) | (next & 0x3F);
+    }
+    if (scalar < least || (scalar >= 0xD800 && scalar < 0xE000) || scalar > 0x10FFFF) {
+        *dst = -1;
+        return -1;
+    }
+    *dst = (int32_t)scalar;
+    return width;
+}
+
+/* THE WIDTH OF THE CHARACTER THAT `lead` BEGINS, read off the byte alone:
+ * 0xxxxxxx is one byte, 110xxxxx two, 1110xxxx three and 11110xxx four.
+ *
+ * For walks that segment text into characters without asking what any of
+ * them is -- a grid column per character, a task marker that is one
+ * character. Those need no scalar, so they decode nothing: the width is one
+ * load for every lead byte, and on valid UTF-8 it is exactly the width
+ * `markdown_core_utf8proc_iterate` reports.
+ *
+ * Valid UTF-8 is a caller precondition (markdown_core.h). On other bytes the
+ * answer is still between one and four -- a continuation byte counts as a
+ * character of its own -- but a lead byte cut off by the end of its range
+ * claims bytes the range does not have. Only the byte is read here, so the
+ * range is the caller's to bound: a walk ends when it reaches OR PASSES its
+ * end, and a probe checks that the width fits before reading past it. */
+static inline int markdown_core_utf8proc_width(uint8_t lead) {
+    /* Indexed by the high four bits: 0-7 begin one-byte characters, 8-B are
+     * continuation bytes, C-D, E and F lead two, three and four. */
+    static const uint8_t widths[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 3, 4};
+    return widths[lead >> 4];
 }
 
 /* DECODE AND ADVANCE, total.

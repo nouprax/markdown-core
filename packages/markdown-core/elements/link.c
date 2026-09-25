@@ -25,7 +25,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
         markdown_core_parser_content_place(parser, &b->content_map, (bufsize_t)(chunk.data - node_content->ptr), &line,
                                            &column);
         uint64_t source_key = ((uint64_t)(uint32_t)line << 32) | (uint32_t)column;
-        pos = markdown_core_parse_reference_inline(&chunk, parser->refmap, &attributes, source_key);
+        pos = markdown_core_parse_reference_inline(parser, &chunk, parser->refmap, &attributes, source_key);
         if (!pos) {
             break;
         }
@@ -119,15 +119,27 @@ markdown_core_optional_chunk markdown_core_clean_title(markdown_core_chunk *titl
     return markdown_core_optional_chunk_present(markdown_core_chunk_buf_detach(&buf));
 }
 
+/* Where a link label written at `data` ends: the first unescaped `[` or `]`,
+ * or `length` when there is none. Past MAX_LINK_LABEL_LENGTH the answer is
+ * only that it is too long, so the search stops there and the length it
+ * returns exceeds the maximum.
+ *
+ * The only bytes that decide anything are the brackets and the backslash
+ * that may escape one, so the label is searched for those three a word at a
+ * time, whatever script the rest of it is in. A backslash escapes the
+ * punctuation character after it, which is stepped over with it. */
 bufsize_t markdown_core_inline_reference_label_length(const unsigned char *data, bufsize_t length) {
-    bufsize_t at = 0;
-    while (at < length && at <= MAX_LINK_LABEL_LENGTH && data[at] != '[' && data[at] != ']') {
-        if (data[at] == '\\' && at + 1 < length && markdown_core_ispunct(data[at + 1])) {
-            at++;
+    const unsigned char *input_end = data + length;
+    const unsigned char *end = length <= MAX_LINK_LABEL_LENGTH ? input_end : data + MAX_LINK_LABEL_LENGTH + 1;
+    const unsigned char *cursor = data;
+    while (cursor < end) {
+        cursor = markdown_core_find_byte3(cursor, end, '[', ']', '\\');
+        if (cursor == end || *cursor != '\\') {
+            break;
         }
-        at++;
+        cursor += cursor + 1 < input_end && markdown_core_ispunct((char)cursor[1]) ? 2 : 1;
     }
-    return at;
+    return (bufsize_t)(cursor - data);
 }
 
 int markdown_core_inline_link_label(markdown_core_inline_state *inline_state, markdown_core_chunk *raw_label) {
@@ -261,8 +273,9 @@ static bool reference_tail(markdown_core_inline_state *inline_state, markdown_co
     return markdown_core_inline_skip_line_end(inline_state);
 }
 
-bufsize_t markdown_core_parse_reference_inline(markdown_core_chunk *input, markdown_core_map *refmap,
-                                               markdown_core_attribute_parser *attributes, uint64_t source_key) {
+bufsize_t markdown_core_parse_reference_inline(markdown_core_parser *parser, markdown_core_chunk *input,
+                                               markdown_core_map *refmap, markdown_core_attribute_parser *attributes,
+                                               uint64_t source_key) {
     markdown_core_inline_state inline_state;
     markdown_core_resource *resource;
     int lost = 0;
@@ -341,7 +354,7 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_chunk *input, markd
     {
         markdown_core_chunk clean_url = markdown_core_clean_url(&url, &lost);
         markdown_core_optional_chunk clean_title = markdown_core_clean_title(&title, &lost);
-        resource = lost ? NULL : markdown_core_resource_new(clean_url, clean_title);
+        resource = lost ? NULL : markdown_core_resource_new(&parser->resources, clean_url, clean_title);
         if (!resource) {
             markdown_core_chunk_free(&clean_url);
             markdown_core_optional_chunk_free(&clean_title);
@@ -482,7 +495,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
         markdown_core_resource_retain(record->resource);
         inl->as.link->resource = record->resource;
     } else if (inl) {
-        inl->as.link->resource = markdown_core_resource_new(url, title);
+        inl->as.link->resource = markdown_core_resource_new(&parser->resources, url, title);
         if (!inl->as.link->resource) {
             markdown_core_parser_release_node(parser, inl);
             inl = NULL;

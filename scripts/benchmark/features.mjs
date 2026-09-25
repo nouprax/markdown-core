@@ -11,6 +11,12 @@ const b = f("body", "inline"),
     a = f("anchor"),
     target = f("target"),
     p = f("literal", "phrase");
+// Fields whose own grammar admits only ASCII letters: a block identifier, a
+// callout type, an email address's local part. They keep [a-z] in a UTF-8
+// document, where every other Word is spelled with UTF-8 letters.
+const asciiKey = f("key", "ascii-word"),
+    asciiValue = f("value", "ascii-word"),
+    asciiTarget = f("target", "ascii-word");
 const inline = (...parts) => ["probe ", ...parts, " end\n\n"];
 const entries = [];
 const ordinal = (encoding) => ({ name: "ordinal", grammar: "ordinal", encoding });
@@ -234,13 +240,13 @@ shared(
     "common-angle-autolink",
     "links-and-images",
     ["angle-url", "angle-email"],
-    inline("<https://", k, ".example/> <", v, "@example.org>")
+    inline("<https://", k, ".example/> <", asciiValue, "@example.org>")
 );
 shared(
     "gfm-bare-autolink",
     "links-and-images",
     ["bare-url", "bare-email", "punctuation-trimming"],
-    inline("https://", k, ".example/", v, ". ", target, "@example.org"),
+    inline("https://", k, ".example/", v, ". ", asciiTarget, "@example.org"),
     { gfm: true }
 );
 for (const [name, marker] of [
@@ -423,8 +429,8 @@ pair(
     "block-id-paragraph",
     "block-identifiers",
     ["paragraph-suffix", "anchor-declaration"],
-    [b, " #", k, "#\n\n"],
-    [b, "\n\n[", k, "]: /target\n\n"]
+    [b, " #", asciiKey, "#\n\n"],
+    [b, "\n\n[", asciiKey, "]: /target\n\n"]
 );
 pair(
     "heading-explicit-id",
@@ -488,8 +494,8 @@ pair(
     "callout",
     "callouts",
     ["custom-type", "case", "three-collapse-states", "title"],
-    ["> [!", k, "]", state("callout"), " ", b, "\n\n"],
-    ["> [", b, "](/", k, ' "', state("title"), '")\n\n']
+    ["> [!", asciiKey, "]", state("callout"), " ", b, "\n\n"],
+    ["> [", b, "](/", asciiKey, ' "', state("title"), '")\n\n']
 );
 pair(
     "citation-affixes",
@@ -618,8 +624,8 @@ pair(
     "block-id-list",
     "block-identifiers",
     ["list-item-suffix", "standalone-list-id"],
-    ["- ", b, " #", k, "#\n\n#", v, "#\n\n"],
-    ["- ", b, "\n\n[", k, "]: /item\n[", v, "]: /list\n\n"]
+    ["- ", b, " #", asciiKey, "#\n\n#", asciiValue, "#\n\n"],
+    ["- ", b, "\n\n[", asciiKey, "]: /item\n[", asciiValue, "]: /list\n\n"]
 );
 pair(
     "footnote-nested-inline",
@@ -757,18 +763,18 @@ pair(
     "block-id-container-list",
     "block-identifiers",
     ["standalone-id", "list-container"],
-    ["- ", b, "\n\n#", k, "#\n\n"],
-    ["- ", b, "\n\n[", k, "]: /block\n\n"]
+    ["- ", b, "\n\n#", asciiKey, "#\n\n"],
+    ["- ", b, "\n\n[", asciiKey, "]: /block\n\n"]
 );
 pair(
     "block-id-container-table",
     "block-identifiers",
     ["standalone-id", "table-container"],
-    ["| ", v, " |\n| --- |\n| ", target, " |\n\n#", k, "#\n\n"],
-    ["| ", v, " |\n| --- |\n| ", target, " |\n\n[", k, "]: /block\n\n"],
+    ["| ", v, " |\n| --- |\n| ", target, " |\n\n#", asciiKey, "#\n\n"],
+    ["| ", v, " |\n| --- |\n| ", target, " |\n\n[", asciiKey, "]: /block\n\n"],
     { gfm: true }
 );
-shared("block-id-escaped", "block-identifiers", ["escaped-id", "fallback"], inline("\\#", k, "#"));
+shared("block-id-escaped", "block-identifiers", ["escaped-id", "fallback"], inline("\\#", asciiKey, "#"));
 for (const [name, prefix] of [
     ["link", ""],
     ["embed", "!"]

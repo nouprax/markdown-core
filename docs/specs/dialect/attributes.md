@@ -68,9 +68,12 @@ or unescaped `}`; quotes, `<`, `=`, `>`, and backticks can otherwise be content.
 Members are separated by spaces/tabs and at most one line ending between
 members; independently delimited members can be adjacent. A blank line is not
 allowed. Only the owning syntax can grant a multiline extent. Non-ASCII
-whitespace does not separate members, although `class=` splits its decoded
-value on ASCII whitespace and Unicode Zs. Identifier and class shorthands do
-not decode escapes or character references.
+whitespace does not separate members. `class=` splits its decoded value where
+HTML splits a `class` attribute: at tab, line feed, form feed, carriage return
+and space. Vertical tab and every non-ASCII space, written or produced by a
+character reference, stay inside a class; Pandoc splits at those too, and that
+is a registered difference. Identifier and class shorthands do not decode
+escapes or character references.
 
 ## Attachment sites
 

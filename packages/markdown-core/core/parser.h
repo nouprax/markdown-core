@@ -248,10 +248,15 @@ struct markdown_core_parser {
      * declares a finish step and opens an iterator. */
     size_t nodes_created, nodes_created_before_finish;
     size_t nodes_freed, nodes_freed_before_finish;
-    /* The parse's node storage (node.h): every node it makes is a cell of
+    /* The parse's node storage (node.h): every node it makes is a slot of
      * this pool's slabs, and every node it releases goes back here. The
      * finished tree keeps its slabs; the pool is disposed with the parser. */
     markdown_core_node_pool nodes;
+    /* The parse's resource storage (node.h): every resource a definition,
+     * a link or a heading's implicit reference states is a slot of this
+     * pool's slabs, which the tree keeps as long as anything reads through
+     * one. The pool is disposed with the parser. */
+    markdown_core_slab_pool resources;
     /* The nodes the walk's own inline parsing handed it, at the ENTER of each
      * container it parsed: what the parse made less what it discarded before
      * returning (a bracket's opener text, a token that failed to close), which

@@ -35,6 +35,7 @@ function stageReport(ir, { rejection = false } = {}) {
         case: `${owner.id}-paired-${side}`,
         side,
         part: "paired",
+        alphabet: "ascii",
         certificate: owner.certificate,
         units: 1,
         bytes: 32,
@@ -53,16 +54,23 @@ function stageReport(ir, { rejection = false } = {}) {
             : [])
     ];
     return {
-        schemaVersion: 7,
+        schemaVersion: 8,
         revision: base,
         corpus: { digest: "c".repeat(64), cases: cases.length },
         grammarCorpus: {
             identity: "d".repeat(64),
             certificates: [certificate, ...(rejection ? [rejected] : [])],
             proofs: [
-                { ...certificate, units: 1, names: names(certificate, ["dialect", "common"]) },
+                { ...certificate, alphabet: "ascii", units: 1, names: names(certificate, ["dialect", "common"]) },
                 ...(rejection
-                    ? [{ ...rejected, units: 1, names: names(rejected, ["dialect", "common", "control"]) }]
+                    ? [
+                          {
+                              ...rejected,
+                              alphabet: "ascii",
+                              units: 1,
+                              names: names(rejected, ["dialect", "common", "control"])
+                          }
+                      ]
                     : [])
             ]
         },
@@ -70,10 +78,20 @@ function stageReport(ir, { rejection = false } = {}) {
     };
 }
 const attributes = () => ({
-    schemaVersion: 1,
-    baselines: {
-        "markdown-core": { lists: 10, values: 30, ir: 200, dataReads: 100, dataWrites: 40 },
-        lexbor: { lists: 10, values: 30, ir: 100, dataReads: 50, dataWrites: 20 }
+    schemaVersion: 2,
+    alphabets: {
+        ascii: {
+            baselines: {
+                "markdown-core": { lists: 10, values: 30, ir: 200, dataReads: 100, dataWrites: 40 },
+                lexbor: { lists: 10, values: 30, ir: 100, dataReads: 50, dataWrites: 20 }
+            }
+        },
+        utf8: {
+            baselines: {
+                "markdown-core": { lists: 10, values: 30, ir: 240, dataReads: 110, dataWrites: 44 },
+                lexbor: { lists: 10, values: 30, ir: 120, dataReads: 60, dataWrites: 24 }
+            }
+        }
     }
 });
 
@@ -86,7 +104,7 @@ test("PR tables report the two stages, their sum and source regressions, and not
     assert.doesNotMatch(body, /parse path|Outside/i);
     assert.match(body, /inline-links-paired-common/);
     assert.match(body, /Required when CI inputs require execution/);
-    assert.match(body, /inline-links-grammar-v2 \| whole \| 1 \| 32\/32 \| 1.0000× \| 2.0400× \| 2.0400×/);
+    assert.match(body, /inline-links-grammar-v2 \| ASCII \| whole \| 1 \| 32\/32 \| 1.0000× \| 2.0400× \| 2.0400×/);
     assert.match(body, /Grammar:/);
     assert.match(attributeSection(attributes()), /2.0000×/);
 });
@@ -98,7 +116,7 @@ test("Core-only rejections are reported against their control, apart from refere
     assert.match(equivalences, /inline-links-grammar-v2/);
     assert.doesNotMatch(equivalences, /inline-marks/);
     assert.match(body, /<summary>Rejection of constructs only Core implements/);
-    assert.match(body, /\| inline-marks-grammar-v2 \| mark \| 1 \| 1\.4854× \| 50 \|/);
+    assert.match(body, /\| inline-marks-grammar-v2 \| ASCII \| mark \| 1 \| 1\.4854× \| 50 \|/);
     assert.doesNotMatch(stageSection(stageReport(103), stageReport(100)), /Rejection of constructs/);
     for (const mutate of [
         (r) => {
@@ -141,19 +159,22 @@ test("the measured report schema renders both the Markdown artifact and PR compa
     const comment = stageSection(report, stageReport(100));
     assert.match(
         artifact,
-        /inline-links-grammar-v2 \| paired-document-grammar \| 1 \| 32\/32 \| 150 \| 150 \| 75 \| 1.000x \| 2.000x \| 2.000x/
+        /inline-links-grammar-v2 \| ascii \| paired-document-grammar \| 1 \| 32\/32 \| 150 \| 150 \| 75 \| 1.000x \| 2.000x \| 2.000x/
     );
-    assert.match(comment, /inline-links-grammar-v2 \| whole \| 1 \| 32\/32 \| 1.0000× \| 2.0000× \| 2.0000×/);
+    assert.match(comment, /inline-links-grammar-v2 \| ASCII \| whole \| 1 \| 32\/32 \| 1.0000× \| 2.0000× \| 2.0000×/);
     for (const output of [artifact, comment]) {
         assert.doesNotMatch(output, /\| Scale \|/);
     }
-    assert.throws(() => markdownReport({ ...report, schemaVersion: 6 }), /report schema 7/);
+    assert.throws(() => markdownReport({ ...report, schemaVersion: 7 }), /report schema 8/);
 });
 
 test("report projections reject corrupt counts, mismatched workloads and injected text", () => {
     for (const mutate of [
         (r) => {
-            r.schemaVersion = 6;
+            r.schemaVersion = 7;
+        },
+        (r) => {
+            r.cases[0].alphabet = "latin1";
         },
         (r) => {
             delete r.grammarCorpus;
@@ -204,11 +225,11 @@ test("report projections reject corrupt counts, mismatched workloads and injecte
     }
     for (const value of ["200", -1, null, Number.MAX_SAFE_INTEGER + 1]) {
         const report = attributes();
-        report.baselines.lexbor.ir = value;
+        report.alphabets.utf8.baselines.lexbor.ir = value;
         assert.throws(() => attributeSection(report));
     }
     const different = attributes();
-    different.baselines.lexbor.values++;
+    different.alphabets.ascii.baselines.lexbor.values++;
     assert.throws(() => attributeSection(different));
     const untrusted = stageReport(100);
     untrusted.toolchain = { compiler: "@everyone" };

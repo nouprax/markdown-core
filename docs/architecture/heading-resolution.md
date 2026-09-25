@@ -76,6 +76,16 @@ to the resource once; bindings encode and decode that resource once, just as
 they do for an explicit reference definition. The heading's attributes do not
 become inherited reference attributes.
 
+A computed anchor is stored once: the resource owns `#anchor`, the heading's
+anchor borrows the bytes after the `#`, and the heading's attribute value holds
+the resource beside that borrow. The hold belongs to the attribute value, not
+to the heading record, because the anchor is a universal attribute: a kind
+conversion keeps the value and releases only the old kind's record, so a
+heading converted to another kind keeps an anchor it can read. A heading whose
+text cannot be a label has no resource and owns its computed anchor. An
+authored anchor stays the attribute value's, and the destination is a copy of
+it after the `#`.
+
 The finish walk reserves effective explicit anchors at each node's ENTER,
 while it discovers owned label/title fields. The walk parses each container's
 inline content at that container's ENTER, so it visits only completed child
@@ -127,16 +137,18 @@ reserved spellings. There is no cardinality-dependent algorithm or restart at
 suffix 1 for each heading. Decimal suffixes are appended directly with bounded
 stack storage and no general format-string processing.
 
-Projection and target construction reuse a single scratch buffer; final
-node/resource strings receive exact-size owned copies. Scratch capacity is
-retained across headings rather than discarded when a value is attached.
+Projection and target construction reuse a single scratch buffer and a single
+projection stack; the final string is one exact-size owned copy, shared by the
+anchor and the destination as above. Scratch capacity is retained across
+headings rather than discarded when a value is attached.
 
 ## Lifetime and bounds
 
 The heading collection and anchor indices borrow nodes and strings only until
 finalization completes. Pending inline states own their temporary parser state.
-The reference map and occurrences own resources through existing reference
-counts; freeing the heading or document does not invalidate a detached Link.
+The reference map, the declaring heading's attribute value and occurrences
+own resources through existing reference counts; freeing the heading or document does not
+invalidate a detached Link.
 Every failure joins the parser's terminal allocation-failure transaction and
 disposes pending inline states before their nodes. Parse-time indices are discarded
 before consolidation or element postprocessing can replace nodes.

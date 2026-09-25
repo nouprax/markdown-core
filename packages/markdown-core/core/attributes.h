@@ -1,6 +1,8 @@
 #ifndef MARKDOWN_CORE_ATTRIBUTES_H
 #define MARKDOWN_CORE_ATTRIBUTES_H
 
+#include <stdint.h>
+
 #include "buffer.h"
 #include "chunk.h"
 
@@ -8,6 +10,8 @@ typedef struct {
     markdown_core_chunk name;
     markdown_core_chunk value;
 } markdown_core_record;
+
+struct markdown_core_resource;
 
 /* One normalized value. Empty anchor bytes mean no anchor. The lists retain
  * every occurrence.
@@ -18,14 +22,23 @@ typedef struct {
  * anything of its own. The anchor is the one member a consumer may replace
  * with a string it made (a chunk with `alloc` set), and the release frees
  * such an anchor beside `storage`. Every string in `storage` is
- * NUL-terminated. */
+ * NUL-terminated.
+ *
+ * An anchor the parser computed for a heading that declares an implicit
+ * reference is instead the bytes after the `#` of that reference's
+ * destination (node.h), and the value holds the resource they belong to in
+ * `anchor_owner`. The hold is the value's, like `storage`, so the anchor lives
+ * exactly as long as the value does, whatever kind the node carrying it is. */
 typedef struct markdown_core_attribute_value {
     markdown_core_chunk anchor;
     markdown_core_chunk *classes;
-    size_t class_count;
     markdown_core_record *records;
-    size_t record_count;
+    /* Each class and record is at least one byte of its container, so a
+     * count is bounded like any length of the input. */
+    uint32_t class_count;
+    uint32_t record_count;
     void *storage;
+    struct markdown_core_resource *anchor_owner;
 } markdown_core_attributes;
 
 /* THE WORKSPACE A CONTAINER IS READ INTO before it is laid out as a value
@@ -66,12 +79,14 @@ typedef struct {
     int oom;
 } markdown_core_attribute_parser;
 
-/* Whether a value owns anything a release must free. Almost every value is
- * empty -- every node carries one and no Text has attributes -- so this is
- * the first test a release makes, shared with the node release that makes
- * it in place before calling. */
+/* Whether a value owns anything a release must free. Everything it can own
+ * is its block or hangs off its anchor -- a string of its own, or the hold on
+ * the resource it borrows from -- so a value with neither owns nothing.
+ * Almost every value is empty -- every node carries one and no Text has
+ * attributes -- so this is the first test a release makes, shared with the
+ * node release that makes it in place before calling. */
 static MARKDOWN_CORE_INLINE bool markdown_core_attributes_owns(const markdown_core_attributes *value) {
-    return value->storage || value->anchor.alloc;
+    return value->storage || value->anchor.data;
 }
 void markdown_core_attributes_free(markdown_core_attributes *value);
 /* A value holding one class, `bytes`, and nothing else: the value an element

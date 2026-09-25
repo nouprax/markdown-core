@@ -17,6 +17,7 @@ set(HEADERS
     iterator.h
     chunk.h
     attributes.h
+    slab.h
     metadata.h
     references.h
     map.h
@@ -30,6 +31,7 @@ set(HEADERS
     delimiter.h)
 set(LIBRARY_SOURCES
     alloc.c
+    slab.c
     markdown_core.c
     node.c
     iterator.c

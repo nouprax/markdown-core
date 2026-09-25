@@ -44,6 +44,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { baseName, callEdge, costRecord, foldNames, parseCallgrind } from "./callgrind.mjs";
+import { alphabets } from "./corpus.mjs";
 import { compiledFlags, discardTree, effectiveFlags, markTree } from "./compile-identity.mjs";
 import { buildEnvironment, CACHE, measurementEnvironment, measurementRoot } from "./measurement.mjs";
 
@@ -127,6 +128,26 @@ const SPECIFICATIONS = [
     { anchor: "tail", classes: ["last"], records: [["k", "v", "bare"]] }
 ];
 
+/* A specification with every letter of its names and values respelled in
+ * `letters`, the same alphabets the stage corpus spells its words with. Only
+ * the letters change: `-`, digits, spaces and character references keep their
+ * bytes, so both grammars take the same branches on both spellings and the
+ * census still compares like with like. White space stays ASCII: in both
+ * grammars ASCII white space separates members and the classes of a class
+ * run, and a non-ASCII space separates neither. */
+function respelled(specification, letters) {
+    const respell = (text) =>
+        text
+            .split(/(&#?[a-z0-9]+;)/u)
+            .map((part, i) => (i % 2 ? part : part.replace(/[a-z]/gu, (letter) => letters[letter.charCodeAt(0) - 97])))
+            .join("");
+    return {
+        anchor: specification.anchor === null ? null : respell(specification.anchor),
+        classes: specification.classes.map(respell),
+        records: specification.records.map(([name, value, quoting]) => [respell(name), respell(value), quoting])
+    };
+}
+
 /* A record's value as each spelling writes it. The quoting is the
  * specification's, so both grammars take the same branch on the same record --
  * a bare value on one side and a quoted one on the other would make the pair
@@ -197,21 +218,26 @@ function htmlSpelling(specification) {
     return `<x ${parts.join(" ")}>`;
 }
 
+/* Each alphabet's two spellings of the same lists. */
 function writeInputs(options) {
     const directory = path.join(options.out, "input");
     fs.mkdirSync(directory, { recursive: true });
     const inputs = {};
-    for (const [spelling, render] of [
-        ["pandoc", pandocSpelling],
-        ["html", htmlSpelling]
-    ]) {
-        const lines = [];
-        for (let i = 0; i < options.lists; i++) {
-            lines.push(render(SPECIFICATIONS[i % SPECIFICATIONS.length]));
+    for (const [alphabet, letters] of Object.entries(alphabets)) {
+        const specifications = SPECIFICATIONS.map((specification) => respelled(specification, letters));
+        inputs[alphabet] = {};
+        for (const [spelling, render] of [
+            ["pandoc", pandocSpelling],
+            ["html", htmlSpelling]
+        ]) {
+            const lines = [];
+            for (let i = 0; i < options.lists; i++) {
+                lines.push(render(specifications[i % specifications.length]));
+            }
+            const file = path.join(directory, `attributes.${alphabet}.${spelling}.txt`);
+            fs.writeFileSync(file, `${lines.join("\n")}\n`);
+            inputs[alphabet][spelling] = file;
         }
-        const file = path.join(directory, `attributes.${spelling}.txt`);
-        fs.writeFileSync(file, `${lines.join("\n")}\n`);
-        inputs[spelling] = file;
     }
     return inputs;
 }
@@ -629,40 +655,51 @@ function markdownReport(report) {
             " baseline that skipped a record or stopped early fails the run rather than" +
             " posting a cheaper number for doing less.",
         "",
-        `| Baseline | Spelling | Lists | Values | Ir | Ir/list | Dr | Dw |`,
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
+        "The lists are measured twice, in two alphabets: once with the names and values" +
+            " spelled in ASCII letters and once with every letter a UTF-8 letter of two, three" +
+            " or four bytes -- the stage corpus's alphabets. Syntax, digits, spaces and character" +
+            " references are the same bytes in both.",
+        ""
     ];
-    for (const [name, result] of Object.entries(report.baselines)) {
+    for (const [alphabet, measurement] of Object.entries(report.alphabets)) {
         lines.push(
-            `| \`${name}\` | ${BASELINES[name].spelling} | ${result.lists.toLocaleString("en-US")} |` +
-                ` ${result.values.toLocaleString("en-US")} | ${result.ir.toLocaleString("en-US")} |` +
-                ` ${(result.ir / result.lists).toFixed(1)} | ${result.dataReads.toLocaleString("en-US")} |` +
-                ` ${result.dataWrites.toLocaleString("en-US")} |`
+            `### ${alphabet === "ascii" ? "ASCII" : "UTF-8"} names and values`,
+            "",
+            `| Baseline | Spelling | Lists | Values | Ir | Ir/list | Dr | Dw |`,
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
+        );
+        for (const [name, result] of Object.entries(measurement.baselines)) {
+            lines.push(
+                `| \`${name}\` | ${BASELINES[name].spelling} | ${result.lists.toLocaleString("en-US")} |` +
+                    ` ${result.values.toLocaleString("en-US")} | ${result.ir.toLocaleString("en-US")} |` +
+                    ` ${(result.ir / result.lists).toFixed(1)} | ${result.dataReads.toLocaleString("en-US")} |` +
+                    ` ${result.dataWrites.toLocaleString("en-US")} |`
+            );
+        }
+        const ours = measurement.baselines["markdown-core"];
+        const theirs = measurement.baselines.lexbor;
+        lines.push(
+            "",
+            `**${(ours.ir / theirs.ir).toFixed(2)}x on instructions, ` +
+                `${((ours.dataReads + ours.dataWrites) / (theirs.dataReads + theirs.dataWrites)).toFixed(2)}x on data ` +
+                "references**, over the same attributes recovered the same way.",
+            "",
+            "Self cost, restricted to what the measured entry reaches -- the instructions" +
+                " each baseline spent IN a function rather than through it.",
+            "",
+            "| Baseline | Dominant self cost |",
+            "| --- | --- |",
+            ...Object.entries(measurement.baselines).map(
+                ([name, result]) =>
+                    `| \`${name}\` | ${(result.hotPaths ?? [])
+                        .slice(0, 5)
+                        .map((entry) => `\`${entry.name}\` ${(entry.share * 100).toFixed(1)}%`)
+                        .join(", ")} |`
+            ),
+            ""
         );
     }
-    const ours = report.baselines["markdown-core"];
-    const theirs = report.baselines.lexbor;
     lines.push(
-        "",
-        `**${(ours.ir / theirs.ir).toFixed(2)}x on instructions, ` +
-            `${((ours.dataReads + ours.dataWrites) / (theirs.dataReads + theirs.dataWrites)).toFixed(2)}x on data ` +
-            "references**, over the same attributes recovered the same way.",
-        "",
-        "### Where the cost is",
-        "",
-        "Self cost, restricted to what the measured entry reaches -- the instructions" +
-            " each baseline spent IN a function rather than through it.",
-        "",
-        "| Baseline | Dominant self cost |",
-        "| --- | --- |",
-        ...Object.entries(report.baselines).map(
-            ([name, result]) =>
-                `| \`${name}\` | ${(result.hotPaths ?? [])
-                    .slice(0, 5)
-                    .map((entry) => `\`${entry.name}\` ${(entry.share * 100).toFixed(1)}%`)
-                    .join(", ")} |`
-        ),
-        "",
         "### What the ratio is and is not",
         "",
         "It is a comparison: both baselines were given the same attributes, both recovered" +
@@ -722,16 +759,22 @@ function main() {
     const profile = profileBuild();
     const toolchain = resolvedToolchain(profile);
     const built = build(profile, toolchain, lexbor, options.out);
-    const recovered = requireSameAttributes(built, inputs);
-    const baselines = {};
-    for (const name of Object.keys(BASELINES)) {
-        baselines[name] = measure(built, name, inputs, options.out);
-        if (baselines[name].lists !== recovered) {
-            fail(`${name} measured ${baselines[name].lists} lists but its census held ${recovered}`);
+    /* Each alphabet is its own comparison: its own census, its own counts. */
+    const measured = {};
+    for (const alphabet of Object.keys(alphabets)) {
+        const recovered = requireSameAttributes(built, inputs[alphabet]);
+        const baselines = {};
+        for (const name of Object.keys(BASELINES)) {
+            baselines[name] = measure(built, name, inputs[alphabet], path.join(options.out, alphabet));
+            if (baselines[name].lists !== recovered) {
+                fail(`${name} measured ${baselines[name].lists} ${alphabet} lists but its census held ${recovered}`);
+            }
         }
+        measured[alphabet] = { baselines };
     }
+    /* Schema 2: the same lists measured once per alphabet. */
     const report = {
-        schemaVersion: 1,
+        schemaVersion: 2,
         toolchain: {
             ...toolchain,
             preset: profile.compiler,
@@ -742,7 +785,7 @@ function main() {
         lexbor: { version: lexbor.version, commit: lexbor.commit },
         artifacts: options.out,
         specifications: SPECIFICATIONS.length,
-        baselines
+        alphabets: measured
     };
     fs.writeFileSync(path.join(options.out, "attributes.json"), `${JSON.stringify(report, null, 4)}\n`);
     const rendered = markdownReport(report);

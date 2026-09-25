@@ -43,7 +43,7 @@ host executable explicitly with `scripts/tooling/setup-environment.sh --install 
 runs CLI canaries, both parsers and the fail-closed digest registry. Normal
 builds and tests never install the executable or access the network.
 
-The active corpus has 113 cases: 80 agreements, 33 documented differences and no
+The active corpus has 134 cases: 98 agreements, 36 documented differences and no
 missing-feature gaps. Three width differences retain the normative interior
 ratios and the oracle's page-relative widths without hiding either value. Every difference
 pins input/reader, oracle projection and product projection SHA-256 digests.

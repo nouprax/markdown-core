@@ -830,7 +830,7 @@ static void iterator_delete(test_batch_runner *runner) {
         }
     }
 
-    // Both lists are gone and each paragraph keeps only its text pieces.
+    // Both lists are gone and each paragraph keeps only its text slots.
     markdown_core_node *first = markdown_core_node_first_child(doc);
     markdown_core_node *second = markdown_core_node_next(first);
     INT_EQ(runner, markdown_core_node_get_type(first), MARKDOWN_CORE_NODE_PARAGRAPH,
@@ -2563,24 +2563,24 @@ typedef struct {
 } payload_integer_alignment;
 
 /* THE POOL'S CLAIMS, in numbers the tree cannot show. A parse's nodes come
- * from slabs of many cells, so a run of constructions is one allocation; a
- * cell released into the pool is handed out again before another is taken
+ * from slabs of many slots, so a run of constructions is one allocation; a
+ * slot released into the pool is handed out again before another is taken
  * from a slab, so the storage a parse holds is bounded by its peak, not by
- * how many nodes it made; and a slab is freed by the last cell that leaves
+ * how many nodes it made; and a slab is freed by the last slot that leaves
  * it, whichever release does that, so a node outlives the pool that made it. */
-static void node_cells_come_from_slabs_and_go_back_to_the_pool(test_batch_runner *runner) {
+static void node_slots_come_from_slabs_and_go_back_to_the_pool(test_batch_runner *runner) {
     enum { LIMIT = 4096 };
     static markdown_core_node *taken[LIMIT];
     markdown_core_node_pool pool = {0};
     payload_probe_arm();
 
-    /* Take cells until the third slab arrives: the first two slabs say how
-     * many cells one holds, and that the count is the slab's, not the run's. */
+    /* Take slots until the third slab arrives: the first two slabs say how
+     * many slots one holds, and that the count is the slab's, not the run's. */
     size_t count = 0, per_slab = 0, second_slab_at = 0;
     while (count < LIMIT) {
         size_t before = payload_allocations;
         markdown_core_node *node = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_TEXT, NULL);
-        OK(runner, node != NULL, "a cell is taken");
+        OK(runner, node != NULL, "a slot is taken");
         if (!node) {
             break;
         }
@@ -2597,16 +2597,16 @@ static void node_cells_come_from_slabs_and_go_back_to_the_pool(test_batch_runner
             }
         }
     }
-    OK(runner, per_slab > 100, "a slab holds many cells: %zu", per_slab);
-    INT_EQ(runner, count - second_slab_at, per_slab, "every slab holds the same number of cells");
+    OK(runner, per_slab > 100, "a slab holds many slots: %zu", per_slab);
+    INT_EQ(runner, count - second_slab_at, per_slab, "every slab holds the same number of slots");
     INT_EQ(runner, payload_allocations, 3, "taking %zu nodes made three allocations", count);
     for (size_t i = 1; i < count; i++) {
         OK(runner, taken[i]->as.literal && taken[i]->kind == MARKDOWN_CORE_NODE_TEXT,
-           "each cell carries a zeroed node with its record");
+           "each slot carries a zeroed node with its record");
     }
 
-    /* Released into the pool, cells are reused before a slab is touched, and
-     * the reused cell is the zeroed one a constructor expects. */
+    /* Released into the pool, slots are reused before a slab is touched, and
+     * the reused slot is the zeroed one a constructor expects. */
     size_t allocations = payload_allocations;
     markdown_core_node *reused[8];
     for (size_t i = 0; i < 8; i++) {
@@ -2619,29 +2619,29 @@ static void node_cells_come_from_slabs_and_go_back_to_the_pool(test_batch_runner
     allocations = payload_allocations;
     for (size_t i = 0; i < 8; i++) {
         markdown_core_node *node = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_PARAGRAPH, NULL);
-        OK(runner, node != NULL, "a released cell is taken again");
+        OK(runner, node != NULL, "a released slot is taken again");
         size_t j = 0;
         while (j < 8 && reused[j] != node) {
             j++;
         }
-        OK(runner, j < 8, "the cell taken is one released into the pool");
+        OK(runner, j < 8, "the slot taken is one released into the pool");
         OK(runner,
            node && node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && !node->as.data && !node->next && !node->first_child &&
                node->content.size == 0,
-           "a reused cell is zeroed before it is a node again");
+           "a reused slot is zeroed before it is a node again");
         taken[count++] = node;
     }
-    INT_EQ(runner, payload_allocations, allocations, "reusing released cells makes no allocator call");
+    INT_EQ(runner, payload_allocations, allocations, "reusing released slots makes no allocator call");
 
-    /* A record too large for the cell is owned apart from it and released
+    /* A record too large for the slot is owned apart from it and released
      * with the node, under the same rule used by kind conversion. */
     markdown_core_node *large = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_METADATA, NULL);
     OK(runner, large && large->node_data_allocation && large->as.data == large->node_data_allocation,
-       "a record that does not fit the cell is owned through node_data_allocation");
-    INT_EQ(runner, payload_allocations, allocations + 1, "the out-of-cell record is one allocation");
+       "a record that does not fit the slot is owned through node_data_allocation");
+    INT_EQ(runner, payload_allocations, allocations + 1, "the out-of-slot record is one allocation");
     size_t releases = payload_releases;
     markdown_core_node_pool_release(&pool, large);
-    INT_EQ(runner, payload_releases, releases + 1, "releasing it frees the record and returns the cell to the pool");
+    INT_EQ(runner, payload_releases, releases + 1, "releasing it frees the record and returns the slot to the pool");
 
     /* Refusing the slab refuses the node and leaves the pool usable. */
     while (count < LIMIT) {
@@ -2660,7 +2660,7 @@ static void node_cells_come_from_slabs_and_go_back_to_the_pool(test_batch_runner
     }
 
     /* The pool disposed, the nodes stand: each slab is freed by the last
-     * cell to leave it, and not before. */
+     * slot to leave it, and not before. */
     releases = payload_releases;
     markdown_core_node_pool_dispose(&pool);
     INT_EQ(runner, payload_releases, releases, "disposing the pool frees no slab that still has a node in it");
@@ -2671,11 +2671,11 @@ static void node_cells_come_from_slabs_and_go_back_to_the_pool(test_batch_runner
         if (payload_releases != releases) {
             freed_slabs++;
             OK(runner, (i + 1) % per_slab == 0 || i + 1 == count,
-               "a slab is freed by the last of its cells: node %zu of %zu per slab", i + 1, per_slab);
+               "a slab is freed by the last of its slots: node %zu of %zu per slab", i + 1, per_slab);
         }
     }
     OK(runner, freed_slabs >= 3, "every slab was freed by a node's release: %zu", freed_slabs);
-    INT_EQ(runner, payload_live, 0, "cells, slabs and records are all released");
+    INT_EQ(runner, payload_live, 0, "slots, slabs and records are all released");
     payload_probe_disarm();
 }
 
@@ -2694,18 +2694,20 @@ static void node_reuse_initializes_the_active_record(test_batch_runner *runner) 
     for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
         markdown_core_node *dirty = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_LIST, NULL);
         void *record = dirty->as.data;
-        OK(runner, !dirty->node_data_allocation, "the dirty record occupies retained cell storage");
+        OK(runner, !dirty->node_data_allocation, "the dirty record occupies retained slot storage");
         markdown_core_node_pool_release(&pool, dirty);
-        /* A released cell is retained by the pool. Use a DIFFERENT poison
+        /* A released slot is retained by the pool. Use a DIFFERENT poison
          * from fresh allocations, so omitted initialization cannot compare
-         * equal by accident. Keep the pool's idle free-list link. */
-        markdown_core_node *next = dirty->next;
+         * equal by accident. Keep the pool's idle free-list link, which it
+         * keeps in the released storage's first bytes (slab.h). */
+        void *link;
+        memcpy(&link, dirty, sizeof(link));
         memset(dirty, 0x5a, sizeof(*dirty));
-        dirty->next = next;
+        memcpy(dirty, &link, sizeof(link));
         memset(record, 0x5a, sizeof(markdown_core_list));
         markdown_core_node *node = markdown_core_node_pool_new(&pool, cases[i].kind, NULL);
         markdown_core_node *control = markdown_core_node_new(cases[i].kind);
-        OK(runner, node == dirty && control, "a dirty cell is reused for kind %d", cases[i].kind);
+        OK(runner, node == dirty && control, "a dirty slot is reused for kind %d", cases[i].kind);
         OK(runner,
            !node->parent && !node->prev && !node->next && !node->first_child && !node->last_child &&
                !node->start_line && !node->flags && !node->element && !node->user_data &&
@@ -2719,7 +2721,169 @@ static void node_reuse_initializes_the_active_record(test_batch_runner *runner) 
     }
     markdown_core_node_pool_dispose(&pool);
     payload_fill_fresh = 0;
-    INT_EQ(runner, payload_live, 0, "dirty-cell reuse and external records release every allocation");
+    INT_EQ(runner, payload_live, 0, "dirty-slot reuse and external records release every allocation");
+    payload_probe_disarm();
+}
+
+/* RESOURCES ARE SLOTS TOO (slab.h), and they outlive the pool that made
+ * them the way nodes do: a run of them is a few slab allocations, disposing
+ * the pool frees no slab a resource is still in, and the last resource out of
+ * a slab frees it. */
+static void resource_slots_come_from_slabs_and_outlive_the_pool(test_batch_runner *runner) {
+    enum { COUNT = 256 };
+    static markdown_core_resource *taken[COUNT];
+    markdown_core_slab_pool pool = {0};
+    payload_probe_arm();
+    for (size_t i = 0; i < COUNT; i++) {
+        taken[i] =
+            markdown_core_resource_new(&pool, markdown_core_chunk_literal("/u"), markdown_core_optional_chunk_absent());
+        OK(runner, taken[i] && taken[i]->holders == 1 && !taken[i]->title.has_value && !taken[i]->attributes.anchor.len,
+           "resource %zu is taken zeroed with one holder", i);
+    }
+    OK(runner, payload_allocations > 0 && payload_allocations <= COUNT / 32, "%d resources took %zu allocations", COUNT,
+       payload_allocations);
+    size_t releases = payload_releases;
+    markdown_core_slab_pool_dispose(&pool);
+    INT_EQ(runner, payload_releases, releases, "disposing the pool frees no slab a resource is still in");
+    for (size_t i = 0; i < COUNT; i++) {
+        markdown_core_resource_release(taken[i]);
+    }
+    INT_EQ(runner, payload_live, 0, "every slab went with the last resource in it");
+    payload_probe_disarm();
+}
+
+static markdown_core_node *first_of_kind(markdown_core_node *root, markdown_core_node_type kind);
+
+/* A HEADING'S COMPUTED ANCHOR IS STORED ONCE, as its implicit reference's
+ * destination after the `#`, and the heading holds that resource (node.h).
+ * The facade has released the parser, its map and its pools by the time the
+ * document is returned, so reading both here reads what the tree kept. */
+static void heading_anchor_shares_its_reference_destination(test_batch_runner *runner) {
+    const char *source = "# Straße and more\n\n[STRASSE AND MORE] and [straße and more]\n\n# Untitled [x]\n";
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    OK(runner, document != NULL, "heading anchor document parses");
+    if (!document) {
+        return;
+    }
+    markdown_core_node *heading = first_of_kind(document->root, MARKDOWN_CORE_NODE_HEADING);
+    markdown_core_node *link = first_of_kind(document->root, MARKDOWN_CORE_NODE_LINK);
+    OK(runner, heading && link && heading->attributes.anchor_owner && link->as.link->resource,
+       "the heading's anchor and a link resolved to it both hold a resource");
+    if (heading && link && heading->attributes.anchor_owner) {
+        markdown_core_resource *resource = heading->attributes.anchor_owner;
+        OK(runner, link->as.link->resource == resource, "the link reads through the heading's own resource");
+        OK(runner, resource->holders >= 3, "the heading and both links hold it after the map is gone: %zu",
+           resource->holders);
+        OK(runner,
+           !heading->attributes.anchor.alloc && heading->attributes.anchor.data == resource->url.data + 1 &&
+               resource->url.len == heading->attributes.anchor.len + 1 && resource->url.data[0] == '#',
+           "the anchor borrows the destination's bytes after the #");
+        STR_EQ(runner, (const char *)heading->attributes.anchor.data, "straße-and-more", "the anchor is the slug");
+    }
+    markdown_core_node *second = heading ? heading->next ? heading->next->next : NULL : NULL;
+    OK(runner,
+       second && second->kind == MARKDOWN_CORE_NODE_HEADING && !second->attributes.anchor_owner &&
+           second->attributes.anchor.alloc,
+       "a heading whose text cannot be a label owns its anchor");
+    markdown_core_document_free(document);
+}
+
+/* THE HOLD IS THE ANCHOR'S, NOT THE HEADING'S: a kind change keeps a node's
+ * attribute value and releases only its old kind's record, so a heading made
+ * into a paragraph keeps a borrowed anchor readable -- here after the parse,
+ * with no link and no map left holding the destination it borrows. */
+static void borrowed_anchor_survives_a_kind_change(test_batch_runner *runner) {
+    const char *source = "# Lone heading {.kept}\n";
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    OK(runner, document != NULL, "lone heading document parses");
+    if (!document) {
+        return;
+    }
+    markdown_core_node *heading = first_of_kind(document->root, MARKDOWN_CORE_NODE_HEADING);
+    markdown_core_resource *owner = heading ? heading->attributes.anchor_owner : NULL;
+    OK(runner, owner && owner->holders == 1, "the anchor's value is the one holder of its destination");
+    if (!heading || !owner) {
+        markdown_core_document_free(document);
+        return;
+    }
+    INT_EQ(runner, markdown_core_node_set_kind(heading, MARKDOWN_CORE_NODE_PARAGRAPH), MARKDOWN_CORE_NODE_SET_KIND_OK,
+           "the heading becomes a paragraph");
+    OK(runner, heading->attributes.anchor_owner == owner && owner->holders == 1,
+       "the paragraph's value still holds the destination");
+    markdown_core_optional_string anchor = markdown_core_node_anchor(heading);
+    OK(runner,
+       anchor.has_value && anchor.value.length == 12 && !memcmp(anchor.value.data, "lone-heading", 12) &&
+           anchor.value.data == owner->url.data + 1,
+       "the paragraph's anchor still reads the destination's bytes");
+    INT_EQ(runner, (int)markdown_core_node_attribute_class_count(heading), 1, "its authored class stays too");
+    markdown_core_document_free(document);
+}
+
+/* A `class=` RUN SPLITS WHERE HTML SPLITS A `class` ATTRIBUTE: at tab, line
+ * feed, form feed, carriage return and space, written or decoded from a
+ * character reference, and nowhere else. Vertical tab and non-ASCII spaces --
+ * NBSP, EM SPACE, IDEOGRAPHIC SPACE, raw or referenced -- stay inside a class. */
+static void class_runs_split_on_ascii_white_space(test_batch_runner *runner) {
+    const char *source = "[x]{class=\"a b\tc&#10;d&#12;e&#13;f g\xC2\xA0h i\xE3\x80\x80j k&nbsp;l "
+                         "m&#x3000;n o&#11;p q\xE2\x80\x83r  s\"}\n";
+    const char *expected[] = {"a",          "b",
+                              "c",          "d",
+                              "e",          "f",
+                              "g\xC2\xA0h", "i\xE3\x80\x80j",
+                              "k\xC2\xA0l", "m\xE3\x80\x80n",
+                              "o\vp",       "q\xE2\x80\x83r",
+                              "s"};
+    const size_t count = sizeof(expected) / sizeof(expected[0]);
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    OK(runner, document != NULL, "class run document parses");
+    if (!document) {
+        return;
+    }
+    markdown_core_node *span = first_of_kind(document->root, MARKDOWN_CORE_NODE_SPAN);
+    OK(runner, span != NULL, "the attributes make a span");
+    if (span) {
+        INT_EQ(runner, (int)markdown_core_node_attribute_class_count(span), (int)count, "one class per separated run");
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_string class = {0};
+            OK(runner,
+               markdown_core_node_attribute_class_at(span, i, &class) && class.length == strlen(expected[i]) &&
+                   !memcmp(class.data, expected[i], class.length),
+               "class %zu is %s", i, expected[i]);
+        }
+    }
+    markdown_core_document_free(document);
+}
+
+/* A MAP'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of definitions is a
+ * few block allocations rather than one each, and the blocks go with the map. */
+static void map_records_are_carved_from_its_blocks(test_batch_runner *runner) {
+    enum { COUNT = 400 };
+    payload_probe_arm();
+    markdown_core_map *map = markdown_core_reference_map_new();
+    OK(runner, map != NULL, "a map is made");
+    if (!map) {
+        payload_probe_disarm();
+        return;
+    }
+    size_t before = payload_allocations;
+    char label[32];
+    for (size_t i = 0; i < COUNT; i++) {
+        snprintf(label, sizeof(label), "label %zu", i);
+        markdown_core_chunk chunk = {(unsigned char *)label, (bufsize_t)strlen(label), 0};
+        markdown_core_map_record *record = markdown_core_reference_create(
+            map, &chunk,
+            markdown_core_resource_new(NULL, markdown_core_chunk_literal("/u"), markdown_core_optional_chunk_absent()));
+        OK(runner, record && !record->implicit && record->label_len == chunk.len, "record %zu is carved", i);
+    }
+    /* One allocation per resource (no pool here), one for the label scratch,
+     * and the blocks. */
+    size_t blocks = payload_allocations - before - COUNT - 1;
+    OK(runner, blocks <= 8, "%d records took %zu blocks", COUNT, blocks);
+    markdown_core_chunk lookup = {(unsigned char *)"LABEL 399", 9, 0};
+    markdown_core_map_record *found = markdown_core_map_lookup(map, &lookup);
+    OK(runner, found && found->label_len == 9 && !memcmp(found->label, "label 399", 9), "a carved record is found");
+    markdown_core_map_free(map);
+    INT_EQ(runner, payload_live, 0, "the map's blocks, index and resources are all released");
     payload_probe_disarm();
 }
 
@@ -9492,7 +9656,12 @@ int main(void) {
     strbuf_growth_preserves_termination(runner);
     node_reuse_initializes_the_active_record(runner);
     block_content_storage_follows_writes(runner);
-    node_cells_come_from_slabs_and_go_back_to_the_pool(runner);
+    node_slots_come_from_slabs_and_go_back_to_the_pool(runner);
+    resource_slots_come_from_slabs_and_outlive_the_pool(runner);
+    heading_anchor_shares_its_reference_destination(runner);
+    borrowed_anchor_survives_a_kind_change(runner);
+    class_runs_split_on_ascii_white_space(runner);
+    map_records_are_carved_from_its_blocks(runner);
     properties_values(runner);
     properties_source_boundaries(runner);
     properties_member_work(runner);

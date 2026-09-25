@@ -4,8 +4,8 @@
 #include "attributes.h"
 #include "../core/attributes.h"
 #include "houdini.h"
+#include "node.h"
 #include "markdown_core_ctype.h"
-#include "utf8.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -43,13 +43,6 @@ static int horizontal(unsigned char c) { return BYTE_CLASS[c] & BYTE_SPACE; }
 static int newline(unsigned char c) { return BYTE_CLASS[c] & BYTE_NEWLINE; }
 static int escaped(const unsigned char *s, bufsize_t n, bufsize_t p) {
     return s[p] == '\\' && p + 1 < n && markdown_core_ispunct(s[p + 1]);
-}
-static int32_t scalar(const unsigned char *s, bufsize_t n, bufsize_t p, bufsize_t *width) {
-    int32_t cp;
-    /* Valid UTF-8 is the parser's input precondition, and the advance is total
-     * so every caller's `at += width` moves forward whatever the bytes are. */
-    *width = markdown_core_utf8proc_step(s + p, n - p, &cp);
-    return cp;
 }
 /* A NAME IS TAKEN AS WRITTEN, as in an HTML start tag: any byte that is not a
  * separator, the assignment sign, the closing brace, a quote or an opening
@@ -329,14 +322,17 @@ bufsize_t markdown_core_attributes_end(markdown_core_attribute_parser *p, bufsiz
 /* RELEASES WHAT THE VALUE OWNS, AND NOTHING FOR A VALUE THAT OWNS NOTHING.
  * Every node carries a value and most carry an empty one -- no Text node has
  * attributes -- and the node's release visits each of them, so the empty value
- * is the common call. A value owns its one block and, when a consumer replaced
- * it, its anchor. */
+ * is the common call. A value owns its one block, its hold on the resource a
+ * computed anchor borrows from and, when a consumer replaced it, its anchor. */
 void markdown_core_attributes_free(markdown_core_attributes *v) {
     if (!markdown_core_attributes_owns(v)) {
         return;
     }
     markdown_core_chunk_free(&v->anchor);
     markdown_core_free(v->storage);
+    if (v->anchor_owner) {
+        markdown_core_resource_release(v->anchor_owner);
+    }
     memset(v, 0, sizeof(*v));
 }
 
@@ -390,24 +386,29 @@ static int add_member(markdown_core_attribute_scratch *w, bufsize_t name, bufsiz
     return 1;
 }
 
-/* `class=` names a run of classes: split the staged value at its white space
- * in place, ending each class with a NUL where the space began. */
+/* What separates the classes of a `class=` run: HTML's ASCII white space --
+ * tab, line feed, form feed, carriage return and space -- which is what HTML
+ * splits a `class` attribute on. Vertical tab and every non-ASCII space stay
+ * inside a class, whether written or decoded from a character reference. */
+static int class_separator(unsigned char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r'; }
+
+/* `class=` names a run of classes: split the staged value at its separators
+ * in place, ending each class with a NUL where the separator was. Every
+ * separator is one byte below 0x80 and no byte of a longer character is, so
+ * the split reads bytes and decodes nothing. */
 static int add_class_run(markdown_core_attribute_scratch *w, bufsize_t value, bufsize_t size) {
     unsigned char *text = w->strings.ptr + value;
-    bufsize_t word = 0, at = 0;
-    while (at < size) {
-        bufsize_t width;
-        int32_t cp = scalar(text, size, at, &width);
-        if (markdown_core_utf8proc_is_space(cp) || cp == 11) {
+    bufsize_t word = 0;
+    for (bufsize_t at = 0; at < size; at++) {
+        if (class_separator(text[at])) {
             if (at > word && !add_member(w, -1, 0, value + word, at - word)) {
                 return 0;
             }
             text[at] = 0;
-            word = at + width;
+            word = at + 1;
         }
-        at += width;
     }
-    return at == word || add_member(w, -1, 0, value + word, at - word);
+    return size == word || add_member(w, -1, 0, value + word, size - word);
 }
 
 /* A record, or the anchor or class run a record named `id` or `class` is. */
@@ -578,9 +579,11 @@ static int read_container(markdown_core_attribute_parser *p, bufsize_t start, bu
 }
 
 /* LAY OUT the scratch as the value: one block, its records, then its
- * classes, then the staged strings, each chunk pointing into the block. */
+ * classes, then the staged strings, each chunk pointing into the block. The
+ * value is written once, whole, when it is complete; a refused allocation
+ * leaves `result` as it was. */
 static int lay_out(markdown_core_attribute_parser *p, bufsize_t anchor, bufsize_t anchor_length,
-                   markdown_core_attributes *value) {
+                   markdown_core_attributes *result) {
     markdown_core_attribute_scratch *const w = p->scratch;
     size_t classes = 0, records = 0, strings = (size_t)w->strings.size;
     for (size_t i = 0; i < w->member_count; i++) {
@@ -592,21 +595,17 @@ static int lay_out(markdown_core_attribute_parser *p, bufsize_t anchor, bufsize_
     }
     size_t bytes = records * sizeof(markdown_core_record) + classes * sizeof(markdown_core_chunk) + strings;
     if (!bytes) {
+        *result = (markdown_core_attributes){0};
         return 1;
     }
     void *storage = markdown_core_realloc(NULL, bytes);
     if (!storage) {
         return 0;
     }
-    markdown_core_record *record = storage;
-    markdown_core_chunk *class = (markdown_core_chunk *)(record + records);
+    markdown_core_record *const first_record = storage, *record = first_record;
+    markdown_core_chunk *const first_class = (markdown_core_chunk *)(record + records), *class = first_class;
     unsigned char *text = (unsigned char *)(class + classes);
     memcpy(text, w->strings.ptr, strings);
-    value->storage = storage;
-    value->records = records ? record : NULL;
-    value->record_count = records;
-    value->classes = classes ? class : NULL;
-    value->class_count = classes;
     for (size_t i = 0; i < w->member_count; i++) {
         const struct markdown_core_attribute_member *member = &w->members[i];
         markdown_core_chunk staged = {text + member->value, member->value_length, 0};
@@ -616,9 +615,14 @@ static int lay_out(markdown_core_attribute_parser *p, bufsize_t anchor, bufsize_
             *record++ = (markdown_core_record){{text + member->name, member->name_length, 0}, staged};
         }
     }
-    if (anchor >= 0) {
-        value->anchor = (markdown_core_chunk){text + anchor, anchor_length, 0};
-    }
+    *result = (markdown_core_attributes){
+        .anchor = anchor >= 0 ? (markdown_core_chunk){text + anchor, anchor_length, 0} : (markdown_core_chunk){0},
+        .classes = classes ? first_class : NULL,
+        .records = records ? first_record : NULL,
+        .class_count = (uint32_t)classes,
+        .record_count = (uint32_t)records,
+        .storage = storage,
+    };
     return 1;
 }
 
@@ -662,13 +666,11 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
         return 0;
     }
     assert(p->scratch);
-    markdown_core_attributes value = {0};
-    if (!read_container(p, start, finish, &anchor, &anchor_length) || !lay_out(p, anchor, anchor_length, &value)) {
+    if (!read_container(p, start, finish, &anchor, &anchor_length) || !lay_out(p, anchor, anchor_length, result)) {
         p->oom = 1;
         return 0;
     }
     p->work += (size_t)(finish - start);
-    *result = value;
     *end = finish;
     return 1;
 }

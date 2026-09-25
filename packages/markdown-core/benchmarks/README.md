@@ -8,7 +8,10 @@ and [feature ledger](../../../docs/architecture/benchmark-grammar-coverage.md)
 define their exact domains. Shared CommonMark/GFM features use identical input;
 extensions use reversible source-grammar transformations or local boundaries.
 
-The deterministic generator emits 424 documents, each measured once.
+The deterministic generator emits 848 documents, each measured once: every
+certificate in two alphabets, with its words spelled in ASCII letters and in
+UTF-8 letters of two, three and four bytes
+([Alphabets](../../../docs/architecture/benchmark-grammar-corpus.md#alphabets)).
 It varies independent fields, widths, repetition and recursion. Every finite
 lexical alternative is exercised in the generated input. The catalog includes two
 reviewable examples per certificate. There is no separate scenario manifest,
@@ -142,7 +145,9 @@ attribute-list grammar with the pinned lexbor HTML attribute tokenizer. Their
 authored spellings differ; the workload and recovered attribute values are
 defined by `scripts/benchmark/measure-attributes.mjs`. It builds both implementations
 with recorded flags and measures scanning, decoding and release on the harness
-entry edge. Its reports and raw profiles live in `build/benchmark-attributes`.
+entry edge. The same lists are measured with ASCII names and values and with
+UTF-8 ones, each alphabet with its own census and ratio. Its reports and raw
+profiles live in `build/benchmark-attributes`.
 
 This operation-level comparison is not pooled into document-parser ratios.
 It has its own provenance and input receipts, and remains a separate CI job.

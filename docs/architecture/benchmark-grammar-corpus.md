@@ -3,9 +3,10 @@
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
 contains all 194 certificates, their concrete grammars, normal forms and two
-complete examples per family. The run emits 424 documents, each measured once:
-182 whole declared-language pairs, 12 local boundary pairs with complete hosts,
-and 12 controls for [rejection certificates](#rejection-certificates). The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
+complete examples per family. The run emits 848 documents, each measured once:
+in each of [two alphabets](#alphabets), 182 whole declared-language pairs, 12
+local boundary pairs with complete hosts, and 12 controls for
+[rejection certificates](#rejection-certificates). The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
 30 syntax-guide features, 136 sections and 32 registered elements. Its explicit
 section mapping names certificates for 132 source-language sections and gives
 reviewed context-only dispositions for four sections. Certificates are registered
@@ -41,9 +42,12 @@ encodings, labelled products, repetition, and recursive delimiter substitution.
 There is no arbitrary enumeration of strings, parser-output matching, or
 instance-specific lookup table. The proof does not identify the *unrestricted*
 Markdown Core and CommonMark languages. Their published constructs contain
-alternatives deliberately excluded by these grammars. For example, Word fields are lowercase ASCII. UnicodeWord is a separate
-`[a-zé字]+` grammar; it is not silently treated as an ASCII URL word. Finite
-marker/state languages and repeated bindings have the separate T7 proof below.
+alternatives deliberately excluded by these grammars. For example, a Word is
+spelled with the 26 lowercase ASCII letters or 26 chosen UTF-8 letters, not with
+any letter at all. A field whose own grammar admits only ASCII letters is an
+AsciiWord, and UnicodeWord is a separate grammar; neither is silently treated as
+a Word. Finite marker/state languages and repeated bindings have the separate T7
+proof below.
 
 These certificates establish the grammar equivalence requested of the benchmark.
 They do not assert equal instruction counts, equal byte lengths for all frames,
@@ -62,14 +66,46 @@ paragraph. They count in B/R. A certificate built around a construct only Core
 implements does not meet the premise. It is never reported as a reference
 comparison; see [Rejection certificates](#rejection-certificates).
 
+## Alphabets
+
+Every certificate is generated twice, once per alphabet, with the same grammar,
+the same fields and the same schedule. ASCII documents spell every Word with
+`[a-z]`; they are byte for byte the documents of the single-alphabet corpus
+before it, so their measurements stay comparable with earlier reports. UTF-8
+documents spell every Word with 26 letters of two, three and four bytes in turn:
+Cyrillic `а`–`и`, CJK `一`–`丈` and CJK Extension B `𠀀`–`𠀇`. Each is a Unicode
+letter that is neither punctuation nor white space and folds to itself, so every
+syntax decision -- flanking, label matching, anchors -- is the same in both
+alphabets and only the work done per character differs. A UTF-8 document's name
+carries `-utf8` after its certificate's id.
+
+A letter keeps its position: the UTF-8 twin of an ASCII document spells the
+same Word with the letter at the same index of its alphabet. So respelling a
+UTF-8 document letter by letter gives its ASCII twin exactly, except in a field
+bounded in bytes, which holds fewer UTF-8 letters at its limit; the tests check
+this for every document. Grid geometry counts characters, not bytes.
+
+Some positions admit only ASCII letters in their own grammar: a block
+identifier (`#id#`), a callout type (`[!type]`) and an email address's local
+part. Those fields are AsciiWord and keep `[a-z]` in both alphabets. A
+certificate whose every field is ASCII-only or finite has the same document in
+both.
+
+The attribute benchmark against lexbor uses the same two alphabets. Its lists
+are measured once with ASCII names and values and once with UTF-8 ones; syntax,
+digits, spaces and character references are the same bytes in both, and white
+space stays ASCII because HTML splits a class run only on ASCII white space.
+
 ## Common grammar and unique recognition (T1)
 
 `SP` is one ASCII space and `LF` one newline. The definitions are:
 
 ```ebnf
-Word   = [a-z]+ ;
+Word   = Letter+ ;
+Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ;
+AsciiWord = [a-z]+ ;
 AttributeKey = Word except 'id' and 'class' ;
-UnicodeWord = [a-zé字]+ ;
+UnicodeWord = (Letter | 'é' | '字')+ ;
 Phrase = Word (SP Word)* ;
 Empty  = epsilon ;
 Body   = Word | Word SP (Atom SP)* Word ;

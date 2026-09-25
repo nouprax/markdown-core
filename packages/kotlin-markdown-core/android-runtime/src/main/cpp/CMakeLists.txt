@@ -11,6 +11,7 @@ set(MARKDOWN_CORE_ELEMENTS_DIR "${MARKDOWN_CORE_ROOT}/packages/markdown-core/ele
 add_library(
     markdown_core_kotlin SHARED
     "${MARKDOWN_CORE_CORE_DIR}/alloc.c"
+    "${MARKDOWN_CORE_CORE_DIR}/slab.c"
     "${MARKDOWN_CORE_CORE_DIR}/markdown_core.c"
     "${MARKDOWN_CORE_CORE_DIR}/node.c"
     "${MARKDOWN_CORE_CORE_DIR}/iterator.c"

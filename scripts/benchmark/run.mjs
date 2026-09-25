@@ -980,9 +980,12 @@ function buildCorpus(options) {
     const directory = path.join(options.out, "corpus");
     const grammar = writeGrammarCorpus(directory);
     const selected = new Set(options.cases);
-    const families = new Set(grammar.cases.filter((entry) => selected.has(entry.name)).map((entry) => entry.id));
+    // A selected document brings its certificate's other documents in the
+    // same alphabet: its counterpart, any control and any boundary hosts.
+    const family = (entry) => `${entry.id} ${entry.alphabet}`;
+    const families = new Set(grammar.cases.filter((entry) => selected.has(entry.name)).map(family));
     const documents = grammar.cases
-        .filter((entry) => !selected.size || families.has(entry.id))
+        .filter((entry) => !selected.size || families.has(family(entry)))
         .map((entry) => ({
             ...documentMetadata(entry),
             case: entry.name,
@@ -1240,8 +1243,8 @@ function derive(document, stage) {
 }
 
 export function markdownReport(report) {
-    if (report.schemaVersion !== 7 || !report.grammarCorpus) {
-        throw new Error("report schema 7 with a grammar corpus required");
+    if (report.schemaVersion !== 8 || !report.grammarCorpus) {
+        throw new Error("report schema 8 with a grammar corpus required");
     }
     const lines = [];
     lines.push("## Parse stage comparison", "");
@@ -1530,11 +1533,13 @@ function main() {
         }
     }
 
-    /* Schema 7: each engine records the two stages and nothing around them.
-     * Certificates carry their reference (null for a construct only Core
-     * implements), and rejection certificates may add a control side. */
+    /* Schema 8: every workload and proof names the alphabet its words are
+     * spelled with, and each certificate is measured once per alphabet. Each
+     * engine records the two stages and nothing around them. Certificates
+     * carry their reference (null for a construct only Core implements), and
+     * rejection certificates may add a control side. */
     const report = {
-        schemaVersion: 7,
+        schemaVersion: 8,
         toolchain: versions,
         /* The exact bytes measured, so a report's numbers trace to a binary. */
         binaries,

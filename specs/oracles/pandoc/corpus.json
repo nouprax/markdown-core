@@ -18,6 +18,11 @@
             "input": "[text]{#first #last .a .a id=final class=\"b b\" k=1 k=2 empty=}\n"
         },
         {
+            "id": "attribute-class-html-whitespace",
+            "from": "markdown_strict+bracketed_spans",
+            "input": "[x]{class=\"a b c　d&#11;e\"}\n"
+        },
+        {
             "id": "pandoc-attribute-value-decoding",
             "from": "markdown_strict+bracketed_spans",
             "input": "[text]{quoted=\"&amp;\" unquoted=&amp; escaped=a\\}b}\n"

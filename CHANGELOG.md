@@ -6,6 +6,13 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Split a `class=` attribute value where HTML splits a `class` attribute: at
+  tab, line feed, form feed, carriage return and space. Vertical tab and
+  non-ASCII spaces, written or from a character reference, now stay inside a
+  class instead of separating classes as Unicode Zs did. The split reads bytes
+  and decodes no UTF-8. Pin the deliberate difference from Pandoc, which splits
+  at every Unicode space.
+
 - Treat `Citation`, `Footnote`, `Specimen`, and `Metadata` as Markup nodes in
   every binding, reached through their named owning relations. One `MarkupVisitor`
   provides enter/exit callbacks across all 43 kinds,
