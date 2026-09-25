@@ -1,4 +1,4 @@
-# Pandoc differences explained by case (originally 34, now 33)
+# Pandoc differences explained by case (originally 34, now 34)
 
 The original 34 entries represent **34 input cases** in the difference registry,
 not 34 unimplemented features or 34 additional Pandoc extensions to support. One
@@ -61,6 +61,7 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | 32 | `p10-nested-and-lazy`: compactness of nested definition bodies | Core stores a separate compact boolean determined by source blank lines between term and body. Pandoc represents compactness through Plain/Para. When the first body is a nested DefinitionList, no corresponding flag is available and the comparison value is null; term and body content agree. |
 | 33 | `p10-padding-and-tabs`: compactness of code definition bodies | The same AST-information difference as item 32, with a CodeBlock as the first body. This is not a TAB or code-content parsing error; Pandoc does not retain the corresponding compact flag. |
 | 34 | `p10-empty-bodies`: compactness of empty definition bodies | The same AST-information difference as item 32, with an empty first body. The empty body and subsequent bodies are preserved and compared. Only Core's explicitly retained compactness information differs. |
+| 35 | `attribute-class-html-whitespace`: separators in a `class=` value | Core splits a `class=` value where HTML splits a `class` attribute: at tab, LF, form feed, CR and space. The case writes `a`, a space, `b`, NBSP, `c`, IDEOGRAPHIC SPACE, `d`, `&#11;` and `e`. Core has two classes: `a`, and one holding everything after the space. Pandoc splits at every Unicode space, the referenced vertical tab included, and has the five classes `a` to `e`. |
 
 The clearest repeated relationships are:
 

@@ -20,6 +20,15 @@
             "coreDigest": "0d530b264cf27c1cbc4d09d4abeb2614ba9545bab3c116f3aea717ce93a0dc96"
         },
         {
+            "id": "attribute-class-html-whitespace",
+            "item": "P5",
+            "status": "projection",
+            "reason": "A class= value splits where HTML splits a class attribute: tab, LF, FF, CR and space. NBSP, IDEOGRAPHIC SPACE and a vertical tab from a character reference stay inside the class; Pandoc splits at every Unicode space.",
+            "inputDigest": "85ec7997d530493553ef62a03db79c56cec6526b024105ae9c2584d96cc39300",
+            "oracleDigest": "a198cda1b4d700829f53601f140f60c398561a01f82bef004e70c144f94b3a74",
+            "coreDigest": "fec4c013b06bcdcc42317020eac925f388e44b681191716d80de15100fdf017c"
+        },
+        {
             "id": "multiline-table",
             "item": "P11c",
             "status": "projection",

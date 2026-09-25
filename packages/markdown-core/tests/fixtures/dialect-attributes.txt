@@ -101,7 +101,7 @@ Document scope=1:1..1:40 anchor=null attributes={} children=1
 .
 Document scope=1:1..1:38 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..1:38 anchor=null attributes={} children=1
-    └── Directive scope=1:1..1:38 anchor=null attributes={.a .b .c .v .f .a .tail} name="n" children=0
+    └── Directive scope=1:1..1:38 anchor=null attributes={."a b c\u000bv" .f .a .tail} name="n" children=0
 ````````````````````````````````
 
 ```````````````````````````````` example

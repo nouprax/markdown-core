@@ -6,7 +6,6 @@
 #include "houdini.h"
 #include "node.h"
 #include "markdown_core_ctype.h"
-#include "utf8.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -44,13 +43,6 @@ static int horizontal(unsigned char c) { return BYTE_CLASS[c] & BYTE_SPACE; }
 static int newline(unsigned char c) { return BYTE_CLASS[c] & BYTE_NEWLINE; }
 static int escaped(const unsigned char *s, bufsize_t n, bufsize_t p) {
     return s[p] == '\\' && p + 1 < n && markdown_core_ispunct(s[p + 1]);
-}
-static int32_t scalar(const unsigned char *s, bufsize_t n, bufsize_t p, bufsize_t *width) {
-    int32_t cp;
-    /* Valid UTF-8 is the parser's input precondition, and the advance is total
-     * so every caller's `at += width` moves forward whatever the bytes are. */
-    *width = markdown_core_utf8proc_step(s + p, n - p, &cp);
-    return cp;
 }
 /* A NAME IS TAKEN AS WRITTEN, as in an HTML start tag: any byte that is not a
  * separator, the assignment sign, the closing brace, a quote or an opening
@@ -394,24 +386,29 @@ static int add_member(markdown_core_attribute_scratch *w, bufsize_t name, bufsiz
     return 1;
 }
 
-/* `class=` names a run of classes: split the staged value at its white space
- * in place, ending each class with a NUL where the space began. */
+/* What separates the classes of a `class=` run: HTML's ASCII white space --
+ * tab, line feed, form feed, carriage return and space -- which is what HTML
+ * splits a `class` attribute on. Vertical tab and every non-ASCII space stay
+ * inside a class, whether written or decoded from a character reference. */
+static int class_separator(unsigned char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r'; }
+
+/* `class=` names a run of classes: split the staged value at its separators
+ * in place, ending each class with a NUL where the separator was. Every
+ * separator is one byte below 0x80 and no byte of a longer character is, so
+ * the split reads bytes and decodes nothing. */
 static int add_class_run(markdown_core_attribute_scratch *w, bufsize_t value, bufsize_t size) {
     unsigned char *text = w->strings.ptr + value;
-    bufsize_t word = 0, at = 0;
-    while (at < size) {
-        bufsize_t width;
-        int32_t cp = scalar(text, size, at, &width);
-        if (markdown_core_utf8proc_is_space(cp) || cp == 11) {
+    bufsize_t word = 0;
+    for (bufsize_t at = 0; at < size; at++) {
+        if (class_separator(text[at])) {
             if (at > word && !add_member(w, -1, 0, value + word, at - word)) {
                 return 0;
             }
             text[at] = 0;
-            word = at + width;
+            word = at + 1;
         }
-        at += width;
     }
-    return at == word || add_member(w, -1, 0, value + word, at - word);
+    return size == word || add_member(w, -1, 0, value + word, size - word);
 }
 
 /* A record, or the anchor or class run a record named `id` or `class` is. */

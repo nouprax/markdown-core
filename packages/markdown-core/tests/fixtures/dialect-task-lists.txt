@@ -412,7 +412,7 @@ Document scope=1:1..3:7 anchor=null attributes={} children=1
         └── Paragraph scope=1:3..3:7 anchor=null attributes={} children=7
             ├── Text scope=1:3..1:5 anchor=null attributes={} literal="[x]" children=0
             ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
-            ├── Directive scope=2:1..2:38 anchor=null attributes={.a .b .c .v .f .a .tail} name="n" children=0
+            ├── Directive scope=2:1..2:38 anchor=null attributes={."a b c\u000bv" .f .a .tail} name="n" children=0
             ├── Text scope=2:39..2:40 anchor=null attributes={} literal="a}" children=0
             ├── Emphasis scope=2:41..2:47 anchor=null attributes={} children=1
             │   └── Text scope=2:42..2:46 anchor=null attributes={} literal=".foo." children=0

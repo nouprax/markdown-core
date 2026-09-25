@@ -2819,6 +2819,41 @@ static void borrowed_anchor_survives_a_kind_change(test_batch_runner *runner) {
     markdown_core_document_free(document);
 }
 
+/* A `class=` RUN SPLITS WHERE HTML SPLITS A `class` ATTRIBUTE: at tab, line
+ * feed, form feed, carriage return and space, written or decoded from a
+ * character reference, and nowhere else. Vertical tab and non-ASCII spaces --
+ * NBSP, EM SPACE, IDEOGRAPHIC SPACE, raw or referenced -- stay inside a class. */
+static void class_runs_split_on_ascii_white_space(test_batch_runner *runner) {
+    const char *source = "[x]{class=\"a b\tc&#10;d&#12;e&#13;f g\xC2\xA0h i\xE3\x80\x80j k&nbsp;l "
+                         "m&#x3000;n o&#11;p q\xE2\x80\x83r  s\"}\n";
+    const char *expected[] = {"a",          "b",
+                              "c",          "d",
+                              "e",          "f",
+                              "g\xC2\xA0h", "i\xE3\x80\x80j",
+                              "k\xC2\xA0l", "m\xE3\x80\x80n",
+                              "o\vp",       "q\xE2\x80\x83r",
+                              "s"};
+    const size_t count = sizeof(expected) / sizeof(expected[0]);
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    OK(runner, document != NULL, "class run document parses");
+    if (!document) {
+        return;
+    }
+    markdown_core_node *span = first_of_kind(document->root, MARKDOWN_CORE_NODE_SPAN);
+    OK(runner, span != NULL, "the attributes make a span");
+    if (span) {
+        INT_EQ(runner, (int)markdown_core_node_attribute_class_count(span), (int)count, "one class per separated run");
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_string class = {0};
+            OK(runner,
+               markdown_core_node_attribute_class_at(span, i, &class) && class.length == strlen(expected[i]) &&
+                   !memcmp(class.data, expected[i], class.length),
+               "class %zu is %s", i, expected[i]);
+        }
+    }
+    markdown_core_document_free(document);
+}
+
 /* A MAP'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of definitions is a
  * few block allocations rather than one each, and the blocks go with the map. */
 static void map_records_are_carved_from_its_blocks(test_batch_runner *runner) {
@@ -9625,6 +9660,7 @@ int main(void) {
     resource_slots_come_from_slabs_and_outlive_the_pool(runner);
     heading_anchor_shares_its_reference_destination(runner);
     borrowed_anchor_survives_a_kind_change(runner);
+    class_runs_split_on_ascii_white_space(runner);
     map_records_are_carved_from_its_blocks(runner);
     properties_values(runner);
     properties_source_boundaries(runner);

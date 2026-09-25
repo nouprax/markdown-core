@@ -132,9 +132,9 @@ const SPECIFICATIONS = [
  * `letters`, the same alphabets the stage corpus spells its words with. Only
  * the letters change: `-`, digits, spaces and character references keep their
  * bytes, so both grammars take the same branches on both spellings and the
- * census still compares like with like. White space stays ASCII: HTML splits a
- * class run only on ASCII white space, so a Unicode space is not a separator
- * both grammars share. */
+ * census still compares like with like. White space stays ASCII: in both
+ * grammars ASCII white space separates members and the classes of a class
+ * run, and a non-ASCII space separates neither. */
 function respelled(specification, letters) {
     const respell = (text) =>
         text
