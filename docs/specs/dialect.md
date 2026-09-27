@@ -96,13 +96,42 @@ to the engine. Line endings may be LF, CR, or CRLF. Indentation uses tab stops
 four columns apart. Syntax matching uses bundled Unicode 17 tables, rather than
 the host operating system's Unicode version.
 
-Unless a rule specifies otherwise, CommonMark whitespace means Unicode Zs
-plus tab, LF, form feed, and CR; ASCII whitespace means U+0009 through U+000D
-and space. Letters, numbers, combining marks, and punctuation use the Unicode
+Letters, numbers, combining marks, and punctuation use the Unicode
 categories; CommonMark punctuation also includes symbols. Reference-label
-normalization uses full case folding, trims ASCII whitespace, and collapses
-internal ASCII whitespace runs. Automatic anchors use their own
+normalization uses full case folding, trims whitespace, and collapses each
+internal whitespace run to one space. Automatic anchors use their own
 [lowercase algorithm](dialect/anchors.md#automatic-anchors).
+
+## Whitespace
+
+Markdown Core uses the whitespace classes that CommonMark 0.31.2 defines.
+Each class has fixed members:
+
+| Class | Characters |
+| --- | --- |
+| Line ending | LF, CR, or CR followed by LF |
+| Space or tab | U+0020 space and U+0009 tab |
+| Whitespace | a space, a tab, or a line ending |
+| Unicode whitespace | Unicode `Zs`, tab, LF, form feed, and CR |
+
+On these pages, *whitespace* with no class named means spaces and tabs, plus
+line endings where the construct can span lines. This covers separators,
+trimmed edges, and anything that must contain no whitespace. It applies in
+every module, including the syntax taken from GitHub, Pandoc, and Obsidian.
+Vertical tab, form feed, and the other control characters are not whitespace.
+Neither are the non-breaking space and the other `Zs` characters beyond
+U+0020.
+
+*Unicode whitespace* decides only delimiter flanking: whether a run of `*`,
+`_`, `~~`, `==`, or `++` can open or close. Two rules use other sets, and
+their pages say so:
+- `class=` values split at HTML's ASCII whitespace: tab, LF, form feed, CR,
+  and space.
+- Automatic anchors replace each Unicode `White_Space` character with a
+  hyphen.
+
+A CommonMark rule that names spaces alone means U+0020 alone. Code spans and
+hard line breaks are the two such rules.
 
 ## Limits
 

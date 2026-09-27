@@ -106,17 +106,14 @@ static void prepare_citation_braces(markdown_core_inline_state *inline_state) {
             }
         }
         if (opaque_end > at) {
-            while (at < opaque_end) {
-                int32_t scalar;
-                int width = markdown_core_utf8proc_step(inline_state->input.data + at, opaque_end - at, &scalar);
+            for (; at < opaque_end; at++) {
                 inline_state->owner_parser->citation_work++;
                 if (top >= 0) {
                     index->entries[top].content = true;
-                    if (markdown_core_utf8proc_is_space(scalar)) {
+                    if (markdown_core_is_whitespace(inline_state->input.data[at])) {
                         index->entries[top].valid = false;
                     }
                 }
-                at += width;
             }
             continue;
         }
@@ -150,16 +147,13 @@ static void prepare_citation_braces(markdown_core_inline_state *inline_state) {
             }
             at++;
         } else {
-            int32_t scalar;
-            int width =
-                markdown_core_utf8proc_step(inline_state->input.data + at, inline_state->input.len - at, &scalar);
             if (top >= 0) {
                 index->entries[top].content = true;
-                if (markdown_core_utf8proc_is_space(scalar)) {
+                if (markdown_core_is_whitespace(c)) {
                     index->entries[top].valid = false;
                 }
             }
-            at += width;
+            at++;
         }
     }
 }
@@ -250,19 +244,10 @@ static markdown_core_node *markdown_core_inline_read_citation_token(markdown_cor
     *token = value;
     token->tail_start = -1;
     if (key) {
-        bufsize_t at = value.end;
-        unsigned lines = 0;
-        while (at < inline_state->input.len && (markdown_core_inline_peek_at(inline_state, at) == ' ' ||
-                                                markdown_core_inline_peek_at(inline_state, at) == '\t' ||
-                                                markdown_core_inline_peek_at(inline_state, at) == '\n' ||
-                                                markdown_core_inline_peek_at(inline_state, at) == '\r')) {
-            inline_state->owner_parser->citation_work++;
-            if (markdown_core_inline_peek_at(inline_state, at) == '\n') {
-                lines++;
-            }
-            at++;
-        }
-        if (lines <= 1 && markdown_core_inline_peek_at(inline_state, at) == '[' &&
+        bufsize_t at =
+            markdown_core_skip_spaces_and_line_end(inline_state->input.data, value.end, inline_state->input.len);
+        inline_state->owner_parser->citation_work += (size_t)(at - value.end);
+        if (markdown_core_inline_peek_at(inline_state, at) == '[' &&
             markdown_core_inline_peek_at(inline_state, at + 1) != '^') {
             token->tail_start = at;
         }
@@ -329,33 +314,24 @@ static void citation_boundary(markdown_core_inline_state *inline_state, citation
     }
 }
 
+/* Whitespace at either edge of a citation's source is separation, not
+ * content. Whitespace is a space, a tab or a line ending, each one byte, so
+ * the edges are trimmed byte by byte. */
 static void trim_citation_source(markdown_core_inline_state *inline_state, bufsize_t *start, bufsize_t *end) {
-    while (*start < *end) {
-        int32_t scalar;
-        int width = markdown_core_utf8proc_step(inline_state->input.data + *start, *end - *start, &scalar);
+    const unsigned char *data = inline_state->input.data;
+    while (*start < *end && markdown_core_is_whitespace(data[*start])) {
         inline_state->owner_parser->citation_work++;
-        if (!markdown_core_utf8proc_is_space(scalar)) {
-            break;
-        }
-        *start += width;
+        (*start)++;
     }
-    while (*end > *start) {
-        bufsize_t at = *end - 1;
-        while (at > *start && (inline_state->input.data[at] & 0xc0) == 0x80) {
-            at--;
-        }
-        int32_t scalar;
-        markdown_core_utf8proc_iterate(inline_state->input.data + at, *end - at, &scalar);
+    while (*end > *start && markdown_core_is_whitespace(data[*end - 1])) {
         inline_state->owner_parser->citation_work++;
-        if (!markdown_core_utf8proc_is_space(scalar)) {
+        /* An escaped space or line ending is an owned inline token, not raw
+         * edge whitespace. Preserve its complete source extent. */
+        if ((data[*end - 1] == ' ' || markdown_core_is_line_end(data[*end - 1])) &&
+            source_escaped(inline_state, *end - 1, *start)) {
             break;
         }
-        /* An escaped ASCII space or line ending is an owned inline token,
-         * not raw edge whitespace. Preserve its complete source extent. */
-        if ((scalar == ' ' || scalar == '\n') && source_escaped(inline_state, at, *start)) {
-            break;
-        }
-        *end = at;
+        (*end)--;
     }
 }
 

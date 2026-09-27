@@ -159,7 +159,7 @@ void markdown_core_utf8proc_normalize_label(markdown_core_strbuf *dest, const ui
          * says it does not do. */
         int32_t c;
         bufsize_t char_len = markdown_core_utf8proc_step(str, len, &c);
-        if (char_len == 1 && markdown_core_isspace((char)str[0])) {
+        if (char_len == 1 && markdown_core_is_whitespace(str[0])) {
             space = out - dest->ptr > first;
         } else {
             const uint32_t *entry = char_len > 1 && c < CF_MAX ? S_case_fold_entry(c) : NULL;

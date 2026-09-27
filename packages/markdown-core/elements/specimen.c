@@ -49,7 +49,7 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_parser 
         }
         pos += width;
     }
-    if (BLOCK_PEEK(input, pos) != ')' || !markdown_core_isspace(BLOCK_PEEK(input, pos + 1))) {
+    if (BLOCK_PEEK(input, pos) != ')' || !markdown_core_is_whitespace(BLOCK_PEEK(input, pos + 1))) {
         return 0;
     }
     if (pos > label) {
@@ -100,7 +100,7 @@ static bool markdown_core_specimen_open(markdown_core_parser *parser, markdown_c
         return false;
     }
     markdown_core_block_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
-    while (markdown_core_block_is_space_or_tab(input->data[parser->offset])) {
+    while (markdown_core_is_space_or_tab(input->data[parser->offset])) {
         markdown_core_block_advance_offset(parser, input, 1, true);
         parser->specimen_work++;
     }

@@ -40,9 +40,7 @@ static int is_fence_line(const unsigned char *data, int len, int first_nonspace)
     if (i + 2 > len || data[i] != '%' || data[i + 1] != '%') {
         return 0;
     }
-    for (i += 2; i < len && (data[i] == ' ' || data[i] == '\t'); i++) {
-    }
-    return i >= len || data[i] == '\n' || data[i] == '\r';
+    return markdown_core_is_blank_to_line_end(data, i + 2, len);
 }
 
 static int probe_comment_block(markdown_core_parser *parser, markdown_core_chunk *input, int first, int indent,
@@ -195,7 +193,7 @@ void markdown_core_block_convert_comment_block(markdown_core_parser *parser, mar
     bufsize_t body_len;
     bufsize_t rest;
 
-    while (open < len && (data[open] == ' ' || data[open] == '\t')) {
+    while (open < len && markdown_core_is_space_or_tab(data[open])) {
         open++;
     }
     if (len - open < 4 || memcmp(data + open, "<!--", 4) != 0) {
@@ -210,7 +208,7 @@ void markdown_core_block_convert_comment_block(markdown_core_parser *parser, mar
         return;
     }
     rest = close + 3;
-    while (rest < len && (data[rest] == ' ' || data[rest] == '\t')) {
+    while (rest < len && markdown_core_is_space_or_tab(data[rest])) {
         rest++;
     }
     if (rest < len && data[rest] == '\r') {

@@ -343,6 +343,16 @@
             "input": "@张三，如此说。 [@张三，第 3 页] @张三、@李四 @Foo_bar。\n"
         },
         {
+            "id": "p7-braced-key-whitespace",
+            "from": "markdown_strict+citations",
+            "input": "@{a b} @{a b} [@{c　d}, p. 1]\n"
+        },
+        {
+            "id": "p7-affix-whitespace",
+            "from": "markdown_strict+citations",
+            "input": "[ see @a, p. 1 ]\n"
+        },
+        {
             "id": "p9a-variants",
             "from": "markdown_strict+fancy_lists+startnum",
             "input": "a) alpha\nb) next\n\n(A) upper\n(B) next\n\niv. roman\nv. next\n\nIV) upper roman\nV) next\n"

@@ -53,7 +53,7 @@ export function outsideSharedFuzzScope(input) {
         if (node.type === "listItem" && node.children[0]?.type === "paragraph") {
             const first = node.children[0];
             const raw = input.slice(first.position.start.offset, first.position.end.offset);
-            const marker = /^\[([^[\]\p{White_Space}])\][ \t\v\f]/u.exec(raw)?.[1];
+            const marker = /^\[([^[\]\p{White_Space}])\][ \t]/u.exec(raw)?.[1];
             if (marker && ![" ", "x", "X"].includes(marker)) return "custom-task-markers";
         }
         if (node.type === "paragraph") {

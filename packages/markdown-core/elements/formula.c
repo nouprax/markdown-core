@@ -154,10 +154,10 @@ static int set_formula_literal_bytes(markdown_core_node *node, const unsigned ch
 static int own_trimmed_literal(markdown_core_chunk *literal) {
     bufsize_t from = 0;
     bufsize_t end = literal->len;
-    while (from < end && markdown_core_isspace(literal->data[from])) {
+    while (from < end && markdown_core_is_whitespace(literal->data[from])) {
         from++;
     }
-    while (end > from && markdown_core_isspace(literal->data[end - 1])) {
+    while (end > from && markdown_core_is_whitespace(literal->data[end - 1])) {
         end--;
     }
     bufsize_t length = end - from;
@@ -177,26 +177,14 @@ static int own_trimmed_literal(markdown_core_chunk *literal) {
     return 1;
 }
 
-static int is_line_end(const unsigned char *data, bufsize_t len, bufsize_t pos) {
-    return pos >= len || data[pos] == '\n' || data[pos] == '\r';
-}
-
-static int has_only_spaces_until_line_end(const unsigned char *data, bufsize_t len, bufsize_t pos) {
-    while (pos < len && (data[pos] == ' ' || data[pos] == '\t')) {
-        pos++;
-    }
-
-    return is_line_end(data, len, pos);
-}
-
 static int scan_formula_block_open(const unsigned char *data, bufsize_t len, bufsize_t pos) {
     if (pos + 3 <= len && data[pos] == '\\' && data[pos + 1] == '\\' && data[pos + 2] == '[' &&
-        has_only_spaces_until_line_end(data, len, pos + 3)) {
+        markdown_core_is_blank_to_line_end(data, pos + 3, len)) {
         return FORMULA_BLOCK_DELIM_LATEX_BACKSLASH;
     }
 
     if (pos + 2 <= len && data[pos] == '$' && data[pos + 1] == '$' &&
-        has_only_spaces_until_line_end(data, len, pos + 2)) {
+        markdown_core_is_blank_to_line_end(data, pos + 2, len)) {
         return FORMULA_BLOCK_DELIM_DOLLAR;
     }
 
@@ -206,12 +194,12 @@ static int scan_formula_block_open(const unsigned char *data, bufsize_t len, buf
 static int scan_formula_block_close(const unsigned char *data, bufsize_t len, bufsize_t pos, int block_delim) {
     if (block_delim == FORMULA_BLOCK_DELIM_LATEX_BACKSLASH) {
         return pos + 3 <= len && data[pos] == '\\' && data[pos + 1] == '\\' && data[pos + 2] == ']' &&
-               has_only_spaces_until_line_end(data, len, pos + 3);
+               markdown_core_is_blank_to_line_end(data, pos + 3, len);
     }
 
     if (block_delim == FORMULA_BLOCK_DELIM_DOLLAR) {
         return pos + 2 <= len && data[pos] == '$' && data[pos + 1] == '$' &&
-               has_only_spaces_until_line_end(data, len, pos + 2);
+               markdown_core_is_blank_to_line_end(data, pos + 2, len);
     }
 
     return 0;
@@ -354,11 +342,11 @@ static markdown_core_node *match_formula_delimiter(const markdown_core_element *
 }
 
 static int dollar_inline_can_open(markdown_core_chunk *chunk, bufsize_t offset) {
-    return offset + 1 < chunk->len && !markdown_core_isspace((char)chunk->data[offset + 1]);
+    return offset + 1 < chunk->len && !markdown_core_is_whitespace(chunk->data[offset + 1]);
 }
 
 static int dollar_inline_can_close(markdown_core_chunk *chunk, bufsize_t offset) {
-    return offset > 0 && !markdown_core_isspace((char)chunk->data[offset - 1]) &&
+    return offset > 0 && !markdown_core_is_whitespace(chunk->data[offset - 1]) &&
            (offset + 1 >= chunk->len || !markdown_core_isdigit((char)chunk->data[offset + 1]));
 }
 
@@ -400,7 +388,7 @@ static int scan_formula_closer(const unsigned char *data, int length, int at, ma
         if (rule == FORMULA_DELIM_DOLLAR_DISPLAY) {
             *closes = pair;
         } else if (!pair) {
-            *closes = at > 0 && !markdown_core_isspace(data[at - 1]) &&
+            *closes = at > 0 && !markdown_core_is_whitespace(data[at - 1]) &&
                       (at + 1 == length || !markdown_core_isdigit(data[at + 1]));
         }
         return pair ? 2 : 1;
@@ -538,7 +526,7 @@ static void free_nodes_through(markdown_core_parser *parser, markdown_core_node 
  * which is why those arms are gone and this one is not. A fixture cannot reach
  * either; the difference is that this one states the rule and they stated an
  * algorithm. If source-line normalization changes, they have to come back. */
-static bool formula_pad_byte(unsigned char c) { return c == ' ' || c == '\n' || c == '\r'; }
+static bool formula_pad_byte(unsigned char c) { return c == ' ' || markdown_core_is_line_end(c); }
 
 static void strip_formula_padding(const unsigned char **literal, bufsize_t *len) {
     const unsigned char *data = *literal;

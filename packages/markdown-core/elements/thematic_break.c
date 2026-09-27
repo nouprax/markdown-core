@@ -17,7 +17,7 @@ static int S_scan_thematic_break(markdown_core_chunk *input, bufsize_t offset, b
     while ((nextc = peek_at(input, ++i))) {
         if (nextc == c) {
             count++;
-        } else if (nextc != ' ' && nextc != '\t') {
+        } else if (!markdown_core_is_space_or_tab(nextc)) {
             break;
         }
     }

@@ -36,11 +36,8 @@ void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf);
  * 70 instructions for two-, three- and four-byte characters it was most of
  * what a heading anchor cost outside ASCII (#405).
  *
- * Decoding is NOT skippable in general. `markdown_core_utf8proc_is_space`
- * matches the Zs class, every non-control member of which (160, 5760,
- * 8192-8202, 8239, 8287, 12288) is at or above 128. Walks that only need to
- * know where a character ends read its width off the lead byte instead
- * (`markdown_core_utf8proc_width`). */
+ * Walks that only need to know where a character ends read its width off
+ * the lead byte instead (`markdown_core_utf8proc_width`). */
 static inline int markdown_core_utf8proc_iterate(const uint8_t *str, bufsize_t len, int32_t *dst) {
     uint32_t lead, scalar, least;
     int width;
@@ -154,8 +151,9 @@ static inline int markdown_core_utf8proc_step(const uint8_t *str, bufsize_t len,
  * punctuation character is punctuation, and those whose category is S are
  * symbols too. */
 enum {
-    /* Zs, and tab, LF, form feed and CR: CommonMark's Unicode whitespace. */
-    MARKDOWN_CORE_UNICODE_SPACE = 1 << 0,
+    /* Zs, and tab, LF, form feed and CR: CommonMark's Unicode whitespace,
+     * which decides delimiter flanking and nothing else. */
+    MARKDOWN_CORE_UNICODE_WHITESPACE = 1 << 0,
     /* P, and every ASCII punctuation character. */
     MARKDOWN_CORE_UNICODE_PUNCTUATION = 1 << 1,
     MARKDOWN_CORE_UNICODE_SYMBOL = 1 << 2,
@@ -193,10 +191,6 @@ static inline uint8_t markdown_core_utf8proc_classes(int32_t uc) {
         return 0;
     }
     return markdown_core_unicode_blocks[(size_t)markdown_core_unicode_pages[scalar >> 8] + (scalar & 255)];
-}
-
-static inline int markdown_core_utf8proc_is_space(int32_t uc) {
-    return markdown_core_utf8proc_classes(uc) & MARKDOWN_CORE_UNICODE_SPACE;
 }
 
 /* Punctuation as CommonMark 0.29 and GFM define it: ASCII punctuation and P. */

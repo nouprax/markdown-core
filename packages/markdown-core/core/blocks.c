@@ -58,8 +58,6 @@ static void S_set_last_line_blank(markdown_core_node *node, bool markdown_core_b
 
 static void S_set_last_line_checked(markdown_core_node *node) { node->flags |= MARKDOWN_CORE_NODE__LAST_LINE_CHECKED; }
 
-bool markdown_core_block_is_space_or_tab(char c) { return (c == ' ' || c == '\t'); }
-
 static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length);
 static markdown_core_node *S_finish_parse(markdown_core_parser *parser);
 
@@ -245,25 +243,9 @@ void markdown_core_block_set_end_to_current_line(markdown_core_parser *parser, m
     b->end_column = markdown_core_parser_source_column(parser, b->end_line, S_current_line_length(parser));
 }
 
-// Returns true if line has only space characters, else false.
+// Returns true if the line at `offset` has only spaces and tabs, else false.
 bool markdown_core_block_is_blank(markdown_core_strbuf *s, bufsize_t offset) {
-    while (offset < s->size) {
-        switch (s->ptr[offset]) {
-        case '\r':
-        case '\n':
-            return true;
-        case ' ':
-            offset++;
-            break;
-        case '\t':
-            offset++;
-            break;
-        default:
-            return false;
-        }
-    }
-
-    return true;
+    return markdown_core_is_blank_to_line_end(s->ptr, offset, s->size);
 }
 
 static bool element_accepts_lines(markdown_core_node *node) {

@@ -782,11 +782,15 @@ static int case_comment_nested_item_blank_runs(pc_context *context) {
     return 0;
 }
 
+/* cmark-gfm's table case. Its delimiter row was `-` and a vertical tab, which
+ * no setext underline accepts. A vertical tab is not whitespace here
+ * (docs/specs/dialect.md), so the row is `-|`, which no underline accepts
+ * either. */
 static int case_tables(pc_context *context) {
     const markdown_core_node *root;
     const markdown_core_node *paragraph;
     markdown_core_string value;
-    if (pc_build(context, NULL, "aaa\rbbb\n-\x0b\n", 30000, NULL) != 0) {
+    if (pc_build(context, NULL, "aaa\rbbb\n-|\n", 30000, NULL) != 0) {
         return -1;
     }
     if (pc_parse(context) != 0) {

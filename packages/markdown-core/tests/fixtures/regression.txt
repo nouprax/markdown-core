@@ -989,3 +989,161 @@ Document scope=1:1..3:55 anchor=null attributes={} children=2
     │   └── Text scope=3:22..3:33 anchor=null attributes={} literal="mailto:x@y.z" children=0
     └── Text scope=3:34..3:55 anchor=null attributes={} literal=", not word:name@nodot." children=0
 ````````````````````````````````
+
+Whitespace follows the text of CommonMark 0.31.2, where cmark does not.
+
+Only spaces, tabs and one line ending separate the parts of an inline link;
+the vertical tab between two line endings is text.
+
+```````````````````````````````` example
+[a](
+
+/u)
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..3:3 anchor=null attributes={} children=5
+    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="[a](" children=0
+    ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+    ├── Text scope=2:1..2:1 anchor=null attributes={} literal="\u000b" children=0
+    ├── SoftBreak scope=2:2..2:2 anchor=null attributes={} children=0
+    └── Text scope=3:1..3:3 anchor=null attributes={} literal="/u)" children=0
+````````````````````````````````
+
+A pointy destination keeps the spaces it encloses.
+
+```````````````````````````````` example
+[a](< u >)
+.
+Document scope=1:1..1:10 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+    └── Link scope=1:1..1:10 anchor=null attributes={} dest=url(" u ") title=null children=1
+        └── Text scope=1:2..1:2 anchor=null attributes={} literal="a" children=0
+````````````````````````````````
+
+An unbracketed destination includes no ASCII control character.
+
+```````````````````````````````` example
+[a](/ux)
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:9 anchor=null attributes={} literal="[a](/u\u0001x)" children=0
+````````````````````````````````
+
+DEL is an ASCII control character too.
+
+```````````````````````````````` example
+[a](/ux)
+.
+Document scope=1:1..1:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:9 anchor=null attributes={} literal="[a](/ux)" children=0
+````````````````````````````````
+
+A backslash before a line ending does not escape it, so the pointy
+destination contains a line ending.
+
+```````````````````````````````` example
+[a](<b\
+c>)
+.
+Document scope=1:1..2:3 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:3 anchor=null attributes={} children=3
+    ├── Text scope=1:1..1:6 anchor=null attributes={} literal="[a](<b" children=0
+    ├── LineBreak scope=1:7..1:8 anchor=null attributes={} children=0
+    └── Text scope=2:1..2:3 anchor=null attributes={} literal="c>)" children=0
+````````````````````````````````
+
+A vertical tab does not collapse into a label's whitespace.
+
+```````````````````````````````` example
+[ab]
+
+[a b]: /u
+.
+Document scope=1:1..3:9 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:5 anchor=null attributes={} literal="[a\u000bb]" children=0
+````````````````````````````````
+
+A list marker must be followed by a space, a tab or the end of the line.
+
+```````````````````````````````` example
+-item
+.
+Document scope=1:1..1:6 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:6 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:6 anchor=null attributes={} literal="-\u000bitem" children=0
+````````````````````````````````
+
+An attribute is separated from a tag name by spaces, tabs and up to one
+line ending, not by a vertical tab.
+
+```````````````````````````````` example
+<spanclass="x">
+
+a <spanclass="x"> b
+.
+Document scope=1:1..3:20 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:16 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:16 anchor=null attributes={} literal="<span\u000bclass=\"x\">" children=0
+└── Paragraph scope=3:1..3:20 anchor=null attributes={} children=1
+    └── Text scope=3:1..3:20 anchor=null attributes={} literal="a <span\u000bclass=\"x\"> b" children=0
+````````````````````````````````
+
+An HTML block's tag name must be followed by a space, a tab, the end of the
+line, `>` or `/>`.
+
+```````````````````````````````` example
+<prex>
+foo
+
+<divx>
+foo
+.
+Document scope=1:1..5:3 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..2:3 anchor=null attributes={} children=3
+│   ├── Text scope=1:1..1:7 anchor=null attributes={} literal="<pre\u000bx>" children=0
+│   ├── SoftBreak scope=1:8..1:8 anchor=null attributes={} children=0
+│   └── Text scope=2:1..2:3 anchor=null attributes={} literal="foo" children=0
+└── Paragraph scope=4:1..5:3 anchor=null attributes={} children=3
+    ├── Text scope=4:1..4:7 anchor=null attributes={} literal="<div\fx>" children=0
+    ├── SoftBreak scope=4:8..4:8 anchor=null attributes={} children=0
+    └── Text scope=5:1..5:3 anchor=null attributes={} literal="foo" children=0
+````````````````````````````````
+
+A tag opens an HTML block of type 7 only when spaces or tabs alone follow it.
+
+```````````````````````````````` example
+<a>
+foo
+.
+Document scope=1:1..2:3 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..2:3 anchor=null attributes={} children=4
+    ├── HTML scope=1:1..1:3 anchor=null attributes={} literal="<a>" children=0
+    ├── Text scope=1:4..1:4 anchor=null attributes={} literal="\f" children=0
+    ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+    └── Text scope=2:1..2:3 anchor=null attributes={} literal="foo" children=0
+````````````````````````````````
+
+An absolute URI includes no ASCII control character.
+
+```````````````````````````````` example
+<ab:cd>
+.
+Document scope=1:1..1:8 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+    └── Text scope=1:1..1:8 anchor=null attributes={} literal="<ab:cd>" children=0
+````````````````````````````````
+
+The info string is trimmed of spaces and tabs before its references are
+decoded.
+
+```````````````````````````````` example
+```&#32;js
+code
+```
+.
+Document scope=1:1..3:3 anchor=null attributes={} children=1
+└── CodeBlock scope=1:1..3:3 anchor=null attributes={} info=" js" language="js" literal="code\n" fenced=true closed=true children=0
+````````````````````````````````

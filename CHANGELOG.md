@@ -6,6 +6,19 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Give whitespace fixed, named classes, following the text of CommonMark
+  0.31.2 (`docs/specs/dialect.md`). Whitespace is a space, a tab or a line
+  ending everywhere except delimiter flanking, which keeps Unicode whitespace.
+  Vertical tab and form feed no longer separate link parts, HTML attributes,
+  table cells or task prefixes, or follow list and HTML-block openers. An
+  unbracketed link destination and an absolute URI exclude every ASCII control
+  character, DEL included; a pointy destination keeps the spaces it encloses;
+  an info string is trimmed before its references are decoded. A non-breaking
+  or other non-ASCII space no longer ends a superscript or subscript, is not
+  trimmed from citation affixes, may appear in a braced citation key, and does
+  not end a `www.` domain. Register the differences from cmark, cmark-gfm and
+  Pandoc; micromark agrees with the specification's text on every cmark one.
+
 - Classify characters for syntax with Unicode 17, as the dialect specifies:
   whitespace, punctuation, symbols, letters and numbers now come from one
   generated table, where punctuation and symbols came from older tables.

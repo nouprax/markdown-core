@@ -5,8 +5,8 @@
 // checked-in table, without downloads.
 //
 // Every class is a bit of one byte per scalar (utf8.h names them):
-//   space        Zs, and tab, LF, form feed and CR: CommonMark's Unicode
-//                whitespace;
+//   whitespace   Zs, and tab, LF, form feed and CR: CommonMark's Unicode
+//                whitespace, which decides delimiter flanking;
 //   punctuation  P, and every ASCII punctuation character;
 //   symbol       S;
 //   letter       L;
@@ -16,12 +16,11 @@
 // classes with one load and every other scalar's with two, whatever its
 // script.
 import assert from "node:assert/strict";
-import { Buffer } from "node:buffer";
 import fs from "node:fs";
 
 assert.equal(process.versions.unicode, "17.0", "Unicode 17.0 is required");
 
-const SPACE = 1 << 0;
+const WHITESPACE = 1 << 0;
 const PUNCTUATION = 1 << 1;
 const SYMBOL = 1 << 2;
 const LETTER = 1 << 3;
@@ -38,7 +37,7 @@ const classesOf = (scalar) => {
     const text = String.fromCodePoint(scalar);
     let value = 0;
     if (/\p{Zs}/u.test(text) || scalar === 0x09 || scalar === 0x0a || scalar === 0x0c || scalar === 0x0d) {
-        value |= SPACE;
+        value |= WHITESPACE;
     }
     if (/\p{P}/u.test(text) || asciiPunctuation(scalar)) value |= PUNCTUATION;
     if (/\p{S}/u.test(text)) value |= SYMBOL;
@@ -48,15 +47,6 @@ const classesOf = (scalar) => {
 };
 const classes = new Uint8Array(SCALARS);
 for (let scalar = 0; scalar < SCALARS; scalar++) classes[scalar] = classesOf(scalar);
-
-/* The text scanner's backward search for white space (elements/text.c)
- * decodes only a character whose lead byte is C2 or E1-E3, the lead bytes of
- * every non-ASCII space. */
-for (let scalar = 0x80; scalar < SCALARS; scalar++) {
-    if (!(classes[scalar] & SPACE)) continue;
-    const lead = Buffer.from(String.fromCodePoint(scalar), "utf8")[0];
-    assert.ok(lead === 0xc2 || (lead >= 0xe1 && lead <= 0xe3), `U+${scalar.toString(16)} breaks text.c's lead bytes`);
-}
 
 /* Blocks of 1 << bits scalars, interned in first-occurrence order and laid
  * end to end; a page holds the offset of the block for each run of that many

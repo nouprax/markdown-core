@@ -11,7 +11,7 @@ static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {
     for (i = ln->size - 1; i >= 0; --i) {
         c = ln->ptr[i];
 
-        if (c != ' ' && c != '\t' && !markdown_core_is_line_end(c)) {
+        if (!markdown_core_is_whitespace(c)) {
             break;
         }
     }
@@ -64,7 +64,7 @@ static int continue_code(const markdown_core_element *self, markdown_core_parser
             // skip opt. spaces of fence parser->offset
             int i = container->as.code->fence_offset;
 
-            while (i > 0 && markdown_core_block_is_space_or_tab(peek_at(input, parser->offset))) {
+            while (i > 0 && markdown_core_is_space_or_tab(peek_at(input, parser->offset))) {
                 markdown_core_block_advance_offset(parser, input, 1, true);
                 i--;
             }
@@ -91,10 +91,20 @@ static void finalize_code(markdown_core_parser *parser, markdown_core_node *b) {
         }
         assert(pos < node_content->size);
 
+        /* The info string is the rest of the fence line, less an attribute
+         * tail, trimmed of spaces and tabs as written. References and
+         * escapes are decoded after the trim, so a space one of them spells
+         * is the info string's own. */
         markdown_core_strbuf tmp = MARKDOWN_CORE_BUF_INIT();
         bufsize_t info_end = markdown_core_attributes_attach_tail(parser, b, node_content->ptr, pos);
-        houdini_unescape_html_f(&tmp, node_content->ptr, info_end);
-        markdown_core_strbuf_trim(&tmp);
+        bufsize_t info_start = 0;
+        while (info_start < info_end && markdown_core_is_space_or_tab(node_content->ptr[info_start])) {
+            info_start++;
+        }
+        while (info_end > info_start && markdown_core_is_space_or_tab(node_content->ptr[info_end - 1])) {
+            info_end--;
+        }
+        houdini_unescape_html_f(&tmp, node_content->ptr + info_start, info_end - info_start);
         markdown_core_strbuf_unescape(&tmp);
         /* WHETHER THE SOURCE WROTE AN INFO STRING IS DECIDED HERE, ONCE.
          * A fence with nothing but whitespace after it wrote none, and

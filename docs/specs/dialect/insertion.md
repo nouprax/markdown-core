@@ -28,11 +28,11 @@ Pairs can span a soft line break within the same inline container.
 
 ## Matching rules
 
-Matching consumes two signs at a time. Opening pairs must be followed by
-non-whitespace, closing pairs must be preceded by non-whitespace, and the
-CommonMark asterisk punctuation/flanking rules apply without the rule of three.
-Intraword insertion is allowed. Units in one uninterrupted run cannot match
-each other, so `++++` and `a++++b` remain text.
+Matching consumes two signs at a time. Opening pairs must not be followed by
+[Unicode whitespace](../dialect.md#whitespace), closing pairs must not be
+preceded by it, and the CommonMark asterisk punctuation/flanking rules apply
+without the rule of three. Intraword insertion is allowed. Units in one
+uninterrupted run cannot match each other, so `++++` and `a++++b` remain text.
 
 Single plus signs, unmatched pairs, and escaped `\+` are literal. Crossing
 delimiters do not gain an extra pairing to repair the source. Code, formulas,

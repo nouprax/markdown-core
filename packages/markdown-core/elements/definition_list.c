@@ -35,7 +35,7 @@ bool markdown_core_block_definition_body_blank_continues(markdown_core_parser *p
 
 static bool markdown_core_block_definition_marker(markdown_core_chunk *input, int at, int indent) {
     return indent < 4 && at + 1 < input->len && (input->data[at] == ':' || input->data[at] == '~') &&
-           (markdown_core_block_is_space_or_tab(input->data[at + 1]) || markdown_core_is_line_end(input->data[at + 1]));
+           markdown_core_is_whitespace(input->data[at + 1]);
 }
 
 /* A definition marker is ':' or '~' followed by a space, a tab or the line
@@ -76,9 +76,8 @@ static bool definition_next_lines_admit(markdown_core_parser *parser) {
             }
             at++;
         }
-        if (at < end && !markdown_core_is_line_end((char)*at)) {
-            return (*at == ':' || *at == '~') && (at + 1 == end || markdown_core_block_is_space_or_tab(at[1]) ||
-                                                  markdown_core_is_line_end((char)at[1]));
+        if (at < end && !markdown_core_is_line_end(*at)) {
+            return (*at == ':' || *at == '~') && (at + 1 == end || markdown_core_is_whitespace(at[1]));
         }
         /* Blank once stripped: the transaction skips one such line. */
         cursor = at;
@@ -165,8 +164,7 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_par
     }
     definition->as.definition->term = term;
     int begin = parser->first_nonspace, end = input->len;
-    while (end > begin && (markdown_core_block_is_space_or_tab(input->data[end - 1]) ||
-                           markdown_core_is_line_end(input->data[end - 1]))) {
+    while (end > begin && markdown_core_is_whitespace(input->data[end - 1])) {
         end--;
     }
     parser->definition_list_work += end - begin;

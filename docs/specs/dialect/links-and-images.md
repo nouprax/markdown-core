@@ -16,7 +16,10 @@ escapes and character references in the destination and title are decoded.
 
 Empty destinations and titles are allowed. A missing title is null; an authored
 empty title is the empty string. Angle brackets around the destination allow
-forms such as `[guide](<folder/my guide.md>)`.
+forms such as `[guide](<folder/my guide.md>)`, and the destination keeps every
+space they enclose. A destination without them contains no space and no ASCII
+control character. Spaces, tabs, and at most one line ending may separate the
+destination, the title, and the parentheses.
 
 ## Reference links
 
@@ -49,9 +52,9 @@ https://example.com/guide www.example.com reader@example.com
 These become links. Email destinations gain `mailto:` and bare `www.`
 destinations gain `http://`. Bare URL schemes accept `http`, `https`, and `ftp`
 case-insensitively. The `www.` form needs an eligible boundary and a domain
-containing a dot. The final two domain segments cannot contain an underscore;
-earlier segments may contain underscores. This rule applies regardless of how
-many segments precede them.
+containing a dot; the domain ends at whitespace or punctuation. The final two
+domain segments cannot contain an underscore; earlier segments may contain
+underscores. This rule applies regardless of how many segments precede them.
 
 Bare URLs end at whitespace or `<`, with trailing punctuation, entity-shaped
 suffixes, and unmatched closing parentheses excluded. Their bodies are opaque:

@@ -19,10 +19,10 @@ content but included in the node's scope.
 ```
 
 The strikethrough contains text and nested emphasis. Links and other inline
-syntax can also appear inside it. The opening pair must be followed by
-non-whitespace and the closing pair preceded by non-whitespace, following
-CommonMark's asterisk flanking rules without the rule of three. Intraword
-strikethrough is allowed.
+syntax can also appear inside it. The opening pair must not be followed by
+[Unicode whitespace](../dialect.md#whitespace) and the closing pair must not be
+preceded by it, following CommonMark's asterisk flanking rules without the rule
+of three. Intraword strikethrough is allowed.
 
 ## Literal tildes
 

@@ -609,7 +609,7 @@ bufsize_t scan_autolink_uri(const unsigned char *data, bufsize_t length, bufsize
 		128, 128, 128, 128, 128, 128, 128, 128,
 		128, 128, 128, 128, 128, 128, 128, 128,
 		128, 128, 128, 128, 128, 128, 128, 128,
-		128, 128, 128, 128, 128, 128, 128, 128,
+		128, 128, 128, 128, 128, 128, 128,   0,
 		128, 128, 128, 128, 128, 128, 128, 128,
 		128, 128, 128, 128, 128, 128, 128, 128,
 		128, 128, 128, 128, 128, 128, 128, 128,
@@ -704,7 +704,8 @@ yy16:
 	yych = (p < remaining ? input[p] : 0);
 	if (yybm[0+yych] & 128) goto yy16;
 	if (yych <= '<') goto yy14;
-	goto yy18;
+	if (yych <= '>') goto yy18;
+	goto yy14;
 yy17:
 	++p;
 	yych = (p < remaining ? input[p] : 0);

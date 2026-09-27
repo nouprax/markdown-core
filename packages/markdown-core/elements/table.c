@@ -225,7 +225,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
      * lost one of its two backslashes here and the inline phase then read the
      * survivor as the escape, giving `pre | lead` where the author wrote an
      * escaped backslash followed by a pipe. */
-    while (first < content_end && markdown_core_isspace(parent_string[first])) {
+    while (first < content_end && markdown_core_is_whitespace(parent_string[first])) {
         first++;
     }
     /* Paragraph finalization needs the complete terminated slice, including
@@ -509,7 +509,7 @@ static int table_caption_start(const unsigned char *data, int length, int first,
         return -1;
     }
     int content = first + marker;
-    while (content < length && markdown_core_isspace(data[content])) {
+    while (content < length && markdown_core_is_whitespace(data[content])) {
         content++;
     }
     return content;
@@ -1020,10 +1020,10 @@ static bool table_rectangular_row(table_source *source, table_candidate *candida
         table_source_line *begin = &source->lines[cell_first], *finish = &source->lines[cell_last];
         int start = table_byte(begin, left), end = table_byte(finish, right);
         if (!candidate->block_content) {
-            while (start < end && markdown_core_isspace(begin->data[start])) {
+            while (start < end && markdown_core_is_whitespace(begin->data[start])) {
                 start++;
             }
-            while (end > start && markdown_core_isspace(begin->data[end - 1])) {
+            while (end > start && markdown_core_is_whitespace(begin->data[end - 1])) {
                 end--;
             }
         }
@@ -1453,7 +1453,7 @@ static int table_horizontal_bytes(const table_source_line *line, int first, int 
 static int table_full_horizontal(table_source_line *line) {
     if (!line->horizontal_scanned) {
         int end = line->length;
-        while (end > line->first && (line->data[end - 1] == ' ' || line->data[end - 1] == '\t')) {
+        while (end > line->first && markdown_core_is_space_or_tab(line->data[end - 1])) {
             end--;
         }
         line->parser->table_scan_work += (size_t)(line->length - end);
@@ -2063,7 +2063,7 @@ static size_t table_trailing_dash_runs(const unsigned char *start, const unsigne
         if (c == '-') {
             runs += !dash;
             dash = true;
-        } else if (c == ' ' || c == '\t' || (pipe && (c == '|' || c == ':'))) {
+        } else if (markdown_core_is_space_or_tab(c) || (pipe && (c == '|' || c == ':'))) {
             dash = false;
         } else {
             break;
@@ -2103,7 +2103,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_grammar_admits
     }
     const unsigned char *end = parser->input_source + line->end;
     const unsigned char *byte = cursor;
-    while (byte < end && (*byte == ' ' || *byte == '\t')) {
+    while (byte < end && markdown_core_is_space_or_tab(*byte)) {
         byte++;
     }
     if (byte == end) {

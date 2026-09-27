@@ -54,9 +54,10 @@ character, so a final period stays outside the key and `@Foo_bar--baz` keys
 ```
 
 The keys are `Foo_bar.baz` and `https://example.com/paper`. Braced keys must be
-nonempty, whitespace-free, and balanced; the outer braces are removed. Nested
-braces are allowed, while braces owned by code or HTML tokens do not count.
-Keys retain case and spelling, without normalization or resolution.
+nonempty, balanced, and free of spaces, tabs, and line endings; the outer braces
+are removed. Nested braces are allowed, while braces owned by code or HTML
+tokens do not count. Keys retain case and spelling, without normalization or
+resolution.
 
 ## Affixes and tails
 

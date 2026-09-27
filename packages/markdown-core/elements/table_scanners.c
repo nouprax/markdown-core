@@ -25,7 +25,7 @@ bufsize_t scan_table_start(const unsigned char *data, bufsize_t length, bufsize_
   unsigned char yych;
   static const unsigned char yybm[256] = {
       0,   0,   0,   0,   0,   0,   0,   0,
-      0,  64,   0,  64,  64,   0,   0,   0,
+      0,  64,   0,   0,   0,   0,   0,   0,
       0,   0,   0,   0,   0,   0,   0,   0,
       0,   0,   0,   0,   0,   0,   0,   0,
      64,   0,   0,   0,   0,   0,   0,   0,
@@ -58,18 +58,17 @@ bufsize_t scan_table_start(const unsigned char *data, bufsize_t length, bufsize_
       0,   0,   0,   0,   0,   0,   0,   0
   };
   yych = (p < remaining ? input[p] : 0);
-  if (yych <= ' ') {
-    if (yych <= '\n') {
-      if (yych == '\t') goto yy2;
+  if (yych <= ',') {
+    if (yych <= '\t') {
+      if (yych >= '\t') goto yy2;
     } else {
-      if (yych <= '\f') goto yy2;
-      if (yych >= ' ') goto yy2;
+      if (yych == ' ') goto yy2;
     }
   } else {
-    if (yych <= '9') {
-      if (yych == '-') goto yy3;
+    if (yych <= ':') {
+      if (yych <= '-') goto yy3;
+      if (yych >= ':') goto yy4;
     } else {
-      if (yych <= ':') goto yy4;
       if (yych == '|') goto yy2;
     }
   }
@@ -89,13 +88,17 @@ yy3:
   marker = p;
   yych = (p < remaining ? input[p] : 0);
   if (yybm[0+yych] & 128) goto yy7;
-  if (yych <= ' ') {
-    if (yych <= 0x08) goto yy1;
-    if (yych <= '\r') goto yy10;
-    if (yych <= 0x1F) goto yy1;
-    goto yy10;
+  if (yych <= 0x1F) {
+    if (yych <= '\n') {
+      if (yych <= 0x08) goto yy1;
+      goto yy10;
+    } else {
+      if (yych == '\r') goto yy10;
+      goto yy1;
+    }
   } else {
     if (yych <= ':') {
+      if (yych <= ' ') goto yy10;
       if (yych <= '9') goto yy1;
       goto yy9;
     } else {
@@ -128,8 +131,7 @@ yy7:
       if (yych <= '\t') goto yy9;
       goto yy11;
     } else {
-      if (yych <= '\f') goto yy9;
-      if (yych <= '\r') goto yy13;
+      if (yych == '\r') goto yy13;
       goto yy6;
     }
   } else {
@@ -157,7 +159,7 @@ yy10:
       goto yy9;
     } else {
       if (yych <= '\n') goto yy11;
-      if (yych <= '\f') goto yy9;
+      if (yych <= '\f') goto yy6;
       goto yy13;
     }
   } else {
@@ -190,7 +192,7 @@ yy14:
       goto yy14;
     } else {
       if (yych <= '\n') goto yy11;
-      if (yych <= '\f') goto yy14;
+      if (yych <= '\f') goto yy6;
       goto yy13;
     }
   } else {
@@ -450,7 +452,7 @@ bufsize_t scan_table_cell_end(const unsigned char *data, bufsize_t length, bufsi
   unsigned char yych;
   static const unsigned char yybm[256] = {
       0,   0,   0,   0,   0,   0,   0,   0,
-      0, 128,   0, 128, 128,   0,   0,   0,
+      0, 128,   0,   0,   0,   0,   0,   0,
       0,   0,   0,   0,   0,   0,   0,   0,
       0,   0,   0,   0,   0,   0,   0,   0,
     128,   0,   0,   0,   0,   0,   0,   0,
@@ -509,7 +511,7 @@ bufsize_t scan_table_row_end(const unsigned char *data, bufsize_t length, bufsiz
   unsigned char yych;
   static const unsigned char yybm[256] = {
       0,   0,   0,   0,   0,   0,   0,   0,
-      0, 128,   0, 128, 128,   0,   0,   0,
+      0, 128,   0,   0,   0,   0,   0,   0,
       0,   0,   0,   0,   0,   0,   0,   0,
       0,   0,   0,   0,   0,   0,   0,   0,
     128,   0,   0,   0,   0,   0,   0,   0,
@@ -544,8 +546,8 @@ bufsize_t scan_table_row_end(const unsigned char *data, bufsize_t length, bufsiz
   yych = (p < remaining ? input[p] : 0);
   if (yych <= '\f') {
     if (yych <= 0x08) goto yy39;
-    if (yych == '\n') goto yy42;
-    goto yy41;
+    if (yych <= '\t') goto yy41;
+    if (yych <= '\n') goto yy42;
   } else {
     if (yych <= '\r') goto yy44;
     if (yych == ' ') goto yy41;
@@ -558,10 +560,15 @@ yy41:
   ++p;
   marker = p;
   yych = (p < remaining ? input[p] : 0);
-  if (yych <= 0x08) goto yy40;
-  if (yych <= '\r') goto yy46;
-  if (yych == ' ') goto yy46;
-  goto yy40;
+  if (yych <= '\f') {
+    if (yych <= 0x08) goto yy40;
+    if (yych <= '\n') goto yy46;
+    goto yy40;
+  } else {
+    if (yych <= '\r') goto yy46;
+    if (yych == ' ') goto yy46;
+    goto yy40;
+  }
 yy42:
   ++p;
 yy43:
@@ -578,7 +585,7 @@ yy46:
   if (yybm[0+yych] & 128) goto yy45;
   if (yych <= 0x08) goto yy47;
   if (yych <= '\n') goto yy42;
-  if (yych <= '\r') goto yy44;
+  if (yych == '\r') goto yy44;
 yy47:
   p = marker;
   goto yy40;

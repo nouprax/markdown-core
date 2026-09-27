@@ -278,7 +278,7 @@ void markdown_core_strbuf_rtrim(markdown_core_strbuf *buf) {
     }
 
     while (buf->size > 0) {
-        if (!markdown_core_isspace(buf->ptr[buf->size - 1])) {
+        if (!markdown_core_is_whitespace(buf->ptr[buf->size - 1])) {
             break;
         }
 
@@ -295,7 +295,7 @@ void markdown_core_strbuf_trim(markdown_core_strbuf *buf) {
         return;
     }
 
-    while (i < buf->size && markdown_core_isspace(buf->ptr[i])) {
+    while (i < buf->size && markdown_core_is_whitespace(buf->ptr[i])) {
         i++;
     }
 

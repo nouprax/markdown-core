@@ -159,6 +159,20 @@ Document scope=1:1..1:41 anchor=null attributes={} children=1
     └── Text scope=1:41..1:41 anchor=null attributes={} literal=")" children=0
 ````````````````````````````````
 
+A domain ends at whitespace, which is a space, a tab or a line ending. A form
+feed is not whitespace, so the underscore after one is in the last two
+segments of the domain, and that run is not a link:
+
+```````````````````````````````` example
+www.a_b.c and www.ab.c
+.
+Document scope=1:1..1:24 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:24 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:15 anchor=null attributes={} literal="www.a\f_b.c and " children=0
+    └── Link scope=1:16..1:24 anchor=null attributes={} dest=url("http://www.a\fb.c") title=null children=1
+        └── Text scope=1:16..1:24 anchor=null attributes={} literal="www.a\fb.c" children=0
+````````````````````````````````
+
 ## Embedded dimensions
 
 

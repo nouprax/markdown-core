@@ -105,13 +105,15 @@ static markdown_core_node *match_angle(markdown_core_inline_state *inline_state)
     return make_autolink(inline_state, from - 1, inline_state->pos - 1, content, email);
 }
 
+/* A host character is neither whitespace nor punctuation. Whitespace is a
+ * space, a tab or a line ending, as everywhere outside delimiter flanking. */
 static int is_valid_hostchar(const uint8_t *link, size_t link_len) {
     int32_t ch;
     int r = markdown_core_utf8proc_iterate(link, (bufsize_t)link_len, &ch);
-    if (r < 0) {
+    if (r < 0 || markdown_core_is_whitespace(link[0])) {
         return 0;
     }
-    return !markdown_core_utf8proc_is_space(ch) && !markdown_core_utf8proc_is_punctuation(ch);
+    return !markdown_core_utf8proc_is_punctuation(ch);
 }
 
 static int sd_autolink_issafe(const uint8_t *link, size_t link_len) {
@@ -297,7 +299,7 @@ static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core
  * is visited once, including tokens that end at a footnote's closing ]. */
 static size_t autolink_extent(markdown_core_inline_state *inline_state, uint8_t *data, size_t size, size_t offset) {
     unsigned char closer = markdown_core_inline_state_closing_bracket(inline_state);
-    while (offset < size && !markdown_core_isspace(data[offset]) && data[offset] != '<') {
+    while (offset < size && !markdown_core_is_whitespace(data[offset]) && data[offset] != '<') {
         if (data[offset] == closer) {
             break;
         }
@@ -320,7 +322,7 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
     size_t link_end;
 
     if (max_rewind > (size_t)markdown_core_inline_state_context_start(inline_state) &&
-        strchr("*_~(", data[-1]) == NULL && !markdown_core_isspace(data[-1])) {
+        strchr("*_~(", data[-1]) == NULL && !markdown_core_is_whitespace(data[-1])) {
         return 0;
     }
 

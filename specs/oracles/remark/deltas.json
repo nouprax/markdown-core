@@ -387,7 +387,7 @@
             "id": "shared-attributes-unicode-whitespace",
             "input": ":n{.a .b} :n{k=x y} :n{k=\"x y\"}\n",
             "authority": "docs/specs/dialect/attributes.md and directives.md (M7)",
-            "summary": "Only SP, TAB and line endings separate members or terminate unquoted values. Class assignments split ASCII whitespace and Zs; U+2028, U+2029 and U+0085 remain content.",
+            "summary": "Only spaces, tabs and line endings separate members or terminate unquoted values, so NBSP and U+2028 remain content; remark separates at every white space character.",
             "why": "Directives are the first attachment site of the single Pandoc 3.11 attribute operation. The dialect owns normalization and the Unicode letter-first directive envelope; remark supplies independent evidence, not alternate parsing modes."
         },
         {
@@ -602,7 +602,14 @@
         },
         {
             "id": "task-prefix-grammar-51",
-            "input": "- [?] space\n- [✓]\ttab\n- [🚀]\u000bvertical\n- [-]\fform\n- [?] \t\u000b\f  mixed\n",
+            "input": "- [?] space\n- [✓]\ttab\n- [?] \t  mixed\n",
+            "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
+            "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
+            "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
+        },
+        {
+            "id": "task-prefix-grammar-57",
+            "input": "- [x]\u000bvertical\n- [🚀]\u000bvertical\n- [ ]\fform\n- [?] \u000b\f  mixed\n",
             "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
             "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
             "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."
@@ -630,7 +637,7 @@
         },
         {
             "id": "task-prefix-grammar-55",
-            "input": "- [?] \t\u000b\f\noutside\n",
+            "input": "- [?] \t \noutside\n",
             "authority": "docs/specs/dialect/task-lists.md (O5); opacity follows formulas.md, cross-links.md and comments.md",
             "summary": "One Unicode scalar and its full structural separator run are recognized once when an item opens, before its first block. Opaque bodies cannot supply a task prefix.",
             "why": "remark-gfm only recognizes inherited ASCII task states after forming paragraph content; it has no custom markers, CrossLink or percent comments. The exact witnesses preserve every difference instead of changing the product grammar."

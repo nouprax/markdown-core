@@ -18,8 +18,11 @@
 */
 
 /*!re2c
-  spacechar = [ \t\v\f\r\n];
   escaped_char = [\\][!"#$%&'()*+,./:;<=>?@[\\\]^_`{|}~-];
-  horizontal_space = [ \t\v\f];
+  space_or_tab = [ \t];
   newline = [\r][\n]? | [\n];
+  // Spaces, tabs and up to one line ending (docs/specs/dialect.md), and the
+  // same with at least one of them.
+  spnl = space_or_tab* (newline space_or_tab*)?;
+  spnl1 = space_or_tab+ (newline space_or_tab*)? | newline space_or_tab*;
 */

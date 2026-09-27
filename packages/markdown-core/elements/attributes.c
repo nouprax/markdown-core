@@ -697,7 +697,7 @@ void markdown_core_inline_attach_inline_attributes(markdown_core_inline_state *i
 bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, markdown_core_node *node,
                                                const unsigned char *source, bufsize_t length) {
     bufsize_t info_end = length, attribute_end;
-    while (info_end > 0 && markdown_core_block_is_space_or_tab(source[info_end - 1])) {
+    while (info_end > 0 && markdown_core_is_space_or_tab(source[info_end - 1])) {
         info_end--;
     }
     markdown_core_attribute_parser attributes = {
