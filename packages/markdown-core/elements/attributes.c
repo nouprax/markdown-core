@@ -24,10 +24,8 @@ enum {
     BYTE_ASSIGN = 1 << 7     /* `=` */
 };
 static const unsigned char BYTE_CLASS[256] = {
-    [' '] = BYTE_SPACE | BYTE_NAME_END,
-    ['\t'] = BYTE_SPACE | BYTE_NAME_END,
-    ['\n'] = BYTE_NEWLINE | BYTE_NAME_END,
-    ['\r'] = BYTE_NEWLINE | BYTE_NAME_END,
+    MARKDOWN_CORE_SPACE_OR_TAB_BYTES(BYTE_SPACE | BYTE_NAME_END),
+    MARKDOWN_CORE_LINE_END_BYTES(BYTE_NEWLINE | BYTE_NAME_END),
     ['}'] = BYTE_CLOSE | BYTE_NAME_END,
     ['{'] = BYTE_NAME_END,
     ['"'] = BYTE_QUOTE | BYTE_NAME_END,

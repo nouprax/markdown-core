@@ -2912,6 +2912,17 @@ static void whitespace_is_space_tab_and_line_ending(test_batch_runner *runner) {
     }
     OK(runner, exact, "every byte's whitespace class");
 
+    /* A byte-class table names the same bytes as the predicates. */
+    static const uint8_t classes[256] = {MARKDOWN_CORE_SPACE_OR_TAB_BYTES(1), MARKDOWN_CORE_LINE_END_BYTES(2)};
+    static const uint8_t whitespace[256] = {MARKDOWN_CORE_WHITESPACE_BYTES(1)};
+    int tables = 1;
+    for (int c = 0; c < 256; c++) {
+        tables &= (classes[c] == 1) == !!markdown_core_is_space_or_tab((unsigned char)c) &&
+                  (classes[c] == 2) == !!markdown_core_is_line_end((unsigned char)c) &&
+                  (whitespace[c] == 1) == !!markdown_core_is_whitespace((unsigned char)c);
+    }
+    OK(runner, tables, "byte-class tables name the whitespace bytes");
+
     static const struct {
         const char *text;
         bufsize_t end;

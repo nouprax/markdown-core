@@ -56,17 +56,17 @@ static node_directive *get_directive(markdown_core_node *node) {
  * continues it, up to the `[` or `{` that opens the label or the attributes
  * and the `:` that would make a block fence's colon count ambiguous. Nothing
  * is classified by Unicode category: `:中文[中文]` names `中文`, `:1a[x]`
- * names `1a`, and a name is found by one byte test per byte. What makes
+ * names `1a`, and a name is found by one table test per byte. What makes
  * `12:30` text is not the `3` but the absence of a bracket part, which is
  * where the inline form is anchored (see match_colon_directive). */
-static int name_byte(unsigned char c) { return !markdown_core_is_whitespace(c) && c != '[' && c != '{' && c != ':'; }
+enum { NAME_END = 1 };
+static const uint8_t NAME_BYTES[256] = {MARKDOWN_CORE_WHITESPACE_BYTES(NAME_END), ['['] = NAME_END, ['{'] = NAME_END,
+                                        [':'] = NAME_END};
 
 static int scan_name(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *name_start,
                      bufsize_t *name_len) {
     bufsize_t start = pos;
-    while (pos < len && name_byte(data[pos])) {
-        pos++;
-    }
+    pos = markdown_core_scan_to_class(NAME_BYTES, NAME_END, data, pos, len);
     if (pos == start) {
         return 0;
     }

@@ -53,13 +53,24 @@ static inline int markdown_core_is_whitespace(unsigned char c) {
     return markdown_core_is_space_or_tab(c) || markdown_core_is_line_end(c);
 }
 
+/* The same classes as designated initializers of a byte-class table
+ * (markdown_core_scan_to_class below), giving each of their bytes `value`:
+ * a scanner that stops at whitespace among other bytes names it by class,
+ * not byte by byte. */
+#define MARKDOWN_CORE_SPACE_OR_TAB_BYTES(value) [' '] = (value), ['\t'] = (value)
+#define MARKDOWN_CORE_LINE_END_BYTES(value) ['\n'] = (value), ['\r'] = (value)
+#define MARKDOWN_CORE_WHITESPACE_BYTES(value)                                                                          \
+    MARKDOWN_CORE_SPACE_OR_TAB_BYTES(value), MARKDOWN_CORE_LINE_END_BYTES(value)
+
 /* Whether only spaces and tabs come before the first line ending in
  * data[at, end), or before `end` when there is none: a blank rest of line. */
 static inline int markdown_core_is_blank_to_line_end(const unsigned char *data, bufsize_t at, bufsize_t end) {
-    while (at < end && markdown_core_is_space_or_tab(data[at])) {
-        at++;
+    for (; at < end; at++) {
+        if (!markdown_core_is_space_or_tab(data[at])) {
+            return markdown_core_is_line_end(data[at]);
+        }
     }
-    return at == end || markdown_core_is_line_end(data[at]);
+    return 1;
 }
 
 /* Past the spaces, tabs and at most one line ending that begin data[at, end).
