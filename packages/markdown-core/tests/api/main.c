@@ -9444,6 +9444,129 @@ static void directive_scopes_are_editor_positions(test_batch_runner *runner) {
     }
 }
 
+/* A PARAGRAPH STARTS WHERE ITS TEXT DOES. Its first line's indentation is
+ * not content, whether the line opened the paragraph with every container's
+ * prefix or lazily without them: the paragraph, and the text it starts with,
+ * start on the line's first non-space byte, and the literal starts with that
+ * byte. A lazy line continues an open paragraph, except after a callout's
+ * marker line, whose text is the title: there it opens the body's first
+ * paragraph. The sources give lazy lines to both, under quotes, callouts,
+ * list items and a grid cell, after spaces and a tab. */
+static void paragraphs_start_on_their_first_byte(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "> [!note]\n   lazy\n",
+        "> [!note] T\n  lazy\nmore\n",
+        "- > [!note]\n \tlazy\n",
+        "> > [!tip]\n  lazy\n",
+        "- > [!note] T\n     lazy\n",
+        "1. > [!note]\n   lazy\n",
+        "+-------------+\n| > [!note]   |\n|   lazy      |\n+-------------+\n",
+        "> quote\n   lazy\n",
+        "> [!note]\n>    body\n",
+        "   plain\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const char *source = sources[i];
+        const int shown = (int)strcspn(source, "\n");
+        markdown_core_node *doc = parse(source);
+        markdown_core_iter *iter = markdown_core_iter_new(doc);
+        markdown_core_event_type event;
+        size_t paragraphs = 0;
+        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            markdown_core_node *node = markdown_core_iter_get_node(iter);
+            if (event != MARKDOWN_CORE_EVENT_ENTER || node->kind != MARKDOWN_CORE_NODE_PARAGRAPH) {
+                continue;
+            }
+            paragraphs++;
+            const int first = source_byte_at(source, node->start_line, node->start_column);
+            markdown_core_node *text = markdown_core_node_first_child(node);
+            OK(runner, first > 0 && first != ' ' && first != '\t', "a paragraph in %.*s starts on a non-space byte",
+               shown, source);
+            OK(runner,
+               text && text->kind == MARKDOWN_CORE_NODE_TEXT && text->start_line == node->start_line &&
+                   text->start_column == node->start_column && markdown_core_node_get_literal(text) &&
+                   (unsigned char)markdown_core_node_get_literal(text)[0] == first,
+               "a paragraph in %.*s starts with its text", shown, source);
+        }
+        markdown_core_iter_free(iter);
+        OK(runner, paragraphs > 0, "%.*s holds a paragraph", shown, source);
+        markdown_core_node_free(doc);
+    }
+}
+
+/* The canonical dump of `source`, with every column on `line` other than the
+ * sentinel moved left by `shift`. NULL when the parse or the dump fails. */
+static char *dump_with_line_shifted(const char *source, int line, int shift) {
+    markdown_core_error *error = NULL;
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), &error);
+    uint8_t *dump = NULL;
+    size_t length = 0;
+    if (!document || !markdown_core_document_dump(document, &dump, &length, &error)) {
+        markdown_core_error_free(error);
+        markdown_core_document_free(document);
+        return NULL;
+    }
+    markdown_core_document_free(document);
+    markdown_core_strbuf out = MARKDOWN_CORE_BUF_INIT();
+    for (const char *at = (const char *)dump; *at;) {
+        const char *scope = strstr(at, "scope=");
+        if (!scope) {
+            markdown_core_strbuf_puts(&out, at);
+            break;
+        }
+        markdown_core_strbuf_put(&out, (const unsigned char *)at, (bufsize_t)(scope - at + 6));
+        at = scope + 6;
+        for (int end = 0; end < 2; end++) {
+            char *next;
+            long l = strtol(at, &next, 10), c = strtol(next + 1, &next, 10);
+            char place[48];
+            snprintf(place, sizeof(place), "%s%ld:%ld", end ? ".." : "", l, l == line && c ? c - shift : c);
+            markdown_core_strbuf_puts(&out, place);
+            at = next + (end ? 0 : 2);
+        }
+    }
+    markdown_core_dump_free(dump);
+    return (char *)markdown_core_strbuf_detach(&out);
+}
+
+/* A LAZY LINE PARSES AS IT WOULD WITH THE QUOTE'S PREFIX. A lazy line is text:
+ * its indentation is not content, as it is not on a line that continues a
+ * paragraph with every prefix. After a callout's marker line, which is its
+ * title, the line opens the body's first paragraph -- with the dialect's one
+ * text-block opener, which is what opens it when the prefix is there. After a
+ * quote whose paragraph so far is a reference definition, it continues that
+ * paragraph and becomes its first text once the definition is taken. Either
+ * way, whatever the line holds reads the same as with the prefix, in node
+ * kinds, literals, anchors, destinations and every other field: a definition
+ * defines, a standalone formula is a formula block, a pipe row can head a
+ * table, and a setext underline makes a heading. Only the line's own columns
+ * differ, by the prefix's two bytes. */
+static void lazy_lines_parse_as_prefixed(test_batch_runner *runner) {
+    static const char *const heads[] = {"> [!note]\n", "> [a]: /x\n"};
+    static const char *const indents[] = {"", " ", "  ", "   "};
+    static const char *const bodies[] = {
+        "lazy\n",           "*em* x\n", "`c` x\n",          "[l](/u) x\n",   "<b>x</b> y\n",
+        "[x]: /u\n\n[x]\n", "$$x$$\n",  "| a |\n> |---|\n", "lazy\n> ===\n", "lazy\n> more\n",
+    };
+    for (size_t h = 0; h < sizeof(heads) / sizeof(heads[0]); h++) {
+        for (size_t i = 0; i < sizeof(indents) / sizeof(indents[0]); i++) {
+            for (size_t b = 0; b < sizeof(bodies) / sizeof(bodies[0]); b++) {
+                char lazy[64], prefixed[64];
+                snprintf(lazy, sizeof(lazy), "%s%s%s", heads[h], indents[i], bodies[b]);
+                snprintf(prefixed, sizeof(prefixed), "%s> %s%s", heads[h], indents[i], bodies[b]);
+                char *lazy_dump = dump_with_line_shifted(lazy, 2, 0);
+                char *prefixed_dump = dump_with_line_shifted(prefixed, 2, 2);
+                OK(runner, lazy_dump && prefixed_dump && !strcmp(lazy_dump, prefixed_dump),
+                   "a lazy line after %.*s and %zu spaces parses as with the prefix: %.*s",
+                   (int)strcspn(heads[h], "\n"), heads[h], strlen(indents[i]), (int)strcspn(bodies[b], "\n"),
+                   bodies[b]);
+                markdown_core_free(lazy_dump);
+                markdown_core_free(prefixed_dump);
+            }
+        }
+    }
+}
+
 /* EVERY NODE THE FINISH STAGE WAS HANDED, counted by the test's own walk:
  * the root's children through the public iterator, each node's owned field
  * roots through the inline-subtree visitor, and the document's definition
@@ -10241,6 +10364,8 @@ int main(void) {
     formula_element_accessors(runner);
     directive_element_accessors(runner);
     directive_scopes_are_editor_positions(runner);
+    paragraphs_start_on_their_first_byte(runner);
+    lazy_lines_parse_as_prefixed(runner);
     node_check(runner);
     iterator(runner);
     iterator_delete(runner);

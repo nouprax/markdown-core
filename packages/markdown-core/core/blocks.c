@@ -2170,10 +2170,14 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
     if (parser->current != last_matched_container && container == last_matched_container && !parser->blank &&
         current_structure && current_structure->accepts_lazy &&
         current_structure->accepts_lazy(parser, parser->current)) {
-        parser->current = current_structure->open_lazy(parser, parser->current);
-        if (!parser->current) {
+        markdown_core_node *lazy = current_structure->open_lazy(parser, parser->current, input);
+        if (!lazy) {
             return;
         }
+        parser->current = lazy;
+        /* A lazy line is text, so its indentation is not content, as it is not
+         * on a line that continues a paragraph with every prefix. */
+        markdown_core_block_advance_offset(parser, input, parser->first_nonspace - parser->offset, false);
         markdown_core_block_add_line(parser->current, input, parser);
     } else { // not a lazy continuation
         // Finalize any blocks that were not matched and set cur to container:

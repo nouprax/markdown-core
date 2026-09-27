@@ -126,32 +126,25 @@ static bool markdown_core_callout_scan(markdown_core_parser *parser, block_start
     return true;
 }
 
-bool markdown_core_callout_accepts_lazy_body(markdown_core_parser *parser, markdown_core_node *node) {
+static bool accepts_lazy(markdown_core_parser *parser, markdown_core_node *node) {
     return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value &&
            node->start_line == parser->line_number - 1 && !node->first_child;
-}
-bool markdown_core_callout_open_lazy_body(markdown_core_parser *parser) {
-    if (markdown_core_block_type(parser->current) == MARKDOWN_CORE_NODE_CALLOUT) {
-        markdown_core_node *paragraph =
-            markdown_core_parser_add_child(parser, parser->current, MARKDOWN_CORE_NODE_PARAGRAPH, parser->offset + 1);
-        if (!paragraph) {
-            return false;
-        }
-        parser->current = paragraph;
-    }
-    return true;
 }
 
 static bool continue_container(markdown_core_parser *parser, markdown_core_node *node, markdown_core_chunk *input,
                                const markdown_core_node *joining, bool *taken) {
     return markdown_core_block_parse_callout_prefix(parser, input);
 }
-static markdown_core_node *open_lazy(markdown_core_parser *parser, markdown_core_node *node) {
-    return markdown_core_callout_open_lazy_body(parser) ? parser->current : NULL;
+/* The marker line's text is the callout's title, so a lazy line after it
+ * cannot continue a paragraph: it starts the body's first one, as it would
+ * have with the quote's prefix. */
+static markdown_core_node *open_lazy(markdown_core_parser *parser, markdown_core_node *node,
+                                     markdown_core_chunk *input) {
+    return parser->dialect->document_structure->open_text_block(parser, node, input);
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
-    .accepts_lazy = markdown_core_callout_accepts_lazy_body,
+    .accepts_lazy = accepts_lazy,
     .open_lazy = open_lazy,
 
     .name = "callout",

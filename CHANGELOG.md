@@ -6,6 +6,21 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Parse a lazy line as the same line parses with the quote's prefix. A lazy
+  line kept its indentation in the content of the paragraph it went to.
+  After a callout's marker line, where it opens the body's first paragraph,
+  `> [!note]` followed by `   lazy` gave the paragraph `2:1..2:7` and the
+  text `"   lazy"`, where they are `2:4..2:7` and `"lazy"`. Everything that
+  read that content saw the indentation too: an indented reference
+  definition did not define, a lone `$$x$$` stayed inline, a pipe row's
+  indentation decided whether a table formed and gave it an empty first
+  cell, a setext heading's anchor gained leading hyphens, and a line led by a
+  link, code or emphasis began with a text node holding only the
+  indentation. A lazy line that continued a paragraph did the same once a
+  reference definition before it was taken: `> [a]: /x`, `   bar`, `> ===`
+  gave the heading `2:1..3:5` with the anchor `---bar`, where it is
+  `2:4..3:5` and `bar`.
+
 - Report a directive's label, and an inline directive's end, where the user
   sees those bytes in the editor. A block directive's label added the fence's
   column to a position already counted from the start of the line, so after
