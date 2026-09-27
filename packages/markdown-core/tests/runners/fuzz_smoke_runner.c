@@ -75,6 +75,10 @@ static int smoke(const uint8_t *bytes, size_t length, const char *label) {
         fprintf(stderr, "%s: traversal produced an invalid scope\n", label);
         goto done;
     }
+    if (ts_ast_scope_outside(markdown_core_document_root(document), bytes, length)) {
+        fprintf(stderr, "%s: a scope lies outside the source\n", label);
+        goto done;
+    }
     if (!markdown_core_document_dump(document, &first, &first_length, &error) ||
         !markdown_core_document_dump(document, &second, &second_length, &error)) {
         fprintf(stderr, "%s: dump failed\n", label);
@@ -93,6 +97,39 @@ done:
     markdown_core_error_free(error);
     return result;
 }
+
+/* ONE PROBE FOR EVERY WALK THAT DECODES A CHARACTER: a stray continuation
+ * byte or a lead byte cut off by its line or by the input, where that walk
+ * meets it. What such input parses to is unspecified; that each walk stays
+ * inside its range is not. Each probe is parsed from a heap block of exactly
+ * its length, so a read past the input is a sanitizer error, and a read past
+ * a line that stays inside the parser's own buffer shows as a scope outside
+ * the source. */
+static const struct {
+    const char *bytes;
+    size_t length;
+} probes[] = {
+#define PROBE(literal) {literal, sizeof(literal) - 1}
+    PROBE("\xe4**a** b\n"),                     /* flanking, before */
+    PROBE("**a**\xe4 b\n"),                     /* flanking, after */
+    PROBE("a **\xe4"),                          /* flanking, cut at the end */
+    PROBE("http://\xf0"),                       /* URL host, cut at the end */
+    PROBE("# http://\xf0\n\nbody\n"),           /* URL host, cut at the line */
+    PROBE("see www.a\xe4\xb8\n"),               /* domain walk, cut */
+    PROBE("see www.\x80\x80.com x\n"),          /* domain walk, stray */
+    PROBE("# heading \xe4\xb8\n"),              /* anchor, cut */
+    PROBE("# \x80\xbf\n"),                      /* anchor, stray */
+    PROBE("[\xe4]\n\n[\xe4]: /u\n"),            /* label normal form */
+    PROBE("x @\xe4 y\n"),                       /* citation key */
+    PROBE("\xe4@key y\n"),                      /* citation opener */
+    PROBE("(@\xe4) item\n"),                    /* specimen label */
+    PROBE("| a |\n| - |\n| b |\n:\xe4\n"),      /* table caption */
+    PROBE("| \xe4\xb8 |\n| - |\n"),             /* pipe table cell */
+    PROBE("+---+\n| \xe4 |\n+---+\n"),          /* grid table columns */
+    PROBE("- [\xe4] task\n"),                   /* task marker */
+    PROBE("---\ntitle: \xe4\xb8\n---\nbody\n"), /* front-matter printable */
+#undef PROBE
+};
 
 int main(int argc, char **argv) {
     int i;
@@ -122,11 +159,28 @@ int main(int argc, char **argv) {
         }
     }
 
+    for (i = 0; (size_t)i < sizeof(probes) / sizeof(*probes); i++) {
+        char label[64];
+        uint8_t *bytes = (uint8_t *)malloc(probes[i].length);
+        if (!bytes) {
+            failures++;
+            break;
+        }
+        memcpy(bytes, probes[i].bytes, probes[i].length);
+        snprintf(label, sizeof(label), "probe[%d]", i);
+        if (smoke(bytes, probes[i].length, label) != 0) {
+            failures++;
+        }
+        free(bytes);
+    }
+
     ts_prng_seed(&prng, UINT64_C(0x6D61726B646F776E)); /* "markdown" */
     for (i = 0; (size_t)i < generated; i++) {
         char label[64];
         size_t length = (size_t)(ts_prng_next(&prng) % 8192);
-        uint8_t *bytes = (uint8_t *)malloc(length + 1);
+        /* Exactly `length` bytes: a read past the input is a sanitizer
+         * error, not a read of a terminator nobody promised. */
+        uint8_t *bytes = (uint8_t *)malloc(length ? length : 1);
         size_t offset;
         if (!bytes) {
             failures++;
@@ -137,7 +191,6 @@ int main(int argc, char **argv) {
             size_t remaining = length - offset < 8 ? length - offset : 8;
             memcpy(bytes + offset, &word, remaining);
         }
-        bytes[length] = 0;
         snprintf(label, sizeof(label), "generated[%d]", i);
         if (smoke(bytes, length, label) != 0) {
             failures++;

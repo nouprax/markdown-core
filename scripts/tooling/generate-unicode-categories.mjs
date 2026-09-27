@@ -12,9 +12,9 @@
 //   letter       L;
 //   number       N.
 // A scalar's classes are blocks[pages[s >> 8] + (s & 255)]. The first page's
-// block is laid first, at offset 0, so utf8.h reads an ASCII character's
-// classes with one load and every other scalar's with two, whatever its
-// script.
+// block is laid first, at offset 0, so utf8.h reads the classes of page 0,
+// U+0000..U+00FF, with one load and every other scalar's with two, whatever
+// its script.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
@@ -79,7 +79,7 @@ for (let bits = 4; bits <= 12; bits++) {
     const other = stage(bits);
     assert.ok(other.flat.length > 0x10000 || other.bytes >= bytes, `${1 << bits}-scalar blocks are smaller`);
 }
-assert.equal(pages[0], 0, "ASCII's block is laid first, where utf8.h reads it without its page");
+assert.equal(pages[0], 0, "page 0, U+0000..U+00FF, is laid first, where utf8.h reads it without its page");
 
 /* The table answers every scalar exactly as the definition above. */
 for (let scalar = 0; scalar < SCALARS; scalar++) {

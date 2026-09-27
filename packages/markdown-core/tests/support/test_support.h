@@ -70,6 +70,16 @@ typedef int (*ts_ast_visit_fn)(const markdown_core_node *node, void *context);
  * non-zero visitor result, 0 on completion, or -1 on allocation failure. */
 int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *context);
 
+/* THE FIRST SCOPE OUTSIDE ITS SOURCE under `root`, or NULL when every scope
+ * lies on a line of `bytes[0, length)` and at most one column past that
+ * line's last byte. Lines end at LF, CR or CR LF, and a NUL counts as the
+ * three bytes of the U+FFFD it becomes; the sentinels 0:0 and L:0 fit.
+ *
+ * A scan that reads past its line but stays inside the parser's own buffer is
+ * invisible to a sanitizer; the scope it leaves behind is what shows it. The
+ * walk itself can fail on allocation, which also answers NULL. */
+const markdown_core_node *ts_ast_scope_outside(const markdown_core_node *root, const uint8_t *bytes, size_t length);
+
 /* Counts every node kind in the subtree.  `counts` must hold
  * TS_KIND_COUNT entries. Returns 0 on success, -1 if traversal fails or a
  * node kind exceeds the counter capacity. */

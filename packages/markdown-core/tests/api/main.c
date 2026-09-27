@@ -2854,10 +2854,10 @@ static void class_runs_split_on_ascii_white_space(test_batch_runner *runner) {
     markdown_core_document_free(document);
 }
 
-/* THE UNICODE CLASSES ARE UNICODE 17'S. One table answers every predicate,
- * so these pin the version: characters P and S gained after the older tables
- * the punctuation predicates once used, one that left P for S, and the
- * values that are not scalars at all. */
+/* THE UNICODE CLASSES ARE UNICODE 17'S. One table answers every class, so
+ * these pin the version: characters P and S gained after the older tables the
+ * punctuation predicates once used, one that left P for S, and the values
+ * that are not scalars at all. */
 static void unicode_classes_are_unicode_17(test_batch_runner *runner) {
     static const struct {
         int32_t scalar;
@@ -2870,21 +2870,15 @@ static void unicode_classes_are_unicode_17(test_batch_runner *runner) {
                  {0xD800, 0, 0, 0, 0, 0}, {0x110000, 0, 0, 0, 0, 0}, {-1, 0, 0, 0, 0, 0}};
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         int32_t scalar = cases[i].scalar;
+        uint8_t classes = markdown_core_utf8proc_classes(scalar);
         OK(runner,
-           !!(markdown_core_utf8proc_classes(scalar) & MARKDOWN_CORE_UNICODE_WHITESPACE) == cases[i].whitespace &&
-               !!markdown_core_utf8proc_is_punctuation(scalar) == cases[i].punctuation &&
-               !!markdown_core_utf8proc_is_punctuation_or_symbol(scalar) == cases[i].punctuation_or_symbol &&
-               !!markdown_core_utf8proc_is_letter(scalar) == cases[i].letter &&
-               !!markdown_core_utf8proc_is_number(scalar) == cases[i].number,
+           !!(classes & MARKDOWN_CORE_UNICODE_WHITESPACE) == cases[i].whitespace &&
+               !!(classes & MARKDOWN_CORE_UNICODE_PUNCTUATION) == cases[i].punctuation &&
+               !!(classes & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL) == cases[i].punctuation_or_symbol &&
+               !!(classes & MARKDOWN_CORE_UNICODE_LETTER) == cases[i].letter &&
+               !!(classes & MARKDOWN_CORE_UNICODE_NUMBER) == cases[i].number,
            "U+%04X has its Unicode 17 classes", (unsigned)scalar);
     }
-    /* ASCII is read without its page because its block is laid first. */
-    int ascii_staged = 1;
-    for (int32_t scalar = 0; scalar < 0x80; scalar++) {
-        ascii_staged &= markdown_core_utf8proc_classes(scalar) ==
-                        markdown_core_unicode_blocks[markdown_core_unicode_pages[scalar >> 8] + (scalar & 255)];
-    }
-    OK(runner, ascii_staged, "ASCII's classes are its page's block");
     /* U+1B4E BALINESE INVERTED CARIK SIAKI became punctuation in Unicode 16,
      * so it keeps `a**` from opening strong emphasis, as a quote would. */
     const char *source = "a**\xE1\xAD\x8E"
@@ -2896,6 +2890,220 @@ static void unicode_classes_are_unicode_17(test_batch_runner *runner) {
            "Unicode 17 punctuation decides flanking");
         markdown_core_document_free(document);
     }
+}
+
+/* A scalar's UTF-8 encoding, written straight from the definition so the
+ * decoder is checked against the standard and not against itself. */
+static int utf8_encode_scalar(int32_t scalar, uint8_t out[4]) {
+    if (scalar < 0x80) {
+        out[0] = (uint8_t)scalar;
+        return 1;
+    }
+    if (scalar < 0x800) {
+        out[0] = (uint8_t)(0xC0 | scalar >> 6);
+        out[1] = (uint8_t)(0x80 | (scalar & 0x3F));
+        return 2;
+    }
+    if (scalar < 0x10000) {
+        out[0] = (uint8_t)(0xE0 | scalar >> 12);
+        out[1] = (uint8_t)(0x80 | ((scalar >> 6) & 0x3F));
+        out[2] = (uint8_t)(0x80 | (scalar & 0x3F));
+        return 3;
+    }
+    out[0] = (uint8_t)(0xF0 | scalar >> 18);
+    out[1] = (uint8_t)(0x80 | ((scalar >> 12) & 0x3F));
+    out[2] = (uint8_t)(0x80 | ((scalar >> 6) & 0x3F));
+    out[3] = (uint8_t)(0x80 | (scalar & 0x3F));
+    return 4;
+}
+
+/* THE DECODER IS UTF-8'S DEFINITION on every scalar. Each one, encoded at the
+ * end of an exact-size heap block so that a read past it is a sanitizer
+ * error, decodes to itself with its encoded width, and that width is also
+ * the one its lead byte gives. Every proper prefix of an encoding is a
+ * character cut off by its range: the rest of the range, with no scalar. So
+ * is a continuation byte where a character should begin. */
+static void utf8_decode_reads_every_scalar(test_batch_runner *runner) {
+    uint8_t *block = malloc(4);
+    int wrong = 0, cut_wrong = 0, stray_wrong = 0;
+    for (int32_t scalar = 0; scalar < 0x110000; scalar++) {
+        if (scalar >= 0xD800 && scalar < 0xE000) {
+            continue;
+        }
+        uint8_t bytes[4];
+        int width = utf8_encode_scalar(scalar, bytes);
+        memcpy(block + 4 - width, bytes, (size_t)width);
+        int32_t decoded = -1;
+        int got = markdown_core_utf8proc_decode(block + 4 - width, width, &decoded);
+        wrong += got != width || decoded != scalar || markdown_core_utf8proc_width(bytes[0]) != width;
+        for (int cut = 1; cut < width; cut++) {
+            memcpy(block + 4 - cut, bytes, (size_t)cut);
+            got = markdown_core_utf8proc_decode(block + 4 - cut, cut, &decoded);
+            cut_wrong += got != cut || decoded != MARKDOWN_CORE_NO_SCALAR;
+        }
+    }
+    for (int byte = 0x80; byte < 0xC0; byte++) {
+        int32_t decoded = -1;
+        block[3] = (uint8_t)byte;
+        stray_wrong += markdown_core_utf8proc_decode(block + 3, 1, &decoded) != 1 || decoded != MARKDOWN_CORE_NO_SCALAR;
+    }
+    free(block);
+    INT_EQ(runner, wrong, 0, "every scalar decodes to itself with its encoded width");
+    INT_EQ(runner, cut_wrong, 0, "every cut encoding is the rest of its range, with no scalar");
+    INT_EQ(runner, stray_wrong, 0, "a continuation byte alone is one byte with no scalar");
+}
+
+/* THE DECODER IS TOTAL on any bytes, which is all it promises outside UTF-8:
+ * its width is the lead byte's width clamped to the range, its result does
+ * not depend on the bytes after the character, and its scalar is never
+ * negative and below 0x400000. A scalar below U+110000 encodes in no more
+ * bytes than it was decoded from, which is what the anchor's reservation
+ * rests on. Every lead byte meets every range of one to four bytes, each in
+ * an exact-size heap block, followed by bytes chosen at the boundaries of the
+ * byte classes, and is decoded again alone in a block of exactly its own
+ * bytes; a seeded walk over random bytes then checks that every step moves
+ * forward and that the walk ends exactly at the end. */
+static void utf8_decode_is_total(test_batch_runner *runner) {
+    static const uint8_t second[] = {0x00, 0x0A, 0x20, 0x41, 0x7F, 0x80, 0x8F, 0x90, 0x9F, 0xA0, 0xBF,
+                                     0xC0, 0xC1, 0xC2, 0xDF, 0xE0, 0xED, 0xEF, 0xF0, 0xF4, 0xF5, 0xFF};
+    static const uint8_t later[] = {0x00, 0x41, 0x80, 0xBF, 0xC2, 0xFF};
+    const size_t seconds = sizeof(second), laters = sizeof(later);
+    int cases = 0, wrong = 0;
+    for (int lead = 0; lead < 256; lead++) {
+        for (int len = 1; len <= 4; len++) {
+            size_t combinations = len == 1 ? 1 : seconds;
+            for (int k = 2; k < len; k++) {
+                combinations *= laters;
+            }
+            for (size_t combination = 0; combination < combinations; combination++) {
+                uint8_t *bytes = malloc((size_t)len);
+                size_t rest = combination;
+                bytes[0] = (uint8_t)lead;
+                if (len > 1) {
+                    bytes[1] = second[rest % seconds];
+                    rest /= seconds;
+                }
+                for (int k = 2; k < len; k++) {
+                    bytes[k] = later[rest % laters];
+                    rest /= laters;
+                }
+                int32_t scalar = -1;
+                int width = markdown_core_utf8proc_decode(bytes, len, &scalar);
+                int expected = markdown_core_utf8proc_width((uint8_t)lead) < len
+                                   ? markdown_core_utf8proc_width((uint8_t)lead)
+                                   : len;
+                /* The same character alone, in a block of exactly its own
+                 * bytes: the same result, and no read past its range. */
+                uint8_t *own = malloc((size_t)expected);
+                memcpy(own, bytes, (size_t)expected);
+                int32_t own_scalar = -1;
+                int own_width = markdown_core_utf8proc_decode(own, expected, &own_scalar);
+                free(own);
+                uint8_t encoded[4];
+                int ok =
+                    width == expected && own_width == width && own_scalar == scalar && scalar >= 0 && scalar < 0x400000;
+                if (lead < 0x80) {
+                    ok &= scalar == lead;
+                } else if (lead < 0xC0 || markdown_core_utf8proc_width((uint8_t)lead) > len) {
+                    ok &= scalar == MARKDOWN_CORE_NO_SCALAR;
+                } else if (scalar < MARKDOWN_CORE_NO_SCALAR) {
+                    ok &= utf8_encode_scalar(scalar, encoded) <= width;
+                }
+                wrong += !ok;
+                cases++;
+                free(bytes);
+            }
+        }
+    }
+    OK(runner, cases > 100000, "%d lead-and-range cases", cases);
+    INT_EQ(runner, wrong, 0, "every width is the lead's clamped to its range, and every scalar is bounded");
+
+    uint64_t state = UINT64_C(0x9E3779B97F4A7C15);
+    int walks_wrong = 0;
+    for (int walk = 0; walk < 4096; walk++) {
+        state = state * UINT64_C(6364136223846793005) + UINT64_C(1442695040888963407);
+        bufsize_t len = (bufsize_t)(1 + (state >> 33) % 64);
+        uint8_t *bytes = malloc((size_t)len);
+        for (bufsize_t at = 0; at < len; at++) {
+            state = state * UINT64_C(6364136223846793005) + UINT64_C(1442695040888963407);
+            bytes[at] = (uint8_t)(state >> 56);
+        }
+        bufsize_t at = 0;
+        while (at < len) {
+            int32_t scalar;
+            int width = markdown_core_utf8proc_decode(bytes + at, len - at, &scalar);
+            if (width < 1 || width > len - at) {
+                walks_wrong++;
+                break;
+            }
+            at += width;
+        }
+        walks_wrong += at != len;
+        free(bytes);
+    }
+    INT_EQ(runner, walks_wrong, 0, "every walk over random bytes moves forward and ends at its end");
+}
+
+/* THE CLASS LOOKUP IS TOTAL over int32_t. Every scalar's classes are its
+ * page's block entry; page 0, U+0000..U+00FF, is laid at offset 0 and read
+ * without its entry. Surrogates, MARKDOWN_CORE_NO_SCALAR, everything a
+ * decoder can produce past it, and the negative values have no class. */
+static void unicode_classes_are_total(test_batch_runner *runner) {
+    int staged = markdown_core_unicode_pages[0] == 0;
+    for (int32_t scalar = 0; scalar < 0x110000; scalar++) {
+        staged &= markdown_core_utf8proc_classes(scalar) ==
+                  markdown_core_unicode_blocks[markdown_core_unicode_pages[scalar >> 8] + (scalar & 255)];
+    }
+    OK(runner, staged, "every scalar's classes are its page's block entry");
+    int none = 1;
+    for (int32_t scalar = 0xD800; scalar < 0xE000; scalar++) {
+        none &= markdown_core_utf8proc_classes(scalar) == 0;
+    }
+    for (int32_t scalar = MARKDOWN_CORE_NO_SCALAR; scalar < 0x400000; scalar++) {
+        none &= markdown_core_utf8proc_classes(scalar) == 0;
+    }
+    none &= markdown_core_utf8proc_classes(-1) == 0 && markdown_core_utf8proc_classes(INT32_MIN) == 0 &&
+            markdown_core_utf8proc_classes(INT32_MAX) == 0;
+    OK(runner, none, "values that are not scalars have no class");
+    int ascii = 1;
+    for (int byte = 0; byte < 0x80; byte++) {
+        uint8_t b = (uint8_t)byte;
+        int alnum = (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z');
+        ascii &= markdown_core_utf8proc_alnum_width(&b, 1) == alnum;
+    }
+    OK(runner, ascii && markdown_core_utf8proc_alnum_width((const uint8_t *)"a", 0) == 0,
+       "an ASCII byte is alphanumeric exactly when it is a letter or digit, and an empty range is not");
+}
+
+/* AN ANCHOR IMAGES ONLY SCALARS. Bytes that are not a character, a lead cut
+ * off by the end of the literal, every surrogate and every value past
+ * U+10FFFF that four bytes can spell have no image, so an anchor is UTF-8
+ * whatever its heading's bytes were. */
+static void anchor_images_only_scalars(test_batch_runner *runner) {
+    markdown_core_strbuf anchor = MARKDOWN_CORE_BUF_INIT();
+    int empty = 1;
+    for (int32_t scalar = 0xD800; scalar < 0xE000; scalar++) {
+        const uint8_t bytes[3] = {(uint8_t)(0xE0 | scalar >> 12), (uint8_t)(0x80 | ((scalar >> 6) & 0x3F)),
+                                  (uint8_t)(0x80 | (scalar & 0x3F))};
+        markdown_core_strbuf_clear(&anchor);
+        markdown_core_utf8proc_anchor(&anchor, bytes, 3);
+        empty &= anchor.size == 0;
+    }
+    OK(runner, empty, "no surrogate has an anchor image");
+    static const char *const others[] = {"\xF4\x90\x80\x80", "\xF7\xBF\xBF\xBF", "\xFF\xFF\xFF\xFF", "\x80",
+                                         "\xBF\xBF",         "\xE4\xB8",         "\xF0\x9F\x98"};
+    for (size_t i = 0; i < sizeof(others) / sizeof(*others); i++) {
+        markdown_core_strbuf_clear(&anchor);
+        markdown_core_utf8proc_anchor(&anchor, (const uint8_t *)others[i], (bufsize_t)strlen(others[i]));
+        INT_EQ(runner, (int)anchor.size, 0, "bytes %zu that are no scalar have no anchor image", i);
+    }
+    markdown_core_strbuf_clear(&anchor);
+    markdown_core_utf8proc_anchor(&anchor,
+                                  (const uint8_t *)"A\x80"
+                                                   "B\xE4",
+                                  4);
+    STR_EQ(runner, (const char *)anchor.ptr, "ab", "the characters around them keep theirs");
+    markdown_core_strbuf_free(&anchor);
 }
 
 /* WHITESPACE IS A SPACE, A TAB OR A LINE ENDING (docs/specs/dialect.md), and
@@ -6850,7 +7058,8 @@ static void reference_label_normal_form(test_batch_runner *runner) {
          "strasse ss"},
         {"\xE2\x84\xAA", "k"},
         {"\xCE\x90\xCE\x90", "\xCE\xB9\xCC\x88\xCC\x81\xCE\xB9\xCC\x88\xCC\x81"},
-        {"A\xC3 B\xFF", "a\xC3 b\xFF"},
+        {"A\x80 B\xBF", "a\x80 b\xBF"},
+        {"C \xE4\xB8", "c \xE4\xB8"},
         {"\x0B\x0C", "\x0B\x0C"},
     };
     markdown_core_strbuf normal = MARKDOWN_CORE_BUF_INIT();
@@ -9755,6 +9964,10 @@ int main(void) {
     borrowed_anchor_survives_a_kind_change(runner);
     class_runs_split_on_ascii_white_space(runner);
     unicode_classes_are_unicode_17(runner);
+    utf8_decode_reads_every_scalar(runner);
+    utf8_decode_is_total(runner);
+    unicode_classes_are_total(runner);
+    anchor_images_only_scalars(runner);
     whitespace_is_space_tab_and_line_ending(runner);
     map_records_are_carved_from_its_blocks(runner);
     properties_values(runner);

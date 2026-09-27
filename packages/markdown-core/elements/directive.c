@@ -15,7 +15,6 @@
 #include <inlines.h>
 #include <node.h>
 #include <parser.h>
-#include <utf8.h>
 
 typedef struct {
     markdown_core_chunk name;

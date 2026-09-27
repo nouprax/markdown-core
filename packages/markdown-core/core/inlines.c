@@ -233,37 +233,32 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
         return &inline_state->cached_run;
     }
 
-    bufsize_t before_char_pos, after_char_pos;
-    int32_t after_char = 0, before_char = 0;
-    int len;
-    if (run.start == 0) {
-        before_char = 10;
-    } else {
-        before_char_pos = run.start - 1;
+    /* The start and the end of the input read as a newline, and so does a run
+     * of skip characters that reaches either. Skip characters are ASCII
+     * (markdown_core_dialect_seal asserts it), so a decoded scalar below 0x80
+     * is its own byte. */
+    int32_t before_char = 10, after_char = 10;
+    if (run.start > 0) {
+        bufsize_t before_char_pos = run.start - 1;
         // Walk back to the beginning of the UTF-8 sequence.
         while ((markdown_core_inline_peek_at(inline_state, before_char_pos) >> 6 == 2 ||
                 inline_state->dialect->skip_chars[markdown_core_inline_peek_at(inline_state, before_char_pos)]) &&
                before_char_pos > 0) {
             before_char_pos--;
         }
-        len = markdown_core_utf8proc_iterate(inline_state->input.data + before_char_pos, run.start - before_char_pos,
-                                             &before_char);
-        if (len == -1 || (before_char < 256 && inline_state->dialect->skip_chars[(unsigned char)before_char])) {
+        markdown_core_utf8proc_decode(inline_state->input.data + before_char_pos, run.start - before_char_pos,
+                                      &before_char);
+        if (before_char < 0x80 && inline_state->dialect->skip_chars[before_char]) {
             before_char = 10;
         }
     }
-    if (run.end == inline_state->input.len) {
-        after_char = 10;
-    } else {
-        after_char_pos = run.end;
-        while (after_char_pos < inline_state->input.len && flanking_skip_at(inline_state, after_char_pos)) {
-            after_char_pos++;
-        }
-        len = markdown_core_utf8proc_iterate(inline_state->input.data + after_char_pos,
-                                             inline_state->input.len - after_char_pos, &after_char);
-        if (len == -1 || (after_char < 256 && inline_state->dialect->skip_chars[(unsigned char)after_char])) {
-            after_char = 10;
-        }
+    bufsize_t after_char_pos = run.end;
+    while (after_char_pos < inline_state->input.len && flanking_skip_at(inline_state, after_char_pos)) {
+        after_char_pos++;
+    }
+    if (after_char_pos < inline_state->input.len) {
+        markdown_core_utf8proc_decode(inline_state->input.data + after_char_pos,
+                                      inline_state->input.len - after_char_pos, &after_char);
     }
     const uint8_t before = markdown_core_utf8proc_classes(before_char);
     const uint8_t after = markdown_core_utf8proc_classes(after_char);
@@ -992,55 +987,6 @@ void markdown_core_inline_state_push_delimiter(markdown_core_inline_state *inlin
                                                const markdown_core_element *owner, markdown_core_delimiter_rule rule,
                                                int can_open, int can_close, markdown_core_node *inl_text) {
     push_delimiter(inline_state, owner, rule, can_open != 0, can_close != 0, inl_text);
-}
-
-int markdown_core_inline_state_scan_delimiters(markdown_core_inline_state *inline_state, int max_delims,
-                                               unsigned char c, int *left_flanking, int *right_flanking,
-                                               int *punct_before, int *punct_after) {
-    int numdelims = 0;
-    bufsize_t before_char_pos;
-    int32_t after_char = 0;
-    int32_t before_char = 0;
-    int len;
-    bool space_before, space_after;
-
-    if (inline_state->pos == 0) {
-        before_char = 10;
-    } else {
-        before_char_pos = inline_state->pos - 1;
-        // walk back to the beginning of the UTF_8 sequence:
-        while (markdown_core_inline_peek_at(inline_state, before_char_pos) >> 6 == 2 && before_char_pos > 0) {
-            before_char_pos -= 1;
-        }
-        len = markdown_core_utf8proc_iterate(inline_state->input.data + before_char_pos,
-                                             inline_state->pos - before_char_pos, &before_char);
-        if (len == -1) {
-            before_char = 10;
-        }
-    }
-
-    while (markdown_core_inline_peek_char(inline_state) == c && numdelims < max_delims) {
-        numdelims++;
-        advance(inline_state);
-    }
-
-    len = markdown_core_utf8proc_iterate(inline_state->input.data + inline_state->pos,
-                                         inline_state->input.len - inline_state->pos, &after_char);
-    if (len == -1) {
-        after_char = 10;
-    }
-
-    const uint8_t before = markdown_core_utf8proc_classes(before_char);
-    const uint8_t after = markdown_core_utf8proc_classes(after_char);
-    *punct_before = (before & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL) != 0;
-    *punct_after = (after & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL) != 0;
-    space_before = before & MARKDOWN_CORE_UNICODE_WHITESPACE;
-    space_after = after & MARKDOWN_CORE_UNICODE_WHITESPACE;
-
-    *left_flanking = numdelims > 0 && !space_after && !(*punct_after && !space_before && !*punct_before);
-    *right_flanking = numdelims > 0 && !space_before && !(*punct_before && !space_after && !*punct_after);
-
-    return numdelims;
 }
 
 void markdown_core_inline_state_advance_offset(markdown_core_inline_state *inline_state) { advance(inline_state); }

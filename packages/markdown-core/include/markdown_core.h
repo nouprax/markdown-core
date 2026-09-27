@@ -301,8 +301,10 @@ typedef struct markdown_core_optional_string {
 /**
  * Parses exactly `length` bytes as UTF-8 in the one Markdown Core dialect.
  * Valid UTF-8 is a caller precondition; Markdown Core does not validate or
- * repair malformed input. There are no options: every feature of the dialect
- * is recognized on every call.
+ * repair malformed input. What such input parses to is unspecified, but the
+ * parse reads only the `length` bytes at `source`, terminates, and returns a
+ * document or fails as described below. There are no options:
+ * every feature of the dialect is recognized on every call.
  * The returned document owns every node and every `markdown_core_string`
  * handed out of it. On failure,
  * NULL is returned and `*error` is set when `error` is non-NULL.

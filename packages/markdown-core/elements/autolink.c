@@ -108,11 +108,13 @@ static markdown_core_node *match_angle(markdown_core_inline_state *inline_state)
 /* The width of the host character at `link`, or 0 when the character there
  * is not one. A host character is neither whitespace nor punctuation.
  * Whitespace is a space, a tab or a line ending, as everywhere outside
- * delimiter flanking, so a non-breaking space is a host character. */
+ * delimiter flanking, so a non-breaking space is a host character. Both
+ * callers have at least one byte at `link`. */
 static inline int hostchar_width(const uint8_t *link, size_t link_len) {
     int32_t ch;
-    int width = markdown_core_utf8proc_iterate(link, (bufsize_t)link_len, &ch);
-    if (width < 0 || markdown_core_is_whitespace(link[0]) || markdown_core_utf8proc_is_punctuation(ch)) {
+    int width = markdown_core_utf8proc_decode(link, (bufsize_t)link_len, &ch);
+    if (markdown_core_is_whitespace(link[0]) ||
+        (markdown_core_utf8proc_classes(ch) & MARKDOWN_CORE_UNICODE_PUNCTUATION)) {
         return 0;
     }
     return width;
@@ -241,8 +243,11 @@ static size_t check_domain(markdown_core_parser *parser, markdown_core_inline_st
      * reached the second byte of a multi-byte character, which is no
      * character at all, and ended the domain there: an underscore after
      * any non-ASCII letter escaped the rule the same underscore after an
-     * ASCII letter obeys. */
-    for (i = markdown_core_utf8proc_width(data[0]); i < size - 1;) {
+     * ASCII letter obeys. The first character's width is decoded within
+     * `size`, which both callers make at least one byte: a lead byte's own
+     * width could claim bytes past the end of the range. */
+    int32_t first;
+    for (i = (size_t)markdown_core_utf8proc_decode(data, (bufsize_t)size, &first); i < size - 1;) {
         parser->autolink_domain_work++;
         if (data[i] == '\\' && i < size - 2) {
             i++;
