@@ -1970,7 +1970,7 @@
         {
             "feature": "links-and-images",
             "specification": "docs/specs/dialect/links-and-images.md",
-            "sha256": "bab3da34eeda132622d39a5ef6072be5c9973623766c01db3215a141620dda05",
+            "sha256": "52a3a84d7e129ee8f191c28dc252045ee964bfdd15822b5b2879033554a4646b",
             "sections": [
                 {
                     "title": "Links and images",
@@ -2002,7 +2002,7 @@
                     "title": "Automatic links",
                     "line": 44,
                     "level": 2,
-                    "sha256": "ced672cf943ea449d5d2ffcfff73c14cb5e0d5a353dd70d5e94d95fedc5666ef",
+                    "sha256": "d59eb6198c16cc12f2b8864cd7f571759fa1f0d9343d4d672476d3e2edb3d33a",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["common-angle-autolink", "gfm-bare-autolink"]
@@ -2010,7 +2010,7 @@
                 },
                 {
                     "title": "Images",
-                    "line": 66,
+                    "line": 67,
                     "level": 2,
                     "sha256": "f9623a4e7f25415d66a333eaefb375b84f6aaac17a43c65824d0b4b5979d7479",
                     "disposition": {
@@ -2020,7 +2020,7 @@
                 },
                 {
                     "title": "Image dimensions",
-                    "line": 83,
+                    "line": 84,
                     "level": 2,
                     "sha256": "9cb0c1985b899643145d48bba0f04522fc98563589be9b4fc22178306a37d55a",
                     "disposition": {
@@ -2030,7 +2030,7 @@
                 },
                 {
                     "title": "Attributes",
-                    "line": 105,
+                    "line": 106,
                     "level": 2,
                     "sha256": "ba141aee0d55e7ad85605d9104a1ee8d5b10c1cab5951abec9244ccbe7e1af38",
                     "disposition": {
@@ -2040,7 +2040,7 @@
                 },
                 {
                     "title": "Bracket precedence",
-                    "line": 121,
+                    "line": 122,
                     "level": 2,
                     "sha256": "a46dc676a5297e220204661ee1d6883e2539e6cc110b6c59ec4dcff0e9749a44",
                     "disposition": {

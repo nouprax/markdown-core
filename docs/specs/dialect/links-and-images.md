@@ -54,7 +54,8 @@ destinations gain `http://`. Bare URL schemes accept `http`, `https`, and `ftp`
 case-insensitively. The `www.` form needs an eligible boundary and a domain
 containing a dot; the domain ends at whitespace or punctuation. The final two
 domain segments cannot contain an underscore; earlier segments may contain
-underscores. This rule applies regardless of how many segments precede them.
+underscores. This rule applies regardless of how many segments precede them,
+and after non-ASCII characters as after ASCII ones.
 
 Bare URLs end at whitespace or `<`, with trailing punctuation, entity-shaped
 suffixes, and unmatched closing parentheses excluded. Their bodies are opaque:

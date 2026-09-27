@@ -112,6 +112,12 @@
             "kind": "deliberate-difference",
             "summary": "An extended autolink's domain ends at whitespace, which is a space, a tab or a line ending (docs/specs/dialect.md). cmark-gfm ends it at any Unicode whitespace, form feed included, so an underscore after a form feed is outside its domain and inside Markdown Core's.",
             "handling": "Keyed to the exact links-and-images fixture input; both parsers still end the link's extent at the same bytes."
+        },
+        {
+            "id": "autolink-domain-characters",
+            "kind": "deliberate-difference",
+            "summary": "cmark-gfm walks an extended autolink's domain a byte at a time and ends it at the second byte of the first multi-byte character, so an underscore after any non-ASCII character escapes its last-two-segments rule. Markdown Core walks whole characters and applies the rule after ASCII and non-ASCII characters alike.",
+            "handling": "Keyed to the exact links-and-images fixture input; the ASCII form of the rule is unchanged and compared everywhere."
         }
     ],
     "expectedDivergences": [
@@ -259,6 +265,11 @@
             "id": "autolink-domain-whitespace",
             "input": "www.a\f_b.c and www.a\fb.c\n",
             "note": "cmark-gfm links `www.a\\f_b.c`; the form feed is a host character here, so `_b` is in the last two segments and the run is text."
+        },
+        {
+            "id": "autolink-domain-characters",
+            "input": "www.例_b.c\nwww.a _b.c\nhttps://例_b.c\nwww.例.com\n",
+            "note": "cmark-gfm links the first three lines; the underscore is in each domain's last two segments, so Markdown Core keeps them as text, as it keeps www.a_b.c. Both link www.例.com."
         }
     ],
     "notDeltas": [],
