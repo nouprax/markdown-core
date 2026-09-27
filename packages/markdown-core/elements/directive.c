@@ -81,8 +81,8 @@ static int scan_name(const unsigned char *data, bufsize_t len, bufsize_t pos, bu
 enum { LABEL_STOP = 1 };
 static const uint8_t LABEL_BYTES[256] = {['['] = LABEL_STOP, [']'] = LABEL_STOP, ['\\'] = LABEL_STOP};
 
-static int scan_label(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *label_start,
-                      bufsize_t *label_len, bufsize_t *end) {
+static inline int scan_label(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *label_start,
+                             bufsize_t *label_len, bufsize_t *end) {
     int depth = 1;
     bufsize_t i;
 
