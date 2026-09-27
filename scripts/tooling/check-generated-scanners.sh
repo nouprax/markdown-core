@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Element-owned lexers are committed output of the pinned generator. Normal
 # builds never invoke re2c. --write is the Makefile's maintenance entry point;
-# checking and regeneration use this one command and encoding declaration.
+# checking and regeneration use this one command. Every lexer matches bytes:
+# the delimiters are ASCII, and valid UTF-8 is a caller precondition that no
+# lexer checks again.
 # A missing/different generator reports SKIP, never a verified pass.
 set -euo pipefail
 
@@ -33,10 +35,7 @@ if [ "$#" = 0 ]; then
     set -- "$root"/packages/markdown-core/elements/*_scanners.re
 fi
 for source in "$@"; do
-    flags=(-W -Werror --case-insensitive -b -i --no-generation-date --encoding-policy substitute)
-    if grep -q '^// re2c-encoding: utf8$' "$source"; then
-        flags+=(-8)
-    fi
+    flags=(-W -Werror --case-insensitive -b -i --no-generation-date)
     generated="$temp_dir/$(basename "${source%.re}").c"
     re2c "${flags[@]}" -o "$generated" "$source"
     if [ "$write" = true ]; then

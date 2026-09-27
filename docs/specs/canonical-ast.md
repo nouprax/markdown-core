@@ -49,8 +49,10 @@ Scope(start: Position, end: Position)
 
 The C facade passes the supplied bytes to the native parser as UTF-8. Valid
 UTF-8 is a caller precondition; Markdown Core has no validation or repair mode
-for malformed input. Swift, Kotlin, and ECMAScript strings are encoded as UTF-8
-before entering that same parse path.
+for malformed input. What the C entry point produces for input that is not
+valid UTF-8 is unspecified; the parse still reads only the supplied bytes,
+terminates, and returns a document or reports an error. Swift, Kotlin, and
+ECMAScript strings are encoded as UTF-8 before entering that same parse path.
 
 A scope is the pair of editor source coordinates reported by the parser,
 using cmark's UTF-8 coordinate convention. It is not a string range: neither

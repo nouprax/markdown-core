@@ -1,4 +1,3 @@
-// re2c-encoding: utf8
 #include "formula_scanners.h"
 
 /*!include:re2c "scanner_common.re" */

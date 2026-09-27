@@ -6,6 +6,24 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Decode UTF-8 without validating it. Valid UTF-8 is the caller's
+  precondition, and on it every result is unchanged: checking each character
+  for overlong forms, surrogates and continuation bytes never failed there,
+  and it cost every character outside ASCII. Pipe-table cells are scanned as
+  bytes for the same reason. Input that is not valid UTF-8, which no binding
+  produces and only raw-byte entry points (the C API, the command-line tool
+  and the ES package's WebAssembly export) accept, parses to an unspecified
+  result; the parser still reads only the bytes it is given and terminates.
+  Headings, reference labels, citation keys, emphasis, extended autolinks and
+  pipe tables in non-ASCII text cost less at every width. In ASCII text,
+  digits in citation keys and specimen labels, and `-`, `;`, `@` and `w` in
+  inline text, cost one to three instructions more each.
+
+- Apply the rule that an extended autolink's last two domain segments hold
+  no underscore after non-ASCII characters too: `www.例_b.c` and
+  `https://例_b.c` are no longer links. The domain is walked a character at a
+  time; it used to end at the second byte of the first multi-byte character.
+
 - Give whitespace fixed, named classes, following the text of CommonMark
   0.31.2 (`docs/specs/dialect.md`). Whitespace is a space, a tab or a line
   ending everywhere except delimiter flanking, which keeps Unicode whitespace.
@@ -26,7 +44,8 @@ promised to remain compatible between releases.
   added to P or S now count as CommonMark punctuation for emphasis flanking,
   and U+166D, which Unicode moved from P to S, is no longer punctuation for
   autolink host names and table captions. Classifying a character is one
-  load for ASCII and two for any other character, whatever its script.
+  load for U+0000..U+00FF and two for any other character, whatever its
+  script.
 
 - Split a `class=` attribute value where HTML splits a `class` attribute: at
   tab, line feed, form feed, carriage return and space. Vertical tab and

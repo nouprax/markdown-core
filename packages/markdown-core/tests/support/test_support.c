@@ -381,6 +381,58 @@ int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *con
     return result;
 }
 
+typedef struct ts_line_widths {
+    size_t *widths;
+    size_t count;
+    const markdown_core_node *outside;
+} ts_line_widths;
+
+static int ts_position_inside(const ts_line_widths *lines, markdown_core_position position) {
+    if (position.line == 0) {
+        return position.column == 0;
+    }
+    if (position.line < 0 || position.column < 0 || (size_t)position.line > lines->count + 1) {
+        return 0;
+    }
+    size_t width = (size_t)position.line <= lines->count ? lines->widths[position.line - 1] : 0;
+    return (size_t)position.column <= width + 1;
+}
+
+static int ts_scope_visit(const markdown_core_node *node, void *context) {
+    ts_line_widths *lines = context;
+    markdown_core_scope scope = markdown_core_node_scope(node);
+    if (!ts_position_inside(lines, scope.start) || !ts_position_inside(lines, scope.end)) {
+        lines->outside = node;
+        return 1;
+    }
+    return 0;
+}
+
+const markdown_core_node *ts_ast_scope_outside(const markdown_core_node *root, const uint8_t *bytes, size_t length) {
+    ts_line_widths lines = {malloc((length + 1) * sizeof(size_t)), 0, NULL};
+    if (!lines.widths) {
+        return NULL;
+    }
+    size_t width = 0;
+    for (size_t at = 0; at < length; at++) {
+        if (bytes[at] == '\n' || bytes[at] == '\r') {
+            lines.widths[lines.count++] = width;
+            width = 0;
+            if (bytes[at] == '\r' && at + 1 < length && bytes[at + 1] == '\n') {
+                at++;
+            }
+        } else {
+            width += bytes[at] ? 1 : 3;
+        }
+    }
+    if (width) {
+        lines.widths[lines.count++] = width;
+    }
+    (void)ts_ast_walk(root, ts_scope_visit, &lines);
+    free(lines.widths);
+    return lines.outside;
+}
+
 static int ts_count_visit(const markdown_core_node *node, void *context) {
     size_t *counts = (size_t *)context;
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);

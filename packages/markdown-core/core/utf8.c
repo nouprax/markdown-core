@@ -138,7 +138,7 @@ static inline void S_copy_image(uint8_t *out, const uint8_t *in, size_t n) {
  * It was three passes -- fold one character at a time into the buffer, trim
  * both ends, collapse the runs -- and they compose character by character:
  * folding neither creates nor changes a whitespace byte (a fold's image is
- * letters and marks, and a byte that is not a character is copied as it is),
+ * letters and marks, and a character with no scalar is copied as it is),
  * so a run seen in the input is the run the later passes saw. A run is
  * therefore remembered and written as one space only when a character follows
  * it and one precedes it, which is the trim.
@@ -153,12 +153,12 @@ void markdown_core_utf8proc_normalize_label(markdown_core_strbuf *dest, const ui
     const bufsize_t first = dest->size;
     bool space = false;
     while (len > 0) {
-        /* Total, so the walk always moves forward. The U+FFFD substitution
-         * this used to make for a byte that starts no character was the one
-         * place the library REPAIRED malformed input, which markdown_core.h
-         * says it does not do. */
+        /* A character that has no scalar, or none below CF_MAX, has no fold
+         * and is copied byte for byte. Any other bytes that are not UTF-8 fold
+         * as the scalar their bits spell: what they normalize to is
+         * unspecified, like everything else about such input. */
         int32_t c;
-        bufsize_t char_len = markdown_core_utf8proc_step(str, len, &c);
+        bufsize_t char_len = markdown_core_utf8proc_decode(str, len, &c);
         if (char_len == 1 && markdown_core_is_whitespace(str[0])) {
             space = out - dest->ptr > first;
         } else {
@@ -215,14 +215,16 @@ static inline int32_t anchor_scalar(int32_t uc) {
  * encoding share one loop and write through the cursor above.
  *
  * The bound it reserves for is twice the rest of the literal. The generator
- * asserts that no scalar's image is longer than 3/2 of its own encoding, and a
- * byte that begins no character is stepped over as a one-byte scalar whose
- * image is at most two bytes. */
+ * asserts that no scalar's image is longer than 3/2 of its own encoding, and
+ * a scalar decoded from w bytes encodes in at most w: a 2-byte character's
+ * scalar is below 0x800 and a 3-byte one's below 0x10000, whatever the bytes.
+ * A character with no scalar, a surrogate and anything past U+10FFFF have no
+ * image. */
 void markdown_core_utf8proc_anchor(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len) {
     uint8_t *out = dest->ptr + dest->size, *end = out;
     for (bufsize_t at = 0; at < len;) {
         int32_t scalar;
-        at += markdown_core_utf8proc_step(str + at, len - at, &scalar);
+        at += markdown_core_utf8proc_decode(str + at, len - at, &scalar);
         scalar = anchor_scalar(scalar);
         if (!scalar) {
             continue;

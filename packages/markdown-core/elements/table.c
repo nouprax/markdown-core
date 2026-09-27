@@ -496,12 +496,12 @@ static int table_caption_start(const unsigned char *data, int length, int first,
     if (length - first >= 6 && (!memcmp(data + first, "Table:", 6) || !memcmp(data + first, "table:", 6))) {
         marker = 6;
     } else if (first < length && data[first] == ':') {
-        int32_t scalar = 0;
         if (first + 1 < length) {
-            markdown_core_utf8proc_iterate(data + first + 1, length - first - 1, &scalar);
-        }
-        if (scalar && markdown_core_utf8proc_is_punctuation(scalar)) {
-            return -1;
+            int32_t scalar;
+            markdown_core_utf8proc_decode(data + first + 1, length - first - 1, &scalar);
+            if (markdown_core_utf8proc_classes(scalar) & MARKDOWN_CORE_UNICODE_PUNCTUATION) {
+                return -1;
+            }
         }
         marker = 1;
     }

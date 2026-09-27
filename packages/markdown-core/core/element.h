@@ -206,7 +206,7 @@ struct markdown_core_element {
      * is empty. */
     const char *terminates_text;      /* ends a text run: inline_state_find_special_char */
     const char *dispatch;             /* offered to match_inline, and owns a delimiter tag */
-    const char *flanking_transparent; /* scan_delims looks through it */
+    const char *flanking_transparent; /* scan_delimiter looks through it; ASCII */
     const char *name;
     markdown_core_get_type_string_func get_type_string_func;
     /* A retained built-in payload may only parent these kinds after conversion.

@@ -285,6 +285,9 @@ static void S_project_inline_bytes(markdown_core_dialect *dialect) {
             dialect->special_chars[*c] = MARKDOWN_CORE_TEXT_END;
         }
         for (const unsigned char *c = (const unsigned char *)element->flanking_transparent; c && *c; c++) {
+            /* Flanking tests a decoded scalar against these bytes, and only
+             * a scalar below 0x80 is its own byte. */
+            assert(*c < 0x80);
             dialect->skip_chars[*c] = 1;
         }
     }

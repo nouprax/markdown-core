@@ -30,8 +30,7 @@ void markdown_core_inline_free_citation_tokens(markdown_core_inline_state *inlin
  * `_`", with letter and digit meaning the Unicode categories. A bare key has
  * no delimiter after it, so the class of the next character is the only thing
  * that ends it -- `@张三，如此说` must key `张三`, as Pandoc keys it -- and
- * reading that class off the bytes would run the key into the clause. ASCII
- * is decided on the byte; a byte at or above 0x80 decodes. */
+ * reading that class off the bytes would run the key into the clause. */
 static int citation_key_width(const unsigned char *str, bufsize_t len) {
     if (len > 0 && str[0] == '_') {
         return 1;
