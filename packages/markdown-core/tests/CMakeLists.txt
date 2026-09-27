@@ -307,6 +307,9 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     emphasis_in_deep_blockquote
     nul_in_input
     backticks
+    flanking_stray_continuations
+    flanking_continuation_runs
+    flanking_split_skip_characters
     unclosed_links_a
     unclosed_links_b
     task_marker_runs

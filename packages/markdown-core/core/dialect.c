@@ -5,7 +5,7 @@
 #include "block_internal.h"
 #include "dialect.h"
 
-/* Why a descriptor is refused, or NULL. The rule: an element takes part in
+/* Whether a descriptor is refused. The rule: an element takes part in
  * the finish stage as a LOCAL step or as a GLOBAL pass, never both
  * (markdown-core-element-api.h states the invariant). A descriptor that
  * declares both would run its step from inside the walk and its pass after it,
@@ -23,7 +23,13 @@
  * its hooks but `observe_inline` without asking, on whichever element owns
  * it, so an element that declares part of it would have the engine call
  * through a NULL the moment it became the owner: it declares all of them or
- * none. */
+ * none.
+ *
+ * A flanking-transparent byte is ASCII. Flanking tests a decoded scalar
+ * against these bytes, and only a scalar below 0x80 is its own byte. Its walk
+ * back also stops at one of them that a continuation byte follows, which
+ * UTF-8 never puts after an ASCII byte; a continuation byte that were
+ * transparent would let every walk run to the start of its paragraph again. */
 static bool S_finish_kind_indexable(markdown_core_node_type kind) {
     unsigned class = (unsigned)kind & MARKDOWN_CORE_NODE_TYPE_MASK;
     return (class == MARKDOWN_CORE_NODE_TYPE_BLOCK || class == MARKDOWN_CORE_NODE_TYPE_INLINE) &&
@@ -35,49 +41,60 @@ static bool S_owns_document_lifecycle(const markdown_core_element *element) {
            element->prepare_document && element->finish_document && element->open_text_block;
 }
 
-static const char *S_element_rejection(const markdown_core_element *element) {
+static bool S_element_refused(const markdown_core_element *element) {
+    /* Both a finish step and a postprocess pass. */
     if (element->finish_step && element->postprocess_func) {
-        return "declares both a finish step and a postprocess pass";
+        return true;
     }
+    /* Kinds to ask a finish step at, without a finish step. */
     if ((element->finish_exit_kinds || element->finish_scope_kinds) && !element->finish_step) {
-        return "declares where a finish step is asked without a finish step";
+        return true;
     }
+    /* A finish step at a kind outside the kind table, or asked at no kind. */
     if (element->finish_step) {
         const markdown_core_node_type *lists[] = {element->finish_exit_kinds, element->finish_scope_kinds};
         bool asked = false;
         for (size_t list = 0; list < 2; list++) {
             for (const markdown_core_node_type *kind = lists[list]; kind && *kind; kind++) {
                 if (!S_finish_kind_indexable(*kind)) {
-                    return "declares a finish step at a kind outside the kind table";
+                    return true;
                 }
                 asked = true;
             }
         }
         if (!asked) {
-            return "declares a finish step asked at no kind";
+            return true;
         }
     }
+    /* A kind as both a finish exit kind and a finish scope kind. */
     for (const markdown_core_node_type *exit = element->finish_exit_kinds; exit && *exit; exit++) {
         for (const markdown_core_node_type *scope = element->finish_scope_kinds; scope && *scope; scope++) {
             if (*exit == *scope) {
-                return "declares a kind as both a finish exit kind and a finish scope kind";
+                return true;
             }
         }
     }
+    /* Only part of the document lifecycle. */
     if ((element->init_document || element->dispose_document || element->read_document_prefix ||
          element->prepare_document || element->finish_document || element->observe_inline ||
          element->open_text_block) &&
         !S_owns_document_lifecycle(element)) {
-        return "declares only part of the document lifecycle";
+        return true;
     }
-    return NULL;
+    /* A flanking-transparent byte outside ASCII. */
+    for (const unsigned char *c = (const unsigned char *)element->flanking_transparent; c && *c; c++) {
+        if (*c >= 0x80) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void markdown_core_dialect_builder_init(markdown_core_dialect_builder *builder,
                                         const markdown_core_element *const *elements, size_t count) {
 #ifndef NDEBUG
     for (size_t i = 0; i < count; i++) {
-        assert(!S_element_rejection(elements[i]));
+        assert(!S_element_refused(elements[i]));
     }
 #endif
     builder->elements = elements;
@@ -93,7 +110,7 @@ void markdown_core_dialect_builder_init(markdown_core_dialect_builder *builder,
  * was. */
 int markdown_core_dialect_builder_attach(markdown_core_dialect_builder *builder, const markdown_core_element *element) {
     size_t count = builder->element_count;
-    if (S_element_rejection(element) || count >= MARKDOWN_CORE_ELEMENT_LIMIT) {
+    if (S_element_refused(element) || count >= MARKDOWN_CORE_ELEMENT_LIMIT) {
         return 0;
     }
     const markdown_core_element **entries =
@@ -285,9 +302,6 @@ static void S_project_inline_bytes(markdown_core_dialect *dialect) {
             dialect->special_chars[*c] = MARKDOWN_CORE_TEXT_END;
         }
         for (const unsigned char *c = (const unsigned char *)element->flanking_transparent; c && *c; c++) {
-            /* Flanking tests a decoded scalar against these bytes, and only
-             * a scalar below 0x80 is its own byte. */
-            assert(*c < 0x80);
             dialect->skip_chars[*c] = 1;
         }
     }
@@ -333,7 +347,7 @@ static void S_project_inline_dispatch(markdown_core_dialect *dialect, const mark
  * into `counts`: the EXIT of each kind it is asked at, and the ENTER and EXIT
  * of each kind whose extent it tracks. An element without a step projects to
  * none. Registration refused a step asked at no kind and a kind outside the
- * table (S_element_rejection), so every key counted here is one the dispatch
+ * table (S_element_refused), so every key counted here is one the dispatch
  * indexes and none is the out-of-table key. Returns how many keys the element
  * added. */
 static size_t S_count_finish_keys(const markdown_core_element *element, size_t *counts) {

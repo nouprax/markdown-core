@@ -638,6 +638,32 @@ static int case_nul_in_input(pc_context *context) {
     return pc_expect_text(context, expected, sizeof(expected) - 1);
 }
 
+/* STRAY CONTINUATION BYTES BETWEEN `~~` RUNS. Flanking walks back from each
+ * run over continuation bytes and skip characters to the character before
+ * it; stepping over both alike let every run walk back to the start of the
+ * paragraph. The input is not UTF-8, so what it parses to is unspecified;
+ * the time it takes is not. On the machine they were written on, the old
+ * walk took 97, 88 and 111 seconds on these three through this runner, where
+ * the CTest timeout is 30. */
+static int pc_flanking_walk_case(pc_context *context, const char *unit, size_t count) {
+    if (pc_build(context, "a", unit, count, NULL) != 0 || pc_parse(context) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int case_flanking_stray_continuations(pc_context *context) {
+    return pc_flanking_walk_case(context, "~~\x80", 250000);
+}
+
+static int case_flanking_continuation_runs(pc_context *context) {
+    return pc_flanking_walk_case(context, "\x80\x80\x80\x80\x80~~", 150000);
+}
+
+static int case_flanking_split_skip_characters(pc_context *context) {
+    return pc_flanking_walk_case(context, "~\x80~~\x80", 200000);
+}
+
 static int case_backticks(pc_context *context) {
     size_t run, total = 0;
     char *cursor;
@@ -1359,6 +1385,9 @@ static const pc_case_entry PC_CASES[] = {
     {"emphasis_in_deep_blockquote", case_emphasis_in_deep_blockquote},
     {"nul_in_input", case_nul_in_input},
     {"backticks", case_backticks},
+    {"flanking_stray_continuations", case_flanking_stray_continuations},
+    {"flanking_continuation_runs", case_flanking_continuation_runs},
+    {"flanking_split_skip_characters", case_flanking_split_skip_characters},
     {"unclosed_links_a", case_unclosed_links_a},
     {"unclosed_links_b", case_unclosed_links_b},
     {"unclosed_comment", case_unclosed_comment},
