@@ -9733,6 +9733,60 @@ static void an_element_declares_one_finish_shape(test_batch_runner *runner) {
     }
 }
 
+static markdown_core_node *match_nothing(const markdown_core_element *self, markdown_core_parser *parser,
+                                         markdown_core_node *parent, unsigned char character,
+                                         markdown_core_inline_state *inline_state) {
+    (void)self;
+    (void)parser;
+    (void)parent;
+    (void)character;
+    (void)inline_state;
+    return NULL;
+}
+
+typedef struct {
+    const markdown_core_element *element;
+    attach_probe probe;
+} transparent_probe;
+
+static bool attach_transparent(markdown_core_dialect_builder *builder, void *context) {
+    transparent_probe *transparent = context;
+    markdown_core_dialect_builder_elements(builder, &transparent->probe.before);
+    transparent->probe.attached = markdown_core_dialect_builder_attach(builder, transparent->element);
+    markdown_core_dialect_builder_elements(builder, &transparent->probe.after);
+    return transparent->probe.attached != 0;
+}
+
+/* A FLANKING-TRANSPARENT BYTE IS ASCII. Flanking looks through these bytes as
+ * whole characters, and its walk back stops at one that a continuation byte
+ * follows, which only holds for an ASCII byte. Each element here inlines, so
+ * its bytes would reach the flanking table if it attached; the last ASCII byte
+ * attaches and every byte from 0x80 up, continuation bytes included, is
+ * refused. */
+static void a_flanking_transparent_byte_is_ascii(test_batch_runner *runner) {
+    static const char source[] = "a ~~b~~ c\n";
+    static const markdown_core_element elements[] = {
+        {.name = "transparent-7f", .match_inline = match_nothing, .flanking_transparent = "\x7F"},
+        {.name = "transparent-80", .match_inline = match_nothing, .flanking_transparent = "\x80"},
+        {.name = "transparent-bf", .match_inline = match_nothing, .flanking_transparent = "\xBF"},
+        {.name = "transparent-ff", .match_inline = match_nothing, .flanking_transparent = "~\xFF"},
+    };
+    for (size_t i = 0; i < sizeof(elements) / sizeof(elements[0]); i++) {
+        const bool ascii = i == 0;
+        transparent_probe transparent = {&elements[i], {0, 0, -1}};
+        markdown_core_node *doc =
+            markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_transparent, &transparent);
+        INT_EQ(runner, transparent.probe.attached, ascii, "%s is %s", elements[i].name, ascii ? "attached" : "refused");
+        INT_EQ(runner, (int)transparent.probe.after, (int)transparent.probe.before + ascii, "%s leaves the dialect %s",
+               elements[i].name, ascii ? "one element longer" : "as it was");
+        OK(runner, (doc != NULL) == ascii, "%s %s", elements[i].name,
+           ascii ? "parses" : "makes the parse report the refusal");
+        if (doc) {
+            markdown_core_node_free(doc);
+        }
+    }
+}
+
 static void simple_table_body_boundaries(test_batch_runner *runner) {
     const char *tails[] = {"# heading\nbody\n", "> quote\n> next\n", "```\ncode\n```\n"};
     const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_CALLOUT,
@@ -10096,6 +10150,7 @@ int main(void) {
     finish_stage_is_one_traversal_at_any_depth(runner);
     a_whole_root_pass_costs_one_traversal(runner);
     an_element_declares_one_finish_shape(runner);
+    a_flanking_transparent_byte_is_ascii(runner);
     postprocess_rewrites_every_owned_tree(runner);
     standalone_formula_as_owned_root(runner);
     simple_table_body_boundaries(runner);

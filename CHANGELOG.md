@@ -6,6 +6,13 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Stop the walk back from a delimiter run to the character before it at a
+  `~` that a continuation byte follows, which UTF-8 never has. The walk
+  stepped over continuation bytes and `~` alike, so bytes that are not UTF-8,
+  with stray continuation bytes between `~~` runs, took time quadratic in the
+  length of the paragraph: 120 KB of them took seconds. Valid UTF-8 parses
+  exactly as before.
+
 - Decode UTF-8 without validating it. Valid UTF-8 is the caller's
   precondition, and on it every result is unchanged: checking each character
   for overlong forms, surrogates and continuation bytes never failed there,

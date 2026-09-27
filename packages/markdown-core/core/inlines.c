@@ -234,15 +234,22 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
     }
 
     /* The start and the end of the input read as a newline, and so does a run
-     * of skip characters that reaches either. Skip characters are ASCII
-     * (markdown_core_dialect_seal asserts it), so a decoded scalar below 0x80
-     * is its own byte. */
+     * of skip characters that reaches either. Skip characters are ASCII (the
+     * dialect refuses an element that declares any other), so a decoded
+     * scalar below 0x80 is its own byte. */
     int32_t before_char = 10, after_char = 10;
     if (run.start > 0) {
         bufsize_t before_char_pos = run.start - 1;
-        // Walk back to the beginning of the UTF-8 sequence.
+        /* Walk back over skip characters and then over the continuation bytes
+         * of the character before them. In UTF-8 a continuation byte follows
+         * only a lead or another continuation byte, never a skip character,
+         * so the walk also stops at a skip character that a continuation byte
+         * follows. Without that stop, stray continuation bytes between `~~`
+         * runs let every run walk back across the ones before it, to the
+         * start of its paragraph. */
         while ((markdown_core_inline_peek_at(inline_state, before_char_pos) >> 6 == 2 ||
-                inline_state->dialect->skip_chars[markdown_core_inline_peek_at(inline_state, before_char_pos)]) &&
+                (inline_state->dialect->skip_chars[markdown_core_inline_peek_at(inline_state, before_char_pos)] &&
+                 markdown_core_inline_peek_at(inline_state, before_char_pos + 1) >> 6 != 2)) &&
                before_char_pos > 0) {
             before_char_pos--;
         }

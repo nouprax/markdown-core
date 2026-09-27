@@ -544,9 +544,10 @@ void markdown_core_parser_advance_offset(markdown_core_parser *parser, const cha
  *  allocation failure, for a descriptor the registration rule refuses -- one
  *  that declares both a finish step and a postprocess pass (see the two
  *  shapes above), or where a step is asked without a step, or one kind as
- *  both an exit and a scope kind, or only part of the document lifecycle --
- *  and once the dialect holds 255 elements (the block-start projection
- *  lists a family's owners by byte), with the builder left as it was.
+ *  both an exit and a scope kind, or only part of the document lifecycle,
+ *  or a flanking-transparent byte outside ASCII -- and once the dialect holds
+ *  255 elements (the block-start projection lists a family's owners by byte),
+ *  with the builder left as it was.
  */
 int markdown_core_dialect_builder_attach(markdown_core_dialect_builder *builder, const markdown_core_element *element);
 
