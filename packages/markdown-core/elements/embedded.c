@@ -24,7 +24,7 @@ bool markdown_core_parse_dimensions(markdown_core_chunk label, bufsize_t suffix,
     bufsize_t pos = suffix + separator_length;
     markdown_core_dimensions parsed = {0};
     (*work)++;
-    if ((suffix > 0 && markdown_core_isspace(label.data[suffix - 1])) ||
+    if ((suffix > 0 && markdown_core_is_whitespace(label.data[suffix - 1])) ||
         !dimension_component(label.data, &pos, label.len, &parsed.width, work)) {
         return false;
     }

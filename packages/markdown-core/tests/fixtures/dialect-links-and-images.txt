@@ -159,6 +159,42 @@ Document scope=1:1..1:41 anchor=null attributes={} children=1
     └── Text scope=1:41..1:41 anchor=null attributes={} literal=")" children=0
 ````````````````````````````````
 
+A domain ends at whitespace, which is a space, a tab or a line ending. A form
+feed is not whitespace, so the underscore after one is in the last two
+segments of the domain, and that run is not a link:
+
+```````````````````````````````` example
+www.a_b.c and www.ab.c
+.
+Document scope=1:1..1:24 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..1:24 anchor=null attributes={} children=2
+    ├── Text scope=1:1..1:15 anchor=null attributes={} literal="www.a\f_b.c and " children=0
+    └── Link scope=1:16..1:24 anchor=null attributes={} dest=url("http://www.a\fb.c") title=null children=1
+        └── Text scope=1:16..1:24 anchor=null attributes={} literal="www.a\fb.c" children=0
+````````````````````````````````
+
+The domain is read a character at a time, so an underscore in its last two
+segments rejects the run after a non-ASCII character, a non-breaking space
+included, just as after an ASCII letter:
+
+```````````````````````````````` example
+www.例_b.c
+www.a _b.c
+https://例_b.c
+www.例.com
+.
+Document scope=1:1..4:11 anchor=null attributes={} children=1
+└── Paragraph scope=1:1..4:11 anchor=null attributes={} children=7
+    ├── Text scope=1:1..1:11 anchor=null attributes={} literal="www.例_b.c" children=0
+    ├── SoftBreak scope=1:12..1:12 anchor=null attributes={} children=0
+    ├── Text scope=2:1..2:11 anchor=null attributes={} literal="www.a _b.c" children=0
+    ├── SoftBreak scope=2:12..2:12 anchor=null attributes={} children=0
+    ├── Text scope=3:1..3:15 anchor=null attributes={} literal="https://例_b.c" children=0
+    ├── SoftBreak scope=3:16..3:16 anchor=null attributes={} children=0
+    └── Link scope=4:1..4:11 anchor=null attributes={} dest=url("http://www.例.com") title=null children=1
+        └── Text scope=4:1..4:11 anchor=null attributes={} literal="www.例.com" children=0
+````````````````````````````````
+
 ## Embedded dimensions
 
 

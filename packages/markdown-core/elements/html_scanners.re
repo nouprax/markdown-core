@@ -6,14 +6,14 @@
   tagname = [A-Za-z][A-Za-z0-9-]*;
   blocktagname = 'address'|'article'|'aside'|'base'|'basefont'|'blockquote'|'body'|'caption'|'center'|'col'|'colgroup'|'dd'|'details'|'dialog'|'dir'|'div'|'dl'|'dt'|'fieldset'|'figcaption'|'figure'|'footer'|'form'|'frame'|'frameset'|'h1'|'h2'|'h3'|'h4'|'h5'|'h6'|'head'|'header'|'hr'|'html'|'iframe'|'legend'|'li'|'link'|'main'|'menu'|'menuitem'|'nav'|'noframes'|'ol'|'optgroup'|'option'|'p'|'param'|'search'|'section'|'title'|'summary'|'table'|'tbody'|'td'|'tfoot'|'th'|'thead'|'title'|'tr'|'track'|'ul';
   attributename = [a-zA-Z_:][a-zA-Z0-9:._-]*;
-  unquotedvalue = [^ \t\r\n\v\f"'=<>`\x00]+;
+  unquotedvalue = [^ \t\r\n"'=<>`\x00]+;
   singlequotedvalue = ['][^'\x00]*['];
   doublequotedvalue = ["][^"\x00]*["];
   attributevalue = unquotedvalue | singlequotedvalue | doublequotedvalue;
-  attributevaluespec = spacechar* [=] spacechar* attributevalue;
-  attribute = spacechar+ attributename attributevaluespec?;
-  opentag = tagname attribute* spacechar* [/]? [>];
-  closetag = [/] tagname spacechar* [>];
+  attributevaluespec = spnl [=] spnl attributevalue;
+  attribute = spnl1 attributename attributevaluespec?;
+  opentag = tagname attribute* spnl [/]? [>];
+  closetag = [/] tagname spnl [>];
   processinginstruction = ([^?>\x00]+ | [?][^>\x00] | [>])+;
   declaration = [A-Za-z]+ [^>\x00]*;
   cdata = "CDATA[" ([^\]\x00]+ | "]" [^\]\x00] | "]]" [^>\x00])*;
@@ -90,12 +90,12 @@ bufsize_t scan_html_block_start(const unsigned char *data, bufsize_t length, buf
   size_t p = 0, remaining = (size_t)(length - offset);
   size_t marker = 0;
 /*!re2c
-  [<] ('script'|'pre'|'textarea'|'style') (spacechar | [>]) { return 1; }
+  [<] ('script'|'pre'|'textarea'|'style') (space_or_tab | [\r\n>]) { return 1; }
   '<!--' { return 2; }
   '<?' { return 3; }
   '<!' [A-Za-z] { return 4; }
   '<![CDATA[' { return 5; }
-  [<] [/]? blocktagname (spacechar | [/]? [>])  { return 6; }
+  [<] [/]? blocktagname (space_or_tab | [\r\n] | [/]? [>])  { return 6; }
   * { return 0; }
 */
 }
@@ -109,7 +109,7 @@ bufsize_t scan_html_block_start_7(const unsigned char *data, bufsize_t length, b
   size_t p = 0, remaining = (size_t)(length - offset);
   size_t marker = 0;
 /*!re2c
-  [<] (opentag | closetag) [\t\n\f ]* [\r\n] { return 7; }
+  [<] (opentag | closetag) space_or_tab* [\r\n] { return 7; }
   * { return 0; }
 */
 }

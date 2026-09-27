@@ -182,27 +182,43 @@ Document scope=1:1..9:22 anchor=null attributes={} children=1
 ```````````````````````````````` example
 - [?] space
 - [✓]→tab
-- [🚀]vertical
-- [-]form
-- [?] →  mixed
+- [?] →  mixed
 .
-Document scope=1:1..5:16 anchor=null attributes={} children=1
-└── List scope=1:1..5:16 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=5
+Document scope=1:1..3:14 anchor=null attributes={} children=1
+└── List scope=1:1..3:14 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=3
     ├── ListItem scope=1:1..1:11 anchor=null attributes={} marker="?" children=1
     │   └── Paragraph scope=1:7..1:11 anchor=null attributes={} children=1
     │       └── Text scope=1:7..1:11 anchor=null attributes={} literal="space" children=0
     ├── ListItem scope=2:1..2:11 anchor=null attributes={} marker="✓" children=1
     │   └── Paragraph scope=2:9..2:11 anchor=null attributes={} children=1
     │       └── Text scope=2:9..2:11 anchor=null attributes={} literal="tab" children=0
-    ├── ListItem scope=3:1..3:17 anchor=null attributes={} marker="🚀" children=1
-    │   └── Paragraph scope=3:10..3:17 anchor=null attributes={} children=1
-    │       └── Text scope=3:10..3:17 anchor=null attributes={} literal="vertical" children=0
-    ├── ListItem scope=4:1..4:10 anchor=null attributes={} marker="-" children=1
-    │   └── Paragraph scope=4:7..4:10 anchor=null attributes={} children=1
-    │       └── Text scope=4:7..4:10 anchor=null attributes={} literal="form" children=0
-    └── ListItem scope=5:1..5:16 anchor=null attributes={} marker="?" children=1
-        └── Paragraph scope=5:12..5:16 anchor=null attributes={} children=1
-            └── Text scope=5:12..5:16 anchor=null attributes={} literal="mixed" children=0
+    └── ListItem scope=3:1..3:14 anchor=null attributes={} marker="?" children=1
+        └── Paragraph scope=3:10..3:14 anchor=null attributes={} children=1
+            └── Text scope=3:10..3:14 anchor=null attributes={} literal="mixed" children=0
+````````````````````````````````
+
+## Vertical tab and form feed are not separators
+
+```````````````````````````````` example
+- [x]vertical
+- [🚀]vertical
+- [ ]form
+- [?]   mixed
+.
+Document scope=1:1..4:15 anchor=null attributes={} children=1
+└── List scope=1:1..4:15 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=4
+    ├── ListItem scope=1:1..1:14 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=1:3..1:14 anchor=null attributes={} children=1
+    │       └── Text scope=1:3..1:14 anchor=null attributes={} literal="[x]\u000bvertical" children=0
+    ├── ListItem scope=2:1..2:17 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=2:3..2:17 anchor=null attributes={} children=1
+    │       └── Text scope=2:3..2:17 anchor=null attributes={} literal="[🚀]\u000bvertical" children=0
+    ├── ListItem scope=3:1..3:10 anchor=null attributes={} marker=null children=1
+    │   └── Paragraph scope=3:3..3:10 anchor=null attributes={} children=1
+    │       └── Text scope=3:3..3:10 anchor=null attributes={} literal="[ ]\fform" children=0
+    └── ListItem scope=4:1..4:15 anchor=null attributes={} marker="?" children=1
+        └── Paragraph scope=4:7..4:15 anchor=null attributes={} children=1
+            └── Text scope=4:7..4:15 anchor=null attributes={} literal="\u000b\f  mixed" children=0
 ````````````````````````````````
 
 ## Malformed prefixes preserve their text
@@ -349,12 +365,12 @@ Document scope=1:1..12:5 anchor=null attributes={} children=1
 ## Every separator-only opening leaves no paragraph for lazy continuation
 
 ```````````````````````````````` example
-- [?] →
+- [?] → 
 outside
 .
 Document scope=1:1..2:7 anchor=null attributes={} children=2
-├── List scope=1:1..1:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
-│   └── ListItem scope=1:1..1:9 anchor=null attributes={} marker="?" children=0
+├── List scope=1:1..1:8 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+│   └── ListItem scope=1:1..1:8 anchor=null attributes={} marker="?" children=0
 └── Paragraph scope=2:1..2:7 anchor=null attributes={} children=1
     └── Text scope=2:1..2:7 anchor=null attributes={} literal="outside" children=0
 ````````````````````````````````

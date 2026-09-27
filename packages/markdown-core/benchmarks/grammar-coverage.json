@@ -3,7 +3,7 @@
     "contract": "Every syntax feature and registered element has generated grammar-certified inputs; every specification section explicitly names its source-grammar certificates or explains why it introduces no grammar obligation. Parser correctness is owned by parity and regression suites. Whole-language proofs apply only to the declared grammars; local boundaries do not certify their residual host grammar.",
     "guide": {
         "file": "docs/specs/dialect.md",
-        "sha256": "f60a1079196774f5745ce8c6c07892034a5d8a43ace01b0f319366e7d39aca4f"
+        "sha256": "7559b561d1e5fd5ffe32f58b4c5d77d6112ce909debd510b33be6584040a75bd"
     },
     "features": [
         {
@@ -656,7 +656,7 @@
         {
             "feature": "citations",
             "specification": "docs/specs/dialect/citations.md",
-            "sha256": "e980b83fedcdaf30a4f45ad3d42ce0e0f0cd088abe95be9223da146392f18f57",
+            "sha256": "ccd2e72c3d7257581fd5a19de09acb2573ecb326d6b41d3bf8a3b185bcbd1aa6",
             "sections": [
                 {
                     "title": "Citations",
@@ -682,7 +682,7 @@
                     "title": "Citation keys",
                     "line": 41,
                     "level": 2,
-                    "sha256": "a61ee808080d0a959aafb97dd38136b6b6ceaa0460c57b243a62290212213a2a",
+                    "sha256": "54ef1f0c94c778f0fde615b40724b3c084be295f7133fed67577ec8ff288a832",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["cite-normal", "fallback-citation"]
@@ -690,7 +690,7 @@
                 },
                 {
                     "title": "Affixes and tails",
-                    "line": 61,
+                    "line": 62,
                     "level": 2,
                     "sha256": "227b03047c102524122328b79e8bf8508bf87e25b8cdb7f4b86da3d9f0609f59",
                     "disposition": {
@@ -700,7 +700,7 @@
                 },
                 {
                     "title": "Boundaries and fallback",
-                    "line": 83,
+                    "line": 84,
                     "level": 2,
                     "sha256": "6bd0131937fc7429ab8472bf150a538d74da86526c05df2e15c64529b2d2a51f",
                     "disposition": {
@@ -1395,7 +1395,7 @@
         {
             "feature": "emphasis",
             "specification": "docs/specs/dialect/emphasis.md",
-            "sha256": "7813b223fd39daf19895a749368b8e6b29ac46d501cec2be7f58946610c7f61d",
+            "sha256": "59341cef2cc8f33660556450cc3972a10a3e56e92509ef75a09dbecf005ddc53",
             "sections": [
                 {
                     "title": "Emphasis",
@@ -1421,7 +1421,7 @@
                     "title": "Spaces and word boundaries",
                     "line": 29,
                     "level": 2,
-                    "sha256": "0527944be6c5a8038aa4ef23f13d9f45adfebbef6202fc790a192774c8c89098",
+                    "sha256": "5bd2414ca1431e70ccd8d1c59e6af1401b3f2a05a1f28a3d75a5cee1e00a65fb",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["common-emphasis-asterisk", "common-emphasis-underscore"]
@@ -1549,7 +1549,7 @@
         {
             "feature": "formulas",
             "specification": "docs/specs/dialect/formulas.md",
-            "sha256": "95bc23ad5834efc3e4c4288a273e685b6a803cba38edac73a657559f24da3483",
+            "sha256": "59099a6f4bb6e648537eecbe2a54f2b89af9f4eb4457393f5f994277741af7e8",
             "sections": [
                 {
                     "title": "Formulas",
@@ -1575,7 +1575,7 @@
                     "title": "Dollar boundaries",
                     "line": 38,
                     "level": 2,
-                    "sha256": "807cb409ab644a83639cd7c85e2e6f7d20cb5cfdc9ae56565644b43b2bba5aa6",
+                    "sha256": "40c36cac78acbcfd90cdd7a660a875cf5708c07ef4d5c84ca9c27e4d8b49fc19",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["opaque-formula", "opaque-display", "fallback-formula"]
@@ -1585,7 +1585,7 @@
                     "title": "Formula blocks",
                     "line": 57,
                     "level": 2,
-                    "sha256": "556626d935eda32eb29eb4914bb953ef53ca13fcd4dc7b3f74b9b68d77bce6b7",
+                    "sha256": "f0048db1288b6c195bb37b5684eadf94bc3eac87656190e474202c4b47df20f0",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["leaf-formula", "leaf-promotion", "formula-bracket-block"]
@@ -1853,7 +1853,7 @@
         {
             "feature": "insertion",
             "specification": "docs/specs/dialect/insertion.md",
-            "sha256": "92c8e42cb41c514dfa97a4e2a69a17def2e6be0e41f8f72db6301ea46390f13a",
+            "sha256": "f946adc19f8cbe6ca9bcdb3862c14e3671849cb5e70d2948455ee46a3f709d49",
             "sections": [
                 {
                     "title": "Insertions",
@@ -1879,7 +1879,7 @@
                     "title": "Matching rules",
                     "line": 29,
                     "level": 2,
-                    "sha256": "f056a3860172627d8a0311eda8c2b114b327130d933aa22810ab9d36405fc41a",
+                    "sha256": "45426184b4c1243ea9aa017c8bfca85bf92ee99e4ed02236f418851c40ad2938",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["run-insertion", "fallback-insertion"]
@@ -1970,13 +1970,13 @@
         {
             "feature": "links-and-images",
             "specification": "docs/specs/dialect/links-and-images.md",
-            "sha256": "2a3b51d4c5774db87ecf870596eb2191038a7b33c3af392bd3f6b89affadc7aa",
+            "sha256": "52a3a84d7e129ee8f191c28dc252045ee964bfdd15822b5b2879033554a4646b",
             "sections": [
                 {
                     "title": "Links and images",
                     "line": 1,
                     "level": 1,
-                    "sha256": "d1056e515ca5c70a36c3cd7f96d13a87f61616bc4795acc574a73a29fd457296",
+                    "sha256": "ff313b8da5109fc5dd9b69539a3e298e4b89aa54bed653cf7da628ad66bb9893",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["common-link-direct", "common-image"]
@@ -1984,7 +1984,7 @@
                 },
                 {
                     "title": "Reference links",
-                    "line": 21,
+                    "line": 24,
                     "level": 2,
                     "sha256": "4763d68ee6893c17b99d043791f715e5174cbeee412dba3f3834e838a67b0839",
                     "disposition": {
@@ -2000,9 +2000,9 @@
                 },
                 {
                     "title": "Automatic links",
-                    "line": 41,
+                    "line": 44,
                     "level": 2,
-                    "sha256": "82d83587b529f4a38c4030f9ddccca45c2508adcfc8ed737555118adfece8456",
+                    "sha256": "d59eb6198c16cc12f2b8864cd7f571759fa1f0d9343d4d672476d3e2edb3d33a",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["common-angle-autolink", "gfm-bare-autolink"]
@@ -2010,7 +2010,7 @@
                 },
                 {
                     "title": "Images",
-                    "line": 63,
+                    "line": 67,
                     "level": 2,
                     "sha256": "f9623a4e7f25415d66a333eaefb375b84f6aaac17a43c65824d0b4b5979d7479",
                     "disposition": {
@@ -2020,7 +2020,7 @@
                 },
                 {
                     "title": "Image dimensions",
-                    "line": 80,
+                    "line": 84,
                     "level": 2,
                     "sha256": "9cb0c1985b899643145d48bba0f04522fc98563589be9b4fc22178306a37d55a",
                     "disposition": {
@@ -2030,7 +2030,7 @@
                 },
                 {
                     "title": "Attributes",
-                    "line": 102,
+                    "line": 106,
                     "level": 2,
                     "sha256": "ba141aee0d55e7ad85605d9104a1ee8d5b10c1cab5951abec9244ccbe7e1af38",
                     "disposition": {
@@ -2040,7 +2040,7 @@
                 },
                 {
                     "title": "Bracket precedence",
-                    "line": 118,
+                    "line": 122,
                     "level": 2,
                     "sha256": "a46dc676a5297e220204661ee1d6883e2539e6cc110b6c59ec4dcff0e9749a44",
                     "disposition": {
@@ -2271,7 +2271,7 @@
         {
             "feature": "marks",
             "specification": "docs/specs/dialect/marks.md",
-            "sha256": "a9eb223caf73c191466d118db5280e70d2e2f43c226faa3c69d1d66d0c595a4d",
+            "sha256": "ff58f6a10e36894c6649b2c33438e09d466beb48945fdb91435292e9e72c1da6",
             "sections": [
                 {
                     "title": "Highlights",
@@ -2287,7 +2287,7 @@
                     "title": "Format highlighted text",
                     "line": 14,
                     "level": 2,
-                    "sha256": "f15c0f6200e8f46c2311bd3e3706e64422205e1683a1aacf50215b85b5250573",
+                    "sha256": "d5d3940899fe84615f495a6363f98ce4bf397305034c2ecb7b70b1c734752cd4",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["mark-formatting"]
@@ -2295,7 +2295,7 @@
                 },
                 {
                     "title": "When signs stay literal",
-                    "line": 41,
+                    "line": 42,
                     "level": 2,
                     "sha256": "e26774f78dd48fca1b1432b2235056c2ba4f7c302c3f7d37a1c529878ab6dd34",
                     "disposition": {
@@ -2487,7 +2487,7 @@
         {
             "feature": "strikethrough",
             "specification": "docs/specs/dialect/strikethrough.md",
-            "sha256": "623cfa5f99adee5d8583a67754a201541a79fbc66e5eae2d28f9f768ad74691d",
+            "sha256": "60b4b63388d5eac47c4765e3d5fb73dccd6f35698039d5abc3b115cc89115a03",
             "sections": [
                 {
                     "title": "Strikethrough",
@@ -2503,7 +2503,7 @@
                     "title": "Combine formatting",
                     "line": 15,
                     "level": 2,
-                    "sha256": "8a2f0c2c7aa88213da70b055b6acfdbb39f9180923b6e16e1a2bc70f46970b96",
+                    "sha256": "12e56c62bc3decce2a0becb8dc95d9c8ef20128b5f9716f08a6824565f8b830f",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["gfm-strike"]
@@ -2545,7 +2545,7 @@
         {
             "feature": "superscript-and-subscript",
             "specification": "docs/specs/dialect/superscript-and-subscript.md",
-            "sha256": "48af27d6c7379d3b94e0022304e21f85dc2c14b6343832cabf0ced2bb49e94fd",
+            "sha256": "4d372e63cc105daa43601bc6b1f2f9dd4486355a2ed6de0a54403549d080bd70",
             "sections": [
                 {
                     "title": "Superscript and subscript",
@@ -2561,7 +2561,7 @@
                     "title": "Include formatting or spaces",
                     "line": 14,
                     "level": 2,
-                    "sha256": "0bded6d26eb29414cf6f37f10f7611736a55c1dd79515d198b6de34f7b052a5f",
+                    "sha256": "55acac381a13746f685ea12a0d301749d5aef926931f9bcb50914ebeca67308d",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["script-formatting", "script-escaped-space"]
@@ -2569,7 +2569,7 @@
                 },
                 {
                     "title": "Delimiter boundaries",
-                    "line": 33,
+                    "line": 34,
                     "level": 2,
                     "sha256": "2ffa1ec68d69cabd66b09101f5f5d30b4e52af9ff9a0133bc157292029f489f6",
                     "disposition": {
@@ -2830,7 +2830,7 @@
         {
             "feature": "task-lists",
             "specification": "docs/specs/dialect/task-lists.md",
-            "sha256": "9c060f32bad88341a5398efda5c1724cecf06eaf1f366945f867c277df49d02e",
+            "sha256": "5a83f0898937ab47cb79fb4e39a64f83d5b91da8ca5b18b0728bb777e5dd5417",
             "sections": [
                 {
                     "title": "Task lists",
@@ -2856,7 +2856,7 @@
                     "title": "Required separator",
                     "line": 31,
                     "level": 2,
-                    "sha256": "71666d40e433ea8b403318f954530d67d66e6fc7741540d49b6a105eec3b56f4",
+                    "sha256": "bb35ff1477455d73b45630cf8d6ec64cd18ba9a267f526d5f05638e68d678422",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["fallback-task-separator", "task-heading"]

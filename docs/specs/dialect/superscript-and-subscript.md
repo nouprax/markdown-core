@@ -13,8 +13,9 @@ The numbers are text, not values calculated by the parser.
 
 ## Include formatting or spaces
 
-The body supports inline formatting, but raw whitespace invalidates a script
-pair. Escape an ASCII space when the intended script contains multiple words:
+The body supports inline formatting, but a raw space, tab, or line ending
+invalidates a script pair. Other space characters, such as a non-breaking space,
+do not. Escape an ASCII space when the intended script contains multiple words:
 
 ```markdown
 x^a\ b^ and y~*small*~

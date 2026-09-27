@@ -394,8 +394,7 @@ void markdown_core_heading_begin_inlines(markdown_core_parser *parser, markdown_
         }
         if (inline_state->heading_attributes_start >= 0) {
             bufsize_t end = inline_state->heading_attributes_start;
-            while (end > line &&
-                   (inline_state->input.data[end - 1] == ' ' || inline_state->input.data[end - 1] == '\t')) {
+            while (end > line && markdown_core_is_space_or_tab(inline_state->input.data[end - 1])) {
                 end--;
             }
             if (!parent->as.heading->setext) {
@@ -403,11 +402,10 @@ void markdown_core_heading_begin_inlines(markdown_core_parser *parser, markdown_
                 while (hashes > line && inline_state->input.data[hashes - 1] == '#') {
                     hashes--;
                 }
-                if (hashes < end && (hashes == line || (inline_state->input.data[hashes - 1] == ' ' ||
-                                                        inline_state->input.data[hashes - 1] == '\t'))) {
+                if (hashes < end &&
+                    (hashes == line || markdown_core_is_space_or_tab(inline_state->input.data[hashes - 1]))) {
                     end = hashes;
-                    while (end > line &&
-                           (inline_state->input.data[end - 1] == ' ' || inline_state->input.data[end - 1] == '\t')) {
+                    while (end > line && markdown_core_is_space_or_tab(inline_state->input.data[end - 1])) {
                         end--;
                     }
                 }
@@ -418,8 +416,8 @@ void markdown_core_heading_begin_inlines(markdown_core_parser *parser, markdown_
             while (hashes > 0 && inline_state->input.data[hashes - 1] == '#') {
                 hashes--;
             }
-            if (hashes < inline_state->input.len && (hashes == 0 || (inline_state->input.data[hashes - 1] == ' ' ||
-                                                                     inline_state->input.data[hashes - 1] == '\t'))) {
+            if (hashes < inline_state->input.len &&
+                (hashes == 0 || markdown_core_is_space_or_tab(inline_state->input.data[hashes - 1]))) {
                 inline_state->input.len = hashes;
                 markdown_core_chunk_rtrim(&inline_state->input);
             }

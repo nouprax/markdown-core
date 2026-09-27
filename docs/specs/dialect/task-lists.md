@@ -30,8 +30,8 @@ even when they appear as one displayed character.
 
 ## Required separator
 
-A space, tab, vertical tab, or form feed must follow `]`. A line ending is not
-a separator. These are ordinary list-item text, not tasks:
+A space or tab must follow `]`; vertical tab, form feed, and a line ending are
+not separators. These are ordinary list-item text, not tasks:
 
 ```markdown
 - [x]

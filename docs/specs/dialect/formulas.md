@@ -39,7 +39,7 @@ retained.
 
 A single-dollar opener must be followed by a non-whitespace character; its
 closer must be preceded by non-whitespace and must not be followed by an ASCII
-digit. Dollar checks use ASCII whitespace. `$$` is tried before `$`.
+digit. A non-breaking space is not whitespace here. `$$` is tried before `$`.
 
 ```markdown
 Prices are $5 and $10.
@@ -65,7 +65,7 @@ $$
 ```
 
 This produces a `FormulaBlock` with literal `x^2 + y^2 = z^2`. Block bodies
-lose leading and trailing ASCII whitespace and retain their interior bytes.
+lose leading and trailing whitespace and retain their interior bytes.
 The `\\[` and `\\]` lines provide the other block form.
 
 Delimiters allow zero to three leading spaces after enclosing container

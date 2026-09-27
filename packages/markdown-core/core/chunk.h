@@ -78,7 +78,7 @@ static MARKDOWN_CORE_INLINE void markdown_core_optional_chunk_free(markdown_core
 static MARKDOWN_CORE_INLINE void markdown_core_chunk_ltrim(markdown_core_chunk *c) {
     assert(!c->alloc);
 
-    while (c->len && markdown_core_isspace(c->data[0])) {
+    while (c->len && markdown_core_is_whitespace(c->data[0])) {
         c->data++;
         c->len--;
     }
@@ -88,7 +88,7 @@ static MARKDOWN_CORE_INLINE void markdown_core_chunk_rtrim(markdown_core_chunk *
     assert(!c->alloc);
 
     while (c->len > 0) {
-        if (!markdown_core_isspace(c->data[c->len - 1])) {
+        if (!markdown_core_is_whitespace(c->data[c->len - 1])) {
             break;
         }
 

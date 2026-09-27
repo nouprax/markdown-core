@@ -14,8 +14,8 @@ explanation: registration must not conceal missing functionality.
 
 See [corpus.json](corpus.json) for original inputs and reader configurations,
 and [deltas.json](deltas.json) for exact result digests and explanations.
-The original audit numbering is retained below. Item 21 has been fixed and
-removed from the registry. The historical `projection` label does not mean that
+The original audit numbering is retained below. Items 8 and 21 have been fixed
+and removed from the registry. The historical `projection` label does not mean that
 every entry is merely an AST representation difference.
 
 The empty superscript, author-tail citation grouping, and malformed-group
@@ -34,7 +34,7 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | 5 | `grid-table-row-and-column-spans`: widths of tables with spans | The same width difference remains. Row/column-span geometry and cell content agree; rowspan/colspan support is not missing. |
 | 6 | `example-lists-and-reference`: specimen definitions and references | Core stores Specimen definitions in source order on the document and preserves exact reference IDs. Pandoc emits numbered example Lists and replaces references with number text. Core delegates numbering to consumers. |
 | 7 | `p6-escaped-space`: escaped spaces in scripts | For `^a\ b^` and `~*c\ d*~`, Core produces scripts and decodes their escaped spaces to NBSP; this Pandoc reader does not produce scripts. Core preserves the original backslash and whitespace outside scripts or when a candidate fails, without global replacement. |
-| 8 | `p6-whitespace-recovery`: Unicode whitespace in scripts | Core treats all raw Unicode White_Space as script-pairing boundaries. Pandoc accepts `^a b^` containing U+2003 EM SPACE; Core retains it as text. Both sides agree on recovery after the earlier ASCII-space failure in this case. |
+| 8 | `p6-whitespace-recovery`: Unicode whitespace in scripts | **Fixed and removed from the registry.** Only a raw space, tab or line ending ends a script candidate, as in Pandoc's reader, so `^a b^` containing U+2003 EM SPACE is a superscript on both sides. Both sides also agree on recovery after the earlier ASCII-space failure in this case. |
 | 9 | `p6-entity-space`: entity-decoded whitespace | In `~a&Tab;b~`, Core preserves the decoded TAB, while Pandoc normalizes it to a space. Entity-decoded whitespace is distinct from a raw source whitespace boundary. |
 | 10 | `p6-pairing-and-tilde-runs`: empty pairs and tilde runs | `^^` now agrees. Core preserves `^^^^` as two empty Superscript nodes with independent scopes; Pandoc merges adjacent nodes of the same kind. Core retains runs of three or more tildes and unmatched double tildes as text. Pandoc can produce empty subscripts and parse `~~~c~~~` as subscript `c`. |
 | 11 | `p6-opaque-tokens`: code spans within scripts | For an outer script candidate containing code `x y`, Core recognizes the complete code span first, so its internal space does not interrupt the outer script. Pandoc does not recognize that outer script. Both preserve `^` and `~` inside standalone code as code text. |
@@ -62,6 +62,7 @@ requires distinguishing reader configuration from failed-candidate fallback.
 | 33 | `p10-padding-and-tabs`: compactness of code definition bodies | The same AST-information difference as item 32, with a CodeBlock as the first body. This is not a TAB or code-content parsing error; Pandoc does not retain the corresponding compact flag. |
 | 34 | `p10-empty-bodies`: compactness of empty definition bodies | The same AST-information difference as item 32, with an empty first body. The empty body and subsequent bodies are preserved and compared. Only Core's explicitly retained compactness information differs. |
 | 35 | `attribute-class-html-whitespace`: separators in a `class=` value | Core splits a `class=` value where HTML splits a `class` attribute: at tab, LF, form feed, CR and space. The case writes `a`, a space, `b`, NBSP, `c`, IDEOGRAPHIC SPACE, `d`, `&#11;` and `e`. Core has two classes: `a`, and one holding everything after the space. Pandoc splits at every Unicode space, the referenced vertical tab included, and has the five classes `a` to `e`. |
+| 36 | `p7-braced-key-whitespace`: whitespace in a braced citation key | A braced key excludes whitespace, which is a space, a tab or a line ending, so Core keys `@{a b}`, written with NBSP, as `a b`, and `[@{c　d}, p. 1]`, written with IDEOGRAPHIC SPACE, as `c　d`. Pandoc excludes every Unicode space and keeps both as text. Both reject the ASCII space in `@{a b}`. |
 
 The clearest repeated relationships are:
 

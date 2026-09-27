@@ -12,7 +12,7 @@ static bool S_scan_block_identifier(markdown_core_parser *parser, const unsigned
         parser->block_identifier_work++;
         end--;
     }
-    while (end && markdown_core_block_is_space_or_tab(data[end - 1])) {
+    while (end && markdown_core_is_space_or_tab(data[end - 1])) {
         parser->block_identifier_work++;
         end--;
     }
@@ -34,7 +34,7 @@ static bool S_scan_block_identifier(markdown_core_parser *parser, const unsigned
     }
     candidate->identifier = (markdown_core_chunk){(unsigned char *)data + start, end - start - 1, 0};
     bufsize_t cut = start - 1;
-    while (cut && markdown_core_block_is_space_or_tab(data[cut - 1])) {
+    while (cut && markdown_core_is_space_or_tab(data[cut - 1])) {
         parser->block_identifier_work++;
         cut--;
     }

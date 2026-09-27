@@ -31,8 +31,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, markdo
          * begins after its own backslash and ends before the next token. */
         bufsize_t end = inline_state->pos;
         while (end < inline_state->input.len &&
-               !markdown_core_is_line_end(markdown_core_inline_peek_at(inline_state, end)) &&
-               markdown_core_isspace(markdown_core_inline_peek_at(inline_state, end))) {
+               markdown_core_is_space_or_tab(markdown_core_inline_peek_at(inline_state, end))) {
             end++;
             parser->whitespace_work++;
         }
@@ -156,56 +155,17 @@ markdown_core_node *markdown_core_text_parse(markdown_core_parser *parser, markd
      * `markdown_core_inline_push_boundary` OVERWRITES when the last delimiter
      * is already a boundary (core/inlines.c), and nothing else is pushed while
      * this runs -- so a pass that pushes on every space leaves exactly one
-     * entry behind, at the position just past the LAST whitespace character in
-     * [pos, endpos). Decoding every byte to find it walks the whole slice for
-     * an answer that depends only on the slice's tail.
-     *
-     * Valid UTF-8 is a caller precondition (markdown_core.h), so the encoding
-     * is self-synchronising here: stepping back over continuation bytes
-     * (0x80-0xBF) lands on the lead byte of the preceding character, and that
-     * is the same segmentation the forward pass builds from `pos`. Walking
-     * back therefore visits the slice's characters in reverse and stops at the
-     * last whitespace, which is the answer.
-     *
-     * The DECODER is entered only where the character could be whitespace at
-     * all. Every non-ASCII member of the set `markdown_core_utf8proc_is_space`
-     * matches -- U+00A0, U+1680, U+2000-200A, U+202F, U+205F, U+3000 -- leads
-     * with 0xC2, 0xE1, 0xE2 or 0xE3, which the generator of its Unicode table
-     * (scripts/tooling/generate-unicode-categories.mjs) asserts. CJK starts at
-     * 0xE4 and the astral planes at 0xF0, so those are walked back on byte
-     * tests alone.
-     *
-     * The `lead > pos` bound keeps a malformed run of continuation bytes in
-     * range. What such input PARSES to is not defined -- the header says Markdown
-     * Core neither validates nor repairs -- but it must still not read out of
-     * the slice. */
+     * entry behind, at the position just past the LAST whitespace byte in
+     * [pos, endpos). Whitespace is a space, a tab or a line ending, all of
+     * them ASCII, so the walk back from `endpos` tests bytes and decodes
+     * nothing: no byte of a multi-byte character is whitespace. */
     bufsize_t boundary = -1;
-    for (bufsize_t i = endpos; i > inline_state->pos;) {
-        unsigned char byte = inline_state->input.data[i - 1];
+    for (bufsize_t i = endpos; i > inline_state->pos; i--) {
         parser->whitespace_work++;
-        if (byte < 0x80) {
-            /* The ASCII members of that same set; the rest are above 128. */
-            if (byte == 9 || byte == 10 || byte == 12 || byte == 13 || byte == 32) {
-                boundary = i;
-                break;
-            }
-            i--;
-            continue;
+        if (markdown_core_is_whitespace(inline_state->input.data[i - 1])) {
+            boundary = i;
+            break;
         }
-        bufsize_t lead = i - 1;
-        while (lead > inline_state->pos && (inline_state->input.data[lead] & 0xC0) == 0x80) {
-            lead--;
-        }
-        unsigned char first = inline_state->input.data[lead];
-        if (first == 0xC2 || (first >= 0xE1 && first <= 0xE3)) {
-            int32_t scalar = 0;
-            int width = markdown_core_utf8proc_step(inline_state->input.data + lead, endpos - lead, &scalar);
-            if (markdown_core_utf8proc_is_space(scalar)) {
-                boundary = lead + width;
-                break;
-            }
-        }
-        i = lead;
     }
     if (boundary >= 0) {
         markdown_core_inline_push_boundary(inline_state, boundary);

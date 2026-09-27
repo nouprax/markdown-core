@@ -74,15 +74,6 @@
             "coreDigest": "59eed74fc828cc575d90c963da225666b7149252edeec37ede516213d9b030fc"
         },
         {
-            "id": "p6-whitespace-recovery",
-            "item": "P6",
-            "status": "projection",
-            "reason": "Every raw Unicode whitespace scalar invalidates unmatched script openers. A subsequent delimiter can open a new candidate immediately.",
-            "inputDigest": "f6815ecc7c11d067190bce97b4ef104e1fef92c4f33cb6dd8ecd1b99dc29556e",
-            "oracleDigest": "beede7e0311744ab14f4fd393cc37ee907497d45dd270a522df0facc38fb12c0",
-            "coreDigest": "c595c1a5889ceab289562c4277eeb63efe33f5a16f28ca7598bc332f0d636f7d"
-        },
-        {
             "id": "p6-entity-space",
             "item": "P6",
             "status": "projection",
@@ -252,6 +243,15 @@
             "inputDigest": "12863bd84b31e5855f95af8b61d6a2a42a5ce1fe352286e00a0a39e9fa4f1d70",
             "oracleDigest": "15557628361006194ce2c3f1eee766882aad365f9374d554fb498d9cabc9e11f",
             "coreDigest": "fb71d0b2075b7aa441b48b66f787868b313cc702e2b2bd566787abf41bd73c80"
+        },
+        {
+            "id": "p7-braced-key-whitespace",
+            "item": "P7",
+            "status": "projection",
+            "reason": "A braced key excludes whitespace, which is a space, a tab or a line ending (docs/specs/dialect.md), so NBSP and IDEOGRAPHIC SPACE are key characters. Pandoc's reader excludes every Unicode space and keeps both candidates as text. Both reject the ASCII space.",
+            "inputDigest": "84426ad536e470171f403ac05d280ab5b5f832c0500c19ab355e3bb92cd660df",
+            "oracleDigest": "8003fdbba24b17abed40538658ad92352c780456f1a9c780cc21c50c3ac190e1",
+            "coreDigest": "8ab8022a3ea6184343f115004231040023d329152a8d89d5855b609932a0c6cd"
         },
         {
             "id": "p9a-start-always-authored",

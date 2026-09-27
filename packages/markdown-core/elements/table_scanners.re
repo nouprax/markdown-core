@@ -5,7 +5,7 @@
 /*!re2c re2c:indent:string = "  "; */
 
 /*!re2c
-  table_marker = (horizontal_space*[:]?[-]+[:]?horizontal_space*);
+  table_marker = (space_or_tab*[:]?[-]+[:]?space_or_tab*);
   table_cell = (escaped_char|[^|\r\n\000])+;
 */
 
@@ -19,7 +19,7 @@ bufsize_t scan_table_start(const unsigned char *data, bufsize_t length, bufsize_
   size_t marker = 0;
   size_t start = p;
 /*!re2c
-    [|]? table_marker ([|] table_marker)* [|]? horizontal_space* newline {
+    [|]? table_marker ([|] table_marker)* [|]? space_or_tab* newline {
       return (bufsize_t)(p - start);
     }
     * { return 0; }
@@ -53,7 +53,7 @@ bufsize_t scan_table_cell_end(const unsigned char *data, bufsize_t length, bufsi
   size_t p = 0, remaining = (size_t)(length - offset);
   size_t start = p;
 /*!re2c
-    [|] horizontal_space* { return (bufsize_t)(p - start); }
+    [|] space_or_tab* { return (bufsize_t)(p - start); }
     * { return 0; }
   */
 }
@@ -68,7 +68,7 @@ bufsize_t scan_table_row_end(const unsigned char *data, bufsize_t length, bufsiz
   size_t marker = 0;
   size_t start = p;
 /*!re2c
-    horizontal_space* newline { return (bufsize_t)(p - start); }
+    space_or_tab* newline { return (bufsize_t)(p - start); }
     * { return 0; }
   */
 }
@@ -81,7 +81,7 @@ int scan_table_dash(const unsigned char **cursor, const unsigned char *limit,
     for (;;) {
         size_t start = p;
 /*!re2c
-            [ \t]+ { continue; }
+            space_or_tab+ { continue; }
             [-]+ { *from = input + start; *cursor = input + p; return 1; }
             [\x00] { *cursor = input + (p < remaining ? p : remaining); return start == remaining ? 0 : -1; }
             * { *cursor = input + p; return -1; }

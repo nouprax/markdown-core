@@ -175,8 +175,7 @@ int markdown_core_inline_is_eof(markdown_core_inline_state *inline_state) {
 
 bool markdown_core_inline_skip_spaces(markdown_core_inline_state *inline_state) {
     bool skipped = false;
-    while (markdown_core_inline_peek_char(inline_state) == ' ' ||
-           markdown_core_inline_peek_char(inline_state) == '\t') {
+    while (markdown_core_is_space_or_tab(markdown_core_inline_peek_char(inline_state))) {
         advance(inline_state);
         skipped = true;
     }
@@ -268,8 +267,8 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
     }
     const uint8_t before = markdown_core_utf8proc_classes(before_char);
     const uint8_t after = markdown_core_utf8proc_classes(after_char);
-    const bool space_before = before & MARKDOWN_CORE_UNICODE_SPACE;
-    const bool space_after = after & MARKDOWN_CORE_UNICODE_SPACE;
+    const bool space_before = before & MARKDOWN_CORE_UNICODE_WHITESPACE;
+    const bool space_after = after & MARKDOWN_CORE_UNICODE_WHITESPACE;
     const bool punct_before = before & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL;
     const bool punct_after = after & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL;
     bool left_flanking = !space_after && (!punct_after || space_before || punct_before);
@@ -816,7 +815,7 @@ append:
     while (endpos > token_start) {
         unsigned char byte = inline_state->input.data[--endpos];
         parser->footnote_body_work++;
-        if (byte != ' ' && byte != '\t') {
+        if (!markdown_core_is_space_or_tab(byte)) {
             inline_state->nonblank_end = endpos + 1;
             break;
         }
@@ -1035,8 +1034,8 @@ int markdown_core_inline_state_scan_delimiters(markdown_core_inline_state *inlin
     const uint8_t after = markdown_core_utf8proc_classes(after_char);
     *punct_before = (before & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL) != 0;
     *punct_after = (after & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL) != 0;
-    space_before = before & MARKDOWN_CORE_UNICODE_SPACE;
-    space_after = after & MARKDOWN_CORE_UNICODE_SPACE;
+    space_before = before & MARKDOWN_CORE_UNICODE_WHITESPACE;
+    space_after = after & MARKDOWN_CORE_UNICODE_WHITESPACE;
 
     *left_flanking = numdelims > 0 && !space_after && !(*punct_after && !space_before && !*punct_before);
     *right_flanking = numdelims > 0 && !space_before && !(*punct_before && !space_after && !*punct_after);

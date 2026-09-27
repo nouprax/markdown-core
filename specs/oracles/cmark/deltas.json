@@ -58,6 +58,13 @@
             "kind": "deliberate-difference",
             "summary": "A newly opened ordered list inside a list item or specimen body must start at one under the lists module. CommonMark permits a nested list to start at two.",
             "handling": "The inherited same-line nested-marker witness remains exact; rejected markers stay ordinary paragraph content."
+        },
+        {
+            "id": "spec-text-whitespace",
+            "kind": "deliberate-difference",
+            "summary": "Where cmark 0.31.2 departs from the text of its own specification about whitespace and control characters, Markdown Core follows the text. cmark treats vertical tab and form feed as whitespace (055b9ea follows the 0.29 definition, which 0.30 removed), lets ASCII control characters into an unbracketed link destination and DEL into an absolute URI, trims a pointy destination, lets a backslash escape a line ending in one, and decodes an info string's references before trimming it.",
+            "rationale": "The pinned specification names spaces, tabs and up to one line ending as separators, excludes ASCII control characters (U+0000 to U+001F and U+007F) from unbracketed destinations and absolute URIs, keeps a pointy destination's contents, and trims the info string as written. micromark, an independent implementation, agrees with the text on every registered input.",
+            "handling": "Keyed to the exact inputs of the regression fixture's whitespace section; docs/specs/dialect.md names the whitespace classes."
         }
     ],
     "expectedDivergences": [
@@ -165,6 +172,66 @@
             "id": "nested-ordered-start",
             "input": "1. - 2. foo\n",
             "note": "P9a, docs/specs/dialect/lists.md: new nested ordered lists start at one."
+        },
+        {
+            "id": "spec-text-whitespace",
+            "input": "[a](\n\u000b\n/u)\n",
+            "note": "a vertical tab between two line endings: cmark reads a link."
+        },
+        {
+            "id": "spec-text-whitespace",
+            "input": "[a](< u >)\n",
+            "note": "cmark trims the pointy destination to `u`; the text keeps ` u `."
+        },
+        {
+            "id": "spec-text-whitespace",
+            "input": "[a](/u\u0001x)\n",
+            "note": "cmark admits U+0001 into the destination."
+        },
+        {
+            "id": "spec-text-whitespace",
+            "input": "[a](/ux)\n",
+            "note": "cmark admits DEL into the destination."
+        },
+        {
+            "id": "spec-text-whitespace",
+            "input": "[a](<b\\\nc>)\n",
+            "note": "cmark lets the backslash escape the line ending inside the pointy destination."
+        },
+        {
+            "id": "spec-text-whitespace",
+            "input": "[a\u000bb]\n\n[a b]: /u\n",
+            "note": "cmark collapses the vertical tab into the label's whitespace and resolves it."
+        },
+        {
+            "id": "spec-text-whitespace",
+            "input": "-\u000bitem\n",
+            "note": "cmark accepts the vertical tab after the list marker."
+        },
+        {
+            "id": "spec-text-whitespace",
+            "input": "<span\u000bclass=\"x\">\n\na <span\u000bclass=\"x\"> b\n",
+            "note": "cmark separates the attribute with a vertical tab."
+        },
+        {
+            "id": "spec-text-whitespace",
+            "input": "<pre\u000bx>\nfoo\n\n<div\fx>\nfoo\n",
+            "note": "cmark ends the tag name at a vertical tab or form feed and opens HTML blocks."
+        },
+        {
+            "id": "spec-text-whitespace",
+            "input": "<a>\f\nfoo\n",
+            "note": "cmark accepts a form feed after a type-7 tag."
+        },
+        {
+            "id": "spec-text-whitespace",
+            "input": "<ab:cd>\n",
+            "note": "cmark admits DEL into the absolute URI."
+        },
+        {
+            "id": "spec-text-whitespace",
+            "input": "```&#32;js\ncode\n```\n",
+            "note": "cmark decodes `&#32;` before trimming, so its info string is `js`; the text trims first and keeps ` js`."
         }
     ],
     "notDeltas": [],

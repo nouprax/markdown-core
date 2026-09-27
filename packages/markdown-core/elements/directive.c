@@ -51,49 +51,22 @@ static node_directive *get_directive(markdown_core_node *node) {
     return (node_directive *)node->opaque;
 }
 
-static int ascii_is_line_space(unsigned char c) { return c == ' ' || c == '\t'; }
-
-static int is_line_end(const unsigned char *data, bufsize_t len, bufsize_t pos) {
-    return pos >= len || data[pos] == '\n' || data[pos] == '\r';
-}
-
-static int has_only_spaces_until_line_end(const unsigned char *data, bufsize_t len, bufsize_t pos) {
-    while (pos < len && ascii_is_line_space(data[pos])) {
-        pos++;
-    }
-
-    return is_line_end(data, len, pos);
-}
-
 /* A NAME IS A STRING WITHOUT SPACES, as the generic-directive proposal puts
- * it. Any byte that is not ASCII whitespace continues it, up to the `[` or
- * `{` that opens the label or the attributes and the `:` that would make a
- * block fence's colon count ambiguous. Nothing is classified by Unicode
- * category: `:中文[中文]` names `中文`, `:1a[x]` names `1a`, and a name is
- * found by one byte test per byte. What makes `12:30` text is not the `3`
- * but the absence of a bracket part, which is where the inline form is
- * anchored (see match_colon_directive). */
-static int name_byte(unsigned char c) {
-    switch (c) {
-    case ' ':
-    case '\t':
-    case '\n':
-    case '\r':
-    case '[':
-    case '{':
-    case ':':
-        return 0;
-    default:
-        return 1;
-    }
-}
+ * it. Any byte that is not whitespace (a space, tab or line ending)
+ * continues it, up to the `[` or `{` that opens the label or the attributes
+ * and the `:` that would make a block fence's colon count ambiguous. Nothing
+ * is classified by Unicode category: `:中文[中文]` names `中文`, `:1a[x]`
+ * names `1a`, and a name is found by one table test per byte. What makes
+ * `12:30` text is not the `3` but the absence of a bracket part, which is
+ * where the inline form is anchored (see match_colon_directive). */
+enum { NAME_END = 1 };
+static const uint8_t NAME_BYTES[256] = {MARKDOWN_CORE_WHITESPACE_BYTES(NAME_END), ['['] = NAME_END, ['{'] = NAME_END,
+                                        [':'] = NAME_END};
 
 static int scan_name(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *name_start,
                      bufsize_t *name_len) {
     bufsize_t start = pos;
-    while (pos < len && name_byte(data[pos])) {
-        pos++;
-    }
+    pos = markdown_core_scan_to_class(NAME_BYTES, NAME_END, data, pos, len);
     if (pos == start) {
         return 0;
     }
@@ -544,7 +517,7 @@ static bufsize_t count_colons(const unsigned char *data, bufsize_t len, bufsize_
  * the opener's attribute spelling differs; a class word is one literal class. */
 static int parse_nameless_suffix(markdown_core_parser *parser, unsigned char *data, bufsize_t len, bufsize_t pos,
                                  parsed_directive *parsed) {
-    while (pos < len && ascii_is_line_space(data[pos])) {
+    while (pos < len && markdown_core_is_space_or_tab(data[pos])) {
         pos++;
     }
     if (pos < len && data[pos] == '{') {
@@ -553,8 +526,8 @@ static int parse_nameless_suffix(markdown_core_parser *parser, unsigned char *da
         }
     } else {
         bufsize_t start = pos;
-        while (pos < len && !ascii_is_line_space(data[pos]) && !is_line_end(data, len, pos) && data[pos] != ':' &&
-               data[pos] != '{' && data[pos] != '}') {
+        while (pos < len && !markdown_core_is_whitespace(data[pos]) && data[pos] != ':' && data[pos] != '{' &&
+               data[pos] != '}') {
             pos++;
         }
         if (pos == start) {
@@ -563,7 +536,7 @@ static int parse_nameless_suffix(markdown_core_parser *parser, unsigned char *da
         parsed->attributes_start = start;
         parsed->attributes_len = pos - start;
     }
-    while (pos < len && ascii_is_line_space(data[pos])) {
+    while (pos < len && markdown_core_is_space_or_tab(data[pos])) {
         pos++;
     }
     pos += count_colons(data, len, pos);
@@ -583,10 +556,11 @@ static bufsize_t scan_directive_block(markdown_core_parser *parser, unsigned cha
     }
 
     bufsize_t suffix = first + colon_count;
-    bool nameless = colon_count >= 3 && suffix < len && (ascii_is_line_space(input[suffix]) || input[suffix] == '{');
+    bool nameless =
+        colon_count >= 3 && suffix < len && (markdown_core_is_space_or_tab(input[suffix]) || input[suffix] == '{');
     int matched = nameless ? parse_nameless_suffix(parser, input, len, suffix, parsed)
                            : parse_directive_suffix(parser, input, len, suffix, parsed);
-    return matched && has_only_spaces_until_line_end(input, len, parsed->end) ? colon_count : 0;
+    return matched && markdown_core_is_blank_to_line_end(input, parsed->end, len) ? colon_count : 0;
 }
 
 static void free_parsed_directive(markdown_core_parser *parser, parsed_directive *parsed) {
@@ -653,7 +627,7 @@ static int directive_closer_line(const node_directive *directive, markdown_core_
     bufsize_t colon_count = count_colons(input, (bufsize_t)len, first_nonspace);
 
     return markdown_core_parser_get_indent(parser) <= 3 && colon_count >= (bufsize_t)directive->fence_length &&
-           has_only_spaces_until_line_end(input, (bufsize_t)len, first_nonspace + colon_count);
+           markdown_core_is_blank_to_line_end(input, first_nonspace + colon_count, (bufsize_t)len);
 }
 
 static int directive_block_continues(const markdown_core_element *element, markdown_core_parser *parser,

@@ -14,7 +14,7 @@ bool markdown_core_block_parse_callout_prefix(markdown_core_parser *parser, mark
 
         markdown_core_block_advance_offset(parser, input, parser->indent + 1, true);
 
-        if (markdown_core_block_is_space_or_tab(BLOCK_PEEK(input, parser->offset))) {
+        if (markdown_core_is_space_or_tab(BLOCK_PEEK(input, parser->offset))) {
             markdown_core_block_advance_offset(parser, input, 1, true);
         }
 
@@ -54,17 +54,15 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *par
     bool has_fold = pos < input->len && (input->data[pos] == '+' || input->data[pos] == '-');
     bool collapsed = has_fold && input->data[pos] == '-';
     pos += has_fold;
-    if (pos < input->len && !markdown_core_block_is_space_or_tab(input->data[pos]) &&
-        !markdown_core_is_line_end(input->data[pos])) {
+    if (pos < input->len && !markdown_core_is_whitespace(input->data[pos])) {
         return false;
     }
-    while (pos < input->len && markdown_core_block_is_space_or_tab(input->data[pos])) {
+    while (pos < input->len && markdown_core_is_space_or_tab(input->data[pos])) {
         pos++;
         parser->callout_scan_work++;
     }
     bufsize_t end = input->len;
-    while (end > pos && (markdown_core_block_is_space_or_tab(input->data[end - 1]) ||
-                         markdown_core_is_line_end(input->data[end - 1]))) {
+    while (end > pos && markdown_core_is_whitespace(input->data[end - 1])) {
         end--;
         parser->callout_scan_work++;
     }
@@ -101,7 +99,7 @@ static bool markdown_core_callout_open(markdown_core_parser *parser, markdown_co
 
     markdown_core_block_advance_offset(parser, input, parser->first_nonspace + 1 - parser->offset, false);
     // optional following character
-    if (markdown_core_block_is_space_or_tab(input->data[parser->offset])) {
+    if (markdown_core_is_space_or_tab(input->data[parser->offset])) {
         markdown_core_block_advance_offset(parser, input, 1, true);
     }
     *container =

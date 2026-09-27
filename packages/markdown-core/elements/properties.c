@@ -43,14 +43,11 @@ static source_line property_line(const properties *p, size_t line) {
     return p->parser->input_lines[p->first_line + line];
 }
 
-static bool space(unsigned char c) { return c == ' ' || c == '\t'; }
-static bool newline(unsigned char c) { return c == '\r' || c == '\n'; }
 static bool plain_start(const unsigned char *s, size_t start, size_t end) {
-    if (start == end || space(s[start]) || strchr(",[]{}#&*!|>'\"%@`", s[start])) {
+    if (start == end || markdown_core_is_space_or_tab(s[start]) || strchr(",[]{}#&*!|>'\"%@`", s[start])) {
         return false;
     }
-    return !((s[start] == '?' || s[start] == ':') &&
-             (start + 1 == end || space(s[start + 1]) || newline(s[start + 1])));
+    return !((s[start] == '?' || s[start] == ':') && (start + 1 == end || markdown_core_is_whitespace(s[start + 1])));
 }
 static size_t next_line(const unsigned char *s, size_t p, size_t end) {
     if (p < end && s[p] == '\r') {
@@ -112,9 +109,9 @@ void markdown_core_metadata_fields_free(markdown_core_metadata_fields *metadata)
 static void skip(decoder *d) {
     const unsigned char *s = d->owner->source;
     while (d->pos < d->end) {
-        if (space(s[d->pos]) || newline(s[d->pos])) {
+        if (markdown_core_is_whitespace(s[d->pos])) {
             d->pos++;
-        } else if (s[d->pos] == '#' && (d->pos == 0 || space(s[d->pos - 1]) || newline(s[d->pos - 1]))) {
+        } else if (s[d->pos] == '#' && (d->pos == 0 || markdown_core_is_whitespace(s[d->pos - 1]))) {
             d->pos = property_line(d->owner, decoder_line(d)).end;
         } else {
             break;
@@ -226,21 +223,22 @@ static bool quoted(decoder *d, markdown_core_string *value) {
 static bool plain(decoder *d, bool delimited, markdown_core_string *value) {
     const unsigned char *s = d->owner->source;
     size_t start = d->pos, last = start;
-    if (!plain_start(s, start, d->end) || newline(s[start])) {
+    if (!plain_start(s, start, d->end) || markdown_core_is_line_end(s[start])) {
         return false;
     }
-    while (d->pos < d->end && !newline(s[d->pos])) {
+    while (d->pos < d->end && !markdown_core_is_line_end(s[d->pos])) {
         unsigned char c = s[d->pos];
-        bool colon = c == ':' && (d->pos + 1 == d->end || space(s[d->pos + 1]) || newline(s[d->pos + 1]) ||
+        bool colon = c == ':' && (d->pos + 1 == d->end || markdown_core_is_whitespace(s[d->pos + 1]) ||
                                   (delimited && strchr(",[]{}", s[d->pos + 1])));
-        if ((delimited && strchr(",[]{}", c)) || (c == '#' && (d->pos == start || space(s[d->pos - 1])))) {
+        if ((delimited && strchr(",[]{}", c)) ||
+            (c == '#' && (d->pos == start || markdown_core_is_space_or_tab(s[d->pos - 1])))) {
             break;
         }
         if (colon) {
             return false;
         }
         d->pos++;
-        if (!space(c)) {
+        if (!markdown_core_is_space_or_tab(c)) {
             last = d->pos;
         }
     }
@@ -294,16 +292,16 @@ static bool literal(decoder *d, size_t key_start, markdown_core_metadata_value *
     size_t key_line = decoder_line(d);
     size_t key_indent = key_start - property_line(d->owner, key_line).start;
     d->pos++;
-    if (d->pos < d->end && !space(s[d->pos]) && !newline(s[d->pos])) {
+    if (d->pos < d->end && !markdown_core_is_whitespace(s[d->pos])) {
         return false;
     }
-    while (d->pos < d->end && space(s[d->pos])) {
+    while (d->pos < d->end && markdown_core_is_space_or_tab(s[d->pos])) {
         d->pos++;
     }
     if (d->pos < d->end && s[d->pos] == '#') {
         d->pos = property_line(d->owner, key_line).end;
     }
-    if (d->pos < d->end && !newline(s[d->pos])) {
+    if (d->pos < d->end && !markdown_core_is_line_end(s[d->pos])) {
         return false;
     }
     markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
@@ -315,7 +313,7 @@ static bool literal(decoder *d, size_t key_start, markdown_core_metadata_value *
             content++;
         }
         size_t nonblank = content;
-        while (nonblank < end && space(s[nonblank])) {
+        while (nonblank < end && markdown_core_is_space_or_tab(s[nonblank])) {
             nonblank++;
         }
         if (nonblank == end) {
@@ -470,18 +468,18 @@ static bool sequence(decoder *d, markdown_core_metadata_value *value) {
     size_t outer_end = d->end;
     while (d->pos < outer_end && !d->owner->parser->error) {
         size_t start = d->pos;
-        if (s[start] != '-' || (start + 1 < outer_end && !space(s[start + 1]) && !newline(s[start + 1]))) {
+        if (s[start] != '-' || (start + 1 < outer_end && !markdown_core_is_whitespace(s[start + 1]))) {
             return false;
         }
         size_t line = decoder_line(d);
         size_t item_indent = start - property_line(d->owner, line).start;
         d->pos++;
-        while (d->pos < outer_end && space(s[d->pos])) {
+        while (d->pos < outer_end && markdown_core_is_space_or_tab(s[d->pos])) {
             d->pos++;
         }
         for (line++; property_line(d->owner, line).start < outer_end; line++) {
             size_t p = property_line(d->owner, line).start, end = property_line(d->owner, line).end;
-            while (p < end && space(s[p])) {
+            while (p < end && markdown_core_is_space_or_tab(s[p])) {
                 p++;
             }
             if (p < end && s[p] != '#' && p - property_line(d->owner, line).start <= item_indent) {
@@ -521,21 +519,21 @@ static bool field(decoder *d, size_t key_end) {
         valid = quoted(d, &name);
     } else {
         size_t end = key_end - 1;
-        while (end > start && space(s[end - 1])) {
+        while (end > start && markdown_core_is_space_or_tab(s[end - 1])) {
             end--;
         }
         name = (markdown_core_string){s + start, end - start};
         d->pos = key_end - 1;
     }
     valid = valid && name.length && single_line(name) && d->pos <= value_line_end;
-    while (d->pos < d->end && space(s[d->pos])) {
+    while (d->pos < d->end && markdown_core_is_space_or_tab(s[d->pos])) {
         d->pos++;
     }
     markdown_core_metadata_value *slot = field_slot(p->metadata, name);
     if (!valid || !slot || slot->kind || d->pos == d->end || s[d->pos++] != ':') {
         goto failed;
     }
-    if (d->pos < d->end && !space(s[d->pos]) && !newline(s[d->pos])) {
+    if (d->pos < d->end && !markdown_core_is_whitespace(s[d->pos])) {
         goto failed;
     }
     if (!printable(p, start, d->end)) {
@@ -550,8 +548,9 @@ static bool field(decoder *d, size_t key_end) {
         if (!literal(d, start, &value)) {
             goto failed;
         }
-    } else if (d->pos < d->end && (s[d->pos] == '[' || (d->pos > value_line_end && s[d->pos] == '-' &&
-                                                        d->pos + 1 < d->end && space(s[d->pos + 1])))) {
+    } else if (d->pos < d->end &&
+               (s[d->pos] == '[' || (d->pos > value_line_end && s[d->pos] == '-' && d->pos + 1 < d->end &&
+                                     markdown_core_is_space_or_tab(s[d->pos + 1])))) {
         if (!sequence(d, &value)) {
             goto failed;
         }
@@ -599,19 +598,22 @@ static size_t block_key_end(const unsigned char *s, size_t start, size_t end) {
                 }
             }
         }
-        while (start < end && space(s[start])) {
+        while (start < end && markdown_core_is_space_or_tab(s[start])) {
             start++;
         }
-        return closed && start < end && s[start] == ':' && (start + 1 == end || space(s[start + 1])) ? start + 1 : 0;
+        return closed && start < end && s[start] == ':' &&
+                       (start + 1 == end || markdown_core_is_space_or_tab(s[start + 1]))
+                   ? start + 1
+                   : 0;
     }
     if (!plain_start(s, start, end)) {
         return 0;
     }
     for (size_t i = start; i < end; i++) {
-        if (s[i] == ':' && (i + 1 == end || space(s[i + 1]))) {
+        if (s[i] == ':' && (i + 1 == end || markdown_core_is_space_or_tab(s[i + 1]))) {
             return i + 1;
         }
-        if (s[i] == '#' && (i == start || space(s[i - 1]))) {
+        if (s[i] == '#' && (i == start || markdown_core_is_space_or_tab(s[i - 1]))) {
             return 0;
         }
     }
@@ -648,11 +650,11 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
         classify_line(p, line);
         size_t cursor = property_line(p, line).start, e = property_line(p, line).end, nonspace = p->first;
         if (!first && nonspace < e && nonspace - cursor <= indent) {
-            bool list_line =
-                nonspace - cursor == indent && s[nonspace] == '-' && (nonspace + 1 == e || space(s[nonspace + 1]));
+            bool list_line = nonspace - cursor == indent && s[nonspace] == '-' &&
+                             (nonspace + 1 == e || markdown_core_is_space_or_tab(s[nonspace + 1]));
             bool recovery_key = p->key != 0;
             size_t content = nonspace;
-            while (content < e && space(s[content])) {
+            while (content < e && markdown_core_is_space_or_tab(s[content])) {
                 content++;
             }
             bool separation = content == e || s[content] == '#';
@@ -667,7 +669,7 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
         for (size_t i = token ? token : nonspace; i < e; i++) {
             unsigned char c = s[i];
             if (form == VALUE_PREFIX) {
-                if (space(c)) {
+                if (markdown_core_is_space_or_tab(c)) {
                     continue;
                 }
                 if (c == '#') {
@@ -676,10 +678,10 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
                 /* Only the value's first token can open a bracketed collection.
                  * Brackets and quotes within block plain scalars, including
                  * block sequence items, never extend the root member. */
-                form = c == '[' || c == '{'                                    ? VALUE_BRACKETED
-                       : c == '\'' || c == '"'                                 ? VALUE_QUOTED
-                       : !first && c == '-' && (i + 1 == e || space(s[i + 1])) ? VALUE_SEQUENCE
-                                                                               : VALUE_SCALAR;
+                form = c == '[' || c == '{'                                                            ? VALUE_BRACKETED
+                       : c == '\'' || c == '"'                                                         ? VALUE_QUOTED
+                       : !first && c == '-' && (i + 1 == e || markdown_core_is_space_or_tab(s[i + 1])) ? VALUE_SEQUENCE
+                                                                                                       : VALUE_SCALAR;
             }
             if (form != VALUE_BRACKETED && form != VALUE_QUOTED) {
                 break;
@@ -697,9 +699,10 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
                         }
                     }
                 }
-            } else if ((c == '\'' || c == '"') && (i == nonspace || space(s[i - 1]) || strchr(":,[{?", s[i - 1]))) {
+            } else if ((c == '\'' || c == '"') &&
+                       (i == nonspace || markdown_core_is_space_or_tab(s[i - 1]) || strchr(":,[{?", s[i - 1]))) {
                 quote = c;
-            } else if (c == '#' && (i == nonspace || space(s[i - 1]))) {
+            } else if (c == '#' && (i == nonspace || markdown_core_is_space_or_tab(s[i - 1]))) {
                 break;
             } else if (c == '[') {
                 array_depth++;
@@ -728,11 +731,12 @@ static void payload(properties *p) {
         classify_line(p, line);
         size_t first = p->first, key = p->key, e = property_line(p, line).end;
         size_t content = first;
-        while (content < e && space(s[content])) {
+        while (content < e && markdown_core_is_space_or_tab(s[content])) {
             content++;
         }
         if (content == e || s[content] == '#' || s[first] == '%' ||
-            (e - first >= 3 && memcmp(s + first, "...", 3) == 0 && (e == first + 3 || space(s[first + 3])))) {
+            (e - first >= 3 && memcmp(s + first, "...", 3) == 0 &&
+             (e == first + 3 || markdown_core_is_space_or_tab(s[first + 3])))) {
             line++;
             continue;
         }
@@ -746,7 +750,7 @@ static void payload(properties *p) {
 size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsigned char *source, size_t length) {
     size_t bom = length >= 3 && memcmp(source, "\xef\xbb\xbf", 3) == 0 ? 3 : 0;
     /* The opener is exactly "---" and a line ending: a peek, not a scan. */
-    if (length < bom + 4 || memcmp(source + bom, "---", 3) || !newline(source[bom + 3])) {
+    if (length < bom + 4 || memcmp(source + bom, "---", 3) || !markdown_core_is_line_end(source[bom + 3])) {
         return 0;
     }
     size_t start = next_line(source, bom + 3, length), close = start;
@@ -768,8 +772,8 @@ size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsign
         }
         size_t at = (size_t)(hit - source);
         fence_work += at - close + 1;
-        if (newline(source[at - 1]) && length - at >= 3 && source[at + 1] == '-' && source[at + 2] == '-' &&
-            (at + 3 == length || newline(source[at + 3]))) {
+        if (markdown_core_is_line_end(source[at - 1]) && length - at >= 3 && source[at + 1] == '-' &&
+            source[at + 2] == '-' && (at + 3 == length || markdown_core_is_line_end(source[at + 3]))) {
             close = at;
             closed = true;
             break;

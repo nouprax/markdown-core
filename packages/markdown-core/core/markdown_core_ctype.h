@@ -13,37 +13,90 @@ extern "C" {
 /** Locale-independent versions of functions from ctype.h.
  * We want markdown_core to behave the same no matter what the system locale.
  *
- * Each predicate is one load from the shared class table, so it is defined
- * here, where every caller -- most of them walking a buffer byte by byte --
- * can see it, rather than behind a call into another translation unit that
- * costs more to reach than to evaluate. None of them is part of the exported
- * surface.
+ * Each predicate is one load from the shared class table or a comparison or
+ * two, so it is defined here, where every caller -- most of them walking a
+ * buffer byte by byte -- can see it, rather than behind a call into another
+ * translation unit that costs more to reach than to evaluate. None of them is
+ * part of the exported surface.
  */
 
-/* 1 = space, 2 = punct, 3 = digit, 4 = alpha, 0 = other. */
+/* 1 = punct, 2 = digit, 3 = alpha, 0 = other. */
 extern const uint8_t markdown_core_ctype_class[256];
 
-/* A "whitespace" character as the spec defines it: space, tab, LF, CR. */
-static inline int markdown_core_isspace(char c) { return markdown_core_ctype_class[(uint8_t)c] == 1; }
-
 /* An ASCII punctuation character. */
-static inline int markdown_core_ispunct(char c) { return markdown_core_ctype_class[(uint8_t)c] == 2; }
+static inline int markdown_core_ispunct(char c) { return markdown_core_ctype_class[(uint8_t)c] == 1; }
 
 static inline int markdown_core_isalnum(char c) {
     uint8_t result = markdown_core_ctype_class[(uint8_t)c];
-    return result == 3 || result == 4;
+    return result == 2 || result == 3;
 }
 
-static inline int markdown_core_isdigit(char c) { return markdown_core_ctype_class[(uint8_t)c] == 3; }
+static inline int markdown_core_isdigit(char c) { return markdown_core_ctype_class[(uint8_t)c] == 2; }
 
-static inline int markdown_core_isalpha(char c) { return markdown_core_ctype_class[(uint8_t)c] == 4; }
+static inline int markdown_core_isalpha(char c) { return markdown_core_ctype_class[(uint8_t)c] == 3; }
+
+/* WHITESPACE, in the classes docs/specs/dialect.md names. CommonMark 0.31.2
+ * indents, separates and trims with spaces and tabs, and ends a line with
+ * LF, CR or CR LF; the dialect's whitespace is those bytes together. No
+ * other byte is whitespace here: not vertical tab, not form feed, and no
+ * other control character. Unicode whitespace, a class of scalars that
+ * decides delimiter flanking and nothing else, is in utf8.h. */
+
+/* A space (U+0020) or a tab (U+0009). */
+static inline int markdown_core_is_space_or_tab(unsigned char c) { return c == ' ' || c == '\t'; }
+
+/* A byte of a line ending: LF, or CR alone or before LF. */
+static inline int markdown_core_is_line_end(unsigned char c) { return c == '\n' || c == '\r'; }
+
+/* Whitespace: a space, a tab or a byte of a line ending. */
+static inline int markdown_core_is_whitespace(unsigned char c) {
+    return markdown_core_is_space_or_tab(c) || markdown_core_is_line_end(c);
+}
+
+/* The same classes as designated initializers of a byte-class table
+ * (markdown_core_scan_to_class below), giving each of their bytes `value`:
+ * a scanner that stops at whitespace among other bytes names it by class,
+ * not byte by byte. */
+#define MARKDOWN_CORE_SPACE_OR_TAB_BYTES(value) [' '] = (value), ['\t'] = (value)
+#define MARKDOWN_CORE_LINE_END_BYTES(value) ['\n'] = (value), ['\r'] = (value)
+#define MARKDOWN_CORE_WHITESPACE_BYTES(value)                                                                          \
+    MARKDOWN_CORE_SPACE_OR_TAB_BYTES(value), MARKDOWN_CORE_LINE_END_BYTES(value)
+
+/* Whether only spaces and tabs come before the first line ending in
+ * data[at, end), or before `end` when there is none: a blank rest of line. */
+static inline int markdown_core_is_blank_to_line_end(const unsigned char *data, bufsize_t at, bufsize_t end) {
+    for (; at < end; at++) {
+        if (!markdown_core_is_space_or_tab(data[at])) {
+            return markdown_core_is_line_end(data[at]);
+        }
+    }
+    return 1;
+}
+
+/* Past the spaces, tabs and at most one line ending that begin data[at, end).
+ * CommonMark separates a link's parts this way, and the dialect does wherever
+ * one line break may fall between two parts of a construct. */
+static inline bufsize_t markdown_core_skip_spaces_and_line_end(const unsigned char *data, bufsize_t at, bufsize_t end) {
+    while (at < end && markdown_core_is_space_or_tab(data[at])) {
+        at++;
+    }
+    bufsize_t after = at < end && data[at] == '\r' ? at + 1 : at;
+    if (after < end && data[after] == '\n') {
+        after++;
+    }
+    if (after == at) {
+        return at;
+    }
+    at = after;
+    while (at < end && markdown_core_is_space_or_tab(data[at])) {
+        at++;
+    }
+    return at;
+}
 
 #ifdef __cplusplus
 }
 #endif
-
-/* Source-line boundaries use ASCII CR/LF in every syntax scanner. */
-static inline int markdown_core_is_line_end(unsigned char c) { return c == '\n' || c == '\r'; }
 
 /* THE FIRST BYTE OF A CLASS A SCAN STOPS AT: the index of the first byte of
  * data[at, end) whose class meets `stops`, or `end` when none does; `at` must

@@ -2861,7 +2861,7 @@ static void class_runs_split_on_ascii_white_space(test_batch_runner *runner) {
 static void unicode_classes_are_unicode_17(test_batch_runner *runner) {
     static const struct {
         int32_t scalar;
-        int space, punctuation, punctuation_or_symbol, letter, number;
+        int whitespace, punctuation, punctuation_or_symbol, letter, number;
     } cases[] = {{0x20, 1, 0, 0, 0, 0},   {0x0B, 0, 0, 0, 0, 0},     {0x85, 0, 0, 0, 0, 0},   {0x3000, 1, 0, 0, 0, 0},
                  {'!', 0, 1, 1, 0, 0},    {'$', 0, 1, 1, 0, 0},      {'a', 0, 0, 0, 1, 0},    {'7', 0, 0, 0, 0, 1},
                  {0xA7, 0, 1, 1, 0, 0},   {0x166D, 0, 0, 1, 0, 0},   {0x1B4E, 0, 1, 1, 0, 0}, {0x2FFC, 0, 0, 1, 0, 0},
@@ -2871,7 +2871,7 @@ static void unicode_classes_are_unicode_17(test_batch_runner *runner) {
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         int32_t scalar = cases[i].scalar;
         OK(runner,
-           !!markdown_core_utf8proc_is_space(scalar) == cases[i].space &&
+           !!(markdown_core_utf8proc_classes(scalar) & MARKDOWN_CORE_UNICODE_WHITESPACE) == cases[i].whitespace &&
                !!markdown_core_utf8proc_is_punctuation(scalar) == cases[i].punctuation &&
                !!markdown_core_utf8proc_is_punctuation_or_symbol(scalar) == cases[i].punctuation_or_symbol &&
                !!markdown_core_utf8proc_is_letter(scalar) == cases[i].letter &&
@@ -2895,6 +2895,53 @@ static void unicode_classes_are_unicode_17(test_batch_runner *runner) {
         OK(runner, first_of_kind(document->root, MARKDOWN_CORE_NODE_STRONG) == NULL,
            "Unicode 17 punctuation decides flanking");
         markdown_core_document_free(document);
+    }
+}
+
+/* WHITESPACE IS A SPACE, A TAB OR A LINE ENDING (docs/specs/dialect.md), and
+ * no other byte: not vertical tab, form feed or another control, and no byte
+ * of a multi-byte character, so no Unicode space. */
+static void whitespace_is_space_tab_and_line_ending(test_batch_runner *runner) {
+    int exact = 1;
+    for (int c = 0; c < 256; c++) {
+        const int space_or_tab = c == ' ' || c == '\t';
+        const int line_end = c == '\n' || c == '\r';
+        exact &= !!markdown_core_is_space_or_tab((unsigned char)c) == space_or_tab &&
+                 !!markdown_core_is_line_end((unsigned char)c) == line_end &&
+                 !!markdown_core_is_whitespace((unsigned char)c) == (space_or_tab || line_end);
+    }
+    OK(runner, exact, "every byte's whitespace class");
+
+    /* A byte-class table names the same bytes as the predicates. */
+    static const uint8_t classes[256] = {MARKDOWN_CORE_SPACE_OR_TAB_BYTES(1), MARKDOWN_CORE_LINE_END_BYTES(2)};
+    static const uint8_t whitespace[256] = {MARKDOWN_CORE_WHITESPACE_BYTES(1)};
+    int tables = 1;
+    for (int c = 0; c < 256; c++) {
+        tables &= (classes[c] == 1) == !!markdown_core_is_space_or_tab((unsigned char)c) &&
+                  (classes[c] == 2) == !!markdown_core_is_line_end((unsigned char)c) &&
+                  (whitespace[c] == 1) == !!markdown_core_is_whitespace((unsigned char)c);
+    }
+    OK(runner, tables, "byte-class tables name the whitespace bytes");
+
+    static const struct {
+        const char *text;
+        bufsize_t end;
+    } separators[] = {{"", 0},        {"x", 0},        {" \tx", 2}, {" \n x", 3}, {"\r\n\tx", 3}, {"\r x", 2},
+                      {" \n\n x", 2}, {" \n \n x", 3}, {"\r\r", 1}, {"\v x", 0},  {"\f\n", 0},    {"\xC2\xA0x", 0}};
+    for (size_t i = 0; i < sizeof(separators) / sizeof(separators[0]); i++) {
+        const unsigned char *text = (const unsigned char *)separators[i].text;
+        INT_EQ(runner, (int)markdown_core_skip_spaces_and_line_end(text, 0, (bufsize_t)strlen(separators[i].text)),
+               (int)separators[i].end, "separator %zu ends at %d", i, (int)separators[i].end);
+    }
+
+    static const struct {
+        const char *text;
+        int blank;
+    } rests[] = {{"", 1}, {" \t", 1}, {" \n x", 1}, {"\t\rx", 1}, {" x", 0}, {"\v\n", 0}, {"\f", 0}, {"\xC2\xA0", 0}};
+    for (size_t i = 0; i < sizeof(rests) / sizeof(rests[0]); i++) {
+        const unsigned char *text = (const unsigned char *)rests[i].text;
+        OK(runner, !!markdown_core_is_blank_to_line_end(text, 0, (bufsize_t)strlen(rests[i].text)) == rests[i].blank,
+           "rest %zu is %sblank", i, rests[i].blank ? "" : "not ");
     }
 }
 
@@ -3461,7 +3508,7 @@ static bool task_block_facts_equal(markdown_core_node *a, markdown_core_node *b)
 
 static void task_marker_tab_structure(test_batch_runner *runner) {
     const char *markers[] = {"é", "✓", "🚀", "́"};
-    const char *separators[] = {" ", "\t", " \t", "\v", "\f", " \t\v\f"};
+    const char *separators[] = {" ", "\t", " \t", "\t ", "  ", " \t \t"};
     const char *padding[] = {" ", "\t", " \t", "\t ", " \t ", "\t\t"};
     const char *lists[] = {"-", "1.", "1)"};
     for (int indent = 0; indent < 4; indent++) {
@@ -5350,7 +5397,10 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
         {"^a^b^c^ ", "", "", 2},
         {"^a ", "", "", 0},
         {"^a\t", "", "", 0},
-        {"^a\xe2\x80\x83", "", "", 0},
+        {"^a\xe2\x80\x83"
+         "b^ ",
+         "", "", 1},            /* EM SPACE is not whitespace */
+        {"^a\vb^ ", "", "", 1}, /* nor is vertical tab */
         {"^*a\\ b*^ ", "", "", 1},
         {"[^a^]{} ", "", "", 1},
         {"^[^a^] ", "", "", 0}, /* detached notes are visited by the value walker */
@@ -7321,7 +7371,6 @@ static void bounded_scanners(test_batch_runner *runner) {
                  {scan_html_block_end_4, "x>", -1},
                  {scan_html_block_end_5, "x]]>", -1},
                  {scan_link_title, "\"title\"", -1},
-                 {scan_spacechars, " \t\n", -1},
                  {scan_atx_heading_start, "## ", -1},
                  {scan_setext_heading_line, "---\n", 2},
                  {scan_open_code_fence, "```lang\n", 3},
@@ -9706,6 +9755,7 @@ int main(void) {
     borrowed_anchor_survives_a_kind_change(runner);
     class_runs_split_on_ascii_white_space(runner);
     unicode_classes_are_unicode_17(runner);
+    whitespace_is_space_tab_and_line_ending(runner);
     map_records_are_carved_from_its_blocks(runner);
     properties_values(runner);
     properties_source_boundaries(runner);

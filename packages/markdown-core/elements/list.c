@@ -166,7 +166,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_parser *par
             int column = first_column + (pos - startpos);
             int initial_column = column;
             bufsize_t at = pos;
-            while (markdown_core_block_is_space_or_tab(BLOCK_PEEK(input, at))) {
+            while (markdown_core_is_space_or_tab(BLOCK_PEEK(input, at))) {
                 parser->list_marker_work++;
                 column += input->data[at++] == '\t' ? 4 - column % 4 : 1;
                 if (column - initial_column >= 2) {
@@ -178,12 +178,12 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_parser *par
             }
         }
     }
-    if (!markdown_core_isspace(BLOCK_PEEK(input, pos))) {
+    if (!markdown_core_is_whitespace(BLOCK_PEEK(input, pos))) {
         return 0;
     }
     if (interrupts_paragraph) {
         bufsize_t at = pos;
-        while (markdown_core_block_is_space_or_tab(BLOCK_PEEK(input, at))) {
+        while (markdown_core_is_space_or_tab(BLOCK_PEEK(input, at))) {
             parser->list_marker_work++;
             at++;
         }
@@ -326,7 +326,7 @@ int markdown_core_block_consume_item_marker(markdown_core_parser *parser, markdo
     markdown_core_block_advance_offset(parser, input, parser->first_nonspace + marker_width - parser->offset, false);
     int offset = parser->offset, column = parser->column;
     bool partial = parser->partially_consumed_tab;
-    while (parser->column - column < 5 && markdown_core_block_is_space_or_tab(input->data[parser->offset])) {
+    while (parser->column - column < 5 && markdown_core_is_space_or_tab(input->data[parser->offset])) {
         markdown_core_block_advance_offset(parser, input, 1, true);
     }
     int padding = parser->column - column;

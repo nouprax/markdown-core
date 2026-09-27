@@ -1,6 +1,5 @@
 #include "alloc.h"
 #include "link_scanners.h"
-#include "text_scanners.h"
 #include "citation.h"
 #include "footnote.h"
 #include "span.h"
@@ -76,10 +75,12 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     return !markdown_core_block_is_blank(&b->content, 0);
 }
 
+/* A destination is its source less the angle brackets, with escapes and
+ * references decoded. Nothing is trimmed: an unbracketed destination cannot
+ * hold a space, tab or line ending, and CommonMark keeps the spaces a
+ * bracketed one encloses (`<  u >` is `  u `). */
 markdown_core_chunk markdown_core_clean_url(markdown_core_chunk *url, int *lost) {
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT();
-
-    markdown_core_chunk_trim(url);
 
     if (url->len == 0) {
         return markdown_core_chunk_literal("");
@@ -175,6 +176,10 @@ noMatch:
     return 0;
 }
 
+/* An unbracketed destination includes no ASCII control character (U+0000 to
+ * U+001F, U+007F) and no space; tab and the line endings are controls. */
+static bool destination_excludes(unsigned char c) { return c <= 0x20 || c == 0x7F; }
+
 static bufsize_t manual_scan_link_url_2(markdown_core_chunk *input, bufsize_t offset, markdown_core_chunk *output) {
     bufsize_t i = offset;
     size_t nb_p = 0;
@@ -194,7 +199,7 @@ static bufsize_t manual_scan_link_url_2(markdown_core_chunk *input, bufsize_t of
             }
             --nb_p;
             ++i;
-        } else if (markdown_core_isspace(input->data[i])) {
+        } else if (destination_excludes(input->data[i])) {
             if (i == offset) {
                 return -1;
             }
@@ -225,9 +230,9 @@ static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *
             if (input->data[i] == '>') {
                 ++i;
                 break;
-            } else if (input->data[i] == '\\') {
+            } else if (input->data[i] == '\\' && i + 1 < input->len && markdown_core_ispunct(input->data[i + 1])) {
                 i += 2;
-            } else if (input->data[i] == '\n' || input->data[i] == '<') {
+            } else if (markdown_core_is_line_end(input->data[i]) || input->data[i] == '<') {
                 return -1;
             } else {
                 ++i;
@@ -249,10 +254,8 @@ static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *
 }
 
 static void spnl(markdown_core_inline_state *inline_state) {
-    markdown_core_inline_skip_spaces(inline_state);
-    if (markdown_core_inline_skip_line_end(inline_state)) {
-        markdown_core_inline_skip_spaces(inline_state);
-    }
+    inline_state->pos =
+        markdown_core_skip_spaces_and_line_end(inline_state->input.data, inline_state->pos, inline_state->input.len);
 }
 
 static bool reference_tail(markdown_core_inline_state *inline_state, markdown_core_attribute_parser *attributes,
@@ -379,7 +382,7 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_parser *parser, mar
 
 markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_state *inline_state, bracket *opener,
                                                       markdown_core_link_candidate *candidate) {
-    bufsize_t initial_pos = inline_state->pos, endurl, starttitle, endtitle, endall, sps, n;
+    bufsize_t initial_pos = inline_state->pos, starturl, endurl, starttitle, endtitle, endall, n;
     markdown_core_chunk url_chunk, title_chunk, raw_label;
     markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_optional_chunk title = {MARKDOWN_CORE_CHUNK_EMPTY, false};
@@ -394,22 +397,23 @@ markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_state
 
     bufsize_t after_link_text_pos = inline_state->pos;
 
-    // First, look for an inline link.
+    // First, look for an inline link. Its destination, title and closing
+    // parenthesis may each follow spaces, tabs and up to one line ending.
+    const unsigned char *data = inline_state->input.data;
+    const bufsize_t len = inline_state->input.len;
     if (link_allowed && markdown_core_inline_peek_char(inline_state) == '(' &&
-        ((sps = scan_spacechars(inline_state->input.data, inline_state->input.len, inline_state->pos + 1)) > -1) &&
-        ((n = markdown_core_inline_manual_scan_link_url(&inline_state->input, inline_state->pos + 1 + sps,
-                                                        &url_chunk)) > -1)) {
+        ((n = markdown_core_inline_manual_scan_link_url(
+              &inline_state->input, starturl = markdown_core_skip_spaces_and_line_end(data, inline_state->pos + 1, len),
+              &url_chunk)) > -1)) {
 
         // try to parse an explicit link:
-        endurl = inline_state->pos + 1 + sps + n;
-        starttitle = endurl + scan_spacechars(inline_state->input.data, inline_state->input.len, endurl);
+        endurl = starturl + n;
+        starttitle = markdown_core_skip_spaces_and_line_end(data, endurl, len);
 
-        // ensure there are spaces btw url and title
-        endtitle = (starttitle == endurl)
-                       ? starttitle
-                       : starttitle + scan_link_title(inline_state->input.data, inline_state->input.len, starttitle);
-
-        endall = endtitle + scan_spacechars(inline_state->input.data, inline_state->input.len, endtitle);
+        // A title must be separated from the destination; without one, the
+        // separator already read is the one before the parenthesis.
+        endtitle = starttitle == endurl ? starttitle : starttitle + scan_link_title(data, len, starttitle);
+        endall = endtitle == starttitle ? starttitle : markdown_core_skip_spaces_and_line_end(data, endtitle, len);
 
         if (markdown_core_inline_peek_at(inline_state, endall) == ')') {
             explicit_tail = true;

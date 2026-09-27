@@ -22,9 +22,10 @@ and a link. It can span soft line breaks inside a paragraph, but not a block
 boundary.
 
 Pairs use CommonMark's asterisk flanking rules without the rule of three:
-opening pairs need non-whitespace after them, closing pairs need non-whitespace
-before them, and punctuation affects whether a pair can open or close.
-Intraword highlights are allowed.
+opening pairs cannot be followed by [Unicode
+whitespace](../dialect.md#whitespace), closing pairs cannot be preceded by it,
+and punctuation affects whether a pair can open or close. Intraword highlights
+are allowed.
 
 ```markdown
 a==b==c

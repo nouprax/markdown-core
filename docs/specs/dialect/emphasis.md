@@ -28,9 +28,9 @@ cover their own content.
 
 ## Spaces and word boundaries
 
-Opening delimiters cannot be followed by whitespace; closing delimiters cannot
-be preceded by whitespace. CommonMark's punctuation and word-boundary rules
-also apply:
+Opening delimiters cannot be followed by [Unicode
+whitespace](../dialect.md#whitespace); closing delimiters cannot be preceded by
+it. CommonMark's punctuation and word-boundary rules also apply:
 
 ```markdown
 The * spaced * pair stays literal.

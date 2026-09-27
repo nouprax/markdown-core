@@ -25,7 +25,6 @@ shared parser rather than added as an alternate mode.
 | `77f7e7a` | do not merge consecutive indented code blocks |
 | `74e8f63` | skip a UTF-8 BOM at the beginning of input |
 | `06e3af5` | treat `textarea` as a type-1 HTML block |
-| `055b9ea` | use the specification's whitespace definition |
 | `5acc7d4` | do not let type-7 HTML blocks interrupt paragraphs |
 | `34250e1` | preserve the final resolution of cmark issue 383 |
 | `4efec35` | parse emphasis correctly before links |
@@ -88,6 +87,15 @@ The 2020–2024 node-layout, allocator, parser-construction, and tree-API change
 were reviewed against Markdown Core's independent ownership model. Observable
 parser behavior is covered by parity, OOM injection, concurrency, and tree
 invariant tests; cmark's mutable/public lifecycle is not imported.
+
+`055b9ea` adds vertical tab and form feed to `cmark_isspace`, following the
+0.29 specification's "whitespace character". Specification 0.30 removed that
+definition; 0.31.2 names spaces, tabs and line endings wherever it separates
+or trims, and cmark still accepts the two controls there, in its re2c
+`spacechar` too. Markdown Core follows the 0.31.2 text instead
+([whitespace](../../../docs/specs/dialect.md#whitespace)). The
+`spec-text-whitespace` delta registers the inputs where the two differ, with
+micromark agreeing with the text on each.
 
 ## Deliberately outside the product
 

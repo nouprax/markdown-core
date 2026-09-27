@@ -105,13 +105,17 @@ static markdown_core_node *match_angle(markdown_core_inline_state *inline_state)
     return make_autolink(inline_state, from - 1, inline_state->pos - 1, content, email);
 }
 
-static int is_valid_hostchar(const uint8_t *link, size_t link_len) {
+/* The width of the host character at `link`, or 0 when the character there
+ * is not one. A host character is neither whitespace nor punctuation.
+ * Whitespace is a space, a tab or a line ending, as everywhere outside
+ * delimiter flanking, so a non-breaking space is a host character. */
+static inline int hostchar_width(const uint8_t *link, size_t link_len) {
     int32_t ch;
-    int r = markdown_core_utf8proc_iterate(link, (bufsize_t)link_len, &ch);
-    if (r < 0) {
+    int width = markdown_core_utf8proc_iterate(link, (bufsize_t)link_len, &ch);
+    if (width < 0 || markdown_core_is_whitespace(link[0]) || markdown_core_utf8proc_is_punctuation(ch)) {
         return 0;
     }
-    return !markdown_core_utf8proc_is_space(ch) && !markdown_core_utf8proc_is_punctuation(ch);
+    return width;
 }
 
 static int sd_autolink_issafe(const uint8_t *link, size_t link_len) {
@@ -124,7 +128,7 @@ static int sd_autolink_issafe(const uint8_t *link, size_t link_len) {
         size_t len = strlen(valid_uris[i]);
 
         if (link_len > len && strncasecmp((char *)link, valid_uris[i], len) == 0 &&
-            is_valid_hostchar(link + len, link_len - len)) {
+            hostchar_width(link + len, link_len - len)) {
             return 1;
         }
     }
@@ -231,8 +235,14 @@ static size_t check_domain(markdown_core_parser *parser, markdown_core_inline_st
      *
      * The reason is that domain names are allowed to include underscores,
      * but host names are not. See: https://stackoverflow.com/a/2183140
-     */
-    for (i = 1; i < size - 1; i++) {
+     *
+     * The walk starts after the first character, which the caller has
+     * matched, and steps a whole host character at a time. Stepping a byte
+     * reached the second byte of a multi-byte character, which is no
+     * character at all, and ended the domain there: an underscore after
+     * any non-ASCII letter escaped the rule the same underscore after an
+     * ASCII letter obeys. */
+    for (i = markdown_core_utf8proc_width(data[0]); i < size - 1;) {
         parser->autolink_domain_work++;
         if (data[i] == '\\' && i < size - 2) {
             i++;
@@ -244,9 +254,15 @@ static size_t check_domain(markdown_core_parser *parser, markdown_core_inline_st
             uscore1 = uscore2;
             uscore2 = 0;
             np++;
-        } else if (!is_valid_hostchar(data + i, size - i) && data[i] != '-') {
-            break;
+        } else if (data[i] != '-') {
+            int width = hostchar_width(data + i, size - i);
+            if (!width) {
+                break;
+            }
+            i += (size_t)width;
+            continue;
         }
+        i++;
     }
 
     if (uscore1 > 0 || uscore2 > 0) {
@@ -297,7 +313,7 @@ static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core
  * is visited once, including tokens that end at a footnote's closing ]. */
 static size_t autolink_extent(markdown_core_inline_state *inline_state, uint8_t *data, size_t size, size_t offset) {
     unsigned char closer = markdown_core_inline_state_closing_bracket(inline_state);
-    while (offset < size && !markdown_core_isspace(data[offset]) && data[offset] != '<') {
+    while (offset < size && !markdown_core_is_whitespace(data[offset]) && data[offset] != '<') {
         if (data[offset] == closer) {
             break;
         }
@@ -320,7 +336,7 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
     size_t link_end;
 
     if (max_rewind > (size_t)markdown_core_inline_state_context_start(inline_state) &&
-        strchr("*_~(", data[-1]) == NULL && !markdown_core_isspace(data[-1])) {
+        strchr("*_~(", data[-1]) == NULL && !markdown_core_is_whitespace(data[-1])) {
         return 0;
     }
 

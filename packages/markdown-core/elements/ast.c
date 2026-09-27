@@ -464,13 +464,11 @@ bool markdown_core_node_code_block_properties(const markdown_core_node *node, ma
     language->has_value = false;
     language->value.data = NULL;
     language->value.length = 0;
-    while (start < info->value.length && (info->value.data[start] == ' ' || info->value.data[start] == '\t' ||
-                                          info->value.data[start] == '\n' || info->value.data[start] == '\r')) {
+    while (start < info->value.length && markdown_core_is_whitespace(info->value.data[start])) {
         start++;
     }
     end = start;
-    while (end < info->value.length && info->value.data[end] != ' ' && info->value.data[end] != '\t' &&
-           info->value.data[end] != '\n' && info->value.data[end] != '\r') {
+    while (end < info->value.length && !markdown_core_is_whitespace(info->value.data[end])) {
         end++;
     }
     if (info->has_value && end > start) {

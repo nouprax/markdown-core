@@ -24,10 +24,8 @@ enum {
     BYTE_ASSIGN = 1 << 7     /* `=` */
 };
 static const unsigned char BYTE_CLASS[256] = {
-    [' '] = BYTE_SPACE | BYTE_NAME_END,
-    ['\t'] = BYTE_SPACE | BYTE_NAME_END,
-    ['\n'] = BYTE_NEWLINE | BYTE_NAME_END,
-    ['\r'] = BYTE_NEWLINE | BYTE_NAME_END,
+    MARKDOWN_CORE_SPACE_OR_TAB_BYTES(BYTE_SPACE | BYTE_NAME_END),
+    MARKDOWN_CORE_LINE_END_BYTES(BYTE_NEWLINE | BYTE_NAME_END),
     ['}'] = BYTE_CLOSE | BYTE_NAME_END,
     ['{'] = BYTE_NAME_END,
     ['"'] = BYTE_QUOTE | BYTE_NAME_END,
@@ -697,7 +695,7 @@ void markdown_core_inline_attach_inline_attributes(markdown_core_inline_state *i
 bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, markdown_core_node *node,
                                                const unsigned char *source, bufsize_t length) {
     bufsize_t info_end = length, attribute_end;
-    while (info_end > 0 && markdown_core_block_is_space_or_tab(source[info_end - 1])) {
+    while (info_end > 0 && markdown_core_is_space_or_tab(source[info_end - 1])) {
         info_end--;
     }
     markdown_core_attribute_parser attributes = {

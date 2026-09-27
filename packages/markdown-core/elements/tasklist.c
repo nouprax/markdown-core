@@ -2,8 +2,6 @@
 #include "parser.h"
 #include "utf8.h"
 
-static bool task_separator(unsigned char c) { return c == ' ' || c == '\t' || c == '\v' || c == '\f'; }
-
 void markdown_core_parse_task_prefix(markdown_core_parser *parser, markdown_core_node *item, const unsigned char *input,
                                      bufsize_t len) {
     bufsize_t start = parser->first_nonspace;
@@ -15,12 +13,13 @@ void markdown_core_parse_task_prefix(markdown_core_parser *parser, markdown_core
      * asked, so nothing is decoded. The bracket, marker, bracket and
      * separator must all be on the line before any of them is read. */
     bufsize_t width = markdown_core_utf8proc_width(input[start + 1]);
-    if (len - start < width + 3 || input[start + width + 1] != ']' || !task_separator(input[start + width + 2])) {
+    if (len - start < width + 3 || input[start + width + 1] != ']' ||
+        !markdown_core_is_space_or_tab(input[start + width + 2])) {
         return;
     }
 
     bufsize_t end = start + width + 3;
-    while (end < len && task_separator(input[end])) {
+    while (end < len && markdown_core_is_space_or_tab(input[end])) {
         end++;
     }
 

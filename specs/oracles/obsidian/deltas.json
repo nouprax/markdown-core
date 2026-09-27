@@ -198,12 +198,12 @@
             "oracleDigest": "b518b89f8066f1fde3768cd98e4840b1bc14f8bbe8f4be059df8621ab5d8d034",
             "markdownCoreDigest": "5193bd733a4a86f7c3a42dc9e87887620ce7d43f4927d6c49a04a3f0a798a52d",
             "authority": "docs/specs/dialect/task-lists.md (O5)",
-            "requirement": "Only SP, TAB, VT and FF separate a prefix; the oracle accepts Unicode whitespace including NBSP."
+            "requirement": "Only a space or a tab separates a prefix; the oracle accepts Unicode whitespace including NBSP."
         },
         {
             "id": "task-prefix-separator-run",
-            "input": "- [?] \t\u000b\f  body\n",
-            "oracleDigest": "3b4ab8a4d01adf4bef7901e95756cbcab6f84f0c6e8224527a3f2b37aad4d020",
+            "input": "- [?] \t \t  body\n",
+            "oracleDigest": "0ef7a422853c4352674ed5b87ae835091a775618646ad9c85af01df10760c480",
             "markdownCoreDigest": "3fd19bbbe29f15210415141397949e38d5c9b4890cd2787a8db428aef603335a",
             "authority": "docs/specs/dialect/task-lists.md (O5)",
             "requirement": "The entire structural separator run is removed; the oracle removes only one whitespace character."
