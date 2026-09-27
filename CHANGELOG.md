@@ -9,14 +9,15 @@ promised to remain compatible between releases.
 - Decode UTF-8 without validating it. Valid UTF-8 is the caller's
   precondition, and on it every result is unchanged: checking each character
   for overlong forms, surrogates and continuation bytes never failed there,
-  and it cost every character outside ASCII. Input that is not valid UTF-8,
-  which no binding produces and only raw-byte entry points (the C API, the
-  command-line tool and the ES package's WebAssembly export) accept, parses
-  to an unspecified result; the parser still reads only the bytes it is given
-  and terminates. Headings, reference labels, citation keys, emphasis and
-  extended autolinks in non-ASCII text cost less at every width. In ASCII
-  text, digits in citation keys and specimen labels, and `-`, `;`, `@` and
-  `w` in inline text, cost one to three instructions more each.
+  and it cost every character outside ASCII. Pipe-table cells are scanned as
+  bytes for the same reason. Input that is not valid UTF-8, which no binding
+  produces and only raw-byte entry points (the C API, the command-line tool
+  and the ES package's WebAssembly export) accept, parses to an unspecified
+  result; the parser still reads only the bytes it is given and terminates.
+  Headings, reference labels, citation keys, emphasis, extended autolinks and
+  pipe tables in non-ASCII text cost less at every width. In ASCII text,
+  digits in citation keys and specimen labels, and `-`, `;`, `@` and `w` in
+  inline text, cost one to three instructions more each.
 
 - Apply the rule that an extended autolink's last two domain segments hold
   no underscore after non-ASCII characters too: `www.例_b.c` and

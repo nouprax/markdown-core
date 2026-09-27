@@ -1,4 +1,3 @@
-// re2c-encoding: utf8
 #include "table_scanners.h"
 
 /*!include:re2c "scanner_common.re" */
@@ -33,7 +32,6 @@ bufsize_t scan_table_cell(const unsigned char *data, bufsize_t length, bufsize_t
   }
   const unsigned char *input = data + offset;
   size_t p = 0, remaining = (size_t)(length - offset);
-  size_t marker = 0;
   size_t start = p;
 /*!re2c
     // In fact, `table_cell` matches non-empty table cells only. The empty

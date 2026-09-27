@@ -161,7 +161,7 @@ padding. The generated functions own this boundary; there is no shared scanner
 wrapper, callback dispatch or forwarding macro. Table's cursor-based dash
 scanner additionally reports matched spans for its geometry pass.
 
-The generator retains each grammar's encoding, and the Makefile and
+Every lexer is generated one way, in byte mode, and the Makefile and
 reproducibility check use the same pinned re2c command. Ordinary builds consume
 committed C files.
 
