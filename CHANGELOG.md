@@ -6,6 +6,17 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Report a directive's label, and an inline directive's end, where the user
+  sees those bytes in the editor. A block directive's label added the fence's
+  column to a position already counted from the start of the line, so after
+  indentation or a container prefix it, and everything in it, lay to the
+  right of its brackets: `> :::note[a]` gave the label `1:12..1:14` on a
+  12-byte line, where it is `1:10..1:12`. In a grid or multiline table cell
+  it was counted from the cell's content instead of the line. An inline
+  directive and its label ended one column before the byte after them, which
+  at a table cell's edge is the end of the row, so they ran into the next
+  cell or onto the table's border.
+
 - Stop the walk back from a delimiter run to the character before it at a
   `~` that a continuation byte follows, which UTF-8 never has. The walk
   stepped over continuation bytes and `~` alike, so bytes that are not UTF-8,

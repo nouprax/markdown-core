@@ -6418,9 +6418,10 @@ static void releasing_an_empty_attribute_value_makes_no_allocator_call(test_batc
  * probes per query are read where the search would be dearest. Placements
  * behind the cursor -- a link closed after its opener, a rewind -- are
  * answered by a search of the part behind it, so the bound is on the
- * average, not on each query, and the links here exercise that path too. */
+ * average, not on each query, and the links here exercise that path too, as
+ * a directive does, placed from its colon and then back at its label. */
 static void inline_placement_probes_the_map_a_bounded_number_of_times(test_batch_runner *runner) {
-    static const char line[] = "a *b* c [d](/e) f\n";
+    static const char line[] = "a *b* c [d](/e) f :g[h]{.i}\n";
     for (size_t lines = 64; lines <= 4096; lines *= 8) {
         markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
         for (size_t i = 0; i < lines; i++) {
@@ -6430,7 +6431,7 @@ static void inline_placement_probes_the_map_a_bounded_number_of_times(test_batch
         markdown_core_node *root =
             markdown_core_parse_document_with_setup((const char *)source.ptr, source.size, measure_inline_work, &work);
         OK(runner, root != NULL, "the paragraph parses");
-        OK(runner, work.content_mark_queries >= 6 * lines, "every token asks the map: lines=%zu queries=%zu", lines,
+        OK(runner, work.content_mark_queries >= 12 * lines, "every token asks the map: lines=%zu queries=%zu", lines,
            work.content_mark_queries);
         OK(runner, work.content_mark_probes <= 2 * work.content_mark_queries + 64,
            "a placement is answered from the cursor, not by a search of the container: lines=%zu queries=%zu "
@@ -9292,6 +9293,157 @@ static markdown_core_node *first_of_kind(markdown_core_node *root, markdown_core
     return found;
 }
 
+/* The byte a scope coordinate names in `source`: the column-th byte of the
+ * line-th line, both counted from 1. -1 when no byte is there. */
+static int source_byte_at(const char *source, int line, int column) {
+    const char *text = source;
+    for (int l = 1; l < line; l++) {
+        text = strchr(text, '\n');
+        if (!text) {
+            return -1;
+        }
+        text++;
+    }
+    size_t length = strcspn(text, "\n");
+    return column >= 1 && (size_t)column <= length ? (unsigned char)text[column - 1] : -1;
+}
+
+static bool scope_within(const markdown_core_node *inner, const markdown_core_node *outer) {
+    return (inner->start_line > outer->start_line ||
+            (inner->start_line == outer->start_line && inner->start_column >= outer->start_column)) &&
+           (inner->end_line < outer->end_line ||
+            (inner->end_line == outer->end_line && inner->end_column <= outer->end_column));
+}
+
+/* Every node under `label` lies between its brackets: from the byte after the
+ * `[` to the byte before the `]`. */
+static bool label_holds_its_content(markdown_core_node *label) {
+    markdown_core_iter *iter = markdown_core_iter_new(label);
+    markdown_core_event_type event;
+    bool held = true;
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event != MARKDOWN_CORE_EVENT_ENTER || node == label) {
+            continue;
+        }
+        held &= (node->start_line > label->start_line ||
+                 (node->start_line == label->start_line && node->start_column > label->start_column)) &&
+                (node->end_line < label->end_line ||
+                 (node->end_line == label->end_line && node->end_column < label->end_column));
+    }
+    markdown_core_iter_free(iter);
+    return held;
+}
+
+/* A DIRECTIVE'S SCOPES ARE THE EDITOR POSITIONS OF ITS OWN BYTES, wherever it
+ * sits. A label starts on its `[` and ends on its `]`, its content starts on
+ * the byte after the `[`, and everything in it lies between the brackets. An
+ * inline directive starts on its `:` and ends on its last byte: the `}` of
+ * its attributes, or else its label's `]`. The parser reads a table cell's
+ * content as an input of its own, and a byte's index in that input is not its
+ * column in the editor: a tab there is as many spaces as it reaches, and at a
+ * cell's edge the byte after a directive is the cell's line ending, placed at
+ * the end of the row. So every endpoint is the position of the byte it names,
+ * never a column counted from another. Labels nest, so each label's own
+ * directives are checked too. */
+static void directive_scopes_are_editor_positions(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        /* Block directives after indentation and container prefixes. */
+        ":::note[a]\n:::\n",
+        ":::note[]\n:::\n",
+        "   ::note[a]\n",
+        ">\t::note[ab]\n",
+        "> :::note[label]{k=v}\n> :::\n",
+        "1. ::x[*e*]\n",
+        "  1. >  ::n[]\n",
+        "> > :::n[\xE4\xB8\xAD]\n",
+        /* Block directives in grid and multiline cells: first and later
+         * columns, a prefix inside the cell, a container spanning cell lines,
+         * and a label holding an inline directive. */
+        "+------------+\n| ::note[ab] |\n+------------+\n",
+        "+-----------+\n| > ::n[ab] |\n+-----------+\n",
+        "+----+---------------+\n| x  | > ::n[*e*]    |\n+----+---------------+\n",
+        "+-------------+\n| :::note[ab] |\n| body        |\n| :::         |\n+-------------+\n",
+        "+----------------+\n| - ::n[a :m[b]] |\n+----------------+\n",
+        "----------------------\nLeft       Right\n---------- -----------\na          ::n[ab]\nc\n\nd          e\n"
+        "----------------------\n",
+        /* Inline directives, at the edge of a simple, grid and multiline cell,
+         * with a label over a line ending, and in a pipe cell. */
+        "text :n[a] more\n",
+        "> - x :n[lbl]\n",
+        "h      k\n------ ------\n:m[ab] y\n\n",
+        "+-----------+\n| x :n[a]   |\n+-----------+\n",
+        "+-----------+\n| x :n{#y}  |\n+-----------+\n",
+        "----------------------\nLeft       Right\n---------- -----------\nx :m[ab]   yyyy\nc\n\nd          e\n"
+        "----------------------\n",
+        "> x :m[a\n> b]{.c}\n",
+        "+-----------+\n| x :m[a    |\n| b]        |\n+-----------+\n",
+        "| :m[ab] | y |\n| - | - |\n| a | b |\n",
+        /* A tab inside a block label is one source byte but several bytes of
+         * a grid or multiline cell's input. */
+        "+--------------+\n| ::nn[a\tb] |\n+--------------+\n",
+        "+--------------------+\n| ::note[a\tb :x[c]] |\n+--------------------+\n",
+        "----------------------\nLeft       Right\n---------- -----------\na          ::n[a\tb]\nc\n\nd          e\n"
+        "----------------------\n",
+        "> ::n[a\t*b*]\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const char *source = sources[i];
+        const int shown = (int)strcspn(source, "\n");
+        markdown_core_node *doc = parse(source);
+        markdown_core_node *roots[16] = {doc};
+        size_t root_count = 1, directives = 0;
+        while (root_count) {
+            markdown_core_iter *iter = markdown_core_iter_new(roots[--root_count]);
+            markdown_core_event_type event;
+            while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+                markdown_core_node *node = markdown_core_iter_get_node(iter);
+                if (event != MARKDOWN_CORE_EVENT_ENTER ||
+                    (node->kind != MARKDOWN_CORE_NODE_DIRECTIVE && node->kind != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
+                    continue;
+                }
+                directives++;
+                OK(runner, !node->parent || scope_within(node, node->parent), "a directive in %.*s lies in its parent",
+                   shown, source);
+                markdown_core_node *label = markdown_core_directive_label(node);
+                if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE) {
+                    /* Attributes follow the label's `]` directly, or stand
+                     * alone; the directive ends on the last of these. */
+                    bool attributed = !label || source_byte_at(source, label->end_line, label->end_column + 1) == '{';
+                    int last = source_byte_at(source, node->end_line, node->end_column);
+                    OK(runner, source_byte_at(source, node->start_line, node->start_column) == ':',
+                       "an inline directive in %.*s starts on its colon", shown, source);
+                    OK(runner,
+                       attributed ? last == '}'
+                                  : node->end_line == label->end_line && node->end_column == label->end_column,
+                       "an inline directive in %.*s ends on its last byte", shown, source);
+                }
+                if (!label) {
+                    continue;
+                }
+                markdown_core_node *content = markdown_core_node_first_child(label);
+                OK(runner,
+                   source_byte_at(source, label->start_line, label->start_column) == '[' &&
+                       source_byte_at(source, label->end_line, label->end_column) == ']',
+                   "a label in %.*s starts on its [ and ends on its ]", shown, source);
+                OK(runner, scope_within(label, node), "a label in %.*s lies in its directive", shown, source);
+                OK(runner,
+                   !content ||
+                       (content->start_line == label->start_line && content->start_column == label->start_column + 1),
+                   "a label's content in %.*s starts on the byte after its [", shown, source);
+                OK(runner, label_holds_its_content(label), "a label's content in %.*s lies between its brackets", shown,
+                   source);
+                if (root_count < sizeof(roots) / sizeof(roots[0])) {
+                    roots[root_count++] = label;
+                }
+            }
+            markdown_core_iter_free(iter);
+        }
+        OK(runner, directives > 0, "%.*s holds a directive", shown, source);
+        markdown_core_node_free(doc);
+    }
+}
+
 /* EVERY NODE THE FINISH STAGE WAS HANDED, counted by the test's own walk:
  * the root's children through the public iterator, each node's owned field
  * roots through the inline-subtree visitor, and the document's definition
@@ -10088,6 +10240,7 @@ int main(void) {
     accessors(runner);
     formula_element_accessors(runner);
     directive_element_accessors(runner);
+    directive_scopes_are_editor_positions(runner);
     node_check(runner);
     iterator(runner);
     iterator_delete(runner);
