@@ -410,8 +410,11 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
                             len - markdown_core_parser_get_first_nonspace(parser), &row)) {
         return NULL;
     }
-    table_row_block =
-        markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_TABLE_ROW, parser->offset + 1);
+    /* A pipe row begins at its own first non-space byte, as its header does:
+     * `parser->offset` is the container's content, which holds the row's
+     * indentation or the tail of a tab its container prefix shares. */
+    table_row_block = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_TABLE_ROW,
+                                                     parser->first_nonspace + 1);
     if (!table_row_block) {
 
         return NULL;
@@ -622,6 +625,10 @@ typedef struct {
     size_t first, last;
     bool block_content, open;
     int padding_limit;
+    /* The table's left edge, in geometry columns (`table_margin`): the
+     * table, each row and the first column begin here, not at the
+     * container's content. */
+    int margin;
 } table_candidate;
 
 typedef struct {
@@ -768,8 +775,22 @@ static void table_candidate_reset(table_candidate *candidate) {
     candidate->column_count = candidate->row_count = candidate->cell_count = 0;
     candidate->head_count = candidate->foot_count = candidate->first = candidate->last = 0;
     candidate->block_content = candidate->open = false;
-    candidate->padding_limit = 0;
+    candidate->padding_limit = candidate->margin = 0;
 }
+
+/* WHERE GEOMETRY IS MEASURED FROM. A line's geometry column 0 is its
+ * container's content -- the virtual column the block parser reached after
+ * the container prefixes, `first_column - indent` -- so a table reads the same
+ * inside a list item, a quote, or a grid cell as at the top level. Its tab
+ * stops are still the PHYSICAL line's, as for block indentation: a tab
+ * after `- x` or `> `, or one a prefix consumed in part, contributes only the
+ * columns left to its stop. Counting stops from the content instead gave the
+ * same tab four columns on one line and two on the next. */
+static int table_line_origin(const table_source_line *line) { return line->first_column - line->indent; }
+
+static int table_tab_width(int origin, int column) { return 4 - (origin + column) % 4; }
+
+static int table_column(const table_source_line *line, int byte);
 
 /* Grid columns count scalars, with tabs expanded at four-column stops. Each
  * position retains the input byte that authored it; slicing never loses tabs
@@ -802,7 +823,8 @@ static bool table_source_columns(table_source *source, size_t index) {
     int *bytes = workspace->bytes + line->byte_offset;
     /* The line's extent is read once: every position stored below is an
      * `int`, which the compiler must otherwise assume could be the line's own
-     * length and reload it for every character. */
+     * length and reload it for every character. Only a tab needs the line's
+     * origin, so only a tab reads it. */
     const unsigned char *data = line->data;
     const int end = line->length;
     for (int byte = line->offset, column = 0;;) {
@@ -814,6 +836,9 @@ static bool table_source_columns(table_source *source, size_t index) {
             line->columns = column;
             line->columns_ready = true;
             workspace->bytes_count += (size_t)column + 1;
+            /* The block parser measured this line's indentation with the
+             * same stops: geometry and indentation are one measurement. */
+            assert(table_column(line, line->first) == line->indent);
             return true;
         }
         if (column > INT_MAX - 4) {
@@ -821,7 +846,7 @@ static bool table_source_columns(table_source *source, size_t index) {
             return false;
         }
         if (data[byte] == '\t') {
-            int spaces = 4 - column % 4;
+            int spaces = table_tab_width(table_line_origin(line), column);
             while (spaces--) {
                 bytes[column++] = byte;
             }
@@ -940,12 +965,12 @@ static bool table_prepare_dashes(table_source *source, size_t index) {
         workspace->dashes_count += count;
         line->dashes_ready = true;
         const unsigned char *p = line->data + line->offset, *from, *before = p;
-        int column = 0;
+        int column = 0, origin = table_line_origin(line);
         for (size_t i = 0; i < count; i++) {
             scan_table_dash(&p, line->data + line->length, &from);
             source->parser->table_scan_work += (size_t)(p - before);
             while (before < from) {
-                column += *before++ == '\t' ? 4 - column % 4 : 1;
+                column += *before++ == '\t' ? table_tab_width(origin, column) : 1;
             }
             int start = column;
             column += (int)(p - from);
@@ -995,6 +1020,45 @@ static bool table_add_cell(table_source *source, table_candidate *candidate, siz
     return true;
 }
 
+/* WHERE A TABLE STARTS. The lines of a simple, multiline or grid table
+ * share one column geometry, so its left edge belongs to the table, not to a
+ * line: the indentation all of those lines share. Columns before the margin
+ * are blank on every one of them -- block indentation, which never changes a
+ * block's meaning -- so the first column, the table and each row begin at the
+ * margin wherever that indentation came from. The separator is one of these
+ * lines, so the margin never lies right of the first dash run; a line whose
+ * text starts left of that run moves the margin to its text, which the first
+ * column owns. A row whose first line is indented further still begins at the
+ * margin: its leading columns are the first cell's, and an empty first cell
+ * sits there. A pipe row shares no geometry, so its margin is its own. */
+static int table_margin(table_source *source, size_t first, size_t last) {
+    int margin = INT_MAX;
+    for (size_t i = first; i <= last; i++) {
+        if (source->lines[i].indent < margin) {
+            margin = source->lines[i].indent;
+        }
+    }
+    source->parser->table_scan_work += last - first + 1;
+    return margin;
+}
+
+/* The byte at a line's margin: where the table, or a row, begins on it. The
+ * margin lies in every table line's indentation, so the walk stays inside
+ * the whitespace the block parser has already measured and needs no column
+ * map; a multiline table's opening boundary never gets one. A tab that spans
+ * the margin is the byte there, as the column map would say. */
+static int table_margin_byte(const table_source_line *line, int margin) {
+    const unsigned char *data = line->data;
+    int byte = line->offset;
+    for (int column = 0, first = line->first; byte < first; byte++) {
+        column += data[byte] == '\t' ? table_tab_width(table_line_origin(line), column) : 1;
+        if (column > margin) {
+            break;
+        }
+    }
+    return byte;
+}
+
 static bool table_rectangular_row(table_source *source, table_candidate *candidate, size_t first, size_t last,
                                   size_t runs) {
     for (size_t i = first; i <= last; i++) {
@@ -1005,8 +1069,10 @@ static bool table_rectangular_row(table_source *source, table_candidate *candida
     if (!table_add_row(source, candidate, first, last)) {
         return false;
     }
+    /* Interior columns meet at dash-run starts; the outer two reach the
+     * table's edges, the margin and the line's end. */
     for (size_t column = 0; column < candidate->column_count; column++) {
-        int left = column ? table_dash(source, runs, column).start : 0;
+        int left = column ? table_dash(source, runs, column).start : candidate->margin;
         int right = column + 1 < candidate->column_count ? table_dash(source, runs, column + 1).start : INT_MAX;
         size_t cell_first = first, cell_last = last;
         if (candidate->block_content) {
@@ -1060,17 +1126,24 @@ static bool table_set_columns(table_source *source, table_candidate *candidate, 
         total += (i + 1 < count ? table_dash(source, runs, i + 1).start : table_dash(source, runs, i).end) -
                  table_dash(source, runs, i).start;
     }
+    /* ALIGNMENT IS READ AGAINST EACH COLUMN'S OWN DASH RUN, the first
+     * column's included: the text has leading space when the run's first
+     * column is blank, and room on the right when it ends before the run
+     * does -- the segment Pandoc's `alignType` reads. The first column used to
+     * be probed at the container's content instead, where an indented table
+     * has its indentation, so indenting a table one to three spaces made its
+     * first column right- or center-aligned. Where the table's text begins
+     * is the margin's business (`table_margin`), not alignment's. */
     for (size_t i = 0; i < count; i++) {
-        int left = i ? table_dash(source, runs, i).start : 0;
+        table_interval run = table_dash(source, runs, i);
         int right = i + 1 < count ? table_dash(source, runs, i + 1).start : line->columns;
         if (right > line->columns) {
             right = line->columns;
         }
-        right = table_trim_spaces(line, left, right);
-        bool occupied = right > left;
-        bool left_space = table_character(line, left) == ' ';
-        bool right_space = right - table_dash(source, runs, i).start <
-                           table_dash(source, runs, i).end - table_dash(source, runs, i).start;
+        right = table_trim_spaces(line, run.start, right);
+        bool occupied = right > run.start;
+        bool left_space = table_character(line, run.start) == ' ';
+        bool right_space = right < run.end;
         candidate->columns[i].flow = !occupied    ? MARKDOWN_CORE_FLOW_NONE
                                      : left_space ? (right_space ? MARKDOWN_CORE_FLOW_CENTER : MARKDOWN_CORE_FLOW_RIGHT)
                                                   : (right_space ? MARKDOWN_CORE_FLOW_LEFT : MARKDOWN_CORE_FLOW_NONE);
@@ -1321,6 +1394,7 @@ static bool table_parse_simple(table_source *source, size_t start, table_candida
     }
     candidate->first = start;
     candidate->last = end;
+    candidate->margin = table_margin(source, start, end);
     candidate->head_count = headerless ? 0 : 1;
     if (!headerless && !table_rectangular_row(source, candidate, start, start, runs)) {
         goto failed;
@@ -1397,6 +1471,7 @@ static bool table_parse_multiline(table_source *source, size_t start, table_cand
     candidate->padding_limit = INT_MAX;
     candidate->first = start;
     candidate->last = end;
+    candidate->margin = table_margin(source, start, end);
     candidate->head_count = header ? 1 : 0;
     if (!table_set_columns(source, candidate, runs, count, header ? start + 1 : delimiter + 1, true)) {
         goto failed;
@@ -1853,8 +1928,12 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         }
         table_source_line *line = &source->lines[i];
         source->parser->table_scan_work++;
+        /* A grid line BEGINS with its wall: its indentation reaches the
+         * wall's column exactly. Text left of the wall is not a wall-led
+         * line; it ends the candidate instead of being dropped from a table
+         * that starts after it. */
         int first = table_character(line, left);
-        if (first != '+' && first != '|') {
+        if ((first != '+' && first != '|') || line->indent != left) {
             break;
         }
         int last = table_trim_spaces(line, left + 1, line->columns) - 1;
@@ -1929,6 +2008,9 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
     }
     candidate->first = start;
     candidate->last = end;
+    /* Every grid line is indented exactly to the wall (above), so the shared
+     * indentation `table_margin` would find is the wall's column. */
+    candidate->margin = left;
     candidate->block_content = true;
     candidate->padding_limit = 1;
     size_t first_equal = SIZE_MAX, last_equal = SIZE_MAX, previous_equal = SIZE_MAX;
@@ -2001,6 +2083,10 @@ static bool table_parse_pipe_header(table_source *source, size_t start, table_ca
     }
     candidate->first = start;
     candidate->last = start + 1;
+    /* Pipes, not columns, delimit a pipe row's cells: no other line shares
+     * its geometry, so its margin is its own indentation, as for the body
+     * rows `try_opening_table_row` adds. */
+    candidate->margin = table_margin(source, start, start);
     candidate->head_count = 1;
     candidate->open = true;
     if (!table_add_row(source, candidate, start, start)) {
@@ -2277,7 +2363,9 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
     table->foot_count = candidate->foot_count;
     table->content_count = candidate->row_count - table->head_count - table->foot_count;
     node->start_line = first->line;
-    node->start_column = markdown_core_parser_source_column(parser, first->line, first->offset + 1);
+    /* The table and each of its rows begin at the margin on their first line. */
+    node->start_column =
+        markdown_core_parser_source_column(parser, first->line, table_margin_byte(first, candidate->margin) + 1);
     node->end_line = last->line;
     node->end_column = markdown_core_parser_source_column(parser, last->line, last->length);
     if (!candidate->open) {
@@ -2286,8 +2374,9 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
     for (size_t i = 0; i < candidate->row_count && !parser->error; i++) {
         table_source_row *row = &candidate->rows[i];
         table_source_line *begin = &source->lines[row->first], *end = &source->lines[row->last];
-        markdown_core_node *row_node = table_child(parser, node, MARKDOWN_CORE_NODE_TABLE_ROW, begin->line,
-                                                   begin->offset + 1, end->line, end->length);
+        markdown_core_node *row_node =
+            table_child(parser, node, MARKDOWN_CORE_NODE_TABLE_ROW, begin->line,
+                        table_margin_byte(begin, candidate->margin) + 1, end->line, end->length);
         if (!row_node) {
             break;
         }

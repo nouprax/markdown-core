@@ -681,6 +681,41 @@
             "id": "simple-table-headerless-footer-before-prose",
             "from": "markdown_strict+simple_tables+table_captions",
             "input": "--- ---\nv   w\n--- ---\nprose\n"
+        },
+        {
+            "id": "simple-table-indented-one-space",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": " Name  Count\n ----  -----\n ab    4\n"
+        },
+        {
+            "id": "simple-table-indented-empty-first-cell",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "   Name  Count\n   ----  -----\n   ab    4\n         5\n"
+        },
+        {
+            "id": "simple-table-headerless-indented",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "   ---- ----\n   a    b\n   ---- ----\n"
+        },
+        {
+            "id": "simple-table-header-indented-past-separator",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": " Name  Count\n----  -----\nab    4\n"
+        },
+        {
+            "id": "simple-table-quote-partially-consumed-tab",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": ">\tName  Count\n>   ----  -----\n>   ab    4\n"
+        },
+        {
+            "id": "simple-table-list-item-tab",
+            "from": "markdown_strict+simple_tables+table_captions",
+            "input": "* Name\tCount\n  ----  -----\n  ab    4\n"
+        },
+        {
+            "id": "grid-table-text-before-border",
+            "from": "markdown_strict+grid_tables",
+            "input": "  +---+\nx | a |\n  +---+\n"
         }
     ]
 }

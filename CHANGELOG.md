@@ -6,6 +6,22 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Read a table the same wherever its indentation comes from, but for the tab
+  stops a tab after it reaches. Indenting a simple or multiline table by one
+  to three spaces made its first column right- or center-aligned: alignment
+  was measured from the container's content, where the indentation is,
+  instead of from the column's own dash run, so the result depended on
+  whether the same indentation came from spaces or a list item. Tab stops
+  were counted from the container's content rather than the line, so a tab
+  after `- x` or one a `>` prefix consumed in part moved the columns
+  differently from Pandoc and from one line to the next. Simple, multiline
+  and grid tables and their rows now begin at the table's margin, the
+  indentation all of its lines share, and pipe rows at their own first
+  non-space byte; they began at the container's content, on indentation or on
+  a tab the prefix shared, so `   | c | d |` under an indented header started
+  at column 1. A grid line with text before its left border no longer joins
+  the grid, which dropped that text.
+
 - End a block in a grid or multiline table's cell that a blank line of the
   cell closes at column 0 of that line, as an empty line does at the top
   level. It ended on the row's last byte or on the next cell's text, outside
