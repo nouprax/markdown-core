@@ -36,10 +36,10 @@ const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdo
 /* A line of L bytes carries boundaries 1 through L+1. Column 0 is the boundary
  * before a line's first, and an END there says the element stopped at the end
  * of the line above — so it is a place on any line the document could reach,
- * including the one past the last. */
-const fault = ([line, column], lengths) => {
+ * including the one past the last. It names no byte, so no START is there. */
+const fault = ([line, column], lengths, end) => {
     if (line < 1) return "off-line";
-    if (column < 0) return "off-column";
+    if (column < 0 || (column === 0 && !end)) return "off-column";
     if (column === 0) return line >= 1 && line <= lengths.length + 1 ? "place" : "off-line";
     if (line > lengths.length) return "off-line";
     return column > lengths[line - 1] + 1 ? "off-column" : "place";
@@ -73,8 +73,8 @@ for (const example of corpus) {
             scope.end[1] === 0
         )
             continue;
-        const start = fault(scope.start, lengths);
-        const end = fault(scope.end, lengths);
+        const start = fault(scope.start, lengths, false);
+        const end = fault(scope.end, lengths, true);
         const order = before(scope.end, scope.start) ? "reversed" : "ordered";
         if (start === "place" && end === "place" && order === "ordered") continue;
         findings.push({

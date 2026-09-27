@@ -65,8 +65,11 @@ Lines normally begin at 1 and increment once for LF, CR, or CRLF. Columns
 follow the native byte-oriented convention; a tab occupies one source byte.
 The native sentinel values are preserved too: a zero-byte document has scope
 `1:1..0:0`, whereas a document containing only one newline has `1:1..1:0`.
-An end at `L:0` can also be produced when a block closes on a following blank
-line. The coordinates are reported without validation or repair.
+An end at `L:0` can also be produced when a block closes on a following empty
+line, in a grid or multiline table's cell as at the top level; a cell's line is
+empty when its part of the physical line is blank, and there the sentinel is
+the end of the cell's part of line `L-1`. The coordinates are reported without
+validation or repair.
 
 SoftBreak and LineBreak locate the authored break using this same convention;
 their scopes do not promise retrievable string slices. A multiline table cell

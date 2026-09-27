@@ -6,6 +6,14 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- End a block in a grid or multiline table's cell that a blank line of the
+  cell closes at column 0 of that line, as an empty line does at the top
+  level. It ended on the row's last byte or on the next cell's text, outside
+  its cell: a list in the first cell of `| - item | x   |`, closed by the
+  row's blank line below it, ended at `3:16`, the table's right border,
+  instead of `3:0`. A footnote defined in a cell, a list item, and indented
+  code did the same.
+
 - Parse a lazy line as the same line parses with the quote's prefix. A lazy
   line kept its indentation in the content of the paragraph it went to.
   After a callout's marker line, where it opens the body's first paragraph,

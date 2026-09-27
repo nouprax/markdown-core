@@ -162,7 +162,8 @@ struct markdown_core_parser {
     bool partially_consumed_tab;
     /* Contains the currently processed line */
     markdown_core_strbuf curline;
-    /* See the documentation for markdown_core_parser_get_last_line_length() in markdown_core.h */
+    /* See the documentation for markdown_core_parser_get_last_line_length() in
+     * markdown-core-element-api.h */
     bufsize_t last_line_length;
     /* Options set by the user, see the Options section in markdown_core.h */
     /* Sticky allocation-failure flag: once any parse structure is lost, the
@@ -671,12 +672,15 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
 void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser);
 bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_node *owner);
 /* Project a byte column in the active input to its original source column.
- * Line numbers already name physical source lines. Column zero stays a
- * line-ending sentinel. Producers call this when assigning node scopes. */
+ * Line numbers already name physical source lines. Column zero names no byte:
+ * an END there is the sentinel for the end of the line above -- in a table
+ * cell, the end of the cell's part of that line -- so there is nothing in the
+ * input to project and it is returned as it is. Producers call this when
+ * assigning node scopes. */
 int markdown_core_parser_mapped_source_column(markdown_core_parser *parser, int line, int column);
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int markdown_core_parser_source_column(
     markdown_core_parser *parser, int line, int column) {
-    return column < 0 || parser->block_root == parser->root
+    return column <= 0 || parser->block_root == parser->root
                ? column
                : markdown_core_parser_mapped_source_column(parser, line, column);
 }

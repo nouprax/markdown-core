@@ -54,9 +54,9 @@ Document scope=1:1..17:33 anchor=null attributes={} children=3
 │   │               │               └── Text scope=15:18..15:21 anchor=null attributes={} literal="text" children=0
 │   │               └── TableFoot children=0
 │   └── TableFoot children=0
-├── Footnote scope=6:3..7:51 anchor=null attributes={} id="f" children=1
+├── Footnote scope=6:3..7:0 anchor=null attributes={} id="f" children=1
 │   └── Paragraph scope=6:9..6:13 anchor=null attributes={} children=1
 │       └── Text scope=6:9..6:13 anchor=null attributes={} literal="first" children=0
-└── Footnote scope=6:28..7:51 anchor=null attributes={} id="f" children=1
+└── Footnote scope=6:28..7:0 anchor=null attributes={} id="f" children=1
     └── Paragraph scope=6:34..6:39 anchor=null attributes={} children=1
         └── Text scope=6:34..6:39 anchor=null attributes={} literal="second" children=0

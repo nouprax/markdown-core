@@ -444,18 +444,18 @@ int markdown_core_parser_append_content_marks(markdown_core_parser *parser, cons
 }
 
 int markdown_core_parser_mapped_source_column(markdown_core_parser *parser, int line, int column) {
-    assert(column >= 0 && parser->block_root != parser->root);
+    assert(column > 0 && parser->block_root != parser->root);
     size_t index = (size_t)(line - parser->input_first_line);
     assert(line >= parser->input_first_line && index < parser->input_line_count);
     int source_line, source_column;
     if (!markdown_core_parser_content_end_place(parser, &parser->block_root->content_map,
-                                                (bufsize_t)parser->input_lines[index].start + (column ? column - 1 : 0),
-                                                &source_line, &source_column)) {
+                                                (bufsize_t)parser->input_lines[index].start + column - 1, &source_line,
+                                                &source_column)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return column;
     }
     assert(source_line == line);
-    return source_column - (column == 0 ? 1 : 0);
+    return source_column;
 }
 
 int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markdown_core_node *node, int line,

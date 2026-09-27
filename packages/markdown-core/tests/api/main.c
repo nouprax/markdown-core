@@ -9567,6 +9567,133 @@ static void lazy_lines_parse_as_prefixed(test_batch_runner *runner) {
     }
 }
 
+/* A grid or multiline cell is a rectangle of the source: its lines, between
+ * its first and last column. */
+static bool cell_holds_place(const markdown_core_node *cell, int line, int column) {
+    return line >= cell->start_line && line <= cell->end_line && column >= cell->start_column &&
+           column <= cell->end_column;
+}
+
+/* Whether `cell`'s columns on `line` hold nothing but spaces. */
+static bool cell_segment_is_blank(const char *source, const markdown_core_node *cell, int line) {
+    for (int column = cell->start_column; column <= cell->end_column; column++) {
+        int byte = source_byte_at(source, line, column);
+        if (byte != ' ' && byte != -1) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool node_holds(const markdown_core_node *ancestor, const markdown_core_node *node) {
+    for (; node; node = node->parent) {
+        if (node == ancestor) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* A BLOCK IN A CELL ENDS IN ITS CELL, OR ON THE LINE-ENDING SENTINEL. The
+ * parser reads a grid or multiline cell's content as an input of its own,
+ * whose columns it projects to the source's. A block that a following empty
+ * line closes ends at column 0 of that line -- the sentinel for the end of
+ * the line above, whatever input the block was read from, as
+ * `- item\n\nnext` gives the list `1:1..2:0`. A cell's blank segment is empty
+ * in its input, and column 0 names no byte there, so it has nowhere to be
+ * projected to: projected as if it did, it landed on the row's last byte, the
+ * table's right border, or on the next cell's text. So every node that
+ * starts in a cell -- a footnote defined there too, though the document holds
+ * it -- starts on a byte and ends at a place in that cell, or at column 0 of a
+ * later line whose segment in that cell is blank. Cells nest, so the cell is
+ * the innermost one holding the node's start, other than the node's own: a
+ * row starts on its first cell. */
+typedef struct {
+    markdown_core_node *roots[8];
+    size_t count;
+} cell_test_roots;
+
+static int collect_cell_test_root(markdown_core_node **slot, void *context) {
+    cell_test_roots *roots = context;
+    if (slot && *slot && roots->count < sizeof(roots->roots) / sizeof(roots->roots[0])) {
+        roots->roots[roots->count++] = *slot;
+    }
+    return 1;
+}
+
+static void cell_blocks_end_in_their_cell(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "+--------+-----+\n| - item | x   |\n|        |     |\n| next   | y   |\n+--------+-----+\n",
+        "+-----+--------+\n| x   | - a    |\n|     |   - b  |\n|     |        |\n|     | c      |\n+-----+--------+\n",
+        "+----------+-----+\n|     code | x   |\n|          |     |\n| next     | y   |\n+----------+-----+\n",
+        "+---------+-----+\n| [^f]: a | x   |\n|         |     |\n| next    | y   |\n+---------+-----+\n",
+        "+--------+\n| - a    |\n|        |\n+--------+\n",
+        "+----------------+\n| +----------+   |\n| | - a      |   |\n| |          |   |\n| | b        |   |\n| "
+        "+----------+   |\n+----------------+\n",
+        "------------------\nLeft     Right\n-------- ---------\n- a      x\n"
+        "  - b    y\n\nc        z\n------------------\n",
+        /* A multiline cell's blank segment, on a line the next cell holds text on. */
+        "------------------\nLeft     Right\n-------- ---------\n- a      x\n         y\nc        z\n\n"
+        "d        w\n------------------\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const char *source = sources[i];
+        const int shown = (int)strcspn(source, "\n");
+        markdown_core_node *doc = parse(source);
+        /* The document, and the definitions it holds apart from its children. */
+        cell_test_roots roots = {{doc}, 1};
+        markdown_core_visit_block_subtrees(doc, collect_cell_test_root, &roots);
+        const markdown_core_node *cells[32];
+        size_t cell_count = 0, checked = 0;
+        for (size_t r = 0; r < roots.count; r++) {
+            markdown_core_iter *iter = markdown_core_iter_new(roots.roots[r]);
+            markdown_core_event_type event;
+            while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+                markdown_core_node *node = markdown_core_iter_get_node(iter);
+                if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_TABLE_CELL &&
+                    cell_count < sizeof(cells) / sizeof(cells[0])) {
+                    cells[cell_count++] = node;
+                }
+            }
+            markdown_core_iter_free(iter);
+        }
+        for (size_t r = 0; r < roots.count; r++) {
+            markdown_core_iter *iter = markdown_core_iter_new(roots.roots[r]);
+            markdown_core_event_type event;
+            while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+                markdown_core_node *node = markdown_core_iter_get_node(iter);
+                if (event != MARKDOWN_CORE_EVENT_ENTER || node->start_line <= 0) {
+                    continue;
+                }
+                OK(runner, node->start_column >= 1, "a node from %d:%d in %.*s starts on a byte", node->start_line,
+                   node->start_column, shown, source);
+                const markdown_core_node *cell = NULL;
+                for (size_t c = 0; c < cell_count; c++) {
+                    if (!node_holds(node, cells[c]) &&
+                        cell_holds_place(cells[c], node->start_line, node->start_column) &&
+                        (!cell || cell_holds_place(cell, cells[c]->start_line, cells[c]->start_column))) {
+                        cell = cells[c];
+                    }
+                }
+                if (!cell) {
+                    continue;
+                }
+                checked++;
+                OK(runner,
+                   node->end_column == 0 ? node->end_line > cell->start_line && node->end_line <= cell->end_line &&
+                                               cell_segment_is_blank(source, cell, node->end_line)
+                                         : cell_holds_place(cell, node->end_line, node->end_column),
+                   "a node from %d:%d in %.*s ends in its cell %d:%d..%d:%d, not at %d:%d", node->start_line,
+                   node->start_column, shown, source, cell->start_line, cell->start_column, cell->end_line,
+                   cell->end_column, node->end_line, node->end_column);
+            }
+            markdown_core_iter_free(iter);
+        }
+        OK(runner, checked > 0, "%.*s puts nodes in a cell", shown, source);
+        markdown_core_node_free(doc);
+    }
+}
+
 /* EVERY NODE THE FINISH STAGE WAS HANDED, counted by the test's own walk:
  * the root's children through the public iterator, each node's owned field
  * roots through the inline-subtree visitor, and the document's definition
@@ -10366,6 +10493,7 @@ int main(void) {
     directive_scopes_are_editor_positions(runner);
     paragraphs_start_on_their_first_byte(runner);
     lazy_lines_parse_as_prefixed(runner);
+    cell_blocks_end_in_their_cell(runner);
     node_check(runner);
     iterator(runner);
     iterator_delete(runner);
