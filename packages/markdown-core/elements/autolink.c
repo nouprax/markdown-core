@@ -109,7 +109,7 @@ static markdown_core_node *match_angle(markdown_core_inline_state *inline_state)
  * is not one. A host character is neither whitespace nor punctuation.
  * Whitespace is a space, a tab or a line ending, as everywhere outside
  * delimiter flanking, so a non-breaking space is a host character. */
-static int hostchar_width(const uint8_t *link, size_t link_len) {
+static inline int hostchar_width(const uint8_t *link, size_t link_len) {
     int32_t ch;
     int width = markdown_core_utf8proc_iterate(link, (bufsize_t)link_len, &ch);
     if (width < 0 || markdown_core_is_whitespace(link[0]) || markdown_core_utf8proc_is_punctuation(ch)) {
