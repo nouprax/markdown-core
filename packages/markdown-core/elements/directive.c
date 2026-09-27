@@ -75,8 +75,14 @@ static int scan_name(const unsigned char *data, bufsize_t len, bufsize_t pos, bu
     return 1;
 }
 
-static int scan_label(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *label_start,
-                      bufsize_t *label_len, bufsize_t *end) {
+/* The only bytes that decide where a label ends: the brackets, and the
+ * backslash that escapes the byte after it. Every other byte, of any script,
+ * is skipped by the class scan. */
+enum { LABEL_STOP = 1 };
+static const uint8_t LABEL_BYTES[256] = {['['] = LABEL_STOP, [']'] = LABEL_STOP, ['\\'] = LABEL_STOP};
+
+static inline int scan_label(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *label_start,
+                             bufsize_t *label_len, bufsize_t *end) {
     int depth = 1;
     bufsize_t i;
 
@@ -84,10 +90,9 @@ static int scan_label(const unsigned char *data, bufsize_t len, bufsize_t pos, b
         return 0;
     }
 
-    i = pos + 1;
-    while (i < len) {
-        if (data[i] == '\\' && i + 1 < len) {
-            i += 2;
+    for (i = pos + 1; (i = markdown_core_scan_to_class(LABEL_BYTES, LABEL_STOP, data, i, len)) < len;) {
+        if (data[i] == '\\') {
+            i += i + 1 < len ? 2 : 1;
             continue;
         }
 
@@ -99,20 +104,12 @@ static int scan_label(const unsigned char *data, bufsize_t len, bufsize_t pos, b
             if (++depth > 33) {
                 return 0;
             }
-            i++;
-            continue;
+        } else if (--depth == 0) {
+            *label_start = pos + 1;
+            *label_len = i - (pos + 1);
+            *end = i + 1;
+            return 1;
         }
-
-        if (data[i] == ']') {
-            depth--;
-            if (depth == 0) {
-                *label_start = pos + 1;
-                *label_len = i - (pos + 1);
-                *end = i + 1;
-                return 1;
-            }
-        }
-
         i++;
     }
 
