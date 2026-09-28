@@ -6,6 +6,13 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Keep a tab in a pipe table's header cell after a leading caption, as every
+  other pipe cell does. That one header was filled the way a simple table's
+  cells are, column by column, so each tab became the spaces it reached:
+  `Table: cap`, a blank line and ``| `a→b` | c |`` over `| - | - |`, with
+  `→` a tab, gave the code `"a    b"` where the same header without the
+  caption gives `"a\tb"`.
+
 - Take the line after a callout's marker line lazily exactly when a
   paragraph would take it. Indented code, an HTML block of the seventh kind,
   a dash-led table and a definition list's term do not open on a lazy line

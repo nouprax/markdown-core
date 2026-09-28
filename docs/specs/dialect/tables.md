@@ -45,7 +45,9 @@ Escape a pipe that belongs to cell content, including code or a cross-link label
 The code literal contains `a | b` and the cross link has label `Read more`.
 Cell splitting happens before inline parsing; an unescaped pipe splits a cell
 even inside a comment or cross-link candidate. Cell content trims surrounding
-whitespace, and escaped pipes are contracted before inline parsing.
+whitespace, and escaped pipes are contracted before inline parsing. Every
+other byte stays as written, a tab included, in the header and body rows
+alike, whether the header ends a paragraph or follows a caption.
 
 ## Captions
 

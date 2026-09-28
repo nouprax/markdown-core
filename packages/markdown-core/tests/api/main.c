@@ -10036,6 +10036,79 @@ static void table_margin_is_shared_indentation(test_batch_runner *runner) {
     }
 }
 
+/* The row of `doc` that starts on `line`, as its cells and every node in
+ * them: kind, literal, and scope, with lines counted from the row's. */
+static char *describe_row_on(markdown_core_node *doc, int line) {
+    markdown_core_node *row = NULL;
+    markdown_core_iter *iter = markdown_core_iter_new(doc);
+    markdown_core_event_type event;
+    while (!row && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_TABLE_ROW &&
+            node->start_line == line) {
+            row = node;
+        }
+    }
+    markdown_core_iter_free(iter);
+    if (!row) {
+        return NULL;
+    }
+    markdown_core_strbuf out = MARKDOWN_CORE_BUF_INIT();
+    iter = markdown_core_iter_new(row);
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        const char *literal = markdown_core_node_get_literal(node);
+        char place[96];
+        snprintf(place, sizeof(place), "%d %d:%d..%d:%d ", node->kind, node->start_line - line, node->start_column,
+                 node->end_line - line, node->end_column);
+        markdown_core_strbuf_puts(&out, place);
+        markdown_core_strbuf_puts(&out, literal ? literal : "");
+        markdown_core_strbuf_putc(&out, '\n');
+    }
+    markdown_core_iter_free(iter);
+    return (char *)markdown_core_strbuf_detach(&out);
+}
+
+/* A PIPE ROW IS ONE ROW WHEREVER IT IS FOUND. Pipes delimit its cells, and
+ * each cell holds its bytes: trimmed of the whitespace around them, its
+ * escaped pipes contracted, a tab kept a tab. So the row's cells, and every
+ * node in them, are the same whether it heads a table after a paragraph,
+ * heads one after a leading caption, or is a body row -- in their literals
+ * and in their scopes -- under any container prefix. */
+static void pipe_rows_are_one_row(test_batch_runner *runner) {
+    static const char *const rows[] = {
+        "| `a\tb` | c\\|d |",         "|\ta\t|\tb |", "| a | |", "a\t| b", "| *x*\t**y** | `\\|` |",
+        "| \xc3\xa9\t\xc3\xbc | x |",
+    };
+    static const char *const prefixes[][2] = {{"", ""}, {"  ", "  "}, {"> ", "> "}, {"- ", "  "}};
+    for (size_t p = 0; p < sizeof(prefixes) / sizeof(prefixes[0]); p++) {
+        const char *first = prefixes[p][0], *rest = prefixes[p][1];
+        for (size_t r = 0; r < sizeof(rows) / sizeof(rows[0]); r++) {
+            char headed[160], captioned[160], body[160];
+            snprintf(headed, sizeof(headed), "%s%s\n%s| - | - |\n", first, rows[r], rest);
+            snprintf(captioned, sizeof(captioned), "%sTable: cap\n%s\n%s%s\n%s| - | - |\n", first, rest, rest, rows[r],
+                     rest);
+            snprintf(body, sizeof(body), "%s| x | y |\n%s| - | - |\n%s%s\n", first, rest, rest, rows[r]);
+            markdown_core_node *headed_doc = parse(headed), *captioned_doc = parse(captioned), *body_doc = parse(body);
+            char *after_paragraph = describe_row_on(headed_doc, 1), *after_caption = describe_row_on(captioned_doc, 3),
+                 *in_body = describe_row_on(body_doc, 3);
+            OK(runner,
+               after_paragraph && after_caption && in_body && !strcmp(after_caption, after_paragraph) &&
+                   !strcmp(in_body, after_paragraph),
+               "%s%s is one row as a header, after a caption and in the body", first, rows[r]);
+            markdown_core_free(after_paragraph);
+            markdown_core_free(after_caption);
+            markdown_core_free(in_body);
+            markdown_core_node_free(headed_doc);
+            markdown_core_node_free(captioned_doc);
+            markdown_core_node_free(body_doc);
+        }
+    }
+}
+
 /* EVERY NODE THE FINISH STAGE WAS HANDED, counted by the test's own walk:
  * the root's children through the public iterator, each node's owned field
  * roots through the inline-subtree visitor, and the document's definition
@@ -10839,6 +10912,7 @@ int main(void) {
     cell_blocks_end_in_their_cell(runner);
     table_geometry_ignores_indentation(runner);
     table_margin_is_shared_indentation(runner);
+    pipe_rows_are_one_row(runner);
     node_check(runner);
     iterator(runner);
     iterator_delete(runner);
