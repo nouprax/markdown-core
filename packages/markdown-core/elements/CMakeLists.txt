@@ -155,6 +155,12 @@ if(MARKDOWN_CORE_STATIC OR MARKDOWN_CORE_SHARED)
         PRIVATE ${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
         PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
                $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    # The libFuzzer harness links this archive, so the parser sources it
+    # explores carry its coverage instrumentation. The flag is per target: set
+    # directory-wide it would reach core/'s configuration probes, which link.
+    if(MARKDOWN_CORE_LIB_FUZZER)
+        target_compile_options(${PUBLIC_STATIC_LIBRARY} PRIVATE -fsanitize-coverage=trace-pc-guard)
+    endif()
     if(MARKDOWN_CORE_STATIC)
         list(APPEND MARKDOWN_CORE_INSTALL ${PUBLIC_STATIC_LIBRARY})
     endif()
