@@ -537,18 +537,6 @@ static int matches(const markdown_core_element *self, markdown_core_parser *pars
     return res;
 }
 
-static const char *get_type_string(const markdown_core_element *self, markdown_core_node *node) {
-    if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
-        return "table";
-    } else if (node->kind == MARKDOWN_CORE_NODE_TABLE_ROW) {
-        return "table_row";
-    } else if (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
-        return "table_cell";
-    }
-
-    return "<unknown>";
-}
-
 static const markdown_core_node_type containment_kinds[] = {MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_TABLE_ROW,
                                                             MARKDOWN_CORE_NODE_TABLE_CELL, MARKDOWN_CORE_NODE_NONE};
 
@@ -2657,7 +2645,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .last_block_matches = matches,
     .maximum_block_indent = 3,
     .try_opening_block = try_opening_table_block,
-    .get_type_string_func = get_type_string,
     .containment_kinds = containment_kinds,
     .contains_inlines_func = contains_inlines,
     .opaque_alloc_func = opaque_alloc,

@@ -645,18 +645,6 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
     free_nodes_through(parser, opener_node, closer_node);
 }
 
-static const char *get_type_string(const markdown_core_element *element, markdown_core_node *node) {
-    if (node->kind == MARKDOWN_CORE_NODE_FORMULA) {
-        return "formula";
-    }
-
-    if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
-        return "formula_block";
-    }
-
-    return "<unknown>";
-}
-
 static const markdown_core_node_type containment_kinds[] = {MARKDOWN_CORE_NODE_FORMULA,
                                                             MARKDOWN_CORE_NODE_FORMULA_BLOCK, MARKDOWN_CORE_NODE_NONE};
 
@@ -804,7 +792,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
      * every Paragraph EXIT there, where it finds no Formula and returns. */
     .finish_acts_on_kinds = FORMULA_ACTS_ON_KINDS,
     .finish_exit_kinds = FORMULA_EXIT_KINDS,
-    .get_type_string_func = get_type_string,
     .containment_kinds = containment_kinds,
     .accepts_lines_func = accepts_lines,
     .opaque_alloc_func = formula_opaque_alloc,

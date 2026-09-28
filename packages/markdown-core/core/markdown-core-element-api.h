@@ -199,9 +199,6 @@ typedef int (*markdown_core_match_block_func)(const markdown_core_element *eleme
 typedef int (*markdown_core_continues_block_func)(const markdown_core_element *element, markdown_core_parser *parser,
                                                   const unsigned char *input, int len, markdown_core_node *container);
 
-typedef const char *(*markdown_core_get_type_string_func)(const markdown_core_element *element,
-                                                          markdown_core_node *node);
-
 typedef int (*markdown_core_can_contain_func)(const markdown_core_element *element, markdown_core_node *node,
                                               markdown_core_node_type child);
 

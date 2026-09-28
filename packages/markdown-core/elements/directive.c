@@ -649,22 +649,6 @@ static int directive_block_matches(const markdown_core_element *element, markdow
     return directive_block_continues(element, parser, input, len, container);
 }
 
-static const char *get_type_string(const markdown_core_element *element, markdown_core_node *node) {
-    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE) {
-        return "directive";
-    }
-
-    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
-        return "directive_block";
-    }
-
-    if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
-        return "directive_label";
-    }
-
-    return "<unknown>";
-}
-
 static const markdown_core_node_type containment_kinds[] = {
     MARKDOWN_CORE_NODE_DIRECTIVE, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
     MARKDOWN_CORE_NODE_NONE};
@@ -717,7 +701,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
      * does not start with one cannot open a directive. */
     .open_block_gate = {.bytes = ":"},
     .probe_block = probe_directive_block,
-    .get_type_string_func = get_type_string,
     .containment_kinds = containment_kinds,
     .contains_inlines_func = contains_inlines,
     .accepts_lines_func = accepts_lines,
