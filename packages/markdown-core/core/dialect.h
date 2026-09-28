@@ -132,33 +132,58 @@ static inline size_t markdown_core_finish_key(markdown_core_event_type event, ma
  * ENTER and EXIT that bound an extent are delivered whenever the extent is
  * walked, so the state the step keeps for the extent is always in step). */
 typedef struct markdown_core_finish_step_entry {
-    const markdown_core_element *element;
+    const markdown_core_element_instance *instance;
     size_t slot;
     markdown_core_node_kind_set acts_on;
     bool gated;
 } markdown_core_finish_step_entry;
 
-/* WHAT THE FINISH WALK ASKS OF A KIND, answered once per dialect per kind and
- * read as one record per event (see walk_owned_trees in blocks.c), so that
- * the walk's common path reads no descriptor. Each flag is a fact of the
- * kind's structure element: PARSES, the kind may hold inline content the walk
- * parses at its ENTER (it declares `inline_content`, or a
- * `contains_inlines_func` the walk then asks about the node); DEFERRED, the
- * content was parsed before the walk (a heading's, by the document's
- * preparation); FIELDS, the kind can own a field root through its own record
- * (`markdown_core_kind_owns_fields`, element.h -- a subtree an element owns
- * is found through the node's `element`, which the walk tests beside this).
- * `complete` is the element's `complete_inline`, NULL for a kind whose
- * element declares none. The out-of-table index answers nothing. */
+/* WHAT THE ENGINE ASKS OF A KIND, answered once per dialect per kind so that
+ * no hot path reads a descriptor to learn it. `structure` is the instance of
+ * the kind's structure element (element.h, `markdown_core_structure_for_kind`)
+ * -- the `self` every structure hook the engine calls on a node of the kind
+ * is handed -- or NULL for a kind with none or whose structure element the
+ * dialect does not hold, which then has no flag but FIELDS. Each flag is a
+ * fact of that element's descriptor (element.h), read with the record by the
+ * line engine and the finish walk alike. A fact a hook answers per node is a
+ * flag saying the element declares the hook, which is then asked:
+ *
+ * - INLINES / INLINES_ASK: `inline_content` / `contains_inlines_func` -- the
+ *   kind may hold inline content (PARSES, either one), which the walk parses
+ *   at its ENTER; DEFERRED, `deferred_inlines`, it was parsed before the walk
+ *   (a heading's, by the document's preparation);
+ * - LINES / LINES_ASK: the kind takes lines as content, a LITERAL
+ *   `content_mode` / `accepts_lines_func`; PROSE, a PROSE `content_mode`, it
+ *   takes a text line as prose; IS_PARAGRAPH, `paragraph`;
+ * - BLANK_OPAQUE, BLANK_ASK (`blank_line`), BLANK_RUNS and BLANK_PROPAGATES
+ *   (`propagates_child_blank`): what a blank line means inside it;
+ * - FIELDS: the kind can own a field root through its own record
+ *   (`markdown_core_kind_owns_fields`, element.h -- a subtree an element owns
+ *   is found through the node's `element`, which the walk tests beside this).
+ *
+ * `complete` is the structure's `complete_inline`, NULL when it declares
+ * none, which the walk calls at every ENTER. The out-of-table index answers
+ * nothing. */
 enum {
-    MARKDOWN_CORE_FINISH_KIND_PARSES = 1u << 0,
-    MARKDOWN_CORE_FINISH_KIND_DEFERRED = 1u << 1,
-    MARKDOWN_CORE_FINISH_KIND_FIELDS = 1u << 2
+    MARKDOWN_CORE_KIND_INLINES = 1u << 0,
+    MARKDOWN_CORE_KIND_INLINES_ASK = 1u << 1,
+    MARKDOWN_CORE_KIND_PARSES = MARKDOWN_CORE_KIND_INLINES | MARKDOWN_CORE_KIND_INLINES_ASK,
+    MARKDOWN_CORE_KIND_DEFERRED = 1u << 2,
+    MARKDOWN_CORE_KIND_FIELDS = 1u << 3,
+    MARKDOWN_CORE_KIND_LINES = 1u << 4,
+    MARKDOWN_CORE_KIND_LINES_ASK = 1u << 5,
+    MARKDOWN_CORE_KIND_PROSE = 1u << 6,
+    MARKDOWN_CORE_KIND_IS_PARAGRAPH = 1u << 7,
+    MARKDOWN_CORE_KIND_BLANK_OPAQUE = 1u << 8,
+    MARKDOWN_CORE_KIND_BLANK_ASK = 1u << 9,
+    MARKDOWN_CORE_KIND_BLANK_RUNS = 1u << 10,
+    MARKDOWN_CORE_KIND_BLANK_PROPAGATES = 1u << 11
 };
-typedef struct markdown_core_finish_kind {
-    void (*complete)(struct markdown_core_parser *, markdown_core_node *, int);
-    uint8_t flags;
-} markdown_core_finish_kind;
+typedef struct markdown_core_kind_record {
+    const markdown_core_element_instance *structure;
+    void (*complete)(const markdown_core_element_instance *, struct markdown_core_parser *, markdown_core_node *, int);
+    uint16_t flags;
+} markdown_core_kind_record;
 
 /* The keys a block-start family's gate lists are indexed by: each first
  * non-space byte, a line with no such byte, and an indented line (see
@@ -166,6 +191,30 @@ typedef struct markdown_core_finish_kind {
 #define MARKDOWN_CORE_BLOCK_GATE_KEY_NONE 256
 #define MARKDOWN_CORE_BLOCK_GATE_KEY_INDENTED 257
 #define MARKDOWN_CORE_BLOCK_GATE_KEYS 258
+
+/* The alignment every element record begins at: that of the strictest type a
+ * record may hold. C99 has no `max_align_t`; the size of a union of the
+ * candidates is a multiple of each one's alignment. */
+typedef union {
+    long double number;
+    void *pointer;
+    uint64_t integer;
+} markdown_core_state_alignment;
+#define MARKDOWN_CORE_STATE_ALIGN sizeof(markdown_core_state_alignment)
+
+static inline size_t markdown_core_state_align(size_t size) {
+    return (size + MARKDOWN_CORE_STATE_ALIGN - 1) / MARKDOWN_CORE_STATE_ALIGN * MARKDOWN_CORE_STATE_ALIGN;
+}
+
+/* THE INSTANCES BY DESCRIPTOR: an open-addressed table of the dialect's
+ * instances keyed by their descriptor's address, at least twice as large as
+ * the elements it holds, so a lookup ends at the element or at an empty entry.
+ * It answers markdown_core_parser_instance -- one element reading another's
+ * state. The engine and an element's own hooks never search it: the
+ * projections hold instances. */
+static inline size_t markdown_core_instance_hash(const markdown_core_element *element, size_t mask) {
+    return (size_t)(((uint64_t)(uintptr_t)element * UINT64_C(0x9E3779B97F4A7C15)) >> 32) & mask;
+}
 
 /* The dialect as setup extends it. The core dialect is borrowed; the first
  * attachment copies it into `element_allocation`, which the builder owns
@@ -176,13 +225,14 @@ struct markdown_core_dialect_builder {
     size_t element_count, element_capacity;
 };
 
-/* A sealed dialect. Every list it points to, its element list included,
+/* A sealed dialect. Every list it points to, its instances included,
  * lives in the storage it was sealed into, after the struct, so it owns
  * nothing apart from that storage; readers see `const` views only.
  *
  * `document_structure` owns the document lifecycle -- the last registered
  * element that declares it, as `text_structure` is the last that declares
- * `parse_text` and each delimiter rule belongs to the last element that
+ * `parse_text`, `text_block_structure` the last that declares
+ * `open_text_block` and each delimiter rule belongs to the last element that
  * declares it. The core dialect has one of each; a setup that registers
  * another replaces the earlier one for its instance. */
 /* The class of a byte that ends a run of inline text, in the dialect's
@@ -190,10 +240,13 @@ struct markdown_core_dialect_builder {
 enum { MARKDOWN_CORE_TEXT_END = 1 };
 
 typedef struct markdown_core_dialect {
-    const markdown_core_element *const *elements;
+    /* The elements, as one instance each in element order (markdown-core-
+     * element-api.h, "AN ELEMENT AS ONE PARSE HOLDS IT"). Every projection
+     * below names instances, so a hook is dispatched with its `self` in hand. */
+    const markdown_core_element_instance *instances;
     size_t element_count;
-    const markdown_core_element *document_structure, *text_structure;
-    const markdown_core_element *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
+    const markdown_core_element_instance *document_structure, *text_structure, *text_block_structure;
+    const markdown_core_element_instance *delimiter_owners[MARKDOWN_CORE_DELIM_RULE_COUNT];
     markdown_core_delimiter_rule delimiter_chars[256];
     /* Each block-start hook family, in descriptor order. Order inside a
      * family IS the grammar: the first owner that claims a line wins it,
@@ -201,7 +254,7 @@ typedef struct markdown_core_dialect {
      * thematic break precedes list (`***`). A line asks four of these
      * families in turn, so without the projection it would pay the whole
      * dialect four times to reach the one to four owners that can answer. */
-    const markdown_core_element *const *block_hooks[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
+    const markdown_core_element_instance *const *block_hooks[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     size_t block_hook_counts[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     /* Each family's declared gates as one list of owners per key, in the
      * family's own order: a count, then owner indices. NULL when the family
@@ -215,17 +268,18 @@ typedef struct markdown_core_dialect {
      * definition_next_lines_admit). */
     bool container_prefix[256];
     /* The inline-content families, in descriptor order. */
-    const markdown_core_element *const *inline_hooks[MARKDOWN_CORE_INLINE_HOOK_COUNT];
+    const markdown_core_element_instance *const *inline_hooks[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     size_t inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     /* Each byte's inline owners, by precedence and then descriptor order:
      * `inline_dispatch[inline_dispatch_offsets[c] .. inline_dispatch_offsets[c + 1])`. */
     size_t inline_dispatch_offsets[257];
-    const markdown_core_element *const *inline_dispatch;
+    const markdown_core_element_instance *const *inline_dispatch;
     /* The inline byte tables: the text terminators, flanking-transparent
-     * bytes and start predicates of the registered inline elements. A text
-     * terminator has the class MARKDOWN_CORE_TEXT_END, which the text scan
-     * stops at (markdown_core_scan_to_class). */
-    bool (*inline_start_predicates[256])(markdown_core_inline_state *, bufsize_t);
+     * bytes and the instance whose start predicate a byte asks, of the
+     * registered inline elements. A text terminator has the class
+     * MARKDOWN_CORE_TEXT_END, which the text scan stops at
+     * (markdown_core_scan_to_class). */
+    const markdown_core_element_instance *inline_start_owners[256];
     uint8_t special_chars[256];
     int8_t skip_chars[256];
     /* The finish steps by key (see `markdown_core_finish_key`): a list
@@ -234,19 +288,57 @@ typedef struct markdown_core_dialect {
      * one per element that declares a step. */
     const markdown_core_finish_step_entry *finish_dispatch[MARKDOWN_CORE_FINISH_KEY_COUNT];
     size_t finish_step_slots;
-    markdown_core_finish_kind finish_kinds[MARKDOWN_CORE_FINISH_KIND_COUNT + 1];
+    /* Each kind's record, by kind index (markdown_core_finish_kind_index). */
+    markdown_core_kind_record kinds[MARKDOWN_CORE_FINISH_KIND_COUNT + 1];
+    /* The instances by descriptor, `instance_mask + 1` entries
+     * (markdown_core_instance_hash), and the bytes of one inline run's block
+     * of records. */
+    const markdown_core_element_instance *const *instance_table;
+    size_t instance_mask;
+    size_t run_state_size;
 } markdown_core_dialect;
 
+/* The record of `kind`, and the instance of the structure element of a node's
+ * kind -- NULL for no node, as for a kind with none. */
+static inline const markdown_core_kind_record *markdown_core_dialect_kind(const markdown_core_dialect *dialect,
+                                                                          markdown_core_node_type kind) {
+    return &dialect->kinds[markdown_core_finish_kind_index(kind)];
+}
+
+static inline const markdown_core_element_instance *
+markdown_core_dialect_structure(const markdown_core_dialect *dialect, const markdown_core_node *node) {
+    return node ? markdown_core_dialect_kind(dialect, (markdown_core_node_type)node->kind)->structure : NULL;
+}
+
+/* The instance of `element` in `dialect`, or NULL when it holds none. Sealing
+ * resolves kinds and peers through it, and introspection asks it; parse-time
+ * code never does, since every instance a hook reaches is already resolved. */
+static inline const markdown_core_element_instance *
+markdown_core_dialect_instance(const markdown_core_dialect *dialect, const markdown_core_element *element) {
+    size_t mask = dialect->instance_mask;
+    for (size_t at = markdown_core_instance_hash(element, mask);; at = (at + 1) & mask) {
+        const markdown_core_element_instance *instance = dialect->instance_table[at];
+        if (!instance || instance->element == element) {
+            return instance;
+        }
+    }
+}
+
 /* What sealing a builder takes, counted from its element list alone: how
- * many element pointers, finish step entries and gate-table bytes follow the
- * struct, and the counts that place each projection among them. */
+ * many finish step entries, projected instance pointers, instance-table
+ * entries, resolved peers and gate-table bytes follow the struct beside one instance per
+ * element, and the counts that place each projection among them. */
 typedef struct markdown_core_dialect_sizes {
     size_t block_totals[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     bool gated[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     size_t inline_totals[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     size_t inline_dispatch_offsets[257];
     size_t finish_key_counts[MARKDOWN_CORE_FINISH_KEY_COUNT];
-    size_t pointers, steps, gate_bytes;
+    size_t pointers, steps, instance_slots, gate_bytes;
+    /* The bytes the elements' parse records take, and one run's records. */
+    size_t state_bytes, run_state_bytes;
+    /* The peers the elements declare, all together. */
+    size_t peers;
 } markdown_core_dialect_sizes;
 
 /* Begin a builder from the `count` elements of `elements`, which it borrows. */
@@ -258,11 +350,12 @@ void markdown_core_dialect_builder_init(markdown_core_dialect_builder *builder,
 size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builder, markdown_core_dialect_sizes *sizes);
 
 /* Seal `builder`, as `sizes` measured it, into `dialect`: zeroed storage
- * aligned for the struct and followed by the measured bytes. It cannot fail
- * and copies what it keeps, so the builder is unchanged and still owns what
- * it did. */
+ * aligned for the struct and followed by the measured bytes. `state` is the
+ * zeroed, aligned storage of `sizes->state_bytes` the instances' parse
+ * records are laid out in. It cannot fail and copies what it keeps, so the
+ * builder is unchanged and still owns what it did. */
 void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, const markdown_core_dialect_sizes *sizes,
-                                markdown_core_dialect *dialect);
+                                markdown_core_dialect *dialect, unsigned char *state);
 
 /* Release whatever the builder owns. */
 void markdown_core_dialect_builder_dispose(markdown_core_dialect_builder *builder);

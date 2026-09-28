@@ -33,7 +33,7 @@ static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {
     }
 }
 
-static int continue_code(const markdown_core_element *self, markdown_core_parser *parser, unsigned char *data,
+static int continue_code(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *data,
                          int length, markdown_core_node *container) {
     markdown_core_chunk input_chunk = {(unsigned char *)data, length, 0};
     markdown_core_chunk *input = &input_chunk;
@@ -75,7 +75,9 @@ static int continue_code(const markdown_core_element *self, markdown_core_parser
     return res;
 }
 
-static void finalize_code(markdown_core_parser *parser, markdown_core_node *b) {
+static void finalize_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_node *b) {
+    (void)self;
     bufsize_t pos;
     markdown_core_strbuf *node_content = &b->content;
 
@@ -144,8 +146,9 @@ static void finalize_code(markdown_core_parser *parser, markdown_core_node *b) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
-static bool open_fenced(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,
-                        block_start *start) {
+static bool open_fenced(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                        markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
+    (void)self;
     bufsize_t matched = start->matched;
 
     *container =
@@ -167,8 +170,9 @@ static bool open_fenced(markdown_core_parser *parser, markdown_core_node **conta
 
     return true;
 }
-static bool open_indented(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,
-                          block_start *start) {
+static bool open_indented(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
+    (void)self;
 
     markdown_core_block_advance_offset(parser, input, CODE_INDENT, true);
     *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->offset + 1);
@@ -186,7 +190,9 @@ static bool open_indented(markdown_core_parser *parser, markdown_core_node **con
 
     return true;
 }
-static bool scan_code(markdown_core_parser *parser, block_start_context *context, block_start *start) {
+static bool scan_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                      block_start_context *context, block_start *start) {
+    (void)self;
     if (context->indent >= CODE_INDENT) {
         /* Indented code interrupts no paragraph, and a lazy line is text. */
         if (context->paragraph || context->lazy || markdown_core_is_line_end(context->input->data[context->first])) {
@@ -203,7 +209,11 @@ static bool scan_code(markdown_core_parser *parser, block_start_context *context
     start->kind = MARKDOWN_CORE_NODE_CODE_BLOCK;
     return true;
 }
-static bool blank_line(markdown_core_parser *parser, markdown_core_node *node) { return !node->as.code->fenced; }
+static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                       markdown_core_node *node) {
+    (void)self;
+    return !node->as.code->fenced;
+}
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .name = "code_block",
     .maximum_block_indent = INT_MAX,

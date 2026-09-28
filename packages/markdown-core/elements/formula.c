@@ -205,14 +205,15 @@ static int scan_formula_block_close(const unsigned char *data, bufsize_t len, bu
     return 0;
 }
 
-static int probe_formula_block(markdown_core_parser *parser, markdown_core_chunk *input, int first, int indent,
-                               markdown_core_block_reader *reader) {
+static int probe_formula_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                               markdown_core_chunk *input, int first, int indent, markdown_core_block_reader *reader) {
+    (void)self;
     (void)parser;
     (void)reader;
     return indent < 4 && scan_formula_block_open(input->data, input->len, first) != FORMULA_BLOCK_DELIM_NONE;
 }
 
-static markdown_core_node *try_opening_formula_block(const markdown_core_element *element, int indented,
+static markdown_core_node *try_opening_formula_block(const markdown_core_element_instance *self, int indented,
                                                      markdown_core_parser *parser, markdown_core_node *parent_container,
                                                      unsigned char *input, int len) {
     int block_delim;
@@ -235,7 +236,7 @@ static markdown_core_node *try_opening_formula_block(const markdown_core_element
         return NULL;
     }
 
-    markdown_core_node_set_element(node, element);
+    markdown_core_node_set_element(node, self->element);
     node->opaque = markdown_core_alloc(1, sizeof(node_formula));
 
     formula = get_formula(node);
@@ -250,7 +251,7 @@ static markdown_core_node *try_opening_formula_block(const markdown_core_element
     return node;
 }
 
-static int formula_block_matches(const markdown_core_element *element, markdown_core_parser *parser,
+static int formula_block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                  unsigned char *input, int len, markdown_core_node *container) {
     node_formula *formula = get_formula(container);
     int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
@@ -297,8 +298,9 @@ static bool formula_body_admitted(markdown_core_delimiter_rule rule, const unsig
     return rule != FORMULA_DELIM_DOLLAR_INLINE || !len || body[0] != '`' || (len >= 2 && body[len - 1] == '`');
 }
 
-static markdown_core_node *match_formula_delimiter(const markdown_core_element *self, markdown_core_parser *parser,
-                                                   markdown_core_node *parent, markdown_core_inline_state *inline_state,
+static markdown_core_node *match_formula_delimiter(const markdown_core_element_instance *self,
+                                                   markdown_core_parser *parser, markdown_core_node *parent,
+                                                   markdown_core_inline_state *inline_state,
                                                    markdown_core_delimiter_rule rule, bufsize_t len, int can_open,
                                                    int can_close) {
     if (can_open) {
@@ -314,8 +316,8 @@ static markdown_core_node *match_formula_delimiter(const markdown_core_element *
              * deferred transaction: this opaque production is already complete. */
             if (!(parent->element && parent->element->can_contain_func) &&
                 markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_FORMULA)) {
-                markdown_core_node *formula =
-                    make_formula_span(self, parser, inline_state, parent, rule, start, from, close, close + len);
+                markdown_core_node *formula = make_formula_span(self->element, parser, inline_state, parent, rule,
+                                                                start, from, close, close + len);
                 if (formula) {
                     markdown_core_inline_state_set_offset(inline_state, close + len);
                 }
@@ -422,7 +424,7 @@ static int scan_formula_closer(const unsigned char *data, int length, int at, ma
  * entirely: `\\]` is then CommonMark's escaped backslash followed by a
  * bracket closer, and the base scanner must see that `]`, or `[bar\\]` stops
  * being a reference (CommonMark 0.31.2 example 558). */
-static markdown_core_node *match(const markdown_core_element *element, markdown_core_parser *parser,
+static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_state *inline_state) {
     markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
@@ -435,13 +437,13 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     if (character == '$') {
         if (scan_formula_dollar_display_open(chunk->data, len, offset)) {
             open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_DOLLAR_DISPLAY);
-            return match_formula_delimiter(element, parser, parent, inline_state, FORMULA_DELIM_DOLLAR_DISPLAY, 2,
-                                           !open, open);
+            return match_formula_delimiter(self, parser, parent, inline_state, FORMULA_DELIM_DOLLAR_DISPLAY, 2, !open,
+                                           open);
         }
 
         if (scan_formula_dollar_inline_open(chunk->data, len, offset)) {
             open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_DOLLAR_INLINE);
-            return match_formula_delimiter(element, parser, parent, inline_state, FORMULA_DELIM_DOLLAR_INLINE, 1,
+            return match_formula_delimiter(self, parser, parent, inline_state, FORMULA_DELIM_DOLLAR_INLINE, 1,
                                            !open && dollar_inline_can_open(chunk, (bufsize_t)offset),
                                            open && dollar_inline_can_close(chunk, (bufsize_t)offset));
         }
@@ -449,28 +451,28 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
         opener_len = scan_formula_latex_backslash_display_open(chunk->data, len, offset);
         if (opener_len) {
             open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY);
-            return match_formula_delimiter(element, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+            return match_formula_delimiter(self, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
                                            opener_len, !open, 0);
         }
 
         opener_len = scan_formula_latex_backslash_inline_open(chunk->data, len, offset);
         if (opener_len) {
             open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE);
-            return match_formula_delimiter(element, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
+            return match_formula_delimiter(self, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
                                            opener_len, !open, 0);
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ']', 2);
         if (closer_len &&
             markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY)) {
-            return match_formula_delimiter(element, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+            return match_formula_delimiter(self, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
                                            closer_len, 0, 1);
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ')', 2);
         if (closer_len &&
             markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE)) {
-            return match_formula_delimiter(element, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
+            return match_formula_delimiter(self, parser, parent, inline_state, FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
                                            closer_len, 0, 1);
         }
     }
@@ -620,7 +622,7 @@ static markdown_core_node *make_formula_span(const markdown_core_element *elemen
     return formula;
 }
 
-static void insert_formula(const markdown_core_element *element, markdown_core_parser *parser,
+static void insert_formula(const markdown_core_element_instance *self, markdown_core_parser *parser,
                            markdown_core_inline_state *inline_state, delimiter *opener, delimiter *closer) {
     markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
     markdown_core_node *opener_node = markdown_core_delimiter_node(opener);
@@ -635,7 +637,7 @@ static void insert_formula(const markdown_core_element *element, markdown_core_p
         !markdown_core_node_can_contain_type(opener_node->parent, MARKDOWN_CORE_NODE_FORMULA)) {
         return;
     }
-    markdown_core_node *formula = make_formula_span(element, parser, inline_state, opener_node->parent, rule,
+    markdown_core_node *formula = make_formula_span(self->element, parser, inline_state, opener_node->parent, rule,
                                                     from - markdown_core_delimiter_length(opener), from, close,
                                                     markdown_core_delimiter_position(closer));
     if (!formula) {
@@ -717,7 +719,7 @@ failed:
  * cannot be carried out: a field root is detached, so the attach a
  * substitution needs has no parent to take, and `$$x$$\n: body\n` used to
  * report that missing parent to the caller as an allocation failure. */
-static markdown_core_finish_result finish_step(const markdown_core_element *element, markdown_core_parser *parser,
+static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                markdown_core_node *node, markdown_core_event_type event, int is_root,
                                                void **state) {
     int may_replace = !is_root;
@@ -736,7 +738,7 @@ static markdown_core_finish_result finish_step(const markdown_core_element *elem
     }
 
     if (may_replace && node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code->info)) {
-        return replace_with_formula_block(element, parser, node, NULL);
+        return replace_with_formula_block(self->element, parser, node, NULL);
     }
 
     /* Only an anonymous paragraph is a removable wrapper. A declared anchor
@@ -750,7 +752,7 @@ static markdown_core_finish_result finish_step(const markdown_core_element *elem
         if (!formula) {
             return MARKDOWN_CORE_FINISH_CONTINUE;
         }
-        return replace_with_formula_block(element, parser, node, node->first_child);
+        return replace_with_formula_block(self->element, parser, node, node->first_child);
     }
 
     return MARKDOWN_CORE_FINISH_CONTINUE;

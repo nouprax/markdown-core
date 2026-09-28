@@ -13,12 +13,15 @@
  * stage into parser creation makes that stage cheaper without making parsing
  * cheaper, and no number here will show it.
  *
- *   source_to_buffer   markdown-core  markdown_core_parse_document_with_setup
- *                                       -> S_parse_source
- *                      cmark          cmark_parser_feed
- *   buffer_to_ast      markdown-core  markdown_core_parse_document_with_setup
- *                                       -> S_finish_parse
- *                      cmark          cmark_parser_finish
+ *   source_to_buffer   markdown-core  markdown_core_parser_parse -> S_parse_source
+ *                      cmark          bench_parse_document -> cmark_parser_feed
+ *   buffer_to_ast      markdown-core  markdown_core_parser_parse -> S_finish_parse
+ *                      cmark          bench_parse_document -> cmark_parser_finish
+ *
+ * Each stage is named by its boundary alone. The caller is the transaction,
+ * found in each profile as the one function that calls every boundary
+ * (commonCaller), so a baseline revision whose entry had another name is
+ * measured at the same boundaries.
  *
  * WHY cmark's FEED API. cmark splits the same two paths across two public
  * calls, so feeding the whole document and then finishing gives a boundary
@@ -57,7 +60,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { baseName, costRecord, edgesBetween, foldNames, nodesEnteredFrom, parseCallgrind } from "./callgrind.mjs";
+import {
+    baseName,
+    commonCaller,
+    costRecord,
+    edgesBetween,
+    foldNames,
+    nodesEnteredFrom,
+    parseCallgrind
+} from "./callgrind.mjs";
 import {
     compiledFlags as readCompiledFlags,
     discardTree,
@@ -99,15 +110,15 @@ const ENGINES = {
     "markdown-core": {
         runner: "packages/markdown-core/benchmarks/markdown_core_stage_runner",
         stages: {
-            source_to_buffer: { caller: "markdown_core_parse_document_with_setup", callee: "S_parse_source" },
-            buffer_to_ast: { caller: "markdown_core_parse_document_with_setup", callee: "S_finish_parse" }
+            source_to_buffer: { callee: "S_parse_source" },
+            buffer_to_ast: { callee: "S_finish_parse" }
         }
     },
     cmark: {
         runner: "packages/markdown-core/benchmarks/cmark_stage_runner",
         stages: {
-            source_to_buffer: { caller: "bench_parse_document", callee: "cmark_parser_feed" },
-            buffer_to_ast: { caller: "bench_parse_document", callee: "cmark_parser_finish" }
+            source_to_buffer: { callee: "cmark_parser_feed" },
+            buffer_to_ast: { callee: "cmark_parser_finish" }
         }
     },
     /* Same stage split, same API, same codebase -- and it implements tables,
@@ -116,8 +127,8 @@ const ENGINES = {
     "cmark-gfm": {
         runner: "packages/markdown-core/benchmarks/cmark_gfm_stage_runner",
         stages: {
-            source_to_buffer: { caller: "bench_parse_document", callee: "cmark_parser_feed" },
-            buffer_to_ast: { caller: "bench_parse_document", callee: "cmark_parser_finish" }
+            source_to_buffer: { callee: "cmark_parser_feed" },
+            buffer_to_ast: { callee: "cmark_parser_finish" }
         }
     }
 };
@@ -882,7 +893,7 @@ function verifyStageSymbols(profile) {
     for (const [engine, definition] of Object.entries(ENGINES)) {
         const symbols = symbolsOf(engine, definition.runner);
         for (const boundary of Object.values(definition.stages)) {
-            for (const name of [boundary.caller, boundary.callee]) {
+            for (const name of [boundary.callee]) {
                 if (!symbols.has(name)) {
                     fail(
                         `${engine}: ${name} is absent from ${definition.runner}. The profile build must keep the ` +
@@ -1175,8 +1186,15 @@ function measure(profile, engine, document, out) {
         return name.slice(0, context).replace(CLONE_SUFFIX, "") + name.slice(context);
     });
     const stages = {};
+    const boundaries = STAGES.map((stage) => definition.stages[stage].callee);
+    const transaction = commonCaller(profileByName, boundaries);
+    if (!transaction) {
+        fail(
+            `${engine}: no one function calls every stage boundary (${boundaries.join(", ")}) in ${path.basename(dump)}`
+        );
+    }
     for (const stage of STAGES) {
-        const boundary = definition.stages[stage];
+        const boundary = { caller: transaction, callee: definition.stages[stage].callee };
         const edges = edgesBetween(profileByName, boundary.caller, boundary.callee);
         if (!edges.length) {
             fail(`${engine}: no call edge ${boundary.caller} -> ${boundary.callee} in ${path.basename(dump)}`);

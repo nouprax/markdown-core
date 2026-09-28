@@ -60,6 +60,10 @@ typedef struct {
  */
 typedef struct markdown_core_inline_state markdown_core_inline_state;
 
+/** One element as one parse holds it (see "AN ELEMENT AS ONE PARSE HOLDS IT"
+ * below). Every parse-time hook is handed its own as `self`. */
+typedef struct markdown_core_element_instance markdown_core_element_instance;
+
 /** The dialect of one parser instance while its setup extends it
  * (dialect.h). Setup is the only code that holds one. */
 typedef struct markdown_core_dialect_builder markdown_core_dialect_builder;
@@ -147,19 +151,20 @@ int markdown_core_delimiter_can_close(const delimiter *delim);
  * Should return the newly created block if there is one, or
  * 'parent_container' if its type was modified, or NULL.
  */
-typedef markdown_core_node *(*markdown_core_open_block_func)(const markdown_core_element *element, int indented,
+typedef markdown_core_node *(*markdown_core_open_block_func)(const markdown_core_element_instance *self, int indented,
                                                              markdown_core_parser *parser,
                                                              markdown_core_node *parent_container, unsigned char *input,
                                                              int len);
 
-typedef markdown_core_node *(*markdown_core_match_inline_func)(const markdown_core_element *element,
+typedef markdown_core_node *(*markdown_core_match_inline_func)(const markdown_core_element_instance *self,
                                                                markdown_core_parser *parser, markdown_core_node *parent,
                                                                unsigned char character,
                                                                markdown_core_inline_state *inline_state);
 
 /* Builds the opaque AST value only. The matcher owns all delimiter removal,
  * including the matched endpoints, on success and failure alike. */
-typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_element *element, markdown_core_parser *parser,
+typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_element_instance *self,
+                                                     markdown_core_parser *parser,
                                                      markdown_core_inline_state *inline_state, delimiter *opener,
                                                      delimiter *closer);
 
@@ -187,7 +192,7 @@ typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_element
  *  container's own closing line. A DirectiveBlock returns
  *  MARKDOWN_CORE_BLOCK_PENDING_CLOSE until descendant ownership is known.
  */
-typedef int (*markdown_core_match_block_func)(const markdown_core_element *element, markdown_core_parser *parser,
+typedef int (*markdown_core_match_block_func)(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                               unsigned char *input, int len, markdown_core_node *container);
 
 /** Whether 'input' would continue 'container', asked AHEAD OF TIME.
@@ -204,8 +209,9 @@ typedef int (*markdown_core_match_block_func)(const markdown_core_element *eleme
  *  container, or any node. A container whose element provides no hook ends
  *  every lookahead at its next line.
  */
-typedef int (*markdown_core_continues_block_func)(const markdown_core_element *element, markdown_core_parser *parser,
-                                                  const unsigned char *input, int len, markdown_core_node *container);
+typedef int (*markdown_core_continues_block_func)(const markdown_core_element_instance *self,
+                                                  markdown_core_parser *parser, const unsigned char *input, int len,
+                                                  markdown_core_node *container);
 
 typedef int (*markdown_core_can_contain_func)(const markdown_core_element *element, markdown_core_node *node,
                                               markdown_core_node_type child);
@@ -283,7 +289,7 @@ typedef enum {
  * or replaced 'node' (legal only at EXIT), FAILED with 'parser->error' set when
  * an allocation failed, and CONTINUE otherwise.
  */
-typedef markdown_core_finish_result (*markdown_core_finish_step_func)(const markdown_core_element *element,
+typedef markdown_core_finish_result (*markdown_core_finish_step_func)(const markdown_core_element_instance *self,
                                                                       markdown_core_parser *parser,
                                                                       markdown_core_node *node,
                                                                       markdown_core_event_type event, int is_root,
@@ -307,7 +313,7 @@ typedef markdown_core_finish_result (*markdown_core_finish_step_func)(const mark
  * a field root sees that document in whatever state the finish stage has
  * reached, which is not the state any pass is promised.
  */
-typedef int (*markdown_core_postprocess_func)(const markdown_core_element *element, markdown_core_parser *parser,
+typedef int (*markdown_core_postprocess_func)(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                               markdown_core_node *root);
 
 typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_element *element, markdown_core_node *node);
@@ -325,6 +331,55 @@ typedef void (*markdown_core_opaque_free_func)(const markdown_core_element *elem
  * descriptor, so "carries no mutable state" is a fact the compiler checks
  * rather than a convention.
  */
+
+/** AN ELEMENT AS ONE PARSE HOLDS IT.
+ *
+ * A descriptor is immutable, so what an element learns during a parse lives
+ * in records the engine gives it. The descriptor declares their sizes:
+ *
+ *   `state_size`     -- one record per parse transaction, zeroed before the
+ *                       document lifecycle begins and released with the
+ *                       parser. The element's `dispose_parser` releases
+ *                       whatever the record owns.
+ *   `run_state_size` -- one record per inline-content run, zeroed before the
+ *                       run's `init_inline` hooks and released after its
+ *                       `dispose_inline` hooks, which release whatever the
+ *                       record owns. A run started without a parser (a
+ *                       reference definition's cursor) has none.
+ *
+ * Sealing a dialect makes one INSTANCE of each element it holds: the
+ * descriptor, its parse record and where its run record lies in a run. The
+ * engine hands every parse-time hook its own instance as `self`, so an
+ * element reaches its own state directly: `self->state`, and
+ * `markdown_core_run_state` for the run's. Hooks that act on nodes outside a
+ * parse (`can_contain_func` and the rest) take the descriptor alone.
+ *
+ * An element whose code reads ANOTHER element's state declares that element
+ * in `peers`. Sealing resolves each declared peer once, in declaration order,
+ * into `self->peers`: the peer's instance, or NULL when the dialect does not
+ * hold it. The declaration is where one element depending on another is
+ * written down, and no parse-time code looks an element up by name. The
+ * engine never reads a record; it knows sizes and lifetimes only, so an
+ * element that needs state declares a size rather than adding a field to a
+ * core struct.
+ */
+struct markdown_core_element_instance {
+    const markdown_core_element *element;
+    /* The parse record, or NULL when the element declares none. */
+    void *state;
+    /* Where the element's record lies in a run's block of records. */
+    size_t run_offset;
+    /* The instances of the descriptor's `peers`, in its order. */
+    const markdown_core_element_instance *const *peers;
+};
+
+/** The instance of `element` in the parse `parser` runs, or NULL when its
+ *  dialect does not hold `element`. A dialect holds an element once:
+ *  registration refuses a descriptor already attached. For code outside the
+ *  dialect -- an embedder or a test inspecting a parse; an element reaches
+ *  another through its declared `peers`. */
+const markdown_core_element_instance *markdown_core_parser_instance(const markdown_core_parser *parser,
+                                                                    const markdown_core_element *element);
 
 /** Return the index of the line currently being parsed, starting with 1.
  */
@@ -550,6 +605,11 @@ int markdown_core_dialect_builder_attach(markdown_core_dialect_builder *builder,
 const markdown_core_element *const *markdown_core_dialect_builder_elements(const markdown_core_dialect_builder *builder,
                                                                            size_t *count);
 
+/** A parse's dialect extension: it receives the builder, already holding the
+ *  parse's base elements, before any source is read. Returning false aborts
+ *  the parse. */
+typedef bool (*markdown_core_parser_setup_func)(markdown_core_dialect_builder *builder, void *context);
+
 typedef enum {
     MARKDOWN_CORE_NODE_SET_KIND_OK,
     MARKDOWN_CORE_NODE_SET_KIND_REJECTED,
@@ -609,17 +669,6 @@ void markdown_core_inline_state_set_offset(markdown_core_inline_state *inline_st
  */
 struct markdown_core_chunk *markdown_core_inline_state_get_chunk(markdown_core_inline_state *inline_state);
 
-/** The surrounding bracket's closing byte, or zero outside brackets.
- * Bare token scanners preserve an unescaped closer for the shared algorithm. */
-unsigned char markdown_core_inline_state_closing_bracket(markdown_core_inline_state *inline_state);
-
-/** The start of the current independent inline body. */
-int markdown_core_inline_state_context_start(markdown_core_inline_state *inline_state);
-
-/** Returns 1 if the inline state is currently in a bracket; pass 1 for 'image'
- * if you want to know about an image-type bracket, 0 for link-type. */
-int markdown_core_inline_state_in_bracket(markdown_core_inline_state *inline_state, int image);
-
 /** Remove the last n characters from the last child of the given node.
  * This only works where all n characters are in the single last child, and the last
  * child is MARKDOWN_CORE_NODE_TEXT.
@@ -660,8 +709,9 @@ int markdown_core_inline_state_find_opaque_close(markdown_core_inline_state *inl
  * more information on the parameters
  */
 void markdown_core_inline_state_push_delimiter(markdown_core_inline_state *inline_state,
-                                               const markdown_core_element *owner, markdown_core_delimiter_rule rule,
-                                               int can_open, int can_close, markdown_core_node *inl_text);
+                                               const markdown_core_element_instance *owner,
+                                               markdown_core_delimiter_rule rule, int can_open, int can_close,
+                                               markdown_core_node *inl_text);
 
 /** Whether the delimiters of `rule` on the stack that can open outnumber
  * those that can close. The counts are kept at every push and removal, so the

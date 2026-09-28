@@ -7,14 +7,46 @@
 #include "inline_internal.h"
 #include "block_internal.h"
 
+/* The elements whose state this element reads, as `self->peers` holds them. */
+enum { FOOTNOTE_LINK, FOOTNOTE_CITATION };
+static const markdown_core_element *const FOOTNOTE_PEERS[] = {
+    [FOOTNOTE_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, [FOOTNOTE_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION, NULL};
+
 static const markdown_core_map_record *
-markdown_core_inline_footnote_definition(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                         bufsize_t label_start, bufsize_t after_close);
+markdown_core_inline_footnote_definition(const markdown_core_element_instance *self,
+                                         markdown_core_inline_state *inline_state, bufsize_t label_start,
+                                         bufsize_t after_close);
 static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
                                                                    bracket *opener, bufsize_t after_close);
-static bool markdown_core_footnote_scan(markdown_core_parser *parser, block_start_context *context, block_start *start);
-void markdown_core_block_finalize_footnotes(markdown_core_parser *parser) {
-    markdown_core_definition_collection *collection = &parser->footnotes;
+static bool markdown_core_footnote_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                        block_start_context *context, block_start *start);
+void markdown_core_footnotes_begin(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    markdown_core_footnote_state *state = self->state;
+    state->labels = markdown_core_footnote_definition_map_new();
+    if (!state->labels) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+}
+
+/* Whether the label set lost an entry to a failed allocation, which it
+ * records rather than reports. */
+bool markdown_core_footnotes_lost(const markdown_core_element_instance *self) {
+    const markdown_core_footnote_state *state = self->state;
+    return state->labels && state->labels->oom;
+}
+
+void markdown_core_footnotes_dispose(const markdown_core_element_instance *self) {
+    markdown_core_footnote_state *state = self->state;
+    markdown_core_free(state->definitions.values);
+    state->definitions.values = NULL;
+    if (state->labels) {
+        markdown_core_map_free(state->labels);
+        state->labels = NULL;
+    }
+}
+
+void markdown_core_block_finalize_footnotes(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    markdown_core_definition_collection *collection = &((markdown_core_footnote_state *)self->state)->definitions;
     markdown_core_key_index ids = {0};
     size_t index, ordinal = 0;
     if (!collection->count) {
@@ -69,8 +101,9 @@ done:
  * lookup matched it byte for byte -- so the call takes its id from there
  * rather than normalizing the same label a second time. */
 static const markdown_core_map_record *
-markdown_core_inline_footnote_definition(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                         bufsize_t label_start, bufsize_t after_close) {
+markdown_core_inline_footnote_definition(const markdown_core_element_instance *self,
+                                         markdown_core_inline_state *inline_state, bufsize_t label_start,
+                                         bufsize_t after_close) {
     markdown_core_chunk label;
 
     if (after_close - label_start < 2) {
@@ -80,7 +113,7 @@ markdown_core_inline_footnote_definition(markdown_core_parser *parser, markdown_
      * aliases, so the only allocation in here is the map's own normalization,
      * and that one reports itself through the map's sticky flag. */
     label = markdown_core_chunk_dup(&inline_state->input, label_start + 1, after_close - label_start - 2);
-    return markdown_core_map_lookup(parser->footnote_defs, &label);
+    return markdown_core_map_lookup(((markdown_core_footnote_state *)self->state)->labels, &label);
 }
 
 static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
@@ -102,7 +135,8 @@ static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core
     return cite;
 }
 
-markdown_core_node *markdown_core_inline_close_inline_footnote(markdown_core_parser *parser,
+markdown_core_node *markdown_core_inline_close_inline_footnote(const markdown_core_element_instance *self,
+                                                               markdown_core_parser *parser,
                                                                markdown_core_inline_state *inline_state,
                                                                bracket *opener) {
     markdown_core_node *cite, *footnote;
@@ -110,8 +144,9 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(markdown_core_par
      * ancestor. Invalid openers keep their already parsed content as text. */
     if (inline_state->nonblank_end <= opener->position ||
         !markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_CITE)) {
-        inline_state->no_link_openers = opener->outer_no_link_openers;
-        markdown_core_inline_pop_bracket(inline_state);
+        markdown_core_brackets(self->peers[FOOTNOTE_LINK], inline_state)->no_link_openers =
+            opener->outer_no_link_openers;
+        markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
         return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
                         markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
     }
@@ -122,45 +157,51 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(markdown_core_par
             markdown_core_parser_release_node(parser, cite);
         }
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-        markdown_core_inline_pop_bracket(inline_state);
+        markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
         return NULL;
     }
     markdown_core_inline_state_place(inline_state, footnote, opener->position - 2, inline_state->pos - 1);
-    markdown_core_inline_finish_citation_tokens(inline_state, &opener->citations);
+    markdown_core_inline_finish_citation_tokens(self->peers[FOOTNOTE_CITATION], inline_state, &opener->citations);
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
-    markdown_core_inline_take_bracket_content(parser, opener, footnote);
+    markdown_core_inline_take_bracket_content(self->peers[FOOTNOTE_LINK], parser, opener, footnote);
     markdown_core_node_attach_validated(opener->inl_text->parent, cite, opener->inl_text);
-    if (!markdown_core_parser_register_definition(parser, &parser->footnotes, footnote, cite->as.cite->citations,
+    if (!markdown_core_parser_register_definition(parser, &((markdown_core_footnote_state *)self->state)->definitions,
+                                                  footnote, cite->as.cite->citations,
                                                   &parser->root->as.document->footnotes)) {
         markdown_core_parser_release_node(parser, footnote);
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
     markdown_core_parser_release_node(parser, opener->inl_text);
-    inline_state->no_link_openers = opener->outer_no_link_openers;
-    markdown_core_inline_pop_bracket(inline_state);
+    markdown_core_brackets(self->peers[FOOTNOTE_LINK], inline_state)->no_link_openers = opener->outer_no_link_openers;
+    markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
     return NULL;
 }
 
-static markdown_core_node *match(const markdown_core_element *self, markdown_core_parser *parser,
+static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_state *inline_state) {
-    if (character != '^' || markdown_core_inline_peek_char_n(inline_state, 1) != '[') {
+    /* An inline note opens a bracket, which only a dialect with links reads. */
+    if (character != '^' || markdown_core_inline_peek_char_n(inline_state, 1) != '[' || !self->peers[FOOTNOTE_LINK]) {
         return NULL;
     }
     inline_state->pos += 2;
     markdown_core_node *node = make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
                                         markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 2, 2));
     if (node) {
-        markdown_core_inline_push_bracket(inline_state, BRACKET_FOOTNOTE, node);
+        markdown_core_inline_push_bracket(self->peers[FOOTNOTE_LINK], inline_state, BRACKET_FOOTNOTE, node);
     }
     return node;
 }
-static bool continue_container(markdown_core_parser *parser, markdown_core_node *node, markdown_core_chunk *input,
-                               const markdown_core_node *joining, bool *taken) {
+static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                               markdown_core_node *node, markdown_core_chunk *input, const markdown_core_node *joining,
+                               bool *taken) {
+    (void)self;
     return markdown_core_footnote_continue(parser, node, input);
 }
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
+    .peers = FOOTNOTE_PEERS,
     .name = "footnote",
+    .state_size = sizeof(markdown_core_footnote_state),
     .continue_container = continue_container,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_footnote_scan,
@@ -171,8 +212,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .dispatch = "^",
 };
 
-bool markdown_core_footnote_close_reference(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                            bracket *opener) {
+bool markdown_core_footnote_close_reference(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                            markdown_core_inline_state *inline_state, bracket *opener) {
     bufsize_t initial_pos = inline_state->pos;
     if (opener->inl_text->next && opener->inl_text->next->kind == MARKDOWN_CORE_NODE_TEXT) {
 
@@ -221,9 +262,8 @@ bool markdown_core_footnote_close_reference(markdown_core_parser *parser, markdo
                              inline_state->input.data[opener->position] == '^' &&
                              (literal->len > 1 || opener->inl_text->next->next);
         const markdown_core_map_record *definition =
-            caret_written
-                ? markdown_core_inline_footnote_definition(parser, inline_state, opener->position, initial_pos)
-                : NULL;
+            caret_written ? markdown_core_inline_footnote_definition(self, inline_state, opener->position, initial_pos)
+                          : NULL;
         if (definition) {
             if (!markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_CITE)) {
                 return false;
@@ -237,7 +277,7 @@ bool markdown_core_footnote_close_reference(markdown_core_parser *parser, markdo
 
             markdown_core_node *fnref = markdown_core_inline_make_footnote_cite(inline_state, opener, initial_pos);
             if (!fnref) {
-                markdown_core_inline_pop_bracket(inline_state);
+                markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
                 return true;
             }
             /* The call's id is its label's normal form: the key the lookup
@@ -246,7 +286,7 @@ bool markdown_core_footnote_close_reference(markdown_core_parser *parser, markdo
             if (!id) {
                 inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
                 markdown_core_parser_release_node(parser, fnref);
-                markdown_core_inline_pop_bracket(inline_state);
+                markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
                 return true;
             }
             memcpy(id, definition->label, (size_t)definition->label_len + 1);
@@ -281,15 +321,16 @@ bool markdown_core_footnote_close_reference(markdown_core_parser *parser, markdo
             }
 
             markdown_core_inline_replace_bracket_opener(inline_state, opener, fnref);
-            markdown_core_inline_pop_bracket(inline_state);
+            markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
             return true;
         }
     }
     return false;
 }
 
-static bool markdown_core_footnote_open(markdown_core_parser *parser, markdown_core_node **container,
-                                        markdown_core_chunk *input, block_start *start) {
+static bool markdown_core_footnote_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                        markdown_core_node **container, markdown_core_chunk *input,
+                                        block_start *start) {
     bufsize_t matched = start->matched;
 
     markdown_core_chunk c = markdown_core_chunk_dup(input, parser->first_nonspace + 2, matched - 2);
@@ -336,7 +377,8 @@ static bool markdown_core_footnote_open(markdown_core_parser *parser, markdown_c
     normal->data = id;
     normal->len = (bufsize_t)strlen((const char *)id);
     normal->alloc = 1;
-    if (!markdown_core_parser_register_definition(parser, &parser->footnotes, *container, NULL, NULL)) {
+    markdown_core_footnote_state *state = self->state;
+    if (!markdown_core_parser_register_definition(parser, &state->definitions, *container, NULL, NULL)) {
         markdown_core_chunk_free(&c);
         return false;
     }
@@ -354,15 +396,16 @@ static bool markdown_core_footnote_open(markdown_core_parser *parser, markdown_c
      * one was freed with everything written in it (D11). A set of
      * labels owns no node and picks no winner, so order decides
      * nothing left to get wrong. */
-    markdown_core_footnote_definition_create(parser->footnote_defs, normal);
+    markdown_core_footnote_definition_create(state->labels, normal);
     markdown_core_chunk_free(&c);
 
     (*container)->internal_offset = matched;
     return true;
 }
 
-static bool markdown_core_footnote_scan(markdown_core_parser *parser, block_start_context *context,
-                                        block_start *start) {
+static bool markdown_core_footnote_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                        block_start_context *context, block_start *start) {
+    (void)self;
     markdown_core_chunk *input = context->input;
     int first = context->first;
     if (!(context->depth < MAX_FOOTNOTE_DEPTH &&

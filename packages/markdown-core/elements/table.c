@@ -14,6 +14,10 @@
 #include "paragraph.h"
 #include "markdown-core-elements.h"
 
+/* The elements whose state this element reads, as `self->peers` holds them. */
+enum { TABLE_PARAGRAPH };
+static const markdown_core_element *const TABLE_PEERS[] = {[TABLE_PARAGRAPH] = &MARKDOWN_CORE_ELEMENT_PARAGRAPH, NULL};
+
 // Limit to prevent a malicious input from causing a denial of service.
 #define MAX_AUTOCOMPLETED_CELLS 0x80000
 
@@ -203,7 +207,8 @@ static void S_place_content_span(markdown_core_parser *parser, markdown_core_nod
     }
 }
 
-static void try_inserting_table_header_paragraph(markdown_core_parser *parser, markdown_core_node *parent_container,
+static void try_inserting_table_header_paragraph(const markdown_core_element_instance *paragraph_element,
+                                                 markdown_core_parser *parser, markdown_core_node *parent_container,
                                                  unsigned char *parent_string, int paragraph_offset) {
     markdown_core_node *paragraph;
     bufsize_t first = 0;
@@ -268,16 +273,16 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
 
     /* A table split completes this paragraph just as a later block start
      * would: reference definitions and anchor attachment share finalization. */
-    markdown_core_parser_finalize_paragraph(parser, paragraph);
+    markdown_core_paragraph_finalize(paragraph_element, parser, paragraph);
 }
 
 /* Return NULL when the syntax does not match or the parent rejects the table
  * kind, so later elements can try the same line. Once the paragraph becomes
  * a table, return that container even if a later allocation fails; parser->error
  * then aborts the parse and destruction releases the partially built table. */
-static markdown_core_node *try_opening_table_header(const markdown_core_element *self, markdown_core_parser *parser,
-                                                    markdown_core_node *parent_container, unsigned char *input,
-                                                    int len) {
+static markdown_core_node *try_opening_table_header(const markdown_core_element_instance *self,
+                                                    markdown_core_parser *parser, markdown_core_node *parent_container,
+                                                    unsigned char *input, int len) {
     markdown_core_node *table_header;
     pipe_row header_row, delimiter_row;
     const char *parent_string;
@@ -323,8 +328,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
     }
 
     if (header_row.paragraph_offset) {
-        try_inserting_table_header_paragraph(parser, parent_container, (unsigned char *)parent_string,
-                                             header_row.paragraph_offset);
+        try_inserting_table_header_paragraph(self->peers[TABLE_PARAGRAPH], parser, parent_container,
+                                             (unsigned char *)parent_string, header_row.paragraph_offset);
         /* The table starts where its HEADER ROW was written, not where the
          * paragraph it was split out of did. Taken before the row and cells
          * below read start_column, because they are placed against it. */
@@ -337,7 +342,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
 
     /* Table data belongs to the element. Its cleanup accepts partial
      * initialization when an allocation fails after the kind change. */
-    markdown_core_node_set_element(parent_container, self);
+    markdown_core_node_set_element(parent_container, self->element);
     parent_container->opaque = markdown_core_alloc(1, sizeof(markdown_core_table));
     if (!parent_container->opaque) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -366,7 +371,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
 
         return parent_container;
     }
-    markdown_core_node_set_element(table_header, self);
+    markdown_core_node_set_element(table_header, self->element);
     /* The header row and its cells are RECOVERED from the paragraph's content
      * buffer, and every offset below is an offset into that buffer. Adding one
      * to a column is only right while the buffer holds a single line starting
@@ -478,7 +483,12 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
     return table_row_block;
 }
 
-static markdown_core_node *try_opening_table_block(const markdown_core_element *self, int indented,
+typedef struct markdown_core_table_workspace table_workspace;
+/* Recognize a complete source candidate before claiming any of its lines. */
+static markdown_core_node *table_try_open(table_workspace *workspace, markdown_core_parser *parser,
+                                          markdown_core_node *parent, unsigned char *input, int length);
+
+static markdown_core_node *try_opening_table_block(const markdown_core_element_instance *self, int indented,
                                                    markdown_core_parser *parser, markdown_core_node *parent_container,
                                                    unsigned char *input, int len) {
     markdown_core_node_type parent_type = (markdown_core_node_type)parent_container->kind;
@@ -486,9 +496,9 @@ static markdown_core_node *try_opening_table_block(const markdown_core_element *
     if (!indented && parent_type == MARKDOWN_CORE_NODE_PARAGRAPH) {
         return try_opening_table_header(self, parser, parent_container, input, len);
     } else if (!indented && parent_type == MARKDOWN_CORE_NODE_TABLE) {
-        return try_opening_table_row(self, parser, parent_container, input, len);
+        return try_opening_table_row(self->element, parser, parent_container, input, len);
     } else if (!indented) {
-        return markdown_core_table_try_open(parser, parent_container, input, len);
+        return table_try_open(self->state, parser, parent_container, input, len);
     }
 
     return NULL;
@@ -521,8 +531,8 @@ static int table_caption_start(const unsigned char *data, int length, int first,
     return content;
 }
 
-static int matches(const markdown_core_element *self, markdown_core_parser *parser, unsigned char *input, int len,
-                   markdown_core_node *parent_container) {
+static int matches(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *input,
+                   int len, markdown_core_node *parent_container) {
     int res = 0;
 
     if (parent_container->kind == MARKDOWN_CORE_NODE_TABLE) {
@@ -574,9 +584,11 @@ typedef struct {
     int start, end;
 } table_interval;
 
+struct markdown_core_table_workspace;
+
 typedef struct markdown_core_table_source_line {
     const unsigned char *data, *after;
-    markdown_core_parser *parser;
+    struct markdown_core_table_workspace *workspace;
     int length, input_length, offset, first, first_column, indent, line, blanks, horizontal_end;
     /* Horizontal grammar returns only zero, '-' or '='. Group the byte facts
      * with the final offset so the cache fits the former LP64 padding. */
@@ -590,6 +602,7 @@ typedef struct markdown_core_table_source_line {
 
 typedef struct {
     markdown_core_parser *parser;
+    struct markdown_core_table_workspace *workspace;
     markdown_core_block_lookahead lookahead;
     table_source_line *lines;
     size_t count;
@@ -638,7 +651,7 @@ typedef struct {
 /* A query borrows this workspace. Only its used ranges are reset; committed
  * AST values own copies. All references into growing line geometry are
  * offsets, so growth cannot invalidate a previously captured line or key. */
-typedef struct markdown_core_table_workspace {
+struct markdown_core_table_workspace {
     table_source_line *lines;
     size_t lines_capacity;
     int *bytes;
@@ -676,33 +689,31 @@ typedef struct markdown_core_table_workspace {
     size_t region_scratch_capacity;
     table_grid_region *closed;
     size_t closed_capacity;
-} table_workspace;
+    markdown_core_table_work work;
+};
 
-static void *table_reserve(markdown_core_parser *parser, void *values, size_t *capacity, size_t count, size_t size) {
+/* The workspace is the table element's parse record: zeroed with the
+ * parser, grown by the transactions that borrow it, released by
+ * `dispose_parser`. Another element reaches it through its table peer. */
+const markdown_core_table_work *markdown_core_table_work_in(const markdown_core_element_instance *table) {
+    return &((const table_workspace *)table->state)->work;
+}
+
+static void *table_reserve(table_source *source, void *values, size_t *capacity, size_t count, size_t size) {
     size_t previous = *capacity;
     void *grown = markdown_core_reserve(values, capacity, count, size);
     if (!grown) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        markdown_core_parser_fail(source->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
-    parser->table_scratch_growth += *capacity != previous;
+    source->workspace->work.scratch_growth += *capacity != previous;
     return grown;
-}
-
-static table_workspace *table_workspace_get(markdown_core_parser *parser) {
-    if (!parser->table_workspace) {
-        parser->table_workspace = markdown_core_alloc(1, sizeof(*parser->table_workspace));
-        if (!parser->table_workspace) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        }
-    }
-    return parser->table_workspace;
 }
 
 static bool table_candidate_columns(table_source *source, table_candidate *candidate, size_t count) {
     {
-        void *grown = table_reserve(source->parser, candidate->columns, &candidate->column_capacity, count,
-                                    sizeof(*candidate->columns));
+        void *grown =
+            table_reserve(source, candidate->columns, &candidate->column_capacity, count, sizeof(*candidate->columns));
         if (!grown) {
             return false;
         }
@@ -713,25 +724,25 @@ static bool table_candidate_columns(table_source *source, table_candidate *candi
 }
 
 static bool table_source_push(table_source *source, table_source_line line) {
-    markdown_core_parser *parser = source->parser;
-    size_t capacity = parser->table_workspace->lines_capacity;
+    table_workspace *workspace = source->workspace;
+    size_t capacity = workspace->lines_capacity;
     {
-        void *grown = table_reserve(parser, parser->table_workspace->lines, &parser->table_workspace->lines_capacity,
-                                    source->count + 1, sizeof(*source->lines));
+        void *grown = table_reserve(source, workspace->lines, &workspace->lines_capacity, source->count + 1,
+                                    sizeof(*source->lines));
         if (!grown) {
             return false;
         }
-        parser->table_workspace->lines = grown;
+        workspace->lines = grown;
     }
-    source->lines = parser->table_workspace->lines;
-    parser->table_workspace_growth += parser->table_workspace->lines_capacity != capacity;
+    source->lines = workspace->lines;
+    workspace->work.workspace_growth += workspace->lines_capacity != capacity;
     line.input_length = line.length;
     while (line.length && (line.data[line.length - 1] == '\n' || line.data[line.length - 1] == '\r')) {
         line.length--;
     }
     /* The current streaming line, immutable document source and normalized
      * EOF line all outlive this non-nested query, including its commitment. */
-    line.parser = source->parser;
+    line.workspace = source->workspace;
     source->lines[source->count++] = line;
     return true;
 }
@@ -761,7 +772,7 @@ static bool table_source_get(table_source *source, size_t index) {
 
 static void table_source_end(table_source *source) {
     markdown_core_parser_lookahead_end(&source->lookahead);
-    table_workspace *workspace = source->parser->table_workspace;
+    table_workspace *workspace = source->workspace;
     workspace->bytes_count = workspace->dashes_count = 0;
 }
 
@@ -797,14 +808,14 @@ static bool table_source_columns(table_source *source, size_t index) {
     if (line->columns_ready) {
         return true;
     }
-    table_workspace *workspace = source->parser->table_workspace;
+    table_workspace *workspace = source->workspace;
     size_t length = (size_t)(line->length - line->offset);
     if (length > (SIZE_MAX - workspace->bytes_count - 1) / 4) {
         markdown_core_parser_fail(source->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
     {
-        void *grown = table_reserve(source->parser, workspace->bytes, &workspace->bytes_capacity,
+        void *grown = table_reserve(source, workspace->bytes, &workspace->bytes_capacity,
                                     workspace->bytes_count + 4 * length + 1, sizeof(*workspace->bytes));
         if (!grown) {
             markdown_core_parser_fail(source->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -812,7 +823,7 @@ static bool table_source_columns(table_source *source, size_t index) {
         }
         workspace->bytes = grown;
     }
-    source->parser->table_geometry_lines++;
+    source->workspace->work.geometry_lines++;
     line->byte_offset = workspace->bytes_count;
     int *bytes = workspace->bytes + line->byte_offset;
     /* The line's extent is read once: every position stored below is an
@@ -852,9 +863,7 @@ static bool table_source_columns(table_source *source, size_t index) {
     }
 }
 
-static const int *table_line_bytes(const table_source_line *line) {
-    return line->parser->table_workspace->bytes + line->byte_offset;
-}
+static const int *table_line_bytes(const table_source_line *line) { return line->workspace->bytes + line->byte_offset; }
 
 static int table_character(const table_source_line *line, int column) {
     if (column < 0 || column >= line->columns) {
@@ -872,7 +881,7 @@ static int table_skip_spaces(const table_source_line *line, int first, int end) 
     while (first < end && table_character(line, first) == ' ') {
         first++;
     }
-    line->parser->table_scan_work += (size_t)(first - start) + (first < end);
+    line->workspace->work.scan += (size_t)(first - start) + (first < end);
     return first;
 }
 
@@ -881,7 +890,7 @@ static int table_trim_spaces(const table_source_line *line, int first, int end) 
     while (end > first && table_character(line, end - 1) == ' ') {
         end--;
     }
-    line->parser->table_scan_work += (size_t)(last - end) + (end > first);
+    line->workspace->work.scan += (size_t)(last - end) + (end > first);
     return end;
 }
 
@@ -911,7 +920,7 @@ static size_t table_dash_count(table_source *source, size_t index) {
     table_source_line *line = &source->lines[index];
     if (!line->dashes_scanned) {
         line->dashes_scanned = true;
-        source->parser->table_separator_scans++;
+        source->workspace->work.separator_scans++;
         if (line->indent > 3) {
             return 0;
         }
@@ -920,7 +929,7 @@ static size_t table_dash_count(table_source *source, size_t index) {
         do {
             before = p;
             result = scan_table_dash(&p, line->data + line->length, &from);
-            source->parser->table_scan_work += (size_t)(p - before) + 1;
+            source->workspace->work.scan += (size_t)(p - before) + 1;
             if (result > 0) {
                 line->dash_count++;
                 line->full_boundary = line->dash_count == 1 && p - from >= 3;
@@ -940,14 +949,14 @@ static bool table_prepare_dashes(table_source *source, size_t index) {
         return false;
     }
     table_source_line *line = &source->lines[index];
-    table_workspace *workspace = source->parser->table_workspace;
+    table_workspace *workspace = source->workspace;
     if (!line->dashes_ready) {
         if (count > SIZE_MAX - workspace->dashes_count) {
             markdown_core_parser_fail(source->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return false;
         }
         {
-            void *grown = table_reserve(source->parser, workspace->dashes, &workspace->dashes_capacity,
+            void *grown = table_reserve(source, workspace->dashes, &workspace->dashes_capacity,
                                         workspace->dashes_count + count, sizeof(*workspace->dashes));
             if (!grown) {
                 markdown_core_parser_fail(source->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -962,7 +971,7 @@ static bool table_prepare_dashes(table_source *source, size_t index) {
         int column = 0, origin = table_line_origin(line);
         for (size_t i = 0; i < count; i++) {
             scan_table_dash(&p, line->data + line->length, &from);
-            source->parser->table_scan_work += (size_t)(p - before);
+            source->workspace->work.scan += (size_t)(p - before);
             while (before < from) {
                 column += *before++ == '\t' ? table_tab_width(origin, column) : 1;
             }
@@ -978,7 +987,7 @@ static bool table_prepare_dashes(table_source *source, size_t index) {
 /* Dash slices are offsets into the parse workspace, including across further
  * separator discovery. A caller obtains one value, never a reallocable view. */
 static table_interval table_dash(const table_source *source, size_t runs, size_t index) {
-    return source->parser->table_workspace->dashes[runs + index];
+    return source->workspace->dashes[runs + index];
 }
 
 static bool table_full_boundary(table_source *source, size_t index) {
@@ -987,7 +996,7 @@ static bool table_full_boundary(table_source *source, size_t index) {
 
 static bool table_add_row(table_source *source, table_candidate *candidate, size_t first, size_t last) {
     {
-        void *grown = table_reserve(source->parser, candidate->rows, &candidate->row_capacity, candidate->row_count + 1,
+        void *grown = table_reserve(source, candidate->rows, &candidate->row_capacity, candidate->row_count + 1,
                                     sizeof(*candidate->rows));
         if (!grown) {
             return false;
@@ -1001,8 +1010,8 @@ static bool table_add_row(table_source *source, table_candidate *candidate, size
 static bool table_add_cell(table_source *source, table_candidate *candidate, size_t first, size_t last, int left,
                            int right, int start, int end) {
     {
-        void *grown = table_reserve(source->parser, candidate->cells, &candidate->cell_capacity,
-                                    candidate->cell_count + 1, sizeof(*candidate->cells));
+        void *grown = table_reserve(source, candidate->cells, &candidate->cell_capacity, candidate->cell_count + 1,
+                                    sizeof(*candidate->cells));
         if (!grown) {
             return false;
         }
@@ -1032,7 +1041,7 @@ static int table_margin(table_source *source, size_t first, size_t last) {
             margin = source->lines[i].indent;
         }
     }
-    source->parser->table_scan_work += last - first + 1;
+    source->workspace->work.scan += last - first + 1;
     return margin;
 }
 
@@ -1149,7 +1158,7 @@ static bool table_set_columns(table_source *source, table_candidate *candidate, 
                 total;
         }
     }
-    source->parser->table_scan_work += count; /* One left-edge probe per column. */
+    source->workspace->work.scan += count; /* One left-edge probe per column. */
     return true;
 }
 
@@ -1231,11 +1240,11 @@ static bool table_same_dashes(table_source *source, size_t left, size_t right) {
     for (size_t i = 0; i < count; i++) {
         if (table_dash(source, a, i).start != table_dash(source, b, i).start ||
             table_dash(source, a, i).end != table_dash(source, b, i).end) {
-            source->parser->table_scan_work += i + 1;
+            source->workspace->work.scan += i + 1;
             return false;
         }
     }
-    source->parser->table_scan_work += count;
+    source->workspace->work.scan += count;
     return true;
 }
 
@@ -1247,7 +1256,7 @@ static unsigned table_separator_digit(table_source *source, table_separator_key 
     if (digit / 16 >= key.count) {
         return 0;
     }
-    table_interval run = source->parser->table_workspace->dashes[key.runs + digit / 16];
+    table_interval run = source->workspace->dashes[key.runs + digit / 16];
     uint32_t position = (uint32_t)(digit % 16 < 8 ? run.start : run.end);
     return 1 + ((position >> (28 - 4 * (digit % 8))) & 15);
 }
@@ -1258,26 +1267,25 @@ static unsigned table_separator_digit(table_source *source, table_separator_key 
  * tables. Facts retain the shared container/offset ownership. */
 static void table_simple_search_finish(table_source *source, size_t first, size_t last) {
     size_t capacity = last - first + 1, count = 0;
-    table_workspace *workspace = source->parser->table_workspace;
+    table_workspace *workspace = source->workspace;
     {
-        void *grown = table_reserve(source->parser, workspace->separator_keys, &workspace->separator_keys_capacity,
-                                    capacity, sizeof(*workspace->separator_keys));
+        void *grown = table_reserve(source, workspace->separator_keys, &workspace->separator_keys_capacity, capacity,
+                                    sizeof(*workspace->separator_keys));
         if (!grown) {
             return;
         }
         workspace->separator_keys = grown;
     }
     {
-        void *grown =
-            table_reserve(source->parser, workspace->separator_scratch, &workspace->separator_scratch_capacity,
-                          capacity, sizeof(*workspace->separator_scratch));
+        void *grown = table_reserve(source, workspace->separator_scratch, &workspace->separator_scratch_capacity,
+                                    capacity, sizeof(*workspace->separator_scratch));
         if (!grown) {
             return;
         }
         workspace->separator_scratch = grown;
     }
     {
-        void *grown = table_reserve(source->parser, workspace->separator_groups, &workspace->separator_groups_capacity,
+        void *grown = table_reserve(source, workspace->separator_groups, &workspace->separator_groups_capacity,
                                     capacity, sizeof(*workspace->separator_groups));
         if (!grown) {
             return;
@@ -1307,7 +1315,7 @@ static void table_simple_search_finish(table_source *source, size_t first, size_
             continue;
         }
         size_t lengths[17] = {0}, offsets[17], cursors[17];
-        source->parser->table_scan_work += 2 * group.count;
+        source->workspace->work.scan += 2 * group.count;
         for (size_t i = group.first; i < group.first + group.count; i++) {
             lengths[table_separator_digit(source, keys[i], group.digit)]++;
         }
@@ -1505,13 +1513,13 @@ static int table_grid_root(table_source *source, int *parents, int column) {
         parents[column] = root;
         column = next;
     }
-    source->parser->table_scan_work += work;
+    source->workspace->work.scan += work;
     return root;
 }
 
 static int table_horizontal_bytes(const table_source_line *line, int first, int last) {
-    line->parser->table_scan_work += (size_t)(last - first);
-    line->parser->table_horizontal_work += (size_t)(last - first);
+    line->workspace->work.scan += (size_t)(last - first);
+    line->workspace->work.horizontal += (size_t)(last - first);
     return scan_table_horizontal(line->data, last, first);
 }
 
@@ -1525,7 +1533,7 @@ static int table_full_horizontal(table_source_line *line) {
         while (end > line->first && markdown_core_is_space_or_tab(line->data[end - 1])) {
             end--;
         }
-        line->parser->table_scan_work += (size_t)(line->length - end);
+        line->workspace->work.scan += (size_t)(line->length - end);
         line->horizontal_end = end;
         line->horizontal_kind = (unsigned char)table_horizontal_bytes(line, line->first, end);
         line->horizontal_scanned = true;
@@ -1595,9 +1603,9 @@ static bool table_region_complete(table_source *source, table_candidate *candida
         (region.top < rows - candidate->foot_count && region.bottom >= rows - candidate->foot_count)) {
         return false;
     }
-    table_workspace *workspace = source->parser->table_workspace;
+    table_workspace *workspace = source->workspace;
     {
-        void *grown = table_reserve(source->parser, workspace->closed, &workspace->closed_capacity, *count + 1,
+        void *grown = table_reserve(source, workspace->closed, &workspace->closed_capacity, *count + 1,
                                     sizeof(*workspace->closed));
         if (!grown) {
             return false;
@@ -1620,10 +1628,10 @@ static uint64_t table_region_source_key(const void *entry) {
  * Disjoint regions bound the total perimeter work by the source grid area. */
 static bool table_grid_rows(table_source *source, table_candidate *candidate, const int *columns, size_t *boundaries,
                             size_t row_count, table_grid_region *regions, size_t count) {
-    table_workspace *workspace = source->parser->table_workspace;
+    table_workspace *workspace = source->workspace;
     {
-        void *grown = table_reserve(source->parser, workspace->row_indices, &workspace->row_indices_capacity,
-                                    row_count + 1, sizeof(*workspace->row_indices));
+        void *grown = table_reserve(source, workspace->row_indices, &workspace->row_indices_capacity, row_count + 1,
+                                    sizeof(*workspace->row_indices));
         if (!grown) {
             return false;
         }
@@ -1635,7 +1643,7 @@ static bool table_grid_rows(table_source *source, table_candidate *candidate, co
         table_grid_region *region = &regions[i];
         indices[region->top] = 1;
         indices[region->bottom + 1] = 1;
-        source->parser->table_scan_work += 2 * (region->bottom - region->top);
+        source->workspace->work.scan += 2 * (region->bottom - region->top);
         for (size_t b = region->top + 1; b <= region->bottom; b++) {
             table_source_line *line = &source->lines[boundaries[b]];
             if (table_character(line, columns[region->left]) == '+' ||
@@ -1696,25 +1704,25 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         return false;
     }
     size_t capacity = 2 * width, active_count = 0, closed_count = 0;
-    table_workspace *workspace = source->parser->table_workspace;
+    table_workspace *workspace = source->workspace;
     {
-        void *grown = table_reserve(source->parser, workspace->region_parents, &workspace->region_parents_capacity,
-                                    capacity, sizeof(*workspace->region_parents));
+        void *grown = table_reserve(source, workspace->region_parents, &workspace->region_parents_capacity, capacity,
+                                    sizeof(*workspace->region_parents));
         if (!grown) {
             return false;
         }
         workspace->region_parents = grown;
     }
     {
-        void *grown = table_reserve(source->parser, workspace->region_sizes, &workspace->region_sizes_capacity,
-                                    capacity, sizeof(*workspace->region_sizes));
+        void *grown = table_reserve(source, workspace->region_sizes, &workspace->region_sizes_capacity, capacity,
+                                    sizeof(*workspace->region_sizes));
         if (!grown) {
             return false;
         }
         workspace->region_sizes = grown;
     }
     {
-        void *grown = table_reserve(source->parser, workspace->region_next, &workspace->region_next_capacity, capacity,
+        void *grown = table_reserve(source, workspace->region_next, &workspace->region_next_capacity, capacity,
                                     sizeof(*workspace->region_next));
         if (!grown) {
             return false;
@@ -1722,15 +1730,15 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         workspace->region_next = grown;
     }
     {
-        void *grown = table_reserve(source->parser, workspace->region_previous, &workspace->region_previous_capacity,
-                                    width, sizeof(*workspace->region_previous));
+        void *grown = table_reserve(source, workspace->region_previous, &workspace->region_previous_capacity, width,
+                                    sizeof(*workspace->region_previous));
         if (!grown) {
             return false;
         }
         workspace->region_previous = grown;
     }
     {
-        void *grown = table_reserve(source->parser, workspace->regions, &workspace->regions_capacity, capacity,
+        void *grown = table_reserve(source, workspace->regions, &workspace->regions_capacity, capacity,
                                     sizeof(*workspace->regions));
         if (!grown) {
             return false;
@@ -1738,8 +1746,8 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         workspace->regions = grown;
     }
     {
-        void *grown = table_reserve(source->parser, workspace->region_scratch, &workspace->region_scratch_capacity,
-                                    width, sizeof(*workspace->region_scratch));
+        void *grown = table_reserve(source, workspace->region_scratch, &workspace->region_scratch_capacity, width,
+                                    sizeof(*workspace->region_scratch));
         if (!grown) {
             return false;
         }
@@ -1749,8 +1757,8 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
     int *next = workspace->region_next, *previous = workspace->region_previous;
     table_grid_region *regions = workspace->regions, *scratch = workspace->region_scratch, *closed = workspace->closed;
     bool valid = false;
-    if (capacity > source->parser->table_frontier_peak) {
-        source->parser->table_frontier_peak = capacity;
+    if (capacity > source->workspace->work.frontier_peak) {
+        source->workspace->work.frontier_peak = capacity;
     }
     for (size_t r = 0; r < row_count; r++) {
         size_t used = active_count + width;
@@ -1762,7 +1770,7 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         for (size_t c = 0; c < width; c++) {
             regions[active_count + c] = (table_grid_region){r, r, c, c, 1};
         }
-        source->parser->table_scan_work += (width - 1) * (boundaries[r + 1] - boundaries[r] + 1);
+        source->workspace->work.scan += (width - 1) * (boundaries[r + 1] - boundaries[r] + 1);
         for (size_t c = 1; c < width; c++) {
             bool wall = true;
             for (size_t line = boundaries[r]; line <= boundaries[r + 1]; line++) {
@@ -1818,7 +1826,7 @@ static bool table_grid_cells(table_source *source, table_candidate *candidate, c
         markdown_core_parser_fail(source->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         goto done;
     }
-    source->parser->table_scan_work += source->parser->source_order.work - order_work;
+    source->workspace->work.scan += source->parser->source_order.work - order_work;
     valid = table_grid_rows(source, candidate, columns, boundaries, row_count, closed, closed_count);
 done:
     return valid;
@@ -1879,9 +1887,9 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         !table_grid_opening(source, start, &left, &right)) {
         return false;
     }
-    table_workspace *workspace = source->parser->table_workspace;
+    table_workspace *workspace = source->workspace;
     {
-        void *grown = table_reserve(source->parser, workspace->grid_parents, &workspace->grid_parents_capacity,
+        void *grown = table_reserve(source, workspace->grid_parents, &workspace->grid_parents_capacity,
                                     (size_t)right + 1, sizeof(*workspace->grid_parents));
         if (!grown) {
             goto failed;
@@ -1889,7 +1897,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         workspace->grid_parents = grown;
     }
     {
-        void *grown = table_reserve(source->parser, workspace->grid_positions, &workspace->grid_positions_capacity,
+        void *grown = table_reserve(source, workspace->grid_positions, &workspace->grid_positions_capacity,
                                     (size_t)right + 1, sizeof(*workspace->grid_positions));
         if (!grown) {
             goto failed;
@@ -1897,8 +1905,8 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         workspace->grid_positions = grown;
     }
     {
-        void *grown = table_reserve(source->parser, workspace->grid_sizes, &workspace->grid_sizes_capacity,
-                                    (size_t)right + 1, sizeof(*workspace->grid_sizes));
+        void *grown = table_reserve(source, workspace->grid_sizes, &workspace->grid_sizes_capacity, (size_t)right + 1,
+                                    sizeof(*workspace->grid_sizes));
         if (!grown) {
             goto failed;
         }
@@ -1921,7 +1929,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
             goto failed;
         }
         table_source_line *line = &source->lines[i];
-        source->parser->table_scan_work++;
+        source->workspace->work.scan++;
         /* A grid line BEGINS with its wall: its indentation reaches the
          * wall's column exactly. Text left of the wall is not a wall-led
          * line; it ends the candidate instead of being dropped from a table
@@ -1931,7 +1939,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
             break;
         }
         int last = table_trim_spaces(line, left + 1, line->columns) - 1;
-        source->parser->table_scan_work++;
+        source->workspace->work.scan++;
         int edge = table_character(line, right);
         if (last != right || (edge != '+' && edge != '|')) {
             table_grid_search_finish(source, start, end, left, right, false);
@@ -1939,7 +1947,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         }
         int previous = -1;
         bool horizontal = true;
-        source->parser->table_scan_work += (size_t)(right - left) + 1;
+        source->workspace->work.scan += (size_t)(right - left) + 1;
         for (int c = left; c <= right; c++) {
             int ch = table_character(line, c);
             if (ch == '+') {
@@ -1980,13 +1988,13 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
     }
     for (size_t i = start; i <= end; i++) {
         bool boundary = false;
-        source->parser->table_scan_work += count;
+        source->workspace->work.scan += count;
         for (size_t c = 0; c < count; c++) {
             boundary |= table_character(&source->lines[i], positions[c]) == '+';
         }
         if (boundary) {
             {
-                void *grown = table_reserve(source->parser, workspace->boundaries, &workspace->boundaries_capacity,
+                void *grown = table_reserve(source, workspace->boundaries, &workspace->boundaries_capacity,
                                             boundary_count + 1, sizeof(*boundaries));
                 if (!grown) {
                     goto failed;
@@ -2034,7 +2042,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
     for (size_t c = 0; c + 1 < count; c++) {
         total += positions[c + 1] - positions[c] - 1;
     }
-    source->parser->table_scan_work += 2 * (count - 1);
+    source->workspace->work.scan += 2 * (count - 1);
     for (size_t c = 0; c + 1 < count; c++) {
         bool l = table_character(alignment, positions[c] + 1) == ':',
              r = table_character(alignment, positions[c + 1] - 1) == ':';
@@ -2236,7 +2244,7 @@ static void table_append_range(table_source *source, markdown_core_node *node, s
     /* A scan position has one tab probe and at most two escape probes. A
      * run-ending position can be inspected again by the outer loop, so allow
      * two visits per position. Charge once, even if allocation stops copying. */
-    parser->table_scan_work += (escapes ? 6u : 2u) * (size_t)(right - left);
+    source->workspace->work.scan += (escapes ? 6u : 2u) * (size_t)(right - left);
     /* Every column scanned has a byte, `left <= column < right <= columns`, so
      * the line's byte map is read directly; only the run's end, which can be
      * the end of the line, needs `table_byte`. An escape is a backslash whose
@@ -2464,14 +2472,13 @@ static bool table_after_caption(table_source *source, size_t *caption_last, tabl
            table_parse_candidate(source, next, candidate, true);
 }
 
-bool markdown_core_table_caption_probe(markdown_core_block_lookahead *lookahead, markdown_core_chunk *input, int first,
+bool markdown_core_table_caption_probe(const markdown_core_element_instance *table,
+                                       markdown_core_block_lookahead *lookahead, markdown_core_chunk *input, int first,
                                        int indent) {
     markdown_core_parser *parser = lookahead->parser;
-    table_workspace *workspace = table_workspace_get(parser);
-    if (!workspace) {
-        return false;
-    }
-    table_source source = {.parser = parser, .lookahead = *lookahead, .lines = parser->table_workspace->lines};
+    table_workspace *workspace = table->state;
+    table_source source = {
+        .parser = parser, .workspace = workspace, .lookahead = *lookahead, .lines = workspace->lines};
     lookahead->active = false; /* Transfer the transaction; source_free ends it. */
     table_candidate *candidate = &workspace->candidate;
     size_t last = 0;
@@ -2507,8 +2514,8 @@ static bool table_open_admits(markdown_core_parser *parser, const unsigned char 
                                 parser->lookahead_cursor, false);
 }
 
-markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, markdown_core_node *parent,
-                                                 unsigned char *input, int length) {
+static markdown_core_node *table_try_open(table_workspace *workspace, markdown_core_parser *parser,
+                                          markdown_core_node *parent, unsigned char *input, int length) {
     if (parser->indent > 3 || parser->blank || parent->kind == MARKDOWN_CORE_NODE_TABLE ||
         parent->kind == MARKDOWN_CORE_NODE_TABLE_ROW || parent->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
         return NULL;
@@ -2522,11 +2529,7 @@ markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, m
     if (!table_open_admits(parser, input, length)) {
         return NULL;
     }
-    table_workspace *workspace = table_workspace_get(parser);
-    if (!workspace) {
-        return NULL;
-    }
-    table_source source = {.parser = parser, .lines = parser->table_workspace->lines};
+    table_source source = {.parser = parser, .workspace = workspace, .lines = workspace->lines};
     table_candidate *candidate = &workspace->candidate;
     markdown_core_node *result = NULL;
     if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_TABLE, &source.lookahead)) {
@@ -2595,20 +2598,19 @@ done:
 
 /* A block-only element: no byte ends a text run for it, no byte is offered to an
  * inline hook it does not have, and no byte is transparent to flanking. */
-static markdown_core_node *try_interrupting_block(markdown_core_parser *parser, markdown_core_node *node,
+static markdown_core_node *try_interrupting_block(const markdown_core_element_instance *self,
+                                                  markdown_core_parser *parser, markdown_core_node *node,
                                                   markdown_core_chunk *input, bool lazy) {
     if (parser->indent >= 4 || lazy || node->kind == MARKDOWN_CORE_NODE_PARAGRAPH ||
         input->data[parser->first_nonspace] != '-') {
         return NULL;
     }
-    return markdown_core_table_try_open(parser, node, input->data, input->len);
+    return table_try_open(self->state, parser, node, input->data, input->len);
 }
 
-static void dispose_parser(markdown_core_parser *parser) {
-    table_workspace *workspace = parser->table_workspace;
-    if (!workspace) {
-        return;
-    }
+static void dispose_parser(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    (void)parser;
+    table_workspace *workspace = self->state;
     markdown_core_free(workspace->lines);
     markdown_core_free(workspace->bytes);
     markdown_core_free(workspace->dashes);
@@ -2630,12 +2632,13 @@ static void dispose_parser(markdown_core_parser *parser) {
     markdown_core_free(workspace->regions);
     markdown_core_free(workspace->region_scratch);
     markdown_core_free(workspace->closed);
-    markdown_core_free(workspace);
-    parser->table_workspace = NULL;
+    memset(workspace, 0, sizeof(*workspace));
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
+    .peers = TABLE_PEERS,
     .dispose_parser = dispose_parser,
+    .state_size = sizeof(table_workspace),
 
     .try_interrupting_block = try_interrupting_block,
     /* A delimiter row leading a dash-led table. */

@@ -87,8 +87,8 @@ establishes grammar equivalence.
 
 | Stage | Core entry | Reference entry |
 | --- | --- | --- |
-| `source_to_buffer` | `markdown_core_parse_document_with_setup → S_parse_source` | `bench_parse_document → cmark_parser_feed` |
-| `buffer_to_ast` | `markdown_core_parse_document_with_setup → S_finish_parse` | `bench_parse_document → cmark_parser_finish` |
+| `source_to_buffer` | `markdown_core_parser_parse → S_parse_source` | `bench_parse_document → cmark_parser_feed` |
+| `buffer_to_ast` | `markdown_core_parser_parse → S_finish_parse` | `bench_parse_document → cmark_parser_finish` |
 
 These two stages are everything the benchmark measures, and ratios use their
 sum. Creating the parser (allocating it, sealing its dialect, discovering

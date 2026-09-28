@@ -17,6 +17,9 @@ bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
 bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_core_node *node,
                                          markdown_core_map *refmap);
 
+/* Release the run records finished runs gave back to `parser`. */
+void markdown_core_inline_release_records(markdown_core_parser *parser);
+
 #ifdef __cplusplus
 }
 #endif

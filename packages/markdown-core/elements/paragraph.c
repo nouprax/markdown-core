@@ -3,16 +3,17 @@
 
 #include "link.h"
 #include "block_identifier.h"
-void markdown_core_parser_finalize_paragraph(markdown_core_parser *parser, markdown_core_node *paragraph) {
+void markdown_core_paragraph_finalize(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                      markdown_core_node *paragraph) {
     if (!markdown_core_block_resolve_reference_link_definitions(parser, paragraph)) {
         paragraph->flags |= MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY;
         return;
     }
-    markdown_core_block_attach_paragraph_identifier(parser, paragraph);
+    markdown_core_block_attach_paragraph_identifier(self->state, parser, paragraph);
 }
 
-static int continue_paragraph(const markdown_core_element *self, markdown_core_parser *parser, unsigned char *data,
-                              int length, markdown_core_node *container) {
+static int continue_paragraph(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                              unsigned char *data, int length, markdown_core_node *container) {
     return !parser->blank;
 }
 /* A PARAGRAPH THAT HELD ONLY REFERENCE DEFINITIONS IS NOT A PARAGRAPH. Its
@@ -26,10 +27,10 @@ static int contains_inlines(const markdown_core_element *element, markdown_core_
     (void)element;
     return !(node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY);
 }
-static markdown_core_finish_result finish_step(const markdown_core_element *element, markdown_core_parser *parser,
+static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                markdown_core_node *node, markdown_core_event_type event, int is_root,
                                                void **state) {
-    (void)element;
+    (void)self;
     (void)event;
     (void)state;
     assert(event == MARKDOWN_CORE_EVENT_EXIT);
@@ -40,35 +41,28 @@ static markdown_core_finish_result finish_step(const markdown_core_element *elem
     return MARKDOWN_CORE_FINISH_CONSUMED;
 }
 static const markdown_core_node_type PARAGRAPH_EXIT_KINDS[] = {MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_NONE};
-static bool accepts_lazy(markdown_core_parser *parser, markdown_core_node *node) { return true; }
-static markdown_core_node *open_lazy(markdown_core_parser *parser, markdown_core_node *node,
-                                     markdown_core_chunk *input) {
+static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_node *node) {
+    (void)self;
+    (void)parser;
+    (void)node;
+    return true;
+}
+static markdown_core_node *open_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                     markdown_core_node *node, markdown_core_chunk *input) {
+    (void)self;
     return node;
 }
 
-const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
-    .accepts_lazy = accepts_lazy,
-    .open_lazy = open_lazy,
-
-    .name = "paragraph",
-    .last_block_matches = continue_paragraph,
-    .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
-    /* Inline content, unless the paragraph was only definitions. */
-    .contains_inlines_func = contains_inlines,
-    .paragraph = true,
-    .finalize_block = markdown_core_parser_finalize_paragraph,
-    .finish_step = finish_step,
-    .finish_exit_kinds = PARAGRAPH_EXIT_KINDS,
-};
-
-markdown_core_node *markdown_core_paragraph_open_text(markdown_core_parser *parser, markdown_core_node *container,
-                                                      markdown_core_chunk *input) {
+/* A text line no block claims opens a paragraph: the dialect's text block. */
+static markdown_core_node *open_text(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                     markdown_core_node *container, markdown_core_chunk *input) {
     container = markdown_core_block_parent_for(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!container) {
         return NULL;
     }
     parser->current = container;
-    if (markdown_core_block_attach_identifier_line(parser, container, input) || parser->error) {
+    if (markdown_core_block_attach_identifier_line(self->state, parser, container, input) || parser->error) {
         return NULL;
     }
     container = markdown_core_parser_add_child_validated(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH,
@@ -78,3 +72,20 @@ markdown_core_node *markdown_core_paragraph_open_text(markdown_core_parser *pars
     }
     return container;
 }
+
+const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
+    .state_size = sizeof(markdown_core_block_identifier_work),
+    .accepts_lazy = accepts_lazy,
+    .open_lazy = open_lazy,
+
+    .name = "paragraph",
+    .last_block_matches = continue_paragraph,
+    .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
+    /* Inline content, unless the paragraph was only definitions. */
+    .contains_inlines_func = contains_inlines,
+    .paragraph = true,
+    .finalize_block = markdown_core_paragraph_finalize,
+    .open_text_block = open_text,
+    .finish_step = finish_step,
+    .finish_exit_kinds = PARAGRAPH_EXIT_KINDS,
+};

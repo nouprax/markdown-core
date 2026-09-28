@@ -20,6 +20,7 @@ typedef enum { PROPERTY_SCALAR, ARRAY_SCALAR } scalar_context;
 typedef markdown_core_input_line source_line;
 typedef struct {
     markdown_core_parser *parser;
+    markdown_core_properties_work *work;
     const unsigned char *source;
     markdown_core_metadata_fields *metadata;
     size_t first_line;
@@ -539,7 +540,7 @@ static bool field(decoder *d, size_t key_end) {
     if (!printable(p, start, d->end)) {
         goto failed;
     }
-    p->parser->metadata_decoded_bytes += d->end - start;
+    p->work->decoded_bytes += d->end - start;
     skip(d);
     if (d->pos == d->end) {
         value.kind = MARKDOWN_CORE_METADATA_SCALAR;
@@ -635,7 +636,7 @@ static void classify_line(properties *p, size_t line) {
     }
     p->first = first;
     p->key = block_key_end(p->source, first, end);
-    p->parser->metadata_key_work += end - property_line(p, line).start;
+    p->work->key_work += end - property_line(p, line).start;
 }
 
 /* Return the index of the first line after `line` that the member starting
@@ -747,14 +748,15 @@ static void payload(properties *p) {
         line = boundary;
     }
 }
-size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsigned char *source, size_t length) {
+size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser,
+                                      const unsigned char *source, size_t length) {
     size_t bom = length >= 3 && memcmp(source, "\xef\xbb\xbf", 3) == 0 ? 3 : 0;
     /* The opener is exactly "---" and a line ending: a peek, not a scan. */
     if (length < bom + 4 || memcmp(source + bom, "---", 3) || !markdown_core_is_line_end(source[bom + 3])) {
         return 0;
     }
     size_t start = next_line(source, bom + 3, length), close = start;
-    properties p = {.parser = parser, .source = source};
+    properties p = {.parser = parser, .work = work, .source = source};
     /* THE FENCE NEEDS NO LINE GEOMETRY. It is "---" bracketed by line ends,
      * so the search for it is one `memchr` pass over the dashes, checked at
      * each hit for the line start before it and the line end after it, and
@@ -780,7 +782,7 @@ size_t markdown_core_properties_parse(markdown_core_parser *parser, const unsign
         }
         close = at + 1;
     }
-    parser->properties_line_work += fence_work;
+    work->line_work += fence_work;
     if (!closed) {
         return 0;
     }

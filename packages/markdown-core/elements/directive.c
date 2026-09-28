@@ -486,14 +486,14 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
  * recognised as a delimiter to pair with the opener; the label is scanned at
  * the colon now, so the bracket is nobody's business but the core's -- which
  * is what makes `[a](b)` inside a label work like any other link. */
-static markdown_core_node *match(const markdown_core_element *element, markdown_core_parser *parser,
+static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_state *inline_state) {
     markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
     bufsize_t offset = (bufsize_t)markdown_core_inline_state_get_offset(inline_state);
 
     if (character == ':') {
-        return match_colon_directive(element, parser, parent, inline_state, chunk, offset);
+        return match_colon_directive(self->element, parser, parent, inline_state, chunk, offset);
     }
 
     return NULL;
@@ -557,21 +557,22 @@ static bufsize_t scan_directive_block(markdown_core_parser *parser, unsigned cha
     return matched && markdown_core_is_blank_to_line_end(input, parsed->end, len) ? colon_count : 0;
 }
 
-static void free_parsed_directive(markdown_core_parser *parser, parsed_directive *parsed) {
-    parser->attribute_work += parsed->attributes.work;
+static void free_parsed_directive(parsed_directive *parsed) {
     markdown_core_attribute_parser_free(&parsed->attributes);
 }
 
-static int probe_directive_block(markdown_core_parser *parser, markdown_core_chunk *input, int first, int indent,
+static int probe_directive_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                 markdown_core_chunk *input, int first, int indent,
                                  markdown_core_block_reader *reader) {
+    (void)self;
     (void)reader;
     parsed_directive parsed;
     bool matched = scan_directive_block(parser, input->data, input->len, first, indent, &parsed) != 0;
-    free_parsed_directive(parser, &parsed);
+    free_parsed_directive(&parsed);
     return matched;
 }
 
-static markdown_core_node *open_directive_block(const markdown_core_element *element, int indented,
+static markdown_core_node *open_directive_block(const markdown_core_element_instance *self, int indented,
                                                 markdown_core_parser *parser, markdown_core_node *parent_container,
                                                 unsigned char *input, int len) {
     (void)indented;
@@ -591,10 +592,10 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
         goto done;
     }
 
-    markdown_core_node_set_element(node, element);
+    markdown_core_node_set_element(node, self->element);
     node->opaque = markdown_core_alloc(1, sizeof(node_directive));
-    if (!node->opaque ||
-        !apply_parsed_directive(element, parser, node, input, &parsed, markdown_core_parser_get_line_number(parser))) {
+    if (!node->opaque || !apply_parsed_directive(self->element, parser, node, input, &parsed,
+                                                 markdown_core_parser_get_line_number(parser))) {
         /* The suffix already validated; failure here is allocation loss. */
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_parser_release_node(parser, node);
@@ -608,7 +609,7 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
     markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser), false);
 
 done:
-    free_parsed_directive(parser, &parsed);
+    free_parsed_directive(&parsed);
     return node;
 }
 
@@ -624,7 +625,7 @@ static int directive_closer_line(const node_directive *directive, markdown_core_
            markdown_core_is_blank_to_line_end(input, first_nonspace + colon_count, (bufsize_t)len);
 }
 
-static int directive_block_continues(const markdown_core_element *element, markdown_core_parser *parser,
+static int directive_block_continues(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                      const unsigned char *input, int len, markdown_core_node *container) {
     node_directive *directive = get_directive(container);
 
@@ -635,7 +636,7 @@ static int directive_block_continues(const markdown_core_element *element, markd
     return directive_closer_line(directive, parser, input, len) ? MARKDOWN_CORE_BLOCK_PENDING_CLOSE : 1;
 }
 
-static int directive_block_matches(const markdown_core_element *element, markdown_core_parser *parser,
+static int directive_block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                    unsigned char *input, int len, markdown_core_node *container) {
     node_directive *directive = get_directive(container);
 
@@ -645,7 +646,7 @@ static int directive_block_matches(const markdown_core_element *element, markdow
 
     directive->consume_line = 0;
 
-    return directive_block_continues(element, parser, input, len, container);
+    return directive_block_continues(self, parser, input, len, container);
 }
 
 static const markdown_core_node_type containment_kinds[] = {

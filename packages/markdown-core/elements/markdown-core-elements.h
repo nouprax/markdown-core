@@ -27,6 +27,19 @@ typedef enum {
  */
 const markdown_core_element *const *markdown_core_core_elements(size_t *count);
 
+/** Parse `source` with the complete core dialect, extended by `setup` when
+ *  present (see markdown_core_parser_setup_func). The product's composition
+ *  root: the one site that selects the core dialect for the engine. Tests add
+ *  instrumentation through `setup`; no caller selects the language. */
+markdown_core_node *markdown_core_parse_document_with_setup(const char *source, size_t length,
+                                                            markdown_core_parser_setup_func setup, void *context);
+
+/** `markdown_core_parse_document_with_setup` with no setup: the complete
+ *  dialect, returning the bare tree for engine tests. The installed API returns
+ *  a `markdown_core_document` instead. Release the tree with
+ *  `markdown_core_node_free`. */
+markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len);
+
 /** Returns the literal formula payload for formula element nodes, or NULL on error.
  */
 const char *markdown_core_elements_get_formula_literal(markdown_core_node *node);

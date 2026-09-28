@@ -1,20 +1,29 @@
 #include "definition_list.h"
+#include "attributes.h"
 #include "link.h"
 #include "table.h"
 #include "block_internal.h"
 
+/* The elements whose state this element reads, as `self->peers` holds them. */
+enum { DEFINITION_LIST_TABLE };
+static const markdown_core_element *const DEFINITION_LIST_PEERS[] = {
+    [DEFINITION_LIST_TABLE] = &MARKDOWN_CORE_ELEMENT_TABLE, NULL};
+
 static bool markdown_core_block_definition_marker(markdown_core_chunk *input, int at, int indent);
-static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, markdown_core_node *parent,
+static bool markdown_core_block_definition_prefix(const markdown_core_element_instance *self,
+                                                  markdown_core_parser *parser, markdown_core_node *parent,
                                                   markdown_core_chunk *input, bool *compact);
-static markdown_core_node *markdown_core_block_open_definition(markdown_core_parser *parser, markdown_core_node *parent,
+static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
+                                                               markdown_core_parser *parser, markdown_core_node *parent,
                                                                markdown_core_chunk *input, bool compact);
-static bool markdown_core_definition_list_scan(markdown_core_parser *parser, block_start_context *context,
-                                               block_start *start);
-bool markdown_core_block_definition_body_blank_continues(markdown_core_parser *parser, markdown_core_node *body) {
+static bool markdown_core_definition_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                               block_start_context *context, block_start *start);
+static bool accepts_blank(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_node *body) {
     if (body->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY) {
         return true;
     }
-    parser->definition_list_work++;
+    ((markdown_core_definition_list_work *)self->state)->work++;
     if (body->as.definition_body->continuation_line > parser->line_number) {
         return true;
     }
@@ -91,9 +100,11 @@ static bool definition_next_lines_admit(markdown_core_parser *parser) {
     return false;
 }
 
-static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, markdown_core_node *parent,
+static bool markdown_core_block_definition_prefix(const markdown_core_element_instance *self,
+                                                  markdown_core_parser *parser, markdown_core_node *parent,
                                                   markdown_core_chunk *input, bool *compact) {
-    parser->definition_list_work++;
+    markdown_core_definition_list_work *counts = self->state;
+    counts->work++;
     if (parser->blank || parser->indent >= 4 ||
         markdown_core_block_definition_marker(input, parser->first_nonspace, parser->indent)) {
         return false;
@@ -106,11 +117,10 @@ static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, 
     }
     markdown_core_chunk term = {input->data + parser->first_nonspace, input->len - parser->first_nonspace, 0};
     if (term.data[0] == '[') {
-        parser->definition_list_work += term.len;
+        counts->work += term.len;
         markdown_core_attribute_parser attributes = {
             .data = term.data, .length = term.len, .scratch = &parser->attribute_scratch};
         bool reference = markdown_core_parse_reference_inline(parser, &term, NULL, &attributes, 0) != 0;
-        parser->attribute_work += attributes.work;
         if (attributes.oom) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
@@ -128,7 +138,9 @@ static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, 
     bool matched = markdown_core_parser_lookahead_next(&lookahead, &next, &first, &indent, &blanks) && blanks <= 1 &&
                    markdown_core_block_definition_marker(&next, first, indent);
     if (matched && next.data[first] == ':') {
-        matched = !markdown_core_table_caption_probe(&lookahead, &next, first, indent);
+        /* A dialect without tables has no caption to yield to. */
+        const markdown_core_element_instance *table = self->peers[DEFINITION_LIST_TABLE];
+        matched = !table || !markdown_core_table_caption_probe(table, &lookahead, &next, first, indent);
     }
     if (matched) {
         *compact = blanks == 0;
@@ -137,7 +149,8 @@ static bool markdown_core_block_definition_prefix(markdown_core_parser *parser, 
     return matched;
 }
 
-static markdown_core_node *markdown_core_block_open_definition(markdown_core_parser *parser, markdown_core_node *parent,
+static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
+                                                               markdown_core_parser *parser, markdown_core_node *parent,
                                                                markdown_core_chunk *input, bool compact) {
     /* A new term requires the separating blank run. If the preceding body's
      * prefix declined it, append at the existing list's definition boundary. */
@@ -167,7 +180,7 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_par
     while (end > begin && markdown_core_is_whitespace(input->data[end - 1])) {
         end--;
     }
-    parser->definition_list_work += end - begin;
+    counts->work += end - begin;
     term->start_line = term->end_line = parser->line_number;
     term->start_column = markdown_core_parser_source_column(parser, parser->line_number, begin + 1);
     term->end_column = markdown_core_parser_source_column(parser, parser->line_number, end);
@@ -180,8 +193,10 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_par
     return definition;
 }
 
-static bool markdown_core_definition_list_open(markdown_core_parser *parser, markdown_core_node **container,
-                                               markdown_core_chunk *input, block_start *start) {
+static bool markdown_core_definition_list_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                               markdown_core_node **container, markdown_core_chunk *input,
+                                               block_start *start) {
+    (void)self;
 
     int continuation = parser->indent + markdown_core_block_consume_item_marker(parser, input, 1);
     *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_DEFINITION_BODY,
@@ -194,8 +209,9 @@ static bool markdown_core_definition_list_open(markdown_core_parser *parser, mar
     return true;
 }
 
-static bool markdown_core_definition_list_scan(markdown_core_parser *parser, block_start_context *context,
-                                               block_start *start) {
+static bool markdown_core_definition_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                               block_start_context *context, block_start *start) {
+    (void)self;
     markdown_core_chunk *input = context->input;
     int first = context->first;
     if (!(context->container->kind == MARKDOWN_CORE_NODE_DEFINITION &&
@@ -212,28 +228,31 @@ bool markdown_core_definition_list_continue(markdown_core_parser *parser, markdo
     return markdown_core_block_continue_indented(parser, input, container->as.definition_body->continuation, true);
 }
 
-static markdown_core_node *try_paragraph(const markdown_core_element *self, int indented, markdown_core_parser *parser,
-                                         markdown_core_node *parent, unsigned char *data, int length) {
+static markdown_core_node *try_paragraph(const markdown_core_element_instance *self, int indented,
+                                         markdown_core_parser *parser, markdown_core_node *parent, unsigned char *data,
+                                         int length) {
     markdown_core_chunk input = {data, length, 0};
     bool compact = false;
-    if (!markdown_core_block_definition_prefix(parser, parent, &input, &compact)) {
+    if (!markdown_core_block_definition_prefix(self, parser, parent, &input, &compact)) {
         return NULL;
     }
-    return markdown_core_block_open_definition(parser, parent, &input, compact);
+    return markdown_core_block_open_definition(self->state, parser, parent, &input, compact);
 }
 
-static bool continue_container(markdown_core_parser *parser, markdown_core_node *node, markdown_core_chunk *input,
-                               const markdown_core_node *joining, bool *taken) {
+static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                               markdown_core_node *node, markdown_core_chunk *input, const markdown_core_node *joining,
+                               bool *taken) {
+    (void)self;
     return node->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY ||
            markdown_core_definition_list_continue(parser, node, input);
 }
 /* A definition list, a definition and a body end where their last child
  * ends: taken at each one's EXIT, from inside the one finish walk, where the
  * children are complete. */
-static markdown_core_finish_result finish_step(const markdown_core_element *element, markdown_core_parser *parser,
+static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                markdown_core_node *node, markdown_core_event_type event, int is_root,
                                                void **state) {
-    (void)element;
+    (void)self;
     (void)parser;
     (void)event;
     (void)is_root;
@@ -245,18 +264,22 @@ static markdown_core_finish_result finish_step(const markdown_core_element *elem
 static const markdown_core_node_type DEFINITION_LIST_EXIT_KINDS[] = {
     MARKDOWN_CORE_NODE_DEFINITION_LIST, MARKDOWN_CORE_NODE_DEFINITION, MARKDOWN_CORE_NODE_DEFINITION_BODY,
     MARKDOWN_CORE_NODE_NONE};
-static void finalize_block(markdown_core_parser *parser, markdown_core_node *node) {
+static void finalize_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                           markdown_core_node *node) {
+    (void)self;
     if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
         markdown_core_definition_list_close_body(node);
     }
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
+    .peers = DEFINITION_LIST_PEERS,
+    .state_size = sizeof(markdown_core_definition_list_work),
     .finish_step = finish_step,
     .finish_exit_kinds = DEFINITION_LIST_EXIT_KINDS,
     .finalize_block = finalize_block,
 
-    .accepts_blank = markdown_core_block_definition_body_blank_continues,
+    .accepts_blank = accepts_blank,
 
     .name = "definition_list",
     .continue_container = continue_container,

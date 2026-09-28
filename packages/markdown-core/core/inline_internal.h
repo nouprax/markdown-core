@@ -12,9 +12,6 @@
 #include "iterator.h"
 #include "inlines.h"
 #include "element.h"
-#include "../elements/markdown-core-elements.h"
-#include "../elements/citation_state.h"
-#include "../elements/bracket_state.h"
 
 /* One maximal parsed delimiter run, classified from immutable source bytes. The text
  * scanner may retain one lookahead run for delimiter dispatch to consume. */
@@ -27,11 +24,12 @@ typedef struct {
 struct markdown_core_inline_state {
     markdown_core_chunk input;
     markdown_core_attribute_parser attributes;
-    bufsize_t heading_attributes_start, text_end, heading_label_end;
+    /* Where the run owner's tail begins, or -1 for none: inline text yields
+     * there to the owner's `claim_tail`, and no inline attribute block begins
+     * in it. */
+    bufsize_t text_end;
     unsigned flags;
     bufsize_t opaque_end;
-    /* Starts before this underscore share a rejected domain suffix. */
-    bufsize_t autolink_rejected_until;
     /* One plus the start of a suffix proven to contain no closer of a rule. */
     bufsize_t opaque_failed_from[MARKDOWN_CORE_DELIM_RULE_COUNT];
     int line;
@@ -42,12 +40,12 @@ struct markdown_core_inline_state {
      * parser -- and the map is then simply not consulted. */
     markdown_core_parser *owner_parser;
     markdown_core_node *owner;
-    /* `owner`'s structural element, resolved once. The projection is a pure
+    /* The instance of `owner`'s structure element, resolved once. The projection is a pure
      * function of `owner->kind`, `owner` does not change across a run, and a
      * run's owner does not change kind during it -- so asking per token was
      * asking the same question once per inline node. Written only beside
      * `owner`, in the one place that assigns it, so the pair cannot drift. */
-    const markdown_core_element *owner_structure;
+    const markdown_core_element_instance *owner_structure;
     /* The run of `owner`'s map the last placement ended in, and the frame
      * the next is measured in: the inline parser reads `input` left to right,
      * so a node that lies whole on this run is placed by arithmetic, and one
@@ -74,17 +72,14 @@ struct markdown_core_inline_state {
      * a closer will pair without walking the stack. */
     int delim_openers[MARKDOWN_CORE_DELIM_RULE_COUNT];
     int delim_closers[MARKDOWN_CORE_DELIM_RULE_COUNT];
-    bracket *last_bracket;
-    citation_tokens citations;
-    citation_brace_index citation_braces;
-    bracket *pending_brackets;
     /* One past the last consumed byte other than SP/TAB. This lets every
      * inline-note closer test its body's non-empty rule in constant time. */
     bufsize_t nonblank_end;
-    bufsize_t *backticks;
-    bufsize_t backtick_capacity;
-    bool scanned_for_backticks;
-    bool no_link_openers;
+    /* This run's block of the elements' run records (markdown_core_run_state):
+     * taken from the parser when the run starts and given back when it is
+     * cleared. NULL for a run with no parser, and for one whose records could
+     * not be allocated, which is then failed and never begins. */
+    unsigned char *run_state;
     /* The owning parser's sealed dialect, which the scan reads its byte
      * tables and delimiter owners from. NULL with no parser: that state is a
      * reference definition's cursor (markdown_core_parse_reference_inline),
@@ -94,6 +89,14 @@ struct markdown_core_inline_state {
      * pass so a lossy parse is reported instead of silently truncated. */
     markdown_core_parse_error error;
 };
+
+/* The run record of `self` (markdown-core-element-api.h, "AN ELEMENT AS ONE
+ * PARSE HOLDS IT"), or NULL when the run has none. The record lives until the
+ * run is cleared. */
+static inline void *markdown_core_run_state(const markdown_core_inline_state *inline_state,
+                                            const markdown_core_element_instance *self) {
+    return inline_state->run_state ? inline_state->run_state + self->run_offset : NULL;
+}
 
 #define make_str(inline_state, sc, ec, s)                                                                              \
     markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_TEXT, sc, ec, s)
@@ -217,7 +220,7 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
                                         markdown_core_map *refmap, markdown_core_inline_state *inline_state);
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state);
 bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
-markdown_core_node *markdown_core_inline_match_delimiter(const markdown_core_element *element,
+markdown_core_node *markdown_core_inline_match_delimiter(const markdown_core_element_instance *self,
                                                          markdown_core_inline_state *inline_state);
 int markdown_core_byte_set_has(const char *set, unsigned char character);
 void markdown_core_inline_push_boundary(markdown_core_inline_state *inline_state, bufsize_t position);

@@ -1,6 +1,7 @@
 #ifndef MARKDOWN_CORE_AUTOLINK_H
 #define MARKDOWN_CORE_AUTOLINK_H
 
+#include "parser.h"
 #include "markdown-core-elements.h"
 
 /* C LINKAGE, AND WINDOWS IS THE ONLY PLACE THIS SHOWS. The Itanium ABI does not
@@ -15,6 +16,12 @@ extern "C" {
 /** The one, immutable descriptor. `core-elements.c`'s table is the only
  * place its position in the attach order is written down. */
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK;
+
+/* The domain bytes the autolink scanner examined (the autolink
+ * element's parse record), for its complexity gate. */
+typedef struct {
+    size_t domains;
+} markdown_core_autolink_work;
 
 #ifdef __cplusplus
 }

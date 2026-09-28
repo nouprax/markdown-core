@@ -26,25 +26,39 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk take_while(markdown_core_inline_
 // parsed).  Return 0 if you don't find matching closing
 // backticks, otherwise return the position in the inline state
 // after the closing backticks.
-bufsize_t markdown_core_inline_scan_to_closing_backticks(markdown_core_inline_state *inline_state,
+/* ONE RUN'S BACKTICK INDEX (the code element's run record): the
+ * last position of a run of each length up to `capacity`, recorded as the
+ * first scan for a closer passes it, and whether a scan has reached the end
+ * of the run, after which a length whose last run lies behind the cursor has
+ * no closer. Allocated when a run first looks for a closer. */
+typedef struct {
+    bufsize_t *positions;
+    bufsize_t capacity;
+    bool scanned;
+} code_backticks;
+
+// Assumes that the inline state has a backtick at the current position.
+/* `code` is the code element's instance: the positions the scan indexes are
+ * its run record, which another element's scan shares. */
+bufsize_t markdown_core_inline_scan_to_closing_backticks(const markdown_core_element_instance *code,
+                                                         markdown_core_inline_state *inline_state,
                                                          bufsize_t openticklength) {
+    code_backticks *backticks = markdown_core_run_state(inline_state, code);
 
     bool found = false;
     if (openticklength > MAXBACKTICKS) {
-        // we limit backtick string length because of the array inline_state->backticks:
+        // we limit backtick string length because of the positions array:
         return 0;
     }
-    if (!inline_state->backticks) {
-        inline_state->backtick_capacity =
-            inline_state->input.len < MAXBACKTICKS ? inline_state->input.len : MAXBACKTICKS;
-        inline_state->backticks =
-            markdown_core_alloc((size_t)inline_state->backtick_capacity + 1, sizeof(*inline_state->backticks));
-        if (!inline_state->backticks) {
+    if (!backticks->positions) {
+        backticks->capacity = inline_state->input.len < MAXBACKTICKS ? inline_state->input.len : MAXBACKTICKS;
+        backticks->positions = markdown_core_alloc((size_t)backticks->capacity + 1, sizeof(*backticks->positions));
+        if (!backticks->positions) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
             return 0;
         }
     }
-    if (inline_state->scanned_for_backticks && inline_state->backticks[openticklength] <= inline_state->pos) {
+    if (backticks->scanned && backticks->positions[openticklength] <= inline_state->pos) {
         // return if we already know there's no closer
         return 0;
     }
@@ -63,15 +77,15 @@ bufsize_t markdown_core_inline_scan_to_closing_backticks(markdown_core_inline_st
             numticks++;
         }
         // store position of ender
-        if (numticks <= inline_state->backtick_capacity) {
-            inline_state->backticks[numticks] = inline_state->pos - numticks;
+        if (numticks <= backticks->capacity) {
+            backticks->positions[numticks] = inline_state->pos - numticks;
         }
         if (numticks == openticklength) {
             return (inline_state->pos);
         }
     }
     // got through whole input without finding closer
-    inline_state->scanned_for_backticks = true;
+    backticks->scanned = true;
     return 0;
 }
 
@@ -110,11 +124,11 @@ static void S_normalize_code(markdown_core_strbuf *s) {
 }
 
 // Parse backtick code section or raw backticks, return an inline.
-// Assumes that the inline state has a backtick at the current position.
-static markdown_core_node *handle_backticks(markdown_core_inline_state *inline_state) {
+static markdown_core_node *handle_backticks(const markdown_core_element_instance *self,
+                                            markdown_core_inline_state *inline_state) {
     markdown_core_chunk openticks = take_while(inline_state, isbacktick);
     bufsize_t startpos = inline_state->pos;
-    bufsize_t endpos = markdown_core_inline_scan_to_closing_backticks(inline_state, openticks.len);
+    bufsize_t endpos = markdown_core_inline_scan_to_closing_backticks(self, inline_state, openticks.len);
 
     if (endpos == 0) {                // not found
         inline_state->pos = startpos; // rewind
@@ -157,19 +171,21 @@ static markdown_core_node *handle_backticks(markdown_core_inline_state *inline_s
     }
 }
 
-static markdown_core_node *match(const markdown_core_element *self, markdown_core_parser *parser,
+static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_state *inline_state) {
-    return character == '`' ? handle_backticks(inline_state) : NULL;
+    return character == '`' ? handle_backticks(self, inline_state) : NULL;
 }
-static void dispose_inline(markdown_core_inline_state *inline_state) {
-    markdown_core_free(inline_state->backticks);
-    inline_state->backticks = NULL;
+static void dispose_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
+    code_backticks *backticks = markdown_core_run_state(inline_state, self);
+    markdown_core_free(backticks->positions);
+    backticks->positions = NULL;
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE = {
     .inline_precedence = MARKDOWN_CORE_INLINE_TOKEN,
     .dispose_inline = dispose_inline,
+    .run_state_size = sizeof(code_backticks),
 
     .name = "code",
     .match_inline = match,
