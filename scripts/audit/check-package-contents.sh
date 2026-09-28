@@ -418,8 +418,8 @@ if [ ! -f "$kotlin_jvm_sources" ]; then
     echo "Kotlin JVM source publication JAR is missing" >&2
     exit 1
 fi
-if unzip -Z1 "$kotlin_jvm_sources" | grep -E '(^|/)(NativeBridge[^/]*|Walker|Visitor|WalkingVisitor|WireDecoder|WireKind|WireMarkupDecoder)[^/]*\.kt$|^commonMain/.*/(walker|wire)/|(^|/)native-bridge(/|$)'; then
-    echo "Kotlin JVM source publication contains a retired bridge, legacy walker, or shared wire source" >&2
+if unzip -Z1 "$kotlin_jvm_sources" | grep -E '(^|/)(NativeBridge[^/]*|Walker|Visitor|WalkingVisitor|WireKind|WireMarkupDecoder|Jni[A-Za-z]*Decoder|JniNodeKind)[^/]*\.kt$|^commonMain/.*/walker/|(^|/)native-bridge(/|$)'; then
+    echo "Kotlin JVM source publication contains a retired bridge, legacy walker, or JNI-only wire source" >&2
     exit 1
 fi
 for required_source in \
@@ -428,10 +428,9 @@ for required_source in \
     commonMain/com/nouprax/markdown/core/markup/Markup.kt \
     commonMain/com/nouprax/markdown/core/visitor/MarkupVisitor.kt \
     commonMain/com/nouprax/markdown/core/visitor/MarkupWalker.kt \
-    jvmMain/com/nouprax/markdown/core/PlatformParser.jvm.kt \
-    jvmMain/com/nouprax/markdown/core/wire/JniPayloadDecoder.kt \
-    jvmMain/com/nouprax/markdown/core/wire/JniNodeKind.kt \
-    jvmMain/com/nouprax/markdown/core/wire/JniMarkupDecoder.kt; do
+    commonMain/com/nouprax/markdown/core/wire/WireDecoder.kt \
+    commonMain/com/nouprax/markdown/core/wire/WireNodeKind.kt \
+    jvmMain/com/nouprax/markdown/core/PlatformParser.jvm.kt; do
     if ! unzip -Z1 "$kotlin_jvm_sources" | grep -qx "$required_source"; then
         echo "Kotlin JVM source publication is missing $required_source" >&2
         exit 1

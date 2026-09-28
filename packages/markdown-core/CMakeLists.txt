@@ -86,6 +86,9 @@ endif()
 
 add_subdirectory(core)
 add_subdirectory(elements)
+if(MARKDOWN_CORE_SHARED OR MARKDOWN_CORE_STATIC)
+    add_subdirectory(wire)
+endif()
 
 if(MARKDOWN_CORE_SHARED OR MARKDOWN_CORE_STATIC)
     include(CMakePackageConfigHelpers)

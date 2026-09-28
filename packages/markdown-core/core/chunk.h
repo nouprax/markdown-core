@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <assert.h>
-#include "markdown-core.h"
+#include "buffer.h"
 #include "buffer.h"
 #include "markdown_core_ctype.h"
 

@@ -185,32 +185,36 @@ Swift, Kotlin, and ECMAScript expose the same concepts:
 They do not expose native handles, parser ownership, mutation, rendering,
 feed/edit/session types, CST nodes, or diagnostic lists.
 
-The bindings share the canonical AST contract, not a binding bridge or a
-lowest-common-denominator transport. Each platform adapts the C parser at its
-own natural foreign-function boundary:
+The bindings share the canonical AST contract. A binding that can hold C node
+handles reads the facade directly; every other binding reads one core-owned
+message, MCB2 ([wire format](architecture/wire-format.md)), which is a
+projection of that contract and has one encoder:
 
 - Swift consumes the typed C facade directly and copies the native relations
   into value nodes with an iterative relation table.
-- Kotlin/Native cinterops the read-only C document/node facade directly. It
-  pins source bytes only for the parse call, copies borrowed fields while the
-  document is alive, materializes the Kotlin tree iteratively, and frees the C
-  document on every exit path. C types do not appear in the public Kotlin AST.
-- JVM and Android cross JNI once with their own package-private `byte[]`
-  payload. The dynamic library registers that method from `JNI_OnLoad` and
-  exports no class-shaped JNI symbol. Both native encoding and Kotlin decoding
-  use heap-backed action stacks rather than recursive calls.
-- ECMAScript makes one direct Wasm parse call and reads its own private table of
-  fixed-width node records, relation indexes, and UTF-8 bytes from linear
-  memory before freeing it; bottom-up reconstruction is iterative.
+- Kotlin on every target (JVM, Android and Native) and ECMAScript receive a
+  parse as one MCB2 message from `packages/markdown-core/wire/`, a pure
+  consumer of the installed facade. The message borrows nothing: the C
+  document is freed before the call returns.
+- JVM and Android cross JNI once with a package-private `byte[]` method that
+  the dynamic library registers from `JNI_OnLoad`; it exports no class-shaped
+  JNI symbol. Kotlin/Native calls the encoder through cinterop and copies the
+  message into the Kotlin heap. One commonMain decoder builds the tree for all
+  three.
+- ECMAScript makes one Wasm call and copies the message out of linear memory
+  before freeing it.
+- Records arrive in post-order, so both decoders build bottom-up from a stack,
+  without recursion and without calling back into native code. C types do not
+  appear in any public AST.
 
 The parser's element postprocessing is depth-independent as well. In
 particular, enabling formulas must not recursively visit every node in a deep
 document that contains no formula. Correctness tests parse and inspect 10,000
 nested lists through every binding boundary.
 
-The JNI payload is not the Kotlin/Native adapter, and neither is the ES Wasm
-ABI. No binding uses the debug dump as a transport, and no platform adapter
-becomes part of the installed portable C facade or public language AST API.
+MCB2 is internal to the bindings: it is not installed with the C package, and
+it is not part of any public language AST API. No binding uses the debug dump
+as a transport.
 
 ## 8. Repository invariants and gates
 

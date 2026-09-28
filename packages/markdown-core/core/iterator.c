@@ -5,7 +5,8 @@
 #include "alloc.h"
 #include "config.h"
 #include "node.h"
-#include "markdown-core.h"
+#include "node_type.h"
+#include "buffer.h"
 #include "parser.h"
 #include "iterator.h"
 
@@ -33,14 +34,6 @@ void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *curr
 }
 
 markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter) { return iter->cur.node; }
-
-markdown_core_event_type markdown_core_iter_get_event_type(markdown_core_iter *iter) { return iter->cur.ev_type; }
-
-markdown_core_node *markdown_core_iter_get_root(markdown_core_iter *iter) { return iter->root; }
-
-int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
-    return markdown_core_consolidate_text_nodes_with_parser(NULL, root);
-}
 
 /* Every iterator step a finish-stage consolidation takes is counted on the
  * parser when there is one, so the traversal count the finish stage claims

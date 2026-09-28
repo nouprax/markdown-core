@@ -9,7 +9,9 @@
 #include <limits.h>
 #include <stdint.h>
 #include "config.h"
-#include "markdown-core.h"
+
+/* A length or offset within one parse input or buffer. */
+typedef int32_t bufsize_t;
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,7 +44,6 @@ extern const unsigned char markdown_core_strbuf__initbuf[];
  * For the cases where MARKDOWN_CORE_BUF_INIT cannot be used to do static
  * initialization.
  */
-MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_init(markdown_core_strbuf *buf, bufsize_t initial_size);
 
 /* THE EMPTY BUFFER, over storage that is ALREADY ZERO.
@@ -64,10 +65,8 @@ static inline void markdown_core_strbuf_init_zeroed(markdown_core_strbuf *buf) {
 /**
  * Grow the buffer to hold at least `target_size` bytes.
  */
-MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size);
 
-MARKDOWN_CORE_EXPORT
 /* Whether the buffer owns storage: a buffer still on the shared initial
  * storage owns nothing. The first test a release makes, shared with the
  * node release that makes it in place before calling. */
@@ -76,19 +75,14 @@ static MARKDOWN_CORE_INLINE bool markdown_core_strbuf_owns(const markdown_core_s
 }
 void markdown_core_strbuf_free(markdown_core_strbuf *buf);
 
-MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_swap(markdown_core_strbuf *buf_a, markdown_core_strbuf *buf_b);
 
-MARKDOWN_CORE_EXPORT
 bufsize_t markdown_core_strbuf_len(const markdown_core_strbuf *buf);
 
-MARKDOWN_CORE_EXPORT
 int markdown_core_strbuf_cmp(const markdown_core_strbuf *a, const markdown_core_strbuf *b);
 
-MARKDOWN_CORE_EXPORT
 unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf);
 
-MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_copy_cstr(char *data, bufsize_t datasize, const markdown_core_strbuf *buf);
 
 static MARKDOWN_CORE_INLINE const char *markdown_core_strbuf_cstr(const markdown_core_strbuf *buf) {
@@ -97,10 +91,8 @@ static MARKDOWN_CORE_INLINE const char *markdown_core_strbuf_cstr(const markdown
 
 #define markdown_core_strbuf_at(buf, n) ((buf)->ptr[n])
 
-MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len);
 
-MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_sets(markdown_core_strbuf *buf, const char *string);
 
 /* The append that needs growth, or meets a poisoned buffer: the half of
@@ -139,31 +131,22 @@ static MARKDOWN_CORE_INLINE void markdown_core_strbuf_putc(markdown_core_strbuf 
     markdown_core_strbuf_put_grown(buf, &byte, 1);
 }
 
-MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_puts(markdown_core_strbuf *buf, const char *string);
 
-MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_clear(markdown_core_strbuf *buf);
 
-MARKDOWN_CORE_EXPORT
 bufsize_t markdown_core_strbuf_strchr(const markdown_core_strbuf *buf, int c, bufsize_t pos);
 
-MARKDOWN_CORE_EXPORT
 bufsize_t markdown_core_strbuf_strrchr(const markdown_core_strbuf *buf, int c, bufsize_t pos);
 
-MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_drop(markdown_core_strbuf *buf, bufsize_t n);
 
-MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_truncate(markdown_core_strbuf *buf, bufsize_t len);
 
-MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_rtrim(markdown_core_strbuf *buf);
 
-MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_trim(markdown_core_strbuf *buf);
 
-MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_unescape(markdown_core_strbuf *s);
 
 #ifdef __cplusplus

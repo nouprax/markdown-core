@@ -1,12 +1,9 @@
 if(MARKDOWN_CORE_KOTLIN_JNI)
     find_package(JNI REQUIRED)
 
-    add_library(markdown_core_kotlin_jni SHARED markdown_core_kotlin_jni_payload.c markdown_core_kotlin_jni.c)
-    target_include_directories(markdown_core_kotlin_jni PRIVATE ${JNI_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}
-                                                                ${CMAKE_SOURCE_DIR}/packages/markdown-core/include)
-    target_compile_definitions(markdown_core_kotlin_jni PRIVATE MARKDOWN_CORE_STATIC_DEFINE
-                                                                MARKDOWN_CORE_ELEMENTS_STATIC_DEFINE)
-    target_link_libraries(markdown_core_kotlin_jni PRIVATE libmarkdown-core-public-static)
+    add_library(markdown_core_kotlin_jni SHARED markdown_core_kotlin_jni.c)
+    target_include_directories(markdown_core_kotlin_jni PRIVATE ${JNI_INCLUDE_DIRS})
+    target_link_libraries(markdown_core_kotlin_jni PRIVATE libmarkdown-core-wire)
     set_target_properties(
         markdown_core_kotlin_jni
         PROPERTIES OUTPUT_NAME markdown_core_kotlin

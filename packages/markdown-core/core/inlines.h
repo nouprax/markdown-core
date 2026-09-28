@@ -10,7 +10,6 @@ extern "C" {
 #include "parser.h"
 #include "element.h"
 
-MARKDOWN_CORE_EXPORT
 bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap);
 
 /* Shared field ownership and inline parsing. Parsing returns whether ordinary

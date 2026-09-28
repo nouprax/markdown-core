@@ -8,10 +8,20 @@ extern "C" {
 #include <assert.h>
 #include <stdbool.h>
 
-#include "markdown-core.h"
+#include "node_type.h"
 #include "markdown-core-element-api.h"
 #include "buffer.h"
 #include "node.h"
+
+/* A depth-first walk over a subtree: every node yields exactly one ENTER and
+ * one EXIT, with its descendants' events between them, and DONE follows the
+ * root's EXIT. Node-valued fields are independent roots and are never
+ * discovered by this traversal. While walking, the only node that may be freed
+ * is the one whose EXIT is current: that is the one moment the lookahead names
+ * something outside the node's own subtree. `markdown_core_iter_reset(iter,
+ * node, MARKDOWN_CORE_EVENT_EXIT)` brings a node back under that rule after
+ * mutating around it. */
+typedef struct markdown_core_iter markdown_core_iter;
 
 typedef struct {
     markdown_core_event_type ev_type;
@@ -77,6 +87,14 @@ static inline markdown_core_event_type markdown_core_iter_step(markdown_core_ite
     return ev_type;
 }
 
+markdown_core_iter *markdown_core_iter_new(markdown_core_node *root);
+void markdown_core_iter_free(markdown_core_iter *iter);
+markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter);
+markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter);
+/* The new current node must be `root` or one of its descendants. */
+void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *current,
+                              markdown_core_event_type event_type);
+
 /* Whether consolidation has anything to do at `text`'s EXIT: a Text sibling
  * to absorb, or no bytes of its own to keep. The step below answers the same
  * two questions itself; this is what lets the walk ask them in place and
@@ -111,8 +129,7 @@ markdown_core_finish_result markdown_core_consolidate_text_step(struct markdown_
                                                                 markdown_core_iter *iter, markdown_core_node *cur,
                                                                 markdown_core_complete_node_func complete, int depth);
 
-/* The step applied at every Text EXIT of a walk over `root`.
- * `markdown_core_consolidate_text_nodes` is this with no parser. */
+/* The step applied at every Text EXIT of a walk over `root`. */
 int markdown_core_consolidate_text_nodes_with_parser(struct markdown_core_parser *parser, markdown_core_node *root);
 
 #ifdef __cplusplus

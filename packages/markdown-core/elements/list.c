@@ -78,7 +78,7 @@ static bool ordered_numeral(markdown_core_parser *parser, markdown_core_chunk *i
 }
 
 static bool markdown_core_block_list_facts_match(const markdown_core_list *list, const markdown_core_list *item) {
-    return list->list_type == item->list_type && list->bullet_char == item->bullet_char &&
+    return list->flavor == item->flavor && list->bullet_char == item->bullet_char &&
            list->variant.kind == item->variant.kind && list->variant.lowercased == item->variant.lowercased &&
            list->delimiter.kind == item->delimiter.kind && list->delimiter.closed == item->delimiter.closed;
 }
@@ -92,7 +92,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_parser *par
     *data = (markdown_core_list){0};
     parser->list_marker_work++;
     if (c == '*' || c == '-' || c == '+') {
-        data->list_type = MARKDOWN_CORE_BULLET_LIST;
+        data->flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET;
         data->bullet_char = c;
         pos++;
     } else {
@@ -131,7 +131,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_parser *par
         if (delim != ')' && (closed || delim != '.')) {
             return 0;
         }
-        data->list_type = MARKDOWN_CORE_ORDERED_LIST;
+        data->flavor = MARKDOWN_CORE_LIST_FLAVOR_ORDERED;
         data->delimiter =
             (markdown_core_ordered_list_delimiter){delim == '.' ? MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD
                                                                 : MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS,
@@ -141,7 +141,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_parser *par
                              : markdown_core_isdigit(c)                 ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL
                              : end == begin + 1 && c != 'i' && c != 'I' ? MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA
                                                                         : MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN;
-        if (committed && committed->list_type == MARKDOWN_CORE_ORDERED_LIST &&
+        if (committed && committed->flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED &&
             ordered_numeral(parser, input, begin, end, committed->variant, &data->start)) {
             data->variant = committed->variant;
         } else if (!ordered_numeral(parser, input, begin, end, data->variant, &data->start)) {

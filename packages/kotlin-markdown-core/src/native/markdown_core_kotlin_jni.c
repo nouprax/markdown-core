@@ -1,7 +1,7 @@
-#include "markdown_core_kotlin_jni_payload.h"
+#include <markdown_core_wire.h>
 
 #include <jni.h>
-#include <limits.h>
+#include <stdint.h>
 
 static void throw_new(JNIEnv *environment, const char *class_name, const char *message) {
     jclass error_class = (*environment)->FindClass(environment, class_name);
@@ -11,11 +11,17 @@ static void throw_new(JNIEnv *environment, const char *class_name, const char *m
     }
 }
 
+static uint32_t message_length(const uint8_t *message) {
+    return (uint32_t)message[4] | (uint32_t)message[5] << 8 | (uint32_t)message[6] << 16 | (uint32_t)message[7] << 24;
+}
+
+/* Returns the MCB2 message (docs/architecture/wire-format.md) for `source`;
+ * the Kotlin decoder owns everything after the copy. */
 static jbyteArray JNICALL native_parse(JNIEnv *environment, jobject receiver, jbyteArray source) {
     jbyte *source_bytes;
     jsize source_length;
-    uint8_t *output = NULL;
-    size_t output_length = 0;
+    uint8_t *message;
+    uint32_t length;
     jbyteArray result;
     (void)receiver;
 
@@ -31,27 +37,25 @@ static jbyteArray JNICALL native_parse(JNIEnv *environment, jobject receiver, jb
             return NULL;
         }
     }
-    if (!markdown_core_kotlin_jni_encode((const uint8_t *)source_bytes, (size_t)source_length, &output,
-                                         &output_length)) {
-        if (source_bytes != NULL) {
-            (*environment)->ReleaseByteArrayElements(environment, source, source_bytes, JNI_ABORT);
-        }
-        throw_new(environment, "java/lang/OutOfMemoryError", "JNI AST payload allocation failed");
-        return NULL;
-    }
+    message = markdown_core_wire_parse((const uint8_t *)source_bytes, (size_t)source_length);
     if (source_bytes != NULL) {
         (*environment)->ReleaseByteArrayElements(environment, source, source_bytes, JNI_ABORT);
     }
-    if (output_length > (size_t)INT32_MAX) {
-        markdown_core_kotlin_jni_payload_free(output);
+    if (message == NULL) {
+        throw_new(environment, "java/lang/OutOfMemoryError", "native AST message allocation failed");
+        return NULL;
+    }
+    length = message_length(message);
+    if (length > (uint32_t)INT32_MAX) {
+        markdown_core_wire_free(message);
         throw_new(environment, "java/lang/OutOfMemoryError", "native AST exceeds the JVM array limit");
         return NULL;
     }
-    result = (*environment)->NewByteArray(environment, (jsize)output_length);
+    result = (*environment)->NewByteArray(environment, (jsize)length);
     if (result != NULL) {
-        (*environment)->SetByteArrayRegion(environment, result, 0, (jsize)output_length, (const jbyte *)output);
+        (*environment)->SetByteArrayRegion(environment, result, 0, (jsize)length, (const jbyte *)message);
     }
-    markdown_core_kotlin_jni_payload_free(output);
+    markdown_core_wire_free(message);
     if ((*environment)->ExceptionCheck(environment)) {
         return NULL;
     }

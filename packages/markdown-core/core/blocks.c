@@ -19,7 +19,7 @@
 #include "../elements/markdown-core-elements.h"
 #include "config.h"
 #include "parser.h"
-#include "markdown-core.h"
+#include "node_type.h"
 #include "node.h"
 #include "references.h"
 #include "utf8.h"

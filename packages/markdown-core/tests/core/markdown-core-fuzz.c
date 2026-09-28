@@ -1,35 +1,23 @@
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include "markdown-core.h"
-#include "markdown-core-elements.h"
-#include "parser.h"
+#include <markdown_core.h>
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) { return 0; }
 
+/* The whole input is Markdown, parsed as the one dialect: the dialect has no
+ * switches, so there is no configuration prefix to fuzz. The facade parses,
+ * the canonical dump reads every node and node-valued field, and both are
+ * released. */
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    /* The whole input is Markdown, parsed as the one dialect: the engine always
-     * attaches every element. The dialect has no
-     * switches, so there is no configuration prefix to fuzz. */
-    markdown_core_node *doc = markdown_core_parse_document_with_setup((const char *)data, size, NULL, NULL);
-    if (!doc) {
+    markdown_core_document *document = markdown_core_document_parse(data, size, NULL);
+    if (!document) {
         return 0;
     }
-
-    /* Exercise every node and accessor instead of the retired renderers:
-     * parse, traverse, and free. */
-    markdown_core_iter *iter = markdown_core_iter_new(doc);
-    markdown_core_event_type ev_type;
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
-        (void)markdown_core_node_get_type(node);
-        (void)markdown_core_node_get_literal(node);
-        (void)markdown_core_node_get_start_line(node);
-        (void)markdown_core_node_get_end_column(node);
+    uint8_t *dump = NULL;
+    size_t dump_length = 0;
+    if (markdown_core_document_dump(document, &dump, &dump_length, NULL)) {
+        markdown_core_dump_free(dump);
     }
-    markdown_core_iter_free(iter);
-
-    markdown_core_node_free(doc);
+    markdown_core_document_free(document);
     return 0;
 }

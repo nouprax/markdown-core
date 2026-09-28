@@ -1,5 +1,5 @@
 #include "alloc.h"
-#include "markdown-core.h"
+#include "buffer.h"
 #include "parser.h"
 #include "references.h"
 #include "inlines.h"

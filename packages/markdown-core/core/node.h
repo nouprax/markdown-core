@@ -8,7 +8,7 @@ extern "C" {
 #include <stdio.h>
 #include <stdint.h>
 
-#include "markdown-core.h"
+#include "node_type.h"
 #include "markdown-core-element-api.h"
 #include "buffer.h"
 #include "chunk.h"
@@ -17,7 +17,7 @@ extern "C" {
 #include "metadata.h"
 
 typedef struct {
-    markdown_core_list_type list_type;
+    markdown_core_list_flavor flavor;
     int marker_offset;
     int padding;
     int start;
@@ -280,9 +280,6 @@ struct markdown_core_node {
     struct markdown_core_node *first_child;
     struct markdown_core_node *last_child;
 
-    void *user_data;
-    markdown_core_free_func user_data_free_func;
-
     int start_line;
     int start_column;
     int end_line;
@@ -335,7 +332,7 @@ markdown_core_resource *markdown_core_resource_new(markdown_core_slab_pool *pool
 void markdown_core_resource_retain(markdown_core_resource *resource);
 /* Drops one holder and frees the resource with the last. NULL is a no-op. */
 void markdown_core_resource_release(markdown_core_resource *resource);
-MARKDOWN_CORE_EXPORT int markdown_core_node_check(markdown_core_node *node, FILE *out);
+int markdown_core_node_check(markdown_core_node *node, FILE *out);
 
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_TYPE_BLOCK_P(markdown_core_node_type node_type) {
     return (node_type & MARKDOWN_CORE_NODE_TYPE_MASK) == MARKDOWN_CORE_NODE_TYPE_BLOCK;
@@ -357,8 +354,7 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_INLINE_P(markdown_core_node 
  * Checked mutation and construction assertions use this same rule. */
 bool markdown_core_node_can_contain_builtin(const markdown_core_node *node, markdown_core_node_type child_type);
 
-MARKDOWN_CORE_EXPORT bool markdown_core_node_can_contain_type(markdown_core_node *node,
-                                                              markdown_core_node_type child_type);
+bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type);
 
 typedef int (*markdown_core_owned_subtree_visitor)(markdown_core_node **root_slot, void *context);
 /* The chains a document owns as roots of their own, in the order the visitor
@@ -433,9 +429,26 @@ static MARKDOWN_CORE_INLINE void markdown_core_node_kind_set_add(markdown_core_n
 /* Whether the two sets name any kind in common. */
 bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a, const markdown_core_node_kind_set *b);
 
-#ifdef __cplusplus
-}
-#endif
+/* A node of `type` built outside any parse, from the allocator's own slot.
+ * `_with_ext` also names the element whose descriptor owns its behaviour. The
+ * node may have required fields the caller must still assign. */
+markdown_core_node *markdown_core_node_new(markdown_core_node_type type);
+markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type, const markdown_core_element *element);
+
+/* Releases `node`, its descendants and every node-valued field under them. */
+void markdown_core_node_free(markdown_core_node *node);
+
+/* Detaches `node` from its parent and siblings without releasing it. */
+void markdown_core_node_unlink(markdown_core_node *node);
+
+/* Moves `child` to the end of `node`'s children. Returns 0, having moved
+ * nothing, when `node` cannot contain `child`. */
+int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node *child);
+
+/* The internal type's name, for diagnostics: "<unknown>" for a value no
+ * class defines. Internal types the facade folds together (COMMENT_BLOCK and
+ * COMMENT) keep their own names here. */
+const char *markdown_core_node_get_type_string(markdown_core_node *node);
 
 /* `markdown_core_node_free`, reporting how many nodes it released: the node,
  * its descendants and every owned field root under them. The parse's own
@@ -468,5 +481,9 @@ size_t markdown_core_node_pool_release(markdown_core_node_pool *pool, markdown_c
 /* Drops what the pool holds: its released slots and its current slab. Slots
  * still in use keep their slabs alive after this. */
 void markdown_core_node_pool_dispose(markdown_core_node_pool *pool);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

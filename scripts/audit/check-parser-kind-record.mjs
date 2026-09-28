@@ -48,12 +48,7 @@ const TEARDOWNS = new Set(["elements/ast.c:markdown_core_document_free", "core/b
 /** Where the parser-less forms are allowed to appear: the two headers that
  * DECLARE them, the translation unit that DEFINES them, and `parser.h`, where
  * the recording wrappers are the one thing in the library that calls them. */
-const DEFINES_THEM = new Set([
-    "core/markdown-core.h",
-    "core/markdown-core-element-api.h",
-    "core/node.c",
-    "core/parser.h"
-]);
+const DEFINES_THEM = new Set(["core/node.h", "core/markdown-core-element-api.h", "core/node.c", "core/parser.h"]);
 
 const failures = [];
 let recordingSites = 0;

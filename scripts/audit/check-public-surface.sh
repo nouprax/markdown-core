@@ -17,10 +17,18 @@ fi
 
 test -f packages/markdown-core/core/element.h \
     || fail "the internal parser-element descriptor header is missing"
-for retired_header in syntax_extension.h extension.h markdown-core-extension-api.h; do
+for retired_header in syntax_extension.h extension.h markdown-core-extension-api.h markdown-core.h \
+    include/markdown-core-export.h; do
     test ! -e "packages/markdown-core/core/$retired_header" \
         || fail "the retired $retired_header header still exists"
 done
+# One mechanism decides what the library exports: MARKDOWN_CORE_API in the
+# installed header, bounded by the export maps. An internal header that marks
+# a symbol for export is a second, unreviewed public surface.
+if grep -R -n -E '__declspec|visibility\("default"\)|MARKDOWN_CORE_(API|EXPORT)\b' \
+    packages/markdown-core/core packages/markdown-core/elements --include='*.h' --exclude-dir=build; then
+    fail "an internal header marks a symbol for export"
+fi
 test ! -e packages/markdown-core/extensions \
     || fail "the retired extensions directory still exists"
 if grep -R -n -E \
@@ -29,7 +37,7 @@ if grep -R -n -E \
     fail "the retired extension identifier family still exists"
 fi
 grep -q 'typedef struct markdown_core_element markdown_core_element;' \
-    packages/markdown-core/core/markdown-core.h \
+    packages/markdown-core/core/markdown-core-element-api.h \
     || fail "the parser-element descriptor does not use markdown_core_element"
 grep -q 'markdown_core_dialect_builder_attach' \
     packages/markdown-core/core/markdown-core-element-api.h \
@@ -226,31 +234,31 @@ grep -q 'public enum class MarkupVisitPhase' \
     && grep -q 'public fun Markup.walk(visitor: MarkupVisitor)' \
         packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/MarkupVisitor.kt \
     || fail "Kotlin does not use the unified visitor for no-result walks"
-grep -q '^headers = markdown_core.h$' \
-    packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
+# ONE WIRE. Every Kotlin target reads a parse the same way: the core's MCB2
+# encoder writes it and the one commonMain decoder reads it
+# (docs/architecture/wire-format.md). No target keeps its own encoder or walks
+# the C tree itself.
+kotlin_src=packages/kotlin-markdown-core/src
+grep -q '^headers = markdown_core_wire.h$' "$kotlin_src/nativeInterop/cinterop/markdown_core_kotlin.def" \
     && grep -q '^package = com.nouprax.markdown.core.internal.capi$' \
-        packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
-    && grep -q '^staticLibraries = libmarkdown-core-elements.a libmarkdown-core.a$' \
-        packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
-    && grep -q 'markdown_core_document_parse' \
-        packages/kotlin-markdown-core/src/nativePlatformMain/kotlin/com/nouprax/markdown/core/PlatformParser.native.kt \
-    && ! grep -R -q 'markdown_core_kotlin_jni_' \
-        packages/kotlin-markdown-core/src/nativePlatformMain \
-        packages/kotlin-markdown-core/src/nativeInterop \
-    || fail "Kotlin/Native must cinterop the C facade directly, independently of JNI"
+        "$kotlin_src/nativeInterop/cinterop/markdown_core_kotlin.def" \
+    && grep -q '^staticLibraries = libmarkdown-core-wire.a libmarkdown-core.a$' \
+        "$kotlin_src/nativeInterop/cinterop/markdown_core_kotlin.def" \
+    && grep -q 'markdown_core_wire_parse' "$kotlin_src/nativePlatformMain/kotlin/com/nouprax/markdown/core/PlatformParser.native.kt" \
+    && grep -q 'markdown_core_wire_parse' "$kotlin_src/native/markdown_core_kotlin_jni.c" \
+    && test "$(grep -l 'WireDecoder.decode(' \
+        "$kotlin_src/jvmMain/kotlin/com/nouprax/markdown/core/PlatformParser.jvm.kt" \
+        "$kotlin_src/androidMain/kotlin/com/nouprax/markdown/core/PlatformParser.android.kt" \
+        "$kotlin_src/nativePlatformMain/kotlin/com/nouprax/markdown/core/PlatformParser.native.kt" | wc -l)" -eq 3 \
+    || fail "every Kotlin target must read the core's MCB2 message through the one commonMain decoder"
+if grep -R -q -E 'markdown_core_(node|document|attribute|resource|metadata)_' "$kotlin_src/nativePlatformMain" \
+    || find "$kotlin_src" -type f \( -name '*payload*' -o -name 'Jni*Decoder.kt' -o -name 'JniNodeKind.kt' \) | grep -q .; then
+    fail "a Kotlin target keeps its own AST encoder, decoder or C tree walk beside MCB2"
+fi
 if find packages/kotlin-markdown-core/src -type f -name 'NativeBridge*' | grep -q . \
     || grep -R -q -E '\bnativeParse\b|internal\.nativebridge' packages/kotlin-markdown-core/src; then
     fail "the retired cross-target NativeBridge abstraction still exists"
 fi
-if find packages/kotlin-markdown-core/src/commonMain packages/kotlin-markdown-core/src/nativePlatformMain \
-    -type f \( -name 'JniPayloadDecoder.kt' -o -name 'JniMarkupDecoder.kt' -o -name 'JniNodeKind.kt' \) | grep -q .; then
-    fail "the JVM/Android JNI wire protocol leaked into a Kotlin/Native source set"
-fi
-grep -q 'JVM/Android-only JNI payload encoder' \
-    packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni_payload.h \
-    && ! grep -q 'markdown_core_kotlin_jni_payload' \
-        packages/kotlin-markdown-core/src/nativeInterop/cinterop/markdown_core_kotlin.def \
-    || fail "the JNI payload encoder leaked into the Kotlin/Native adapter"
 grep -qx '_JNI_OnLoad' packages/kotlin-markdown-core/src/native/markdown_core_kotlin.exports \
     && grep -qx '    JNI_OnLoad' packages/kotlin-markdown-core/src/native/markdown_core_kotlin.def \
     && test "$(grep -cE '^        [A-Za-z0-9_]+;' packages/kotlin-markdown-core/src/native/markdown_core_kotlin.map)" -eq 1 \

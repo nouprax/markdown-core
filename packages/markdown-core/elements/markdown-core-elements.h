@@ -6,7 +6,6 @@ extern "C" {
 #endif
 
 #include "markdown-core-element-api.h"
-#include "markdown-core-export.h"
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -22,46 +21,38 @@ typedef enum {
  * parser keeps whatever attached before the failure and the caller is expected
  * to discard it.
  *
- * DELIBERATELY NOT `MARKDOWN_CORE_EXPORT`.  Both product entry points -- the
- * CLI and the facade every binding goes through -- are linked against the
- * static archives, so neither needs the symbol in `core/exports/markdown_core.map`,
- * and putting it there would make the attach order part of the public ABI at
- * the exact moment the point is that callers cannot choose it.
+ * Not in `core/exports/markdown_core.map`: putting it there would make the
+ * attach order part of the public ABI, and the point is that callers cannot
+ * choose it.
  */
 const markdown_core_element *const *markdown_core_core_elements(size_t *count);
 
 /** Returns the literal formula payload for formula element nodes, or NULL on error.
  */
-MARKDOWN_CORE_EXPORT
 const char *markdown_core_elements_get_formula_literal(markdown_core_node *node);
 
 /** Sets the literal formula payload for formula element nodes, returning 1 on success and 0 on
  * error.
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_elements_set_formula_literal(markdown_core_node *node, const char *literal);
 
 /** Returns the paragraph-internal layout mode for formula element nodes.
  */
-MARKDOWN_CORE_EXPORT
 markdown_core_formula_mode markdown_core_elements_get_formula_mode(markdown_core_node *node);
 
 /** Sets the paragraph-internal layout mode for formula element nodes.
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_elements_set_formula_mode(markdown_core_node *node, markdown_core_formula_mode mode);
 
 /** Returns the directive name, NULL for a nameless block, or NULL on
  * error.
  */
-MARKDOWN_CORE_EXPORT
 const char *markdown_core_elements_get_directive_name(markdown_core_node *node);
 
 /** Sets the directive name for directive element nodes, returning 1
  * on success and 0 on error. NULL selects a nameless DirectiveBlock; an inline
  * directive requires a valid nonempty name.
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_elements_set_directive_name(markdown_core_node *node, const char *name);
 
 #ifdef __cplusplus

@@ -1,103 +1,54 @@
-import type { Attributes } from "../markup/attributes.js";
-import type { Dimensions } from "../common/constraints.js";
-import type { Metadata, MetadataValue } from "../markup/metadata.js";
+import { Attributes } from "../markup/attributes.js";
+import type { Record as AttributeRecord } from "../markup/attributes.js";
+import type { Dimensions, Flow } from "../common/constraints.js";
+import type { Metadata, MetadataListItem, MetadataScalar, MetadataValue } from "../markup/metadata.js";
 import type { MarkupBase } from "../markup/base.js";
 import type { DirectiveLabel } from "../markup/directive-label.js";
 import type { Citation } from "../markup/cite.js";
 import type { Document } from "../markup/document.js";
-import type { Specimen } from "../markup/specimen.js";
 import type { Footnote } from "../markup/footnote.js";
+import type { Specimen } from "../markup/specimen.js";
 import type { ListItem } from "../markup/list.js";
 import type { Markup } from "../markup/markup.js";
-import type { TableCell, TableRow } from "../markup/table.js";
+import type { TableCaption, TableCell, TableColumn, TableRow } from "../markup/table.js";
+import type { Definition } from "../markup/definition-list.js";
 import { ParseError, type ParseErrorCode } from "../common/parse-error.js";
 import { MarkupDumper } from "../visitor/markup-dumper.js";
-import type { BibMode, CitationReferent, Destination, ListFlavor, Placement, Scope } from "../markup/values.js";
-import type { Flow } from "../common/constraints.js";
-import { kinds, type NativeKind } from "./kinds.js";
+import type {
+    BibMode,
+    CitationReferent,
+    Destination,
+    ListFlavor,
+    OrderedListDelimiter,
+    OrderedListVariant,
+    Placement,
+    Scope
+} from "../markup/values.js";
+import { contentKinds, kinds, type NativeKind } from "./kinds.js";
 
 /*
- * MCB1 is an ES-only result ABI over WebAssembly linear memory. Native emits
- * fixed-width records in breadth-first order, so relationships always point
- * forward and this decoder can construct the immutable value tree bottom-up.
- * It performs no calls into Wasm and retains no view after decode
- * returns; the runtime frees the result immediately afterwards.
+ * The MCB2 reader (docs/architecture/wire-format.md). Records arrive in
+ * post-order, so each node is built bottom-up from the nodes already on the
+ * stack, without recursion and without another call into WebAssembly. The
+ * reader retains no view of the message after decode returns.
  */
 
-const magic = [0x4d, 0x43, 0x42, 0x31] as const;
-export const transferHeaderSize = 64;
-const nodeSize = 160;
-const attributeSize = 16;
-const columnSize = 16;
-const noIndex = 0xffff_ffff;
-type ValueKind = "metadataValue" | "definitionBody";
-const valueKindBase = 0x100;
-const valueKinds: readonly ValueKind[] = Object.freeze(["metadataValue", "definitionBody"]);
-type DefinitionBody = { readonly body: readonly Markup[] };
-type Decoded = DefinitionBody | Markup | MetadataValue;
-const isMarkup = (value: Decoded): value is Markup => "kind" in value && "scope" in value;
-const isContent = (value: Decoded): value is Markup =>
-    isMarkup(value) && !["metadata", "citation", "footnote", "specimen"].includes(value.kind);
+const magic = [0x4d, 0x43, 0x42, 0x32] as const;
+/** The magic, the u32 message length and the u8 status. */
+export const headerSize = 9;
+/** The byte offset of the u32 message length. */
+export const lengthOffset = 4;
 
-const header = {
-    totalSize: 4,
-    status: 8,
-    errorCode: 12,
-    errorOffset: 16,
-    errorLength: 20,
-    nodeCount: 24,
-    edgeCount: 28,
-    attributeCount: 32,
-    columnCount: 36,
-    nodesOffset: 40,
-    edgesOffset: 44,
-    attributesOffset: 48,
-    columnsOffset: 52,
-    stringsOffset: 56,
-    stringsLength: 60
-} as const;
-
-const nodeField = {
-    kind: 0,
-    flags: 4,
-    scope: 8,
-    childStart: 24,
-    childCount: 28,
-    fieldIndex: 32,
-    auxiliaryStart: 36,
-    auxiliaryCount: 40,
-    scalar0: 44,
-    integer2: 48,
-    integer: 56,
-    strings: 64,
-    anchor: 96,
-    classesStart: 104,
-    classesCount: 108,
-    recordsStart: 112,
-    recordsCount: 116,
-    metadata: 120,
-    dimensions: 124,
-    inheritedAttributes: 132
-} as const;
+const flows: readonly Flow[] = ["none", "left", "center", "right"];
+const placements: readonly Placement[] = ["embedded", "standalone"];
+const bibModes: readonly BibMode[] = ["normal", "authorInText", "suppressAuthor"];
+const flavors: readonly ListFlavor[] = ["bullet", "ordered"];
+const errorCodes: readonly ParseErrorCode[] = ["internal", "invalidArgument", "allocationFailed", "internal"];
 
 type MarkupValue = Markup extends infer Node ? (Node extends Markup ? Omit<Node, "dump"> : never) : never;
-type MarkupValueOf<Kind extends Markup["kind"]> = Extract<MarkupValue, { readonly kind: Kind }>;
+type Base<Kind extends Markup["kind"]> = Omit<MarkupBase<Kind>, "dump">;
 
-interface Layout {
-    readonly totalSize: number;
-    readonly nodeCount: number;
-    readonly edgeCount: number;
-    readonly attributeCount: number;
-    readonly columnCount: number;
-    readonly nodesOffset: number;
-    readonly edgesOffset: number;
-    readonly attributesOffset: number;
-    readonly columnsOffset: number;
-    readonly stringsOffset: number;
-    readonly stringsLength: number;
-}
-
-/** Definition values decoded once into ordinary immutable JavaScript values. */
+/** A reference definition's shared values, decoded once however often it is used. */
 interface Resource {
     readonly dest: Destination;
     readonly title: string | null;
@@ -105,28 +56,12 @@ interface Resource {
     readonly attributes: Attributes;
 }
 
-interface Record {
-    readonly index: number;
-    readonly offset: number;
-    readonly kind: NativeKind | ValueKind;
-    readonly flags: number;
-    readonly scope: Scope;
-    readonly childStart: number;
-    readonly childCount: number;
-    readonly fieldIndex: number;
-    readonly auxiliaryStart: number;
-    readonly auxiliaryCount: number;
-    readonly scalar0: number;
-    readonly integer: bigint;
-    readonly integer2: bigint;
-}
-
 export class Decoder {
     private readonly view: DataView;
     private readonly utf8 = new TextDecoder("utf-8", { fatal: false });
-    private layout!: Layout;
-    private values: readonly (Decoded | undefined)[] = [];
-    private readonly resources = new Map<number, Resource>();
+    private offset = 0;
+    private readonly stack: Markup[] = [];
+    private readonly resources: Resource[] = [];
 
     constructor(private readonly bytes: Uint8Array) {
         this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -134,198 +69,308 @@ export class Decoder {
 
     decode(): Document {
         this.header();
-        this.topology();
-        const values: (Decoded | undefined)[] = Array.from({ length: this.layout.nodeCount });
-        this.values = values;
-        for (let remaining = this.layout.nodeCount; remaining > 0; --remaining) {
-            const index = remaining - 1;
-            const record = this.record(index);
-            if (record.kind === "definitionBody") {
-                this.flags(record, 0);
-                values[index] = { body: this.content(record) };
-            } else if (record.kind === "metadataValue") values[index] = this.metadataValue(record);
-            else values[index] = this.markup(this.value(record));
-        }
-        const document = values[0];
-        if (document === undefined || !isMarkup(document) || document.kind !== "document") {
-            throw new Error("native result root is not a document");
+        while (this.offset < this.bytes.byteLength) this.stack.push(this.record());
+        const document = this.stack.pop();
+        if (document?.kind !== "document" || this.stack.length !== 0) {
+            throw new Error("native result is not one document tree");
         }
         return document;
     }
 
     private header(): void {
-        if (this.bytes.byteLength < transferHeaderSize) throw new Error("truncated native result header");
+        if (this.bytes.byteLength < headerSize) throw new Error("truncated native result header");
         for (const [index, expected] of magic.entries()) {
-            const actual = this.bytes[index];
+            const actual = this.u8();
             if (actual !== expected) {
-                throw new Error(`invalid native result at byte ${index}: expected ${expected}, got ${String(actual)}`);
+                throw new Error(`invalid native result at byte ${index}: expected ${expected}, got ${actual}`);
             }
         }
-        const totalSize = this.uint(header.totalSize);
-        if (totalSize !== this.bytes.byteLength) throw new Error("native result length does not match its header");
-        const status = this.uint(header.status);
+        if (this.u32() !== this.bytes.byteLength) throw new Error("native result length does not match its header");
+        const status = this.u8();
         if (status === 1) throw this.error();
         if (status !== 0) throw new Error(`unsupported native result status ${status}`);
-        if (
-            this.uint(header.errorCode) !== 0 ||
-            this.uint(header.errorOffset) !== 0 ||
-            this.uint(header.errorLength) !== 0
-        ) {
-            throw new Error("successful native result carries an error payload");
-        }
-
-        const layout: Layout = {
-            totalSize,
-            nodeCount: this.uint(header.nodeCount),
-            edgeCount: this.uint(header.edgeCount),
-            attributeCount: this.uint(header.attributeCount),
-            columnCount: this.uint(header.columnCount),
-            nodesOffset: this.uint(header.nodesOffset),
-            edgesOffset: this.uint(header.edgesOffset),
-            attributesOffset: this.uint(header.attributesOffset),
-            columnsOffset: this.uint(header.columnsOffset),
-            stringsOffset: this.uint(header.stringsOffset),
-            stringsLength: this.uint(header.stringsLength)
-        };
-        if (layout.nodeCount === 0) throw new Error("native result contains no document node");
-        const expectedEdges = this.sectionEnd(transferHeaderSize, layout.nodeCount, nodeSize, "node table");
-        const expectedAttributes = this.sectionEnd(expectedEdges, layout.edgeCount, 4, "edge table");
-        const expectedColumns = this.sectionEnd(
-            expectedAttributes,
-            layout.attributeCount,
-            attributeSize,
-            "attribute table"
-        );
-        const expectedStrings = this.sectionEnd(expectedColumns, layout.columnCount, columnSize, "column table");
-        const expectedEnd = this.sectionEnd(expectedStrings, layout.stringsLength, 1, "string blob");
-        if (
-            layout.nodesOffset !== transferHeaderSize ||
-            layout.edgesOffset !== expectedEdges ||
-            layout.attributesOffset !== expectedAttributes ||
-            layout.columnsOffset !== expectedColumns ||
-            layout.stringsOffset !== expectedStrings ||
-            expectedEnd !== layout.totalSize
-        ) {
-            throw new Error("native result sections are not canonical and contiguous");
-        }
-        this.layout = layout;
     }
 
     private error(): ParseError {
-        const code = errorCode(this.int(header.errorCode));
-        const offset = this.uint(header.errorOffset);
-        const length = this.uint(header.errorLength);
-        if (
-            offset !== transferHeaderSize ||
-            this.sectionEnd(offset, length, 1, "error message") !== this.bytes.length
-        ) {
-            throw new Error("invalid native result error payload");
-        }
-        return new ParseError(code, this.utf8.decode(this.bytes.subarray(offset, offset + length)));
+        const code = errorCodes[this.u32()] ?? "internal";
+        const message = this.string();
+        if (this.offset !== this.bytes.byteLength) throw new Error("invalid native result error payload");
+        return new ParseError(code, message);
     }
 
-    private record(index: number): Record {
-        const offset = this.layout.nodesOffset + index * nodeSize;
-        const rawKind = this.uint(offset + nodeField.kind);
-        const kind = rawKind >= valueKindBase ? valueKinds[rawKind - valueKindBase] : kinds[rawKind];
-        if (!kind || kind === "none") throw new Error(`native result contains unknown node kind ${rawKind}`);
-        return {
-            index,
-            offset,
-            kind,
-            flags: this.uint(offset + nodeField.flags),
-            scope: {
-                start: { line: this.int(offset + nodeField.scope), column: this.int(offset + nodeField.scope + 4) },
-                end: { line: this.int(offset + nodeField.scope + 8), column: this.int(offset + nodeField.scope + 12) }
-            },
-            childStart: this.uint(offset + nodeField.childStart),
-            childCount: this.uint(offset + nodeField.childCount),
-            fieldIndex: this.uint(offset + nodeField.fieldIndex),
-            auxiliaryStart: this.uint(offset + nodeField.auxiliaryStart),
-            auxiliaryCount: this.uint(offset + nodeField.auxiliaryCount),
-            scalar0: this.int(offset + nodeField.scalar0),
-            integer2: this.view.getBigInt64(offset + nodeField.integer2, true),
-            integer: this.view.getBigInt64(offset + nodeField.integer, true)
-        };
+    // ---- Records -----------------------------------------------------------
+
+    private record(): Markup {
+        const ordinal = this.u8();
+        const kind = kinds[ordinal];
+        if (kind === undefined || kind === "none")
+            throw new Error(`native result contains unknown node kind ${ordinal}`);
+        const scope = this.scope();
+        const anchor = this.optional(() => this.string());
+        const attributes = this.attributes();
+        return this.markup(this.fields(kind, { kind, scope, anchor, attributes }));
     }
 
-    private topology(): void {
-        const incoming = new Uint8Array(this.layout.nodeCount);
-        for (let index = 0; index < this.layout.nodeCount; ++index) {
-            const record = this.record(index);
-            if ((index === 0) !== (record.kind === "document")) {
-                throw new Error("native result must contain exactly one document at its root");
+    /** A kind's fields in the contract's order; node-valued fields read their counts. */
+    private fields(kind: NativeKind, base: Base<NativeKind>): MarkupValue {
+        switch (kind) {
+            case "document": {
+                const content = this.count();
+                const metadata = this.presence();
+                const footnotes = this.count();
+                const specimens = this.count();
+                const nodes = this.nodes(content + metadata + footnotes + specimens);
+                return {
+                    ...(base as Base<"document">),
+                    content: nodes.content(content),
+                    metadata: nodes.optional("metadata", metadata) as Metadata | null,
+                    footnotes: nodes.typed("footnote", footnotes) as Footnote[],
+                    specimens: nodes.typed("specimen", specimens) as Specimen[]
+                };
             }
-            this.range(record.childStart, record.childCount, this.layout.edgeCount, "child edge range");
-            for (let offset = 0; offset < record.childCount; ++offset) {
-                this.relation(record, this.edge(record.childStart + offset), incoming, "child");
+            case "callout": {
+                const variant = this.optional(() => this.string());
+                const collapsed = this.optional(() => this.bool());
+                const title = this.optional(() => this.count());
+                const content = this.count();
+                const nodes = this.nodes((title ?? 0) + content);
+                return {
+                    ...(base as Base<"callout">),
+                    variant,
+                    collapsed,
+                    title: title === null ? null : nodes.content(title),
+                    content: nodes.content(content)
+                };
             }
-            const anchor = this.stringAt(record.offset + nodeField.anchor);
-            if (anchor === "") throw new Error("empty normalized anchor");
-            if (
-                this.uint(record.offset) >= valueKindBase &&
-                (anchor !== null ||
-                    this.uint(record.offset + nodeField.classesCount) !== 0 ||
-                    this.uint(record.offset + nodeField.recordsCount) !== 0)
-            )
-                throw new Error("non-node record carries Markup fields");
-            const metadata = this.uint(record.offset + nodeField.metadata);
-            if (metadata !== noIndex) {
-                if (record.kind !== "document" || this.record(metadata).kind !== "metadata")
-                    throw new Error("invalid metadata relation");
-                this.relation(record, metadata, incoming, "metadata");
+            case "paragraph":
+            case "emphasis":
+            case "strong":
+            case "strikethrough":
+            case "mark":
+            case "insertion":
+            case "span":
+            case "superscript":
+            case "subscript":
+            case "directiveLabel":
+            case "tableCaption": {
+                const content = this.count();
+                return { ...base, content: this.nodes(content).content(content) } as MarkupValue;
             }
-            if (
-                record.kind !== "embedded" &&
-                record.kind !== "crossEmbedded" &&
-                (this.uint(record.offset + nodeField.dimensions) !== 0 ||
-                    this.uint(record.offset + nodeField.dimensions + 4) !== 0)
-            )
-                throw new Error("dimensions require Embedded or CrossEmbedded");
-            if (record.fieldIndex !== noIndex) {
-                if (record.kind !== "directive" && record.kind !== "directiveBlock" && record.kind !== "table") {
-                    throw new Error("node kind cannot own a singular field relation");
-                }
-                this.relation(record, record.fieldIndex, incoming, "owned node");
+            case "heading": {
+                const level = this.int();
+                const content = this.count();
+                return { ...(base as Base<"heading">), level, content: this.nodes(content).content(content) };
             }
-            if (record.kind === "callout" && record.auxiliaryCount !== 0) {
-                // The title's nodes are owned through the auxiliary range, as
-                // a directive's label is through its index; a present title
-                // holds at least one node, so the range's count is its presence.
-                this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "callout title range");
-                for (let offset = 0; offset < record.auxiliaryCount; ++offset) {
-                    this.relation(record, this.edge(record.auxiliaryStart + offset), incoming, "title");
-                }
+            case "thematicBreak":
+            case "softBreak":
+            case "lineBreak":
+                return base as MarkupValue;
+            case "list": {
+                const flavor = this.index(flavors);
+                const start = this.optional(() => this.int());
+                const variant = this.optional(() => this.variant());
+                const delimiter = this.optional(() => this.delimiter());
+                const tight = this.bool();
+                const items = this.count();
+                return {
+                    ...(base as Base<"list">),
+                    flavor,
+                    start,
+                    variant,
+                    delimiter,
+                    tight,
+                    items: this.nodes(items).typed("listItem", items) as ListItem[]
+                };
             }
-            // The document's definitions and a citation's suffix are owned
-            // through the auxiliary range as well (M4).
-            const auxiliary =
-                record.kind === "document"
-                    ? "definitions"
-                    : record.kind === "citation"
-                      ? "suffix"
-                      : record.kind === "definition"
-                        ? "term"
-                        : null;
-            if (auxiliary !== null && record.auxiliaryCount !== 0) {
-                this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, `${auxiliary} range`);
-                for (let offset = 0; offset < record.auxiliaryCount; ++offset) {
-                    this.relation(record, this.edge(record.auxiliaryStart + offset), incoming, auxiliary);
-                }
+            case "listItem": {
+                const marker = this.optional(() => this.string());
+                const content = this.count();
+                return {
+                    ...(base as Base<"listItem">),
+                    marker,
+                    get tasked() {
+                        return marker !== null;
+                    },
+                    get completed() {
+                        return marker !== null && marker !== " ";
+                    },
+                    content: this.nodes(content).content(content)
+                };
+            }
+            case "codeBlock":
+                return {
+                    ...(base as Base<"codeBlock">),
+                    info: this.optional(() => this.string()),
+                    language: this.optional(() => this.string()),
+                    literal: this.string(),
+                    fenced: this.bool(),
+                    closed: this.bool()
+                };
+            case "htmlBlock":
+            case "formulaBlock":
+            case "text":
+            case "code":
+            case "html":
+            case "comment":
+                return { ...base, literal: this.string() } as MarkupValue;
+            case "formula":
+                return { ...(base as Base<"formula">), mode: this.index(placements), literal: this.string() };
+            case "table": {
+                const caption = this.presence();
+                const columns = this.list(() => this.column());
+                const head = this.count();
+                const content = this.count();
+                const foot = this.count();
+                const nodes = this.nodes(caption + head + content + foot);
+                return {
+                    ...(base as Base<"table">),
+                    caption: nodes.optional("tableCaption", caption) as TableCaption | null,
+                    columns,
+                    head: nodes.typed("tableRow", head) as TableRow[],
+                    content: nodes.typed("tableRow", content) as TableRow[],
+                    foot: nodes.typed("tableRow", foot) as TableRow[]
+                };
+            }
+            case "tableRow": {
+                const cells = this.count();
+                return {
+                    ...(base as Base<"tableRow">),
+                    cells: this.nodes(cells).typed("tableCell", cells) as TableCell[]
+                };
+            }
+            case "tableCell": {
+                const rowspan = this.int();
+                const colspan = this.int();
+                const content = this.count();
+                return {
+                    ...(base as Base<"tableCell">),
+                    rowspan,
+                    colspan,
+                    content: this.nodes(content).content(content)
+                };
+            }
+            case "directiveBlock": {
+                const name = this.optional(() => this.string());
+                const label = this.presence();
+                const content = this.count();
+                const nodes = this.nodes(label + content);
+                return {
+                    ...(base as Base<"directiveBlock">),
+                    name,
+                    label: nodes.optional("directiveLabel", label) as DirectiveLabel | null,
+                    content: nodes.content(content)
+                };
+            }
+            case "directive": {
+                const name = this.string();
+                const label = this.presence();
+                return {
+                    ...(base as Base<"directive">),
+                    name,
+                    label: this.nodes(label).optional("directiveLabel", label) as DirectiveLabel | null
+                };
+            }
+            case "crossLink":
+                return {
+                    ...(base as Base<"crossLink">),
+                    dest: this.destination(),
+                    label: this.optional(() => this.string())
+                };
+            case "crossEmbedded":
+                return {
+                    ...(base as Base<"crossEmbedded">),
+                    dest: this.destination(),
+                    label: this.optional(() => this.string()),
+                    dimensions: this.optional(() => this.dimensions())
+                };
+            case "link": {
+                const resource = this.resource();
+                const content = this.count();
+                return {
+                    ...this.inheriting(base as Base<"link">, resource),
+                    dest: resource.dest,
+                    title: resource.title,
+                    content: this.nodes(content).content(content)
+                };
+            }
+            case "embedded": {
+                const resource = this.resource();
+                const dimensions = this.optional(() => this.dimensions());
+                const content = this.count();
+                return {
+                    ...this.inheriting(base as Base<"embedded">, resource),
+                    dest: resource.dest,
+                    title: resource.title,
+                    dimensions,
+                    content: this.nodes(content).content(content)
+                };
+            }
+            case "cite": {
+                const citations = this.count();
+                return {
+                    ...(base as Base<"cite">),
+                    citations: this.nodes(citations).typed("citation", citations) as Citation[]
+                };
+            }
+            case "definitionList": {
+                const definitions = this.count();
+                return {
+                    ...(base as Base<"definitionList">),
+                    definitions: this.nodes(definitions).typed("definition", definitions) as Definition[]
+                };
+            }
+            case "definition": {
+                const term = this.count();
+                const bodies = this.list(() => this.count());
+                const compact = this.bool();
+                const nodes = this.nodes(bodies.reduce((sum, count) => sum + count, term));
+                return {
+                    ...(base as Base<"definition">),
+                    term: nodes.content(term),
+                    content: bodies.map((count) => nodes.content(count)),
+                    compact
+                };
+            }
+            case "citation": {
+                const referent = this.referent();
+                const prefix = this.count();
+                const suffix = this.count();
+                const nodes = this.nodes(prefix + suffix);
+                return {
+                    ...(base as Base<"citation">),
+                    referent,
+                    prefix: nodes.content(prefix),
+                    suffix: nodes.content(suffix)
+                };
+            }
+            case "footnote": {
+                const id = this.string();
+                const content = this.count();
+                return { ...(base as Base<"footnote">), id, content: this.nodes(content).content(content) };
+            }
+            case "specimen": {
+                const id = this.optional(() => this.string());
+                const start = this.optional(() => this.int());
+                const content = this.count();
+                return { ...(base as Base<"specimen">), id, start, content: this.nodes(content).content(content) };
+            }
+            case "metadata": {
+                const value = (): MetadataValue | null => this.optional(() => this.metadataValue());
+                return {
+                    ...(base as Base<"metadata">),
+                    name: value(),
+                    title: value(),
+                    subtitle: value(),
+                    time: value(),
+                    date: value(),
+                    authors: value(),
+                    keywords: value(),
+                    abstract: value(),
+                    state: value(),
+                    comment: value()
+                };
             }
         }
-        if (incoming[0] !== 0) throw new Error("native result root has an incoming relation");
-        for (let index = 1; index < incoming.length; ++index) {
-            if (incoming[index] !== 1) throw new Error(`native result node ${index} is not uniquely owned`);
-        }
-    }
-
-    private relation(record: Record, target: number, incoming: Uint8Array, field: string): void {
-        if (target <= record.index || target >= incoming.length) {
-            throw new Error(`native result ${field} relation does not point forward`);
-        }
-        if (incoming[target] !== 0) throw new Error(`native result node ${target} has multiple owners`);
-        incoming[target] = 1;
     }
 
     private markup(value: MarkupValue): Markup {
@@ -338,698 +383,237 @@ export class Decoder {
         return value as Markup;
     }
 
-    private value(record: Record): MarkupValue {
-        const kind = record.kind;
-        if (kind === "metadataValue" || kind === "definitionBody") {
-            throw new Error(`native result places a ${kind} value where a node belongs`);
-        }
-        const base = this.base(record);
-        switch (kind) {
-            case "citation":
-                return this.citation(record);
-            case "footnote":
-                return this.footnote(record);
-            case "specimen":
-                return this.specimen(record);
-            case "metadata":
-                return this.metadata(record);
-            case "document":
-                this.flags(record, 0);
-                return {
-                    ...base,
-                    content: this.content(record),
-                    metadata: this.documentMetadata(record),
-                    ...this.definitions(record)
-                } as MarkupValue;
-            case "cite":
-                this.flags(record, 0);
-                return { ...base, citations: this.citations(record) } as MarkupValue;
-            case "paragraph":
-            case "emphasis":
-            case "strong":
-            case "strikethrough":
-            case "mark":
-            case "insertion":
-            case "span":
-            case "superscript":
-            case "subscript":
-            case "directiveLabel":
-                this.flags(record, 0);
-                return { ...base, content: this.content(record) } as MarkupValue;
-            case "heading": {
-                this.flags(record, 0);
-                const level = record.scalar0;
-                if (level < 1 || level > 6) throw new Error(`native result contains invalid heading level ${level}`);
-                return { ...base, level, content: this.content(record) } as MarkupValue;
-            }
-            case "thematicBreak":
-            case "softBreak":
-            case "lineBreak":
-                this.flags(record, 0);
-                this.leaf(record);
-                return base as MarkupValue;
-            case "callout":
-                return this.callout(record);
-            case "list":
-                return this.list(record);
-            case "listItem": {
-                this.flags(record, 0);
-                const marker = this.string(record, 0);
-                return {
-                    ...base,
-                    marker,
-                    get tasked() {
-                        return marker !== null;
-                    },
-                    get completed() {
-                        return marker !== null && marker !== " ";
-                    },
-                    content: this.content(record)
-                } as MarkupValue;
-            }
-            case "codeBlock":
-                this.flags(record, 0b11);
-                this.leaf(record);
-                return {
-                    ...base,
-                    info: this.string(record, 0),
-                    language: this.string(record, 1),
-                    literal: this.required(record, 2),
-                    fenced: (record.flags & 1) !== 0,
-                    closed: (record.flags & 2) !== 0
-                } as MarkupValue;
-            case "htmlBlock":
-            case "text":
-            case "code":
-            case "html":
-            case "comment":
-                this.flags(record, 0);
-                this.leaf(record);
-                return { ...base, literal: this.required(record, 0) } as MarkupValue;
-            case "formulaBlock":
-                this.flags(record, 0);
-                this.leaf(record);
-                return { ...base, literal: this.required(record, 0) } as MarkupValue;
-            case "formula":
-                this.flags(record, 0);
-                this.leaf(record);
-                return {
-                    ...base,
-                    mode: this.placement(record.scalar0),
-                    literal: this.required(record, 0)
-                } as MarkupValue;
-            case "tableCaption":
-                this.flags(record, 0);
-                return { ...this.base(record, "tableCaption"), content: this.content(record) };
-            case "table":
-                return this.table(record);
-            case "definitionList": {
-                this.flags(record, 0);
-                const definitions = this.content(record).map((child) => {
-                    if (child.kind !== "definition") throw new Error("invalid definition list child");
-                    return child;
-                });
-                if (definitions.length === 0) throw new Error("empty definition list");
-                return { ...base, definitions } as MarkupValue;
-            }
-            case "definition": {
-                this.flags(record, 1);
-                const term = this.edgeRange(record.auxiliaryStart, record.auxiliaryCount, "term").map((value) => {
-                    if (!isContent(value)) throw new Error("invalid definition term");
-                    return value;
-                });
-                const content = this.edgeRange(record.childStart, record.childCount, "body").map((value) => {
-                    if (!("body" in value)) throw new Error("invalid definition body");
-                    return value.body;
-                });
-                if (content.length === 0) throw new Error("definition has no bodies");
-                return { ...base, term, content, compact: (record.flags & 1) !== 0 } as MarkupValue;
-            }
-            case "directiveBlock":
-                return { ...base, ...this.directiveFields(record) } as MarkupValue;
-            case "directive": {
-                const fields = this.directiveFields(record);
-                if (fields.name === null) throw new Error("inline directive requires a name");
-                if (fields.content.length !== 0) throw new Error("inline directive contains block content");
-                return {
-                    ...base,
-                    name: fields.name,
-                    label: fields.label
-                } as MarkupValue;
-            }
-            case "crossLink":
-            case "crossEmbedded": {
-                this.flags(record, 0);
-                this.leaf(record);
-                if (record.scalar0 !== 2) throw new Error("cross reference requires a cross destination");
-                const label = this.string(record, 2);
-                const fields = { ...base, dest: this.destination(record), label };
-                if (kind === "crossEmbedded") {
-                    const dimensions = this.dimensions(record);
-                    if (dimensions !== null && label === null) throw new Error("dimensions require an authored label");
-                    return { ...fields, dimensions } as MarkupValue;
-                }
-                return fields as MarkupValue;
-            }
-            case "link":
-            case "embedded": {
-                this.flags(record, 0);
-                const resource = this.resource(record);
-                return {
-                    ...base,
-                    dest: resource.dest,
-                    title: resource.title,
-                    ...(kind === "embedded"
-                        ? {
-                              dimensions: this.dimensions(record)
-                          }
-                        : {}),
-                    content: this.content(record)
-                } as MarkupValue;
-            }
-            case "tableRow":
-                return this.tableRow(record);
-            case "tableCell": {
-                this.flags(record, 0);
-                const rowspan = this.safeInteger(record.integer, "table scalar");
-                const colspan = this.safeInteger(record.integer2, "table scalar");
-                if (rowspan < 1 || colspan < 1) throw new Error("invalid table cell spans");
-                return { ...base, rowspan, colspan, content: this.content(record) } as MarkupValue;
-            }
-        }
+    /** The `count` nodes on top of the stack, handed out in field order. */
+    private nodes(count: number): Nodes {
+        if (count > this.stack.length) throw new Error("native result record names more nodes than precede it");
+        return new Nodes(this.stack.splice(this.stack.length - count, count));
     }
 
-    /**
-     * The variant is the first string slot and the fold marker the scalar; the
-     * auxiliary range names the title's nodes in the edge table, a node-valued
-     * list beside the content, and an empty range is no title because a
-     * present title holds at least one node.
-     */
-    private callout(record: Record): MarkupValueOf<"callout"> {
-        this.flags(record, 0);
-        let title: readonly Markup[] | null = null;
-        if (record.auxiliaryCount !== 0) {
-            this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "callout title range");
-            title = this.edgeRange(record.auxiliaryStart, record.auxiliaryCount, "callout title").map((value) => {
-                if (!isContent(value)) throw new Error("native result callout title is not ordinary content");
-                return value;
-            });
-        }
-        return {
-            ...this.base(record, "callout"),
-            variant: this.string(record, 0),
-            collapsed: this.nullableBoolean(record.scalar0, "callout fold marker"),
-            title,
-            content: this.content(record)
+    // ---- Shared resources --------------------------------------------------
+
+    private resource(): Resource {
+        const ordinal = this.u32();
+        if (ordinal < this.resources.length) return this.resources[ordinal] as Resource;
+        if (ordinal !== this.resources.length) throw new Error(`native result names unknown resource ${ordinal}`);
+        const resource: Resource = {
+            dest: this.destination(),
+            title: this.optional(() => this.string()),
+            anchor: this.optional(() => this.string()),
+            attributes: this.attributes()
         };
-    }
-
-    private list(record: Record): MarkupValueOf<"list"> {
-        this.flags(record, 0x3ff);
-        const flavor = this.flavor(record.scalar0);
-        const start = (record.flags & 1) === 0 ? null : this.safeInteger(record.integer, "list start");
-        if (flavor === "bullet" && start !== null) throw new Error("native result gives a bullet list a start");
-        const children = this.content(record);
-        if (!children.every((child): child is ListItem => child.kind === "listItem")) {
-            throw new Error("list contains a non-item node");
-        }
-        const variantRaw = (record.flags >> 2) & 0x7;
-        const lowercased = (record.flags & (1 << 9)) !== 0;
-        const variant =
-            start === null
-                ? null
-                : variantRaw === 1
-                  ? "decimal"
-                  : variantRaw === 2
-                    ? { kind: "alpha" as const, lowercased }
-                    : variantRaw === 3
-                      ? { kind: "roman" as const, lowercased }
-                      : variantRaw === 4
-                        ? "default"
-                        : null;
-        const delimiterRaw = (record.flags >> 5) & 0x7;
-        const delimiter =
-            start === null
-                ? null
-                : delimiterRaw === 1
-                  ? "period"
-                  : delimiterRaw === 2
-                    ? { kind: "parenthesis" as const, closed: (record.flags & (1 << 8)) !== 0 }
-                    : delimiterRaw === 3
-                      ? "default"
-                      : null;
-        if (start !== null && (variant === null || delimiter === null)) throw new Error("invalid ordered list facts");
-        return {
-            ...this.base(record, "list"),
-            flavor,
-            start,
-            variant,
-            delimiter,
-            tight: (record.flags & 2) !== 0,
-            items: children
-        };
-    }
-
-    private table(record: Record): MarkupValueOf<"table"> {
-        this.flags(record, 0);
-        this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.columnCount, "table column range");
-        if (record.auxiliaryCount === 0) throw new Error("table has no columns");
-        const columns = Array.from({ length: record.auxiliaryCount }, (_, index) => {
-            const offset = this.layout.columnsOffset + (record.auxiliaryStart + index) * columnSize;
-            const flow = this.flow(this.uint(offset));
-            const present = this.uint(offset + 4);
-            if (present > 1) throw new Error("invalid table column width presence");
-            const value = this.view.getFloat64(offset + 8, true);
-            if (present && (!Number.isFinite(value) || value <= 0)) throw new Error("invalid table column width");
-            return { flow, relative: present ? value : null };
-        });
-        const rows = this.content(record);
-        if (!rows.every((child): child is TableRow => child.kind === "tableRow")) {
-            throw new Error("table contains a non-row node");
-        }
-        const headCount = record.scalar0;
-        const contentCount = this.safeInteger(record.integer2, "table scalar");
-        const footCount = this.safeInteger(record.integer, "table scalar");
-        if (
-            headCount < 0 ||
-            contentCount < 0 ||
-            footCount < 0 ||
-            headCount + contentCount + footCount !== rows.length
-        ) {
-            throw new Error("invalid table row groups");
-        }
-        const caption = record.fieldIndex === noIndex ? null : this.values[record.fieldIndex];
-        if (caption !== null && (caption === undefined || !isMarkup(caption) || caption.kind !== "tableCaption")) {
-            throw new Error("table caption field contains a non-caption node");
-        }
-        return {
-            ...this.base(record, "table"),
-            caption,
-            columns,
-            head: rows.slice(0, headCount),
-            content: rows.slice(headCount, headCount + contentCount),
-            foot: rows.slice(headCount + contentCount)
-        };
-    }
-
-    private tableRow(record: Record): Omit<TableRow, "dump"> {
-        this.flags(record, 0);
-        const cells = this.content(record);
-        if (!cells.every((child): child is TableCell => child.kind === "tableCell")) {
-            throw new Error("table row contains a non-cell node");
-        }
-        return { ...this.base(record, "tableRow"), cells };
-    }
-
-    private directiveFields(record: Record): {
-        readonly name: string | null;
-        readonly label: DirectiveLabel | null;
-        readonly content: readonly Markup[];
-    } {
-        this.flags(record, 0);
-        return {
-            name: this.string(record, 0),
-            label: this.directiveLabel(record),
-            content: this.content(record)
-        };
-    }
-
-    private directiveLabel(record: Record): DirectiveLabel | null {
-        if (record.fieldIndex === noIndex) return null;
-        const label = this.values[record.fieldIndex];
-        if (label === undefined || !isMarkup(label) || label.kind !== "directiveLabel") {
-            throw new Error("directive label field contains a non-label node");
-        }
-        return label;
-    }
-
-    private content(record: Record): readonly Markup[] {
-        return this.edgeRange(record.childStart, record.childCount, "child").map((value) => {
-            if (!isContent(value)) throw new Error("native result child is not ordinary content");
-            return value;
-        });
-    }
-
-    private edgeRange(start: number, count: number, field: string): readonly Decoded[] {
-        return Array.from({ length: count }, (_, index) => {
-            const value = this.values[this.edge(start + index)];
-            if (!value) throw new Error(`native result ${field} was not constructed`);
-            return value;
-        });
-    }
-
-    /**
-     * A citation (M4): its referent branch is the scalar, the bib mode the
-     * integer and its key or id the first string; its prefix is its child
-     * range and its suffix its auxiliary range.
-     */
-    private citation(record: Record): MarkupValueOf<"citation"> {
-        this.flags(record, 0);
-        let suffix: readonly Markup[] = [];
-        if (record.auxiliaryCount !== 0) {
-            this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "suffix range");
-            suffix = this.edgeRange(record.auxiliaryStart, record.auxiliaryCount, "suffix").map((value) => {
-                if (!isContent(value)) throw new Error("native result suffix is not ordinary content");
-                return value;
-            });
-        }
-        return {
-            ...this.base(record),
-            kind: "citation",
-            referent: this.referent(record),
-            prefix: this.content(record),
-            suffix
-        };
-    }
-
-    private referent(record: Record): CitationReferent {
-        switch (record.scalar0) {
-            case 1:
-                return { kind: "bib", key: this.required(record, 0), mode: this.bibMode(record.integer) };
-            case 2:
-                return { kind: "footnote", id: this.required(record, 0) };
-            case 3:
-                return { kind: "specimen", id: this.required(record, 0) };
-            default:
-                throw new Error(`native result contains unknown referent kind ${String(record.scalar0)}`);
-        }
-    }
-
-    private bibMode(value: bigint): BibMode {
-        if (value === 1n) return "normal";
-        if (value === 2n) return "authorInText";
-        if (value === 3n) return "suppressAuthor";
-        throw new Error(`native result contains invalid bib mode ${String(value)}`);
-    }
-
-    /** A footnote (M4): its id is the first string and its content its child range. */
-    private footnote(record: Record): MarkupValueOf<"footnote"> {
-        this.flags(record, 0);
-        return { ...this.base(record), kind: "footnote", id: this.required(record, 0), content: this.content(record) };
-    }
-
-    private citations(record: Record): readonly Citation[] {
-        const items = this.edgeRange(record.childStart, record.childCount, "citation").map((value) => {
-            if (!isMarkup(value) || value.kind !== "citation") throw new Error("cite contains a non-citation record");
-            return value;
-        });
-        if (items.length === 0) throw new Error("native result gives a cite no items");
-        return items;
-    }
-
-    private specimen(record: Record): MarkupValueOf<"specimen"> {
-        this.flags(record, 1);
-        return {
-            ...this.base(record),
-            kind: "specimen",
-            id: this.string(record, 0),
-            start: (record.flags & 1) === 0 ? null : this.safeInteger(record.integer, "specimen start"),
-            content: this.content(record)
-        };
-    }
-
-    private definitions(record: Record): { footnotes: readonly Footnote[]; specimens: readonly Specimen[] } {
-        if (record.auxiliaryCount === 0) return { footnotes: [], specimens: [] };
-        this.range(record.auxiliaryStart, record.auxiliaryCount, this.layout.edgeCount, "definitions range");
-        const footnotes: Footnote[] = [];
-        const specimens: Specimen[] = [];
-        for (const value of this.edgeRange(record.auxiliaryStart, record.auxiliaryCount, "definition")) {
-            if (!isMarkup(value) || (value.kind !== "footnote" && value.kind !== "specimen"))
-                throw new Error("document definitions contain a non-definition record");
-            if (value.kind === "specimen") specimens.push(value);
-            else {
-                if (specimens.length !== 0) throw new Error("document footnotes follow specimens");
-                footnotes.push(value);
-            }
-        }
-        return { footnotes, specimens };
-    }
-
-    /**
-     * Every occurrence of one reference definition reads through one resource
-     * in the C tree, and a link or image record's integer names the first
-     * node that did. Each record carries the same string references, so the
-     * resource decodes from whichever occurrence is met first, and every
-     * record naming that index shares the one value.
-     */
-    private resource(record: Record): Resource {
-        const first = this.safeInteger(record.integer, "resource index");
-        if (first < 0 || first > record.index) {
-            throw new Error("native result resource does not name its first occurrence");
-        }
-        let resource = this.resources.get(first);
-        if (resource === undefined) {
-            const definition = this.record(first);
-            if ((definition.kind !== "link" && definition.kind !== "embedded") || definition.integer !== BigInt(first))
-                throw new Error("invalid definition resource");
-            const offset = definition.offset + nodeField.inheritedAttributes;
-            const anchor = this.stringAt(offset);
-            if (anchor === "") throw new Error("empty normalized anchor");
-            resource = {
-                dest: this.destination(definition),
-                title: this.string(definition, 2),
-                anchor,
-                attributes: this.attributes(offset)
-            };
-            this.resources.set(first, resource);
-        }
+        this.resources.push(resource);
         return resource;
     }
 
-    /**
-     * A tagged `Destination`: the branch is the record's scalar, and the
-     * branch's own strings follow -- the url, or the path and the optional
-     * anchor -- so a field of the other branch is never read.
-     */
-    private destination(record: Record): Destination {
-        switch (record.scalar0) {
-            case 1:
-                return { kind: "url", value: this.required(record, 0) };
-            case 2:
-                return { kind: "cross", path: this.required(record, 0), anchor: this.string(record, 1) };
+    /** The occurrence's anchor wins; the definition's classes and records come first. */
+    private inheriting<Kind extends "link" | "embedded">(base: Base<Kind>, resource: Resource): Base<Kind> {
+        const primary = base.attributes;
+        const inherited = resource.attributes;
+        const attributes =
+            primary.classes.length === 0 && primary.records.length === 0
+                ? inherited
+                : Object.freeze({
+                      classes: Object.freeze([...inherited.classes, ...primary.classes]),
+                      records: Object.freeze([...inherited.records, ...primary.records])
+                  });
+        return { ...base, anchor: base.anchor ?? resource.anchor, attributes };
+    }
+
+    // ---- Values ------------------------------------------------------------
+
+    private scope(): Scope {
+        return {
+            start: { line: this.i32(), column: this.i32() },
+            end: { line: this.i32(), column: this.i32() }
+        };
+    }
+
+    private attributes(): Attributes {
+        const classes = this.list(() => this.string());
+        const records = this.list((): AttributeRecord => Object.freeze({ name: this.string(), value: this.string() }));
+        if (classes.length === 0 && records.length === 0) return Attributes.empty;
+        return Object.freeze({ classes: Object.freeze(classes), records: Object.freeze(records) });
+    }
+
+    private destination(): Destination {
+        switch (this.branch(2)) {
+            case 0:
+                return { kind: "url", value: this.string() };
             default:
-                throw new Error(`native result contains unknown destination kind ${String(record.scalar0)}`);
+                return { kind: "cross", path: this.string(), anchor: this.optional(() => this.string()) };
         }
     }
 
-    private string(record: Record, slot: number): string | null {
-        return this.stringAt(record.offset + nodeField.strings + slot * 8);
-    }
-
-    private required(record: Record, slot: number): string {
-        const value = this.string(record, slot);
-        if (value === null) throw new Error("native result is missing a required string");
-        return value;
-    }
-
-    private requiredAt(referenceOffset: number): string {
-        const value = this.stringAt(referenceOffset);
-        if (value === null) throw new Error("native result is missing a required string");
-        return value;
-    }
-
-    private stringAt(referenceOffset: number): string | null {
-        const offset = this.uint(referenceOffset);
-        const length = this.uint(referenceOffset + 4);
-        if (offset === noIndex) {
-            if (length !== 0) throw new Error("absent native string has a nonzero length");
-            return null;
+    private referent(): CitationReferent {
+        switch (this.branch(3)) {
+            case 0:
+                return { kind: "bib", key: this.string(), mode: this.index(bibModes) };
+            case 1:
+                return { kind: "footnote", id: this.string() };
+            default:
+                return { kind: "specimen", id: this.string() };
         }
-        if (
-            offset < this.layout.stringsOffset ||
-            this.sectionEnd(offset, length, 1, "string") > this.layout.totalSize
-        ) {
-            throw new Error("native result string lies outside the string blob");
+    }
+
+    private variant(): OrderedListVariant {
+        switch (this.branch(4)) {
+            case 0:
+                return "decimal";
+            case 1:
+                return { kind: "alpha", lowercased: this.bool() };
+            case 2:
+                return { kind: "roman", lowercased: this.bool() };
+            default:
+                return "default";
         }
-        return this.utf8.decode(this.bytes.subarray(offset, offset + length));
     }
 
-    private edge(index: number): number {
-        return this.uint(this.layout.edgesOffset + index * 4);
+    private delimiter(): OrderedListDelimiter {
+        switch (this.branch(3)) {
+            case 0:
+                return "period";
+            case 1:
+                return { kind: "parenthesis", closed: this.bool() };
+            default:
+                return "default";
+        }
     }
 
-    private base<Kind extends Markup["kind"]>(
-        record: Record,
-        kind: Kind = record.kind as Kind
-    ): Omit<MarkupBase<Kind>, "dump"> {
-        const primaryAnchor = this.stringAt(record.offset + nodeField.anchor);
-        const primary = this.attributes(record.offset + nodeField.anchor);
-        if (kind !== "link" && kind !== "embedded")
-            return { kind, scope: record.scope, anchor: primaryAnchor, attributes: primary };
-        const inherited = this.resource(record);
-        // Keep ordinary JS arrays. Definition-only occurrences reuse the native
-        // immutable values; a local sequence creates its own merged array.
-        const attributes = Object.freeze({
-            classes: primary.classes.length
-                ? Object.freeze([...inherited.attributes.classes, ...primary.classes])
-                : inherited.attributes.classes,
-            records: primary.records.length
-                ? Object.freeze([...inherited.attributes.records, ...primary.records])
-                : inherited.attributes.records
-        });
-        return { kind, scope: record.scope, anchor: primaryAnchor ?? inherited.anchor, attributes };
+    private column(): TableColumn {
+        return { flow: this.index(flows), relative: this.optional(() => this.double()) };
     }
 
-    private attributes(offset: number): Attributes {
-        const classes = this.attributeRange(this.uint(offset + 8), this.uint(offset + 12));
-        if (classes.some((value) => value.name !== "" || value.value.length === 0))
-            throw new Error("class has a record name");
-        const records = this.attributeRange(this.uint(offset + 16), this.uint(offset + 20));
-        if (records.some((value) => value.name === "id" || value.name === "class" || value.name.length === 0))
-            throw new Error("invalid normalized attribute record");
-        return Object.freeze({
-            classes: Object.freeze(classes.map((value) => value.value)),
-            records: Object.freeze(records)
-        });
+    private dimensions(): Dimensions {
+        return { width: this.int(), height: this.optional(() => this.int()) };
     }
-    private attributeRange(start: number, count: number): readonly { readonly name: string; readonly value: string }[] {
-        this.range(start, count, this.layout.attributeCount, "attribute range");
-        return Array.from({ length: count }, (_, index) => {
-            const offset = this.layout.attributesOffset + (start + index) * attributeSize;
-            return Object.freeze({ name: this.requiredAt(offset), value: this.requiredAt(offset + 8) });
-        });
+
+    private metadataValue(): MetadataValue {
+        if (this.branch(2) === 0) return { kind: "scalar", value: this.metadataScalar() };
+        return { kind: "list", items: this.list(() => this.metadataListItem()) };
     }
-    private dimensions(record: Record): Dimensions | null {
-        // The value occupies two u32s. Zero width encodes absence and requires
-        // zero height; otherwise width is required and zero height is optional.
-        const width = this.uint(record.offset + nodeField.dimensions);
-        const height = this.uint(record.offset + nodeField.dimensions + 4);
-        if (width > 0x7fffffff || height > 0x7fffffff || (width === 0 && height !== 0))
-            throw new Error("invalid dimensions");
-        return width === 0 ? null : { width, height: height === 0 ? null : height };
+
+    private metadataScalar(): MetadataScalar {
+        switch (this.branch(4)) {
+            case 0:
+                return { kind: "null" };
+            case 1:
+                return { kind: "bool", value: this.bool() };
+            case 2:
+                return { kind: "number", value: this.string() };
+            default:
+                return { kind: "text", value: this.string() };
+        }
     }
-    private documentMetadata(record: Record): Metadata | null {
-        const index = this.uint(record.offset + nodeField.metadata);
-        if (index === noIndex) return null;
-        const value = this.values[index];
-        if (!value || !isMarkup(value) || value.kind !== "metadata") throw new Error("invalid document metadata");
-        return value;
+
+    private metadataListItem(): MetadataListItem {
+        return this.branch(2) === 0 ? { kind: "number", value: this.string() } : { kind: "text", value: this.string() };
     }
-    private metadata(record: Record): MarkupValueOf<"metadata"> {
-        this.flags(record, 0x3ff);
-        const values = this.edgeRange(record.childStart, record.childCount, "metadata fields");
-        let cursor = 0;
-        const field = (bit: number): MetadataValue | null => {
-            if ((record.flags & (1 << bit)) === 0) return null;
-            const value = values[cursor++];
-            if (!value || "scope" in value || !("kind" in value) || (value.kind !== "scalar" && value.kind !== "list"))
-                throw new Error("invalid metadata field value");
-            return value;
-        };
-        const metadata: MarkupValueOf<"metadata"> = {
-            ...this.base(record),
-            kind: "metadata",
-            name: field(0),
-            title: field(1),
-            subtitle: field(2),
-            time: field(3),
-            date: field(4),
-            authors: field(5),
-            keywords: field(6),
-            abstract: field(7),
-            state: field(8),
-            comment: field(9)
-        };
-        if (cursor !== values.length) throw new Error("invalid metadata field count");
-        return metadata;
+
+    // ---- Primitives --------------------------------------------------------
+
+    private optional<T>(read: () => T): T | null {
+        return this.bool() ? read() : null;
     }
-    private metadataValue(record: Record): MetadataValue {
-        this.leaf(record);
-        let value: MetadataValue;
-        if (record.scalar0 === 1) {
-            switch (record.flags) {
-                case 0:
-                    value = { kind: "scalar", value: { kind: "null" } };
-                    break;
-                case 1:
-                    if (record.integer !== 0n && record.integer !== 1n) throw new Error("invalid metadata boolean");
-                    value = { kind: "scalar", value: { kind: "bool", value: record.integer === 1n } };
-                    break;
-                case 2:
-                    value = { kind: "scalar", value: { kind: "number", value: this.required(record, 1) } };
-                    break;
-                case 3:
-                    value = { kind: "scalar", value: { kind: "text", value: this.required(record, 1) } };
-                    break;
-                default:
-                    throw new Error("invalid metadata scalar");
-            }
-        } else if (record.scalar0 === 2) {
-            this.flags(record, 0);
-            value = {
-                kind: "list",
-                items: this.attributeRange(record.auxiliaryStart, record.auxiliaryCount).map((item) => {
-                    if (item.name !== "number" && item.name !== "text") throw new Error("invalid metadata item");
-                    return { kind: item.name, value: item.value };
-                })
-            };
-        } else throw new Error("invalid metadata value");
+
+    /** The node count of a `K?` field. */
+    private presence(): number {
+        return this.bool() ? 1 : 0;
+    }
+
+    private list<T>(read: () => T): T[] {
+        const count = this.count();
+        // Every item occupies at least one byte, so a count the message cannot
+        // hold is rejected before anything is allocated for it.
+        if (count > this.bytes.byteLength - this.offset) throw new Error("native result count exceeds the message");
+        return Array.from({ length: count }, read);
+    }
+
+    private count(): number {
+        return this.u32();
+    }
+
+    private branch(count: number): number {
+        const branch = this.u8();
+        if (branch >= count) throw new Error(`native result contains invalid branch ${branch}`);
+        return branch;
+    }
+
+    private index<T>(values: readonly T[]): T {
+        const index = this.u8();
+        const value = values[index];
+        if (value === undefined) throw new Error(`native result contains invalid enum index ${index}`);
         return value;
     }
 
-    private flags(record: Record, allowed: number): void {
-        if ((record.flags & ~allowed) !== 0) throw new Error(`native result contains invalid flags for ${record.kind}`);
+    private bool(): boolean {
+        const value = this.u8();
+        if (value > 1) throw new Error(`native result contains invalid boolean ${value}`);
+        return value === 1;
     }
 
-    private leaf(record: Record): void {
-        if (record.childCount !== 0) throw new Error(`native result gives leaf ${record.kind} child relations`);
+    private string(): string {
+        const length = this.u32();
+        const start = this.take(length);
+        return this.utf8.decode(this.bytes.subarray(start, start + length));
     }
 
-    private range(start: number, count: number, limit: number, field: string): void {
-        if (start > limit || count > limit - start) throw new Error(`native result contains an invalid ${field}`);
+    /** Int, which a JavaScript number carries only while it is a safe integer. */
+    private int(): number {
+        const start = this.take(8);
+        const value = this.view.getInt32(start + 4, true) * 0x1_0000_0000 + this.view.getUint32(start, true);
+        if (!Number.isSafeInteger(value)) throw new Error("native integer exceeds JavaScript integer precision");
+        return value;
     }
 
-    private sectionEnd(start: number, count: number, width: number, field: string): number {
-        const end = start + count * width;
-        if (!Number.isSafeInteger(end) || end > this.bytes.length) {
-            throw new Error(`native result ${field} exceeds its allocation`);
-        }
-        return end;
+    private double(): number {
+        return this.view.getFloat64(this.take(8), true);
     }
 
-    private safeInteger(value: bigint, field: string): number {
-        const number = Number(value);
-        if (!Number.isSafeInteger(number)) throw new Error(`native ${field} exceeds JavaScript integer precision`);
-        return number;
+    private u8(): number {
+        return this.view.getUint8(this.take(1));
     }
 
-    private nullableBoolean(value: number, field: string): boolean | null {
-        if (value === -1) return null;
-        if (value === 0) return false;
-        if (value === 1) return true;
-        throw new Error(`native result contains invalid ${field} ${value}`);
+    private u32(): number {
+        return this.view.getUint32(this.take(4), true);
     }
 
-    private placement(value: number): Placement {
-        if (value === 1) return "embedded";
-        if (value === 2) return "standalone";
-        throw new Error(`native result contains invalid placement mode ${value}`);
+    private i32(): number {
+        return this.view.getInt32(this.take(4), true);
     }
 
-    private flavor(value: number): ListFlavor {
-        if (value === 1) return "bullet";
-        if (value === 2) return "ordered";
-        throw new Error(`native result contains invalid list flavor ${value}`);
-    }
-
-    private flow(value: number): Flow {
-        const flows: readonly Flow[] = ["none", "left", "center", "right"];
-        const flow = flows[value];
-        if (flow === undefined) throw new Error(`native result contains invalid table flow ${value}`);
-        return flow;
-    }
-
-    private uint(offset: number): number {
-        return this.view.getUint32(offset, true);
-    }
-
-    private int(offset: number): number {
-        return this.view.getInt32(offset, true);
+    /** Advances past `length` bytes and returns where they start. */
+    private take(length: number): number {
+        const start = this.offset;
+        if (length > this.bytes.byteLength - start) throw new Error("truncated native result");
+        this.offset = start + length;
+        return start;
     }
 }
 
-function errorCode(value: number): ParseErrorCode {
-    if (value === 1) return "invalidArgument";
-    if (value === 2) return "allocationFailed";
-    return "internal";
+/** One record's nodes, handed to its fields in order; each field checks the kinds it accepts. */
+class Nodes {
+    private next = 0;
+
+    constructor(private readonly nodes: readonly Markup[]) {}
+
+    content(count: number): readonly Markup[] {
+        return this.take(count, (node) => contentKinds.has(node.kind), "content");
+    }
+
+    typed(kind: NativeKind, count: number): readonly Markup[] {
+        return this.take(count, (node) => node.kind === kind, kind);
+    }
+
+    optional(kind: NativeKind, count: number): Markup | null {
+        return count === 0 ? null : (this.typed(kind, 1)[0] as Markup);
+    }
+
+    private take(count: number, accepts: (node: Markup) => boolean, field: string): readonly Markup[] {
+        const taken = this.nodes.slice(this.next, this.next + count);
+        this.next += count;
+        for (const node of taken) {
+            if (!accepts(node)) throw new Error(`native result places a ${node.kind} node in a ${field} field`);
+        }
+        return taken;
+    }
 }

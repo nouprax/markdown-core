@@ -5,8 +5,22 @@
 extern "C" {
 #endif
 
-#include "markdown-core.h"
+#include "node_type.h"
+#include "buffer.h"
 #include <stdbool.h>
+
+typedef struct markdown_core_parser markdown_core_parser;
+typedef struct markdown_core_element markdown_core_element;
+
+/* Where a depth-first walk stands on a node: every node yields one ENTER and
+ * one EXIT, and DONE follows the root's EXIT (iterator.h). Element finish
+ * steps receive the event they are called at. */
+typedef enum {
+    MARKDOWN_CORE_EVENT_NONE,
+    MARKDOWN_CORE_EVENT_DONE,
+    MARKDOWN_CORE_EVENT_ENTER,
+    MARKDOWN_CORE_EVENT_EXIT
+} markdown_core_event_type;
 
 struct markdown_core_chunk;
 
@@ -112,24 +126,18 @@ typedef enum {
 typedef struct delimiter delimiter;
 
 /** The literal text node the delimiter was pushed for. */
-MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_delimiter_node(const delimiter *delim);
 
-MARKDOWN_CORE_EXPORT
 markdown_core_delimiter_rule markdown_core_delimiter_rule_of(const delimiter *delim);
 
 /** The inline state offset just past the delimiter's last byte. */
-MARKDOWN_CORE_EXPORT
 bufsize_t markdown_core_delimiter_position(const delimiter *delim);
 
 /** How many bytes the delimiter run owns. */
-MARKDOWN_CORE_EXPORT
 bufsize_t markdown_core_delimiter_length(const delimiter *delim);
 
-MARKDOWN_CORE_EXPORT
 int markdown_core_delimiter_can_open(const delimiter *delim);
 
-MARKDOWN_CORE_EXPORT
 int markdown_core_delimiter_can_close(const delimiter *delim);
 
 /** Should create and add a new open block to 'parent_container' if
@@ -320,7 +328,6 @@ typedef void (*markdown_core_opaque_free_func)(const markdown_core_element *elem
 
 /** Return the index of the line currently being parsed, starting with 1.
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_parser_get_line_number(markdown_core_parser *parser);
 
 /** Return the offset in bytes in the line being processed.
@@ -331,7 +338,6 @@ int markdown_core_parser_get_line_number(markdown_core_parser *parser);
  *
  * Here, offset will first be 0, then 5 (the index of the 'f' character).
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_parser_get_offset(markdown_core_parser *parser);
 
 /**
@@ -366,7 +372,6 @@ int markdown_core_parser_get_offset(markdown_core_parser *parser);
  * markdown_core_parser_has_partially_consumed_tab() will now return
  * 'true'.
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_parser_get_column(markdown_core_parser *parser);
 
 /** Return the absolute index in bytes of the first nonspace
@@ -381,7 +386,6 @@ int markdown_core_parser_get_column(markdown_core_parser *parser);
  * 0            offset (16) first_nonspace (28)
  * ```
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser);
 
 /** Declare that 'node''s content -- which the caller SET rather than the parser
@@ -405,11 +409,9 @@ int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser);
  * long -- the paragraph a table was split out of -- where one mark would put
  * every line of it on the first line's row.
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, const markdown_core_content_map *owner,
                                              markdown_core_content_map *map, bufsize_t from, bufsize_t length);
 
-MARKDOWN_CORE_EXPORT
 int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_core_node *node, int line, int column);
 
 /** Name the source line and BYTE column, both counted from 1, of the byte at
@@ -426,7 +428,6 @@ int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_cor
  * block is open, and the inline phase may ask after every block has closed.
  * the parse transaction releases it with the rest of the parse state.
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_parser_content_place(markdown_core_parser *parser, const markdown_core_content_map *map,
                                        bufsize_t content_offset, int *line, int *column);
 
@@ -457,7 +458,6 @@ int markdown_core_parser_content_end_place(markdown_core_parser *parser, const m
  * See the documentation for markdown_core_parser_get_first_nonspace() and
  * markdown_core_parser_get_column() for more information.
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_parser_get_first_nonspace_column(markdown_core_parser *parser);
 
 /** Return the difference between the values returned by
@@ -467,7 +467,6 @@ int markdown_core_parser_get_first_nonspace_column(markdown_core_parser *parser)
  * This is not a byte offset, as it can count one tab as multiple
  * characters.
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_parser_get_indent(markdown_core_parser *parser);
 
 /** Return 'true' if the line currently being processed has been entirely
@@ -498,7 +497,6 @@ int markdown_core_parser_get_indent(markdown_core_parser *parser);
  *
  * At this point, this function will now return 'true'.
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_parser_is_blank(markdown_core_parser *parser);
 
 /** Return 'true' if the value returned by markdown_core_parser_get_offset()
@@ -507,7 +505,6 @@ int markdown_core_parser_is_blank(markdown_core_parser *parser);
  * See the documentation for markdown_core_parser_get_column() for more
  * information.
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_parser_has_partially_consumed_tab(markdown_core_parser *parser);
 
 /** Return the source column of the previously processed line's last byte,
@@ -516,7 +513,6 @@ int markdown_core_parser_has_partially_consumed_tab(markdown_core_parser *parser
  * reads as an input of its own, it is where the cell line's last byte is in
  * the source line.
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_parser_get_last_line_length(markdown_core_parser *parser);
 
 /** Add a child to 'parent' during the parsing process.
@@ -525,7 +521,6 @@ int markdown_core_parser_get_last_line_length(markdown_core_parser *parser);
  * this function will back up till it hits a node that can, closing
  * blocks as appropriate.
  */
-MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_node *parent,
                                                    markdown_core_node_type block_type, int start_column);
 
@@ -534,7 +529,6 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
  * See the documentation of markdown_core_parser_get_offset() and
  * markdown_core_parser_get_column() for more information.
  */
-MARKDOWN_CORE_EXPORT
 void markdown_core_parser_advance_offset(markdown_core_parser *parser, const char *input, int count, int columns);
 
 /** Register 'element' after every element 'builder' already holds.
@@ -573,22 +567,21 @@ typedef enum {
  * A record that fits the node's existing cell needs no allocation.
  * Setting the current kind succeeds without allocating or changing its data.
  */
-MARKDOWN_CORE_EXPORT markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node,
-                                                                                    markdown_core_node_type kind);
+markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node_type kind);
 
 /** Return the string content for all types of 'node'.
  *  The pointer stays valid as long as 'node' isn't freed.
  */
-MARKDOWN_CORE_EXPORT const char *markdown_core_node_get_string_content(markdown_core_node *node);
+const char *markdown_core_node_get_string_content(markdown_core_node *node);
 
 /** Set the string 'content' for all types of 'node'.
  *  Copies 'content'.
  */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_string_content(markdown_core_node *node, const char *content);
+int markdown_core_node_set_string_content(markdown_core_node *node, const char *content);
 
 /** Set the parser element responsible for creating 'node'.
  */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_element(markdown_core_node *node, const markdown_core_element *element);
+int markdown_core_node_set_element(markdown_core_node *node, const markdown_core_element *element);
 
 /**
  * ## Inline parser element helpers
@@ -602,22 +595,18 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_set_element(markdown_core_node *node
 typedef int (*markdown_core_inline_predicate)(int c);
 
 /** Advance the current inline parsing offset */
-MARKDOWN_CORE_EXPORT
 void markdown_core_inline_state_advance_offset(markdown_core_inline_state *inline_state);
 
 /** Get the current inline parsing offset */
-MARKDOWN_CORE_EXPORT
 int markdown_core_inline_state_get_offset(markdown_core_inline_state *inline_state);
 
 /** Set the offset in bytes in the chunk being processed by the given inline state.
  */
-MARKDOWN_CORE_EXPORT
 void markdown_core_inline_state_set_offset(markdown_core_inline_state *inline_state, int offset);
 
 /** Gets the markdown_core_chunk being operated on by the given inline state.
  * Use markdown_core_inline_state_get_offset to get our current position in the chunk.
  */
-MARKDOWN_CORE_EXPORT
 struct markdown_core_chunk *markdown_core_inline_state_get_chunk(markdown_core_inline_state *inline_state);
 
 /** The surrounding bracket's closing byte, or zero outside brackets.
@@ -629,35 +618,29 @@ int markdown_core_inline_state_context_start(markdown_core_inline_state *inline_
 
 /** Returns 1 if the inline state is currently in a bracket; pass 1 for 'image'
  * if you want to know about an image-type bracket, 0 for link-type. */
-MARKDOWN_CORE_EXPORT
 int markdown_core_inline_state_in_bracket(markdown_core_inline_state *inline_state, int image);
 
 /** Remove the last n characters from the last child of the given node.
  * This only works where all n characters are in the single last child, and the last
  * child is MARKDOWN_CORE_NODE_TEXT.
  */
-MARKDOWN_CORE_EXPORT
 void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n);
 
 /** Get the character located at the current inline parsing offset
  */
-MARKDOWN_CORE_EXPORT
 unsigned char markdown_core_inline_state_peek_char(markdown_core_inline_state *inline_state);
 
 /** Get the character located 'pos' bytes in the current line.
  */
-MARKDOWN_CORE_EXPORT
 unsigned char markdown_core_inline_state_peek_at(markdown_core_inline_state *inline_state, int pos);
 
 /** Whether the inline state has reached the end of the current line
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_inline_state_is_eof(markdown_core_inline_state *inline_state);
 
 /** Get the characters located after the current inline parsing offset
  * while 'pred' matches. Free after usage.
  */
-MARKDOWN_CORE_EXPORT
 char *markdown_core_inline_state_take_while(markdown_core_inline_state *inline_state,
                                             markdown_core_inline_predicate pred);
 
@@ -676,7 +659,6 @@ int markdown_core_inline_state_find_opaque_close(markdown_core_inline_state *inl
  * See <<http://spec.commonmark.org/0.24/#phase-2-inline-structure> for
  * more information on the parameters
  */
-MARKDOWN_CORE_EXPORT
 void markdown_core_inline_state_push_delimiter(markdown_core_inline_state *inline_state,
                                                const markdown_core_element *owner, markdown_core_delimiter_rule rule,
                                                int can_open, int can_close, markdown_core_node *inl_text);
@@ -693,14 +675,11 @@ void markdown_core_inline_state_push_delimiter(markdown_core_inline_state *inlin
  * alternate on the stack, so every closer pairs with the opener directly
  * before it and no pair ever spans another of the rule.
  */
-MARKDOWN_CORE_EXPORT
 int markdown_core_inline_state_has_unmatched_opener(markdown_core_inline_state *inline_state,
                                                     markdown_core_delimiter_rule rule);
 
-MARKDOWN_CORE_EXPORT
 int markdown_core_inline_state_get_line(markdown_core_inline_state *inline_state);
 
-MARKDOWN_CORE_EXPORT
 int markdown_core_inline_state_get_column(markdown_core_inline_state *inline_state);
 
 /** Make the Text node a delimiter run stands as: its literal is the bytes
@@ -713,7 +692,6 @@ int markdown_core_inline_state_get_column(markdown_core_inline_state *inline_sta
  * end. Passing the range says it once. The cursor is NOT moved: a caller that
  * has not consumed the run yet still has to.
  */
-MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_inline_state_make_delimiter_text(markdown_core_inline_state *inline_state, int from,
                                                                    int to);
 

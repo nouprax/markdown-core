@@ -1,8 +1,7 @@
 #ifndef TASKLIST_H
 #define TASKLIST_H
 
-#include "markdown-core.h"
-#include "buffer.h"
+#include "markdown-core-element-api.h"
 
 #ifdef __cplusplus
 extern "C" {
