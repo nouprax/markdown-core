@@ -2244,19 +2244,25 @@ static void table_append_range(table_source *source, markdown_core_node *node, s
     if (left > right) {
         left = right;
     }
+    assert(left >= 0);
     /* A scan position has one tab probe and at most two escape probes. A
      * run-ending position can be inspected again by the outer loop, so allow
      * two visits per position. Charge once, even if allocation stops copying. */
     parser->table_scan_work += (escapes ? 6u : 2u) * (size_t)(right - left);
+    /* Every column scanned has a byte, `left <= column < right <= columns`, so
+     * the line's byte map is read directly; only the run's end, which can be
+     * the end of the line, needs `table_byte`. An escape is a backslash whose
+     * next column, if the line has one, is a pipe. */
+    const int *bytes = table_line_bytes(line), columns = line->columns;
+    const unsigned char *data = line->data;
     for (int column = left; column < right && !parser->error;) {
-        int byte = table_byte(line, column);
-        if (line->data[byte] == '\t') {
+        int byte = bytes[column];
+        if (data[byte] == '\t') {
             int original = markdown_core_parser_source_column(parser, line->line, byte + 1);
             markdown_core_parser_append_content_mark(parser, node, node->content.size, line->line, original, 1, 0);
             markdown_core_strbuf_putc(&node->content, ' ');
             column++;
-        } else if (escapes && column + 1 < right && table_character(line, column) == '\\' &&
-                   table_character(line, column + 1) == '|') {
+        } else if (escapes && column + 1 < right && data[byte] == '\\' && data[bytes[column + 1]] == '|') {
             int first = markdown_core_parser_source_column(parser, line->line, byte + 1);
             int end = markdown_core_parser_source_column(parser, line->line, byte + 2);
             markdown_core_parser_append_content_mark(parser, node, node->content.size, line->line, first,
@@ -2265,8 +2271,8 @@ static void table_append_range(table_source *source, markdown_core_node *node, s
             column += 2;
         } else {
             int end = column + 1;
-            while (end < right && line->data[table_byte(line, end)] != '\t' &&
-                   !(escapes && table_character(line, end) == '\\' && table_character(line, end + 1) == '|')) {
+            while (end < right && data[bytes[end]] != '\t' &&
+                   !(escapes && data[bytes[end]] == '\\' && end + 1 < columns && data[bytes[end + 1]] == '|')) {
                 end++;
             }
             int length = table_byte(line, end) - byte;
