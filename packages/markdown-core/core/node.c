@@ -7,7 +7,6 @@
 #include "node.h"
 #include "references.h"
 #include "element.h"
-#include "../elements/markdown-core-elements.h"
 
 static void S_node_unlink(markdown_core_node *node);
 
