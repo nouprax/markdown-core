@@ -444,18 +444,18 @@ int markdown_core_parser_append_content_marks(markdown_core_parser *parser, cons
 }
 
 int markdown_core_parser_mapped_source_column(markdown_core_parser *parser, int line, int column) {
-    assert(column >= 0 && parser->block_root != parser->root);
+    assert(column > 0 && parser->block_root != parser->root);
     size_t index = (size_t)(line - parser->input_first_line);
     assert(line >= parser->input_first_line && index < parser->input_line_count);
     int source_line, source_column;
     if (!markdown_core_parser_content_end_place(parser, &parser->block_root->content_map,
-                                                (bufsize_t)parser->input_lines[index].start + (column ? column - 1 : 0),
-                                                &source_line, &source_column)) {
+                                                (bufsize_t)parser->input_lines[index].start + column - 1, &source_line,
+                                                &source_column)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return column;
     }
     assert(source_line == line);
-    return source_column - (column == 0 ? 1 : 0);
+    return source_column;
 }
 
 int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
@@ -2170,10 +2170,14 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
     if (parser->current != last_matched_container && container == last_matched_container && !parser->blank &&
         current_structure && current_structure->accepts_lazy &&
         current_structure->accepts_lazy(parser, parser->current)) {
-        parser->current = current_structure->open_lazy(parser, parser->current);
-        if (!parser->current) {
+        markdown_core_node *lazy = current_structure->open_lazy(parser, parser->current, input);
+        if (!lazy) {
             return;
         }
+        parser->current = lazy;
+        /* A lazy line is text, so its indentation is not content, as it is not
+         * on a line that continues a paragraph with every prefix. */
+        markdown_core_block_advance_offset(parser, input, parser->first_nonspace - parser->offset, false);
         markdown_core_block_add_line(parser->current, input, parser);
     } else { // not a lazy continuation
         // Finalize any blocks that were not matched and set cur to container:

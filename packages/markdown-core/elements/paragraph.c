@@ -41,7 +41,10 @@ static markdown_core_finish_result finish_step(const markdown_core_element *elem
 }
 static const markdown_core_node_type PARAGRAPH_EXIT_KINDS[] = {MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_NONE};
 static bool accepts_lazy(markdown_core_parser *parser, markdown_core_node *node) { return true; }
-static markdown_core_node *open_lazy(markdown_core_parser *parser, markdown_core_node *node) { return node; }
+static markdown_core_node *open_lazy(markdown_core_parser *parser, markdown_core_node *node,
+                                     markdown_core_chunk *input) {
+    return node;
+}
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     .accepts_lazy = accepts_lazy,

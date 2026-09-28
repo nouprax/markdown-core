@@ -513,8 +513,11 @@ int markdown_core_parser_is_blank(markdown_core_parser *parser);
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_has_partially_consumed_tab(markdown_core_parser *parser);
 
-/** Return the length in bytes of the previously processed line, excluding potential
- * newline (\n) and carriage return (\r) trailing characters.
+/** Return the source column of the previously processed line's last byte,
+ * excluding its line ending, or 0 for an empty line. At the top level that is
+ * the line's length in bytes; in a table cell's content, which the parser
+ * reads as an input of its own, it is where the cell line's last byte is in
+ * the source line.
  */
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_get_last_line_length(markdown_core_parser *parser);

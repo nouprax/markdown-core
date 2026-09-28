@@ -2621,7 +2621,7 @@
         {
             "feature": "tables",
             "specification": "docs/specs/dialect/tables.md",
-            "sha256": "f64448694faebee13a0a917fc5a772b137adb837796c5534f929b262d9b148ce",
+            "sha256": "be5f421a1fe9708e603527cf5e38ee2b77b07c79f345999b59c401eb247ed7bd",
             "sections": [
                 {
                     "title": "Tables",
@@ -2667,7 +2667,7 @@
                     "title": "Simple tables",
                     "line": 78,
                     "level": 2,
-                    "sha256": "63d547b25b5abca3df164ade2db40ba726fff76cce4e1a377dfd46ea346b99d7",
+                    "sha256": "7f21bd98a09eb774805246bb210d11742a388c00931d1905f1d8f5985a3aec51",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["simple-matrix", "headless-matrix"]
@@ -2675,7 +2675,7 @@
                 },
                 {
                     "title": "Multiline tables",
-                    "line": 117,
+                    "line": 119,
                     "level": 2,
                     "sha256": "19e707c0324e6f0f62a4c2ee271c78549538987b1a92209fffcc221f23bcae21",
                     "disposition": {
@@ -2685,7 +2685,7 @@
                 },
                 {
                     "title": "Grid tables",
-                    "line": 148,
+                    "line": 150,
                     "level": 2,
                     "sha256": "fe30992633d63c6f1b361f79fe8d6afefb493ed6dfcaf2e775407dd0fda88de4",
                     "disposition": {
@@ -2695,7 +2695,7 @@
                 },
                 {
                     "title": "Merged cells",
-                    "line": 166,
+                    "line": 168,
                     "level": 3,
                     "sha256": "508b139f9366bce0c108f5101bfb29282592d3894bf7cef20b84247a137119b5",
                     "disposition": {
@@ -2705,7 +2705,7 @@
                 },
                 {
                     "title": "Foot rows",
-                    "line": 194,
+                    "line": 196,
                     "level": 3,
                     "sha256": "952c3083226671357904ded75e7c06f5b5cc52344ccd9ddd2c35618b6934f730",
                     "disposition": {
@@ -2715,9 +2715,9 @@
                 },
                 {
                     "title": "Boundaries and row groups",
-                    "line": 211,
+                    "line": 213,
                     "level": 3,
-                    "sha256": "a4b50f863d2ee0dcd991166f520c78b6af37401bf502711f69797ae78b3856b3",
+                    "sha256": "faca7291a0bf25095ff339473653b0e5f70f70dfc85d61f6817a0fb003c40f01",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["sparse-grid", "fallback-grid"]
@@ -2725,9 +2725,9 @@
                 },
                 {
                     "title": "Column widths and source positions",
-                    "line": 231,
+                    "line": 234,
                     "level": 2,
-                    "sha256": "cddff1849c1ee392aa76287395caed27ae644e0a5aff60ef0646ca56c5d6cb49",
+                    "sha256": "44846e0032dcf8aa4e4285e21fc756837151b3067523ffa84aeff14e41ee28e9",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -2741,7 +2741,7 @@
                 },
                 {
                     "title": "Competing block syntax",
-                    "line": 250,
+                    "line": 268,
                     "level": 2,
                     "sha256": "15848b2923c6f996b4242f01a024271bd4e138e33638837236011e4bdc58d0fd",
                     "disposition": {

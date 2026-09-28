@@ -543,6 +543,58 @@ Document scope=1:1..7:6 anchor=null attributes={} children=2
         └── Text scope=7:3..7:6 anchor=null attributes={} literal="more" children=0
 ````````````````````````````````
 
+## A lazy body line starts where its text does
+
+A lazy line opens the body's first paragraph, so its indentation is not
+content: the paragraph and its text start on the line's first non-space byte.
+
+```````````````````````````````` example
+> [!note]
+   indented lazy
+continued
+
+- > [!tip] T
+     lazy
+.
+Document scope=1:1..6:9 anchor=null attributes={} children=2
+├── Callout scope=1:1..3:9 anchor=null attributes={} variant="note" collapsed=null children=1
+│   └── Paragraph scope=2:4..3:9 anchor=null attributes={} children=3
+│       ├── Text scope=2:4..2:16 anchor=null attributes={} literal="indented lazy" children=0
+│       ├── SoftBreak scope=2:17..2:17 anchor=null attributes={} children=0
+│       └── Text scope=3:1..3:9 anchor=null attributes={} literal="continued" children=0
+└── List scope=5:1..6:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
+    └── ListItem scope=5:1..6:9 anchor=null attributes={} marker=null children=1
+        └── Callout scope=5:3..6:9 anchor=null attributes={} variant="tip" collapsed=null children=1
+            ├── Title children=1
+            │   └── Text scope=5:12..5:12 anchor=null attributes={} literal="T" children=0
+            └── Paragraph scope=6:6..6:9 anchor=null attributes={} children=1
+                └── Text scope=6:6..6:9 anchor=null attributes={} literal="lazy" children=0
+````````````````````````````````
+
+A lazy body line parses as it does with the prefix, whatever it holds: an
+indented definition defines, and a line led by emphasis starts with it.
+
+```````````````````````````````` example
+> [!note]
+  [x]: /u
+
+[x]
+
+> [!tip]
+  *em* x
+.
+Document scope=1:1..7:8 anchor=null attributes={} children=3
+├── Callout scope=1:1..2:9 anchor=null attributes={} variant="note" collapsed=null children=0
+├── Paragraph scope=4:1..4:3 anchor=null attributes={} children=1
+│   └── Link scope=4:1..4:3 anchor=null attributes={} dest=url("/u") title=null children=1
+│       └── Text scope=4:2..4:2 anchor=null attributes={} literal="x" children=0
+└── Callout scope=6:1..7:8 anchor=null attributes={} variant="tip" collapsed=null children=1
+    └── Paragraph scope=7:3..7:8 anchor=null attributes={} children=2
+        ├── Emphasis scope=7:3..7:6 anchor=null attributes={} children=1
+        │   └── Text scope=7:4..7:5 anchor=null attributes={} literal="em" children=0
+        └── Text scope=7:7..7:8 anchor=null attributes={} literal=" x" children=0
+````````````````````````````````
+
 ## Metadata never becomes a Setext heading or table header
 
 ```````````````````````````````` example

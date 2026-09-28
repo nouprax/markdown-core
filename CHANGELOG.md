@@ -6,6 +6,56 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Read a table the same wherever its indentation comes from, but for the tab
+  stops a tab after it reaches. Indenting a simple or multiline table by one
+  to three spaces made its first column right- or center-aligned: alignment
+  was measured from the container's content, where the indentation is,
+  instead of from the column's own dash run, so the result depended on
+  whether the same indentation came from spaces or a list item. Tab stops
+  were counted from the container's content rather than the line, so a tab
+  after `- x` or one a `>` prefix consumed in part moved the columns
+  differently from Pandoc and from one line to the next. Simple, multiline
+  and grid tables and their rows now begin at the table's margin, the
+  indentation all of its lines share, and pipe rows at their own first
+  non-space byte; they began at the container's content, on indentation or on
+  a tab the prefix shared, so `   | c | d |` under an indented header started
+  at column 1. A grid line with text before its left border no longer joins
+  the grid, which dropped that text.
+
+- End a block in a grid or multiline table's cell that a blank line of the
+  cell closes at column 0 of that line, as an empty line does at the top
+  level. It ended on the row's last byte or on the next cell's text, outside
+  its cell: a list in the first cell of `| - item | x   |`, closed by the
+  row's blank line below it, ended at `3:16`, the table's right border,
+  instead of `3:0`. A footnote defined in a cell, a list item, and indented
+  code did the same.
+
+- Parse a lazy line as the same line parses with the quote's prefix. A lazy
+  line kept its indentation in the content of the paragraph it went to.
+  After a callout's marker line, where it opens the body's first paragraph,
+  `> [!note]` followed by `   lazy` gave the paragraph `2:1..2:7` and the
+  text `"   lazy"`, where they are `2:4..2:7` and `"lazy"`. Everything that
+  read that content saw the indentation too: an indented reference
+  definition did not define, a lone `$$x$$` stayed inline, a pipe row's
+  indentation decided whether a table formed and gave it an empty first
+  cell, a setext heading's anchor gained leading hyphens, and a line led by a
+  link, code or emphasis began with a text node holding only the
+  indentation. A lazy line that continued a paragraph did the same once a
+  reference definition before it was taken: `> [a]: /x`, `   bar`, `> ===`
+  gave the heading `2:1..3:5` with the anchor `---bar`, where it is
+  `2:4..3:5` and `bar`.
+
+- Report a directive's label, and an inline directive's end, where the user
+  sees those bytes in the editor. A block directive's label added the fence's
+  column to a position already counted from the start of the line, so after
+  indentation or a container prefix it, and everything in it, lay to the
+  right of its brackets: `> :::note[a]` gave the label `1:12..1:14` on a
+  12-byte line, where it is `1:10..1:12`. In a grid or multiline table cell
+  it was counted from the cell's content instead of the line. An inline
+  directive and its label ended one column before the byte after them, which
+  at a table cell's edge is the end of the row, so they ran into the next
+  cell or onto the table's border.
+
 - Stop the walk back from a delimiter run to the character before it at a
   `~` that a continuation byte follows, which UTF-8 never has. The walk
   stepped over continuation bytes and `~` alike, so bytes that are not UTF-8,

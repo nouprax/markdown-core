@@ -6418,9 +6418,10 @@ static void releasing_an_empty_attribute_value_makes_no_allocator_call(test_batc
  * probes per query are read where the search would be dearest. Placements
  * behind the cursor -- a link closed after its opener, a rewind -- are
  * answered by a search of the part behind it, so the bound is on the
- * average, not on each query, and the links here exercise that path too. */
+ * average, not on each query, and the links here exercise that path too, as
+ * a directive does, placed from its colon and then back at its label. */
 static void inline_placement_probes_the_map_a_bounded_number_of_times(test_batch_runner *runner) {
-    static const char line[] = "a *b* c [d](/e) f\n";
+    static const char line[] = "a *b* c [d](/e) f :g[h]{.i}\n";
     for (size_t lines = 64; lines <= 4096; lines *= 8) {
         markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
         for (size_t i = 0; i < lines; i++) {
@@ -6430,7 +6431,7 @@ static void inline_placement_probes_the_map_a_bounded_number_of_times(test_batch
         markdown_core_node *root =
             markdown_core_parse_document_with_setup((const char *)source.ptr, source.size, measure_inline_work, &work);
         OK(runner, root != NULL, "the paragraph parses");
-        OK(runner, work.content_mark_queries >= 6 * lines, "every token asks the map: lines=%zu queries=%zu", lines,
+        OK(runner, work.content_mark_queries >= 12 * lines, "every token asks the map: lines=%zu queries=%zu", lines,
            work.content_mark_queries);
         OK(runner, work.content_mark_probes <= 2 * work.content_mark_queries + 64,
            "a placement is answered from the cursor, not by a search of the container: lines=%zu queries=%zu "
@@ -9292,6 +9293,635 @@ static markdown_core_node *first_of_kind(markdown_core_node *root, markdown_core
     return found;
 }
 
+/* The byte a scope coordinate names in `source`: the column-th byte of the
+ * line-th line, both counted from 1. -1 when no byte is there. */
+static int source_byte_at(const char *source, int line, int column) {
+    const char *text = source;
+    for (int l = 1; l < line; l++) {
+        text = strchr(text, '\n');
+        if (!text) {
+            return -1;
+        }
+        text++;
+    }
+    size_t length = strcspn(text, "\n");
+    return column >= 1 && (size_t)column <= length ? (unsigned char)text[column - 1] : -1;
+}
+
+static bool scope_within(const markdown_core_node *inner, const markdown_core_node *outer) {
+    return (inner->start_line > outer->start_line ||
+            (inner->start_line == outer->start_line && inner->start_column >= outer->start_column)) &&
+           (inner->end_line < outer->end_line ||
+            (inner->end_line == outer->end_line && inner->end_column <= outer->end_column));
+}
+
+/* Every node under `label` lies between its brackets: from the byte after the
+ * `[` to the byte before the `]`. */
+static bool label_holds_its_content(markdown_core_node *label) {
+    markdown_core_iter *iter = markdown_core_iter_new(label);
+    markdown_core_event_type event;
+    bool held = true;
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event != MARKDOWN_CORE_EVENT_ENTER || node == label) {
+            continue;
+        }
+        held &= (node->start_line > label->start_line ||
+                 (node->start_line == label->start_line && node->start_column > label->start_column)) &&
+                (node->end_line < label->end_line ||
+                 (node->end_line == label->end_line && node->end_column < label->end_column));
+    }
+    markdown_core_iter_free(iter);
+    return held;
+}
+
+/* A DIRECTIVE'S SCOPES ARE THE EDITOR POSITIONS OF ITS OWN BYTES, wherever it
+ * sits. A label starts on its `[` and ends on its `]`, its content starts on
+ * the byte after the `[`, and everything in it lies between the brackets. An
+ * inline directive starts on its `:` and ends on its last byte: the `}` of
+ * its attributes, or else its label's `]`. The parser reads a table cell's
+ * content as an input of its own, and a byte's index in that input is not its
+ * column in the editor: a tab there is as many spaces as it reaches, and at a
+ * cell's edge the byte after a directive is the cell's line ending, placed at
+ * the end of the row. So every endpoint is the position of the byte it names,
+ * never a column counted from another. Labels nest, so each label's own
+ * directives are checked too. */
+static void directive_scopes_are_editor_positions(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        /* Block directives after indentation and container prefixes. */
+        ":::note[a]\n:::\n",
+        ":::note[]\n:::\n",
+        "   ::note[a]\n",
+        ">\t::note[ab]\n",
+        "> :::note[label]{k=v}\n> :::\n",
+        "1. ::x[*e*]\n",
+        "  1. >  ::n[]\n",
+        "> > :::n[\xE4\xB8\xAD]\n",
+        /* Block directives in grid and multiline cells: first and later
+         * columns, a prefix inside the cell, a container spanning cell lines,
+         * and a label holding an inline directive. */
+        "+------------+\n| ::note[ab] |\n+------------+\n",
+        "+-----------+\n| > ::n[ab] |\n+-----------+\n",
+        "+----+---------------+\n| x  | > ::n[*e*]    |\n+----+---------------+\n",
+        "+-------------+\n| :::note[ab] |\n| body        |\n| :::         |\n+-------------+\n",
+        "+----------------+\n| - ::n[a :m[b]] |\n+----------------+\n",
+        "----------------------\nLeft       Right\n---------- -----------\na          ::n[ab]\nc\n\nd          e\n"
+        "----------------------\n",
+        /* Inline directives, at the edge of a simple, grid and multiline cell,
+         * with a label over a line ending, and in a pipe cell. */
+        "text :n[a] more\n",
+        "> - x :n[lbl]\n",
+        "h      k\n------ ------\n:m[ab] y\n\n",
+        "+-----------+\n| x :n[a]   |\n+-----------+\n",
+        "+-----------+\n| x :n{#y}  |\n+-----------+\n",
+        "----------------------\nLeft       Right\n---------- -----------\nx :m[ab]   yyyy\nc\n\nd          e\n"
+        "----------------------\n",
+        "> x :m[a\n> b]{.c}\n",
+        "+-----------+\n| x :m[a    |\n| b]        |\n+-----------+\n",
+        "| :m[ab] | y |\n| - | - |\n| a | b |\n",
+        /* A tab inside a block label is one source byte but several bytes of
+         * a grid or multiline cell's input. */
+        "+--------------+\n| ::nn[a\tb] |\n+--------------+\n",
+        "+--------------------+\n| ::note[a\tb :x[c]] |\n+--------------------+\n",
+        "----------------------\nLeft       Right\n---------- -----------\na          ::n[a\tb]\nc\n\nd          e\n"
+        "----------------------\n",
+        "> ::n[a\t*b*]\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const char *source = sources[i];
+        const int shown = (int)strcspn(source, "\n");
+        markdown_core_node *doc = parse(source);
+        markdown_core_node *roots[16] = {doc};
+        size_t root_count = 1, directives = 0;
+        while (root_count) {
+            markdown_core_iter *iter = markdown_core_iter_new(roots[--root_count]);
+            markdown_core_event_type event;
+            while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+                markdown_core_node *node = markdown_core_iter_get_node(iter);
+                if (event != MARKDOWN_CORE_EVENT_ENTER ||
+                    (node->kind != MARKDOWN_CORE_NODE_DIRECTIVE && node->kind != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
+                    continue;
+                }
+                directives++;
+                OK(runner, !node->parent || scope_within(node, node->parent), "a directive in %.*s lies in its parent",
+                   shown, source);
+                markdown_core_node *label = markdown_core_directive_label(node);
+                if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE) {
+                    /* Attributes follow the label's `]` directly, or stand
+                     * alone; the directive ends on the last of these. */
+                    bool attributed = !label || source_byte_at(source, label->end_line, label->end_column + 1) == '{';
+                    int last = source_byte_at(source, node->end_line, node->end_column);
+                    OK(runner, source_byte_at(source, node->start_line, node->start_column) == ':',
+                       "an inline directive in %.*s starts on its colon", shown, source);
+                    OK(runner,
+                       attributed ? last == '}'
+                                  : node->end_line == label->end_line && node->end_column == label->end_column,
+                       "an inline directive in %.*s ends on its last byte", shown, source);
+                }
+                if (!label) {
+                    continue;
+                }
+                markdown_core_node *content = markdown_core_node_first_child(label);
+                OK(runner,
+                   source_byte_at(source, label->start_line, label->start_column) == '[' &&
+                       source_byte_at(source, label->end_line, label->end_column) == ']',
+                   "a label in %.*s starts on its [ and ends on its ]", shown, source);
+                OK(runner, scope_within(label, node), "a label in %.*s lies in its directive", shown, source);
+                OK(runner,
+                   !content ||
+                       (content->start_line == label->start_line && content->start_column == label->start_column + 1),
+                   "a label's content in %.*s starts on the byte after its [", shown, source);
+                OK(runner, label_holds_its_content(label), "a label's content in %.*s lies between its brackets", shown,
+                   source);
+                if (root_count < sizeof(roots) / sizeof(roots[0])) {
+                    roots[root_count++] = label;
+                }
+            }
+            markdown_core_iter_free(iter);
+        }
+        OK(runner, directives > 0, "%.*s holds a directive", shown, source);
+        markdown_core_node_free(doc);
+    }
+}
+
+/* A PARAGRAPH STARTS WHERE ITS TEXT DOES. Its first line's indentation is
+ * not content, whether the line opened the paragraph with every container's
+ * prefix or lazily without them: the paragraph, and the text it starts with,
+ * start on the line's first non-space byte, and the literal starts with that
+ * byte. A lazy line continues an open paragraph, except after a callout's
+ * marker line, whose text is the title: there it opens the body's first
+ * paragraph. The sources give lazy lines to both, under quotes, callouts,
+ * list items and a grid cell, after spaces and a tab. */
+static void paragraphs_start_on_their_first_byte(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "> [!note]\n   lazy\n",
+        "> [!note] T\n  lazy\nmore\n",
+        "- > [!note]\n \tlazy\n",
+        "> > [!tip]\n  lazy\n",
+        "- > [!note] T\n     lazy\n",
+        "1. > [!note]\n   lazy\n",
+        "+-------------+\n| > [!note]   |\n|   lazy      |\n+-------------+\n",
+        "> quote\n   lazy\n",
+        "> [!note]\n>    body\n",
+        "   plain\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const char *source = sources[i];
+        const int shown = (int)strcspn(source, "\n");
+        markdown_core_node *doc = parse(source);
+        markdown_core_iter *iter = markdown_core_iter_new(doc);
+        markdown_core_event_type event;
+        size_t paragraphs = 0;
+        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            markdown_core_node *node = markdown_core_iter_get_node(iter);
+            if (event != MARKDOWN_CORE_EVENT_ENTER || node->kind != MARKDOWN_CORE_NODE_PARAGRAPH) {
+                continue;
+            }
+            paragraphs++;
+            const int first = source_byte_at(source, node->start_line, node->start_column);
+            markdown_core_node *text = markdown_core_node_first_child(node);
+            OK(runner, first > 0 && first != ' ' && first != '\t', "a paragraph in %.*s starts on a non-space byte",
+               shown, source);
+            OK(runner,
+               text && text->kind == MARKDOWN_CORE_NODE_TEXT && text->start_line == node->start_line &&
+                   text->start_column == node->start_column && markdown_core_node_get_literal(text) &&
+                   (unsigned char)markdown_core_node_get_literal(text)[0] == first,
+               "a paragraph in %.*s starts with its text", shown, source);
+        }
+        markdown_core_iter_free(iter);
+        OK(runner, paragraphs > 0, "%.*s holds a paragraph", shown, source);
+        markdown_core_node_free(doc);
+    }
+}
+
+/* The canonical dump of `source`, with every column on `line` other than the
+ * sentinel moved left by `shift`. NULL when the parse or the dump fails. */
+static char *dump_with_line_shifted(const char *source, int line, int shift) {
+    markdown_core_error *error = NULL;
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), &error);
+    uint8_t *dump = NULL;
+    size_t length = 0;
+    if (!document || !markdown_core_document_dump(document, &dump, &length, &error)) {
+        markdown_core_error_free(error);
+        markdown_core_document_free(document);
+        return NULL;
+    }
+    markdown_core_document_free(document);
+    markdown_core_strbuf out = MARKDOWN_CORE_BUF_INIT();
+    for (const char *at = (const char *)dump; *at;) {
+        const char *scope = strstr(at, "scope=");
+        if (!scope) {
+            markdown_core_strbuf_puts(&out, at);
+            break;
+        }
+        markdown_core_strbuf_put(&out, (const unsigned char *)at, (bufsize_t)(scope - at + 6));
+        at = scope + 6;
+        for (int end = 0; end < 2; end++) {
+            char *next;
+            long l = strtol(at, &next, 10), c = strtol(next + 1, &next, 10);
+            char place[48];
+            snprintf(place, sizeof(place), "%s%ld:%ld", end ? ".." : "", l, l == line && c ? c - shift : c);
+            markdown_core_strbuf_puts(&out, place);
+            at = next + (end ? 0 : 2);
+        }
+    }
+    markdown_core_dump_free(dump);
+    return (char *)markdown_core_strbuf_detach(&out);
+}
+
+/* A LAZY LINE PARSES AS IT WOULD WITH THE QUOTE'S PREFIX. A lazy line is text:
+ * its indentation is not content, as it is not on a line that continues a
+ * paragraph with every prefix. After a callout's marker line, which is its
+ * title, the line opens the body's first paragraph -- with the dialect's one
+ * text-block opener, which is what opens it when the prefix is there. After a
+ * quote whose paragraph so far is a reference definition, it continues that
+ * paragraph and becomes its first text once the definition is taken. Either
+ * way, whatever the line holds reads the same as with the prefix, in node
+ * kinds, literals, anchors, destinations and every other field: a definition
+ * defines, a standalone formula is a formula block, a pipe row can head a
+ * table, and a setext underline makes a heading. Only the line's own columns
+ * differ, by the prefix's two bytes. */
+static void lazy_lines_parse_as_prefixed(test_batch_runner *runner) {
+    static const char *const heads[] = {"> [!note]\n", "> [a]: /x\n"};
+    static const char *const indents[] = {"", " ", "  ", "   "};
+    static const char *const bodies[] = {
+        "lazy\n",           "*em* x\n", "`c` x\n",          "[l](/u) x\n",   "<b>x</b> y\n",
+        "[x]: /u\n\n[x]\n", "$$x$$\n",  "| a |\n> |---|\n", "lazy\n> ===\n", "lazy\n> more\n",
+    };
+    for (size_t h = 0; h < sizeof(heads) / sizeof(heads[0]); h++) {
+        for (size_t i = 0; i < sizeof(indents) / sizeof(indents[0]); i++) {
+            for (size_t b = 0; b < sizeof(bodies) / sizeof(bodies[0]); b++) {
+                char lazy[64], prefixed[64];
+                snprintf(lazy, sizeof(lazy), "%s%s%s", heads[h], indents[i], bodies[b]);
+                snprintf(prefixed, sizeof(prefixed), "%s> %s%s", heads[h], indents[i], bodies[b]);
+                char *lazy_dump = dump_with_line_shifted(lazy, 2, 0);
+                char *prefixed_dump = dump_with_line_shifted(prefixed, 2, 2);
+                OK(runner, lazy_dump && prefixed_dump && !strcmp(lazy_dump, prefixed_dump),
+                   "a lazy line after %.*s and %zu spaces parses as with the prefix: %.*s",
+                   (int)strcspn(heads[h], "\n"), heads[h], strlen(indents[i]), (int)strcspn(bodies[b], "\n"),
+                   bodies[b]);
+                markdown_core_free(lazy_dump);
+                markdown_core_free(prefixed_dump);
+            }
+        }
+    }
+}
+
+/* A grid or multiline cell is a rectangle of the source: its lines, between
+ * its first and last column. */
+static bool cell_holds_place(const markdown_core_node *cell, int line, int column) {
+    return line >= cell->start_line && line <= cell->end_line && column >= cell->start_column &&
+           column <= cell->end_column;
+}
+
+/* Whether `cell`'s columns on `line` hold nothing but spaces. */
+static bool cell_segment_is_blank(const char *source, const markdown_core_node *cell, int line) {
+    for (int column = cell->start_column; column <= cell->end_column; column++) {
+        int byte = source_byte_at(source, line, column);
+        if (byte != ' ' && byte != -1) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool node_holds(const markdown_core_node *ancestor, const markdown_core_node *node) {
+    for (; node; node = node->parent) {
+        if (node == ancestor) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* A BLOCK IN A CELL ENDS IN ITS CELL, OR ON THE LINE-ENDING SENTINEL. The
+ * parser reads a grid or multiline cell's content as an input of its own,
+ * whose columns it projects to the source's. A block that a following empty
+ * line closes ends at column 0 of that line -- the sentinel for the end of
+ * the line above, whatever input the block was read from, as
+ * `- item\n\nnext` gives the list `1:1..2:0`. A cell's blank segment is empty
+ * in its input, and column 0 names no byte there, so it has nowhere to be
+ * projected to: projected as if it did, it landed on the row's last byte, the
+ * table's right border, or on the next cell's text. So every node that
+ * starts in a cell -- a footnote defined there too, though the document holds
+ * it -- starts on a byte and ends at a place in that cell, or at column 0 of a
+ * later line whose segment in that cell is blank. Cells nest, so the cell is
+ * the innermost one holding the node's start, other than the node's own: a
+ * row starts on its first cell. */
+typedef struct {
+    markdown_core_node *roots[8];
+    size_t count;
+} cell_test_roots;
+
+static int collect_cell_test_root(markdown_core_node **slot, void *context) {
+    cell_test_roots *roots = context;
+    if (slot && *slot && roots->count < sizeof(roots->roots) / sizeof(roots->roots[0])) {
+        roots->roots[roots->count++] = *slot;
+    }
+    return 1;
+}
+
+static void cell_blocks_end_in_their_cell(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "+--------+-----+\n| - item | x   |\n|        |     |\n| next   | y   |\n+--------+-----+\n",
+        "+-----+--------+\n| x   | - a    |\n|     |   - b  |\n|     |        |\n|     | c      |\n+-----+--------+\n",
+        "+----------+-----+\n|     code | x   |\n|          |     |\n| next     | y   |\n+----------+-----+\n",
+        "+---------+-----+\n| [^f]: a | x   |\n|         |     |\n| next    | y   |\n+---------+-----+\n",
+        "+--------+\n| - a    |\n|        |\n+--------+\n",
+        "+----------------+\n| +----------+   |\n| | - a      |   |\n| |          |   |\n| | b        |   |\n| "
+        "+----------+   |\n+----------------+\n",
+        "------------------\nLeft     Right\n-------- ---------\n- a      x\n"
+        "  - b    y\n\nc        z\n------------------\n",
+        /* A multiline cell's blank segment, on a line the next cell holds text on. */
+        "------------------\nLeft     Right\n-------- ---------\n- a      x\n         y\nc        z\n\n"
+        "d        w\n------------------\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const char *source = sources[i];
+        const int shown = (int)strcspn(source, "\n");
+        markdown_core_node *doc = parse(source);
+        /* The document, and the definitions it holds apart from its children. */
+        cell_test_roots roots = {{doc}, 1};
+        markdown_core_visit_block_subtrees(doc, collect_cell_test_root, &roots);
+        const markdown_core_node *cells[32];
+        size_t cell_count = 0, checked = 0;
+        for (size_t r = 0; r < roots.count; r++) {
+            markdown_core_iter *iter = markdown_core_iter_new(roots.roots[r]);
+            markdown_core_event_type event;
+            while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+                markdown_core_node *node = markdown_core_iter_get_node(iter);
+                if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_TABLE_CELL &&
+                    cell_count < sizeof(cells) / sizeof(cells[0])) {
+                    cells[cell_count++] = node;
+                }
+            }
+            markdown_core_iter_free(iter);
+        }
+        for (size_t r = 0; r < roots.count; r++) {
+            markdown_core_iter *iter = markdown_core_iter_new(roots.roots[r]);
+            markdown_core_event_type event;
+            while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+                markdown_core_node *node = markdown_core_iter_get_node(iter);
+                if (event != MARKDOWN_CORE_EVENT_ENTER || node->start_line <= 0) {
+                    continue;
+                }
+                OK(runner, node->start_column >= 1, "a node from %d:%d in %.*s starts on a byte", node->start_line,
+                   node->start_column, shown, source);
+                const markdown_core_node *cell = NULL;
+                for (size_t c = 0; c < cell_count; c++) {
+                    if (!node_holds(node, cells[c]) &&
+                        cell_holds_place(cells[c], node->start_line, node->start_column) &&
+                        (!cell || cell_holds_place(cell, cells[c]->start_line, cells[c]->start_column))) {
+                        cell = cells[c];
+                    }
+                }
+                if (!cell) {
+                    continue;
+                }
+                checked++;
+                OK(runner,
+                   node->end_column == 0 ? node->end_line > cell->start_line && node->end_line <= cell->end_line &&
+                                               cell_segment_is_blank(source, cell, node->end_line)
+                                         : cell_holds_place(cell, node->end_line, node->end_column),
+                   "a node from %d:%d in %.*s ends in its cell %d:%d..%d:%d, not at %d:%d", node->start_line,
+                   node->start_column, shown, source, cell->start_line, cell->start_column, cell->end_line,
+                   cell->end_column, node->end_line, node->end_column);
+            }
+            markdown_core_iter_free(iter);
+        }
+        OK(runner, checked > 0, "%.*s puts nodes in a cell", shown, source);
+        markdown_core_node_free(doc);
+    }
+}
+
+/* `base` with `first` before its first line, `rest` before each later
+ * nonblank line and `blank` on each blank one. */
+static void prefix_lines(markdown_core_strbuf *out, const char *base, const char *first, const char *rest,
+                         const char *blank) {
+    for (const char *line = base; *line;) {
+        size_t length = strcspn(line, "\n");
+        markdown_core_strbuf_puts(out, length ? (line == base ? first : rest) : blank);
+        markdown_core_strbuf_put(out, (const unsigned char *)line, (bufsize_t)length);
+        markdown_core_strbuf_putc(out, '\n');
+        line += length + (line[length] == '\n');
+    }
+}
+
+/* One scope column of `moved`, where `base` has `column` and every line of
+ * the table gained `shift` leading bytes. Column 0 is the line-ending
+ * sentinel and names no byte, so it does not move. */
+static int shifted_column(int column, int shift) { return column ? column + shift : 0; }
+
+static bool same_columns(const markdown_core_table *a, const markdown_core_table *b) {
+    if (a->column_count != b->column_count || a->head_count != b->head_count || a->content_count != b->content_count ||
+        a->foot_count != b->foot_count) {
+        return false;
+    }
+    for (size_t i = 0; i < a->column_count; i++) {
+        if (a->columns[i].flow != b->columns[i].flow ||
+            a->columns[i].relative.has_value != b->columns[i].relative.has_value ||
+            (a->columns[i].relative.has_value && a->columns[i].relative.value != b->columns[i].relative.value)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Walk two table trees in lockstep, captions included: the same kinds, text,
+ * spans and columns, and every scope moved by exactly `shift` bytes. Returns
+ * the number of nodes that differ. */
+static size_t shifted_table_differences(markdown_core_node *base, markdown_core_node *moved, int shift) {
+    markdown_core_iter *a = markdown_core_iter_new(base), *b = markdown_core_iter_new(moved);
+    markdown_core_event_type event;
+    size_t differences = 0;
+    while ((event = markdown_core_iter_next(a)) != MARKDOWN_CORE_EVENT_DONE) {
+        if (markdown_core_iter_next(b) != event) {
+            differences++;
+            break;
+        }
+        markdown_core_node *x = markdown_core_iter_get_node(a), *y = markdown_core_iter_get_node(b);
+        if (event != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        const char *lx = markdown_core_node_get_literal(x), *ly = markdown_core_node_get_literal(y);
+        bool same = x->kind == y->kind && x->start_line == y->start_line && x->end_line == y->end_line &&
+                    y->start_column == shifted_column(x->start_column, shift) &&
+                    y->end_column == shifted_column(x->end_column, shift) && (!lx || !ly ? lx == ly : !strcmp(lx, ly));
+        if (same && x->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
+            same = x->as.table_cell->rowspan == y->as.table_cell->rowspan &&
+                   x->as.table_cell->colspan == y->as.table_cell->colspan;
+        }
+        if (same && x->kind == MARKDOWN_CORE_NODE_TABLE) {
+            const markdown_core_table *tx = x->opaque, *ty = y->opaque;
+            same = same_columns(tx, ty) && !tx->caption == !ty->caption;
+            if (same && tx->caption) {
+                differences += shifted_table_differences(tx->caption, ty->caption, shift);
+            }
+        }
+        differences += !same;
+    }
+    differences += markdown_core_iter_next(b) != MARKDOWN_CORE_EVENT_DONE;
+    markdown_core_iter_free(a);
+    markdown_core_iter_free(b);
+    return differences;
+}
+
+static bool table_nodes_nest(markdown_core_node *table) {
+    markdown_core_iter *iter = markdown_core_iter_new(table);
+    markdown_core_event_type event;
+    bool nested = true;
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event == MARKDOWN_CORE_EVENT_ENTER && node->parent) {
+            nested &= scope_within(node, node->parent);
+        }
+    }
+    markdown_core_iter_free(iter);
+    return nested;
+}
+
+/* A TABLE READS THE SAME WHEREVER ITS INDENTATION CAME FROM, BUT FOR WHERE ITS
+ * TABS STOP. Up to three columns of block indentation never change a block's
+ * meaning, and a container's prefix is not part of the block it holds. So
+ * under every prefix below -- spaces, a list item, a quote, a quote whose tab
+ * the prefix consumes in part -- each table must parse to the tree it has
+ * unprefixed: the same column flows and widths, cells, spans and text, and
+ * every scope in it moved by exactly the prefix's bytes, inside its container.
+ * Before the margin model, alignment probed the first column at the
+ * container's content, so indentation right- or center-aligned it; the table
+ * and its rows began at the container's content, in the indentation or on a
+ * tab the prefix shared; and tab stops counted from the container, not the
+ * line. A table with a tab in its geometry keeps its tree only under a prefix
+ * four columns wide, because a tab reaches the physical line's next stop. Each
+ * table's first line sits at its margin: a prefix indents every line, and a
+ * first line pushed to four columns is indented code, not a table. */
+static void table_geometry_ignores_indentation(test_batch_runner *runner) {
+    static const struct {
+        const char *source;
+        bool tab;
+    } tables[] = {
+        {"Name  Count\n----  -----\nab    4\n      5\n", false},
+        {"-------   ------   ----------\n     12   12          12\n     34   34          34\n-------   ------   "
+         "----------\n",
+         false},
+        {"---- ----\na    b\n     c\n---- ----\n", false},
+        {"------------\nLeft  Right\n----- ------\na     b\n\n      d\nc\n------------\n", false},
+        {"----- ------\n a     b\n\nc     d\n------------\n", false},
+        {"+---+---+\n| a | b |\n+===+===+\n| c     |\n+---+---+\n", false},
+        {"| a | b |\n| :- | -: |\n| c |\n", false},
+        {"Table: cap\n\nName  Count\n----  -----\nab    4\n", false},
+        {"Name  Count\n----  -----\nab    4\n\nTable: cap\n", false},
+        {"+----------------+\n| Name  Count    |\n| ----  -----    |\n|  ab    4       |\n+----------------+\n", false},
+        {"Name\tCount\n----    -----\nab\t4\n", true},
+    };
+    static const struct {
+        const char *first, *rest, *blank;
+        int columns;
+    } prefixes[] = {
+        {" ", " ", "", 1},        {"  ", "  ", "", 2},       {"   ", "   ", "", 3},
+        {"* ", "  ", "", 2},      {"1. ", "   ", "", 3},     {"> ", "> ", ">", 2},
+        {">\t", ">\t", ">", 4},   {" >\t", " >\t", " >", 4}, {"   > ", "   > ", "   >", 5},
+        {"*   ", "    ", "", 4},  {"> * ", ">   ", ">", 4},  {">  ", ">  ", ">", 3},
+        {">\t ", ">\t ", ">", 5}, {"1.  ", "    ", "", 4},
+    };
+    for (size_t t = 0; t < sizeof(tables) / sizeof(tables[0]); t++) {
+        const char *source = tables[t].source;
+        const int shown = (int)strcspn(source, "\n");
+        markdown_core_node *base_doc = parse(source);
+        markdown_core_node *base = first_of_kind(base_doc, MARKDOWN_CORE_NODE_TABLE);
+        OK(runner, base != NULL, "%.*s is a table", shown, source);
+        for (size_t p = 0; base && p < sizeof(prefixes) / sizeof(prefixes[0]); p++) {
+            if (tables[t].tab && prefixes[p].columns % 4) {
+                continue;
+            }
+            markdown_core_strbuf moved_source = MARKDOWN_CORE_BUF_INIT();
+            prefix_lines(&moved_source, source, prefixes[p].first, prefixes[p].rest, prefixes[p].blank);
+            markdown_core_node *moved_doc = parse((const char *)moved_source.ptr);
+            markdown_core_node *moved = first_of_kind(moved_doc, MARKDOWN_CORE_NODE_TABLE);
+            OK(runner, moved && !shifted_table_differences(base, moved, (int)strlen(prefixes[p].first)),
+               "%.*s under %s reads as it does unprefixed, every scope moved by the prefix", shown, source,
+               prefixes[p].first);
+            OK(runner, moved && table_nodes_nest(moved) && scope_within(moved, moved->parent),
+               "%.*s under %s nests in its container", shown, source, prefixes[p].first);
+            markdown_core_node_free(moved_doc);
+            markdown_core_strbuf_free(&moved_source);
+        }
+        markdown_core_node_free(base_doc);
+    }
+}
+
+/* WHERE INDENTATION IS NOT SHARED, IT IS GEOMETRY. A header indented past the
+ * separator has leading space in its columns (right-aligned, as Pandoc
+ * reads it), so the table and that row begin at the margin the lines share,
+ * on the space. Text written left of the first dash run is the first
+ * column's and moves the margin to it. A tab a quote prefix consumes in part
+ * contributes only the columns left to its stop, so it lines up with spaces.
+ * A grid line must begin with its wall: text before it is no grid line. */
+static void table_margin_is_shared_indentation(test_batch_runner *runner) {
+    static const struct {
+        const char *source;
+        markdown_core_flow flows[2];
+        int table[2], row[2], cell[4];
+    } cases[] = {
+        {" Name  Count\n----  -----\nab    4\n",
+         {MARKDOWN_CORE_FLOW_RIGHT, MARKDOWN_CORE_FLOW_RIGHT},
+         {1, 1},
+         {1, 1},
+         {1, 2, 1, 5}},
+        {"Name  Count\n ---  -----\n ab    4\n",
+         {MARKDOWN_CORE_FLOW_NONE, MARKDOWN_CORE_FLOW_NONE},
+         {1, 1},
+         {1, 1},
+         {1, 1, 1, 4}},
+        {">\tName  Count\n>   ----  -----\n>   ab    4\n",
+         {MARKDOWN_CORE_FLOW_NONE, MARKDOWN_CORE_FLOW_NONE},
+         {1, 3},
+         {1, 3},
+         {1, 3, 1, 6}},
+        {"- Name\tCount\n  ----  -----\n  ab    4\n",
+         {MARKDOWN_CORE_FLOW_NONE, MARKDOWN_CORE_FLOW_NONE},
+         {1, 3},
+         {1, 3},
+         {1, 3, 1, 6}},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *source = cases[i].source;
+        const int shown = (int)strcspn(source, "\n");
+        markdown_core_node *doc = parse(source), *table = first_of_kind(doc, MARKDOWN_CORE_NODE_TABLE);
+        OK(runner, table != NULL, "%.*s is a table", shown, source);
+        if (table) {
+            const markdown_core_table *value = table->opaque;
+            markdown_core_node *row = table->first_child, *cell = row ? row->first_child : NULL;
+            OK(runner, value->columns[0].flow == cases[i].flows[0] && value->columns[1].flow == cases[i].flows[1],
+               "%.*s aligns against its dash runs", shown, source);
+            OK(runner, table->start_line == cases[i].table[0] && table->start_column == cases[i].table[1],
+               "%.*s starts at its margin", shown, source);
+            OK(runner, row && row->start_line == cases[i].row[0] && row->start_column == cases[i].row[1],
+               "%.*s's first row starts at the margin", shown, source);
+            OK(runner,
+               cell && cell->start_line == cases[i].cell[0] && cell->start_column == cases[i].cell[1] &&
+                   cell->end_line == cases[i].cell[2] && cell->end_column == cases[i].cell[3],
+               "%.*s's first cell covers its text", shown, source);
+            OK(runner, table_nodes_nest(table), "%.*s nests", shown, source);
+        }
+        markdown_core_node_free(doc);
+    }
+    for (int indent = 0; indent < 3; indent++) {
+        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+        for (int line = 0; line < 3; line++) {
+            for (int column = 0; column < indent; column++) {
+                markdown_core_strbuf_putc(&source, ' ');
+            }
+            markdown_core_strbuf_puts(&source, line == 1 ? "x | a |\n" : "  +---+\n");
+        }
+        markdown_core_node *doc = parse((const char *)source.ptr);
+        OK(runner, first_of_kind(doc, MARKDOWN_CORE_NODE_TABLE) == NULL,
+           "a line with text left of the wall is no grid line (indent %d)", indent);
+        markdown_core_node_free(doc);
+        markdown_core_strbuf_free(&source);
+    }
+}
+
 /* EVERY NODE THE FINISH STAGE WAS HANDED, counted by the test's own walk:
  * the root's children through the public iterator, each node's owned field
  * roots through the inline-subtree visitor, and the document's definition
@@ -10088,6 +10718,12 @@ int main(void) {
     accessors(runner);
     formula_element_accessors(runner);
     directive_element_accessors(runner);
+    directive_scopes_are_editor_positions(runner);
+    paragraphs_start_on_their_first_byte(runner);
+    lazy_lines_parse_as_prefixed(runner);
+    cell_blocks_end_in_their_cell(runner);
+    table_geometry_ignores_indentation(runner);
+    table_margin_is_shared_indentation(runner);
     node_check(runner);
     iterator(runner);
     iterator_delete(runner);

@@ -65,8 +65,11 @@ Lines normally begin at 1 and increment once for LF, CR, or CRLF. Columns
 follow the native byte-oriented convention; a tab occupies one source byte.
 The native sentinel values are preserved too: a zero-byte document has scope
 `1:1..0:0`, whereas a document containing only one newline has `1:1..1:0`.
-An end at `L:0` can also be produced when a block closes on a following blank
-line. The coordinates are reported without validation or repair.
+An end at `L:0` can also be produced when a block closes on a following empty
+line, in a grid or multiline table's cell as at the top level; a cell's line is
+empty when its part of the physical line is blank, and there the sentinel is
+the end of the cell's part of line `L-1`. The coordinates are reported without
+validation or repair.
 
 SoftBreak and LineBreak locate the authored break using this same convention;
 their scopes do not promise retrievable string slices. A multiline table cell
@@ -132,20 +135,27 @@ separator semicolon nor a closing bracket. A parenthesized specimen `Cite`
 includes parentheses, while its item covers `@label`.
 
 A table includes its claimed caption, whose scope includes the caption marker.
-A pipe row covers its physical line; cells cover the segments between pipes,
-and synthesized empty cells use the row's end. A simple row covers its line,
-and a simple cell covers its trimmed segment. An empty segment uses its start
-byte, or the line's last byte if the segment starts beyond the line.
+A simple, multiline, or grid table and each of its rows begin at the table's
+margin on their first line: the indentation all of its lines share, measured
+after container prefixes, so a table scope starts after the block indentation
+its lines share and its container's prefix. When the margin falls inside a tab,
+whether a container prefix consumed part of it or it is a line's own
+indentation, that tab is the byte there. A pipe row covers its physical line
+from its first non-space byte; cells cover the segments between pipes, and
+synthesized empty cells use the row's end. A simple row covers its line from
+the margin, and a simple cell covers its trimmed segment. An empty segment uses
+its start byte, or the line's last byte if the segment starts beyond the line;
+the first column's segment starts at the margin.
 
-Multiline rows cover their physical lines. Grid rows cover the lines following
-their opening boundary through the line before the next row begins, excluding
-the final table border. A row without physical content lines uses its closing
-boundary. Multiline/grid cells span their first through last line segments,
-clipped to each line's end; a cell without physical content lines uses the
-corresponding closing-boundary segment. Joined-segment soft breaks cover the
-original line ending and may therefore include other columns' bytes in the
-contiguous range. A row-spanning grid cell can end below its owning row, as
-the containment exception above permits.
+Multiline rows cover their lines from the margin. Grid rows cover the lines
+following their opening boundary through the line before the next row begins,
+excluding the final table border. A row without physical content lines uses its
+closing boundary. Multiline/grid cells span their first through last line
+segments, clipped to each line's end; a cell without physical content lines
+uses the corresponding closing-boundary segment. Joined-segment soft breaks
+cover the original line ending and may therefore include other columns' bytes
+in the contiguous range. A row-spanning grid cell can end below its owning row,
+as the containment exception above permits.
 
 ## Shared value types
 

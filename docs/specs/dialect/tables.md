@@ -108,11 +108,13 @@ Pears       2
 ```
 
 This has an empty head group. Alignment is inferred from the first body line.
-For alignment, a right-trimmed segment with leading space but no room on the
-right is right-aligned; room on the right only means left; room on both means
-center; neither, or an empty segment, means none. Text before the first dash
-run belongs to the first column, and text after the last start belongs to the
-last column. Segments are trimmed before inline parsing.
+Each column's alignment compares that line's text with the column's own dash
+run, from the run's first dash to the next run's start: text with leading
+space but no room on the right is right-aligned; room on the right only means
+left; room on both means center; neither, or an empty segment, means none.
+Text before the first dash run belongs to the first column, and text after the
+last start belongs to the last column; neither changes the segment alignment
+reads. Segments are trimmed before inline parsing.
 
 ## Multiline tables
 
@@ -223,7 +225,8 @@ Alignment comes from colons on the head separator, or the top border when
 there is no head; colons elsewhere do not set it.
 
 A candidate includes consecutive nonblank lines beginning with `+` or `|` at
-its margin. A wrong-width marker-led line invalidates it. Separate following
+its margin. A line with text before that marker is not one of them. A
+wrong-width marker-led line invalidates it. Separate following
 prose beginning with either marker by a blank line so it cannot be mistaken
 for another table line. Failure resumes ordinary block parsing at the first
 line, without keeping a partial table or discarding trailing prose.
@@ -231,10 +234,25 @@ line, without keeping a partial table or discarding trailing prose.
 ## Column widths and source positions
 
 Columns count Unicode scalars after four-column tab expansion, not display
-width. For multiline tables, each width runs from a dash run's start to the
+width. They are counted from the start of the container's content, after any
+list, quote, or other container prefix, but tabs still stop at every fourth
+column of the physical line, as they do for block indentation. A tab that a
+container prefix consumes in part contributes only its remaining columns.
+For multiline tables, each width runs from a dash run's start to the
 next start, with the last run using its own length. For grids, it is the count
 strictly between borders. A relative width is that count divided by their sum,
 using double precision. Pipe and simple tables have no authored relative widths.
+
+A simple, multiline, or grid table has a margin: the indentation that all of
+its lines share. Indentation and container prefixes therefore change neither a
+table's alignment nor its cells, except through a tab after them: it still
+reaches the physical line's next four-column stop, so indentation or a prefix
+whose width is not a multiple of four moves the columns after such a tab, as in
+Pandoc. The table and each of its rows begin at the margin on their first line.
+A line indented further keeps its extra columns as part of the table, so a row
+with an empty first cell still begins at the margin. A grid table's margin is
+its left border. A pipe row has no shared geometry and begins at its own first
+non-space character.
 
 A table's scope includes its caption. Cells retain original document coordinates
 even when their text is assembled from several line segments. A cell spanning

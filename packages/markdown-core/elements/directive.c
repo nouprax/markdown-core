@@ -252,11 +252,6 @@ static markdown_core_node *make_label_node(const markdown_core_element *element,
     label_node->start_line = label_node->end_line = start_line;
     label_node->start_column = start_column;
     label_node->end_column = end_column;
-    /* The scope starts ON the `[` and the content starts after it. This is
-     * what `internal_offset` is for -- a heading's `#` and a table cell's
-     * leading pipe use the same field -- and it is why making the scope
-     * bracket-inclusive did not move the label's own children. */
-    label_node->internal_offset = 1;
     return label_node;
 }
 
@@ -283,7 +278,7 @@ static int attach_label_node(const markdown_core_element *element, markdown_core
 
 static int apply_parsed_directive(const markdown_core_element *element, markdown_core_parser *parser,
                                   markdown_core_node *node, const unsigned char *data, parsed_directive *parsed,
-                                  int start_line, int start_column) {
+                                  int start_line) {
     node_directive *directive = get_directive(node);
 
     if (!directive) {
@@ -317,12 +312,26 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
          * only, which made `[]` a NEGATIVE range -- end one column before
          * start -- because there was no content to point at. A label always
          * has its two brackets, so the bracket-inclusive range is a place for
-         * every label there is, and `:red[]:` reads `1:5..1:6`. */
-        int label_start_column = start_column + (int)parsed->label_start;
-        int label_end_column = label_start_column + (int)parsed->label_len + 1;
-
+         * every label there is, and `:red[]:` reads `1:5..1:6`.
+         *
+         * A scope is where the user sees these bytes in the editor. `parsed`
+         * indexes the block parser's input line, which is the whole source
+         * line in the document but a cell's content in a grid or multiline
+         * table; the `[` is in its column label_start, and the `]` follows
+         * the label. Both are projected from that line to the source. The
+         * content is the bytes between them, and its map is that slice of
+         * the line's source map, as a callout title's is: in a cell a tab is
+         * several bytes of the input but one byte of the source. */
+        const int open_column = (int)parsed->label_start;
+        const int close_column = open_column + (int)parsed->label_len + 1;
         if (!attach_label_node(element, parser, node, data + parsed->label_start, parsed->label_len, start_line,
-                               label_start_column, label_end_column)) {
+                               markdown_core_parser_source_column(parser, start_line, open_column),
+                               markdown_core_parser_source_column(parser, start_line, close_column))) {
+            return 0;
+        }
+        if (!markdown_core_parser_append_source_marks(parser, directive->label, start_line, open_column + 1,
+                                                      (bufsize_t)parsed->label_len, 0)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return 0;
         }
     }
@@ -331,8 +340,7 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
 }
 
 static markdown_core_node *make_directive_node(const markdown_core_element *element, markdown_core_parser *parser,
-                                               const unsigned char *name, bufsize_t name_len, int start_line,
-                                               int start_column, int end_line, int end_column) {
+                                               const unsigned char *name, bufsize_t name_len) {
     markdown_core_node *node = markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_DIRECTIVE, element);
     node_directive *directive;
 
@@ -352,10 +360,6 @@ static markdown_core_node *make_directive_node(const markdown_core_element *elem
         markdown_core_parser_release_node(parser, node);
         return NULL;
     }
-    node->start_line = start_line;
-    node->end_line = end_line;
-    node->start_column = start_column;
-    node->end_column = end_column;
     return node;
 }
 
@@ -392,8 +396,6 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
     markdown_core_node *node;
     markdown_core_node *label_node = NULL;
     node_directive *directive;
-    int start_line = markdown_core_inline_state_get_line(inline_state);
-    int start_column = markdown_core_inline_state_get_column(inline_state);
 
     memset(&attributes, 0, sizeof(attributes));
 
@@ -438,8 +440,7 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
         return NULL;
     }
 
-    node = make_directive_node(element, parser, chunk->data + name_start, name_len, start_line, start_column,
-                               start_line, start_column);
+    node = make_directive_node(element, parser, chunk->data + name_start, name_len);
     if (!node) {
         markdown_core_attributes_free(&attributes);
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -448,22 +449,22 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
     directive = get_directive(node);
     node->attributes = attributes;
 
+    /* The directive, from its `:` to its last byte, and its label, from the
+     * `[` to the `]`, are placed like every inline scope: each endpoint is
+     * where the user sees that byte. A label may span a line ending, and the
+     * byte after the directive need not be the next byte in the editor: at a
+     * table cell's edge it is the cell's line ending, placed at the end of
+     * the row. */
+    markdown_core_inline_state_place(inline_state, node, (int)offset, (int)pos - 1);
+
     if (has_label) {
-        /* Consume to the `]` first and read the label's end back from the
-         * inline state, because a label may span a line ending and a column
-         * computed from the start plus a length states it in the wrong line's
-         * frame -- 0a.10's rule, and the reason D22 was a defect. */
-        int label_line = start_line;
-        int label_column = start_column + (int)(label_open - offset);
-        markdown_core_inline_state_set_offset(inline_state, (int)(label_start + label_len + 1));
-        label_node = make_label_node(element, parser, chunk->data + label_start, label_len, label_line, label_column,
-                                     markdown_core_inline_state_get_column(inline_state) - 1);
+        label_node = make_label_node(element, parser, chunk->data + label_start, label_len, 0, 0, 0);
         if (!label_node) {
             markdown_core_parser_release_node(parser, node);
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return NULL;
         }
-        label_node->end_line = markdown_core_inline_state_get_line(inline_state);
+        markdown_core_inline_state_place(inline_state, label_node, (int)label_open, (int)(label_start + label_len));
         if (directive->label) {
             markdown_core_parser_release_node(parser, label_node);
             markdown_core_parser_release_node(parser, node);
@@ -478,8 +479,6 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
     }
 
     markdown_core_inline_state_set_offset(inline_state, (int)pos);
-    node->end_line = markdown_core_inline_state_get_line(inline_state);
-    node->end_column = markdown_core_inline_state_get_column(inline_state) - 1;
 
     return node;
 }
@@ -595,8 +594,8 @@ static markdown_core_node *open_directive_block(const markdown_core_element *ele
 
     markdown_core_node_set_element(node, element);
     node->opaque = markdown_core_alloc(1, sizeof(node_directive));
-    if (!node->opaque || !apply_parsed_directive(element, parser, node, input, &parsed,
-                                                 markdown_core_parser_get_line_number(parser), (int)first_nonspace)) {
+    if (!node->opaque ||
+        !apply_parsed_directive(element, parser, node, input, &parsed, markdown_core_parser_get_line_number(parser))) {
         /* The suffix already validated; failure here is allocation loss. */
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_parser_release_node(parser, node);

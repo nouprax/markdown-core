@@ -120,7 +120,14 @@ struct markdown_core_element {
     void (*finish_inline)(markdown_core_inline_state *);
     void (*dispose_inline)(markdown_core_inline_state *);
     void (*complete_inline)(markdown_core_parser *, markdown_core_node *, int);
-    markdown_core_node *(*open_lazy)(markdown_core_parser *, markdown_core_node *);
+    /* A lazy line -- one that did not match every open container's prefix
+     * and opened no block -- is offered to the current block. `accepts_lazy`
+     * says whether it takes the line; `open_lazy` returns the block the line is
+     * added to, from its first non-space byte: the block itself when the line
+     * continues it, or a block it opens, which starts where a block the line
+     * opened would. NULL means the line was consumed or the parse failed, and
+     * leaves the parser's current block where the hook put it. */
+    markdown_core_node *(*open_lazy)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *);
     bool (*accepts_lazy)(markdown_core_parser *, markdown_core_node *);
     unsigned speculative_flags;
     markdown_core_content_mode content_mode;
