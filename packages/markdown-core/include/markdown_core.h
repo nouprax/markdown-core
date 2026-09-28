@@ -158,7 +158,7 @@ typedef enum markdown_core_error_code {
 } markdown_core_error_code;
 
 /* A node's kind. The value IS the wire kind every binding decodes, and it is
- * the `ordinal` of docs/specs/canonical-ast.json: a new kind takes the next
+ * the kind's `ordinal` in the canonical AST contract: a new kind takes the next
  * ordinal, since a kind inserted in the middle renumbers every kind after it.
  *
  * `MARKDOWN_CORE_KIND_COMMENT` is the one kind valid in both block and inline
