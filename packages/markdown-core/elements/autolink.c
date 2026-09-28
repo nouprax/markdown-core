@@ -13,11 +13,11 @@
 #define strncasecmp _strnicmp
 #else
 #include <strings.h>
+#endif
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
 enum { AUTOLINK_LINK };
 static const markdown_core_element *const AUTOLINK_PEERS[] = {[AUTOLINK_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, NULL};
-#endif
 
 static markdown_core_node *make_str_with_entities(markdown_core_inline_state *inline_state, int start_column,
                                                   int end_column, markdown_core_chunk *content) {
