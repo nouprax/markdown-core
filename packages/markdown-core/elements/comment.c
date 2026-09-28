@@ -43,8 +43,9 @@ static int is_fence_line(const unsigned char *data, int len, int first_nonspace)
     return markdown_core_is_blank_to_line_end(data, i + 2, len);
 }
 
-static int probe_comment_block(markdown_core_parser *parser, markdown_core_chunk *input, int first, int indent,
-                               markdown_core_block_reader *reader) {
+static int probe_comment_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                               markdown_core_chunk *input, int first, int indent, markdown_core_block_reader *reader) {
+    (void)self;
     if (indent >= 4 || !is_fence_line(input->data, input->len, first)) {
         return 0;
     }
@@ -62,8 +63,9 @@ static int read_block_line(void *context, markdown_core_chunk *input, int *first
     return markdown_core_parser_lookahead_next(context, input, first, indent, &blanks);
 }
 
-static markdown_core_node *open_block(const markdown_core_element *element, int indented, markdown_core_parser *parser,
-                                      markdown_core_node *parent_container, unsigned char *input, int len) {
+static markdown_core_node *open_block(const markdown_core_element_instance *self, int indented,
+                                      markdown_core_parser *parser, markdown_core_node *parent_container,
+                                      unsigned char *input, int len) {
     int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
     markdown_core_block_lookahead lookahead;
     markdown_core_node *node;
@@ -76,7 +78,7 @@ static markdown_core_node *open_block(const markdown_core_element *element, int 
     }
     markdown_core_chunk line = {input, len, 0};
     markdown_core_block_reader reader = {&lookahead, read_block_line};
-    bool closed = probe_comment_block(parser, &line, first_nonspace, parser->indent, &reader);
+    bool closed = probe_comment_block(self, parser, &line, first_nonspace, parser->indent, &reader);
     markdown_core_parser_lookahead_end(&lookahead);
     if (!closed || parser->error) {
         return NULL;
@@ -87,7 +89,7 @@ static markdown_core_node *open_block(const markdown_core_element *element, int 
     if (!node) {
         return NULL;
     }
-    markdown_core_node_set_element(node, element);
+    markdown_core_node_set_element(node, self->element);
     /* The fence line is the block's marker and no part of its literal. */
     markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser), false);
     return node;
@@ -96,7 +98,7 @@ static markdown_core_node *open_block(const markdown_core_element *element, int 
 /* Every line reaches the open block until its closer; the closer line closes
  * it and is not added. The lookahead saw this closer before the block opened,
  * through the same container matchers, so an open block always finds it. */
-static int block_matches(const markdown_core_element *element, markdown_core_parser *parser, unsigned char *input,
+static int block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *input,
                          int len, markdown_core_node *container) {
     if (markdown_core_parser_get_indent(parser) <= 3 &&
         is_fence_line(input, len, markdown_core_parser_get_first_nonspace(parser))) {
@@ -119,7 +121,7 @@ static int scan_closer(const unsigned char *data, int length, int at, markdown_c
     return 1;
 }
 
-static markdown_core_node *match(const markdown_core_element *element, markdown_core_parser *parser,
+static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_state *inline_state) {
     markdown_core_chunk *input = markdown_core_inline_state_get_chunk(inline_state);
@@ -130,7 +132,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     if (character != '%') {
         return NULL;
     }
-    parser->comment_scan_work++;
+    ((markdown_core_comment_work *)self->state)->scan++;
     if (start + 1 >= input->len || input->data[start + 1] != '%') {
         return NULL;
     }
@@ -139,7 +141,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     if (close < 0) {
         return NULL;
     }
-    node = markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_COMMENT, element);
+    node = markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_COMMENT, self->element);
     if (!node) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
@@ -158,9 +160,10 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
 }
 
 /* `%` ends a text run and is offered to the scanner, and that is the whole set. */
-static void finalize_comment(markdown_core_parser *, markdown_core_node *);
+static void finalize_comment(const markdown_core_element_instance *self, markdown_core_parser *, markdown_core_node *);
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
+    .state_size = sizeof(markdown_core_comment_work),
     .interrupts_paragraph = true,
 
     .finalize_block = finalize_comment,
@@ -244,7 +247,9 @@ markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state
     return markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_COMMENT, from, to, literal);
 }
 
-static void finalize_comment(markdown_core_parser *parser, markdown_core_node *b) {
+static void finalize_comment(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                             markdown_core_node *b) {
+    (void)self;
     markdown_core_strbuf *node_content = &b->content;
 
     /* O3: a `%%` block comment arrives here with its lines in `content`:

@@ -1,12 +1,12 @@
 #include "emphasis.h"
 #include "inline_internal.h"
-static markdown_core_node *match(const markdown_core_element *self, markdown_core_parser *parser,
+static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_state *inline_state) {
     if (character != '*' && character != '_') {
         return NULL;
     }
-    if (character != self->delimiter_character) {
+    if (character != self->element->delimiter_character) {
         return NULL;
     }
     return markdown_core_inline_match_delimiter(self, inline_state);

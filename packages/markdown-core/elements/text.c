@@ -2,12 +2,18 @@
 #include "embedded.h"
 #include "text.h"
 #include "inline_internal.h"
+
+/* The elements whose state this element reads, as `self->peers` holds them. */
+enum { TEXT_EMBEDDED };
+static const markdown_core_element *const TEXT_PEERS[] = {[TEXT_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED, NULL};
 #define advance(inline_state) ((inline_state)->pos += 1)
 
-static int any_element_dispatches(markdown_core_parser *parser, unsigned char c) {
+/* Whether an element other than this one owns `c`. */
+static int any_element_dispatches(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                  unsigned char c) {
     const markdown_core_dialect *dialect = parser->dialect;
     for (size_t i = dialect->inline_dispatch_offsets[c]; i < dialect->inline_dispatch_offsets[c + 1]; i++) {
-        if (dialect->inline_dispatch[i] != &MARKDOWN_CORE_ELEMENT_TEXT) {
+        if (dialect->inline_dispatch[i] != self) {
             return 1;
         }
     }
@@ -15,7 +21,9 @@ static int any_element_dispatches(markdown_core_parser *parser, unsigned char c)
     return 0;
 }
 
-static markdown_core_node *handle_backslash(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
+static markdown_core_node *handle_backslash(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                            markdown_core_inline_state *inline_state) {
+    markdown_core_text_work *counts = self->state;
     bufsize_t start = inline_state->pos;
     /* The line frame BEFORE anything is consumed. The hard-break arm below
      * needs it, and reading it after `markdown_core_inline_skip_line_end` would be right only
@@ -33,8 +41,8 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, markdo
         while (end < inline_state->input.len &&
                markdown_core_is_space_or_tab(markdown_core_inline_peek_at(inline_state, end))) {
             end++;
-            parser->whitespace_work++;
         }
+        counts->whitespace += (size_t)(end - inline_state->pos);
         if ((end == inline_state->input.len && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->kind)) ||
             (end < inline_state->input.len &&
              markdown_core_is_line_end(markdown_core_inline_peek_at(inline_state, end)))) {
@@ -51,7 +59,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, markdo
         return escaped;
     }
     if (markdown_core_ispunct(nextchar)) {
-        if (nextchar == '\\' && !any_element_dispatches(parser, '\\')) {
+        if (nextchar == '\\' && !any_element_dispatches(self, parser, '\\')) {
             bufsize_t end = start;
             while (end + 1 < inline_state->input.len && inline_state->input.data[end] == '\\' &&
                    inline_state->input.data[end + 1] == '\\') {
@@ -133,19 +141,20 @@ static markdown_core_node *handle_entity(markdown_core_inline_state *inline_stat
                     markdown_core_chunk_buf_detach(&ent));
 }
 
-static markdown_core_node *match(const markdown_core_element *self, markdown_core_parser *parser,
+static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_state *inline_state) {
     if (character == '\\') {
-        return handle_backslash(parser, inline_state);
+        return handle_backslash(self, parser, inline_state);
     }
     if (character == '&') {
         return handle_entity(inline_state);
     }
     return NULL;
 }
-markdown_core_node *markdown_core_text_parse(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                             bufsize_t endpos) {
+markdown_core_node *markdown_core_text_parse(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                             markdown_core_inline_state *inline_state, bufsize_t endpos) {
+    markdown_core_text_work *counts = self->state;
     markdown_core_chunk contents;
     bufsize_t startpos;
     /* Disjoint ordinary text slices alone contribute whitespace barriers.
@@ -159,21 +168,23 @@ markdown_core_node *markdown_core_text_parse(markdown_core_parser *parser, markd
      * [pos, endpos). Whitespace is a space, a tab or a line ending, all of
      * them ASCII, so the walk back from `endpos` tests bytes and decodes
      * nothing: no byte of a multi-byte character is whitespace. */
-    bufsize_t boundary = -1;
-    for (bufsize_t i = endpos; i > inline_state->pos; i--) {
-        parser->whitespace_work++;
-        if (markdown_core_is_whitespace(inline_state->input.data[i - 1])) {
-            boundary = i;
+    bufsize_t boundary = -1, walked = endpos;
+    while (walked > inline_state->pos) {
+        if (markdown_core_is_whitespace(inline_state->input.data[--walked])) {
+            boundary = walked + 1;
             break;
         }
     }
+    counts->whitespace += (size_t)(endpos - walked);
     if (boundary >= 0) {
         markdown_core_inline_push_boundary(inline_state, boundary);
     }
     /* Text runs are disjoint, so recording separators costs at most one
      * extra visit per byte, regardless of bracket nesting or digit-run
      * length. No image closer scans its label again. */
-    markdown_core_embedded_record_text(parser, inline_state, endpos);
+    if (self->peers[TEXT_EMBEDDED]) {
+        markdown_core_embedded_record_text(self->peers[TEXT_EMBEDDED], inline_state, endpos);
+    }
     contents = markdown_core_chunk_dup(&inline_state->input, inline_state->pos, endpos - inline_state->pos);
     startpos = inline_state->pos;
     inline_state->pos = endpos;
@@ -191,7 +202,9 @@ markdown_core_node *markdown_core_text_parse(markdown_core_parser *parser, markd
      * is what L5 measures. */
     return new_inl;
 }
-static void complete_inline(markdown_core_parser *parser, markdown_core_node *node, int word_depth) {
+static void complete_inline(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                            markdown_core_node *node, int word_depth) {
+    (void)self;
     if (node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) {
         if (word_depth > 0) {
             markdown_core_chunk_free(node->as.literal);
@@ -202,7 +215,9 @@ static void complete_inline(markdown_core_parser *parser, markdown_core_node *no
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TEXT = {
+    .peers = TEXT_PEERS,
     .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
+    .state_size = sizeof(markdown_core_text_work),
     .parse_text = markdown_core_text_parse,
     .complete_inline = complete_inline,
 

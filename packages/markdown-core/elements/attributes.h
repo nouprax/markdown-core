@@ -8,4 +8,5 @@ void markdown_core_inline_attach_inline_attributes(markdown_core_inline_state *i
 bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, markdown_core_node *node,
                                                const unsigned char *source, bufsize_t length);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_ATTRIBUTES;
+
 #endif

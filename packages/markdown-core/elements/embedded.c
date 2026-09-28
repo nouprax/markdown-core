@@ -2,6 +2,10 @@
 #include "embedded.h"
 #include "inline_internal.h"
 #include "block_internal.h"
+
+/* The elements whose state this element reads, as `self->peers` holds them. */
+enum { EMBEDDED_LINK };
+static const markdown_core_element *const EMBEDDED_PEERS[] = {[EMBEDDED_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, NULL};
 static bool dimension_component(const unsigned char *s, bufsize_t *pos, bufsize_t end, int32_t *value, size_t *work) {
     if (*pos == end || s[*pos] < '1' || s[*pos] > '9') {
         return false;
@@ -43,7 +47,8 @@ bool markdown_core_parse_dimensions(markdown_core_chunk label, bufsize_t suffix,
     return true;
 }
 
-void markdown_core_inline_apply_image_dimensions(markdown_core_inline_state *inline_state, const bracket *opener,
+void markdown_core_inline_apply_image_dimensions(const markdown_core_element_instance *self,
+                                                 markdown_core_inline_state *inline_state, const bracket *opener,
                                                  markdown_core_node *image, bufsize_t end) {
     /* Earlier inline allocation failure may have omitted the final text run.
      * The transaction is already failed; do not consume its incomplete tree. */
@@ -54,7 +59,7 @@ void markdown_core_inline_apply_image_dimensions(markdown_core_inline_state *inl
     markdown_core_dimensions dimensions;
     markdown_core_chunk label = markdown_core_chunk_dup(&inline_state->input, opener->position, end - opener->position);
     if (!markdown_core_parse_dimensions(label, suffix - opener->position, opener->image_pipe >= 0 ? 1 : 0, &dimensions,
-                                        &inline_state->owner_parser->dimension_work)) {
+                                        &((markdown_core_embedded_work *)self->state)->dimensions)) {
         return;
     }
 
@@ -74,32 +79,36 @@ void markdown_core_inline_apply_image_dimensions(markdown_core_inline_state *inl
     image->as.link->dimensions.has_value = true;
 }
 
-void markdown_core_embedded_record_text(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                        bufsize_t endpos) {
-    if (inline_state->last_bracket && inline_state->last_bracket->kind == BRACKET_IMAGE) {
+void markdown_core_embedded_record_text(const markdown_core_element_instance *self,
+                                        markdown_core_inline_state *inline_state, bufsize_t endpos) {
+    const markdown_core_element_instance *link = self->peers[EMBEDDED_LINK];
+    bracket *image = link ? markdown_core_brackets(link, inline_state)->last : NULL;
+    if (image && image->kind == BRACKET_IMAGE) {
+        markdown_core_embedded_work *counts = self->state;
         for (bufsize_t i = inline_state->pos; i < endpos; i++) {
-            parser->dimension_work++;
+            counts->dimensions++;
             if (inline_state->input.data[i] == '|') {
-                inline_state->last_bracket->image_pipe = i;
+                image->image_pipe = i;
             }
         }
     }
 }
 
-static markdown_core_node *match(const markdown_core_element *self, markdown_core_parser *parser,
+static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_state *inline_state) {
     if (character != '!') {
         return NULL;
     }
     inline_state->pos++;
-    if (markdown_core_inline_peek_char(inline_state) == '[' &&
+    /* An image opens a bracket, which only a dialect with links reads. */
+    if (self->peers[EMBEDDED_LINK] && markdown_core_inline_peek_char(inline_state) == '[' &&
         markdown_core_inline_peek_char_n(inline_state, 1) != '^') {
         inline_state->pos++;
         markdown_core_node *text = make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
                                             markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 2, 2));
         if (text) {
-            markdown_core_inline_push_bracket(inline_state, BRACKET_IMAGE, text);
+            markdown_core_inline_push_bracket(self->peers[EMBEDDED_LINK], inline_state, BRACKET_IMAGE, text);
         }
         return text;
     }
@@ -108,7 +117,9 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_EMBEDDED = {
+    .peers = EMBEDDED_PEERS,
     .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
+    .state_size = sizeof(markdown_core_embedded_work),
 
     .name = "embedded",
     .match_inline = match,

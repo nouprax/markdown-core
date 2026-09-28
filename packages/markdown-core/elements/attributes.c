@@ -330,8 +330,13 @@ void markdown_core_attributes_free(markdown_core_attributes *v) {
 
 /* The memo exists only once recognition ran (see the recogniser above): a
  * parser that never asked owns nothing and releases nothing. The scratch is
- * borrowed and released by its owner. */
+ * borrowed and released by its owner, and totals the work of every
+ * recogniser released into it. */
 void markdown_core_attribute_parser_free(markdown_core_attribute_parser *p) {
+    if (p->scratch) {
+        p->scratch->work += p->work;
+    }
+    p->work = 0;
     if (p->ends) {
         markdown_core_free(p->ends);
         p->ends = NULL;
@@ -664,9 +669,13 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
 
 #include "inline_internal.h"
 #include "block_internal.h"
+
 int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_state, bufsize_t start,
                                           markdown_core_attributes *value, bufsize_t *end) {
-    if (start == inline_state->heading_attributes_start) {
+    /* The run owner's tail is its own: a heading's trailing attributes are
+     * claimed there, so no inline construct takes an attribute block that
+     * begins in it. */
+    if (inline_state->text_end >= 0 && start >= inline_state->text_end) {
         return 0;
     }
     if (!inline_state->attributes.data) {
@@ -708,14 +717,13 @@ bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, mar
     if (attributes.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
-    parser->attribute_work += attributes.work;
     markdown_core_attribute_parser_free(&attributes);
     return info_end;
 }
 
-static void dispose_inline(markdown_core_inline_state *inline_state) {
+static void dispose_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
+    (void)self;
     if (inline_state->attributes.data) {
-        inline_state->owner_parser->attribute_work += inline_state->attributes.work;
         markdown_core_attribute_parser_free(&inline_state->attributes);
     }
 }

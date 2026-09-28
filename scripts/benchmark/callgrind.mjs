@@ -241,6 +241,26 @@ export function nodesEnteredFrom(profile, callee, caller) {
     return [...names];
 }
 
+/**
+ * The one function that calls every one of `callees`, or null unless exactly
+ * one does. A stage is the work its boundary does inside the transaction that
+ * runs all of the stages, so the transaction is found from the boundaries
+ * rather than named: a rename of the entry cannot make a baseline revision
+ * unmeasurable, and a boundary reached from elsewhere too (a nested parse)
+ * still counts only the transaction's own calls.
+ */
+export function commonCaller(profile, callees) {
+    let common = null;
+    for (const callee of callees) {
+        const callers = new Set();
+        for (const edge of profile.edges.values()) {
+            if (baseName(edge.callee) === callee) callers.add(baseName(edge.caller));
+        }
+        common = common ? new Set([...common].filter((caller) => callers.has(caller))) : callers;
+    }
+    return common && common.size === 1 ? [...common][0] : null;
+}
+
 /** Every recorded call into `callee`, whatever the caller. */
 export function callersOf(profile, callee) {
     return [...profile.edges.values()].filter((edge) => edge.callee === callee);

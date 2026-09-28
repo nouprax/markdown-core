@@ -15,12 +15,25 @@ typedef struct {
     markdown_core_node *caption;
 } markdown_core_table;
 
-/* Recognize a complete source candidate before claiming any of its lines. */
-markdown_core_node *markdown_core_table_try_open(markdown_core_parser *parser, markdown_core_node *parent,
-                                                 unsigned char *input, int length);
+/* THE TABLE GRAMMAR'S WORK in one parse, for its complexity gates: scalar and
+ * byte probe ranges plus union-find and ordering visits (`scan`, each span
+ * charged once, short-circuited ranges possibly overcounted); the widest
+ * search frontier; the bytes submitted to the horizontal-border grammar,
+ * cached facts charging zero; and the growths, geometry lines and separator
+ * scans of the workspace the table element keeps. */
+typedef struct {
+    size_t scan, frontier_peak, horizontal;
+    size_t workspace_growth, geometry_lines, separator_scans, scratch_growth;
+} markdown_core_table_work;
 
-/* Consumes the active lookahead transaction at its current caption line. */
-bool markdown_core_table_caption_probe(markdown_core_block_lookahead *lookahead, markdown_core_chunk *input, int first,
+/* The work counted in the parse record of `table`, the table element's
+ * instance; the record itself is the table's own. */
+const markdown_core_table_work *markdown_core_table_work_in(const markdown_core_element_instance *table);
+
+/* Consumes the active lookahead transaction at its current caption line,
+ * with `table` the table element's instance. */
+bool markdown_core_table_caption_probe(const markdown_core_element_instance *table,
+                                       markdown_core_block_lookahead *lookahead, markdown_core_chunk *input, int first,
                                        int indent);
 
 /* C LINKAGE, AND WINDOWS IS THE ONLY PLACE THIS SHOWS. The Itanium ABI does not

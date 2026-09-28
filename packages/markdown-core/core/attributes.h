@@ -57,6 +57,10 @@ typedef struct markdown_core_attribute_scratch {
         bufsize_t value, value_length;
     } *members;
     size_t member_count, member_capacity;
+    /* The bytes every recogniser that borrowed this workspace examined, each
+     * added once as that recogniser is released, for the attribute grammar's
+     * complexity gate. */
+    size_t work;
 } markdown_core_attribute_scratch;
 
 /* A recogniser belongs to one immutable input extent. It walks forward from

@@ -11,6 +11,13 @@
 #include "inline_internal.h"
 #include "block_internal.h"
 
+/* The elements whose state this element reads, as `self->peers` holds them. */
+enum { LINK_EMBEDDED, LINK_FOOTNOTE, LINK_CITATION };
+static const markdown_core_element *const LINK_PEERS[] = {[LINK_EMBEDDED] = &MARKDOWN_CORE_ELEMENT_EMBEDDED,
+                                                          [LINK_FOOTNOTE] = &MARKDOWN_CORE_ELEMENT_FOOTNOTE,
+                                                          [LINK_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION,
+                                                          NULL};
+
 static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *input, bufsize_t offset,
                                                            markdown_core_chunk *output);
 bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
@@ -34,7 +41,6 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     if (attributes.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
-    parser->attribute_work += attributes.work;
     markdown_core_attribute_parser_free(&attributes);
     // The definitions are dropped off the FRONT of the block's content, so what
     // is left starts further down the source than the block was told it did.
@@ -380,7 +386,8 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_parser *parser, mar
     return inline_state.pos;
 }
 
-markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_state *inline_state, bracket *opener,
+markdown_core_link_match markdown_core_link_recognize(const markdown_core_element_instance *link,
+                                                      markdown_core_inline_state *inline_state, bracket *opener,
                                                       markdown_core_link_candidate *candidate) {
     bufsize_t initial_pos = inline_state->pos, starturl, endurl, starttitle, endtitle, endall, n;
     markdown_core_chunk url_chunk, title_chunk, raw_label;
@@ -393,7 +400,7 @@ markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_state
     // Now we check to see if it's a link/image.
     bool is_image = opener->kind == BRACKET_IMAGE;
 
-    bool link_allowed = is_image || !inline_state->no_link_openers;
+    bool link_allowed = is_image || !markdown_core_brackets(link, inline_state)->no_link_openers;
 
     bufsize_t after_link_text_pos = inline_state->pos;
 
@@ -471,7 +478,8 @@ markdown_core_link_match markdown_core_link_recognize(markdown_core_inline_state
     return record ? (explicit_tail ? LINK_EXPLICIT : LINK_SHORTCUT) : LINK_UNMATCHED;
 }
 
-bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inline_state *inline_state, bracket *opener,
+bool markdown_core_link_commit(const markdown_core_element_instance *link, markdown_core_parser *parser,
+                               markdown_core_inline_state *inline_state, bracket *opener,
                                markdown_core_link_candidate *candidate, bufsize_t initial_pos) {
     bool is_image = opener->kind == BRACKET_IMAGE;
     bool explicit_tail = candidate->explicit_tail;
@@ -479,7 +487,7 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
     markdown_core_chunk url = candidate->url;
     markdown_core_optional_chunk title = candidate->title;
     markdown_core_node *inl;
-    markdown_core_inline_finish_citation_tokens(inline_state, &opener->citations);
+    markdown_core_inline_finish_citation_tokens(link->peers[LINK_CITATION], inline_state, &opener->citations);
     if (!markdown_core_node_can_contain_type(opener->inl_text->parent,
                                              is_image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK)) {
         markdown_core_chunk_free(&url);
@@ -543,23 +551,25 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
     // would count the label's own newlines a second time -- measured,
     // `[a\nb](/u) tail` then reports line 3 of a two-line document.
     markdown_core_node_attach_validated(opener->inl_text->parent, inl, opener->inl_text);
-    markdown_core_inline_take_bracket_content(parser, opener, inl);
+    markdown_core_inline_take_bracket_content(link, parser, opener, inl);
 
+    /* Only the embedded element opens an image bracket. */
     if (is_image) {
-        markdown_core_inline_apply_image_dimensions(inline_state, opener, inl, initial_pos - 1);
+        markdown_core_inline_apply_image_dimensions(link->peers[LINK_EMBEDDED], inline_state, opener, inl,
+                                                    initial_pos - 1);
     }
 
     // Free the bracket [:
     markdown_core_parser_release_node(parser, opener->inl_text);
 
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
-    markdown_core_inline_pop_bracket(inline_state);
+    markdown_core_inline_pop_bracket(link, inline_state);
 
     // Now, if we have a link, we also want to deactivate links until
     // we get a new opener. (This code can be removed if we decide to allow links
     // inside links.)
     if (!is_image) {
-        inline_state->no_link_openers = true;
+        markdown_core_brackets(link, inline_state)->no_link_openers = true;
     }
 
     return true;
@@ -568,30 +578,32 @@ bool markdown_core_link_commit(markdown_core_parser *parser, markdown_core_inlin
 /* Claim the parsed body of one balanced bracket pair. Span, links/images,
  * and document-owned inline notes share this transfer; their callers decide
  * where the resulting owner lives and when its delimiter boundary closes. */
-void markdown_core_inline_take_bracket_content(markdown_core_parser *parser, bracket *opener,
-                                               markdown_core_node *owner) {
+void markdown_core_inline_take_bracket_content(const markdown_core_element_instance *link, markdown_core_parser *parser,
+                                               bracket *opener, markdown_core_node *owner) {
+    markdown_core_bracket_work *counts = link->state;
     markdown_core_node *child = opener->inl_text->next;
     while (child != opener->close_text) {
         markdown_core_node *next = child->next;
         markdown_core_node_unlink(child);
         markdown_core_node_attach_validated(owner, child, NULL);
-        parser->bracket_work++;
+        counts->work++;
         child = next;
     }
 }
 
-void markdown_core_inline_pop_bracket(markdown_core_inline_state *inline_state) {
-    bracket *b;
-    if (inline_state->last_bracket == NULL) {
+void markdown_core_inline_pop_bracket(const markdown_core_element_instance *link,
+                                      markdown_core_inline_state *inline_state) {
+    markdown_core_bracket_scope *brackets = markdown_core_brackets(link, inline_state);
+    bracket *b = brackets->last;
+    if (b == NULL) {
         return;
     }
-    b = inline_state->last_bracket;
-    inline_state->last_bracket = inline_state->last_bracket->previous;
+    brackets->last = b->previous;
     if (b->close_text) {
         if (b->pending_previous) {
             b->pending_previous->pending_next = b->pending_next;
         } else {
-            inline_state->pending_brackets = b->pending_next;
+            brackets->pending = b->pending_next;
         }
         if (b->pending_next) {
             b->pending_next->pending_previous = b->pending_previous;
@@ -602,26 +614,30 @@ void markdown_core_inline_pop_bracket(markdown_core_inline_state *inline_state) 
     markdown_core_free(b);
 }
 
-void markdown_core_inline_push_bracket(markdown_core_inline_state *inline_state, bracket_kind kind,
+void markdown_core_inline_push_bracket(const markdown_core_element_instance *link,
+                                       markdown_core_inline_state *inline_state, bracket_kind kind,
                                        markdown_core_node *inl_text) {
     bracket *b = (bracket *)markdown_core_alloc(1, sizeof(bracket));
     if (!b) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return;
     }
-    if (inline_state->last_bracket != NULL) {
-        inline_state->last_bracket->bracket_after = true;
+    markdown_core_bracket_scope *brackets = markdown_core_brackets(link, inline_state);
+    if (brackets->last != NULL) {
+        brackets->last->bracket_after = true;
         if (kind != BRACKET_FOOTNOTE) {
-            b->in_bracket_image0 = inline_state->last_bracket->in_bracket_image0;
-            b->in_bracket_image1 = inline_state->last_bracket->in_bracket_image1;
+            b->in_bracket_image0 = brackets->last->in_bracket_image0;
+            b->in_bracket_image1 = brackets->last->in_bracket_image1;
         }
     }
     b->kind = kind;
-    markdown_core_citation_open_bracket(inline_state, b);
-    b->outer_no_link_openers = inline_state->no_link_openers;
+    if (link->peers[LINK_CITATION]) {
+        markdown_core_citation_open_bracket(link->peers[LINK_CITATION], inline_state, b);
+    }
+    b->outer_no_link_openers = brackets->no_link_openers;
     b->active = true;
     b->inl_text = inl_text;
-    b->previous = inline_state->last_bracket;
+    b->previous = brackets->last;
     b->position = inline_state->pos;
     b->image_pipe = -1;
     b->bracket_after = false;
@@ -630,9 +646,9 @@ void markdown_core_inline_push_bracket(markdown_core_inline_state *inline_state,
     } else if (kind == BRACKET_LINK) {
         b->in_bracket_image0 = true;
     }
-    inline_state->last_bracket = b;
+    brackets->last = b;
     if (kind != BRACKET_IMAGE) {
-        inline_state->no_link_openers = false;
+        brackets->no_link_openers = false;
     }
 }
 
@@ -648,32 +664,36 @@ void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inl
     }
 }
 
-markdown_core_node *markdown_core_inline_handle_close_bracket(markdown_core_parser *parser,
+markdown_core_node *markdown_core_inline_handle_close_bracket(const markdown_core_element_instance *link,
+                                                              markdown_core_parser *parser,
                                                               markdown_core_inline_state *inline_state) {
-    parser->bracket_work++;
+    const markdown_core_element_instance *citation = link->peers[LINK_CITATION];
+    const markdown_core_element_instance *footnote = link->peers[LINK_FOOTNOTE];
+    ((markdown_core_bracket_work *)link->state)->work++;
     advance(inline_state);
     bufsize_t initial_pos = inline_state->pos;
-    bracket *opener = inline_state->last_bracket;
+    bracket *opener = markdown_core_brackets(link, inline_state)->last;
     if (!opener) {
         return make_str(inline_state, initial_pos - 1, initial_pos - 1,
                         markdown_core_chunk_dup(&inline_state->input, initial_pos - 1, 1));
     }
+    /* Only the footnote element opens a footnote bracket. */
     if (opener->kind == BRACKET_FOOTNOTE) {
-        return markdown_core_inline_close_inline_footnote(parser, inline_state, opener);
+        return markdown_core_inline_close_inline_footnote(footnote, parser, inline_state, opener);
     }
 
     /* One bracket owns its parsed children. Alternatives only claim that
      * existing range, in syntax precedence order; none reparses its body. */
-    markdown_core_link_candidate link = {0};
-    markdown_core_link_match match = markdown_core_link_recognize(inline_state, opener, &link);
+    markdown_core_link_candidate candidate = {0};
+    markdown_core_link_match match = markdown_core_link_recognize(link, inline_state, opener, &candidate);
     if (match == LINK_EXPLICIT) {
-        if (markdown_core_link_commit(parser, inline_state, opener, &link, initial_pos)) {
+        if (markdown_core_link_commit(link, parser, inline_state, opener, &candidate, initial_pos)) {
             return NULL;
         }
         goto no_match;
     }
     inline_state->pos = initial_pos;
-    markdown_core_bracket_match span = markdown_core_span_close(parser, inline_state, opener);
+    markdown_core_bracket_match span = markdown_core_span_close(link, citation, parser, inline_state, opener);
     if (span == BRACKET_MATCHED) {
         return NULL;
     }
@@ -681,63 +701,69 @@ markdown_core_node *markdown_core_inline_handle_close_bracket(markdown_core_pars
         goto no_match;
     }
     markdown_core_node *close = NULL;
-    if (markdown_core_citation_defer_tail(inline_state, opener, &close)) {
+    if (citation && markdown_core_citation_defer_tail(citation, inline_state, opener, &close)) {
         return close;
     }
-    if (markdown_core_inline_close_bibliography(parser, inline_state, opener)) {
+    if (citation && markdown_core_inline_close_bibliography(citation, parser, inline_state, opener)) {
         return NULL;
     }
     if (match == LINK_SHORTCUT) {
-        if (markdown_core_link_commit(parser, inline_state, opener, &link, initial_pos)) {
+        if (markdown_core_link_commit(link, parser, inline_state, opener, &candidate, initial_pos)) {
             return NULL;
         }
         goto no_match;
     }
-    if (markdown_core_footnote_close_reference(parser, inline_state, opener)) {
+    if (footnote && markdown_core_footnote_close_reference(footnote, parser, inline_state, opener)) {
         return NULL;
     }
 
 no_match:
-    markdown_core_inline_finish_citation_tokens(inline_state, &opener->citations);
-    markdown_core_inline_pop_bracket(inline_state);
+    markdown_core_inline_finish_citation_tokens(citation, inline_state, &opener->citations);
+    markdown_core_inline_pop_bracket(link, inline_state);
     inline_state->pos = initial_pos;
     return make_str(inline_state, initial_pos - 1, initial_pos - 1,
                     markdown_core_chunk_dup(&inline_state->input, initial_pos - 1, 1));
 }
 
-static markdown_core_node *match_bracket(const markdown_core_element *self, markdown_core_parser *parser,
+static markdown_core_node *match_bracket(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                          markdown_core_node *parent, unsigned char character,
                                          markdown_core_inline_state *inline_state) {
     if (character == ']') {
-        return markdown_core_inline_handle_close_bracket(parser, inline_state);
+        return markdown_core_inline_handle_close_bracket(self, parser, inline_state);
     }
     if (character == '[') {
         advance(inline_state);
         markdown_core_node *text = make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
                                             markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
         if (text) {
-            markdown_core_inline_push_bracket(inline_state, BRACKET_LINK, text);
+            markdown_core_inline_push_bracket(self, inline_state, BRACKET_LINK, text);
         }
         return text;
     }
     return NULL;
 }
-static void dispose_inline(markdown_core_inline_state *inline_state) {
-    while (inline_state->last_bracket) {
-        markdown_core_inline_pop_bracket(inline_state);
+static void dispose_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
+    markdown_core_bracket_scope *brackets = markdown_core_brackets(self, inline_state);
+    while (brackets->last) {
+        markdown_core_inline_pop_bracket(self, inline_state);
     }
-    while (inline_state->pending_brackets) {
-        bracket *next = inline_state->pending_brackets->pending_next;
-        markdown_core_inline_free_citation_tokens(inline_state, &inline_state->pending_brackets->citations);
-        markdown_core_free(inline_state->pending_brackets);
-        inline_state->pending_brackets = next;
+    while (brackets->pending) {
+        bracket *next = brackets->pending->pending_next;
+        markdown_core_inline_free_citation_tokens(inline_state, &brackets->pending->citations);
+        markdown_core_free(brackets->pending);
+        brackets->pending = next;
     }
 }
 
-static void init_inline(markdown_core_inline_state *inline_state) { inline_state->no_link_openers = true; }
+static void init_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
+    markdown_core_brackets(self, inline_state)->no_link_openers = true;
+}
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
+    .peers = LINK_PEERS,
     .init_inline = init_inline,
+    .state_size = sizeof(markdown_core_bracket_work),
+    .run_state_size = sizeof(markdown_core_bracket_scope),
 
     .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
     .dispose_inline = dispose_inline,
@@ -748,8 +774,9 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
     .dispatch = "[]",
 };
 
-int markdown_core_inline_state_in_bracket(markdown_core_inline_state *inline_state, int image) {
-    bracket *b = inline_state->last_bracket;
+int markdown_core_inline_state_in_bracket(const markdown_core_element_instance *link,
+                                          markdown_core_inline_state *inline_state, int image) {
+    bracket *b = markdown_core_open_bracket(link, inline_state);
     if (!b) {
         return 0;
     }
@@ -759,10 +786,12 @@ int markdown_core_inline_state_in_bracket(markdown_core_inline_state *inline_sta
         return b->in_bracket_image0;
     }
 }
-unsigned char markdown_core_inline_state_closing_bracket(markdown_core_inline_state *inline_state) {
-    return inline_state->last_bracket ? ']' : 0;
+unsigned char markdown_core_inline_state_closing_bracket(const markdown_core_element_instance *link,
+                                                         markdown_core_inline_state *inline_state) {
+    return markdown_core_open_bracket(link, inline_state) ? ']' : 0;
 }
-int markdown_core_inline_state_context_start(markdown_core_inline_state *inline_state) {
-    bracket *opener = inline_state->last_bracket;
+int markdown_core_inline_state_context_start(const markdown_core_element_instance *link,
+                                             markdown_core_inline_state *inline_state) {
+    bracket *opener = markdown_core_open_bracket(link, inline_state);
     return opener && opener->kind == BRACKET_FOOTNOTE ? opener->position : 0;
 }

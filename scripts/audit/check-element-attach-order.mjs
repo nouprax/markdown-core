@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-/** The parse transaction selects the complete core dialect at exactly one
- * site, as the start of every instance's dialect. Every descriptor occurs once
+/** The product's composition root selects the complete core dialect at
+ * exactly one site, and hands it to the engine's one parse transaction as the
+ * start of every instance's dialect. The engine itself names no element. Every descriptor occurs once
  * and table is last. Private setup probes can extend an instance's dialect
  * through its builder; production parsing must not register anything or
  * choose a different dialect. */
@@ -29,6 +30,34 @@ failures.push(
         { elementHeaders, syntaxScanners }
     )
 );
+// No engine source or header reaches an element's interface: element state
+// is handed to its owner's hooks as `self` (markdown-core-element-api.h).
+const coreFiles = fs.readdirSync(path.join(pkg, "core"));
+const elementInterfaces = fs.readdirSync(path.join(pkg, "elements")).filter((file) => file.endsWith(".h"));
+for (const file of coreFiles.filter((name) => /\.[ch]$/.test(name))) {
+    const code = read(`core/${file}`).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
+    for (const [, include] of code.matchAll(/#include\s*["<]([^">]+)[">]/g)) {
+        // A quoted name resolves to core's own header first.
+        const name = include.split("/").at(-1);
+        if (elementInterfaces.includes(name) && (include.includes("/") || !coreFiles.includes(name))) {
+            failures.push(`core/${file}: engine includes element interface ${include}`);
+        }
+    }
+}
+// No library code looks an element up while parsing: an element reads
+// another's state through the peers sealing resolved, and the lookup by
+// descriptor is for code outside the dialect (tests, embedders).
+for (const dir of ["core", "elements"]) {
+    for (const file of fs.readdirSync(path.join(pkg, dir)).filter((name) => /\.[ch]$/.test(name))) {
+        const code = read(`${dir}/${file}`).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
+        for (const match of code.matchAll(/\bmarkdown_core_parser_instance\s*\(/g)) {
+            const line = code.slice(code.lastIndexOf("\n", match.index) + 1, match.index);
+            if (!/^(const\s+)?markdown_core_element_instance\s*\*\s*$/.test(line)) {
+                failures.push(`${dir}/${file}: library code looks up an element instance by descriptor`);
+            }
+        }
+    }
+}
 if (fs.readdirSync(path.join(pkg, "core")).some((file) => file.endsWith(".re"))) {
     failures.push("generated lexical grammar belongs to elements, not core");
 }
@@ -94,6 +123,7 @@ for (const site of sites) {
 // The one transaction attaches the whole table; neither facade, tests, nor
 // fuzzers own a configurable engine entry. Old option words cannot return.
 const dialectAttachSites = [];
+const engineParseSites = [];
 function cSources(dir) {
     return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
         const full = path.join(dir, entry.name);
@@ -111,13 +141,25 @@ for (const file of cSources(pkg)) {
         if (end < 0 || /^\s*\{/.test(source.slice(end))) continue;
         dialectAttachSites.push({ file: path.relative(pkg, file), function: enclosingFunction(source, match.index) });
     }
+    for (const match of source.matchAll(/\bmarkdown_core_parser_parse\s*\(/g)) {
+        const end = endOfArguments(source, source.indexOf("(", match.index));
+        if (end < 0 || /^\s*\{/.test(source.slice(end))) continue;
+        engineParseSites.push({ file: path.relative(pkg, file), function: enclosingFunction(source, match.index) });
+    }
 }
 if (
     dialectAttachSites.length !== 1 ||
-    dialectAttachSites[0].file !== "core/blocks.c" ||
+    dialectAttachSites[0].file !== "elements/core-elements.c" ||
     dialectAttachSites[0].function !== "markdown_core_parse_document_with_setup"
 ) {
-    failures.push("the sole engine parse transaction must select the complete core dialect");
+    failures.push("the sole composition root must select the complete core dialect");
+}
+if (
+    engineParseSites.length !== 1 ||
+    engineParseSites[0].file !== "elements/core-elements.c" ||
+    engineParseSites[0].function !== "markdown_core_parse_document_with_setup"
+) {
+    failures.push("only the composition root may run the engine's parse transaction");
 }
 
 // (2) The shared inventory proves every descriptor has exactly one position.

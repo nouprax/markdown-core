@@ -2,6 +2,7 @@
 #include "inline_internal.h"
 #include "attributes.h"
 #include "autolink.h"
+#include "link.h"
 #include "element.h"
 #include <parser.h>
 #include <string.h>
@@ -12,6 +13,10 @@
 #define strncasecmp _strnicmp
 #else
 #include <strings.h>
+
+/* The elements whose state this element reads, as `self->peers` holds them. */
+enum { AUTOLINK_LINK };
+static const markdown_core_element *const AUTOLINK_PEERS[] = {[AUTOLINK_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, NULL};
 #endif
 
 static markdown_core_node *make_str_with_entities(markdown_core_inline_state *inline_state, int start_column,
@@ -218,12 +223,22 @@ static size_t autolink_delim(uint8_t *data, size_t link_end) {
     return link_end;
 }
 
-static size_t check_domain(markdown_core_parser *parser, markdown_core_inline_state *inline_state, uint8_t *data,
-                           size_t size, int allow_short) {
+/* THE AUTOLINK SCANNER'S STATE. Its run record: where a shared domain suffix
+ * was rejected, so that the starts before its underscore reject it without
+ * rescanning. Its parse record (autolink.h): the domain bytes scanned, for
+ * the scanner's complexity gate. */
+typedef struct {
+    bufsize_t rejected_until;
+} autolink_run;
+
+static size_t check_domain(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
+                           uint8_t *data, size_t size, int allow_short) {
     size_t i, np = 0, uscore1 = 0, uscore2 = 0, last_underscore = 0;
     bufsize_t start = (bufsize_t)(data - inline_state->input.data);
-    parser->autolink_domain_work++;
-    if (start < inline_state->autolink_rejected_until) {
+    autolink_run *run = markdown_core_run_state(inline_state, self);
+    markdown_core_autolink_work *counts = self->state;
+    counts->domains++;
+    if (start < run->rejected_until) {
         return 0;
     }
 
@@ -248,7 +263,7 @@ static size_t check_domain(markdown_core_parser *parser, markdown_core_inline_st
      * width could claim bytes past the end of the range. */
     int32_t first;
     for (i = (size_t)markdown_core_utf8proc_decode(data, (bufsize_t)size, &first); i < size - 1;) {
-        parser->autolink_domain_work++;
+        counts->domains++;
         if (data[i] == '\\' && i < size - 2) {
             i++;
         }
@@ -275,7 +290,7 @@ static size_t check_domain(markdown_core_parser *parser, markdown_core_inline_st
          * last two segments. Keep that rejection frontier, not the whole
          * host end: a candidate after the underscore may be valid. A shared
          * suffix is scanned once, with no segment-count change in grammar. */
-        inline_state->autolink_rejected_until = start + (bufsize_t)last_underscore;
+        run->rejected_until = start + (bufsize_t)last_underscore;
         return 0;
     }
 
@@ -316,8 +331,9 @@ static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core
 /* URL and www candidates use the same extent rule. Bracket bodies supply
  * their delimiter; escaped punctuation stays in the opaque token. Each byte
  * is visited once, including tokens that end at a footnote's closing ]. */
-static size_t autolink_extent(markdown_core_inline_state *inline_state, uint8_t *data, size_t size, size_t offset) {
-    unsigned char closer = markdown_core_inline_state_closing_bracket(inline_state);
+static size_t autolink_extent(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
+                              uint8_t *data, size_t size, size_t offset) {
+    unsigned char closer = markdown_core_inline_state_closing_bracket(self->peers[AUTOLINK_LINK], inline_state);
     while (offset < size && !markdown_core_is_whitespace(data[offset]) && data[offset] != '<') {
         if (data[offset] == closer) {
             break;
@@ -331,8 +347,8 @@ static size_t autolink_extent(markdown_core_inline_state *inline_state, uint8_t 
     return offset;
 }
 
-static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core_node *parent,
-                                     markdown_core_inline_state *inline_state) {
+static markdown_core_node *www_match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                     markdown_core_node *parent, markdown_core_inline_state *inline_state) {
     markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
     size_t max_rewind = markdown_core_inline_state_get_offset(inline_state);
     uint8_t *data = chunk->data + max_rewind;
@@ -340,7 +356,7 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
 
     size_t link_end;
 
-    if (max_rewind > (size_t)markdown_core_inline_state_context_start(inline_state) &&
+    if (max_rewind > (size_t)markdown_core_inline_state_context_start(self->peers[AUTOLINK_LINK], inline_state) &&
         strchr("*_~(", data[-1]) == NULL && !markdown_core_is_whitespace(data[-1])) {
         return 0;
     }
@@ -349,13 +365,13 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
         return 0;
     }
 
-    link_end = check_domain(parser, inline_state, data, size, 0);
+    link_end = check_domain(self, inline_state, data, size, 0);
 
     if (link_end == 0) {
         return NULL;
     }
 
-    link_end = autolink_extent(inline_state, data, size, link_end);
+    link_end = autolink_extent(self, inline_state, data, size, link_end);
 
     link_end = autolink_delim(data, link_end);
 
@@ -401,8 +417,8 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
     return node;
 }
 
-static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core_node *parent,
-                                     markdown_core_inline_state *inline_state) {
+static markdown_core_node *url_match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                     markdown_core_node *parent, markdown_core_inline_state *inline_state) {
     size_t link_end, domain_len;
     int rewind = 0;
 
@@ -425,14 +441,14 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
 
     link_end = strlen("://");
 
-    domain_len = check_domain(parser, inline_state, data + link_end, size - link_end, 1);
+    domain_len = check_domain(self, inline_state, data + link_end, size - link_end, 1);
 
     if (domain_len == 0) {
         return 0;
     }
 
     link_end += domain_len;
-    link_end = autolink_extent(inline_state, data, size, link_end);
+    link_end = autolink_extent(self, inline_state, data, size, link_end);
 
     link_end = autolink_delim(data, link_end);
 
@@ -526,27 +542,27 @@ static markdown_core_node *address_match(markdown_core_parser *parser, markdown_
     return node;
 }
 
-static markdown_core_node *match(const markdown_core_element *element, markdown_core_parser *parser,
+static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char c,
                                  markdown_core_inline_state *inline_state) {
     if (c == '<') {
         return match_angle(inline_state);
     }
 
-    int in_bracket = markdown_core_inline_state_in_bracket(inline_state, false) ||
-                     markdown_core_inline_state_in_bracket(inline_state, true);
+    int in_bracket = markdown_core_inline_state_in_bracket(self->peers[AUTOLINK_LINK], inline_state, false) ||
+                     markdown_core_inline_state_in_bracket(self->peers[AUTOLINK_LINK], inline_state, true);
 
     if (c == ':') {
         /* No link forms inside a bracket, but the colon is still fenced off
          * there: `postprocess_text` skips the text of a link, so
          * `[mailto:x@y.z](u)` keeps its plain text as cmark-gfm does, and a
          * bracket that never closes still gets its link. */
-        markdown_core_node *node = in_bracket ? NULL : url_match(parser, parent, inline_state);
+        markdown_core_node *node = in_bracket ? NULL : url_match(self, parser, parent, inline_state);
         return node || parser->error ? node : address_match(parser, inline_state);
     }
 
     if (c == 'w' && !in_bracket) {
-        return www_match(parser, parent, inline_state);
+        return www_match(self, parser, parent, inline_state);
     }
 
     return NULL;
@@ -794,10 +810,10 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
  * EXIT's lookahead already names the following survivor, so the splits
  * inserted before the Text are never visited and the Text itself may be
  * freed. */
-static markdown_core_finish_result finish_step(const markdown_core_element *element, markdown_core_parser *parser,
+static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                markdown_core_node *node, markdown_core_event_type event, int is_root,
                                                void **state) {
-    (void)element;
+    (void)self;
     (void)is_root;
     if (node->kind == MARKDOWN_CORE_NODE_LINK) {
         *state = event == MARKDOWN_CORE_EVENT_ENTER ? node : NULL;
@@ -814,7 +830,10 @@ static const markdown_core_node_type AUTOLINK_FINISH_KINDS[] = {MARKDOWN_CORE_NO
 static const markdown_core_node_type AUTOLINK_SCOPE_KINDS[] = {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_NONE};
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
+    .peers = AUTOLINK_PEERS,
     .name = "autolink",
+    .state_size = sizeof(markdown_core_autolink_work),
+    .run_state_size = sizeof(autolink_run),
     .match_inline = match,
     .finish_step = finish_step,
     /* The step rewrites a Text -- the kind it acts on and the kind it is asked

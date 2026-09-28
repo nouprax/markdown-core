@@ -12,7 +12,6 @@
 #include "iterator.h"
 #include "inlines.h"
 #include "element.h"
-#include "../elements/markdown-core-elements.h"
 #define CODE_INDENT 4
 #define TAB_STOP 4
 #ifndef MIN
@@ -24,10 +23,9 @@ bool markdown_core_block_last_line_blank(const markdown_core_node *node);
 markdown_core_node_type markdown_core_block_type(const markdown_core_node *node);
 void markdown_core_block_set_end_to_current_line(markdown_core_parser *parser, markdown_core_node *b);
 bool markdown_core_block_is_blank(markdown_core_strbuf *s, bufsize_t offset);
-bool markdown_core_block_accepts_lines(markdown_core_node *node);
 void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, markdown_core_node *node, bufsize_t dropped,
                                               bufsize_t remaining);
-bool markdown_core_block_ends_with_blank_line(markdown_core_node *node);
+bool markdown_core_block_ends_with_blank_line(const markdown_core_parser *parser, markdown_core_node *node);
 markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, markdown_core_node *b);
 void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t count,
                                         bool columns);
@@ -51,8 +49,11 @@ typedef struct markdown_core_block_start_context {
 } block_start_context;
 
 typedef struct markdown_core_block_start {
-    bool (*open)(markdown_core_parser *, markdown_core_node **, markdown_core_chunk *,
-                 struct markdown_core_block_start *);
+    /* The claiming owner's open, and the owner itself, which the dispatcher
+     * records and hands `open` as its `self`. */
+    bool (*open)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node **,
+                 markdown_core_chunk *, struct markdown_core_block_start *);
+    const markdown_core_element_instance *owner;
     markdown_core_node_type kind;
     bufsize_t matched;
     markdown_core_list list;

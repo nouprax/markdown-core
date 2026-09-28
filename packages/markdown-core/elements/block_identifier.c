@@ -1,29 +1,31 @@
 #include "block_identifier.h"
 #include "block_internal.h"
+#include "markdown-core-elements.h"
+
 typedef struct {
     markdown_core_chunk identifier;
     bufsize_t content_end;
     bool own_line;
 } block_identifier;
-static bool S_scan_block_identifier(markdown_core_parser *parser, const unsigned char *data, bufsize_t length,
-                                    block_identifier *candidate) {
+static bool S_scan_block_identifier(markdown_core_block_identifier_work *counts, const unsigned char *data,
+                                    bufsize_t length, block_identifier *candidate) {
     bufsize_t end = length;
     while (end && markdown_core_is_line_end(data[end - 1])) {
-        parser->block_identifier_work++;
+        counts->scan++;
         end--;
     }
     while (end && markdown_core_is_space_or_tab(data[end - 1])) {
-        parser->block_identifier_work++;
+        counts->scan++;
         end--;
     }
-    parser->block_identifier_work++;
+    counts->scan++;
     if (end < 3 || data[end - 1] != '#') {
         return false;
     }
     bufsize_t start = end - 1;
     while (start) {
         unsigned char c = data[start - 1];
-        parser->block_identifier_work++;
+        counts->scan++;
         if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-')) {
             break;
         }
@@ -35,7 +37,7 @@ static bool S_scan_block_identifier(markdown_core_parser *parser, const unsigned
     candidate->identifier = (markdown_core_chunk){(unsigned char *)data + start, end - start - 1, 0};
     bufsize_t cut = start - 1;
     while (cut && markdown_core_is_space_or_tab(data[cut - 1])) {
-        parser->block_identifier_work++;
+        counts->scan++;
         cut--;
     }
     candidate->own_line = !cut || markdown_core_is_line_end(data[cut - 1]);
@@ -69,9 +71,10 @@ static bool S_attach_block_identifier(markdown_core_parser *parser, markdown_cor
     return true;
 }
 
-void markdown_core_block_attach_paragraph_identifier(markdown_core_parser *parser, markdown_core_node *paragraph) {
+void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identifier_work *work,
+                                                     markdown_core_parser *parser, markdown_core_node *paragraph) {
     block_identifier candidate;
-    if (!S_scan_block_identifier(parser, paragraph->content.ptr, paragraph->content.size, &candidate)) {
+    if (!S_scan_block_identifier(work, paragraph->content.ptr, paragraph->content.size, &candidate)) {
         return;
     }
     markdown_core_node *owner = paragraph;
@@ -98,8 +101,8 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_parser *parse
     }
 }
 
-bool markdown_core_block_attach_identifier_line(markdown_core_parser *parser, markdown_core_node *parent,
-                                                markdown_core_chunk *input) {
+bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_work *work, markdown_core_parser *parser,
+                                                markdown_core_node *parent, markdown_core_chunk *input) {
     markdown_core_node *owner = parent->last_child;
     block_identifier candidate;
     if (parser->indent >= CODE_INDENT || input->data[parser->first_nonspace] != '#' || !owner ||
@@ -107,9 +110,9 @@ bool markdown_core_block_attach_identifier_line(markdown_core_parser *parser, ma
         (markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_LIST &&
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_CALLOUT &&
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_TABLE) ||
-        !S_scan_block_identifier(parser, input->data + parser->first_nonspace, input->len - parser->first_nonspace,
+        !S_scan_block_identifier(work, input->data + parser->first_nonspace, input->len - parser->first_nonspace,
                                  &candidate) ||
-        !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(owner)) {
+        !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(parser, owner)) {
         return false;
     }
     bool followed_by_boundary = parser->lookahead_cursor == parser->lookahead_end;

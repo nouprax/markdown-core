@@ -10,7 +10,7 @@
  * nest or share a suffix: at most the ![[ and [[ attempts inspect the same body.
  * Recognition inspects each byte at most twice, including failed and unclosed
  * forms. A successful embed then inspects only its bounded numeric suffix. */
-static markdown_core_node *match(const markdown_core_element *element, markdown_core_parser *parser,
+static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,
                                  markdown_core_inline_state *inline_state) {
     markdown_core_chunk *input = markdown_core_inline_state_get_chunk(inline_state);
@@ -24,7 +24,8 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     bool part_empty = false, block_id = false;
     markdown_core_node *node;
     markdown_core_cross_reference *cross;
-    parser->cross_link_scan_work++;
+    markdown_core_cross_link_work *counts = self->state;
+    counts->scan++;
     if (input->len - start < opener_length) {
         return NULL;
     }
@@ -34,7 +35,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     }
     for (i = body; i < input->len; i++) {
         unsigned char c = s[i];
-        parser->cross_link_scan_work++;
+        counts->scan++;
         if (c == '[' || c == '\n' || c == '\r') {
             return NULL;
         }
@@ -51,7 +52,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
                 dimension_separator = i;
                 dimension_separator_length = c == '|' ? 1 : 2;
                 i += dimension_separator_length - 1;
-                parser->cross_link_scan_work += (size_t)dimension_separator_length - 1;
+                counts->scan += (size_t)dimension_separator_length - 1;
             }
             continue;
         }
@@ -87,7 +88,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     /* A lone ^ is an ordinary nonempty heading part, not a block identifier. */
     block_id = block_id && target_end > hash + 2;
     node = markdown_core_parser_make_node_with_ext(
-        parser, embedded ? MARKDOWN_CORE_NODE_CROSS_EMBEDDED : MARKDOWN_CORE_NODE_CROSS_LINK, element);
+        parser, embedded ? MARKDOWN_CORE_NODE_CROSS_EMBEDDED : MARKDOWN_CORE_NODE_CROSS_LINK, self->element);
     if (!node) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
@@ -104,7 +105,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
         bufsize_t suffix = dimension_separator >= 0 ? dimension_separator - label : 0;
         if (embedded &&
             markdown_core_parse_dimensions(cross->label.value, suffix, dimension_separator_length,
-                                           &node->as.cross_embedded->dimensions.value, &parser->dimension_work)) {
+                                           &node->as.cross_embedded->dimensions.value, &counts->dimensions)) {
             node->as.cross_embedded->dimensions.has_value = true;
             cross->label.value.len = suffix;
         }
@@ -124,6 +125,7 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CROSS_LINK = {
     .name = "cross_link",
+    .state_size = sizeof(markdown_core_cross_link_work),
     .match_inline = match,
     .dispatch = "[!",
 };

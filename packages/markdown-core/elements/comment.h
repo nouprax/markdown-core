@@ -6,6 +6,13 @@
 extern "C" {
 #endif
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT;
+
+/* THE `%%` COMMENT SCANNER'S WORK (the comment element's parse
+ * record): the opener checks it made, for its linearity gate. */
+typedef struct {
+    size_t scan;
+} markdown_core_comment_work;
+
 #ifdef __cplusplus
 }
 #endif

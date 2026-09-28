@@ -37,8 +37,9 @@ struct delimiter {
     struct delimiter *next;
     /* Borrowed marker Text or field owner; NULL for a content boundary. */
     markdown_core_node *node;
-    /** The element that pushed it, or NULL for a core rule. One load. */
-    const markdown_core_element *owner;
+    /** The instance of the element that pushed it, or NULL for a core rule.
+     *  One load. */
+    const markdown_core_element_instance *owner;
     bufsize_t position;
     delimiter_kind kind;
     bufsize_t length;

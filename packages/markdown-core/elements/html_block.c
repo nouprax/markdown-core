@@ -4,7 +4,7 @@
 #include "block_internal.h"
 
 #include "comment.h"
-static int continue_html(const markdown_core_element *self, markdown_core_parser *parser, unsigned char *data,
+static int continue_html(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *data,
                          int length, markdown_core_node *container) {
     bool res = false;
     int html_block_type = container->as.html_block->block_type;
@@ -28,7 +28,9 @@ static int continue_html(const markdown_core_element *self, markdown_core_parser
     return res;
 }
 
-static void finalize_html(markdown_core_parser *parser, markdown_core_node *b) {
+static void finalize_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_node *b) {
+    (void)self;
     markdown_core_strbuf *node_content = &b->content;
 
     int html_block_type = b->as.html_block->block_type;
@@ -41,8 +43,9 @@ static void finalize_html(markdown_core_parser *parser, markdown_core_node *b) {
         markdown_core_block_convert_comment_block(parser, b);
     }
 }
-static bool open_html(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,
-                      block_start *start) {
+static bool open_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                      markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
+    (void)self;
     bufsize_t matched = start->matched;
 
     *container =
@@ -56,7 +59,9 @@ static bool open_html(markdown_core_parser *parser, markdown_core_node **contain
 
     return true;
 }
-static bool scan_html(markdown_core_parser *parser, block_start_context *context, block_start *start) {
+static bool scan_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                      block_start_context *context, block_start *start) {
+    (void)self;
     if (!(start->matched = scan_html_block_start(context->input->data, context->input->len, context->first)) &&
         !(!context->paragraph && !context->lazy &&
           (start->matched = scan_html_block_start_7(context->input->data, context->input->len, context->first)))) {
@@ -66,7 +71,9 @@ static bool scan_html(markdown_core_parser *parser, block_start_context *context
     start->open = open_html;
     return true;
 }
-static bool ends_html(markdown_core_parser *parser, markdown_core_node *container, markdown_core_chunk *input) {
+static bool ends_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                      markdown_core_node *container, markdown_core_chunk *input) {
+    (void)self;
     switch (container->as.html_block->block_type) {
     case 1:
         return scan_html_block_end_1(input->data, input->len, parser->first_nonspace);
@@ -82,7 +89,11 @@ static bool ends_html(markdown_core_parser *parser, markdown_core_node *containe
         return false;
     }
 }
-static bool blank_line(markdown_core_parser *parser, markdown_core_node *node) { return true; }
+static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                       markdown_core_node *node) {
+    (void)self;
+    return true;
+}
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML_BLOCK = {
     .blank_line = blank_line,

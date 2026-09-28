@@ -2,9 +2,10 @@
 #define BLOCK_PEEK(input, at) ((input)->data[(at)])
 #include "block_internal.h"
 
-static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *parser, markdown_core_node *node,
-                                                       markdown_core_chunk *input);
-static bool markdown_core_callout_scan(markdown_core_parser *parser, block_start_context *context, block_start *start);
+static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_work *counts, markdown_core_parser *parser,
+                                                       markdown_core_node *node, markdown_core_chunk *input);
+static bool markdown_core_callout_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                       block_start_context *context, block_start *start);
 bool markdown_core_block_parse_callout_prefix(markdown_core_parser *parser, markdown_core_chunk *input) {
     bool res = false;
     bufsize_t matched = 0;
@@ -23,15 +24,15 @@ bool markdown_core_block_parse_callout_prefix(markdown_core_parser *parser, mark
     return res;
 }
 
-static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *parser, markdown_core_node *node,
-                                                       markdown_core_chunk *input) {
+static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_work *counts, markdown_core_parser *parser,
+                                                       markdown_core_node *node, markdown_core_chunk *input) {
     bufsize_t pos = parser->offset;
     bufsize_t begin = pos;
     while (pos < input->len && input->data[pos] == ' ' && pos - begin < 3) {
         pos++;
-        parser->callout_scan_work++;
+        counts->scan++;
     }
-    parser->callout_scan_work++;
+    counts->scan++;
     if (parser->partially_consumed_tab || pos + 2 >= input->len || input->data[pos] != '[' ||
         input->data[pos + 1] != '!') {
         return false;
@@ -40,7 +41,7 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *par
     begin = pos;
     while (pos < input->len) {
         unsigned char c = input->data[pos];
-        parser->callout_scan_work++;
+        counts->scan++;
         if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-')) {
             break;
         }
@@ -59,12 +60,12 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *par
     }
     while (pos < input->len && markdown_core_is_space_or_tab(input->data[pos])) {
         pos++;
-        parser->callout_scan_work++;
+        counts->scan++;
     }
     bufsize_t end = input->len;
     while (end > pos && markdown_core_is_whitespace(input->data[end - 1])) {
         end--;
-        parser->callout_scan_work++;
+        counts->scan++;
     }
     if (!markdown_core_chunk_to_cstr(&variant)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -92,8 +93,8 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_parser *par
     return true;
 }
 
-static bool markdown_core_callout_open(markdown_core_parser *parser, markdown_core_node **container,
-                                       markdown_core_chunk *input, block_start *start) {
+static bool markdown_core_callout_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                       markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
 
     bufsize_t blockquote_startpos = parser->first_nonspace;
 
@@ -108,14 +109,16 @@ static bool markdown_core_callout_open(markdown_core_parser *parser, markdown_co
         return false;
     }
 
-    if (markdown_core_block_parse_callout_metadata(parser, *container, input)) {
+    if (markdown_core_block_parse_callout_metadata(self->state, parser, *container, input)) {
         return false;
     }
 
     return true;
 }
 
-static bool markdown_core_callout_scan(markdown_core_parser *parser, block_start_context *context, block_start *start) {
+static bool markdown_core_callout_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                       block_start_context *context, block_start *start) {
+    (void)self;
     markdown_core_chunk *input = context->input;
     int first = context->first;
     if (!(input->data[first] == '>')) {
@@ -126,24 +129,31 @@ static bool markdown_core_callout_scan(markdown_core_parser *parser, block_start
     return true;
 }
 
-static bool accepts_lazy(markdown_core_parser *parser, markdown_core_node *node) {
+static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_node *node) {
+    (void)self;
     return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value &&
            node->start_line == parser->line_number - 1 && !node->first_child;
 }
 
-static bool continue_container(markdown_core_parser *parser, markdown_core_node *node, markdown_core_chunk *input,
-                               const markdown_core_node *joining, bool *taken) {
+static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                               markdown_core_node *node, markdown_core_chunk *input, const markdown_core_node *joining,
+                               bool *taken) {
+    (void)self;
     return markdown_core_block_parse_callout_prefix(parser, input);
 }
 /* The marker line's text is the callout's title, so a lazy line after it
  * cannot continue a paragraph: it starts the body's first one, as the same
  * text would with the quote's prefix. */
-static markdown_core_node *open_lazy(markdown_core_parser *parser, markdown_core_node *node,
-                                     markdown_core_chunk *input) {
-    return parser->dialect->document_structure->open_text_block(parser, node, input);
+static markdown_core_node *open_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                     markdown_core_node *node, markdown_core_chunk *input) {
+    (void)self;
+    const markdown_core_element_instance *text_block = parser->dialect->text_block_structure;
+    return text_block->element->open_text_block(text_block, parser, node, input);
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
+    .state_size = sizeof(markdown_core_callout_work),
     .accepts_lazy = accepts_lazy,
     .open_lazy = open_lazy,
 

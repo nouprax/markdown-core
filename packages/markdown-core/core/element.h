@@ -17,8 +17,9 @@ typedef struct markdown_core_block_reader {
     int (*next)(void *context, markdown_core_chunk *input, int *first, int *indent);
 } markdown_core_block_reader;
 
-typedef int (*markdown_core_probe_block_func)(markdown_core_parser *parser, markdown_core_chunk *input, int first,
-                                              int indent, markdown_core_block_reader *reader);
+typedef int (*markdown_core_probe_block_func)(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                              markdown_core_chunk *input, int first, int indent,
+                                              markdown_core_block_reader *reader);
 
 /* Node-valued fields are independent child-tree roots. This internal hook
  * exposes their owning slots only to parser phases; it does not change the
@@ -47,19 +48,13 @@ typedef enum {
 /* Which element defines the structure of a node KIND -- distinct from
  * `node->element`, which is the element that created that node INSTANCE.
  *
- * This is a pure function of the kind: two loads from a constant table. It
- * used to live behind a call in core-elements.c, out of line and in another
- * translation unit, 17 instructions asked once per element-descriptor field
- * access. On the 65 same-job documents that was about 5.7 million calls;
- * `block-list-flat` spent 5.48% of its whole parse inside it, and cmark has
- * no counterpart at all.
- *
- * So the tables are declared here and the projection is what it always was,
- * an array index, at every call site. It is NOT cached on the node: a cached
- * copy is a second answer to "which element defines this kind" that has to be
- * rewritten at every kind change and can be wrong in between. Both tables sit
- * in the same shared object as their callers, which are built with hidden
- * visibility, so the index resolves PC-relative with no indirection. */
+ * This is the definition, a pure function of the kind. Sealing reads it once
+ * per kind to project the dialect's kind record (dialect.h,
+ * markdown_core_kind_record), and everything the engine asks of a node's kind
+ * while parsing it asks that record: the structure's instance and the facts
+ * of its descriptor, in one load. It is NOT cached on the node: a cached copy
+ * is a second answer to "which element defines this kind" that has to be
+ * rewritten at every kind change and can be wrong in between. */
 extern const markdown_core_element *const markdown_core_block_structure[MARKDOWN_CORE_NODE_KIND_COUNT];
 extern const markdown_core_element *const markdown_core_inline_structure[MARKDOWN_CORE_NODE_KIND_COUNT];
 
@@ -70,10 +65,6 @@ static inline const markdown_core_element *markdown_core_structure_for_kind(mark
     }
     return MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind) ? markdown_core_inline_structure[index]
                                                   : markdown_core_block_structure[index];
-}
-
-static inline const markdown_core_element *markdown_core_node_structure(const markdown_core_node *node) {
-    return node ? markdown_core_structure_for_kind((markdown_core_node_type)node->kind) : NULL;
 }
 
 /* What the block dispatcher may know about a hook's grammar without entering
@@ -114,13 +105,16 @@ struct markdown_core_element {
      * A byte's owners are asked in ascending precedence -- any value, not only
      * the named ones -- and equal precedences in descriptor order. */
     markdown_core_inline_precedence inline_precedence;
-    markdown_core_node *(*parse_text)(markdown_core_parser *, markdown_core_inline_state *, bufsize_t);
-    void (*init_inline)(markdown_core_inline_state *);
-    void (*begin_inline)(markdown_core_parser *, markdown_core_inline_state *, markdown_core_node *);
-    bool (*claim_inline_tail)(markdown_core_inline_state *, markdown_core_node *);
-    void (*finish_inline)(markdown_core_inline_state *);
-    void (*dispose_inline)(markdown_core_inline_state *);
-    void (*complete_inline)(markdown_core_parser *, markdown_core_node *, int);
+    markdown_core_node *(*parse_text)(const markdown_core_element_instance *, markdown_core_parser *,
+                                      markdown_core_inline_state *, bufsize_t);
+    void (*init_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    void (*begin_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_inline_state *,
+                         markdown_core_node *);
+    bool (*claim_inline_tail)(const markdown_core_element_instance *, markdown_core_inline_state *,
+                              markdown_core_node *);
+    void (*finish_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    void (*dispose_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    void (*complete_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, int);
     /* A lazy line -- one that did not match every open container's prefix
      * and opened no block -- is offered to the current block. `accepts_lazy`
      * says whether it takes the line; `open_lazy` returns the block the line is
@@ -131,26 +125,29 @@ struct markdown_core_element {
      * accepts the line takes it as a paragraph takes a lazy line: the starts
      * that refuse a lazy line (`block_start_context`) open no block on it, so
      * the line is lazy exactly when it would be after a paragraph's line. */
-    markdown_core_node *(*open_lazy)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *);
-    bool (*accepts_lazy)(markdown_core_parser *, markdown_core_node *);
+    markdown_core_node *(*open_lazy)(const markdown_core_element_instance *, markdown_core_parser *,
+                                     markdown_core_node *, markdown_core_chunk *);
+    bool (*accepts_lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     unsigned speculative_flags;
     markdown_core_content_mode content_mode;
     bool inline_content, deferred_inlines, paragraph, blank_opaque, blank_runs, propagates_child_blank, pending_close;
     int maximum_block_indent;
-    void (*init_document)(markdown_core_parser *);
-    void (*dispose_parser)(markdown_core_parser *);
-    void (*dispose_document)(markdown_core_parser *);
-    size_t (*read_document_prefix)(markdown_core_parser *, const unsigned char *, size_t);
-    void (*prepare_document)(markdown_core_parser *);
-    void (*finish_document)(markdown_core_parser *);
-    void (*observe_inline)(markdown_core_parser *, markdown_core_node *);
-    markdown_core_node *(*open_text_block)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *);
-    markdown_core_node *(*try_interrupting_block)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *,
-                                                  bool);
+    void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *);
+    void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
+    void (*dispose_document)(const markdown_core_element_instance *, markdown_core_parser *);
+    size_t (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *,
+                                   const unsigned char *, size_t);
+    void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
+    void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
+    void (*observe_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    markdown_core_node *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
+                                           markdown_core_node *, markdown_core_chunk *);
+    markdown_core_node *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,
+                                                  markdown_core_node *, markdown_core_chunk *, bool);
     bool interrupts_paragraph;
 
-    bool (*continue_container)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *,
-                               const markdown_core_node *, bool *);
+    bool (*continue_container)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                               markdown_core_chunk *, const markdown_core_node *, bool *);
     /* The bytes `continue_container` can strip from a line besides
      * indentation: the COMPLETE set, as a gate's is, and NULL when it strips
      * indentation only. A block-start question asked of a LATER line from raw
@@ -163,13 +160,14 @@ struct markdown_core_element {
      * from that marker in raw source, so the key hands such a line to the
      * lookahead rather than walking over it. */
     const char *container_prefix_bytes;
-    bool (*accepts_blank)(markdown_core_parser *, markdown_core_node *);
-    bool (*blank_line)(markdown_core_parser *, markdown_core_node *);
-    bool (*ends_block)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *);
-    void (*finalize_block)(markdown_core_parser *, markdown_core_node *);
+    bool (*accepts_blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                       markdown_core_chunk *);
+    void (*finalize_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
 
-    bool (*scan_block_start)(markdown_core_parser *, struct markdown_core_block_start_context *,
-                             struct markdown_core_block_start *);
+    bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,
+                             struct markdown_core_block_start_context *, struct markdown_core_block_start *);
     /* What `scan_block_start` needs on a non-indented line before it is worth
      * entering; an indented line reaches it through `maximum_block_indent`. */
     markdown_core_block_gate scan_block_gate;
@@ -194,9 +192,10 @@ struct markdown_core_element {
     unsigned char delimiter_character;
     delimiter_rule_spec delimiter;
     /* Optional non-consuming token predicate. Text scanning consults the
-     * parser's byte-indexed projection; all owners of a shared byte must
-     * agree, otherwise that byte always reaches ordinary element dispatch. */
-    bool (*is_inline_start)(markdown_core_inline_state *, bufsize_t);
+     * dialect's byte-indexed projection of it; a byte another element also
+     * terminates text at keeps none, and always reaches ordinary element
+     * dispatch. */
+    bool (*is_inline_start)(const markdown_core_element_instance *, markdown_core_inline_state *, bufsize_t);
     markdown_core_match_inline_func match_inline;
     markdown_core_inline_from_delim_func insert_inline_from_delim;
     /* THREE byte sets, not one list.
@@ -287,6 +286,14 @@ struct markdown_core_element {
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;
+    /* The bytes of the element's parse record and of its record in each
+     * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS
+     * IT"); zero declares none. */
+    size_t state_size, run_state_size;
+    /* The elements whose state this element's code reads, NULL-terminated
+     * (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS IT").
+     * Sealing resolves them, in this order, into the instance's `peers`. */
+    const markdown_core_element *const *peers;
 };
 
 /* Defined here rather than in node.c because the ANSWER IS NO for almost every
@@ -304,7 +311,7 @@ struct markdown_core_element {
  * below the first time a kind is added to it. */
 /* WHICH KINDS CAN OWN A SUBTREE THROUGH THEIR OWN RECORD: the one predicate,
  * read by the visitor below and projected into the finish walk's per-kind
- * record (parser.h, MARKDOWN_CORE_FINISH_KIND_FIELDS), so the walk asks it
+ * record (dialect.h, MARKDOWN_CORE_KIND_FIELDS), so the walk asks it
  * once per parse per kind rather than three compares per node. An element
  * that owns subtrees through `visit_owned_subtrees_func` is found through
  * the node's `element`, which the walk tests beside the flag. */

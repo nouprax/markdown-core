@@ -1,12 +1,12 @@
 #ifndef MARKDOWN_CORE_PARSER_H
 #define MARKDOWN_CORE_PARSER_H
 
+#include <assert.h>
 #include <stdint.h>
 #include "references.h"
 #include "node.h"
 #include "buffer.h"
 #include "dialect.h"
-#include "../elements/heading_state.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -83,8 +83,8 @@ typedef struct {
     struct markdown_core_node *last_inline;
 } markdown_core_definition_collection;
 
-/* Sequential source-order operations share scratch, including table regions,
- * headings and document definitions. Space depends on entries, never on the
+/* Sequential source-order operations share scratch, such as an element's
+ * deferred registrations or a table's regions. Space depends on entries, never on the
  * area of a sparse table or the numeric range of source coordinates. */
 typedef struct {
     uint64_t *keys;
@@ -97,16 +97,11 @@ typedef struct {
 struct markdown_core_parser {
     /* A hashtable of urls in the current document for cross-references */
     struct markdown_core_map *refmap;
-    /* The labels this document defines footnotes for (see references.h). The
-     * block phase fills it as each definition opens; the inline phase reads it
-     * to decide whether a `[^label]` is a call at all. */
-    struct markdown_core_map *footnote_defs;
-    markdown_core_definition_collection footnotes;
-    markdown_core_definition_collection specimens;
-    markdown_core_key_index specimen_ids;
-    markdown_core_heading_collection headings;
     markdown_core_source_order source_order;
-    anchor_registry anchors;
+    /* Run records released by finished runs, kept for the next run
+     * (markdown_core_inline_state_from_buf); linked through their first word
+     * and released with the parser. Each is the dialect's `run_state_size`. */
+    struct markdown_core_inline_record *free_inline_records;
     /* The sealed dialect this instance parses with (dialect.h), which
      * shares the instance's allocation (blocks.c, markdown_core_instance),
      * and the context its setup was given. The context is the caller's; the
@@ -170,9 +165,8 @@ struct markdown_core_parser {
      * one-shot transaction reports the whole parse as failed (NULL) instead of
      * returning a silently truncated document. */
     markdown_core_parse_error error;
-    /* Bytes inspected by the cross-link scanner, for deterministic complexity gates. */
-    size_t cross_link_scan_work;
-    size_t autolink_domain_work;
+    /* THE ENGINE'S WORK COUNTERS, for deterministic complexity gates. An
+     * element counts its own work in its own state record. */
     size_t opaque_scan_work;
     size_t footnote_body_work;
     size_t definition_registration_work;
@@ -188,9 +182,6 @@ struct markdown_core_parser {
      * searching the container's from scratch; the ratio is that claim. */
     size_t content_mark_queries;
     size_t content_mark_probes;
-    /* Ordinary whitespace scalars and contextual-space lookahead bytes. */
-    size_t whitespace_work;
-    size_t bracket_work;
     /* Elements the inline-content hook dispatch EXAMINED, counted one per
      * element per family per inline-content node. The projection's whole claim
      * is that this grows with the declarers and not with the dialect, and
@@ -268,39 +259,9 @@ struct markdown_core_parser {
     size_t finish_walk_events;
     size_t finish_nodes_entered;
     size_t finish_walk_roots;
-    /* Opener checks of the `%%` comment scanner; and the lines the block-start
-     * lookahead visited plus the prefix bytes each visit matched itself, for
-     * the linearity gates of both. */
-    size_t comment_scan_work;
+    /* The lines the block-start lookahead visited plus the prefix bytes each
+     * visit matched itself, for its linearity gate. */
     size_t block_lookahead_work;
-    /* Scalar/byte probe ranges plus union-find and ordering visits. Scans
-     * charge a span once; short-circuited ranges may conservatively overcount. */
-    size_t table_scan_work, table_frontier_peak;
-    /* Bytes submitted to horizontal-border grammar; cached facts charge zero. */
-    size_t table_horizontal_work;
-    size_t table_workspace_growth, table_geometry_lines, table_separator_scans;
-    size_t table_scratch_growth;
-    /* Properties work: source ranges decoded once at their owning boundary. */
-    size_t metadata_decoded_bytes;
-    size_t metadata_key_work;
-    /* Bytes examined by the allocation-free closing-fence search. Physical
-     * line geometry is counted by input_line_work for every input consumer. */
-    size_t properties_line_work;
-    /* Bytes examined by the shared block-identifier suffix scanner. */
-    size_t block_identifier_work;
-    size_t callout_scan_work;
-    /* Shared attribute grammar and attachment work. */
-    size_t attribute_work;
-    /* Projection bytes and registry spelling work, including collision probes. */
-    size_t anchor_work;
-    /* Ordinary image-label bytes and bounded dimension work for Embedded and embeds. */
-    size_t dimension_work;
-    size_t list_marker_work;
-    size_t specimen_work;
-    size_t citation_work;
-    /* Cumulative capacity bytes reserved for per-inline state brace event records. */
-    size_t citation_brace_bytes;
-    size_t definition_list_work;
     /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
      * cursor to the first byte of the next raw line before it hands each line
      * to `S_process_line`, so a block start whose grammar needs a later line --
@@ -321,8 +282,6 @@ struct markdown_core_parser {
     struct markdown_core_node **lookahead_chain;
     markdown_core_node_internal_flags *lookahead_chain_flags;
     int lookahead_chain_alloc;
-    /* Element-owned scratch for sequential table recognition transactions. */
-    struct markdown_core_table_workspace *table_workspace;
     /* Delimiter entries removed from an inline parse, kept for the next push
      * (see `markdown_core_inline_push_delimiter_entry`); linked through `next`
      * and released with the parser. */
@@ -545,6 +504,21 @@ static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_k
     return markdown_core_node_set_kind(node, kind);
 }
 
+/* The instance of the structure element of `node`'s kind (dialect.h,
+ * markdown_core_dialect_structure): the `self` of every structure hook the
+ * engine asks about the node. NULL for no node. */
+static inline const markdown_core_element_instance *markdown_core_parser_structure(const markdown_core_parser *parser,
+                                                                                   const markdown_core_node *node) {
+    return markdown_core_dialect_structure(parser->dialect, node);
+}
+
+/* The record of `node`'s kind (dialect.h, markdown_core_kind_record): its
+ * structure's instance and every fact of it the engine asks. */
+static inline const markdown_core_kind_record *markdown_core_parser_kind(const markdown_core_parser *parser,
+                                                                         const markdown_core_node *node) {
+    return markdown_core_dialect_kind(parser->dialect, (markdown_core_node_type)node->kind);
+}
+
 /* Physical geometry is present for every visited line. Optional normalized
  * views and grammar facts share one lazily created record for that line. */
 typedef struct markdown_core_input_line {
@@ -706,24 +680,19 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
                                               markdown_core_node *definition, markdown_core_node *citation,
                                               markdown_core_node **inline_owner);
 
-/* The engine has one parse operation. `setup`, when present, extends the
- * dialect this instance will parse with: it receives the builder, already
- * holding the complete core dialect, and never the parser, so what it
- * registers is sealed before any source is read and fixed for the instance's
- * lifetime (dialect.h). `context` is handed to setup and carried on the
- * parser for element hooks. Tests add instrumentation this way; no caller
- * selects the language. Returning false aborts the transaction. The parser
- * and its dialect never escape this call and are released before it
- * returns. */
-/* `markdown_core_parse_document_with_setup` with no setup: the complete
- * dialect, returning the bare tree for engine tests. The installed API returns
- * a `markdown_core_document` instead. Release the tree with
- * `markdown_core_node_free`. */
-markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len);
-
-typedef bool (*markdown_core_parser_setup_func)(markdown_core_dialect_builder *builder, void *context);
-markdown_core_node *markdown_core_parse_document_with_setup(const char *source, size_t length,
-                                                            markdown_core_parser_setup_func setup, void *context);
+/* The engine has one parse operation. It parses with the dialect `elements`
+ * names, in that order; the composition root that chooses the product's
+ * dialect lives with the elements (markdown-core-elements.h), so the engine
+ * names no element. `setup`, when present, extends the dialect this instance
+ * will parse with: it receives the builder, already holding `elements`, and
+ * never the parser, so what it registers is sealed before any source is read
+ * and fixed for the instance's lifetime (dialect.h). `context` is handed to
+ * setup and carried on the parser for element hooks. Returning false aborts
+ * the transaction. The parser and its dialect never escape this call and are
+ * released before it returns. */
+markdown_core_node *markdown_core_parser_parse(const char *source, size_t length,
+                                               const markdown_core_element *const *elements, size_t count,
+                                               markdown_core_parser_setup_func setup, void *context);
 
 #ifdef __cplusplus
 }

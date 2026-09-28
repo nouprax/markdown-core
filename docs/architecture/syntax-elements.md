@@ -182,9 +182,12 @@ Each parser instance parses with one dialect: the element list, in order, and
 every table projected from it. The engine writes no construct's grammar of its
 own; the dialect is only the elements and their projections.
 
-A dialect has two types for its two states. The parse transaction starts a
-builder (`markdown_core_dialect_builder`) from the complete core dialect. A
-private setup (`markdown_core_parse_document_with_setup`) receives only that
+A dialect has two types for its two states. The engine's one parse
+transaction (`markdown_core_parser_parse`) starts a builder
+(`markdown_core_dialect_builder`) from the element list it is given and names
+no element itself. The product's composition root
+(`markdown_core_parse_document_with_setup`, with the elements) is the one site
+that gives it the complete core dialect. A private setup receives only that
 builder, never the parser, and may register further elements under the one
 registration rule. The transaction then seals the builder into a
 `markdown_core_dialect`. Sealing projects every table once:
@@ -207,10 +210,46 @@ is released before the parse and the instance is released as one block.
 Instances in one process may seal different dialects, and nothing about a
 dialect is process state, so no global initialization cache or lock is needed.
 
+### Element state
+
+State an element keeps while a document parses (an index of definitions, a
+retained workspace, a work counter) belongs to that element, not to the
+parser. An element declares two record sizes in its descriptor:
+
+- `state_size`: one record per parse, laid out by sealing in the parser's own
+  allocation and zeroed with it. The element releases what the record points
+  to from its own lifecycle hook.
+- `run_state_size`: one record per inline run, zeroed when the run begins. The
+  run takes every element's run record as one block from a pool the parser
+  keeps and gives the block back after the run's dispose hooks.
+
+A dialect holds an element at most once: attachment refuses a descriptor that
+is already attached, so each record has exactly one lifecycle. Sealing turns
+every attached element into a `markdown_core_element_instance` that binds the
+descriptor to its parse record and its offset in the run block. The engine
+resolves the instance once, at seal, and passes it as `self` to every
+parse-time hook of that element, so an element reads its own record as
+`self->state` or through `markdown_core_run_state`. Node-level hooks, which
+run without a parse, keep taking the descriptor.
+
+An element whose code reads another element's state declares that element
+in its descriptor's `peers`. Sealing resolves each declared peer once, in
+declaration order, into `self->peers`: the peer's instance, or NULL when the
+dialect does not hold it, and the reading element decides what an absent peer
+means (a definition list without tables has no caption to yield to). A call
+into another element's grammar takes that element's instance, so every record
+a hook reaches was resolved before the first line was read, and no parse-time
+code looks an element up by name. `markdown_core_parser_instance` answers the
+same question for code outside the dialect, such as a test reading an
+element's work. The engine reads no element's record, and no core header
+includes an element header; `check-element-attach-order.mjs` enforces both.
+
 A role the whole dialect has one owner for belongs to the last registered
 element that declares it:
 
 - the text scanner (`parse_text`);
+- the text block a line no block claims opens (`open_text_block`), the
+  paragraph in the core dialect;
 - each delimiter rule;
 - the document lifecycle.
 
