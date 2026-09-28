@@ -188,7 +188,8 @@ static bool open_indented(markdown_core_parser *parser, markdown_core_node **con
 }
 static bool scan_code(markdown_core_parser *parser, block_start_context *context, block_start *start) {
     if (context->indent >= CODE_INDENT) {
-        if (context->lazy || markdown_core_is_line_end(context->input->data[context->first])) {
+        /* Indented code interrupts no paragraph, and a lazy line is text. */
+        if (context->paragraph || context->lazy || markdown_core_is_line_end(context->input->data[context->first])) {
             return false;
         }
         start->open = open_indented;

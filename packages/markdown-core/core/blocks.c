@@ -262,9 +262,18 @@ static bool contains_inlines(markdown_core_node *node) {
     return structure && (structure->inline_content ||
                          (structure->contains_inlines_func && structure->contains_inlines_func(structure, node)));
 }
-static bool is_paragraph(markdown_core_node *node) {
-    const markdown_core_element *structure = markdown_core_node_structure(node);
-    return structure && structure->paragraph;
+/* Whether the line may be LAZY: it did not match the prefix of the current
+ * block, `matched` being the deepest block whose prefix it did match, and the
+ * current block takes such a line as text (`accepts_lazy`). A paragraph takes
+ * one; so does a callout on the line after its marker line, whose body the
+ * line then starts. The line is lazy if it opens no block, and the starts
+ * that refuse a lazy line (`block_start_context`) are no block start on it. */
+static bool S_may_be_lazy(markdown_core_parser *parser, const markdown_core_node *matched) {
+    if (parser->current == matched) {
+        return false;
+    }
+    const markdown_core_element *structure = markdown_core_node_structure(parser->current);
+    return structure && structure->accepts_lazy && structure->accepts_lazy(parser, parser->current);
 }
 
 /* Record where the bytes about to be appended to `node`'s content came from.
@@ -1508,7 +1517,7 @@ static bool parse_element_block(markdown_core_parser *parser, markdown_core_node
         assert(parser->current != NULL);
     }
     /* A block survives its own finalization and can still be positioned. */
-    assert(!is_paragraph(container));
+    assert(!markdown_core_node_structure(container) || !markdown_core_node_structure(container)->paragraph);
     container->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
     parser->current = markdown_core_block_finalize(parser, container);
     markdown_core_block_set_end_to_current_line(parser, container);
@@ -1967,7 +1976,7 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
                                    .column = column,
                                    .indent = indent,
                                    .paragraph = paragraph,
-                                   .lazy = paragraph,
+                                   .lazy = false,
                                    .all_matched = true,
                                    .depth = 1};
     block_start start;
@@ -2002,7 +2011,11 @@ static bool S_structure_accepts_lines(const markdown_core_element *structure, ma
 
 static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **container, markdown_core_chunk *input,
                             bool all_matched) {
-    bool maybe_lazy = is_paragraph(parser->current);
+    /* Two facts keep a line from interrupting text: `paragraph`, the matched
+     * container is a paragraph the line would continue, and `maybe_lazy`, the
+     * current block would take the line lazily. Only the first turn has
+     * either: a block opened here holds the rest of the line. */
+    bool maybe_lazy = S_may_be_lazy(parser, *container);
     size_t depth = 0;
     const markdown_core_element *structure = markdown_core_node_structure(*container);
     /* The instance's dialect is sealed: read its families through one local. */
@@ -2160,17 +2173,11 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
         tmp = tmp->parent;
     }
 
-    // If the last line processed belonged to a paragraph node,
-    // and we didn't match all of the line prefixes for the open containers,
-    // and we didn't start any new containers,
-    // and the line isn't blank,
-    // then treat this as a "lazy continuation line" and add it to
-    // the open paragraph.
-    const markdown_core_element *current_structure = markdown_core_node_structure(parser->current);
-    if (parser->current != last_matched_container && container == last_matched_container && !parser->blank &&
-        current_structure && current_structure->accepts_lazy &&
-        current_structure->accepts_lazy(parser, parser->current)) {
-        markdown_core_node *lazy = current_structure->open_lazy(parser, parser->current, input);
+    // A line that may be lazy, opened no block and is not blank is a lazy
+    // line: the current block takes it.
+    if (container == last_matched_container && !parser->blank && S_may_be_lazy(parser, last_matched_container)) {
+        markdown_core_node *lazy =
+            markdown_core_node_structure(parser->current)->open_lazy(parser, parser->current, input);
         if (!lazy) {
             return;
         }

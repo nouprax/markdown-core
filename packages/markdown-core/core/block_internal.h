@@ -38,6 +38,13 @@ typedef struct markdown_core_block_start_context {
     markdown_core_node *container;
     markdown_core_chunk *input;
     int first, column, indent;
+    /* `paragraph`: the container is a paragraph the line would continue.
+     * `lazy`: the line missed the current block's prefix, and that block
+     * would take it as text. Indented code, an HTML block of the seventh
+     * kind, a dash-led table and the paragraph hooks open on neither, so such
+     * a line stays text. Every other start reads `paragraph` alone, if
+     * anything: a list that cannot interrupt a paragraph still opens on a
+     * lazy line, as in cmark. */
     bool paragraph, lazy, all_matched;
     size_t depth;
     bufsize_t thematic_kill;

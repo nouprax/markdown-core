@@ -594,7 +594,7 @@
         {
             "feature": "callouts",
             "specification": "docs/specs/dialect/callouts.md",
-            "sha256": "86d81880474c8b41b8ceff2f046376e7caeb9cb50f692c0f8fdc93dae51d421c",
+            "sha256": "80816585e6c9de40da0d0152cc34ded0e683768bdddc60d87f61feb81d0c4ca2",
             "sections": [
                 {
                     "title": "Quotes and callouts",
@@ -630,7 +630,7 @@
                     "title": "Metadata boundaries",
                     "line": 53,
                     "level": 2,
-                    "sha256": "0edf7c90ab9a16b5427b982bfd44efaf0540cefc9218ef54cad9a610e4034f7c",
+                    "sha256": "d018da6eec0308f28406e1c72000a6a17a979aa9261e9c7dc21c3b85615dd9aa",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["callout"]

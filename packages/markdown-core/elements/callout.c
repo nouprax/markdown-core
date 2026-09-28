@@ -136,8 +136,8 @@ static bool continue_container(markdown_core_parser *parser, markdown_core_node 
     return markdown_core_block_parse_callout_prefix(parser, input);
 }
 /* The marker line's text is the callout's title, so a lazy line after it
- * cannot continue a paragraph: it starts the body's first one, as it would
- * have with the quote's prefix. */
+ * cannot continue a paragraph: it starts the body's first one, as the same
+ * text would with the quote's prefix. */
 static markdown_core_node *open_lazy(markdown_core_parser *parser, markdown_core_node *node,
                                      markdown_core_chunk *input) {
     return parser->dialect->document_structure->open_text_block(parser, node, input);
