@@ -157,10 +157,6 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     return node;
 }
 
-static const char *type_string(const markdown_core_element *element, markdown_core_node *node) {
-    return node->kind == MARKDOWN_CORE_NODE_COMMENT_BLOCK ? "comment_block" : "comment";
-}
-
 /* `%` ends a text run and is offered to the scanner, and that is the whole set. */
 static void finalize_comment(markdown_core_parser *, markdown_core_node *);
 
@@ -177,7 +173,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     /* `is_fence_line` refuses anything whose first non-space byte is not `%`. */
     .open_block_gate = {.bytes = "%"},
     .probe_block = probe_comment_block,
-    .get_type_string_func = type_string,
     .accepts_lines_func = comment_accepts_lines,
     .terminates_text = "%",
     .dispatch = "%",

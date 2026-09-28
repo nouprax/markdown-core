@@ -14,10 +14,6 @@ static markdown_core_node *match(const markdown_core_element *self, markdown_cor
     return markdown_core_inline_match_delimiter(self, inline_state);
 }
 
-static const char *get_type_string(const markdown_core_element *element, markdown_core_node *node) {
-    return node->kind == MARKDOWN_CORE_NODE_STRIKETHROUGH ? "strikethrough" : "<unknown>";
-}
-
 static const markdown_core_node_type containment_kinds[] = {MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_NONE};
 
 /* `~` is the ONE byte in this repository that is genuinely
@@ -31,7 +27,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_STRIKETHROUGH = {
                   .body = DELIMITER_INLINE_BODY,
                   .double_kind = MARKDOWN_CORE_NODE_STRIKETHROUGH,
                   .exact_run = true},
-    .get_type_string_func = get_type_string,
     .containment_kinds = containment_kinds,
     .match_inline = match,
     .terminates_text = "~",

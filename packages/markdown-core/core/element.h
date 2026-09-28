@@ -218,7 +218,6 @@ struct markdown_core_element {
     const char *dispatch;             /* offered to match_inline, and owns a delimiter tag */
     const char *flanking_transparent; /* scan_delimiter looks through it; ASCII */
     const char *name;
-    markdown_core_get_type_string_func get_type_string_func;
     /* A retained built-in payload may only parent these kinds after conversion.
      * NULL uses the core kind domain. Dynamic policy remains a separate decision. */
     const markdown_core_node_type *containment_kinds;

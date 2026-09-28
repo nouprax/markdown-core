@@ -7,6 +7,13 @@ and field inventory. This companion specifies ownership, coordinates, values,
 and traversal. The node table below is checked against that inventory by
 `scripts/audit/check-ast-projections.mjs`.
 
+Each kind's `ordinal` in the contract is its wire number: the value of
+`markdown_core_node_kind` and of the JNI and ECMAScript wire kinds. A new kind
+takes the next ordinal, because renumbering one renumbers every binding.
+`scripts/tooling/generate-node-kinds.mjs` generates every table that
+enumerates kinds from the contract and from
+`packages/markdown-core/node-types.json`, the native types that report them.
+
 The contract is implemented by the C facade and the Swift, Kotlin, and
 ECMAScript bindings. Platform APIs use idiomatic syntax while preserving names,
 nullability, ownership, traversal order, defaults, and semantics. Native C views

@@ -84,7 +84,11 @@ classification and projection boundaries.
    by the contract.
 3. Add shared canonical cases for new kinds, fields, enum values, and nullable
    states. Update the JSON inventory, prose, dump grammar, and every binding
-   together. The shared manifest is the sole cross-platform case list.
+   together. The shared manifest is the sole cross-platform case list. A new
+   kind takes the next `ordinal` in the JSON inventory and a native type in
+   `packages/markdown-core/node-types.json`; `pnpm generate:node-kinds` then
+   regenerates every kind enumeration, and the bindings' compilers point at
+   each hand-written consumer that still lacks the kind.
 4. Test failure and resource invariants: allocation failures publish no partial
    result, deep traversal is stack-safe, and repeated malformed candidates do
    not cause unbounded rescanning or expansion. A size-doubling case parses

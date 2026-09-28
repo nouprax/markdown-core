@@ -1,0 +1,291 @@
+{
+    "purpose": "The native node types, the one source for the internal markdown_core_node_type enum and every per-type table in core/ and elements/. Each class is numbered in list order from 1, so append a type to the end of its class. `kind` names the canonical AST kind (docs/specs/canonical-ast.json) the facade reports, or null for a private type; `record` is the C type of the payload the node allocates inline, or null; `structure` names the MARKDOWN_CORE_ELEMENT_* descriptor that defines the type's block or inline structure, or null. The type string is the lowercased name. Run scripts/tooling/generate-node-kinds.mjs after editing.",
+    "block": [
+        {
+            "name": "DOCUMENT",
+            "kind": "Document",
+            "record": "markdown_core_document_value",
+            "structure": "DOCUMENT"
+        },
+        {
+            "name": "CALLOUT",
+            "kind": "Callout",
+            "record": "markdown_core_callout",
+            "structure": "CALLOUT"
+        },
+        {
+            "name": "LIST",
+            "kind": "List",
+            "record": "markdown_core_list",
+            "structure": "LIST"
+        },
+        {
+            "name": "LIST_ITEM",
+            "kind": "ListItem",
+            "record": "markdown_core_list",
+            "structure": "LIST"
+        },
+        {
+            "name": "CODE_BLOCK",
+            "kind": "CodeBlock",
+            "record": "markdown_core_code",
+            "structure": "CODE_BLOCK"
+        },
+        {
+            "name": "HTML_BLOCK",
+            "kind": "HTMLBlock",
+            "record": "markdown_core_html_block",
+            "structure": "HTML_BLOCK"
+        },
+        {
+            "name": "PARAGRAPH",
+            "kind": "Paragraph",
+            "record": null,
+            "structure": "PARAGRAPH"
+        },
+        {
+            "name": "HEADING",
+            "kind": "Heading",
+            "record": "markdown_core_heading",
+            "structure": "HEADING"
+        },
+        {
+            "name": "THEMATIC_BREAK",
+            "kind": "ThematicBreak",
+            "record": null,
+            "structure": "THEMATIC_BREAK"
+        },
+        {
+            "name": "FOOTNOTE",
+            "kind": "Footnote",
+            "record": "markdown_core_footnote_value",
+            "structure": "FOOTNOTE",
+            "note": "A footnote definition: a block container while it is parsed, and a document-owned Footnote value once the document finalizes, when every one leaves the tree for the root's own footnote chain."
+        },
+        {
+            "name": "TABLE",
+            "kind": "Table",
+            "record": null,
+            "structure": "TABLE",
+            "note": "Its payload comes from the table element's opaque_alloc_func."
+        },
+        {
+            "name": "TABLE_ROW",
+            "kind": "TableRow",
+            "record": null,
+            "structure": "TABLE"
+        },
+        {
+            "name": "TABLE_CELL",
+            "kind": "TableCell",
+            "record": "markdown_core_table_cell",
+            "structure": "TABLE"
+        },
+        {
+            "name": "FORMULA_BLOCK",
+            "kind": "FormulaBlock",
+            "record": null,
+            "structure": "FORMULA",
+            "note": "Its payload comes from the formula element's opaque_alloc_func."
+        },
+        {
+            "name": "DIRECTIVE_BLOCK",
+            "kind": "DirectiveBlock",
+            "record": null,
+            "structure": "DIRECTIVE",
+            "note": "Its payload comes from the directive element's opaque_alloc_func."
+        },
+        {
+            "name": "COMMENT_BLOCK",
+            "kind": "Comment",
+            "record": "markdown_core_chunk",
+            "structure": "COMMENT",
+            "note": "A block comment: an HTML block that opened with <!-- and whose end line held only whitespace after the first -->. One public kind, Comment, stands for this and for the inline COMMENT; the two internal types record which content the node sits in, which is what containment checks and the inline parser ask."
+        },
+        {
+            "name": "SPECIMEN",
+            "kind": "Specimen",
+            "record": "markdown_core_specimen_value",
+            "structure": "SPECIMEN",
+            "note": "A specimen definition: a document-owned citation value."
+        },
+        {
+            "name": "DEFINITION_LIST",
+            "kind": "DefinitionList",
+            "record": null,
+            "structure": "DEFINITION_LIST"
+        },
+        {
+            "name": "DEFINITION",
+            "kind": "Definition",
+            "record": "markdown_core_definition",
+            "structure": "DEFINITION_LIST"
+        },
+        {
+            "name": "DEFINITION_BODY",
+            "kind": null,
+            "record": "markdown_core_definition_body_value",
+            "structure": "DEFINITION_LIST",
+            "note": "A private collection root, not a public Markup kind."
+        },
+        {
+            "name": "TABLE_CAPTION",
+            "kind": "TableCaption",
+            "record": null,
+            "structure": "TABLE"
+        },
+        {
+            "name": "METADATA",
+            "kind": "Metadata",
+            "record": "markdown_core_metadata_fields",
+            "structure": null,
+            "note": "Read by the document element's prefix reader (properties.c) and never parsed as a block, so no element defines its structure."
+        }
+    ],
+    "inline": [
+        {
+            "name": "TEXT",
+            "kind": "Text",
+            "record": "markdown_core_chunk",
+            "structure": "TEXT"
+        },
+        {
+            "name": "SOFT_BREAK",
+            "kind": "SoftBreak",
+            "record": null,
+            "structure": "LINE_BREAK"
+        },
+        {
+            "name": "LINE_BREAK",
+            "kind": "LineBreak",
+            "record": null,
+            "structure": "LINE_BREAK"
+        },
+        {
+            "name": "CODE",
+            "kind": "Code",
+            "record": "markdown_core_chunk",
+            "structure": "CODE"
+        },
+        {
+            "name": "HTML",
+            "kind": "HTML",
+            "record": "markdown_core_chunk",
+            "structure": "HTML"
+        },
+        {
+            "name": "EMPHASIS",
+            "kind": "Emphasis",
+            "record": null,
+            "structure": "EMPHASIS"
+        },
+        {
+            "name": "STRONG",
+            "kind": "Strong",
+            "record": null,
+            "structure": "EMPHASIS"
+        },
+        {
+            "name": "LINK",
+            "kind": "Link",
+            "record": "markdown_core_link",
+            "structure": "LINK"
+        },
+        {
+            "name": "EMBEDDED",
+            "kind": "Embedded",
+            "record": "markdown_core_link",
+            "structure": "EMBEDDED"
+        },
+        {
+            "name": "CITE",
+            "kind": "Cite",
+            "record": "markdown_core_cite",
+            "structure": "CITATION",
+            "note": "A citation cluster, whose items are a chain of CITATION nodes it owns beside its children, which it never has."
+        },
+        {
+            "name": "STRIKETHROUGH",
+            "kind": "Strikethrough",
+            "record": null,
+            "structure": "STRIKETHROUGH"
+        },
+        {
+            "name": "FORMULA",
+            "kind": "Formula",
+            "record": null,
+            "structure": "FORMULA",
+            "note": "Its payload comes from the formula element's opaque_alloc_func."
+        },
+        {
+            "name": "DIRECTIVE",
+            "kind": "Directive",
+            "record": null,
+            "structure": "DIRECTIVE",
+            "note": "Its payload comes from the directive element's opaque_alloc_func."
+        },
+        {
+            "name": "DIRECTIVE_LABEL",
+            "kind": "DirectiveLabel",
+            "record": null,
+            "structure": "DIRECTIVE"
+        },
+        {
+            "name": "COMMENT",
+            "kind": "Comment",
+            "record": "markdown_core_chunk",
+            "structure": "COMMENT",
+            "note": "An inline HTML comment token: <!-- ... -->, <!--> or <!--->."
+        },
+        {
+            "name": "CITATION",
+            "kind": "Citation",
+            "record": "markdown_core_citation_item",
+            "structure": "CITATION",
+            "note": "One item of a Cite: a scoped value, never a child of anything, owning a prefix chain and a suffix chain of inline nodes beside its referent. Inline-classed because it lives in inline content."
+        },
+        {
+            "name": "CROSS_LINK",
+            "kind": "CrossLink",
+            "record": "markdown_core_cross_reference",
+            "structure": "CROSS_LINK"
+        },
+        {
+            "name": "MARK",
+            "kind": "Mark",
+            "record": null,
+            "structure": "MARK"
+        },
+        {
+            "name": "CROSS_EMBEDDED",
+            "kind": "CrossEmbedded",
+            "record": "markdown_core_cross_embedded",
+            "structure": "CROSS_LINK"
+        },
+        {
+            "name": "INSERTION",
+            "kind": "Insertion",
+            "record": null,
+            "structure": "INSERTION"
+        },
+        {
+            "name": "SPAN",
+            "kind": "Span",
+            "record": null,
+            "structure": null,
+            "note": "Built by the link element's bracket closer when a bracket matches no link; it takes no structure hooks from any element."
+        },
+        {
+            "name": "SUPERSCRIPT",
+            "kind": "Superscript",
+            "record": null,
+            "structure": "SUPERSCRIPT"
+        },
+        {
+            "name": "SUBSCRIPT",
+            "kind": "Subscript",
+            "record": null,
+            "structure": "SUBSCRIPT"
+        }
+    ]
+}

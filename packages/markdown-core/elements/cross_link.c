@@ -122,13 +122,8 @@ static markdown_core_node *match(const markdown_core_element *element, markdown_
     return node;
 }
 
-static const char *type_string(const markdown_core_element *element, markdown_core_node *node) {
-    return node->kind == MARKDOWN_CORE_NODE_CROSS_EMBEDDED ? "cross_embedded" : "cross_link";
-}
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CROSS_LINK = {
     .name = "cross_link",
     .match_inline = match,
-    .get_type_string_func = type_string,
     .dispatch = "[!",
 };

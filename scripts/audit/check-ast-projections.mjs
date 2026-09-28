@@ -21,6 +21,15 @@
  * This audit compares it against the JSON kind for kind and field for field,
  * so the two cannot drift apart.
  *
+ * KIND LISTS ARE NOT CHECKED HERE. Every table that enumerates the kinds -- the
+ * C enums, dispatch and name tables, the JNI and ES wire kinds -- is generated
+ * from the contract by scripts/tooling/generate-node-kinds.mjs, whose --check
+ * gates staleness. The consumers written by hand over those generated lists
+ * (the Kotlin JNI decoder's `when`, the ES decoder's switch, the ES walker and
+ * visitor mapped types, both dumpers' visitor conformance) are exhaustive by
+ * their compilers. Only the consumers no compiler can prove exhaustive are
+ * listed below.
+ *
  * It does not check types across platforms: a `level` is `Int` in the
  * contract, `Int32` in Swift, `Int` in Kotlin and `number` in TypeScript, and
  * pretending one spelling is canonical would be a lie the audit then has to
@@ -150,9 +159,6 @@ function projection({ label, directories, declaration, field, optional }) {
 }
 
 /** SCREAMING_SNAKE for a PascalCase kind: `HTMLBlock` -> `HTML_BLOCK`. */
-const camel = (kind) =>
-    kind.replace(/^([A-Z]+)(?=[A-Z][a-z]|$)/, (m) => m.toLowerCase()).replace(/^([A-Z])/, (m) => m.toLowerCase());
-
 const snake = (kind) =>
     kind
         .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
@@ -240,69 +246,15 @@ let failed = false;
     }
 }
 
-/* Every projection surface names every kind.
- *
- * §4.1's Step 15A requires ONE audit over the C header, the C dump, the Kotlin
- * platform adapters + decoders + model, the ES writer + export list + decoder
- * + model, the Swift model + dumper, and the canonical-AST manifest. Until
- * 15A.3 this file
- * read three of those -- the three MODELS -- so a decoder that forgot a kind, a
- * dumper that could not name one, or a wire enum that was one short was
- * invisible here and visible only if some test happened to parse that kind. */
-const cKinds = namedKinds("packages/markdown-core/include/markdown_core.h", /MARKDOWN_CORE_KIND_([A-Z_]+)/g).filter(
-    (name) => name !== "NONE"
-);
-const counterBound = read("packages/markdown-core/tests/support/test_support.h").match(
-    /^#define TS_KIND_COUNT \(MARKDOWN_CORE_KIND_([A-Z_]+) \+ 1\)$/m
-);
-if (counterBound?.[1] !== cKinds.at(-1)) {
-    console.error("C test node-kind counter capacity does not match the last public node kind");
-    failed = true;
-}
-
+/* Every hand-written consumer that no compiler proves exhaustive names every
+ * kind: each of them falls through to an `else`, a `default` or a runtime cast. */
 const kindSurfaces = [
-    {
-        label: "C header kind enum",
-        expect: [...kinds.keys()].map(snake),
-        actual: cKinds
-    },
-    {
-        label: "C dump kind names",
-        expect: [...kinds.keys()],
-        actual: namedKinds("packages/markdown-core/elements/ast.c", /^\s+"([A-Za-z]+)"[,}]/gm).filter(
-            (name) => name !== "None"
-        )
-    },
-    {
-        label: "Kotlin JNI node kinds",
-        expect: [...kinds.keys()].map(snake),
-        actual: namedKinds(
-            "packages/kotlin-markdown-core/src/jniMain/kotlin/com/nouprax/markdown/core/wire/JniNodeKind.kt",
-            /^\s{4}([A-Z][A-Z_]*)\(\d+\),$/gm
-        )
-    },
-    {
-        label: "Kotlin decoder",
-        expect: [...kinds.keys()].map(snake),
-        actual: namedKinds(
-            "packages/kotlin-markdown-core/src/jniMain/kotlin/com/nouprax/markdown/core/wire/JniMarkupDecoder.kt",
-            /JniNodeKind\.([A-Z_]+)(?=\s*(?:,|->))/g
-        )
-    },
     {
         label: "Kotlin/Native C facade adapter",
         expect: [...kinds.keys()].map(snake),
         actual: namedKinds(
             "packages/kotlin-markdown-core/src/nativePlatformMain/kotlin/com/nouprax/markdown/core/PlatformParser.native.kt",
             /^\s+MARKDOWN_CORE_KIND_([A-Z_]+)\s*->/gm
-        )
-    },
-    {
-        label: "Kotlin dumper",
-        expect: [...kinds.keys()],
-        actual: namedKinds(
-            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/MarkupDumper.kt",
-            /override fun visit\(\s*[a-zA-Z]+: ([A-Za-z]+),\s*phase: MarkupVisitPhase,?\s*\)/g
         )
     },
     {
@@ -313,13 +265,6 @@ const kindSurfaces = [
             .filter((name) => kinds.has(name))
     },
     {
-        label: "ES wire kinds",
-        expect: [...kinds.keys()].map(camel),
-        actual: namedKinds("packages/es-markdown-core/src/wire/kinds.ts", /"([a-zA-Z]+)"/g).filter(
-            (name) => name !== "none"
-        )
-    },
-    {
         label: "ES Wasm batch writer",
         expect: [...kinds.keys()].map(snake),
         actual: namedKinds(
@@ -328,54 +273,12 @@ const kindSurfaces = [
         ).filter((name) => name !== "NONE")
     },
     {
-        label: "ES decoder",
-        expect: [...kinds.keys()].map(camel),
-        actual: namedKinds("packages/es-markdown-core/src/wire/node-decoder.ts", /case "([a-zA-Z]+)":/g)
-    },
-    {
-        label: "ES dumper",
-        expect: [...kinds.keys()].map(camel),
-        actual: namedKinds(
-            "packages/es-markdown-core/src/visitor/markup-dumper.ts",
-            /^\s+([a-zA-Z]+): \(node, phase\) =>/gm
-        )
-    },
-    {
-        label: "Swift dumper",
-        expect: [...kinds.keys()],
-        actual: namedKinds(
-            "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupDumper.swift",
-            /mutating func visit\(_ node: (?:MarkdownCore\.)?([A-Za-z]+), phase: MarkupVisitPhase\)/g
-        )
-    },
-    {
         label: "Swift markup walker",
         expect: [...kinds.keys()],
         actual: namedKinds(
             "packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupWalker.swift",
             /case let node as ([A-Za-z]+):/g
         )
-    },
-    {
-        label: "Kotlin markup walker",
-        expect: [...kinds.keys()],
-        actual: namedKinds(
-            "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/MarkupWalker.kt",
-            /\bis ([A-Z][A-Za-z]+)/g
-        )
-    },
-    {
-        label: "ES markup walker schedule",
-        expect: [...kinds.keys()].map(camel),
-        actual: namedKinds(
-            "packages/es-markdown-core/src/visitor/markup-walker.ts",
-            /^ {4}([a-zA-Z]+)(?:\(node, actions\) \{|: \(\) => undefined)/gm
-        )
-    },
-    {
-        label: "canonical-AST manifest",
-        expect: [...kinds.keys()],
-        actual: JSON.parse(read("specs/canonical-ast/manifest.json")).coverageRequirements.kinds
     }
 ];
 

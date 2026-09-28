@@ -65,6 +65,7 @@ jobs:
                   pnpm audit:parser-kind-record
                   pnpm audit:allocator-seam
                   pnpm audit:source-lists
+                  pnpm audit:node-kinds
                   pnpm audit:ast-projections
 
     health-check-c:

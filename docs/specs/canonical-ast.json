@@ -1,6 +1,6 @@
 {
     "schemaVersion": 1,
-    "purpose": "The machine-readable, normative canonical AST contract. C, Swift, Kotlin, and TypeScript declare projections of this shape, and scripts/audit/check-ast-projections.mjs checks every projection plus the prose and debug-dump tables against this file. Formula is the only kind whose placement mode varies; placement for Code, CodeBlock, Directive, DirectiveBlock, and FormulaBlock is implied by the kind.",
+    "purpose": "The machine-readable, normative canonical AST contract. Each kind's ordinal is its wire number in every binding; scripts/tooling/generate-node-kinds.mjs generates every table that enumerates kinds from this file. C, Swift, Kotlin, and TypeScript declare projections of this shape, and scripts/audit/check-ast-projections.mjs checks the hand-written projections plus the prose and debug-dump tables against this file. Formula is the only kind whose placement mode varies; placement for Code, CodeBlock, Directive, DirectiveBlock, and FormulaBlock is implied by the kind.",
     "prose": "docs/specs/canonical-ast.md",
     "dumpGrammar": "docs/specs/canonical-ast-dump.md",
     "walk": {
@@ -17,6 +17,7 @@
     "kinds": [
         {
             "name": "Document",
+            "ordinal": 1,
             "fields": [
                 {
                     "name": "content",
@@ -43,6 +44,7 @@
         },
         {
             "name": "Callout",
+            "ordinal": 2,
             "fields": [
                 {
                     "name": "variant",
@@ -69,6 +71,7 @@
         },
         {
             "name": "Paragraph",
+            "ordinal": 3,
             "fields": [
                 {
                     "name": "content",
@@ -80,6 +83,7 @@
         },
         {
             "name": "Heading",
+            "ordinal": 4,
             "fields": [
                 {
                     "name": "level",
@@ -96,11 +100,13 @@
         },
         {
             "name": "ThematicBreak",
+            "ordinal": 5,
             "fields": [],
             "invariants": "leaf"
         },
         {
             "name": "List",
+            "ordinal": 6,
             "fields": [
                 {
                     "name": "flavor",
@@ -137,6 +143,7 @@
         },
         {
             "name": "ListItem",
+            "ordinal": 7,
             "fields": [
                 {
                     "name": "marker",
@@ -153,6 +160,7 @@
         },
         {
             "name": "CodeBlock",
+            "ordinal": 8,
             "fields": [
                 {
                     "name": "info",
@@ -184,6 +192,7 @@
         },
         {
             "name": "HTMLBlock",
+            "ordinal": 9,
             "fields": [
                 {
                     "name": "literal",
@@ -195,6 +204,7 @@
         },
         {
             "name": "FormulaBlock",
+            "ordinal": 10,
             "fields": [
                 {
                     "name": "literal",
@@ -206,6 +216,7 @@
         },
         {
             "name": "Table",
+            "ordinal": 11,
             "fields": [
                 {
                     "name": "caption",
@@ -237,6 +248,7 @@
         },
         {
             "name": "TableCaption",
+            "ordinal": 39,
             "fields": [
                 {
                     "name": "content",
@@ -248,6 +260,7 @@
         },
         {
             "name": "TableRow",
+            "ordinal": 26,
             "fields": [
                 {
                     "name": "cells",
@@ -259,6 +272,7 @@
         },
         {
             "name": "TableCell",
+            "ordinal": 27,
             "fields": [
                 {
                     "name": "rowspan",
@@ -280,6 +294,7 @@
         },
         {
             "name": "DirectiveBlock",
+            "ordinal": 12,
             "fields": [
                 {
                     "name": "name",
@@ -301,6 +316,7 @@
         },
         {
             "name": "DirectiveLabel",
+            "ordinal": 28,
             "fields": [
                 {
                     "name": "content",
@@ -312,6 +328,7 @@
         },
         {
             "name": "Text",
+            "ordinal": 13,
             "fields": [
                 {
                     "name": "literal",
@@ -323,16 +340,19 @@
         },
         {
             "name": "SoftBreak",
+            "ordinal": 14,
             "fields": [],
             "invariants": "leaf"
         },
         {
             "name": "LineBreak",
+            "ordinal": 15,
             "fields": [],
             "invariants": "leaf"
         },
         {
             "name": "Code",
+            "ordinal": 16,
             "fields": [
                 {
                     "name": "literal",
@@ -344,6 +364,7 @@
         },
         {
             "name": "HTML",
+            "ordinal": 17,
             "fields": [
                 {
                     "name": "literal",
@@ -355,6 +376,7 @@
         },
         {
             "name": "CrossLink",
+            "ordinal": 30,
             "fields": [
                 {
                     "name": "dest",
@@ -371,6 +393,7 @@
         },
         {
             "name": "CrossEmbedded",
+            "ordinal": 32,
             "fields": [
                 {
                     "name": "dest",
@@ -392,6 +415,7 @@
         },
         {
             "name": "Comment",
+            "ordinal": 29,
             "fields": [
                 {
                     "name": "literal",
@@ -403,6 +427,7 @@
         },
         {
             "name": "Formula",
+            "ordinal": 18,
             "fields": [
                 {
                     "name": "mode",
@@ -419,6 +444,7 @@
         },
         {
             "name": "Emphasis",
+            "ordinal": 19,
             "fields": [
                 {
                     "name": "content",
@@ -430,6 +456,7 @@
         },
         {
             "name": "Strong",
+            "ordinal": 20,
             "fields": [
                 {
                     "name": "content",
@@ -441,6 +468,7 @@
         },
         {
             "name": "Strikethrough",
+            "ordinal": 21,
             "fields": [
                 {
                     "name": "content",
@@ -452,6 +480,7 @@
         },
         {
             "name": "Mark",
+            "ordinal": 31,
             "fields": [
                 {
                     "name": "content",
@@ -463,6 +492,7 @@
         },
         {
             "name": "Insertion",
+            "ordinal": 33,
             "fields": [
                 {
                     "name": "content",
@@ -474,6 +504,7 @@
         },
         {
             "name": "Span",
+            "ordinal": 34,
             "fields": [
                 {
                     "name": "content",
@@ -485,6 +516,7 @@
         },
         {
             "name": "Superscript",
+            "ordinal": 35,
             "fields": [
                 {
                     "name": "content",
@@ -496,6 +528,7 @@
         },
         {
             "name": "Subscript",
+            "ordinal": 36,
             "fields": [
                 {
                     "name": "content",
@@ -507,6 +540,7 @@
         },
         {
             "name": "Link",
+            "ordinal": 22,
             "fields": [
                 {
                     "name": "dest",
@@ -528,6 +562,7 @@
         },
         {
             "name": "Embedded",
+            "ordinal": 23,
             "fields": [
                 {
                     "name": "dest",
@@ -554,6 +589,7 @@
         },
         {
             "name": "Directive",
+            "ordinal": 24,
             "fields": [
                 {
                     "name": "name",
@@ -570,6 +606,7 @@
         },
         {
             "name": "Cite",
+            "ordinal": 25,
             "fields": [
                 {
                     "name": "citations",
@@ -581,6 +618,7 @@
         },
         {
             "name": "DefinitionList",
+            "ordinal": 37,
             "fields": [
                 {
                     "name": "definitions",
@@ -592,6 +630,7 @@
         },
         {
             "name": "Definition",
+            "ordinal": 38,
             "fields": [
                 {
                     "name": "term",
@@ -613,6 +652,7 @@
         },
         {
             "name": "Citation",
+            "ordinal": 40,
             "fields": [
                 {
                     "name": "referent",
@@ -634,6 +674,7 @@
         },
         {
             "name": "Footnote",
+            "ordinal": 41,
             "fields": [
                 {
                     "name": "id",
@@ -650,6 +691,7 @@
         },
         {
             "name": "Specimen",
+            "ordinal": 42,
             "fields": [
                 {
                     "name": "id",
@@ -671,6 +713,7 @@
         },
         {
             "name": "Metadata",
+            "ordinal": 43,
             "fields": [
                 {
                     "name": "name",
