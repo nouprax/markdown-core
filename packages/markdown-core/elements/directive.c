@@ -11,7 +11,6 @@
 
 #include <buffer.h>
 #include <chunk.h>
-#include <markdown-core.h>
 #include <inlines.h>
 #include <node.h>
 #include <parser.h>

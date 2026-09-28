@@ -12,7 +12,6 @@ add_library(
     markdown_core_kotlin SHARED
     "${MARKDOWN_CORE_CORE_DIR}/alloc.c"
     "${MARKDOWN_CORE_CORE_DIR}/slab.c"
-    "${MARKDOWN_CORE_CORE_DIR}/markdown_core.c"
     "${MARKDOWN_CORE_CORE_DIR}/node.c"
     "${MARKDOWN_CORE_CORE_DIR}/iterator.c"
     "${MARKDOWN_CORE_CORE_DIR}/dialect.c"
@@ -24,7 +23,6 @@ add_library(
     "${MARKDOWN_CORE_CORE_DIR}/map.c"
     "${MARKDOWN_CORE_CORE_DIR}/houdini_html_u.c"
     "${MARKDOWN_CORE_CORE_DIR}/markdown_core_ctype.c"
-    "${MARKDOWN_CORE_CORE_DIR}/linked_list.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/code.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/code_block.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/document.c"
@@ -82,7 +80,6 @@ target_include_directories(
             "${MARKDOWN_CORE_ROOT}/packages/markdown-core/include"
             "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native"
             "${MARKDOWN_CORE_ROOT}/packages/markdown-core/core/include")
-target_compile_definitions(markdown_core_kotlin PRIVATE MARKDOWN_CORE_EXPORTS)
 target_link_options(
     markdown_core_kotlin PRIVATE
     "-Wl,--version-script=${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin.map")

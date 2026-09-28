@@ -2,7 +2,6 @@
 #define MARKDOWN_CORE_METADATA_H
 
 #include "../include/markdown_core.h"
-#include "markdown-core.h"
 
 /* Only the union member selected by kind is active; its allocations belong to
  * the document. Readers and cleanup must not inspect the inactive member. */

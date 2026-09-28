@@ -17,7 +17,6 @@ let package = Package(
             sources: [
                 "core/alloc.c",
                 "core/slab.c",
-                "core/markdown_core.c",
                 "core/node.c",
                 "core/iterator.c",
                 "core/dialect.c",
@@ -29,7 +28,6 @@ let package = Package(
                 "core/map.c",
                 "core/houdini_html_u.c",
                 "core/markdown_core_ctype.c",
-                "core/linked_list.c",
                 "elements/code.c",
                 "elements/code_block.c",
                 "elements/document.c",

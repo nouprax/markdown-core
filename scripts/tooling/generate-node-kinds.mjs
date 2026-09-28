@@ -258,7 +258,7 @@ const PACKAGE = "packages/markdown-core";
 export function outputs(model, readSource) {
     const edit = (relative, body) => [relative, region(relative, readSource(relative), body)];
     return new Map([
-        edit(`${PACKAGE}/core/markdown-core.h`, internalEnum(model)),
+        edit(`${PACKAGE}/core/node_type.h`, internalEnum(model)),
         edit(`${PACKAGE}/include/markdown_core.h`, publicEnum(model)),
         edit(`${PACKAGE}/core/node.c`, nodeTables(model)),
         edit(`${PACKAGE}/elements/ast.c`, facadeTables(model)),

@@ -1,13 +1,26 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include "markdown-core.h"
-#include "markdown-core-elements.h"
-#include "parser.h"
+#include <markdown_core.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+
+/* The shipped path: parse through the facade, then read every node and
+ * node-valued field through the canonical dump, and release both. */
+static void exercise(const uint8_t *markdown, size_t length) {
+    markdown_core_document *document = markdown_core_document_parse(markdown, length, NULL);
+    if (!document) {
+        return;
+    }
+    uint8_t *dump = NULL;
+    size_t dump_length = 0;
+    if (markdown_core_document_dump(document, &dump, &dump_length, NULL)) {
+        markdown_core_dump_free(dump);
+    }
+    markdown_core_document_free(document);
+}
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) { return 0; }
 
@@ -68,22 +81,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 memcpy(markdown, markdown0, markdown_size);
             }
 
-            /* The engine always attaches the complete dialect. */
-            markdown_core_node *doc = markdown_core_parse_document_with_setup(markdown, markdown_size, NULL, NULL);
-            if (!doc) {
-                return 0;
-            }
-
-            /* Exercise the tree instead of the retired renderers. */
-            markdown_core_iter *iter = markdown_core_iter_new(doc);
-            while (markdown_core_iter_next(iter) != MARKDOWN_CORE_EVENT_DONE) {
-                markdown_core_node *node = markdown_core_iter_get_node(iter);
-                (void)markdown_core_node_get_type(node);
-                (void)markdown_core_node_get_literal(node);
-            }
-            markdown_core_iter_free(iter);
-
-            markdown_core_node_free(doc);
+            exercise((const uint8_t *)markdown, markdown_size);
         }
     }
     return 0;

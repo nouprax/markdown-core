@@ -147,7 +147,7 @@ function(markdown_core_add_test name label timeout)
         PARENT_SCOPE)
 endfunction()
 
-# api: legacy engine API harness (native C/C++).
+# api: engine white-box suite over the internal headers (native C/C++).
 markdown_core_add_test(api_engine api 120 api_test)
 
 # conformance: public facade/schema shape and every manifest-owned canonical dump.

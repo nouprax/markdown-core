@@ -8,7 +8,7 @@ extern "C" {
 #include <stdint.h>
 
 #include "config.h"
-#include "markdown-core.h"
+#include "buffer.h"
 
 /** Locale-independent versions of functions from ctype.h.
  * We want markdown_core to behave the same no matter what the system locale.

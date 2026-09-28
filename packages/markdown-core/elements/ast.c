@@ -13,7 +13,7 @@
 #include "strikethrough.h"
 #include "table.h"
 
-#include <markdown-core.h>
+#include <node_type.h>
 #include <node.h>
 #include <parser.h>
 
@@ -355,8 +355,7 @@ bool markdown_core_node_list_properties(const markdown_core_node *node, markdown
     if (!node || node->kind != MARKDOWN_CORE_NODE_LIST || !flavor || !start || !variant || !delimiter || !tight) {
         return false;
     }
-    *flavor = node->as.list->list_type == MARKDOWN_CORE_ORDERED_LIST ? MARKDOWN_CORE_LIST_FLAVOR_ORDERED
-                                                                     : MARKDOWN_CORE_LIST_FLAVOR_BULLET;
+    *flavor = node->as.list->flavor;
     start->has_value = *flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED;
     start->value = node->as.list->start;
     *variant = node->as.list->variant;

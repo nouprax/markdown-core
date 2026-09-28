@@ -8,12 +8,12 @@ set(LIBRARY "libmarkdown-core")
 set(STATICLIBRARY "libmarkdown-core_static")
 set(HEADERS
     alloc.h
-    markdown-core.h
     markdown-core-element-api.h
     parser.h
     dialect.h
     buffer.h
     node.h
+    node_type.h
     iterator.h
     chunk.h
     attributes.h
@@ -32,7 +32,6 @@ set(HEADERS
 set(LIBRARY_SOURCES
     alloc.c
     slab.c
-    markdown_core.c
     node.c
     iterator.c
     dialect.c
@@ -44,7 +43,6 @@ set(LIBRARY_SOURCES
     map.c
     houdini_html_u.c
     markdown_core_ctype.c
-    linked_list.c
     ${HEADERS})
 
 # Keep the engine target private, but make its sources available to the
@@ -67,8 +65,6 @@ include_directories(${MARKDOWN_CORE_ELEMENTS_BINARY_DIR})
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/markdown-core-version.h.in
                ${CMAKE_CURRENT_BINARY_DIR}/markdown-core-version.h)
-
-include(GenerateExportHeader)
 
 add_executable(${PROGRAM} ${PROGRAM_SOURCES})
 
@@ -96,9 +92,6 @@ if(MARKDOWN_CORE_STATIC OR MARKDOWN_CORE_SHARED)
     else()
         set_target_properties(${STATICLIBRARY} PROPERTIES OUTPUT_NAME "markdown-core" VERSION ${PROJECT_VERSION})
     endif(MSVC)
-
-    generate_export_header(${STATICLIBRARY} BASE_NAME MARKDOWN_CORE EXPORT_FILE_NAME
-                           ${CMAKE_CURRENT_BINARY_DIR}/markdown-core-export.h)
 
 endif()
 
@@ -182,8 +175,8 @@ endif()
 
 if(MARKDOWN_CORE_LIB_FUZZER)
     set(FUZZ_HARNESS "markdown-core-fuzz")
-    add_executable(${FUZZ_HARNESS} ${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/markdown-core-fuzz.c ${LIBRARY_SOURCES})
-    target_link_libraries(${FUZZ_HARNESS} "${CMAKE_LIB_FUZZER_PATH}")
+    add_executable(${FUZZ_HARNESS} ${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/markdown-core-fuzz.c)
+    target_link_libraries(${FUZZ_HARNESS} libmarkdown-core-public-static "${CMAKE_LIB_FUZZER_PATH}")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize-coverage=trace-pc-guard")
 
     # Markdown Core is written in C but the libFuzzer runtime is written in C++ which

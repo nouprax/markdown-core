@@ -2,7 +2,6 @@
 #define MARKDOWN_CORE_AST_INTERNAL_H
 
 #include "../include/markdown_core.h"
-#include <markdown-core.h>
 #include <parser.h>
 
 /* C LINKAGE, AND WINDOWS IS THE ONLY PLACE THIS SHOWS. The Itanium ABI does not

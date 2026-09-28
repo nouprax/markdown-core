@@ -9,7 +9,6 @@ const dist = path.join(packageDirectory, "dist");
 const core = [
     "alloc.c",
     "slab.c",
-    "markdown_core.c",
     "node.c",
     "iterator.c",
     "dialect.c",
@@ -20,8 +19,7 @@ const core = [
     "references.c",
     "map.c",
     "houdini_html_u.c",
-    "markdown_core_ctype.c",
-    "linked_list.c"
+    "markdown_core_ctype.c"
 ].map((file) => path.join(root, "packages/markdown-core/core", file));
 const elements = [
     "code.c",

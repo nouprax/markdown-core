@@ -98,9 +98,8 @@ if(MARKDOWN_CORE_SHARED)
                                                  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
     set_target_properties(${LIBRARY} PROPERTIES EXPORT_NAME markdown-core)
 
-    # The engine and element implementation retain private legacy symbols
-    # internally, but the installed facade DSO exports only the reviewed
-    # read-only C contract.
+    # The engine and elements have internal symbols of their own; the
+    # installed facade DSO exports only the read-only C contract.
     # The list is a link input: a symbol added to it must relink the library,
     # or the new build keeps exporting the old set until something else does.
     if(APPLE)

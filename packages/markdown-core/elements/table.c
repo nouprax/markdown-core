@@ -481,7 +481,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
 static markdown_core_node *try_opening_table_block(const markdown_core_element *self, int indented,
                                                    markdown_core_parser *parser, markdown_core_node *parent_container,
                                                    unsigned char *input, int len) {
-    markdown_core_node_type parent_type = markdown_core_node_get_type(parent_container);
+    markdown_core_node_type parent_type = (markdown_core_node_type)parent_container->kind;
 
     if (!indented && parent_type == MARKDOWN_CORE_NODE_PARAGRAPH) {
         return try_opening_table_header(self, parser, parent_container, input, len);
@@ -525,7 +525,7 @@ static int matches(const markdown_core_element *self, markdown_core_parser *pars
                    markdown_core_node *parent_container) {
     int res = 0;
 
-    if (markdown_core_node_get_type(parent_container) == MARKDOWN_CORE_NODE_TABLE) {
+    if (parent_container->kind == MARKDOWN_CORE_NODE_TABLE) {
         if (table_caption_start(input, len, parser->first_nonspace, parser->indent) >= 0) {
             return 0;
         }

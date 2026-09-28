@@ -10,7 +10,7 @@
  * bought nothing and cost about 181 arena bytes per `}` in the document,
  * because the release CLI never reclaims what text consolidation frees.
  *
- * There is no way to see this from output. `markdown_core_consolidate_text_nodes`
+ * There is no way to see this from output. Text consolidation
  * runs while the one-shot parse transaction closes, before any consumer sees the tree,
  * and merges the split run back carrying `end_column` forward — measured over
  * an exhaustive 37,448-case differential with zero differences. So this audit

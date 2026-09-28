@@ -1,7 +1,8 @@
 #ifndef MARKDOWN_CORE_ELEMENT_H
 #define MARKDOWN_CORE_ELEMENT_H
 
-#include "markdown-core.h"
+#include "node_type.h"
+#include "buffer.h"
 #include "markdown-core-element-api.h"
 #include "config.h"
 #include "chunk.h"

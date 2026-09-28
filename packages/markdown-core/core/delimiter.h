@@ -1,7 +1,8 @@
 #ifndef MARKDOWN_CORE_DELIMITER_H
 #define MARKDOWN_CORE_DELIMITER_H
 
-#include "markdown-core.h"
+#include "node_type.h"
+#include "buffer.h"
 #include "markdown-core-element-api.h"
 
 /* Private to the inline engine. Elements receive read-only marker views

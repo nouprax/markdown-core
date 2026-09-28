@@ -715,6 +715,12 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
  * selects the language. Returning false aborts the transaction. The parser
  * and its dialect never escape this call and are released before it
  * returns. */
+/* `markdown_core_parse_document_with_setup` with no setup: the complete
+ * dialect, returning the bare tree for engine tests. The installed API returns
+ * a `markdown_core_document` instead. Release the tree with
+ * `markdown_core_node_free`. */
+markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len);
+
 typedef bool (*markdown_core_parser_setup_func)(markdown_core_dialect_builder *builder, void *context);
 markdown_core_node *markdown_core_parse_document_with_setup(const char *source, size_t length,
                                                             markdown_core_parser_setup_func setup, void *context);

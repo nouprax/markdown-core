@@ -1,6 +1,6 @@
 #ifndef MARKDOWN_CORE_TEXT_SCANNERS_H
 #define MARKDOWN_CORE_TEXT_SCANNERS_H
-#include "markdown-core.h"
+#include "buffer.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

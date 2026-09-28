@@ -91,9 +91,8 @@ endif()
 # implementation reads the other's, so this is a comparison of one grammar
 # against one grammar rather than of two document parsers.
 add_executable(markdown_core_attribute_runner attribute_runner.c markdown_core_attributes.c)
-# The core sources and the directory CMake generates `markdown-core-export.h`
-# into: the internal headers include it, and a consumer of the facade never
-# sees either.
+# The core sources and the directory CMake configures `config.h` into: the
+# internal headers include it, and a consumer of the facade never sees either.
 target_include_directories(
     markdown_core_attribute_runner
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../core"

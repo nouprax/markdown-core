@@ -17,10 +17,18 @@ fi
 
 test -f packages/markdown-core/core/element.h \
     || fail "the internal parser-element descriptor header is missing"
-for retired_header in syntax_extension.h extension.h markdown-core-extension-api.h; do
+for retired_header in syntax_extension.h extension.h markdown-core-extension-api.h markdown-core.h \
+    include/markdown-core-export.h; do
     test ! -e "packages/markdown-core/core/$retired_header" \
         || fail "the retired $retired_header header still exists"
 done
+# One mechanism decides what the library exports: MARKDOWN_CORE_API in the
+# installed header, bounded by the export maps. An internal header that marks
+# a symbol for export is a second, unreviewed public surface.
+if grep -R -n -E '__declspec|visibility\("default"\)|MARKDOWN_CORE_(API|EXPORT)\b' \
+    packages/markdown-core/core packages/markdown-core/elements --include='*.h' --exclude-dir=build; then
+    fail "an internal header marks a symbol for export"
+fi
 test ! -e packages/markdown-core/extensions \
     || fail "the retired extensions directory still exists"
 if grep -R -n -E \
@@ -29,7 +37,7 @@ if grep -R -n -E \
     fail "the retired extension identifier family still exists"
 fi
 grep -q 'typedef struct markdown_core_element markdown_core_element;' \
-    packages/markdown-core/core/markdown-core.h \
+    packages/markdown-core/core/markdown-core-element-api.h \
     || fail "the parser-element descriptor does not use markdown_core_element"
 grep -q 'markdown_core_dialect_builder_attach' \
     packages/markdown-core/core/markdown-core-element-api.h \

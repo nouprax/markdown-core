@@ -14,7 +14,6 @@ extern "C" {
  * space. */
 void markdown_core_utf8proc_normalize_label(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len);
 
-MARKDOWN_CORE_EXPORT
 void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf);
 
 /* A SCALAR NO CHARACTER HAS: the first value past Unicode's range. The class

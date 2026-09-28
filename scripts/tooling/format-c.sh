@@ -38,7 +38,6 @@ find packages/markdown-core \
     -type f \
     \( -name '*.c' -o -name '*.h' -o -name '*.cpp' \) \
     ! -path 'packages/markdown-core/elements/*_scanners.c' \
-    ! -path 'packages/markdown-core/core/include/markdown-core-export.h' \
     ! -path 'packages/markdown-core/core/include/markdown-core-version.h' \
     ! -path 'packages/markdown-core/core/include/config.h' \
     -print0 | xargs -0 "$CLANG_FORMAT" $clang_format_args

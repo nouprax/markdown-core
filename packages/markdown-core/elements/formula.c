@@ -492,7 +492,7 @@ static void free_nodes_through(markdown_core_parser *parser, markdown_core_node 
     markdown_core_node *node = first;
 
     while (node) {
-        markdown_core_node *next = markdown_core_node_next(node);
+        markdown_core_node *next = node->next;
         markdown_core_parser_release_node(parser, node);
         if (node == last) {
             break;
