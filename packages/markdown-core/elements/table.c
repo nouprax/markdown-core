@@ -59,25 +59,30 @@ static markdown_core_node *new_cell(markdown_core_parser *parser, markdown_core_
     return cell;
 }
 
-/* Assemble every cell once, preserving a source run at each contraction.
+/* A PIPE CELL HOLDS ITS BYTES, whichever path found its row: trimmed of the
+ * whitespace around them, its escaped pipes contracted, a tab kept a tab.
+ * Assemble every cell once, preserving a source run at each contraction.
  * A logical pipe represents both authored bytes of its escape. There is no
- * alternate inline parser and no position repair after parsing. */
+ * alternate inline parser and no position repair after parsing. `offset`
+ * indexes the content of `source`, whose map places it, when the row was
+ * recovered from a paragraph, and otherwise the input of physical `line`. */
 static void set_cell_content(markdown_core_parser *parser, markdown_core_node *node, const node_cell *cell,
-                             markdown_core_node *source, bufsize_t offset) {
+                             markdown_core_node *source, int line, bufsize_t offset) {
+    node->internal_offset = cell->internal_offset;
     for (bufsize_t from = 0; from < cell->content.len && !parser->error;) {
         bufsize_t to = from;
         bool escaped =
             cell->content.data[from] == '\\' && from + 1 < cell->content.len && cell->content.data[from + 1] == '|';
         if (escaped) {
-            int line = parser->line_number, first, last;
+            int place = line, first, last;
             if (source) {
-                markdown_core_parser_content_place(parser, &source->content_map, offset + from, &line, &first);
-                markdown_core_parser_content_end_place(parser, &source->content_map, offset + from + 1, &line, &last);
+                markdown_core_parser_content_place(parser, &source->content_map, offset + from, &place, &first);
+                markdown_core_parser_content_end_place(parser, &source->content_map, offset + from + 1, &place, &last);
             } else {
                 first = markdown_core_parser_source_column(parser, line, offset + from + 1);
                 last = markdown_core_parser_source_column(parser, line, offset + from + 2);
             }
-            markdown_core_parser_append_content_mark(parser, node, node->content.size, line, first, last - first + 1,
+            markdown_core_parser_append_content_mark(parser, node, node->content.size, place, first, last - first + 1,
                                                      last - first + 1);
             markdown_core_strbuf_putc(&node->content, '|');
             to = from + 2;
@@ -90,8 +95,8 @@ static void set_cell_content(markdown_core_parser *parser, markdown_core_node *n
                 markdown_core_parser_append_content_marks(parser, &source->content_map, &node->content_map,
                                                           offset + from, to - from, node->content.size);
             } else {
-                markdown_core_parser_append_source_marks(parser, node, parser->line_number, offset + from + 1,
-                                                         to - from, node->content.size);
+                markdown_core_parser_append_source_marks(parser, node, line, offset + from + 1, to - from,
+                                                         node->content.size);
             }
             markdown_core_strbuf_put(&node->content, cell->content.data + from, to - from);
         }
@@ -380,9 +385,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element 
         if (!header_cell) {
             break;
         }
-        header_cell->internal_offset = cell->internal_offset;
         S_place_content_span(parser, parent_container, header_cell, cell->start_offset, cell->end_offset);
-        set_cell_content(parser, header_cell, cell, parent_container,
+        set_cell_content(parser, header_cell, cell, parent_container, parser->line_number,
                          (bufsize_t)(cell->content.data - (unsigned char *)parent_string));
     }
 
@@ -434,10 +438,9 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
             if (!node) {
                 break;
             }
-            node->internal_offset = cell->internal_offset;
             node->end_column = markdown_core_parser_source_column(parser, parser->line_number,
                                                                   parser->first_nonspace + 1 + cell->end_offset);
-            set_cell_content(parser, node, cell, NULL, (bufsize_t)(cell->content.data - input));
+            set_cell_content(parser, node, cell, NULL, parser->line_number, (bufsize_t)(cell->content.data - input));
         }
 
         table->content_count++;
@@ -623,7 +626,10 @@ typedef struct {
     table_source_cell *cells;
     size_t cell_count, cell_capacity;
     size_t first, last;
-    bool block_content, open;
+    /* `pipe`: a pipe table's header. Its cells hold their bytes, as every
+     * pipe cell does (`set_cell_content`), and the table stays open for the
+     * body rows `try_opening_table_row` adds. */
+    bool block_content, pipe;
     int padding_limit;
     /* The table's left edge, in geometry columns (`table_margin`): the
      * table, each row and the first column begin here, not at the
@@ -774,7 +780,7 @@ static void table_source_end(table_source *source) {
 static void table_candidate_reset(table_candidate *candidate) {
     candidate->column_count = candidate->row_count = candidate->cell_count = 0;
     candidate->head_count = candidate->foot_count = candidate->first = candidate->last = 0;
-    candidate->block_content = candidate->open = false;
+    candidate->block_content = candidate->pipe = false;
     candidate->padding_limit = candidate->margin = 0;
 }
 
@@ -2088,7 +2094,7 @@ static bool table_parse_pipe_header(table_source *source, size_t start, table_ca
      * rows `try_opening_table_row` adds. */
     candidate->margin = table_margin(source, start, start);
     candidate->head_count = 1;
-    candidate->open = true;
+    candidate->pipe = true;
     if (!table_add_row(source, candidate, start, start)) {
         matches = false;
         goto done;
@@ -2238,19 +2244,25 @@ static void table_append_range(table_source *source, markdown_core_node *node, s
     if (left > right) {
         left = right;
     }
+    assert(left >= 0);
     /* A scan position has one tab probe and at most two escape probes. A
      * run-ending position can be inspected again by the outer loop, so allow
      * two visits per position. Charge once, even if allocation stops copying. */
     parser->table_scan_work += (escapes ? 6u : 2u) * (size_t)(right - left);
+    /* Every column scanned has a byte, `left <= column < right <= columns`, so
+     * the line's byte map is read directly; only the run's end, which can be
+     * the end of the line, needs `table_byte`. An escape is a backslash whose
+     * next column, if the line has one, is a pipe. */
+    const int *bytes = table_line_bytes(line), columns = line->columns;
+    const unsigned char *data = line->data;
     for (int column = left; column < right && !parser->error;) {
-        int byte = table_byte(line, column);
-        if (line->data[byte] == '\t') {
+        int byte = bytes[column];
+        if (data[byte] == '\t') {
             int original = markdown_core_parser_source_column(parser, line->line, byte + 1);
             markdown_core_parser_append_content_mark(parser, node, node->content.size, line->line, original, 1, 0);
             markdown_core_strbuf_putc(&node->content, ' ');
             column++;
-        } else if (escapes && column + 1 < right && table_character(line, column) == '\\' &&
-                   table_character(line, column + 1) == '|') {
+        } else if (escapes && column + 1 < right && data[byte] == '\\' && data[bytes[column + 1]] == '|') {
             int first = markdown_core_parser_source_column(parser, line->line, byte + 1);
             int end = markdown_core_parser_source_column(parser, line->line, byte + 2);
             markdown_core_parser_append_content_mark(parser, node, node->content.size, line->line, first,
@@ -2259,8 +2271,8 @@ static void table_append_range(table_source *source, markdown_core_node *node, s
             column += 2;
         } else {
             int end = column + 1;
-            while (end < right && line->data[table_byte(line, end)] != '\t' &&
-                   !(escapes && table_character(line, end) == '\\' && table_character(line, end + 1) == '|')) {
+            while (end < right && data[bytes[end]] != '\t' &&
+                   !(escapes && data[bytes[end]] == '\\' && end + 1 < columns && data[bytes[end + 1]] == '|')) {
                 end++;
             }
             int length = table_byte(line, end) - byte;
@@ -2308,6 +2320,20 @@ static void table_fill_cell(table_source *source, markdown_core_node *node, cons
     }
     if (blocks && !source->parser->error) {
         markdown_core_parser_queue_block_input(source->parser, node);
+    }
+}
+
+/* A pipe header found after a caption is filled as every pipe row is. The
+ * iterator that recognized its line (`table_parse_pipe_header`) delimits its
+ * cells again, in the order they were added as `row`'s cells, and each holds
+ * its bytes. */
+static void table_fill_pipe_row(markdown_core_parser *parser, markdown_core_node *row, const table_source_line *line) {
+    pipe_row_cursor cells =
+        pipe_row_begin((unsigned char *)line->data + line->first, line->input_length - line->first, 0);
+    node_cell cell;
+    for (markdown_core_node *node = row->first_child; node && !parser->error && pipe_row_next(&cells, &cell);
+         node = node->next) {
+        set_cell_content(parser, node, &cell, NULL, line->line, (bufsize_t)(cell.content.data - line->data));
     }
 }
 
@@ -2368,7 +2394,7 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
         markdown_core_parser_source_column(parser, first->line, table_margin_byte(first, candidate->margin) + 1);
     node->end_line = last->line;
     node->end_column = markdown_core_parser_source_column(parser, last->line, last->length);
-    if (!candidate->open) {
+    if (!candidate->pipe) {
         node->flags &= ~MARKDOWN_CORE_NODE__OPEN;
     }
     for (size_t i = 0; i < candidate->row_count && !parser->error; i++) {
@@ -2391,7 +2417,12 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
             }
             cell_node->as.table_cell->rowspan = cell->rowspan;
             cell_node->as.table_cell->colspan = cell->colspan;
-            table_fill_cell(source, cell_node, cell, candidate->block_content, candidate->padding_limit);
+            if (!candidate->pipe) {
+                table_fill_cell(source, cell_node, cell, candidate->block_content, candidate->padding_limit);
+            }
+        }
+        if (candidate->pipe && row_node && !parser->error) {
+            table_fill_pipe_row(parser, row_node, begin);
         }
     }
     return node;

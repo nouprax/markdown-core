@@ -63,3 +63,10 @@ Nested quotes have their own first-line metadata. Code, lists, tables, and
 other blocks can appear in the body. A block-identifier-looking suffix in a
 title stays title text; a body paragraph can receive its own
 [block identifier](block-identifiers.md).
+
+A line without the prefix right after the metadata line is lazy exactly when
+it would be after a paragraph's line, and then starts the body's first
+paragraph. So indented code, an HTML block that cannot interrupt a paragraph,
+a dash-led table, and a definition term do not take such a line. Any block
+that ends a quote after its paragraph's line, such as a list, heading, fence,
+or grid table, ends the callout instead.

@@ -6,6 +6,23 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Keep a tab in a pipe table's header cell after a leading caption, as every
+  other pipe cell does. That one header was filled the way a simple table's
+  cells are, column by column, so each tab became the spaces it reached:
+  `Table: cap`, a blank line and ``| `a→b` | c |`` over `| - | - |`, with
+  `→` a tab, gave the code `"a    b"` where the same header without the
+  caption gives `"a\tb"`.
+
+- Take the line after a callout's marker line lazily exactly when a
+  paragraph would take it. Indented code, an HTML block of the seventh kind,
+  a dash-led table and a definition list's term do not open on a lazy line
+  after a paragraph, but they did after a marker line, so the line left the
+  callout: `> [!note]`, `term`, a blank line and `: def` gave an empty
+  callout and a top-level definition list whose term was `term`, and
+  `> [!note]` over `    code` gave an empty callout and a top-level code
+  block. As after `> quote`, the line now starts the callout's body; a list,
+  heading, fence or grid table still ends the callout.
+
 - Read a table the same wherever its indentation comes from, but for the tab
   stops a tab after it reaches. Indenting a simple or multiline table by one
   to three spaces made its first column right- or center-aligned: alignment
@@ -30,8 +47,8 @@ promised to remain compatible between releases.
   instead of `3:0`. A footnote defined in a cell, a list item, and indented
   code did the same.
 
-- Parse a lazy line as the same line parses with the quote's prefix. A lazy
-  line kept its indentation in the content of the paragraph it went to.
+- Parse a lazy line's text as the same text parses with the quote's prefix.
+  A lazy line kept its indentation in the content of the paragraph it went to.
   After a callout's marker line, where it opens the body's first paragraph,
   `> [!note]` followed by `   lazy` gave the paragraph `2:1..2:7` and the
   text `"   lazy"`, where they are `2:4..2:7` and `"lazy"`. Everything that

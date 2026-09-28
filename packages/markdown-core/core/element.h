@@ -126,7 +126,10 @@ struct markdown_core_element {
      * added to, from its first non-space byte: the block itself when the line
      * continues it, or a block it opens, which starts where a block the line
      * opened would. NULL means the line was consumed or the parse failed, and
-     * leaves the parser's current block where the hook put it. */
+     * leaves the parser's current block where the hook put it. A block that
+     * accepts the line takes it as a paragraph takes a lazy line: the starts
+     * that refuse a lazy line (`block_start_context`) open no block on it, so
+     * the line is lazy exactly when it would be after a paragraph's line. */
     markdown_core_node *(*open_lazy)(markdown_core_parser *, markdown_core_node *, markdown_core_chunk *);
     bool (*accepts_lazy)(markdown_core_parser *, markdown_core_node *);
     unsigned speculative_flags;

@@ -9529,18 +9529,21 @@ static char *dump_with_line_shifted(const char *source, int line, int shift) {
     return (char *)markdown_core_strbuf_detach(&out);
 }
 
-/* A LAZY LINE PARSES AS IT WOULD WITH THE QUOTE'S PREFIX. A lazy line is text:
+/* A LAZY LINE'S TEXT PARSES AS IT WOULD WITH THE QUOTE'S PREFIX. A lazy line
+ * is text:
  * its indentation is not content, as it is not on a line that continues a
  * paragraph with every prefix. After a callout's marker line, which is its
  * title, the line opens the body's first paragraph -- with the dialect's one
  * text-block opener, which is what opens it when the prefix is there. After a
  * quote whose paragraph so far is a reference definition, it continues that
  * paragraph and becomes its first text once the definition is taken. Either
- * way, whatever the line holds reads the same as with the prefix, in node
- * kinds, literals, anchors, destinations and every other field: a definition
+ * way, text reads the same as it does with the prefix, in node kinds,
+ * literals, anchors, destinations and every other field: a definition
  * defines, a standalone formula is a formula block, a pipe row can head a
  * table, and a setext underline makes a heading. Only the line's own columns
- * differ, by the prefix's two bytes. */
+ * differ, by the prefix's two bytes. A line that opens a block with the
+ * prefix, such as indented code after a marker line, is no text there, and
+ * `lazy_after_marker_as_after_paragraph` says when it is lazy without. */
 static void lazy_lines_parse_as_prefixed(test_batch_runner *runner) {
     static const char *const heads[] = {"> [!note]\n", "> [a]: /x\n"};
     static const char *const indents[] = {"", " ", "  ", "   "};
@@ -9565,6 +9568,117 @@ static void lazy_lines_parse_as_prefixed(test_batch_runner *runner) {
             }
         }
     }
+}
+
+/* The innermost callout of `doc`: the last one a walk enters. */
+static markdown_core_node *innermost_callout(markdown_core_node *doc) {
+    markdown_core_node *callout = NULL;
+    markdown_core_iter *iter = markdown_core_iter_new(doc);
+    markdown_core_event_type event;
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_CALLOUT) {
+            callout = node;
+        }
+    }
+    markdown_core_iter_free(iter);
+    return callout;
+}
+
+/* Every node after `doc`'s first child, as kind, scope and literal. */
+static char *describe_after_first(markdown_core_node *doc) {
+    markdown_core_strbuf out = MARKDOWN_CORE_BUF_INIT();
+    for (markdown_core_node *top = doc->first_child ? doc->first_child->next : NULL; top; top = top->next) {
+        markdown_core_iter *iter = markdown_core_iter_new(top);
+        markdown_core_event_type event;
+        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            markdown_core_node *node = markdown_core_iter_get_node(iter);
+            if (event != MARKDOWN_CORE_EVENT_ENTER) {
+                continue;
+            }
+            const char *literal = markdown_core_node_get_literal(node);
+            char place[96];
+            snprintf(place, sizeof(place), "%d %d:%d..%d:%d ", node->kind, node->start_line, node->start_column,
+                     node->end_line, node->end_column);
+            markdown_core_strbuf_puts(&out, place);
+            markdown_core_strbuf_puts(&out, literal ? literal : "");
+            markdown_core_strbuf_putc(&out, '\n');
+        }
+        markdown_core_iter_free(iter);
+    }
+    return (char *)markdown_core_strbuf_detach(&out);
+}
+
+/* A CALLOUT'S MARKER LINE TAKES A LAZY LINE AS A PARAGRAPH DOES. A line that
+ * misses the quote's prefix is lazy when it opens no block, and the line
+ * after a callout's marker line is lazy exactly when it is after a
+ * paragraph's line. The starts that refuse a lazy line -- indented code, an
+ * HTML block of the seventh kind, a dash-led table, a paragraph hook such as
+ * a definition list's term -- refuse it there too, and every other start that
+ * opens after a paragraph's line opens there. So the callout keeps the line
+ * exactly when a quote whose paragraph the line would continue keeps it, and
+ * whatever follows is the same blocks at the same places, at any depth. */
+static void lazy_after_marker_as_after_paragraph(test_batch_runner *runner) {
+    static const char *const heads[][2] = {
+        {"> [!note]\n", "> p\n"},
+        {"> > [!note] T\n", "> > p\n"},
+        {"- > [!note]\n", "- > p\n"},
+    };
+    static const char *const bodies[] = {
+        "term\n\n: def\n",
+        "term\n: def\n",
+        ": def\n",
+        "    code\n",
+        "\tcode\n",
+        "<div2 a=\"b\">\n",
+        "<div>\n",
+        "- item\n",
+        "*\n",
+        "2. x\n",
+        "1. x\n",
+        "(@) ex\n",
+        "# h\n",
+        "---\n",
+        "```\nx\n```\n",
+        "| a |\n| - |\n",
+        "----  ----\na     b\n----  ----\n",
+        "a  b\n-  -\n",
+        "+---+\n| a |\n+---+\n",
+        "Table: cap\n\n| a |\n| - |\n",
+        "text\n",
+        "[x]: /u\n",
+        "$$\nx\n$$\n",
+        ":::note\n:::\n",
+        "[^n]: note\n",
+        "%%\nc\n%%\n",
+    };
+    size_t kept = 0, left = 0;
+    for (size_t h = 0; h < sizeof(heads) / sizeof(heads[0]); h++) {
+        for (size_t b = 0; b < sizeof(bodies) / sizeof(bodies[0]); b++) {
+            char after_marker[96], after_paragraph[96];
+            snprintf(after_marker, sizeof(after_marker), "%s%s", heads[h][0], bodies[b]);
+            snprintf(after_paragraph, sizeof(after_paragraph), "%s%s", heads[h][1], bodies[b]);
+            markdown_core_node *marked = parse(after_marker), *prose = parse(after_paragraph);
+            markdown_core_node *callout = marked ? innermost_callout(marked) : NULL,
+                               *quote = prose ? innermost_callout(prose) : NULL;
+            char *marked_rest = marked ? describe_after_first(marked) : NULL,
+                 *prose_rest = prose ? describe_after_first(prose) : NULL;
+            const bool marker_keeps = callout && callout->end_line >= 2,
+                       paragraph_keeps = quote && quote->end_line >= 2;
+            OK(runner,
+               callout && quote && marker_keeps == paragraph_keeps && marked_rest && prose_rest &&
+                   !strcmp(marked_rest, prose_rest),
+               "after %.*s, %.*s parses as it does after a paragraph", (int)strcspn(heads[h][0], "\n"), heads[h][0],
+               (int)strcspn(bodies[b], "\n"), bodies[b]);
+            kept += marker_keeps;
+            left += !marker_keeps;
+            markdown_core_free(marked_rest);
+            markdown_core_free(prose_rest);
+            markdown_core_node_free(marked);
+            markdown_core_node_free(prose);
+        }
+    }
+    OK(runner, kept > 0 && left > 0, "some lines are lazy and some open blocks: %zu and %zu", kept, left);
 }
 
 /* A grid or multiline cell is a rectangle of the source: its lines, between
@@ -9919,6 +10033,79 @@ static void table_margin_is_shared_indentation(test_batch_runner *runner) {
            "a line with text left of the wall is no grid line (indent %d)", indent);
         markdown_core_node_free(doc);
         markdown_core_strbuf_free(&source);
+    }
+}
+
+/* The row of `doc` that starts on `line`, as its cells and every node in
+ * them: kind, literal, and scope, with lines counted from the row's. */
+static char *describe_row_on(markdown_core_node *doc, int line) {
+    markdown_core_node *row = NULL;
+    markdown_core_iter *iter = markdown_core_iter_new(doc);
+    markdown_core_event_type event;
+    while (!row && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_TABLE_ROW &&
+            node->start_line == line) {
+            row = node;
+        }
+    }
+    markdown_core_iter_free(iter);
+    if (!row) {
+        return NULL;
+    }
+    markdown_core_strbuf out = MARKDOWN_CORE_BUF_INIT();
+    iter = markdown_core_iter_new(row);
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (event != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        const char *literal = markdown_core_node_get_literal(node);
+        char place[96];
+        snprintf(place, sizeof(place), "%d %d:%d..%d:%d ", node->kind, node->start_line - line, node->start_column,
+                 node->end_line - line, node->end_column);
+        markdown_core_strbuf_puts(&out, place);
+        markdown_core_strbuf_puts(&out, literal ? literal : "");
+        markdown_core_strbuf_putc(&out, '\n');
+    }
+    markdown_core_iter_free(iter);
+    return (char *)markdown_core_strbuf_detach(&out);
+}
+
+/* A PIPE ROW IS ONE ROW WHEREVER IT IS FOUND. Pipes delimit its cells, and
+ * each cell holds its bytes: trimmed of the whitespace around them, its
+ * escaped pipes contracted, a tab kept a tab. So the row's cells, and every
+ * node in them, are the same whether it heads a table after a paragraph,
+ * heads one after a leading caption, or is a body row -- in their literals
+ * and in their scopes -- under any container prefix. */
+static void pipe_rows_are_one_row(test_batch_runner *runner) {
+    static const char *const rows[] = {
+        "| `a\tb` | c\\|d |",         "|\ta\t|\tb |", "| a | |", "a\t| b", "| *x*\t**y** | `\\|` |",
+        "| \xc3\xa9\t\xc3\xbc | x |",
+    };
+    static const char *const prefixes[][2] = {{"", ""}, {"  ", "  "}, {"> ", "> "}, {"- ", "  "}};
+    for (size_t p = 0; p < sizeof(prefixes) / sizeof(prefixes[0]); p++) {
+        const char *first = prefixes[p][0], *rest = prefixes[p][1];
+        for (size_t r = 0; r < sizeof(rows) / sizeof(rows[0]); r++) {
+            char headed[160], captioned[160], body[160];
+            snprintf(headed, sizeof(headed), "%s%s\n%s| - | - |\n", first, rows[r], rest);
+            snprintf(captioned, sizeof(captioned), "%sTable: cap\n%s\n%s%s\n%s| - | - |\n", first, rest, rest, rows[r],
+                     rest);
+            snprintf(body, sizeof(body), "%s| x | y |\n%s| - | - |\n%s%s\n", first, rest, rest, rows[r]);
+            markdown_core_node *headed_doc = parse(headed), *captioned_doc = parse(captioned), *body_doc = parse(body);
+            char *after_paragraph = describe_row_on(headed_doc, 1), *after_caption = describe_row_on(captioned_doc, 3),
+                 *in_body = describe_row_on(body_doc, 3);
+            OK(runner,
+               after_paragraph && after_caption && in_body && !strcmp(after_caption, after_paragraph) &&
+                   !strcmp(in_body, after_paragraph),
+               "%s%s is one row as a header, after a caption and in the body", first, rows[r]);
+            markdown_core_free(after_paragraph);
+            markdown_core_free(after_caption);
+            markdown_core_free(in_body);
+            markdown_core_node_free(headed_doc);
+            markdown_core_node_free(captioned_doc);
+            markdown_core_node_free(body_doc);
+        }
     }
 }
 
@@ -10721,9 +10908,11 @@ int main(void) {
     directive_scopes_are_editor_positions(runner);
     paragraphs_start_on_their_first_byte(runner);
     lazy_lines_parse_as_prefixed(runner);
+    lazy_after_marker_as_after_paragraph(runner);
     cell_blocks_end_in_their_cell(runner);
     table_geometry_ignores_indentation(runner);
     table_margin_is_shared_indentation(runner);
+    pipe_rows_are_one_row(runner);
     node_check(runner);
     iterator(runner);
     iterator_delete(runner);
