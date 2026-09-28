@@ -110,7 +110,7 @@ CLI, tests, fuzzers, and benchmarks from the production target. Gradle imports
 actual Kotlin/KMP and Android runtime modules; it does not mirror the C package
 as an IDE-only module or under an Android `cpp` tree.
 
-Kotlin/Native IDE import can generate cinterop declarations from public headers
+Kotlin/Native IDE import can generate cinterop declarations from the wire header
 without building CMake. Actual product/test KLIB tasks build and embed their
 static library. The developer-only `allKotlinTests` Gradle task runs applicable
 host tasks and managed-device tests, but does not replace platform-specific

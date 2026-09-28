@@ -242,7 +242,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
     val buildDirectory = layout.buildDirectory.dir("native/$name")
     val archiveDirectory = layout.buildDirectory.dir("native/$name/archives")
     val coreArchive = archiveDirectory.map { it.file("libmarkdown-core.a") }
-    val elementsArchive = archiveDirectory.map { it.file("libmarkdown-core-elements.a") }
+    val wireArchive = archiveDirectory.map { it.file("libmarkdown-core-wire.a") }
     val generatedDefinitionDirectory = layout.buildDirectory.dir("generated/cinterop/$name")
     val embedNativeLibraries = !isIdeModelImport
     val configureTask =
@@ -251,6 +251,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
                 repositoryRoot.files("CMakeLists.txt"),
                 repositoryRoot.dir("packages/markdown-core/core"),
                 repositoryRoot.dir("packages/markdown-core/elements"),
+                repositoryRoot.dir("packages/markdown-core/wire"),
                 layout.projectDirectory.dir("src/native"),
             )
             outputs.file(buildDirectory.map { it.file("CMakeCache.txt") })
@@ -273,9 +274,10 @@ fun KotlinNativeTarget.configureNativeFacade() {
             inputs.files(
                 repositoryRoot.dir("packages/markdown-core/core"),
                 repositoryRoot.dir("packages/markdown-core/elements"),
+                repositoryRoot.dir("packages/markdown-core/wire"),
                 layout.projectDirectory.dir("src/native"),
             )
-            outputs.files(coreArchive, elementsArchive)
+            outputs.files(coreArchive, wireArchive)
             commandLine(
                 "cmake",
                 "--build",
@@ -283,8 +285,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
                 "--config",
                 "Release",
                 "--target",
-                "libmarkdown-core-elements_static",
-                "libmarkdown-core_static",
+                "libmarkdown-core-wire",
                 "--parallel",
             )
         }
@@ -306,7 +307,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
 
     compilations.getByName("main").cinterops.create("markdownCoreKotlin") {
         definitionFile.set(generatedDefinitionDirectory.map { it.file("markdown_core_kotlin.def") })
-        compilerOpts("-I${repositoryRoot.dir("packages/markdown-core/include").asFile.absolutePath}")
+        compilerOpts("-I${repositoryRoot.dir("packages/markdown-core/wire").asFile.absolutePath}")
         tasks.named(interopProcessingTaskName).configure {
             dependsOn(generateDefinition)
             if (embedNativeLibraries) {
@@ -336,6 +337,7 @@ val configureDesktopJni =
             repositoryRoot.files("CMakeLists.txt"),
             repositoryRoot.dir("packages/markdown-core/core"),
             repositoryRoot.dir("packages/markdown-core/elements"),
+            repositoryRoot.dir("packages/markdown-core/wire"),
             layout.projectDirectory.dir("src/native"),
         )
         inputs.property("desktopPlatform", desktopPlatform ?: "unsupported")
@@ -367,6 +369,7 @@ val buildDesktopJni =
         inputs.files(
             repositoryRoot.dir("packages/markdown-core/core"),
             repositoryRoot.dir("packages/markdown-core/elements"),
+            repositoryRoot.dir("packages/markdown-core/wire"),
             layout.projectDirectory.dir("src/native"),
         )
         val libraryName =
@@ -492,14 +495,12 @@ kotlin {
             kotlin.srcDir(layout.buildDirectory.dir("generated/canonicalAstCommonTest/kotlin"))
             dependencies { implementation(kotlin("test")) }
         }
-        jvmMain { kotlin.srcDir("src/jniMain/kotlin") }
         jvmTest.dependencies { implementation(kotlin("test-junit5")) }
         getByName("androidDeviceTest").dependencies {
             implementation("androidx.test.ext:junit:1.3.0")
             implementation("androidx.test:runner:1.7.0")
         }
         androidMain {
-            kotlin.srcDir("src/jniMain/kotlin")
             dependencies {
                 implementation(
                     project.dependencies.project(":packages:kotlin-markdown-core:android-runtime"),
@@ -508,8 +509,6 @@ kotlin {
         }
         macosArm64Main { kotlin.srcDir("src/nativePlatformMain/kotlin") }
         linuxX64Main { kotlin.srcDir("src/nativePlatformMain/kotlin") }
-        macosArm64Test { kotlin.srcDir("src/nativePlatformTest/kotlin") }
-        linuxX64Test { kotlin.srcDir("src/nativePlatformTest/kotlin") }
     }
 }
 

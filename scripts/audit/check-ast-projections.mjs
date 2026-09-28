@@ -22,10 +22,10 @@
  * so the two cannot drift apart.
  *
  * KIND LISTS ARE NOT CHECKED HERE. Every table that enumerates the kinds -- the
- * C enums, dispatch and name tables, the JNI and ES wire kinds -- is generated
+ * C enums, dispatch and name tables, the Kotlin and ES wire kinds -- is generated
  * from the contract by scripts/tooling/generate-node-kinds.mjs, whose --check
  * gates staleness. The consumers written by hand over those generated lists
- * (the Kotlin JNI decoder's `when`, the ES decoder's switch, the ES walker and
+ * (the Kotlin wire decoder's `when`, the ES decoder's switch, the ES walker and
  * visitor mapped types, both dumpers' visitor conformance) are exhaustive by
  * their compilers. Only the consumers no compiler can prove exhaustive are
  * listed below.
@@ -249,14 +249,6 @@ let failed = false;
 /* Every hand-written consumer that no compiler proves exhaustive names every
  * kind: each of them falls through to an `else`, a `default` or a runtime cast. */
 const kindSurfaces = [
-    {
-        label: "Kotlin/Native C facade adapter",
-        expect: [...kinds.keys()].map(snake),
-        actual: namedKinds(
-            "packages/kotlin-markdown-core/src/nativePlatformMain/kotlin/com/nouprax/markdown/core/PlatformParser.native.kt",
-            /^\s+MARKDOWN_CORE_KIND_([A-Z_]+)\s*->/gm
-        )
-    },
     {
         label: "ES export list",
         expect: [...kinds.keys()],

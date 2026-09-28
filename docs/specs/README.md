@@ -29,6 +29,7 @@ resource loading, and presentation belong to the application.
 - [Testing architecture](../architecture/testing.md): platform runners and correctness/conformance boundaries.
 - [Syntax conformance](../architecture/syntax-conformance.md): fixtures, pinned external parsers, and reviewing language changes.
 - [Parser architecture](../architecture/syntax-elements.md): ownership of syntax implementations.
+- [Native AST wire format](../architecture/wire-format.md): MCB2, the one message the Kotlin and ES bindings decode.
 - [Toolchains and environment](../toolchains.md): toolchain setup.
 
 `docs/specs/` contains the readable language and API specifications. The root
