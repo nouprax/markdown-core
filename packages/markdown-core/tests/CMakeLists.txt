@@ -132,6 +132,10 @@ add_executable(facade_test facade.c)
 target_include_directories(facade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(facade_test ${MARKDOWN_CORE_TEST_LIBRARIES})
 
+# The MCB2 encoder the ES and Kotlin bindings decode, over the same corpus.
+add_executable(wire_test wire.c)
+target_link_libraries(wire_test libmarkdown-core-wire)
+
 add_executable(facade_cplusplus_test facade_cplusplus.cpp)
 target_include_directories(facade_cplusplus_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(facade_cplusplus_test ${MARKDOWN_CORE_TEST_LIBRARIES})
@@ -160,6 +164,14 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
     ${MARKDOWN_CORE_CANONICAL_NAMES})
 markdown_core_add_test(consumer_facade_cplusplus consumer 120 facade_cplusplus_test)
+markdown_core_add_test(
+    consumer_wire
+    consumer
+    120
+    wire_test
+    --fixtures
+    "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
+    ${MARKDOWN_CORE_CANONICAL_NAMES})
 
 # The installed CLI parses the one dialect and refuses every switch: a former
 # `--profile` must not silently parse the dialect, and must not parse at all.

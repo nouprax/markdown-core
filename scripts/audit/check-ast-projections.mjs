@@ -265,12 +265,16 @@ const kindSurfaces = [
             .filter((name) => kinds.has(name))
     },
     {
-        label: "ES Wasm batch writer",
+        label: "MCB2 wire encoder",
         expect: [...kinds.keys()].map(snake),
-        actual: namedKinds(
-            "packages/es-markdown-core/src/bridge.c",
-            /^\s{4}case MARKDOWN_CORE_KIND_([A-Z_]+):/gm
-        ).filter((name) => name !== "NONE")
+        actual: [
+            ...new Set(
+                namedKinds(
+                    "packages/markdown-core/wire/markdown_core_wire.c",
+                    /^\s{4}case MARKDOWN_CORE_KIND_([A-Z_]+):/gm
+                )
+            )
+        ].filter((name) => name !== "NONE")
     },
     {
         label: "Swift markup walker",

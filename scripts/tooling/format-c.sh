@@ -30,10 +30,9 @@ case "${1:-}" in
         ;;
 esac
 
-# Every C source the build compiles, not only the engine's: the ES bridge and the
-# Kotlin JNI bridge are compiled by their own builds and were outside this list.
+# Every C source the build compiles, not only the engine's: the Kotlin JNI entry
+# point is compiled by its own build and would otherwise be outside this list.
 find packages/markdown-core \
-    packages/es-markdown-core/src \
     packages/kotlin-markdown-core/src/native \
     -type f \
     \( -name '*.c' -o -name '*.h' -o -name '*.cpp' \) \

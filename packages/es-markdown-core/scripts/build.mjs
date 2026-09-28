@@ -74,13 +74,13 @@ const elements = [
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 const output = path.join(dist, "markdown-core.wasm");
-const exported = ["malloc", "free", "es_parse", "es_result_free"].map((name) => `_${name}`);
+const exported = ["malloc", "free", "markdown_core_wire_parse", "markdown_core_wire_free"].map((name) => `_${name}`);
 const result = spawnSync(
     "emcc",
     [
         ...core,
         ...elements,
-        path.join(packageDirectory, "src/bridge.c"),
+        path.join(root, "packages/markdown-core/wire/markdown_core_wire.c"),
         "-O3",
         "-std=c99",
         "-sSTANDALONE_WASM=1",

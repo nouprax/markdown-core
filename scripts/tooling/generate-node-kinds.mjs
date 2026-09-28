@@ -47,8 +47,14 @@ const hex = (value) => `0x${value.toString(16).padStart(4, "0")}`;
 /** Validates the two schemas and joins them into one model; throws listing every error. */
 export function buildModel(contract, native) {
     const errors = [];
+    // A content kind is one no field names as its type, so `[Markup]` accepts
+    // it; every other kind lives only in the typed fields that name it, and the
+    // Document only at the root.
+    const fieldKinds = new Set(
+        contract.kinds.flatMap(({ fields }) => fields.map(({ type }) => type.replace(/[[\]?]/g, "")))
+    );
     const kinds = [...contract.kinds]
-        .map(({ name, ordinal }) => ({ name, ordinal }))
+        .map(({ name, ordinal }) => ({ name, ordinal, content: name !== "Document" && !fieldKinds.has(name) }))
         .sort((a, b) => a.ordinal - b.ordinal);
     kinds.forEach((kind, index) => {
         if (kind.ordinal !== index + 1) {
@@ -249,7 +255,14 @@ function es({ kinds }) {
         "type Holds<Claim extends true> = Claim;\n\n" +
         "/** Fails to compile unless the wire kinds are exactly the Markup union's kinds, so every\n" +
         " * switch or mapped type exhaustive over one is exhaustive over the other. */\n" +
-        'export type NativeKindsAreMarkupKinds = Holds<Exactly<NativeKind, Markup["kind"]>>;\n'
+        'export type NativeKindsAreMarkupKinds = Holds<Exactly<NativeKind, Markup["kind"]>>;\n\n' +
+        "/** The kinds a `[Markup]` field accepts: every kind no field of the contract names as its type. */\n" +
+        "export const contentKinds: ReadonlySet<NativeKind> = new Set([\n" +
+        kinds
+            .filter((kind) => kind.content)
+            .map((kind) => `    "${camel(kind.name)}"`)
+            .join(",\n") +
+        "\n]);\n"
     );
 }
 

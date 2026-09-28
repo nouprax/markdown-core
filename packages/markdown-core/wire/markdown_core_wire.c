@@ -1,0 +1,973 @@
+#include "markdown_core_wire.h"
+
+#include "markdown_core.h"
+
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+
+/*
+ * MCB2 encoder. See docs/architecture/wire-format.md.
+ *
+ * Records are written in post-order: a node's node-valued fields, field after
+ * field in the contract's order, then the node's own record carrying their
+ * counts. The walk is an explicit stack, so neither the encoder nor a reader
+ * recurses, and no subtree's size is needed before it is written.
+ */
+
+typedef enum wire_failure { WIRE_OK = 0, WIRE_ALLOCATION, WIRE_INTERNAL } wire_failure;
+
+typedef struct wire_buffer {
+    uint8_t *data;
+    size_t size;
+    size_t capacity;
+    wire_failure failure;
+} wire_buffer;
+
+/* The byte offset of the message length. */
+enum { WIRE_HEADER_LENGTH = 4 };
+enum { WIRE_STATUS_DOCUMENT = 0, WIRE_STATUS_ERROR = 1 };
+
+static const uint8_t wire_magic[] = {'M', 'C', 'B', '2'};
+static const uint8_t internal_error_bytes[] = "could not encode the document";
+static const uint8_t allocation_error_bytes[] = "the document is too large to encode";
+
+static void reserve(wire_buffer *buffer, size_t additional) {
+    size_t required;
+    size_t capacity;
+    uint8_t *data;
+    if (buffer->failure != WIRE_OK) {
+        return;
+    }
+    /* The message length is a u32, so no message may outgrow one. */
+    if (additional > UINT32_MAX - buffer->size) {
+        buffer->failure = WIRE_ALLOCATION;
+        return;
+    }
+    required = buffer->size + additional;
+    if (required <= buffer->capacity) {
+        return;
+    }
+    capacity = buffer->capacity == 0 ? 1024 : buffer->capacity;
+    while (capacity < required) {
+        capacity = capacity > SIZE_MAX / 2 ? required : capacity * 2;
+    }
+    data = (uint8_t *)realloc(buffer->data, capacity);
+    if (data == NULL) {
+        buffer->failure = WIRE_ALLOCATION;
+        return;
+    }
+    buffer->data = data;
+    buffer->capacity = capacity;
+}
+
+static void put_bytes(wire_buffer *buffer, const uint8_t *bytes, size_t length) {
+    reserve(buffer, length);
+    if (buffer->failure == WIRE_OK && length != 0) {
+        memcpy(buffer->data + buffer->size, bytes, length);
+        buffer->size += length;
+    }
+}
+
+static void put_u8(wire_buffer *buffer, uint8_t value) { put_bytes(buffer, &value, 1); }
+
+static void put_u32(wire_buffer *buffer, uint32_t value) {
+    uint8_t bytes[4];
+    size_t index;
+    for (index = 0; index < 4; ++index) {
+        bytes[index] = (uint8_t)(value >> (index * 8));
+    }
+    put_bytes(buffer, bytes, sizeof(bytes));
+}
+
+static void put_u64(wire_buffer *buffer, uint64_t value) {
+    uint8_t bytes[8];
+    size_t index;
+    for (index = 0; index < 8; ++index) {
+        bytes[index] = (uint8_t)(value >> (index * 8));
+    }
+    put_bytes(buffer, bytes, sizeof(bytes));
+}
+
+static void put_i32(wire_buffer *buffer, int32_t value) { put_u32(buffer, (uint32_t)value); }
+
+/* Int. */
+static void put_int(wire_buffer *buffer, int64_t value) { put_u64(buffer, (uint64_t)value); }
+
+/* Double. */
+static void put_double(wire_buffer *buffer, double value) {
+    uint64_t bits;
+    memcpy(&bits, &value, sizeof(bits));
+    put_u64(buffer, bits);
+}
+
+static void put_bool(wire_buffer *buffer, bool value) { put_u8(buffer, value ? 1 : 0); }
+
+/* A u32 count, the encoding of `[T]`'s length and of a node-valued field. */
+static void put_count(wire_buffer *buffer, size_t count) {
+    if (count > UINT32_MAX) {
+        buffer->failure = WIRE_ALLOCATION;
+        return;
+    }
+    put_u32(buffer, (uint32_t)count);
+}
+
+static void put_string(wire_buffer *buffer, markdown_core_string value) {
+    put_count(buffer, value.length);
+    put_bytes(buffer, value.data, value.length);
+}
+
+static void put_optional_string(wire_buffer *buffer, markdown_core_optional_string value) {
+    put_bool(buffer, value.has_value);
+    if (value.has_value) {
+        put_string(buffer, value.value);
+    }
+}
+
+static void put_optional_int(wire_buffer *buffer, markdown_core_optional_i64 value) {
+    put_bool(buffer, value.has_value);
+    if (value.has_value) {
+        put_int(buffer, value.value);
+    }
+}
+
+static void put_scope(wire_buffer *buffer, markdown_core_scope scope) {
+    put_i32(buffer, scope.start.line);
+    put_i32(buffer, scope.start.column);
+    put_i32(buffer, scope.end.line);
+    put_i32(buffer, scope.end.column);
+}
+
+static void fail(wire_buffer *buffer) {
+    if (buffer->failure == WIRE_OK) {
+        buffer->failure = WIRE_INTERNAL;
+    }
+}
+
+/* An enum or branch index: the facade numbers from `first`, the wire from 0. */
+static void put_index(wire_buffer *buffer, int value, int first, int last) {
+    if (value < first || value > last) {
+        fail(buffer);
+        return;
+    }
+    put_u8(buffer, (uint8_t)(value - first));
+}
+
+/* anchor: String?, then Attributes { classes: [String], records: [Record] }. */
+static void put_attributes(wire_buffer *buffer, const markdown_core_attribute_value *attributes) {
+    size_t classes = markdown_core_attribute_value_class_count(attributes);
+    size_t records = markdown_core_attribute_value_record_count(attributes);
+    size_t index;
+    put_optional_string(buffer, markdown_core_attribute_value_anchor(attributes));
+    put_count(buffer, classes);
+    for (index = 0; index < classes && buffer->failure == WIRE_OK; ++index) {
+        markdown_core_string value;
+        if (!markdown_core_attribute_value_class_at(attributes, index, &value)) {
+            fail(buffer);
+            return;
+        }
+        put_string(buffer, value);
+    }
+    put_count(buffer, records);
+    for (index = 0; index < records && buffer->failure == WIRE_OK; ++index) {
+        markdown_core_string name, value;
+        if (!markdown_core_attribute_value_record_at(attributes, index, &name, &value)) {
+            fail(buffer);
+            return;
+        }
+        put_string(buffer, name);
+        put_string(buffer, value);
+    }
+}
+
+/* Destination: url { value } | cross { path, anchor? }. */
+static void put_destination(wire_buffer *buffer, const markdown_core_node *node) {
+    markdown_core_destination destination;
+    if (!markdown_core_node_destination(node, &destination)) {
+        fail(buffer);
+        return;
+    }
+    put_index(buffer, destination.kind, MARKDOWN_CORE_DESTINATION_URL, MARKDOWN_CORE_DESTINATION_CROSS);
+    if (destination.kind == MARKDOWN_CORE_DESTINATION_URL) {
+        put_string(buffer, destination.url);
+    } else {
+        put_string(buffer, destination.path);
+        put_optional_string(buffer, destination.anchor);
+    }
+}
+
+/* Dimensions?: { width: Int, height: Int? }. */
+static void put_dimensions(wire_buffer *buffer, const markdown_core_node *node) {
+    const markdown_core_dimensions *dimensions = markdown_core_node_dimensions(node);
+    put_bool(buffer, dimensions != NULL);
+    if (dimensions != NULL) {
+        put_int(buffer, dimensions->width);
+        put_optional_int(buffer, dimensions->height);
+    }
+}
+
+/* MetadataValue?: scalar { MetadataScalar } | list { [MetadataListItem] }. */
+static void put_metadata_value(wire_buffer *buffer, const markdown_core_metadata_value *value) {
+    markdown_core_metadata_value_kind kind;
+    put_bool(buffer, value != NULL);
+    if (value == NULL) {
+        return;
+    }
+    kind = markdown_core_metadata_value_get_kind(value);
+    put_index(buffer, kind, MARKDOWN_CORE_METADATA_SCALAR, MARKDOWN_CORE_METADATA_LIST);
+    if (kind == MARKDOWN_CORE_METADATA_SCALAR) {
+        /* MetadataScalar: null | bool { Bool } | number { String } | text { String }. */
+        markdown_core_metadata_scalar scalar;
+        if (!markdown_core_metadata_value_scalar(value, &scalar)) {
+            fail(buffer);
+            return;
+        }
+        put_index(buffer, scalar.kind, MARKDOWN_CORE_METADATA_NULL, MARKDOWN_CORE_METADATA_TEXT);
+        if (scalar.kind == MARKDOWN_CORE_METADATA_BOOL) {
+            put_bool(buffer, scalar.value.boolean);
+        } else if (scalar.kind != MARKDOWN_CORE_METADATA_NULL) {
+            put_string(buffer, scalar.value.string);
+        }
+    } else {
+        /* MetadataListItem: number { String } | text { String }. */
+        size_t count = markdown_core_metadata_value_item_count(value);
+        size_t index;
+        put_count(buffer, count);
+        for (index = 0; index < count && buffer->failure == WIRE_OK; ++index) {
+            markdown_core_metadata_list_item item;
+            if (!markdown_core_metadata_value_item_at(value, index, &item)) {
+                fail(buffer);
+                return;
+            }
+            put_index(buffer, item.kind, MARKDOWN_CORE_METADATA_ITEM_NUMBER, MARKDOWN_CORE_METADATA_ITEM_TEXT);
+            put_string(buffer, item.value);
+        }
+    }
+}
+
+static void put_metadata(wire_buffer *buffer, const markdown_core_node *metadata) {
+    put_metadata_value(buffer, markdown_core_metadata_name(metadata));
+    put_metadata_value(buffer, markdown_core_metadata_title(metadata));
+    put_metadata_value(buffer, markdown_core_metadata_subtitle(metadata));
+    put_metadata_value(buffer, markdown_core_metadata_time(metadata));
+    put_metadata_value(buffer, markdown_core_metadata_date(metadata));
+    put_metadata_value(buffer, markdown_core_metadata_authors(metadata));
+    put_metadata_value(buffer, markdown_core_metadata_keywords(metadata));
+    put_metadata_value(buffer, markdown_core_metadata_abstract(metadata));
+    put_metadata_value(buffer, markdown_core_metadata_state(metadata));
+    put_metadata_value(buffer, markdown_core_metadata_comment(metadata));
+}
+
+/* ---- Shared resources ---------------------------------------------------- */
+
+/* Numbers each distinct resource in the order the message first names it. An
+ * open-addressing table keyed by the resource's identity. */
+typedef struct wire_resource_slot {
+    const markdown_core_resource *resource;
+    uint32_t ordinal;
+} wire_resource_slot;
+
+typedef struct wire_resources {
+    wire_resource_slot *slots;
+    size_t count;
+    size_t capacity;
+} wire_resources;
+
+static size_t hash_resource(const markdown_core_resource *resource) {
+    uint64_t bits = (uint64_t)(uintptr_t)resource;
+    bits ^= bits >> 33;
+    bits *= UINT64_C(0xff51afd7ed558ccd);
+    bits ^= bits >> 33;
+    return (size_t)bits;
+}
+
+static wire_resource_slot *find_resource_slot(wire_resource_slot *slots, size_t capacity,
+                                              const markdown_core_resource *resource) {
+    size_t position = hash_resource(resource) & (capacity - 1);
+    while (slots[position].resource != NULL && slots[position].resource != resource) {
+        position = (position + 1) & (capacity - 1);
+    }
+    return &slots[position];
+}
+
+static bool grow_resources(wire_resources *resources) {
+    size_t capacity = resources->capacity == 0 ? 64 : resources->capacity * 2;
+    wire_resource_slot *slots;
+    size_t index;
+    if (capacity < resources->capacity || capacity > SIZE_MAX / sizeof(*slots)) {
+        return false;
+    }
+    slots = (wire_resource_slot *)calloc(capacity, sizeof(*slots));
+    if (slots == NULL) {
+        return false;
+    }
+    for (index = 0; index < resources->capacity; ++index) {
+        if (resources->slots[index].resource != NULL) {
+            *find_resource_slot(slots, capacity, resources->slots[index].resource) = resources->slots[index];
+        }
+    }
+    free(resources->slots);
+    resources->slots = slots;
+    resources->capacity = capacity;
+    return true;
+}
+
+/* The `dest` field of a Link or Embedded, which also stands for its `title`:
+ * the resource ordinal, followed by the resource the first time it is named. */
+static void put_resource(wire_buffer *buffer, wire_resources *resources, const markdown_core_node *node) {
+    const markdown_core_resource *resource = markdown_core_node_resource(node);
+    wire_resource_slot *slot;
+    markdown_core_optional_string title;
+    if (resource == NULL) {
+        fail(buffer);
+        return;
+    }
+    if (resources->count + 1 > resources->capacity / 2 && !grow_resources(resources)) {
+        buffer->failure = WIRE_ALLOCATION;
+        return;
+    }
+    slot = find_resource_slot(resources->slots, resources->capacity, resource);
+    if (slot->resource != NULL) {
+        put_u32(buffer, slot->ordinal);
+        return;
+    }
+    if (resources->count >= UINT32_MAX) {
+        buffer->failure = WIRE_ALLOCATION;
+        return;
+    }
+    slot->resource = resource;
+    slot->ordinal = (uint32_t)resources->count++;
+    put_u32(buffer, slot->ordinal);
+    put_destination(buffer, node);
+    if (!markdown_core_node_title(node, &title)) {
+        fail(buffer);
+        return;
+    }
+    put_optional_string(buffer, title);
+    put_attributes(buffer, markdown_core_node_inherited_attributes(node));
+}
+
+/* ---- Node-valued fields -------------------------------------------------- */
+
+typedef enum wire_edge_shape {
+    /* One node, or none. */
+    WIRE_EDGE_NODE,
+    /* A first node and its next siblings. */
+    WIRE_EDGE_CHAIN,
+    /* A definition's bodies, each a chain. */
+    WIRE_EDGE_BODIES
+} wire_edge_shape;
+
+typedef struct wire_edge {
+    wire_edge_shape shape;
+    const markdown_core_node *node;
+    const markdown_core_definition_body *body;
+} wire_edge;
+
+enum { WIRE_MAX_EDGES = 4 };
+
+static wire_edge node_edge(wire_edge_shape shape, const markdown_core_node *node) {
+    wire_edge edge = {shape, node, NULL};
+    return edge;
+}
+
+/* The node-valued fields of `node`, in the contract's field order. This is the
+ * one place that knows where each field's nodes live; the walk schedules them
+ * and the record counts them from the same answer. */
+static size_t node_edges(const markdown_core_node *node, markdown_core_node_kind kind, wire_edge *edges) {
+    const markdown_core_node *children = markdown_core_node_get_first_child(node);
+    switch (kind) {
+    case MARKDOWN_CORE_KIND_DOCUMENT:
+        edges[0] = node_edge(WIRE_EDGE_CHAIN, children);
+        edges[1] = node_edge(WIRE_EDGE_NODE, markdown_core_node_document_metadata(node));
+        edges[2] = node_edge(WIRE_EDGE_CHAIN, markdown_core_node_document_footnotes(node));
+        edges[3] = node_edge(WIRE_EDGE_CHAIN, markdown_core_node_document_specimens(node));
+        return 4;
+    case MARKDOWN_CORE_KIND_CALLOUT:
+        edges[0] = node_edge(WIRE_EDGE_CHAIN, markdown_core_node_callout_title(node));
+        edges[1] = node_edge(WIRE_EDGE_CHAIN, children);
+        return 2;
+    case MARKDOWN_CORE_KIND_TABLE:
+        /* head, content and foot are one chain of rows the record partitions. */
+        edges[0] = node_edge(WIRE_EDGE_NODE, markdown_core_node_table_caption(node));
+        edges[1] = node_edge(WIRE_EDGE_CHAIN, children);
+        return 2;
+    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
+        edges[0] = node_edge(WIRE_EDGE_NODE, markdown_core_node_directive_label(node));
+        edges[1] = node_edge(WIRE_EDGE_CHAIN, children);
+        return 2;
+    case MARKDOWN_CORE_KIND_DIRECTIVE:
+        edges[0] = node_edge(WIRE_EDGE_NODE, markdown_core_node_directive_label(node));
+        return 1;
+    case MARKDOWN_CORE_KIND_CITE:
+        edges[0] = node_edge(WIRE_EDGE_CHAIN, markdown_core_node_cite_citations(node));
+        return 1;
+    case MARKDOWN_CORE_KIND_DEFINITION:
+        edges[0] = node_edge(WIRE_EDGE_CHAIN, markdown_core_node_definition_term(node));
+        edges[1].shape = WIRE_EDGE_BODIES;
+        edges[1].node = NULL;
+        edges[1].body = markdown_core_node_definition_bodies(node);
+        return 2;
+    case MARKDOWN_CORE_KIND_CITATION:
+        edges[0] = node_edge(WIRE_EDGE_CHAIN, markdown_core_citation_prefix(node));
+        edges[1] = node_edge(WIRE_EDGE_CHAIN, markdown_core_citation_suffix(node));
+        return 2;
+    case MARKDOWN_CORE_KIND_FOOTNOTE:
+        edges[0] = node_edge(WIRE_EDGE_CHAIN, markdown_core_footnote_content(node));
+        return 1;
+    case MARKDOWN_CORE_KIND_SPECIMEN:
+        edges[0] = node_edge(WIRE_EDGE_CHAIN, markdown_core_specimen_content(node));
+        return 1;
+    case MARKDOWN_CORE_KIND_THEMATIC_BREAK:
+    case MARKDOWN_CORE_KIND_CODE_BLOCK:
+    case MARKDOWN_CORE_KIND_HTML_BLOCK:
+    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
+    case MARKDOWN_CORE_KIND_TEXT:
+    case MARKDOWN_CORE_KIND_SOFT_BREAK:
+    case MARKDOWN_CORE_KIND_LINE_BREAK:
+    case MARKDOWN_CORE_KIND_CODE:
+    case MARKDOWN_CORE_KIND_HTML:
+    case MARKDOWN_CORE_KIND_FORMULA:
+    case MARKDOWN_CORE_KIND_COMMENT:
+    case MARKDOWN_CORE_KIND_CROSS_LINK:
+    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED:
+    case MARKDOWN_CORE_KIND_METADATA:
+        return 0;
+    case MARKDOWN_CORE_KIND_PARAGRAPH:
+    case MARKDOWN_CORE_KIND_HEADING:
+    case MARKDOWN_CORE_KIND_LIST:
+    case MARKDOWN_CORE_KIND_LIST_ITEM:
+    case MARKDOWN_CORE_KIND_TABLE_CAPTION:
+    case MARKDOWN_CORE_KIND_TABLE_ROW:
+    case MARKDOWN_CORE_KIND_TABLE_CELL:
+    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
+    case MARKDOWN_CORE_KIND_EMPHASIS:
+    case MARKDOWN_CORE_KIND_STRONG:
+    case MARKDOWN_CORE_KIND_STRIKETHROUGH:
+    case MARKDOWN_CORE_KIND_MARK:
+    case MARKDOWN_CORE_KIND_INSERTION:
+    case MARKDOWN_CORE_KIND_SPAN:
+    case MARKDOWN_CORE_KIND_SUPERSCRIPT:
+    case MARKDOWN_CORE_KIND_SUBSCRIPT:
+    case MARKDOWN_CORE_KIND_LINK:
+    case MARKDOWN_CORE_KIND_EMBEDDED:
+    case MARKDOWN_CORE_KIND_DEFINITION_LIST:
+        /* The one node-valued field is the children. */
+        edges[0] = node_edge(WIRE_EDGE_CHAIN, children);
+        return 1;
+    case MARKDOWN_CORE_KIND_NONE:
+        break;
+    }
+    return 0;
+}
+
+static size_t chain_length(const markdown_core_node *node) {
+    size_t count = 0;
+    for (; node != NULL; node = markdown_core_node_get_next_sibling(node)) {
+        count++;
+    }
+    return count;
+}
+
+/* The count of a `[K]` or `[Markup]` field. */
+static void put_chain_count(wire_buffer *buffer, const wire_edge *edge) { put_count(buffer, chain_length(edge->node)); }
+
+/* The presence of a `K?` field. */
+static void put_node_presence(wire_buffer *buffer, const wire_edge *edge) { put_bool(buffer, edge->node != NULL); }
+
+/* The counts of a `[[Markup]]` field. */
+static void put_bodies_counts(wire_buffer *buffer, const wire_edge *edge) {
+    const markdown_core_definition_body *body;
+    size_t count = 0;
+    for (body = edge->body; body != NULL; body = markdown_core_definition_body_next(body)) {
+        count++;
+    }
+    put_count(buffer, count);
+    for (body = edge->body; body != NULL && buffer->failure == WIRE_OK;
+         body = markdown_core_definition_body_next(body)) {
+        put_count(buffer, chain_length(markdown_core_definition_body_content(body)));
+    }
+}
+
+/* ---- Records ------------------------------------------------------------- */
+
+static void put_list_fields(wire_buffer *buffer, const markdown_core_node *node) {
+    markdown_core_list_flavor flavor;
+    markdown_core_optional_i64 start;
+    markdown_core_ordered_list_variant variant;
+    markdown_core_ordered_list_delimiter delimiter;
+    bool tight;
+    if (!markdown_core_node_list_properties(node, &flavor, &start, &variant, &delimiter, &tight)) {
+        fail(buffer);
+        return;
+    }
+    put_index(buffer, flavor, MARKDOWN_CORE_LIST_FLAVOR_BULLET, MARKDOWN_CORE_LIST_FLAVOR_ORDERED);
+    put_optional_int(buffer, start);
+    /* The ordered-marker facts exist exactly when the list has a start. */
+    put_bool(buffer, start.has_value);
+    if (start.has_value) {
+        put_index(buffer, variant.kind, MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL,
+                  MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT);
+        if (variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA ||
+            variant.kind == MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN) {
+            put_bool(buffer, variant.lowercased);
+        }
+    }
+    put_bool(buffer, start.has_value);
+    if (start.has_value) {
+        put_index(buffer, delimiter.kind, MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD,
+                  MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT);
+        if (delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS) {
+            put_bool(buffer, delimiter.closed);
+        }
+    }
+    put_bool(buffer, tight);
+}
+
+static void put_table_fields(wire_buffer *buffer, const markdown_core_node *node, const wire_edge *edges) {
+    size_t columns, head, content, foot, index;
+    if (!markdown_core_node_table_properties(node, &columns, &head, &content, &foot) ||
+        head + content + foot != chain_length(edges[1].node)) {
+        fail(buffer);
+        return;
+    }
+    put_node_presence(buffer, &edges[0]);
+    put_count(buffer, columns);
+    for (index = 0; index < columns && buffer->failure == WIRE_OK; ++index) {
+        /* TableColumn { flow: Flow, relative: Double? }. */
+        markdown_core_table_column column;
+        if (!markdown_core_node_table_column_at(node, index, &column)) {
+            fail(buffer);
+            return;
+        }
+        put_index(buffer, column.flow, MARKDOWN_CORE_FLOW_NONE, MARKDOWN_CORE_FLOW_RIGHT);
+        put_bool(buffer, column.relative.has_value);
+        if (column.relative.has_value) {
+            put_double(buffer, column.relative.value);
+        }
+    }
+    put_count(buffer, head);
+    put_count(buffer, content);
+    put_count(buffer, foot);
+}
+
+static void put_citation_fields(wire_buffer *buffer, const markdown_core_node *node, const wire_edge *edges) {
+    /* CitationReferent: bib { key, mode: BibMode } | footnote { id } | specimen { id }. */
+    markdown_core_referent referent;
+    if (!markdown_core_citation_referent(node, &referent)) {
+        fail(buffer);
+        return;
+    }
+    put_index(buffer, referent.kind, MARKDOWN_CORE_REFERENT_BIB, MARKDOWN_CORE_REFERENT_SPECIMEN);
+    if (referent.kind == MARKDOWN_CORE_REFERENT_BIB) {
+        put_string(buffer, referent.key);
+        put_index(buffer, referent.mode, MARKDOWN_CORE_BIB_MODE_NORMAL, MARKDOWN_CORE_BIB_MODE_SUPPRESS_AUTHOR);
+    } else {
+        put_string(buffer, referent.id);
+    }
+    put_chain_count(buffer, &edges[0]);
+    put_chain_count(buffer, &edges[1]);
+}
+
+/* A node's record: its kind, its inherited fields, then its own fields in the
+ * contract's order, node-valued fields written as counts. */
+static void put_record(wire_buffer *buffer, wire_resources *resources, const markdown_core_node *node) {
+    markdown_core_node_kind kind = markdown_core_node_get_kind(node);
+    wire_edge edges[WIRE_MAX_EDGES];
+    markdown_core_string literal;
+    markdown_core_optional_string first, second;
+
+    node_edges(node, kind, edges);
+    put_u8(buffer, (uint8_t)kind);
+    put_scope(buffer, markdown_core_node_scope(node));
+    put_attributes(buffer, markdown_core_node_primary_attributes(node));
+
+    switch (kind) {
+    case MARKDOWN_CORE_KIND_DOCUMENT:
+        put_chain_count(buffer, &edges[0]);
+        put_node_presence(buffer, &edges[1]);
+        put_chain_count(buffer, &edges[2]);
+        put_chain_count(buffer, &edges[3]);
+        break;
+    case MARKDOWN_CORE_KIND_CALLOUT: {
+        markdown_core_optional_bool collapsed;
+        if (!markdown_core_node_callout_properties(node, &first, &collapsed)) {
+            fail(buffer);
+            break;
+        }
+        put_optional_string(buffer, first);
+        put_bool(buffer, collapsed.has_value);
+        if (collapsed.has_value) {
+            put_bool(buffer, collapsed.value);
+        }
+        put_node_presence(buffer, &edges[0]);
+        if (edges[0].node != NULL) {
+            put_chain_count(buffer, &edges[0]);
+        }
+        put_chain_count(buffer, &edges[1]);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_HEADING: {
+        int32_t level;
+        if (!markdown_core_node_heading_level(node, &level)) {
+            fail(buffer);
+            break;
+        }
+        put_int(buffer, level);
+        put_chain_count(buffer, &edges[0]);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_LIST:
+        put_list_fields(buffer, node);
+        put_chain_count(buffer, &edges[0]);
+        break;
+    case MARKDOWN_CORE_KIND_LIST_ITEM:
+        if (!markdown_core_node_list_item_marker(node, &first)) {
+            fail(buffer);
+            break;
+        }
+        put_optional_string(buffer, first);
+        put_chain_count(buffer, &edges[0]);
+        break;
+    case MARKDOWN_CORE_KIND_CODE_BLOCK: {
+        bool fenced, closed;
+        if (!markdown_core_node_code_block_properties(node, &first, &second, &literal, &fenced, &closed)) {
+            fail(buffer);
+            break;
+        }
+        put_optional_string(buffer, first);
+        put_optional_string(buffer, second);
+        put_string(buffer, literal);
+        put_bool(buffer, fenced);
+        put_bool(buffer, closed);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_HTML_BLOCK:
+    case MARKDOWN_CORE_KIND_TEXT:
+    case MARKDOWN_CORE_KIND_CODE:
+    case MARKDOWN_CORE_KIND_HTML:
+    case MARKDOWN_CORE_KIND_COMMENT:
+        if (!markdown_core_node_literal(node, &literal)) {
+            fail(buffer);
+            break;
+        }
+        put_string(buffer, literal);
+        break;
+    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
+    case MARKDOWN_CORE_KIND_FORMULA: {
+        markdown_core_placement mode;
+        if (!markdown_core_node_formula_properties(node, &mode, &literal)) {
+            fail(buffer);
+            break;
+        }
+        /* A FormulaBlock's placement is implied by its kind. */
+        if (kind == MARKDOWN_CORE_KIND_FORMULA) {
+            put_index(buffer, mode, MARKDOWN_CORE_PLACEMENT_EMBEDDED, MARKDOWN_CORE_PLACEMENT_STANDALONE);
+        }
+        put_string(buffer, literal);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_TABLE:
+        put_table_fields(buffer, node, edges);
+        break;
+    case MARKDOWN_CORE_KIND_TABLE_CELL: {
+        int64_t rowspan, colspan;
+        if (!markdown_core_node_table_cell_spans(node, &rowspan, &colspan)) {
+            fail(buffer);
+            break;
+        }
+        put_int(buffer, rowspan);
+        put_int(buffer, colspan);
+        put_chain_count(buffer, &edges[0]);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
+    case MARKDOWN_CORE_KIND_DIRECTIVE:
+        if (!markdown_core_node_directive_properties(node, &first)) {
+            fail(buffer);
+            break;
+        }
+        if (kind == MARKDOWN_CORE_KIND_DIRECTIVE) {
+            /* An inline directive's name is required and it has no content. */
+            if (!first.has_value || markdown_core_node_get_first_child(node) != NULL) {
+                fail(buffer);
+                break;
+            }
+            put_string(buffer, first.value);
+            put_node_presence(buffer, &edges[0]);
+        } else {
+            put_optional_string(buffer, first);
+            put_node_presence(buffer, &edges[0]);
+            put_chain_count(buffer, &edges[1]);
+        }
+        break;
+    case MARKDOWN_CORE_KIND_CROSS_LINK:
+    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED:
+        put_destination(buffer, node);
+        put_optional_string(buffer, markdown_core_node_cross_label(node));
+        if (kind == MARKDOWN_CORE_KIND_CROSS_EMBEDDED) {
+            put_dimensions(buffer, node);
+        }
+        break;
+    case MARKDOWN_CORE_KIND_LINK:
+    case MARKDOWN_CORE_KIND_EMBEDDED:
+        put_resource(buffer, resources, node);
+        if (kind == MARKDOWN_CORE_KIND_EMBEDDED) {
+            put_dimensions(buffer, node);
+        }
+        put_chain_count(buffer, &edges[0]);
+        break;
+    case MARKDOWN_CORE_KIND_DEFINITION: {
+        bool compact;
+        if (!markdown_core_node_definition_compact(node, &compact)) {
+            fail(buffer);
+            break;
+        }
+        put_chain_count(buffer, &edges[0]);
+        put_bodies_counts(buffer, &edges[1]);
+        put_bool(buffer, compact);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_CITATION:
+        put_citation_fields(buffer, node, edges);
+        break;
+    case MARKDOWN_CORE_KIND_FOOTNOTE:
+        if (!markdown_core_footnote_id(node, &literal)) {
+            fail(buffer);
+            break;
+        }
+        put_string(buffer, literal);
+        put_chain_count(buffer, &edges[0]);
+        break;
+    case MARKDOWN_CORE_KIND_SPECIMEN: {
+        markdown_core_optional_i64 start;
+        if (!markdown_core_specimen_properties(node, &first, &start)) {
+            fail(buffer);
+            break;
+        }
+        put_optional_string(buffer, first);
+        put_optional_int(buffer, start);
+        put_chain_count(buffer, &edges[0]);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_METADATA:
+        put_metadata(buffer, node);
+        break;
+    case MARKDOWN_CORE_KIND_THEMATIC_BREAK:
+    case MARKDOWN_CORE_KIND_SOFT_BREAK:
+    case MARKDOWN_CORE_KIND_LINE_BREAK:
+        break;
+    case MARKDOWN_CORE_KIND_PARAGRAPH:
+    case MARKDOWN_CORE_KIND_TABLE_CAPTION:
+    case MARKDOWN_CORE_KIND_TABLE_ROW:
+    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
+    case MARKDOWN_CORE_KIND_EMPHASIS:
+    case MARKDOWN_CORE_KIND_STRONG:
+    case MARKDOWN_CORE_KIND_STRIKETHROUGH:
+    case MARKDOWN_CORE_KIND_MARK:
+    case MARKDOWN_CORE_KIND_INSERTION:
+    case MARKDOWN_CORE_KIND_SPAN:
+    case MARKDOWN_CORE_KIND_SUPERSCRIPT:
+    case MARKDOWN_CORE_KIND_SUBSCRIPT:
+    case MARKDOWN_CORE_KIND_DEFINITION_LIST:
+    case MARKDOWN_CORE_KIND_CITE:
+        put_chain_count(buffer, &edges[0]);
+        break;
+    case MARKDOWN_CORE_KIND_NONE:
+    default:
+        fail(buffer);
+        break;
+    }
+}
+
+/* ---- The walk ------------------------------------------------------------ */
+
+typedef enum wire_step {
+    /* Schedule a node's fields, then its record. */
+    WIRE_VISIT,
+    /* Write a node's record; its fields are written. */
+    WIRE_RECORD,
+    /* Visit a node, then its next siblings. */
+    WIRE_CHAIN,
+    /* Visit a body's chain, then the next bodies. */
+    WIRE_BODIES
+} wire_step;
+
+typedef struct wire_action {
+    wire_step step;
+    const markdown_core_node *node;
+    const markdown_core_definition_body *body;
+} wire_action;
+
+typedef struct wire_stack {
+    wire_action *actions;
+    size_t count;
+    size_t capacity;
+} wire_stack;
+
+static void push(wire_buffer *buffer, wire_stack *stack, wire_step step, const markdown_core_node *node,
+                 const markdown_core_definition_body *body) {
+    if (buffer->failure != WIRE_OK) {
+        return;
+    }
+    if (stack->count == stack->capacity) {
+        size_t capacity = stack->capacity == 0 ? 64 : stack->capacity * 2;
+        wire_action *actions;
+        if (capacity < stack->capacity || capacity > SIZE_MAX / sizeof(*actions)) {
+            buffer->failure = WIRE_ALLOCATION;
+            return;
+        }
+        actions = (wire_action *)realloc(stack->actions, capacity * sizeof(*actions));
+        if (actions == NULL) {
+            buffer->failure = WIRE_ALLOCATION;
+            return;
+        }
+        stack->actions = actions;
+        stack->capacity = capacity;
+    }
+    stack->actions[stack->count].step = step;
+    stack->actions[stack->count].node = node;
+    stack->actions[stack->count].body = body;
+    stack->count++;
+}
+
+/* Pushes a field so that it runs before anything pushed earlier. */
+static void push_edge(wire_buffer *buffer, wire_stack *stack, const wire_edge *edge) {
+    switch (edge->shape) {
+    case WIRE_EDGE_NODE:
+        if (edge->node != NULL) {
+            push(buffer, stack, WIRE_VISIT, edge->node, NULL);
+        }
+        break;
+    case WIRE_EDGE_CHAIN:
+        if (edge->node != NULL) {
+            push(buffer, stack, WIRE_CHAIN, edge->node, NULL);
+        }
+        break;
+    case WIRE_EDGE_BODIES:
+        if (edge->body != NULL) {
+            push(buffer, stack, WIRE_BODIES, NULL, edge->body);
+        }
+        break;
+    }
+}
+
+static void put_tree(wire_buffer *buffer, const markdown_core_node *root) {
+    wire_stack stack = {0};
+    wire_resources resources = {0};
+    push(buffer, &stack, WIRE_VISIT, root, NULL);
+    while (stack.count != 0 && buffer->failure == WIRE_OK) {
+        wire_action action = stack.actions[--stack.count];
+        switch (action.step) {
+        case WIRE_VISIT: {
+            wire_edge edges[WIRE_MAX_EDGES];
+            size_t count = node_edges(action.node, markdown_core_node_get_kind(action.node), edges);
+            push(buffer, &stack, WIRE_RECORD, action.node, NULL);
+            while (count != 0) {
+                push_edge(buffer, &stack, &edges[--count]);
+            }
+            break;
+        }
+        case WIRE_RECORD:
+            put_record(buffer, &resources, action.node);
+            break;
+        case WIRE_CHAIN: {
+            const markdown_core_node *next = markdown_core_node_get_next_sibling(action.node);
+            if (next != NULL) {
+                push(buffer, &stack, WIRE_CHAIN, next, NULL);
+            }
+            push(buffer, &stack, WIRE_VISIT, action.node, NULL);
+            break;
+        }
+        case WIRE_BODIES: {
+            const markdown_core_definition_body *next = markdown_core_definition_body_next(action.body);
+            const markdown_core_node *content = markdown_core_definition_body_content(action.body);
+            if (next != NULL) {
+                push(buffer, &stack, WIRE_BODIES, NULL, next);
+            }
+            if (content != NULL) {
+                push(buffer, &stack, WIRE_CHAIN, content, NULL);
+            }
+            break;
+        }
+        }
+    }
+    free(stack.actions);
+    free(resources.slots);
+}
+
+/* ---- Messages ------------------------------------------------------------ */
+
+static void put_header(wire_buffer *buffer, uint8_t status) {
+    put_bytes(buffer, wire_magic, sizeof(wire_magic));
+    put_u32(buffer, 0);
+    put_u8(buffer, status);
+}
+
+static void seal(wire_buffer *buffer) {
+    size_t index;
+    if (buffer->failure != WIRE_OK) {
+        return;
+    }
+    for (index = 0; index < 4; ++index) {
+        buffer->data[WIRE_HEADER_LENGTH + index] = (uint8_t)(buffer->size >> (index * 8));
+    }
+}
+
+static uint8_t *error_message(markdown_core_error_code code, markdown_core_string message) {
+    wire_buffer buffer = {0};
+    put_header(&buffer, WIRE_STATUS_ERROR);
+    put_u32(&buffer, (uint32_t)code);
+    put_string(&buffer, message);
+    seal(&buffer);
+    if (buffer.failure != WIRE_OK) {
+        free(buffer.data);
+        return NULL;
+    }
+    return buffer.data;
+}
+
+uint8_t *markdown_core_wire_parse(const uint8_t *source, size_t length) {
+    markdown_core_error *error = NULL;
+    markdown_core_document *document = markdown_core_document_parse(source, length, &error);
+    const markdown_core_node *root;
+    wire_buffer buffer = {0};
+    markdown_core_string text;
+
+    if (document == NULL) {
+        uint8_t *message;
+        if (error == NULL) {
+            text.data = internal_error_bytes;
+            text.length = sizeof(internal_error_bytes) - 1;
+            return error_message(MARKDOWN_CORE_ERROR_INTERNAL, text);
+        }
+        message = error_message(markdown_core_error_get_code(error), markdown_core_error_get_message(error));
+        markdown_core_error_free(error);
+        return message;
+    }
+
+    put_header(&buffer, WIRE_STATUS_DOCUMENT);
+    root = markdown_core_document_root(document);
+    if (root == NULL) {
+        fail(&buffer);
+    } else {
+        put_tree(&buffer, root);
+    }
+    markdown_core_document_free(document);
+    seal(&buffer);
+    if (buffer.failure == WIRE_OK) {
+        return buffer.data;
+    }
+
+    free(buffer.data);
+    if (buffer.failure == WIRE_ALLOCATION) {
+        text.data = allocation_error_bytes;
+        text.length = sizeof(allocation_error_bytes) - 1;
+        return error_message(MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, text);
+    }
+    text.data = internal_error_bytes;
+    text.length = sizeof(internal_error_bytes) - 1;
+    return error_message(MARKDOWN_CORE_ERROR_INTERNAL, text);
+}
+
+void markdown_core_wire_free(uint8_t *message) { free(message); }

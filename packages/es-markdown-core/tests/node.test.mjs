@@ -6,9 +6,9 @@ import { Document, MarkupDumper, walk } from "../dist/index.js";
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
 import { parseDocumentWithNative } from "../dist/runtime/parser.js";
-import { kinds } from "../dist/wire/kinds.js";
 import { Decoder } from "../dist/wire/node-decoder.js";
 import { emptyVisitor } from "./visitor.mjs";
+import { MessageWriter, nativeMessage } from "./wire.mjs";
 
 test("ast: dimensions belong to each image occurrence while its destination stays shared", () => {
     const document = Document.parse('![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared "title"\n');
@@ -344,11 +344,11 @@ test("errors: allocation failure is terminal across the WASM boundary", () => {
         memory: new globalThis.WebAssembly.Memory({ initial: 1 }),
         malloc: () => 0,
         free: () => {},
-        es_parse: () => {
+        markdown_core_wire_parse: () => {
             parseCalled = true;
             return 0;
         },
-        es_result_free: () => {}
+        markdown_core_wire_free: () => {}
     };
     assert.throws(
         () => parseDocumentWithNative(allocationFailure, "text"),
@@ -357,7 +357,7 @@ test("errors: allocation failure is terminal across the WASM boundary", () => {
     assert.equal(parseCalled, false, "the runtime must not parse or fall back after allocation refusal");
 
     const memory = new globalThis.WebAssembly.Memory({ initial: 1 });
-    const result = errorResult(2, "out of memory");
+    const result = new MessageWriter().error(2, "out of memory");
     new Uint8Array(memory.buffer, 64, result.length).set(result);
     const frees = [];
     const freedResults = [];
@@ -365,8 +365,8 @@ test("errors: allocation failure is terminal across the WASM boundary", () => {
         memory,
         malloc: () => 8,
         free: (pointer) => frees.push(pointer),
-        es_parse: () => 64,
-        es_result_free: (pointer) => freedResults.push(pointer)
+        markdown_core_wire_parse: () => 64,
+        markdown_core_wire_free: (pointer) => freedResults.push(pointer)
     };
     assert.throws(
         () => parseDocumentWithNative(nativeFailure, "text"),
@@ -379,35 +379,28 @@ test("errors: allocation failure is terminal across the WASM boundary", () => {
 
 test("ownership: every occurrence of one definition crosses the boundary once and is materialized once", () => {
     // M2: the C tree shares one resource across every occurrence of a
-    // definition; the Wasm result writes its strings once and each later
-    // occurrence points at the same bytes, and the decoder reuses the value it
-    // built for the first. The string blob therefore stays near the source
-    // size where copying would multiply the destination by the occurrences.
-    const destination = `/${"u".repeat(1024)}`;
+    // definition. The message writes it with the first occurrence and every
+    // later one names its ordinal, and the decoder reuses the value it built
+    // for the first. Growing the definition therefore grows the message by
+    // the definition, never by the definition times its occurrences.
     const count = 20_000;
-    const anchor = "a".repeat(1024);
-    const classes = Array.from({ length: 1024 }, () => "c");
-    const source = `[a]: ${destination} {#${anchor} ${classes.map((value) => `.${value}`).join(" ")} k=${destination}}\n\n${"[a]\n\n".repeat(count)}`;
-    let stringsLength = -1;
-    let attributeCount = -1;
-    const measuringNative = {
-        memory: native.memory,
-        malloc: native.malloc,
-        free: native.free,
-        es_parse: (...arguments_) => {
-            const result = native.es_parse(...arguments_);
-            stringsLength = new DataView(native.memory.buffer).getUint32(result + 60, true);
-            attributeCount = new DataView(native.memory.buffer).getUint32(result + 32, true);
-            return result;
-        },
-        es_result_free: native.es_result_free
+    const source = (size) => {
+        const destination = `/${"u".repeat(size)}`;
+        const classes = Array.from({ length: size }, () => ".c").join(" ");
+        return `[a]: ${destination} {#${"a".repeat(size)} ${classes} k=${destination}}\n\n${"[a]\n\n".repeat(count)}`;
     };
-    const document = parseDocumentWithNative(measuringNative, source);
+    const size = 1024;
+    const growth = nativeMessage(source(size)).length - nativeMessage(source(1)).length;
+    const authored = source(size).length - source(1).length;
+    assert.ok(growth < 2 * authored, `the message grew ${growth} bytes for ${authored} authored bytes`);
+
+    const destination = `/${"u".repeat(size)}`;
+    const classes = Array.from({ length: size }, () => "c");
+    const document = Document.parse(source(size));
     const links = document.content.map((paragraph) => paragraph.content[0]);
     assert.equal(links.length, count);
-    assert.equal(links[0].anchor, anchor);
+    assert.equal(links[0].anchor, "a".repeat(size));
     assert.deepEqual(links[0].attributes.classes, classes);
-    assert.equal(attributeCount, classes.length + 1, "definition attributes cross Wasm once");
     assert.throws(() => {
         links[0].attributes.classes[0] = "edited";
     }, TypeError);
@@ -426,33 +419,24 @@ test("ownership: every occurrence of one definition crosses the boundary once an
         links.every((link) => link.kind === "link" && link.dest === links[0].dest),
         "every occurrence materializes the one destination"
     );
-    assert.ok(
-        stringsLength >= 0 && stringsLength < 2 * source.length,
-        `the string blob holds ${stringsLength} bytes for ${source.length} source bytes`
-    );
 });
 
 test("ownership: forward heading references share their finalized target without inheriting heading attributes", () => {
-    const anchor = "a".repeat(1024);
     const count = 5_000;
-    const source = `${"[Target]\n\n".repeat(count)}# Target {#${anchor} .heading k=1}\n`;
-    let stringsLength = -1;
-    const measuringNative = {
-        ...native,
-        es_parse: (...arguments_) => {
-            const result = native.es_parse(...arguments_);
-            stringsLength = new DataView(native.memory.buffer).getUint32(result + 60, true);
-            return result;
-        }
-    };
-    const document = parseDocumentWithNative(measuringNative, source);
+    const source = (size) => `${"[Target]\n\n".repeat(count)}# Target {#${"a".repeat(size)} .heading k=1}\n`;
+    const size = 1024;
+    const anchor = "a".repeat(size);
+    // The anchor crosses twice, on the heading and in the one shared
+    // destination, whatever the number of references.
+    const growth = nativeMessage(source(size)).length - nativeMessage(source(1)).length;
+    assert.ok(growth < 3 * (size - 1), `the message grew ${growth} bytes`);
+    const document = Document.parse(source(size));
     const links = document.content.slice(0, count).map((paragraph) => paragraph.content[0]);
     assert.equal(document.content[count].anchor, anchor);
     assert.deepEqual(links[0].dest, { kind: "url", value: `#${anchor}` });
     assert.ok(links.every((link) => link.dest === links[0].dest));
     assert.ok(links.every((link) => link.anchor === null && link.title === null));
     assert.deepEqual(links[0].attributes, { classes: [], records: [] });
-    assert.ok(stringsLength >= 0 && stringsLength < 2 * source.length);
 });
 
 test("ast: an ordinary quote is a metadata-free callout", () => {
@@ -505,50 +489,20 @@ test("ast: authored callout title walks before body after native release", () =>
     assert.equal(empty.collapsed, null);
 });
 
-test("ast: a title is decoded from the auxiliary range before the content and dumped as a group", () => {
-    // The title path of the wire: a node-valued list the record owns through
-    // its auxiliary range. This transport fixture is built by hand:
-    // a document holding one collapsed `note` callout whose
+test("ast: a title is decoded before the content and dumped as a group", () => {
+    // The title is a node-valued field written before the content, whose
+    // count is present exactly when a title was authored. This message is
+    // written by hand: a document holding one collapsed `note` callout whose
     // title is the text `T` and whose content is empty.
-    const nodeSize = 160;
-    const strings = Uint8Array.from("noteT", (character) => character.charCodeAt(0));
-    const nodesOffset = 64;
-    const edgesOffset = nodesOffset + 3 * nodeSize;
-    const stringsOffset = edgesOffset + 2 * 4;
-    const total = stringsOffset + strings.length;
-    const bytes = new Uint8Array(total);
-    const view = new DataView(bytes.buffer);
-    bytes.set([0x4d, 0x43, 0x42, 0x31], 0);
-    for (const [offset, value] of [
-        [4, total],
-        [24, 3],
-        [28, 2],
-        [40, nodesOffset],
-        [44, edgesOffset],
-        [48, stringsOffset],
-        [52, stringsOffset],
-        [56, stringsOffset],
-        [60, strings.length]
-    ]) {
-        view.setUint32(offset, value, true);
-    }
-    const node = (index, kind, scope, fields) => {
-        const at = nodesOffset + index * nodeSize;
-        view.setUint32(at, kind, true);
-        for (const [slot, value] of scope.entries()) view.setInt32(at + 8 + slot * 4, value, true);
-        view.setUint32(at + 96, 0xffff_ffff, true);
-        view.setUint32(at + 120, 0xffff_ffff, true);
-        view.setUint32(at + 32, 0xffff_ffff, true);
-        view.setUint32(at + 36, 0xffff_ffff, true);
-        for (let slot = 0; slot < 4; ++slot) view.setUint32(at + 64 + slot * 8, 0xffff_ffff, true);
-        for (const [offset, value] of Object.entries(fields)) view.setUint32(at + Number(offset), value, true);
-    };
-    node(0, 1, [1, 1, 1, 8], { 24: 0, 28: 1 });
-    node(1, 2, [1, 1, 1, 8], { 24: 1, 28: 0, 36: 1, 40: 1, 44: 1, 64: stringsOffset, 68: 4 });
-    node(2, 13, [1, 10, 1, 10], { 64: stringsOffset + 4, 68: 1 });
-    view.setUint32(edgesOffset, 1, true);
-    view.setUint32(edgesOffset + 4, 2, true);
-    bytes.set(strings, stringsOffset);
+    const bytes = new MessageWriter()
+        .text("T", { scope: [1, 10, 1, 10] })
+        .record("callout", { scope: [1, 1, 1, 8] })
+        .optional("note", MessageWriter.prototype.string)
+        .optional(true, MessageWriter.prototype.bool)
+        .optional(1, MessageWriter.prototype.u32)
+        .u32(0)
+        .root(1, { scope: [1, 1, 1, 8] })
+        .document();
 
     const document = new Decoder(bytes).decode();
     const [callout] = document.content;
@@ -589,28 +543,28 @@ test("robustness: a large document crosses the WASM boundary in one AST result",
         memory: native.memory,
         malloc: native.malloc,
         free: native.free,
-        es_parse: (...arguments_) => {
+        markdown_core_wire_parse: (...arguments_) => {
             parseCalls += 1;
-            return native.es_parse(...arguments_);
+            return native.markdown_core_wire_parse(...arguments_);
         },
-        es_result_free: (result) => {
+        markdown_core_wire_free: (result) => {
             resultFrees += 1;
-            native.es_result_free(result);
+            native.markdown_core_wire_free(result);
         }
     };
     assert.equal(parseDocumentWithNative(countedNative, unit.repeat(5_000)).content.length, 10_000);
     assert.equal(parseCalls, 1, "AST transfer must be independent of node and field count");
     assert.equal(resultFrees, 1, "the one native result must be released exactly once");
     assert.deepEqual(
-        Object.keys(native).filter((name) => name.startsWith("es_node_")),
+        Object.keys(native).filter((name) => name.startsWith("markdown_core_node_")),
         [],
         "per-node WASM accessors must not return through the export surface"
     );
 });
 
 test("robustness: uncapped list nesting remains traversable", () => {
-    // The transfer is an indexed table and the decoder constructs it in
-    // reverse order, so depth is data rather than native or JS call-stack use.
+    // Records arrive in post-order and the decoder builds them on a heap
+    // stack, so depth is data rather than native or JS call-stack use.
     const depth = 10_000;
     const document = Document.parse("- ".repeat(depth) + "leaf\n");
     let entered = 0;
@@ -823,94 +777,115 @@ test("ast: the decoder's reference, formula, list and empty-string arms are exer
     assert.equal(list.items.length, 2);
 });
 
-test("errors: malformed native values are rejected before they enter the AST", () => {
-    // These guards exist because the two sides of the wire are versioned
-    // separately -- the Kotlin bridge's wire magic addresses the same hazard -- and
-    // a decoder that silently mapped an unknown value would turn a protocol
-    // mismatch into a wrong document. Nothing proved any of them fires, so a
-    // renumbering could have removed the check and stayed green.
-    const decoder = new Decoder(new Uint8Array(64));
-    assert.throws(() => decoder.placement(9), /invalid placement mode 9/u);
-    assert.throws(() => decoder.flavor(9), /invalid list flavor 9/u);
-    assert.throws(() => decoder.flow(9), /invalid table flow 9/u);
-    assert.throws(() => decoder.nullableBoolean(9, "checked"), /invalid checked 9/u);
-    assert.equal(decoder.placement(2), "standalone");
-    assert.equal(decoder.flavor(2), "ordered");
-    assert.equal(decoder.flow(0), "none");
-    assert.equal(decoder.nullableBoolean(-1, "checked"), null);
+test("errors: malformed native messages are rejected before they enter the AST", () => {
+    // The two sides of the wire are built separately, and a decoder that
+    // silently mapped an unknown value would turn a protocol mismatch into a
+    // wrong document. Each guard is exercised, so none can be removed and
+    // stay green.
+    const decode = (writer) => new Decoder(writer.document()).decode();
+    const text = () => new MessageWriter().text("t");
+    assert.equal(decode(text().root(1)).content[0].literal, "t");
 
     // Native parse failures keep their terminal category across the WASM
     // boundary. In particular, allocation failure must not be collapsed into
     // an internal error that a consumer could mistake for a recoverable path.
+    const failure = (code) => new Decoder(new MessageWriter().error(code, "bad")).decode();
     assert.throws(
-        () => new Decoder(errorResult(1, "bad")).decode(),
-        (error) => error.code === "invalidArgument"
+        () => failure(1),
+        (error) => error.code === "invalidArgument" && error.message === "bad"
     );
     assert.throws(
-        () => new Decoder(errorResult(2, "out of memory")).decode(),
+        () => failure(2),
         (error) => error.code === "allocationFailed"
     );
     assert.throws(
-        () => new Decoder(errorResult(99, "bad")).decode(),
+        () => failure(99),
         (error) => error.code === "internal"
     );
 
-    // A directive label is a typed field with its own node kind. Accepting a
-    // generic child here would erase the structural distinction this wire
-    // contract exists to preserve.
-    const malformedDirective = nativeResult(":note[label]\n");
-    const directiveOffset = findNode(malformedDirective, kinds.indexOf("directive"));
-    const fieldIndex = new DataView(malformedDirective.buffer).getUint32(directiveOffset + 32, true);
-    const nodesOffset = new DataView(malformedDirective.buffer).getUint32(40, true);
-    new DataView(malformedDirective.buffer).setUint32(nodesOffset + fieldIndex * 160, 3, true);
-    assert.throws(() => new Decoder(malformedDirective).decode(), /directive label field contains a non-label node/u);
+    // Values outside the contract's enums, booleans and branches.
+    assert.throws(
+        () => decode(new MessageWriter().record("formula").u8(2).string("x").root(1)),
+        /invalid enum index 2/u
+    );
+    assert.throws(
+        () => decode(new MessageWriter().record("codeBlock").bool(false).bool(false).string("x").u8(2).root(1)),
+        /invalid boolean 2/u
+    );
+    assert.throws(
+        () => decode(new MessageWriter().record("crossLink").u8(2).string("p").bool(false).root(1)),
+        /invalid branch 2/u
+    );
 
-    const unknownKind = nativeResult("text\n");
-    new DataView(unknownKind.buffer).setUint32(findNode(unknownKind, kinds.indexOf("text")), 99, true);
-    assert.throws(() => new Decoder(unknownKind).decode(), /unknown node kind 99/u);
+    // A typed field accepts its own kind only, and content accepts no typed
+    // kind: a directive's label is a field, never a generic child.
+    assert.throws(
+        () => decode(new MessageWriter().record("paragraph").u32(0).record("directive").string("n").bool(true).root(1)),
+        /places a paragraph node in a directiveLabel field/u
+    );
+    assert.throws(
+        () => decode(new MessageWriter().record("directiveLabel").u32(0).root(1)),
+        /places a directiveLabel node in a content field/u
+    );
 
-    const badMagic = nativeResult("text\n");
+    // The shape of the message as a whole.
+    assert.throws(() => decode(new MessageWriter().record(99)), /unknown node kind 99/u);
+    assert.throws(() => decode(new MessageWriter().root(1)), /names more nodes than precede it/u);
+    assert.throws(() => decode(text().text("u").root(1)), /not one document tree/u);
+    assert.throws(() => decode(text()), /not one document tree/u);
+    assert.throws(() => decode(new MessageWriter().record("link").u32(1).u32(0).root(1)), /unknown resource 1/u);
+    assert.throws(
+        () => decode(new MessageWriter().record("table").bool(false).u32(0xffff_ffff)),
+        /count exceeds the message/u
+    );
+
+    const valid = text().root(1).document();
+    const truncated = valid.slice(0, -1);
+    new DataView(truncated.buffer).setUint32(4, truncated.length, true);
+    assert.throws(() => new Decoder(truncated).decode(), /truncated native result/u);
+    assert.throws(() => new Decoder(Uint8Array.from([...valid, 0])).decode(), /length does not match/u);
+    const badMagic = valid.slice();
     badMagic[0] = 0;
     assert.throws(() => new Decoder(badMagic).decode(), /invalid native result/u);
+    const badStatus = valid.slice();
+    badStatus[8] = 2;
+    assert.throws(() => new Decoder(badStatus).decode(), /unsupported native result status 2/u);
 });
 
-function errorResult(code, message) {
-    const encoded = new globalThis.TextEncoder().encode(message);
-    const result = new Uint8Array(64 + encoded.length);
-    const view = new DataView(result.buffer);
-    result.set([0x4d, 0x43, 0x42, 0x31]);
-    view.setUint32(4, result.length, true);
-    view.setUint32(8, 1, true);
-    view.setInt32(12, code, true);
-    view.setUint32(16, 64, true);
-    view.setUint32(20, encoded.length, true);
-    result.set(encoded, 64);
-    return result;
-}
-
 test("ast: every ordered delimiter and associated numbering value survives decoding", () => {
+    // Branch indexes of OrderedListVariant and OrderedListDelimiter, in the
+    // contract's declaration order.
     const delimiters = [
-        [1, false, "period"],
-        [2, false, { kind: "parenthesis", closed: false }],
-        [2, true, { kind: "parenthesis", closed: true }],
-        [3, false, "default"]
+        [0, null, "period"],
+        [1, false, { kind: "parenthesis", closed: false }],
+        [1, true, { kind: "parenthesis", closed: true }],
+        [2, null, "default"]
     ];
-    for (const [variantRaw, kind] of [
-        [2, "alpha"],
-        [3, "roman"]
+    const list = (variant, lowercased, delimiter, closed) => {
+        const writer = new MessageWriter()
+            .text("item")
+            .record("paragraph")
+            .u32(1)
+            .record("listItem")
+            .bool(false)
+            .u32(1)
+            .record("list")
+            .u8(1)
+            .optional(1, MessageWriter.prototype.int)
+            .bool(true)
+            .u8(variant);
+        if (lowercased !== null) writer.bool(lowercased);
+        writer.bool(true).u8(delimiter);
+        if (closed !== null) writer.bool(closed);
+        return new Decoder(writer.bool(true).u32(1).root(1).document()).decode();
+    };
+    for (const [variant, kind] of [
+        [1, "alpha"],
+        [2, "roman"]
     ]) {
         for (const lowercased of [false, true]) {
-            for (const [delimiterRaw, closed, expected] of delimiters) {
-                const bytes = nativeResult("1. item\n");
-                const view = new DataView(bytes.buffer);
-                const at = findNode(bytes, kinds.indexOf("list")) + 4;
-                const flags = view.getUint32(at, true) & ~0x3fc;
-                view.setUint32(
-                    at,
-                    flags | (variantRaw << 2) | (delimiterRaw << 5) | (Number(closed) << 8) | (Number(lowercased) << 9),
-                    true
-                );
-                const document = new Decoder(bytes).decode();
+            for (const [delimiter, closed, expected] of delimiters) {
+                const document = list(variant, lowercased, delimiter, closed);
                 assert.deepEqual(document.content[0].variant, { kind, lowercased });
                 assert.deepEqual(document.content[0].delimiter, expected);
                 assert.match(MarkupDumper.dump(document), new RegExp(`variant=${kind}\\(lowercased=${lowercased}\\)`));
@@ -919,83 +894,71 @@ test("ast: every ordered delimiter and associated numbering value survives decod
             }
         }
     }
-    const malformed = nativeResult("1. item\n");
-    const view = new DataView(malformed.buffer);
-    const at = findNode(malformed, kinds.indexOf("list")) + 4;
-    view.setUint32(at, view.getUint32(at, true) | (7 << 5), true);
-    assert.throws(() => new Decoder(malformed).decode(), /invalid ordered list facts/u);
+    assert.equal(list(0, null, 0, null).content[0].variant, "decimal");
+    assert.equal(list(3, null, 2, null).content[0].variant, "default");
 });
 
 test("ast: a UTF-8 task marker is an owned string, independent of the payload", () => {
-    const bytes = nativeResult("- [x] 🚀\n");
-    const view = new DataView(bytes.buffer);
-    const text = findNode(bytes, kinds.indexOf("text"));
-    const item = findNode(bytes, kinds.indexOf("listItem"));
-    view.setUint32(item + 64, view.getUint32(text + 64, true), true);
-    view.setUint32(item + 68, view.getUint32(text + 68, true), true);
+    const bytes = new MessageWriter()
+        .text("x")
+        .record("paragraph")
+        .u32(1)
+        .record("listItem")
+        .optional("🚀", MessageWriter.prototype.string)
+        .u32(1)
+        .record("list")
+        .u8(0)
+        .bool(false)
+        .bool(false)
+        .bool(false)
+        .bool(true)
+        .u32(1)
+        .root(1)
+        .document();
     const document = new Decoder(bytes).decode();
     bytes.fill(0);
     assert.equal(document.content[0].items[0].marker, "🚀");
+    assert.equal(document.content[0].items[0].completed, true);
     assert.ok(MarkupDumper.dump(document).includes('marker="🚀"'));
 });
 
-function nativeResult(source) {
-    const encoded = new globalThis.TextEncoder().encode(source);
-    const sourcePointer = native.malloc(Math.max(encoded.length, 1));
-    assert.notEqual(sourcePointer, 0);
-    let resultPointer = 0;
-    try {
-        new Uint8Array(native.memory.buffer, sourcePointer, encoded.length).set(encoded);
-        resultPointer = native.es_parse(sourcePointer, encoded.length);
-        assert.notEqual(resultPointer, 0);
-        const length = new DataView(native.memory.buffer).getUint32(resultPointer + 4, true);
-        return Uint8Array.from(new Uint8Array(native.memory.buffer, resultPointer, length));
-    } finally {
-        if (resultPointer) native.es_result_free(resultPointer);
-        native.free(sourcePointer);
-    }
-}
-
-function findNode(result, kind) {
-    const view = new DataView(result.buffer, result.byteOffset, result.byteLength);
-    const count = view.getUint32(24, true);
-    const nodesOffset = view.getUint32(40, true);
-    for (let index = 0; index < count; index += 1) {
-        const offset = nodesOffset + index * 160;
-        if (view.getUint32(offset, true) === kind) return offset;
-    }
-    throw new Error(`result does not contain kind ${kind}`);
-}
-
 test("ast: specimen definitions and references retain ownership, nulls and reset facts", () => {
-    // Parsing these values lands with P9b. Existing definition records supply
-    // the shared topology; only the reserved value tags and scalar facts change.
-    const bytes = nativeResult("[^note] [^étude]\n\n[^note]: note\n\n[^étude]: body\n\n[^anonymous]: tail\n");
-    const view = new DataView(bytes.buffer);
-    const nodes = view.getUint32(40, true);
-    let definitions = 0;
-    let citations = 0;
-    let firstSpecimen;
-    for (let i = 0; i < view.getUint32(24, true); ++i) {
-        const at = nodes + i * 160;
-        const kind = view.getUint32(at, true);
-        if (kind === kinds.indexOf("citation") && ++citations === 2) view.setInt32(at + 44, 3, true);
-        if (kind === kinds.indexOf("footnote") && ++definitions > 1) {
-            view.setUint32(at, kinds.indexOf("specimen"), true);
-            if (definitions === 2) {
-                firstSpecimen = at;
-                view.setUint32(at + 4, 1, true);
-                view.setBigInt64(at + 56, 5n, true);
-            } else {
-                view.setUint32(at + 64, 0xffff_ffff, true);
-                view.setUint32(at + 68, 0, true);
-            }
-        }
-    }
+    const message = (start) => {
+        const cite = (writer, branch, id) =>
+            writer.record("citation").u8(branch).string(id).u32(0).u32(0).record("cite").u32(1);
+        const writer = new MessageWriter();
+        cite(writer, 1, "note");
+        writer.text(" ");
+        cite(writer, 2, "étude");
+        return writer
+            .record("paragraph")
+            .u32(3)
+            .text("note")
+            .record("paragraph")
+            .u32(1)
+            .record("footnote", { scope: [3, 1, 4, 0] })
+            .string("note")
+            .u32(1)
+            .text("body")
+            .record("paragraph")
+            .u32(1)
+            .record("specimen", { scope: [5, 1, 6, 0] })
+            .optional("étude", MessageWriter.prototype.string)
+            .optional(start, MessageWriter.prototype.int)
+            .u32(1)
+            .text("tail")
+            .record("paragraph")
+            .u32(1)
+            .record("specimen", { scope: [7, 1, 7, 18] })
+            .bool(false)
+            .bool(false)
+            .u32(1)
+            .root(1, { footnotes: 1, specimens: 2 })
+            .document();
+    };
+    assert.throws(() => new Decoder(message(9007199254740993n)).decode(), /precision/);
+    const bytes = message(5);
     const document = new Decoder(bytes).decode();
-    const invalid = bytes.slice();
-    new DataView(invalid.buffer).setBigInt64(firstSpecimen + 56, 9007199254740993n, true);
-    assert.throws(() => new Decoder(invalid).decode(), /precision/);
     bytes.fill(0);
     assert.equal(document.footnotes.length, 1);
     assert.deepEqual(
@@ -1023,24 +986,33 @@ test("ast: specimen definitions and references retain ownership, nulls and reset
 });
 
 test("ast: table groups, column widths and spans survive the wire as owned facts", () => {
-    const source = "| h | i |\n| - | - |\n| b | c |\n| f | g |\n";
-    const bytes = nativeResult(source);
-    const view = new DataView(bytes.buffer);
-    const table = findNode(bytes, kinds.indexOf("table"));
-    // The third authored row becomes the foot group; no row-local tag exists.
-    view.setBigInt64(table + 48, 1n, true);
-    view.setBigInt64(table + 56, 1n, true);
-    const column = view.getUint32(52, true);
-    view.setUint32(column + 4, 1, true);
-    view.setFloat64(column + 8, 0.1, true);
+    const writer = new MessageWriter();
+    const row = (...literals) => {
+        for (const literal of literals)
+            writer
+                .text(literal)
+                .record("tableCell")
+                .int(1)
+                .int(literal === "f" ? 2 : 1)
+                .u32(1);
+        writer.record("tableRow").u32(literals.length);
+    };
+    row("h", "i");
+    row("b", "c");
+    row("f", "g");
+    // No caption; two columns; one row in each of head, content and foot.
+    writer.record("table").bool(false).u32(2).u8(0).optional(0.1, MessageWriter.prototype.double);
+    const bytes = writer.u8(3).bool(false).u32(1).u32(1).u32(1).root(1).document();
     const document = new Decoder(bytes).decode();
+    bytes.fill(0);
     const value = document.content[0];
     assert.equal(value.head[0].cells[0].content[0].literal, "h");
     assert.equal(value.content[0].cells[0].content[0].literal, "b");
     assert.equal(value.foot[0].cells[0].content[0].literal, "f");
+    assert.equal(value.foot[0].cells[0].colspan, 2);
     assert.deepEqual(value.columns, [
         { flow: "none", relative: 0.1 },
-        { flow: "none", relative: null }
+        { flow: "right", relative: null }
     ]);
     assert.ok(!("isHeader" in value.head[0]));
     const visited = [];
@@ -1051,106 +1023,50 @@ test("ast: table groups, column widths and spans survive the wire as owned facts
         })
     );
     assert.deepEqual(visited, ["h", "i", "b", "c", "f", "g"]);
-    assert.match(value.dump(), /columns=\[none:0.1,none:null\] children=3/);
+    assert.match(value.dump(), /columns=\[none:0.1,right:null\] children=3/);
     assert.match(value.dump(), /TableFoot children=1/);
-    const row = findNode(bytes, kinds.indexOf("tableCell"));
-    const malformed = (change, pattern) => {
-        const copy = bytes.slice();
-        change(new DataView(copy.buffer));
-        assert.throws(() => new Decoder(copy).decode(), pattern);
-    };
-    malformed((v) => v.setInt32(table + 44, -1, true), /row groups/);
-    malformed((v) => v.setBigInt64(table + 56, 2n, true), /row groups/);
-    malformed((v) => v.setBigInt64(row + 56, 0n, true), /spans/);
-    malformed((v) => v.setBigInt64(row + 48, -1n, true), /spans/);
-    malformed((v) => v.setFloat64(column + 8, Number.NaN, true), /column width/);
-    malformed((v) => v.setFloat64(column + 8, 0, true), /column width/);
-    malformed((v) => v.setUint32(column + 4, 2, true), /presence/);
-    bytes.fill(0);
-    assert.equal(value.columns[0].relative, 0.1);
-    assert.equal(value.foot[0].cells[0].content[0].literal, "f");
 });
 
 test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists", () => {
-    const strings = [
-        "key",
-        "n",
-        "s",
-        "empty",
-        "list",
-        "9007199254740993",
-        "中文\nquoted",
-        "number",
-        "text",
-        "1.25",
-        ""
-    ];
-    const encoded = strings.map((value) => new globalThis.TextEncoder().encode(value));
-    const nodes = 64,
-        edges = nodes + 8 * 160,
-        attributes = edges + 6 * 4,
-        blob = attributes + 2 * 16;
-    const bytes = new Uint8Array(blob + encoded.reduce((n, value) => n + value.length, 0));
-    const view = new DataView(bytes.buffer);
-    const put = (offset, value) => view.setUint32(offset, value, true);
-    bytes.set([0x4d, 0x43, 0x42, 0x31]);
-    for (const [offset, value] of [
-        [4, bytes.length],
-        [24, 8],
-        [28, 6],
-        [32, 2],
-        [40, nodes],
-        [44, edges],
-        [48, attributes],
-        [52, blob],
-        [56, blob],
-        [60, bytes.length - blob]
-    ])
-        put(offset, value);
-    let cursor = blob;
-    const refs = encoded.map((value) => {
-        const ref = [cursor, value.length];
-        bytes.set(value, cursor);
-        cursor += value.length;
-        return ref;
-    });
-    const string = (offset, index) => {
-        put(offset, refs[index][0]);
-        put(offset + 4, refs[index][1]);
-    };
-    const node = (index, kind) => {
-        const at = nodes + index * 160;
-        put(at, kind);
-        for (const offset of [8, 12, 16, 20]) put(at + offset, 1);
-        for (const offset of [32, 36, 64, 72, 80, 88, 96, 120]) put(at + offset, 0xffff_ffff);
-        return at;
-    };
-    const root = node(0, 1);
-    put(root + 120, 1);
-    const metadata = node(1, kinds.indexOf("metadata"));
-    put(metadata + 4, 0x3f);
-    put(metadata + 28, 6);
-    for (let index = 0; index < 6; index++) {
-        put(edges + index * 4, index + 2);
-        const at = node(index + 2, 0x100);
-        string(at + 64, index < 2 ? 0 : index - 1);
-        put(at + 44, index < 4 ? 1 : 2);
-        if (index < 4) put(at + 4, index);
-        if (index === 1) view.setBigInt64(at + 56, 1n, true);
-        if (index === 2 || index === 3) string(at + 72, index + 3);
-        if (index >= 4) {
-            put(at + 36, 0);
-            put(at + 40, index === 5 ? 2 : 0);
-        }
-    }
-    string(attributes, 7);
-    string(attributes + 8, 9);
-    string(attributes + 16, 8);
-    string(attributes + 24, 10);
+    // MetadataValue: scalar(0) | list(1); MetadataScalar: null(0) | bool(1) |
+    // number(2) | text(3); MetadataListItem: number(0) | text(1).
+    const message = (nameScalar) =>
+        new MessageWriter()
+            .record("metadata")
+            .bool(true)
+            .u8(0)
+            .u8(nameScalar)
+            .bool(true)
+            .u8(0)
+            .u8(1)
+            .bool(true)
+            .bool(true)
+            .u8(0)
+            .u8(2)
+            .string("9007199254740993")
+            .bool(true)
+            .u8(0)
+            .u8(3)
+            .string("中文\nquoted")
+            .bool(true)
+            .u8(1)
+            .u32(0)
+            .bool(true)
+            .u8(1)
+            .u32(2)
+            .u8(0)
+            .string("1.25")
+            .u8(1)
+            .string("")
+            .bool(false)
+            .bool(false)
+            .bool(false)
+            .bool(false)
+            .root(0, { metadata: true })
+            .document();
+    assert.throws(() => new Decoder(message(9)).decode(), /invalid branch 9/);
+    const bytes = message(0);
     const document = new Decoder(bytes).decode();
-    const bad = bytes.slice();
-    new DataView(bad.buffer).setUint32(nodes + 3 * 160 + 4, 9, true);
-    assert.throws(() => new Decoder(bad).decode(), /metadata scalar/);
     bytes.fill(0);
     assert.deepEqual(
         [
@@ -1190,26 +1106,15 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
 });
 
 test("ast: dimensions belong to occurrences and universal attributes survive release", () => {
-    const bytes = nativeResult("![a][r] ![b][r]\n\n[r]: /u\n");
-    const view = new DataView(bytes.buffer);
-    const image = findNode(bytes, kinds.indexOf("embedded"));
-    view.setUint32(image + 124, 640, true);
-    view.setUint32(image + 128, 480, true);
+    const bytes = nativeMessage("![a|640x480][r] ![b][r]\n\n[r]: /u\n");
     const document = new Decoder(bytes).decode();
+    bytes.fill(0);
     const images = document.content[0].content.filter((value) => value.kind === "embedded");
     assert.equal(images[0].dest, images[1].dest);
     assert.deepEqual(
         images.map((value) => value.dimensions),
         [{ width: 640, height: 480 }, null]
     );
-    view.setUint32(image + 124, 0, true);
-    assert.throws(() => new Decoder(bytes).decode(), /invalid dimensions/);
-    view.setUint32(image + 124, 0xffff_ffff, true);
-    assert.throws(() => new Decoder(bytes).decode(), /invalid dimensions/);
-    view.setUint32(image + 124, 640, true);
-    view.setUint32(image + 128, 0xffff_ffff, true);
-    assert.throws(() => new Decoder(bytes).decode(), /invalid dimensions/);
-    bytes.fill(0);
     const directive = Document.parse(':n{#id .a class="a b}c" k=1 k=2}').content[0].content[0];
     assert.equal(directive.anchor, "id");
     assert.deepEqual(directive.attributes, {
@@ -1222,8 +1127,8 @@ test("ast: dimensions belong to occurrences and universal attributes survive rel
     assert.ok(directive.dump().includes('attributes={.a .a ."b}c" k="1" k="2"}'));
 });
 
-test("ast: cross links retain raw values after native release and reject wrong wire branches", () => {
-    const bytes = nativeResult("[[Note]] [[Note|]] ![[#^id|raw *label*]]\n");
+test("ast: cross links retain raw values after native release", () => {
+    const bytes = nativeMessage("[[Note]] [[Note|]] ![[#^id|raw *label*]]\n");
     const document = new Decoder(bytes).decode();
     const links = document.content[0].content.filter(
         (node) => node.kind === "crossLink" || node.kind === "crossEmbedded"
@@ -1245,9 +1150,6 @@ test("ast: cross links retain raw values after native release and reject wrong w
         walkingVisitor((node, phase) => events.push(`${phase}:${node.kind}`))
     );
     assert.deepEqual(events, ["enter:crossEmbedded", "exit:crossEmbedded"]);
-    const malformed = bytes.slice();
-    new DataView(malformed.buffer).setInt32(findNode(malformed, kinds.indexOf("crossLink")) + 44, 1, true);
-    assert.throws(() => new Decoder(malformed).decode(), /cross reference requires a cross destination/u);
     bytes.fill(0);
     assert.equal(links[2].label, "raw *label*");
 });
@@ -1257,7 +1159,7 @@ test("ast: Properties keep recognized fields and literal prose after native rele
         "---\r\nname: 9007199254740993\r\nnot YAML\r\n...\r\nunknown: ignored\r\n" +
         "comment: *x\r\nname: duplicate\r\nabstract: |\r\n  first\r\n\r\n  second\r\n" +
         "comment: |\r\n  # prose\r\n---\r\nbody\r\n";
-    const bytes = nativeResult(source);
+    const bytes = nativeMessage(source);
     const document = new Decoder(bytes).decode();
     bytes.fill(0);
     assert.deepEqual(
@@ -1288,24 +1190,11 @@ test("ast: Properties keep recognized fields and literal prose after native rele
     assert.equal(Document.parse("---\nname: 1\n").metadata, null);
 });
 
-test("ast: embedded dimensions survive the wire lifetime and require an embedded label", () => {
-    const bytes = nativeResult("![[#^id|raw *label*|2147483647x2]]\n");
-    const record = findNode(bytes, kinds.indexOf("crossEmbedded"));
+test("ast: embedded dimensions survive the wire lifetime", () => {
+    const bytes = nativeMessage("![[#^id|raw *label*|2147483647x2]]\n");
     const document = new Decoder(bytes).decode();
-    const link = document.content[0].content[0];
-    assert.equal(link.label, "raw *label*");
-    assert.deepEqual(link.dimensions, { width: 2147483647, height: 2 });
-    const view = new DataView(bytes.buffer);
-    view.setUint32(record, kinds.indexOf("crossLink"), true);
-    assert.throws(() => new Decoder(bytes).decode(), /dimensions require/u);
-    view.setUint32(record, kinds.indexOf("crossEmbedded"), true);
-    view.setUint32(record + 124, 0, true);
-    assert.throws(() => new Decoder(bytes).decode(), /invalid dimensions/u);
-    view.setUint32(record + 124, 100, true);
-    view.setUint32(record + 80, 0xffff_ffff, true);
-    view.setUint32(record + 84, 0, true);
-    assert.throws(() => new Decoder(bytes).decode(), /dimensions require/u);
     bytes.fill(0);
+    const link = document.content[0].content[0];
     assert.equal(link.label, "raw *label*");
     assert.deepEqual(link.dimensions, { width: 2147483647, height: 2 });
     assert.deepEqual(link.dest, { kind: "cross", path: "", anchor: "id" });
@@ -1339,7 +1228,7 @@ test("ast: P2 attributes preserve native arrays, inheritance, dimensions and occ
 });
 
 test("ast: definition terms and ordered bodies are owned and walk without body wrapper nodes", () => {
-    const bytes = nativeResult("::: box\n*T*\n: one\n~\n\nU\n\n: two\n:::\n");
+    const bytes = nativeMessage("::: box\n*T*\n: one\n~\n\nU\n\n: two\n:::\n");
     const block = new Decoder(bytes).decode().content[0];
     bytes.fill(0);
     assert.equal(block.name, null);
@@ -1383,36 +1272,48 @@ test("ast: definition terms and ordered bodies are owned and walk without body w
     ]);
 });
 
-test("errors: definition body values cannot leak into markup or accept markup in their place", () => {
-    const original = nativeResult("Term\n: body\n");
-    const body = findNode(original, 0x101);
-    const definition = findNode(original, kinds.indexOf("definition"));
-    const malformed = (change, pattern) => {
-        const bytes = original.slice();
-        change(new DataView(bytes.buffer));
-        assert.throws(() => new Decoder(bytes).decode(), pattern);
-    };
-    malformed((v) => v.setUint32(body, kinds.indexOf("paragraph"), true), /invalid definition body/);
-    malformed((v) => v.setUint32(definition, kinds.indexOf("paragraph"), true), /not uniquely owned|non-markup/);
-    malformed((v) => v.setUint32(definition + 4, 2, true), /flags/);
-    malformed(
-        (v) => v.setUint32(findNode(original, kinds.indexOf("definitionList")), 0x101, true),
-        /child is not ordinary content/
+test("errors: definition bodies hold content and definition lists hold definitions only", () => {
+    const decode = (writer) => new Decoder(writer.root(1).document()).decode();
+    // Term `T`; two bodies, the first empty and the second holding `b`.
+    const definition = decode(
+        new MessageWriter()
+            .text("T")
+            .text("b")
+            .record("definition")
+            .u32(1)
+            .u32(2)
+            .u32(0)
+            .u32(1)
+            .bool(true)
+            .record("definitionList")
+            .u32(1)
+    ).content[0].definitions[0];
+    assert.deepEqual(
+        definition.content.map((body) => body.map((node) => node.literal)),
+        [[], ["b"]]
     );
-    const emptyList = nativeResult("text\n");
-    new DataView(emptyList.buffer).setUint32(
-        findNode(emptyList, kinds.indexOf("text")),
-        kinds.indexOf("definitionList"),
-        true
+    assert.throws(
+        () => decode(new MessageWriter().record("paragraph").u32(0).record("definitionList").u32(1)),
+        /places a paragraph node in a definition field/u
     );
-    assert.throws(() => new Decoder(emptyList).decode(), /empty definition list/);
-    const noBodies = nativeResult("Term\n");
-    new DataView(noBodies.buffer).setUint32(
-        findNode(noBodies, kinds.indexOf("text")),
-        kinds.indexOf("definition"),
-        true
+    assert.throws(
+        () =>
+            decode(
+                new MessageWriter()
+                    .text("T")
+                    .record("footnote")
+                    .string("x")
+                    .u32(0)
+                    .record("definition")
+                    .u32(1)
+                    .u32(1)
+                    .u32(1)
+                    .bool(false)
+                    .record("definitionList")
+                    .u32(1)
+            ),
+        /places a footnote node in a content field/u
     );
-    assert.throws(() => new Decoder(noBodies).decode(), /definition has no bodies/);
 });
 
 test("api: owned scoped elements are Markup with finite walks and preserved identifiers", () => {
@@ -1440,13 +1341,17 @@ test("api: owned scoped elements are Markup with finite walks and preserved iden
     }
     assert.deepEqual(citation.referent, { kind: "footnote", id: "label" });
     assert.equal(document.footnotes[0].id, "label");
-    for (const node of nodes) {
-        const bytes = nativeResult("---\ntitle: Example\n---\n[^Label]\n\n[^label]: self\n\n(@sample) Body\n");
-        const leaf = findNode(bytes, kinds.indexOf("text"));
-        const view = new DataView(bytes.buffer);
-        view.setUint32(leaf, kinds.indexOf(node.kind), true);
-        if (node.kind === "citation") view.setInt32(leaf + 44, 2, true);
-        assert.throws(() => new Decoder(bytes).decode(), /child is not ordinary content/);
+    // Owned kinds live only in the fields that name them, never in content.
+    for (const kind of ["metadata", "citation", "footnote", "specimen"]) {
+        const writer = new MessageWriter().record(kind);
+        if (kind === "metadata") for (let field = 0; field < 10; field += 1) writer.bool(false);
+        if (kind === "citation") writer.u8(1).string("label").u32(0).u32(0);
+        if (kind === "footnote") writer.string("label").u32(0);
+        if (kind === "specimen") writer.bool(false).bool(false).u32(0);
+        assert.throws(
+            () => new Decoder(writer.record("paragraph").u32(1).root(1).document()).decode(),
+            new RegExp(`places a ${kind} node in a content field`, "u")
+        );
     }
 });
 
