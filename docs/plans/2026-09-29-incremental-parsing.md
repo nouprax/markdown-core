@@ -45,12 +45,11 @@ make. Section 11 records rejected alternatives.
   an insertion into an empty session. There is no streaming parser, no
   fallback parser and no size threshold that selects a different algorithm
   (see `AGENTS.md`).
-- **R7 Transactions.** An edit either commits a new document and text, or
-  fails (an invalid argument, an engine allocation failure) and leaves the
-  session exactly at its previous version.
+- **R7 Failures.** An invalid argument is rejected before anything changes.
+  An allocation failure inside the engine ends the session: the edit reports
+  it, and the caller creates a new session from its text (5.11).
 - **R8 Explicit retention.** What a session retains between edits, its owner
-  and its size are specified. Parse scratch still never survives a
-  transaction.
+  and its size are specified. Parse scratch never survives an edit.
 - **R9 Concurrency.** Published documents stay immutable and `Sendable`. A
   session has one writer.
 
@@ -327,7 +326,7 @@ C views borrow from the session until its next edit.
   and the conformance fixtures stay in UTF-8 columns.
 - **Batches.** `edit` takes disjoint edits in the coordinates of the text
   before the batch and parses once, for multi-cursor edits and bulk
-  replacements. The transaction keeps every edit as its own piece of the
+  replacements. The batch keeps every edit as its own piece of the
   position mapping (5.2), so bytes between two edits stay surviving bytes
   with their own shift. Damage is per edit; regions whose restart and
   convergence windows overlap are merged, and the others are re-read
@@ -442,7 +441,7 @@ CRLF alike.
 
 Every other workspace in `docs/architecture/parser-input-storage.md`
 (lookahead facts, table geometry, source-order scratch, delimiter pools)
-stays scoped to the transaction that re-parses the damaged region. Caches keyed
+stays scoped to the edit that re-parses the damaged region. Caches keyed
 by line are therefore never stale.
 
 Reading source now goes through the input index for every consumer, as it
@@ -450,7 +449,7 @@ already does for the driver, lookahead, Properties and tables. The index
 resolves a line against the text tree. A line inside one chunk is borrowed. A
 line that spans chunks gets one contiguous view through the mechanism that
 already provides normalized views for NUL-bearing lines, so no scanner sees a
-chunk boundary. The view lives for the transaction, like other scratch.
+chunk boundary. The view lives for the edit, like other scratch.
 
 ### 5.2 From an edit to damage
 
@@ -521,8 +520,7 @@ Restarting at `R` reopens `R`'s ancestors, which are exactly the open spine
 at that line: each ancestor is marked open and its carried facts are restored
 from `R`'s snapshot, not read from its final node data. `R` and everything
 after it in the ancestors' child chains are detached and kept as reuse
-candidates. Every one of these changes goes through the transaction journal
-(5.11), so a failed edit can restore them. The line machine then runs from
+candidates. The line machine then runs from
 `R`'s first line with the ordinary `S_process_line`. No other entry point
 exists.
 
@@ -594,7 +592,7 @@ These are requirements on every element, each checked by an audit script in
   read end to the current line. The audit forbids other writes to closed
   nodes.
 - **E3 Carried state is declared.** Per-parse element state (`state_size`) is
-  one of three things: a cache that the transaction may drop; a declaration
+  one of three things: a cache that the parse may drop; a declaration
   registry that moves to the session (5.7); or carried block state, which is
   stored on the open node, saved into spine snapshots by `carry_save`,
   restored by `carry_restore` and compared by `carry_equal`. Nothing else may
@@ -669,7 +667,7 @@ which is inherent, because a later closer can still pair with it.
 
 ### 5.7 Registries and resolution
 
-The S1 registrations and S3 declarations move from the transaction to the
+The S1 registrations and S3 declarations move from the parse to the
 session and become source-ordered sequences (5.1). An edit replaces exactly
 the entries whose nodes were re-read, which is one contiguous range per
 registry. Then:
@@ -685,7 +683,7 @@ registry. Then:
   holds edges in both directions: each inline root owns the list of keys it
   queried, and each key the set of root ids that queried it. Re-parsing a
   root first removes all of its old edges and then records the new ones;
-  retiring a root removes its edges. Both go through the journal (5.11). The
+  retiring a root removes its edges. The
   index therefore holds exactly the current document's lookups, and an edge
   never names a retired node. A heading's
   declarability depends only on its own content ("a valid declaration cannot
@@ -804,32 +802,21 @@ value, which is what R3 measures and the work counters (8) count.
 
 This argument is also the test oracle (section 8).
 
-### 5.11 Transactions
+### 5.11 Failures
 
-An edit is a transaction over session-owned state: the text tree, the pending
-UTF-8 bytes, the live tree's links, flags and fields, the ledger, the
-registries, the lookup index, the frontier and the inline ledger. Everything else a re-parse allocates is
-scratch or new nodes, which a failure simply releases.
+An edit changes session state in place: the text tree, the pending UTF-8
+bytes, the live tree, the ledger, the registries, the lookup index, the
+frontier and the inline ledger. Nodes and elements it removes are freed when
+it completes.
 
-Every mutation of session-owned state goes through one journal. The journal
-entry that can undo a mutation is reserved before the mutation happens, so
-recording never fails after the state has changed. Examples: detaching a child
-chain records the old links; marking a spine node open records its flags;
-replacing a text range first moves the replaced chunks into the entry instead
-of freeing them; splicing a ledger or registry range keeps the removed
-elements in the entry.
-
-- **Commit** happens once, after the new document is complete: the journal's
-  retained old elements (replaced chunks, removed ledger entries, old nodes
-  that did not survive) are released and the version advances.
-- **Rollback** replays the journal in reverse. It allocates nothing and cannot
-  fail, and afterwards the session's text, document, ids and
-  retained state are the previous version's, bit for bit.
-
-Id allocation takes part: ids handed out by a failed transaction are returned,
-so a failed edit does not skip ids either. The journal is the only mutation
-path to session state; an audit rejects direct writes to it from parse code,
-as E2 does for closed nodes.
+An invalid argument is detected before the first change (4.4). An allocation
+failure can happen mid-edit, when part of that state is already changed; the
+session then keeps the failure, as a parse keeps its sticky allocation
+failure today, and returns it from this and every later call. The engine
+keeps no undo record for this case: out of memory is rare, and the editor
+holds the full text, so a new session is the recovery. Freeing the failed
+session releases everything it owns. Documents a binding already returned
+are platform values and are unaffected.
 
 ## 6. Bindings
 
@@ -992,10 +979,11 @@ pretend otherwise:
   those of a fresh parse, and fixtures with nested, duplicate, anonymous and
   unreferenced definitions check each binding's answers against the winners
   of the C registries, since the canonical dump does not call the queries.
-- **Transactions.** The allocator-seam OOM sweep runs every edit at every
-  allocation boundary and asserts that the session's text, document, ids and
-  retained state equal the previous version afterwards, and that the next edit
-  succeeds.
+- **Allocation failures.** The allocator-seam OOM sweep fails every edit at
+  every allocation boundary and asserts that the edit reports the failure,
+  that every later call on the session reports it too, that freeing the
+  session releases everything (under the leak checker), and that a new
+  session from the same text parses normally.
 - **Audits.** E1–E5 (5.4), the finish-step root rule (5.8), and the
   dependency inventory (section 3) are enforced by scripts in
   `scripts/audit/`.
@@ -1012,7 +1000,7 @@ Each step is one pull request that leaves `main` releasable.
    multiline table cells that end on a blank line part (4.3), whose
    `canonical-ast.md` rule changes in the same step.
 - [ ] **Step 2: Sessions with a whole-document restart.** Session API on every platform,
-   the text tree, the journal and transactional edits, identity matching,
+   the text tree, identity matching,
    and value deduplication. The restart
    point is always the document and nothing converges: this is the degenerate
    case of the final algorithm, and it already gives R1, R3, R4 and R5, with
