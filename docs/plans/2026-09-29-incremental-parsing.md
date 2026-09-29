@@ -45,9 +45,10 @@ make. Section 11 records rejected alternatives.
   an insertion into an empty session. There is no streaming parser, no
   fallback parser and no size threshold that selects a different algorithm
   (see `AGENTS.md`).
-- **R7 Errors.** An invalid argument or an allocation failure, at any stage,
-  throws an error. Nothing is rolled back; after an allocation failure the
-  session only reports that error again (5.11).
+- **R7 Errors.** An invalid argument or an allocation failure, in the engine
+  or in the platform, throws an error. Nothing is rolled back. An engine
+  allocation failure leaves the C session half-edited, so the engine reports
+  that error again on every later call (5.11).
 - **R8 Explicit retention.** What a session retains between edits, its owner
   and its size are specified. Parse scratch never survives an edit.
 - **R9 Concurrency.** Published documents stay immutable and `Sendable`. A
