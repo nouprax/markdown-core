@@ -29,9 +29,8 @@ requirement names (random edits and tail streaming):
   across edits, and is never handed to a different node.
 - **Minimal AST mutation.** A node is a new value exactly when its value
   changed.
-- **Minimal re-parse.** The source re-read per step is what the language
-  makes the edit affect, and the cost per step does not grow with the
-  document.
+- **Minimal re-parse.** The Ir of a local step does not grow with the
+  document, and no step costs more than parsing the whole text again.
 
 The existing one-shot benchmark (`packages/markdown-core/benchmarks/README.md`)
 answers "what does a parse cost". The gate therefore has three benchmarks
@@ -209,10 +208,10 @@ For every node of the new document, the harness classifies it against the
 node of the previous document with the same id: **unchanged** when the two are
 deep equal (plan 4.2), and **changed** when they differ or no previous node has
 that id. `N` is the number of changed nodes. An ancestor of a changed node is
-changed, because its children are part of its value. The engine's `nodes_new`,
-the nodes it created or rewrote in the step, equals `N` exactly: fewer means a
-stale node survived a change (which 4.1 also catches), more means it rewrote a
-node whose value did not change.
+changed, because its children are part of its value. In C, every unchanged
+node is the previous document's node, reused, and every node that is a new C
+object is changed (plan R3, 8): a new object for an unchanged node is a
+rewrite the step did not need.
 
 The comparison uses a **snapshot** of the previous document the harness takes
 before the step: each node's kind, id, scalars, extent and the ids of its
@@ -335,24 +334,6 @@ the engine returns (plan 6.1); bindings are gated for correctness (section 4).
 | `speedup` | `reparse_ir / step_ir` per step, p50 and p5, for scripts of at most 1,024 steps |
 | `stream_ratio` | Stream total `step_ir` / `oneshot_ir` of the final text |
 
-### 5.3 Work counters
-
-Deterministic counters, in the style of the existing `input_line_work` and
-`delimiter_work`, record per step what the requirement asks to be minimal:
-
-| Counter | What it counts |
-| --- | --- |
-| `lines_reread` | Physical lines passed through the line machine |
-| `inline_bytes` | Content bytes the inline parser scanned |
-| `finish_visited` | Nodes visited by finish steps and passes |
-| `nodes_new` | Nodes the engine created or rewrote in the step |
-
-The first three are the re-parse, the last is the AST mutation. Counters are
-exact and platform-independent, and are recorded for every step, including
-every chunk of a long stream. They are where the bounds are enforced (6.2).
-Ir is where constant factors and the asymptotic shape are checked (6.3, 6.4
-and 6.5).
-
 ## 6. Gate rules
 
 A rule is either a bound derived from the design or a regression limit
@@ -364,45 +345,7 @@ happened to look good.
 Every oracle of section 4 passes on every step of every script that runs it.
 There is no tolerance.
 
-### 6.2 Bounds, on counters
-
-Every bound is written in quantities the harness computes without the engine:
-from the fresh parses of the text before and after the step, the position
-mapping, and the script. The quantities, per step:
-
-| Quantity | Definition |
-| --- | --- |
-| `E` | The **language damage**: the edited lines (the step's range widened to whole lines as in plan 5.2, before and after the step) and, per connected edit region, the smallest range of lines around it such that the block trees of the two fresh parses (kinds, depths and mapped start lines of every block) agree before it and after it. Regions whose ranges do not overlap stay separate |
-| `U` | Lines and bytes of every leaf that intersects `E`: every leaf that owns an inline root, and the units plan 5.3 re-reads whole (tables with their captions, code, HTML, comment, formula and directive blocks) |
-| `K` | Registry keys whose winner, family or ordinal differs between the two fresh parses: reference and heading labels, anchors, footnote labels, specimen ids |
-| `R(K)` | Inline roots of the new fresh parse that look up a key in `K`, and their content bytes |
-| `N` | Changed nodes of the step (4.3) |
-
-The bounds:
-
-| Counter | Bound |
-| --- | --- |
-| `lines_reread` | ≤ lines of `E` ∪ `U` + 1 |
-| `inline_bytes` | ≤ content bytes of the inline roots in `U` + bytes of `R(K)` |
-| `finish_visited` | ≤ `N` + nodes of the inline roots re-parsed (in `U` or `R(K)`) |
-| `nodes_new` | = `N` |
-
-For a stream chunk, `E` is the last line before the chunk together with the
-lines it appends, and the inline term is the chunk plus the distance from the
-frontier leaf's stable prefix (plan 5.6) to its end. The harness takes the
-stable prefix from the fresh parse of the text before the chunk as the
-earliest of: the start of the leaf's last line; the earliest opener the fresh
-parse left as literal text in the last inline root; and the start of the
-earliest token that runs to the end of the content (an unmatched backtick run,
-an unclosed HTML or comment token, a formula without a closer).
-
-These bounds are exactly as large as the language makes a step, so the
-language-inherent cases of plan 7.2 get their real bound through the same
-formulas: an unclosed fence makes `E` run to the end of the document, and a
-changed definition puts its references in `R(K)`. Each activation row of
-section 7 turns on the counters its step makes meaningful.
-
-### 6.3 Flatness, on Ir
+### 6.2 Flatness, on Ir
 
 For every local edit family (`typing`, `lines`, `ranges`, `far`, `batch`)
 on every scale shape, **every step** costs at most logarithmically more as the
@@ -435,19 +378,19 @@ edited at the leaf. It excludes the shapes whose cost plan 7.2 assigns to the
 language (the stray opener, the definition with 10,000 references, the shifted
 anchor suffixes, the unclosed `**`, the single-line paragraph) and streaming
 into the `table` shape, which re-reads the table at the tail per appended row.
-Those are bounded by their counters (6.2) and by 6.4.
+Those are bounded by 6.3.
 
-### 6.4 Never worse than reparsing
+### 6.3 Never worse than reparsing
 
 For every step of every script of at most 1,024 steps, including `markers`,
 `declarations`, `random` and every stream of at most 1,024 chunks, `step_ir`
 is at most 1.25 times `reparse_ir` of the same step (decision G2). A longer
-stream is bounded per chunk by 6.2 and 6.3; its `reparse_ir` column is
+stream is bounded per chunk by 6.2; its `reparse_ir` column is
 reported. The margin pays for matching and deduplication when an edit really
 does change the whole document; beyond it, an incremental edit would be a
 regression against the application that just reparses.
 
-### 6.5 Regressions
+### 6.4 Regressions
 
 Against the base revision, measured with the current harness and workloads on
 both sides as the one-shot gate already does, and always between the same
@@ -460,11 +403,11 @@ subject on both sides:
 
 When the base revision has no `session` subject, which is the case for the
 pull request of rollout step 2, there is nothing of the same kind to compare
-with. That pull request is gated by 6.2 and 6.4, reports its session numbers
+with. That pull request is gated by 6.3, reports its session numbers
 beside the base's `reparse` numbers, and becomes the session baseline; the 1.02
 rules apply to `session` from the next pull request (decision G4).
 
-Speedup and `stream_ratio` are reported. They follow from 6.3, 6.4 and 6.5,
+Speedup and `stream_ratio` are reported. They follow from 6.2, 6.3 and 6.4,
 and a fixed target on either would be a number chosen from a measurement.
 
 ## 7. Activation by rollout step
@@ -474,12 +417,12 @@ its numbers are reported with the `reparse` subject.
 
 | Step | Correctness | Benchmarks |
 | --- | --- | --- |
-| 0 Harness (this plan) | Scripts and text model self-tests; 4.1 with `reparse` | Edit and stream runners report the R column; one-shot adds the `buffer_to_ast` rule (6.5) |
+| 0 Harness (this plan) | Scripts and text model self-tests; 4.1 with `reparse` | Edit and stream runners report the R column; one-shot adds the `buffer_to_ast` rule (6.4) |
 | 1 Model | 4.2 for fresh parses; deep equality and 4.9 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
-| 2 Sessions, whole-document restart | 4.1–4.11 on the correctness set, every platform, both units | 6.4 on every workload, which sets the session baseline for 6.5 (G4); 6.2 for `nodes_new` |
-| 3 Block restart and convergence | Unchanged | 6.2 for `lines_reread`, and for `inline_bytes` and `finish_visited` on shapes without declarations; 6.3 for the local edit families on shapes without declarations |
-| 4 Session registries | Unchanged | 6.2 for `inline_bytes` and `finish_visited` on every shape; 6.3 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`) and for the local steps of `declarations` |
-| 5 Frontier and inline restart | Unchanged | 6.2 in its stream form for `lines_reread` and `inline_bytes`; 6.3 for `tokens` and `rows` |
+| 2 Sessions, whole-document restart | 4.1–4.11 on the correctness set, every platform, both units | 6.3 on every workload, which sets the session baseline for 6.4 (G4) |
+| 3 Block restart and convergence | Unchanged | 6.2 for the local edit families on shapes without declarations |
+| 4 Session registries | Unchanged | 6.2 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`) and for the local steps of `declarations` |
+| 5 Frontier and inline restart | Unchanged | 6.2 for `tokens` and `rows` |
 
 From step 2 on, the one-shot benchmark measures `Document.parse` through the
 session path it becomes (plan 4.4), so the one-shot gate also guards what the
@@ -495,12 +438,12 @@ named oracle:
 | --- | --- |
 | Returns the previous document for one step | 4.1 |
 | Renumbers every id on every step (a fresh parse with fresh ids) | 4.2 lineage, 4.4, 4.5 |
-| Rewrites every node with the same ids | 4.3 (`nodes_new` > `N`) |
+| Rewrites every node with the same ids | 4.3 |
 | Gives an edited heading a new id | 4.4 |
-| Keeps a node whose text changed | 4.1, and 4.3 (`nodes_new` < `N`) |
+| Keeps a node whose text changed | 4.1 |
 | Reuses a retired id for a new node | 4.2 |
 | Accepts an end inside a scalar | 4.8 |
-| Re-reads the whole document on every step | 6.2 and 6.3 |
+| Re-reads the whole document on every step | 6.2 |
 
 The faulty subjects wrap `reparse` (and, from step 1, fresh ids), live only in
 the harness's test sources, and are never linked into a product target. The
@@ -533,7 +476,7 @@ enough to track.
 benchmark runs, as the grammar corpus is: every grammar corpus document with
 `typing`, `lines`, `markers`, `undo`, `random`, `tokens` and `scalars`, and
 every scale and adversarial shape at all four sizes with every family but
-`undo`. `random` runs with 16 seeds in both, so 6.4 is measured on arbitrary
+`undo`. `random` runs with 16 seeds in both, so 6.3 is measured on arbitrary
 ranges and not only on the scripted families. Before measuring, the runner
 applies each workload natively, outside callgrind, and checks 4.1–4.4 after
 every step. A workload that fails is not reported, and the run fails, as the
@@ -562,7 +505,7 @@ their own pull requests.
       of section 8 that wrap `reparse`.
 - [ ] The edit and stream benchmark runner, `pnpm benchmark:edits`, reporting
       the R column, with driver tests on synthetic profiles.
-- [ ] The `buffer_to_ast` regression rule in the one-shot gate (6.5, G1).
+- [ ] The `buffer_to_ast` regression rule in the one-shot gate (6.4, G1).
 - [ ] The "Measure - edits and streams" CI job and its tables in the PR
       comment.
 
@@ -574,12 +517,12 @@ their own pull requests.
   `buffer_to_ast` Ir up to 1.10 times the pre-step baseline per document,
   stated in its pull request, and `source_to_buffer` keeps its 1.02 rule.
   After step 1, both stages are at 1.02 per pull request.
-- **G2 The reparse margin. Decided 2026-09-29: as proposed.** Proposed 1.25 (6.4). A smaller margin forbids
+- **G2 The reparse margin. Decided 2026-09-29: as proposed.** Proposed 1.25 (6.3). A smaller margin forbids
   paying for matching on whole-document changes; a larger one hides a
   regression in the language-inherent cases.
 - **G3 Flatness factor. Decided 2026-09-29: as proposed.** Proposed 1.25 as the margin on top of the
-  logarithmic allowance across a 64 times size range (6.3). It is a statement
+  logarithmic allowance across a 64 times size range (6.2). It is a statement
   of "no linear term", and it should not be loosened to pass a measurement.
 - **G4 The session baseline. Decided 2026-09-29: as proposed.** Proposed: the step 2 pull request sets the
-  session baseline under 6.2 and 6.4, and the 1.02 regression rules apply to
-  the session from then on (6.5).
+  session baseline under 6.3, and the 1.02 regression rules apply to
+  the session from then on (6.4).

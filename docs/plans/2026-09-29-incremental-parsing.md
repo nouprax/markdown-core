@@ -482,8 +482,7 @@ immutable list of frames, innermost first, each holding one open container's
 id and its carried facts (E3). Snapshots share frames: a new frame is made
 only for a container whose facts differ from the frame the previous snapshot
 used, together with the frames inside it. Storage is one frame per block plus
-the frames of changed containers, and a work counter gates it against deep
-nesting with changing flags.
+the frames of changed containers.
 
 Restarting at `R` reopens `R`'s ancestors, which are exactly the open spine
 at that line: each ancestor is marked open and its carried facts are restored
@@ -746,7 +745,7 @@ equal scalars, equal extent, and every child relation holding the same
 objects.
 If they are equal, `N` is released and `O` stays. Within the C session, a
 node that differs from its predecessor as an object therefore differs as a
-value, which is what R3 measures and the work counters (8) count.
+value, which is what R3 measures.
 
 ### 5.10 Why the result equals a fresh parse
 
@@ -917,13 +916,6 @@ which also says at which rollout step each one becomes a gate.
   line at the top of a long document (only the Document and the edited
   paragraph are new values), and changing a heading anchor that Links target (every such Link is a new
   value carrying the new destination).
-- **Work counters.** Deterministic counters, like the existing
-  `input_line_work` and `delimiter_work`, gate lines re-read, inline bytes
-  re-parsed, finish nodes visited and C nodes
-  replaced per edit against the bounds of 7.1,
-  including adversarial shapes: a stray early opener, a 10,000-item list edited
-  in the middle, 1,000 nested block quotes, a definition with thousands of
-  references.
 - **Definition queries.** After every edit, `footnotes`, `specimens` and
   `footnote(for:)` and `specimen(for:)` for every label in the text equal
   those of a fresh parse, and fixtures with nested, duplicate, anonymous and
