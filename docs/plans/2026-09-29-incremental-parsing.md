@@ -10,10 +10,12 @@ allows, for two workloads:
 
 The consumers are SwiftUI, Jetpack Compose and React. They reconcile a view
 tree against a value tree by identity and equality, so the result of an edit is
-**a new `Document` and nothing else**. There is no public diff, patch, change
-list or event stream. A consumer that compares the new document with the
-previous one finds every unchanged subtree to be an equal value, finds every node that persists under
-the same identifier, and finds a changed node to be unequal to its predecessor.
+**a new `Document`**, a plain immutable value like the one a fresh parse
+returns. A consumer that compares it with the document it already holds finds
+every unchanged subtree to be an equal value, every node that persists under
+the same identifier, and every changed node unequal to its predecessor. That
+comparison is the consumer's framework's own work; this design gives it the
+ids and equality it needs and nothing else.
 
 Sections 1–3 state requirements and ground them in the current parser. Section
 4 is the public model. Sections 5–6 are the engine and binding design. Sections
@@ -37,9 +39,8 @@ make. Section 11 records rejected alternatives.
 - **R4 Stable identity.** Every node has an identifier, unique within its
   document, that survives every edit that does not remove the node. An
   identifier never changes kind.
-- **R5 No diff.** The API returns a `Document`, and nothing that crosses into
-  a binding is a delta either: every binding builds each document whole from
-  the C document (6.1).
+- **R5 Values only.** An edit returns the new `Document`. A binding builds it
+  from the C document the same way it builds a fresh parse (6.1).
 - **R6 One algorithm.** Streaming is an insertion at the end. A full parse is
   an insertion into an empty session. There is no streaming parser, no
   fallback parser and no size threshold that selects a different algorithm
@@ -832,22 +833,19 @@ as E2 does for closed nodes.
 
 ## 6. Bindings
 
-### 6.1 Materialization without a public diff
+### 6.1 Bindings build values from the C document
 
-A binding builds every published document whole from the committed C
-document, node by node, exactly as it builds a parse today. It keeps no
-table, takes no previous document as input and receives no report of what
-changed: it is a pure projection of C data into platform values, and its
-cost is the platform's cost of building an immutable value, which the
-engine's design never counts or optimizes. What the edit left unchanged
-reaches the consumer as equal values with unchanged ids (4.2), which is what
-SwiftUI, Compose and React reconcile. The public result is one `Document`.
+After an edit, a binding converts the session's C document into platform
+values node by node, exactly as it converts a fresh parse today, and returns
+the result. The C document is its only input. The conversion's cost is the
+platform's cost of building an immutable value, which the engine's design
+does not count or optimize (D5). Nodes the edit left unchanged reach the
+consumer as equal values with unchanged ids (4.2), which is what SwiftUI,
+Compose and React reconcile.
 
-The transaction (5.11) ends when the engine commits. Because the projection
-reads only committed C data, it has no transaction and no failure contract
-of its own: anything the platform raises while building values is the
-platform's own error, and the next projection is built from the C document
-like any other.
+The conversion is ordinary platform code: whatever the platform throws while
+it runs, such as running out of memory, reaches the caller as that
+platform's error.
 
 ### 6.2 Wire format MCB3
 
@@ -886,7 +884,7 @@ operation recurses over tree edges**.
   references, inside `deinit`. Records are therefore immutable to every
   observer and `Sendable` (`@unchecked`, with the invariant stated at its one
   use and an audit that no other code writes the storage).
-- **Traversal.** Deep equality, the walker, materialization (6.1), the scope
+- **Traversal.** Deep equality, the walker, conversion (6.1), the scope
   index and hit testing (4.3), the label index (4.5) and `description` use
   explicit work stacks. Hashing reads only the id. Kotlin (`equals`, `toString`) and
   ECMAScript (`markupEquals`) follow the same rule, because their stacks are
@@ -1057,13 +1055,12 @@ Each step is one pull request that leaves `main` releasable.
   byte and UTF-16 counts so conversion happens once, in C (4.4). The rejected
   alternative was UTF-8 everywhere, which leaves every editor integration to
   convert `NSRange` and JavaScript offsets itself.
-- **D5 Materialization. Decided 2026-09-29: every binding builds each
-  document whole from C (6.1).** Unchanged nodes reach consumers as equal
-  values with unchanged ids, and frameworks compare them with deep equality.
-  Rejected: sharing objects between published documents, which needs either
-  a binding-side id table with retired-id reports from the engine or a
-  projection that pairs each document with the previous one; both give the
-  binding state and logic of its own.
+- **D5 Bindings. Decided 2026-09-29: every binding builds each document
+  whole from C (6.1).** Unchanged nodes reach consumers as equal values with
+  unchanged ids, and frameworks compare them with deep equality. Rejected:
+  sharing objects between successive documents, which would give the
+  binding state of its own (a table of previous objects, or the previous
+  document as a second input) and the engine reports to maintain it.
 
 ## 11. Rejected alternatives
 
