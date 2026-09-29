@@ -296,6 +296,15 @@ C views borrow from the session until its next edit.
   CodeMirror, and the default position encoding of the Language Server
   Protocol. Every binding also offers `.utf8`, and Swift additionally accepts
   `Range<String.Index>` for edits, which carries no unit.
+- **Scalar boundaries.** Both ends of an edit range must fall on Unicode
+  scalar boundaries in the session's unit: never on a UTF-8 continuation byte,
+  never between the two halves of a UTF-16 surrogate pair. Replacement text
+  must be well formed: valid UTF-8 in C (apart from the pending tail of an
+  append, below), and no unpaired surrogate in a Kotlin or ECMAScript string.
+  An edit that breaks either rule is rejected as an invalid argument before
+  any state changes, so the session stays at its previous version. Nothing is
+  rounded to a nearby boundary, because that would silently edit a different
+  range. The text is therefore always valid UTF-8.
 - **Storage stays UTF-8.** The unit is how positions are counted, not how the
   text is stored. A binding takes its platform's own string. Swift's `String`
   is already UTF-8; Kotlin and ECMAScript strings are transcoded once at the
@@ -398,13 +407,18 @@ one place. There is one such structure, not one per consumer. (A gap buffer,
 or a sorted array with one lazy shift, would move Θ(n) bytes or keys whenever
 consecutive edits are far apart.)
 
-Line counts must compose, and CRLF is one line terminator. The text tree
-keeps the invariant that **no chunk boundary falls between a CR and the LF
-after it**. Every operation that creates a boundary (an edit's split and join,
-and rebalancing) checks the two bytes around it and, when they are CR and LF,
-moves the LF into the CR's chunk. That check is local, so the invariant costs
-O(1) per boundary created. With it, each chunk counts its own terminators
-exactly, and summed counts equal the parser's line numbering for CR, LF and
+Line counts and UTF-16 counts must compose: CRLF is one line terminator, and
+a scalar counts as one or two UTF-16 units only when it is whole. The text
+tree keeps one boundary invariant for both: **no chunk boundary falls inside a
+UTF-8 scalar or between a CR and the LF after it**. Edit endpoints are already
+scalar boundaries (4.4). Every operation that creates a boundary (an edit's
+split and join, and rebalancing) checks the bytes around it: a split point on
+a continuation byte moves back to its scalar's lead byte (at most 3 bytes),
+and a boundary between CR and LF moves the LF into the CR's chunk. The chunk
+size bound allows for those few bytes. The check is local, so the invariant
+costs O(1) per boundary created. With it, each chunk counts its own
+terminators and UTF-16 units exactly, a prefix sum always ends on a scalar
+boundary, and summed counts equal the parser's line numbering for CR, LF and
 CRLF alike.
 
 Every other workspace in `docs/architecture/parser-input-storage.md`
@@ -679,6 +693,22 @@ within one root, so their results for a reused root are already in the reused
 tree. `check-finish-hook-shapes.mjs` gains the rule that a finish step or pass
 reads only its root and the registries, which is what lets them run per root.
 
+Within a root re-parsed from its stable prefix (5.6), finish resumes at the
+prefix too; otherwise every streamed chunk would re-finish the whole
+paragraph, and a long paragraph would cost quadratic work. Finished nodes
+wholly before the prefix are kept as they are. The finish walk visits the
+nodes the inline parse rebuilt (the suffix and the path of containers that
+straddle the prefix) plus, at each level of that path, the one finished
+sibling immediately before them. That is exact because of a second rule the
+audit enforces: **a finish step's result for a node depends only on that node
+and its immediately preceding sibling**, after the step has run on that
+sibling. Text consolidation merges a node into its predecessor, the email
+pass scans one consolidated Text, and the others read one node. The left
+sibling at the prefix ends no later than the start of the last line, where
+SoftBreak splits Text, so resumed finish work is of the same order as the
+inline re-parse. A step that needs a wider window must say so in its hook
+shape, and the stable prefix then moves back by that window.
+
 ### 5.9 Identity matching and value deduplication
 
 After re-parsing, each new node in the re-read region is matched to an old
@@ -762,7 +792,8 @@ replacing a text range first moves the replaced chunks into the entry instead
 of freeing them; splicing a ledger or registry range keeps the removed
 elements in the entry.
 
-- **Commit** happens once, after the new document is complete: the journal's
+- **Commit** happens once, after the new document is complete and, for a
+  binding, materialized (6.1): the journal's
   retained old elements (replaced chunks, removed ledger entries, old nodes
   that did not survive) are released and the version advances.
 - **Rollback** replays the journal in reverse. It allocates nothing and cannot
@@ -789,6 +820,20 @@ the table can release them.
 The cost is proportional to the changed nodes plus their children, which is
 also what SwiftUI, Compose and React reconcile. The public result is one
 `Document`.
+
+Publication is part of the edit's transaction (5.11), which therefore has two
+phases. The engine **prepares** an edit: it parses, builds the new tree, keeps
+its journal, and exposes the new tree or its MCB3 message. The binding then
+materializes the new version without touching its live table: new value
+objects go into a staging map beside it. If materialization fails (a host
+allocation, a decoding error), the binding drops the staging map and asks the
+engine to **roll back**, which replays the journal; engine and binding are
+both at the previous version, and `reuse(id)` records of the next attempt
+refer to the table as it was. If it succeeds, the binding asks the engine to
+**commit**, and only then merges the staging map into its table, releases the
+retired ids and publishes the document. Commit and the merge only release and
+move references, so neither can fail. C callers that do not materialize
+anything prepare and commit in one call.
 
 ### 6.2 Wire format MCB3
 
@@ -969,11 +1014,12 @@ Each step is one pull request that leaves `main` releasable.
   condition that no operation recurses over tree edges (6.3). The rejected
   alternative kept the flat store with a cross-version segment scheme, which
   retains dead records until compaction.
-- **D4 Coordinate unit. Recommended, awaiting confirmation:** one unit per
-  session for edit offsets and returned columns alike, UTF-16 by default in
-  bindings and UTF-8 in C, with text stored as UTF-8 (4.4). The alternative is
-  UTF-8 everywhere, which leaves every editor integration to convert
-  `NSRange` and JavaScript offsets itself.
+- **D4 Coordinate unit. Decided 2026-09-29: one unit per session.** Edit
+  offsets and returned columns use the same unit, UTF-16 by default in
+  bindings and UTF-8 in C. Text is stored as UTF-8, and the C text tree keeps
+  byte and UTF-16 counts so conversion happens once, in C (4.4). The rejected
+  alternative was UTF-8 everywhere, which leaves every editor integration to
+  convert `NSRange` and JavaScript offsets itself.
 
 ## 11. Rejected alternatives
 
