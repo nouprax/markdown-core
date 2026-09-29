@@ -20,13 +20,17 @@
  * the R column (section 7, step 0).
  *
  *   node scripts/benchmark/edits.mjs [--out DIR] [--set all|corpus]
- *                                    [--workload NAME]... [--quiet]
+ *                                    [--workload NAME]... [--shard I/N]
+ *                                    [--quiet]
+ *   node scripts/benchmark/edits.mjs --merge DIR [--out DIR] [--quiet]
  *
  * `--set corpus` measures the grammar corpus's workloads alone; `--workload`
- * narrows either set to the named workloads.
+ * narrows either set to the named workloads. `--shard I/N` measures the
+ * workloads at positions I, I + N, I + 2N, ... of the set and writes that
+ * part of the report; `--merge DIR` joins the N parts found in DIR's
+ * subdirectories into the report, so N machines measure one set.
  */
 
-import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -37,7 +41,7 @@ import { parseCallgrind } from "./callgrind.mjs";
 import { groupWindows, summary, windowCost, windowEnds } from "./edit-gates.mjs";
 import { EDIT_RUNNER, measure, prepareBuild, profileRun } from "./run.mjs";
 import { STAGES } from "./stage-budget.mjs";
-import { BENCHMARK_SETS, streamChunks, writeBenchmarkWorkloads } from "./workloads.mjs";
+import { BENCHMARK_SETS, writeBenchmarkWorkloads } from "./workloads.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SUBJECT = "reparse";
@@ -48,7 +52,14 @@ function fail(message) {
 }
 
 function parseArguments(argv) {
-    const options = { out: path.join(root, "build/benchmark-edits"), set: "all", workloads: [], quiet: false };
+    const options = {
+        out: path.join(root, "build/benchmark-edits"),
+        set: "all",
+        workloads: [],
+        shard: { index: 0, count: 1 },
+        merge: null,
+        quiet: false
+    };
     for (let index = 0; index < argv.length; index++) {
         const flag = argv[index];
         const value = argv[index + 1];
@@ -65,6 +76,14 @@ function parseArguments(argv) {
             index++;
         } else if (flag === "--workload") {
             options.workloads.push(value);
+            index++;
+        } else if (flag === "--shard") {
+            const match = /^(\d+)\/(\d+)$/u.exec(value);
+            if (!match || Number(match[1]) >= Number(match[2])) fail("--shard is I/N with I < N");
+            options.shard = { index: Number(match[1]), count: Number(match[2]) };
+            index++;
+        } else if (flag === "--merge") {
+            options.merge = path.resolve(value);
             index++;
         } else {
             fail(`unknown argument: ${flag}`);
@@ -212,16 +231,70 @@ export function markdownReport(report) {
     return lines.join("\n");
 }
 
-async function main() {
-    const options = parseArguments(process.argv.slice(2));
+/** The fields every part of one measurement shares, and the report carries. */
+const IDENTITY = ["schemaVersion", "subject", "toolchain", "binaries", "profile", "workloads"];
+
+/** Write the report and its human rendering under `out`. */
+function writeReport(report, out, quiet) {
+    fs.mkdirSync(out, { recursive: true });
+    const json = path.join(out, "edits.json");
+    fs.writeFileSync(json, `${JSON.stringify(report)}\n`);
+    if (report.shard) {
+        console.error(`wrote part ${report.shard.index}/${report.shard.count}: ${path.relative(root, json)}`);
+        return;
+    }
+    const markdown = path.join(out, "edits.md");
+    const rendered = markdownReport(report);
+    fs.writeFileSync(markdown, `${rendered}\n`);
+    if (!quiet) process.stdout.write(`${rendered}\n`);
+    console.error(`wrote ${path.relative(root, json)} and ${path.relative(root, markdown)}`);
+}
+
+/**
+ * Join the parts of one sharded measurement: every part measured the same
+ * set with the same binaries, and together they hold shards 0 to N - 1 once
+ * each. Workload k of the set is the (k / N)th result of part k mod N.
+ */
+export function mergeParts(parts) {
+    if (!parts.length) throw new Error("no parts to merge");
+    const count = parts[0].shard?.count;
+    const byIndex = new Map();
+    for (const part of parts) {
+        for (const field of IDENTITY) {
+            if (JSON.stringify(part[field]) !== JSON.stringify(parts[0][field])) {
+                throw new Error(`the parts differ in ${field}`);
+            }
+        }
+        if (!part.shard || part.shard.count !== count || byIndex.has(part.shard.index)) {
+            throw new Error("the parts are not one set of shards");
+        }
+        byIndex.set(part.shard.index, part.results);
+    }
+    if (byIndex.size !== count) throw new Error(`${byIndex.size} of ${count} parts are present`);
+    const results = [];
+    for (let position = 0; position < parts[0].workloads.count; position++) {
+        const row = byIndex.get(position % count)[Math.floor(position / count)];
+        if (!row) throw new Error(`no part holds workload ${position}`);
+        results.push(row);
+    }
+    if (results.length !== [...byIndex.values()].reduce((sum, rows) => sum + rows.length, 0)) {
+        throw new Error("the parts hold more results than the set has workloads");
+    }
+    const report = Object.fromEntries(IDENTITY.map((field) => [field, parts[0][field]]));
+    return { ...report, results };
+}
+
+async function measureSet(options) {
     const { profile, versions, binaries } = prepareBuild({ out: options.out });
     const index = writeBenchmarkWorkloads(path.join(options.out, "workloads"), options.set, options.workloads);
+    const { index: shard, count } = options.shard;
+    const selected = index.workloads.filter((_, position) => position % count === shard);
     fs.rmSync(path.join(options.out, "callgrind"), { recursive: true, force: true });
     fs.rmSync(path.join(options.out, "final"), { recursive: true, force: true });
     const measured = await measureAll(
         profile,
         options.out,
-        index.workloads.map((workload) => ({
+        selected.map((workload) => ({
             name: workload.name,
             document: workload.document.path,
             file: workload.file,
@@ -230,40 +303,41 @@ async function main() {
         })),
         options.quiet
     );
-    const results = index.workloads.map((workload) => {
-        const result = measured.get(workload.name);
-        if (workload.stream) {
-            /* Each window's end byte, for the stream form of 6.2. */
-            const ends = streamChunks(Buffer.from(workload.document.text), workload.stream);
-            result.windowEnds = windowEnds(ends.length).map((step) => ends[step - 1]);
-        }
-        return {
+    const report = {
+        schemaVersion: 1,
+        subject: SUBJECT,
+        toolchain: versions,
+        /* The two binaries this report measures, by content: parts built on
+         * different machines agree on these and nothing else. */
+        binaries: Object.fromEntries(
+            ["markdown-core", "markdown-core edits"].map((name) => [name, { sha256: binaries[name].sha256 }])
+        ),
+        profile: { compiler: profile.compiler, flags: profile.flags },
+        workloads: { version: index.version, set: index.set, digest: index.digest, count: index.workloads.length },
+        results: selected.map((workload) => ({
             name: workload.name,
             document: workload.document.name,
             source: workload.document.shape ?? "grammar corpus",
             alphabet: workload.document.alphabet,
             size: workload.document.shape ? workload.document.size : null,
             family: workload.family,
-            ...result
-        };
-    });
-    const report = {
-        schemaVersion: 1,
-        subject: SUBJECT,
-        toolchain: versions,
-        binaries,
-        profile: { compiler: profile.compiler, flags: profile.flags },
-        workloads: { version: index.version, set: index.set, digest: index.digest, count: index.workloads.length },
-        artifacts: path.relative(root, options.out),
-        results
+            ...measured.get(workload.name)
+        }))
     };
-    const json = path.join(options.out, "edits.json");
-    const markdown = path.join(options.out, "edits.md");
-    fs.writeFileSync(json, `${JSON.stringify(report)}\n`);
-    const rendered = markdownReport(report);
-    fs.writeFileSync(markdown, `${rendered}\n`);
-    if (!options.quiet) process.stdout.write(`${rendered}\n`);
-    console.error(`wrote ${path.relative(root, json)} and ${path.relative(root, markdown)}`);
+    return count === 1 ? report : { ...report, shard: options.shard };
+}
+
+async function main() {
+    const options = parseArguments(process.argv.slice(2));
+    if (options.merge) {
+        const parts = fs
+            .readdirSync(options.merge, { withFileTypes: true })
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => JSON.parse(fs.readFileSync(path.join(options.merge, entry.name, "edits.json"), "utf8")));
+        writeReport(mergeParts(parts), options.out, options.quiet);
+    } else {
+        writeReport(await measureSet(options), options.out, options.quiet);
+    }
 }
 
 if (isMainThread && import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

@@ -173,6 +173,20 @@ workload's per-window Ir and its p50, p95, maximum and total), the generated
 expensive window. `scripts/benchmark/edit-gates.mjs` holds the arithmetic of
 the edit gates; later rollout steps activate them.
 
+The grammar corpus's workloads take hours of callgrind on one runner, so CI
+measures them in parts on parallel runners and joins the parts into one
+report:
+
+```sh
+pnpm benchmark:edits --set corpus --shard 0/8 --out build/edit-parts/0
+# ... one run per part, on any machine with the same toolchain ...
+pnpm benchmark:edits --merge build/edit-parts
+```
+
+Part `I` of `N` measures the workloads at positions `I`, `I + N`, ... of the
+set. The join refuses parts that differ in their toolchain, binaries or
+workload set, and a set of parts that misses or repeats one.
+
 ## The attribute grammar, against lexbor
 
 `pnpm benchmark:attributes` remains an independent comparison of Core's
