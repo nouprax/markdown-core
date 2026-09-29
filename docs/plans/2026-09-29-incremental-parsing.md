@@ -922,7 +922,7 @@ which also says at which rollout step each one becomes a gate.
   value carrying the new destination).
 - **Work counters.** Deterministic counters, like the existing
   `input_line_work` and `delimiter_work`, gate lines re-read, inline bytes
-  re-parsed, child summaries recombined, finish nodes visited and C nodes
+  re-parsed, finish nodes visited and C nodes
   replaced per edit against the bounds of 7.1,
   including adversarial shapes: a stray early opener, a 10,000-item list edited
   in the middle, 1,000 nested block quotes, a definition with thousands of

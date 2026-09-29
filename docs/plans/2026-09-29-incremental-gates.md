@@ -423,10 +423,10 @@ step fails the same way, however few steps it affects.
 
 For `tokens` and `rows` on every scale shape, the chunks do not correspond
 across sizes, so the rule compares positions within one stream of `n` bytes.
-With `m(p)` the highest window cost among the windows that end in the last
-tenth before `p` and `Δ = max(0, m(n/4) − m(n/16))`, the rule is
-`m(n) ≤ 1.25 × m(n/16) + 2Δ`: the same logarithmic allowance, which catches
-per-chunk work that grows with the text already streamed.
+With `m(p)` the highest cost of every window that ends at or before `p` and
+`Δ = max(0, m(n/4) − m(n/16))`, the rule is `m(n) ≤ 1.25 × m(n/16) + 2Δ`: the
+same logarithmic allowance, which catches per-chunk work that grows with the
+text already streamed, wherever in the stream it occurs.
 
 The same rule covers the adversarial shapes whose cost the language keeps
 local: the 10,000-item list edited in the middle and the 1,000 nested quotes
