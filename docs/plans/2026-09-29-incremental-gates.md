@@ -286,8 +286,10 @@ footnote index of plan 4.5) are exercised by concurrent first use in Swift and
 Kotlin: several threads released together by a barrier make their first
 `Document.scope(of:)`, `Document.node(at:)` and `Document.footnote(for:)`
 calls on the same fresh document of every step, and every answer must equal
-the single-threaded answer. This runs under the thread sanitizer where the
-platform has one. It also covers documents that share subtrees with the
+the single-threaded answer. Each index is built exactly once per document:
+the test build counts index constructions, and the count after the concurrent
+first use is one per index, not one per thread. This runs under the thread
+sanitizer where the platform has one. It also covers documents that share subtrees with the
 previous version while that version is being read on another thread.
 
 ### 4.11 Platforms and units
@@ -385,7 +387,7 @@ quantities, per step:
 
 | Quantity | Definition |
 | --- | --- |
-| `E` | The **language damage**: the smallest range of lines such that the block trees of the two fresh parses (kinds, depths and mapped start lines of every block) agree before it and after it |
+| `E` | The **language damage**: the union of the edited lines (the step's range widened to whole lines as in plan 5.2, before and after the step) and the smallest range of lines such that the block trees of the two fresh parses (kinds, depths and mapped start lines of every block) agree before it and after it. A content-only edit therefore still has the lines it touched as its damage |
 | `U` | Lines and bytes of the whole units that intersect `E`: paragraphs, tables with their captions, code, HTML, comment, formula and directive blocks (plan 5.3) |
 | `B` | Blocks of either fresh parse that start inside `E`, at any depth |
 | `d` | Depth of the deepest block that contains `E` |
@@ -548,8 +550,10 @@ enough to track.
 
 **The benchmark workloads** are the generator's large output, built when the
 benchmark runs, as the grammar corpus is: every grammar corpus document with
-`typing`, `lines`, `markers`, `undo`, `tokens` and `bytes`, and every scale and
-adversarial shape at all four sizes with every family but `undo` and `random`.
+`typing`, `lines`, `markers`, `undo`, `random`, `tokens` and `bytes`, and every
+scale and adversarial shape at all four sizes with every family but `undo`.
+`random` runs with 16 seeds in both, so 6.4 is measured on arbitrary ranges
+and not only on the scripted families.
 Before measuring, the runner applies each workload natively, outside
 callgrind, and checks 4.1–4.4 after every step. A workload that fails is not
 reported, and the run fails, as the one-shot runner already refuses an empty
