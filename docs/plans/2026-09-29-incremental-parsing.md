@@ -270,21 +270,24 @@ public final class MarkdownSession {           // one writer; not Sendable
     public var document: Document { get }       // immutable, Sendable
     public var text: String { get }
     @discardableResult
-    public func replace(_ range: Range<Int>, with text: String) throws -> Document
-    @discardableResult
-    public func replace(_ range: Range<String.Index>,
-                        with text: String) throws -> Document
+    public func edit(_ edits: [TextEdit]) throws -> Document
     @discardableResult
     public func append(_ text: String) throws -> Document
-    @discardableResult
-    public func apply(_ edits: [TextEdit]) throws -> Document
+}
+
+public struct TextEdit {
+    public init(_ range: Range<Int>, with text: String)
+    public init(_ range: Range<String.Index>, with text: String)
 }
 ```
+
+`edit` is the one way to change a range: a single replacement is a batch of
+one edit.
 
 Kotlin has the same shape as an `AutoCloseable` class. ECMAScript exports
 `class MarkdownSession` with `dispose()` (and a `FinalizationRegistry`
 backstop), because its state lives in WebAssembly memory. C exposes
-`markdown_core_session_new`, `_replace`, `_append`, `_document` and `_free`.
+`markdown_core_session_new`, `_edit`, `_append`, `_document` and `_free`.
 C views borrow from the session until its next edit.
 
 - **One coordinate unit.** A session, and every document it publishes, counts
@@ -321,7 +324,7 @@ C views borrow from the session until its next edit.
 - **Columns in the unit.** Extents are bytes (4.3). A column is converted to
   the session's unit only when a scope query asks for it. The canonical dump
   and the conformance fixtures stay in UTF-8 columns.
-- **Batches.** `apply` takes disjoint edits in the coordinates of the text
+- **Batches.** `edit` takes disjoint edits in the coordinates of the text
   before the batch and parses once, for multi-cursor edits and bulk
   replacements. The transaction keeps every edit as its own piece of the
   position mapping (5.2), so bytes between two edits stay surviving bytes
