@@ -171,10 +171,15 @@ A node stores only its relative extent: `Extent(lead, span)`, where `lead` is th
 previous sibling in the same relation (or from its owner's start, for the
 first) and `span` is its UTF-8 length. `Document.scope(of:in:)` and
 `Document.node(at:in:)` compute absolute positions from the extents and the
-source text the caller passes (plan 4.3). On every step of the correctness
-set, for every node of the subject's document, `scope(of:in:)` with the model
-text equals the scope the dump printed for that node, and `node(at:in:)` at
-the scope's start returns the deepest node the dump places there. A document
+source text the caller passes (plan 4.3), and return them in the session's
+unit; the extents themselves are UTF-8 in every unit, as the engine produces
+them. On every step of the correctness set, for every node of the subject's
+document, `scope(of:in:)` with the model text equals `scope(of:in:)` of the
+corresponding node of a fresh parse of the model text in the same unit, and
+`node(at:in:)` at the scope's start returns the corresponding node. The fresh
+parse's own answers are checked once, in UTF-8, against the scopes the
+canonical dump prints, which stay in UTF-8 columns, and in UTF-16 against the
+same scopes converted through the model text. A document
 answers these queries from its own values alone, so the previous document
 with the previous text still answers exactly as it did before the step.
 
