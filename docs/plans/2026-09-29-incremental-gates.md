@@ -29,8 +29,8 @@ owner.
 The incremental plan first put its gates in its last rollout step. That order
 lets four steps land without the evidence the design depends on:
 
-- Step 1 adds ids, deep equality, relative spans and Swift per-node records.
-  Every one of them costs the one-shot parse something, and the current gate
+- Step 1 adds ids, deep equality and Swift per-node records, and takes
+  positions off the nodes. Every one of these changes the one-shot parse something, and the current gate
   sees only `source_to_buffer`. Nothing today would notice the AST stage
   getting slower.
 - Steps 2–5 each claim a property (R1 equivalence, R3 minimal replacement, R4
@@ -166,6 +166,14 @@ subject's document equals the dump of a fresh `Document.parse` of the model
 text in the same unit. The dump prints no ids and prints absolute scopes, so
 it compares meaning and positions and nothing that depends on history.
 
+Nodes carry no positions; `Document.scope(of:)` and `Document.node(at:)`
+compute them on demand (plan 4.3). On every step of the correctness set, for
+every node of the subject's document, `scope(of:)` equals the scope the dump
+printed for that node, and `node(at:)` at the scope's start returns the
+deepest node the dump places there. Both calls on the previous document,
+which the step made stale, throw the stale-document error instead of answering
+with another version's positions.
+
 ### 4.2 Identity (R4)
 
 - Ids are unique within the document, across every owned relation.
@@ -185,16 +193,19 @@ an unchanged value, which forces every consumer to re-render it. Every
 ancestor of a new object is a new object.
 
 The comparison is always against a **snapshot** of `O` taken before the step:
-its kind, id, scalars, span and the ids of its children, keyed by id, on every
-platform. Comparing against the live object would be meaningless if a subject
+its kind, id, scalars and the ids of its children, keyed by id, on every
+platform, together with its absolute scope, read through `scope(of:)` while
+that document is still current, because the call throws once the step has
+made it stale. Comparing against the live object would be meaningless if a subject
 mutated a published node in place, because `O` would already show the new
 value. "Same object" is object identity in Swift, Kotlin and ECMAScript, and
 an unchanged node `version` in C (plan 5.9), whose views the next edit
 invalidates.
 
 Published documents are immutable (R9). Every binding keeps the previous
-document alive across the step and checks, after the step, that its canonical
-dump and its per-node snapshot are unchanged. A subject that edits a published
+document alive across the step and checks, after the step, that its per-node
+values (kind, id, scalars and children, walked without positions, since the
+stale document no longer answers scope queries) are unchanged. A subject that edits a published
 value in place fails here even when the new document is correct.
 
 ### 4.4 Identity follows the matching rule
@@ -203,7 +214,8 @@ value in place fails here even when the new document is correct.
 accept an implementation that gives a node a new id, changed or not, and
 loses its view state. The plan states which old node each new node continues
 (5.9) in terms the harness can evaluate from the public model alone: the
-position mapping of the step (5.2), absolute scopes, kinds and owner
+position mapping of the step (5.2), the absolute scopes of the pre-step
+snapshot (4.3) and of `scope(of:)` on the new document, kinds and owner
 relations. The harness therefore computes the expected matching itself, for
 every node of every step:
 
@@ -219,11 +231,10 @@ every node of every step:
 
 This holds whether the node's value changed or not, so an edited heading,
 list item or table cell keeps its id exactly as an edited paragraph does. In
-addition, a continued node whose relative-span subtree value equals its
-predecessor's is the predecessor itself (4.3). Relative spans make that
-precise: a node after an inserted line keeps its value, while the first node
-after a changed sibling may change its lead, and then is legitimately a new
-value with the same id.
+addition, a continued node whose subtree value equals its predecessor's is
+the predecessor itself (4.3). Values hold no positions, so an edit elsewhere
+never changes a node's value by moving it: a node after an inserted line, or
+after a changed sibling, is the same object unless its own content changed.
 
 ### 4.5 Scripted identity
 
@@ -283,8 +294,9 @@ of a deep document whose subtree is shared with a newer version, equality of
 two deep documents that differ at the deepest leaf, walking, scope lookup, hit
 testing and `description`, on a thread with a small fixed stack.
 
-Every document index a binding builds lazily (the scope index of plan 4.3,
-and any other the plan publishes that way) is exercised by concurrent first
+Every document index built lazily on first use (any the plan computes on
+demand and caches, such as a position index behind `scope(of:)` and
+`node(at:)`) is exercised by concurrent first
 use in Swift and Kotlin: several threads released together by a barrier make
 their first `Document.scope(of:)` and `Document.node(at:)` calls, and their
 first call into each other lazy index, on the same fresh document of every step, and every answer must equal
@@ -650,8 +662,8 @@ as section 7 says, in their own pull requests.
 ## 11. Decisions for the owner
 
 - **G1 One-shot budget for the model change.** Step 1 makes every fresh parse
-  assign ids, compute relative spans and, in Swift, allocate one record per
-  node. Proposed: step 1 may raise `buffer_to_ast` Ir up to 1.10 times the
+  assign ids and, in Swift, allocate one record per node, while nodes stop
+  storing positions. Proposed: step 1 may raise `buffer_to_ast` Ir up to 1.10 times the
   pre-step baseline per document, stated in its pull request, and
   `source_to_buffer` keeps its 1.02 rule. After step 1, both stages are at
   1.02 per pull request.
