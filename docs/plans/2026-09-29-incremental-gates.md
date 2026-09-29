@@ -184,10 +184,18 @@ after its value changed. The "if" direction catches a wasteful new object for
 an unchanged value, which forces every consumer to re-render it. Every
 ancestor of a new object is a new object.
 
-"Same object" is object identity in Swift, Kotlin and ECMAScript. In C it is
-an unchanged node `version` (plan 5.9); the harness snapshots the previous
-document's per-node values, keyed by id, because C views are invalidated by
-the next edit.
+The comparison is always against a **snapshot** of `O` taken before the step:
+its kind, id, scalars, span and the ids of its children, keyed by id, on every
+platform. Comparing against the live object would be meaningless if a subject
+mutated a published node in place, because `O` would already show the new
+value. "Same object" is object identity in Swift, Kotlin and ECMAScript, and
+an unchanged node `version` in C (plan 5.9), whose views the next edit
+invalidates.
+
+Published documents are immutable (R9). Every binding keeps the previous
+document alive across the step and checks, after the step, that its canonical
+dump and its per-node snapshot are unchanged. A subject that edits a published
+value in place fails here even when the new document is correct.
 
 ### 4.4 Identity follows the matching rule
 
@@ -266,12 +274,21 @@ middle of a surrogate pair), ill-formed replacement text and impossible
 pending continuations are rejected as invalid arguments, and the session is
 bit-for-bit at its previous version.
 
-### 4.10 Depth
+### 4.10 Depth and concurrency
 
 Every binding runs the plan's deep-tree set (6.3) through a session: release
 of a deep document whose subtree is shared with a newer version, equality of
 two deep documents that differ at the deepest leaf, walking, scope lookup, hit
 testing and `description`, on a thread with a small fixed stack.
+
+The lazily published document indexes (the scope index of plan 4.3 and the
+footnote index of plan 4.5) are exercised by concurrent first use in Swift and
+Kotlin: several threads released together by a barrier make their first
+`Document.scope(of:)`, `Document.node(at:)` and `Document.footnote(for:)`
+calls on the same fresh document of every step, and every answer must equal
+the single-threaded answer. This runs under the thread sanitizer where the
+platform has one. It also covers documents that share subtrees with the
+previous version while that version is being read on another thread.
 
 ### 4.11 Platforms and units
 
@@ -360,26 +377,52 @@ There is no tolerance.
 
 ### 6.2 Bounds, on counters
 
-The generator knows the structure it built, so each script step carries the
-quantities its bound needs: the damaged leaf's lines and bytes, the depth of
-the edit point, the child counts along the path, and the number of references
-to a changed declaration. The gate checks the plan's table 7.1 as exact
-inequalities with named constant terms, for example for `typing` in a
-closed paragraph:
+Every activated counter has a bound, and every bound is written in quantities
+the harness computes without the engine: from the fresh parses of the text
+before and after the step (the `reparse` subject), the position mapping, and
+the script. No bound contains a constant chosen by the implementer. The
+quantities, per step:
 
-- `lines_reread` ≤ lines of the paragraph + the lookahead of its kind;
-- `inline_bytes` ≤ bytes of the paragraph;
-- `nodes_new` = the set 4.5 asserts;
-- `summaries_combined` ≤ (changed children + 1) × ⌈log₂ children⌉ per
-  ancestor.
+| Quantity | Definition |
+| --- | --- |
+| `E` | The **language damage**: the smallest range of lines such that the block trees of the two fresh parses (kinds, depths and mapped start lines of every block) agree before it and after it |
+| `U` | Lines and bytes of the whole units that intersect `E`: paragraphs, tables with their captions, code, HTML, comment, formula and directive blocks (plan 5.3) |
+| `B` | Blocks of either fresh parse that start inside `E`, at any depth |
+| `d` | Depth of the deepest block that contains `E` |
+| `C` | Per ancestor of `E`: its child count, and how many of its children start inside `E` |
+| `K` | Registry keys whose winner, family or ordinal differs between the two fresh parses: reference and heading labels, anchors, footnote labels, specimen ids |
+| `R(K)` | Inline roots of the new fresh parse that look up a key in `K`, and their content bytes |
+| `N` | New objects the step must produce, as 4.3 and 4.4 predict them |
+| `T` | Text chunks the step touches: ⌈(removed + inserted bytes) / chunk size⌉ + 2, where the chunk size is the text tree's one declared constant |
 
-For streaming, per chunk: `lines_reread` ≤ 1 + lines closed by the chunk, and
-`inline_bytes` ≤ chunk + the distance to the stable prefix, which the generator
-computes from the document it streams.
+The bounds:
 
-The language-inherent cases of plan 7.2 get their real bound: opening an
-unclosed fence re-reads to the end, a changed definition invalidates its
-references. The bound is still exact; it is just large.
+| Counter | Bound |
+| --- | --- |
+| `lines_reread` | ≤ lines of `E` ∪ `U` + 1 |
+| `inline_bytes` | ≤ content bytes of the inline roots in `U` + bytes of `R(K)` |
+| `ledger_touched` | ≤ `B` + `d` |
+| `summaries_combined` | ≤ Σ over ancestors (children in `E` + 1) × ⌈log₂(child count + 1)⌉ |
+| `registry_recomputed` | ≤ declarations inside `E` + members of the families of `K` |
+| `lookups_invalidated` | ≤ number of inline roots in `R(K)` |
+| `finish_visited` | ≤ `N` + nodes of the inline roots re-parsed (in `U` or `R(K)`) |
+| `nodes_new` | = `N` |
+| `nodes_materialized` | = `N`, per binding |
+| `journal_entries` | ≤ `ledger_touched` + `registry_recomputed` + `lookups_invalidated` + `T` + `d` |
+
+For a stream chunk, `E` is the last line before the chunk together with the
+lines it appends, and the inline term is the chunk plus the distance from the
+frontier leaf's stable prefix (plan 5.6) to its end, which the harness
+computes as the offset of the earliest delimiter in the new fresh parse's
+last inline root that is still unpaired.
+
+These bounds are exactly as large as the language makes a step, so the
+language-inherent cases of plan 7.2 get their real bound through the same
+formulas: an unclosed fence makes `E` run to the end of the document, and a
+changed definition puts its references in `R(K)`. Each activation row of
+section 7 turns on the counters its step makes meaningful; a step that has not
+yet removed a term (step 2 re-reads the whole document) is gated only on the
+counters that row names.
 
 ### 6.3 Flatness, on Ir
 
@@ -446,10 +489,10 @@ its numbers are reported with the `reparse` subject.
 | --- | --- | --- |
 | 0 Harness (this plan) | Scripts, text model and pending-byte model self-tests; 4.1 with `reparse` | Edit and stream runners report the R column; one-shot adds the `buffer_to_ast` rule (6.5) |
 | 1 Model | 4.2 for fresh parses; deep equality and 4.10 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
-| 2 Sessions, whole-document restart | 4.1–4.12 on the correctness set, every platform, both units | 6.4 on every workload, which sets the session baseline for 6.5 (G5); 6.2 for `nodes_new`, `nodes_materialized`, `journal_entries` |
-| 3 Block restart and convergence | Unchanged | 6.2 for block counters; 6.3 for the local edit families on shapes without declarations |
-| 4 Session registries | Unchanged | 6.2 for registry counters; 6.3 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`) and for the local steps of `declarations` |
-| 5 Frontier and inline restart | Unchanged | 6.2 for streaming; 6.3 for `tokens` and `rows` |
+| 2 Sessions, whole-document restart | 4.1–4.12 on the correctness set, every platform, both units | 6.4 on every workload, which sets the session baseline for 6.5 (G5); 6.2 for `nodes_new` and `nodes_materialized` |
+| 3 Block restart and convergence | Unchanged | 6.2 for `lines_reread`, `ledger_touched` and `summaries_combined`, and for `inline_bytes` and `finish_visited` on shapes without declarations; 6.3 for the local edit families on shapes without declarations |
+| 4 Session registries | Unchanged | 6.2 for `registry_recomputed` and `lookups_invalidated`, and for `inline_bytes`, `finish_visited` and `journal_entries` on every shape; 6.3 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`) and for the local steps of `declarations` |
+| 5 Frontier and inline restart | Unchanged | 6.2 in its stream form for `lines_reread` and `inline_bytes`; 6.3 for `tokens` and `rows` |
 
 From step 2 on, the one-shot benchmark measures `Document.parse` through the
 session path it becomes (plan 4.4), so the one-shot gate also guards what the
