@@ -589,6 +589,13 @@ an earlier tree, ledger entry or journal fails on the first step it does so,
 whatever the script's length, so the rule holds from step 2, before there is
 a session baseline.
 
+Counts alone would let each correctly counted element carry a buffer that
+grows with the document. So each kind's retained bytes per element (per text
+byte, for the text tree) are held to the flatness rule of 6.3 across the scale
+sizes, at the end of every scale script, from the pull request that introduces
+the kind. An element whose size depends on the document fails there as a
+linear Ir term does, before the kind has a baseline.
+
 ### 6.6 Regressions
 
 Against the base revision, measured with the current harness and workloads on
