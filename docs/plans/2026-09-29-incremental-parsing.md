@@ -557,11 +557,14 @@ where it did relative to it.
 
 **Re-finalization.** The spine containers are still the new parse's open
 nodes. Their closing facts come from the old parse's corresponding closes,
-which convergence proves identical, and then each spine container runs its
-finalize hook over its full children. Finalize for containers is required to
-be a pure function of children and recorded facts (5.4), which is what makes
-`List.tight` correct when the edit added a blank line between two early items
-and every later item was reused.
+which convergence proves identical. Each container's child summaries (E4) are
+kept in its ledger entries, in the same summed balanced tree as the rest of
+the ledger (5.1): internal nodes hold the combined summary of their range. An
+edit replaces the summaries of the re-read children and recombines up the
+tree, so a spine container is re-finalized in O(changed children × log
+children), not by walking every child. That is what makes `List.tight`
+correct, and cheap, when the edit added a blank line between two early items
+of a 10,000-item list and every later item was reused.
 
 **Units that are always whole.** A leaf is re-read whole when damaged: a
 paragraph, a code block, an HTML block, and a table with its caption and
@@ -601,9 +604,14 @@ These are requirements on every element, each checked by an audit script in
   stored on the open node, saved into spine snapshots by `carry_save`,
   restored by `carry_restore` and compared by `carry_equal`. Nothing else may
   carry information from one line to a later one.
-- **E4 Container finalize is idempotent.** It reads children and recorded
-  facts and writes the container's own fields. Running it twice gives the same
-  node.
+- **E4 Container finalize is a fold of child summaries.** It reads children
+  and recorded facts and writes the container's own fields, and running it
+  twice gives the same node. Each container kind declares a per-child summary
+  and an associative combine, and its fields are a function of the combined
+  summary. `List.tight` is one: a child's summary is (starts after a blank
+  line, contains a blank between its own children), and the list is loose
+  when any child contains one or any child after the first starts after one.
+  Scopes of definitions and lists combine as first start and last end.
 - **E5 Leaf finalize does not consume accumulation.** It produces the node's
   value from the accumulated content without destroying that content, so the
   frontier (5.5) can publish a provisional value and keep accumulating.
@@ -840,16 +848,19 @@ also what SwiftUI, Compose and React reconcile. The public result is one
 Publication is part of the edit's transaction (5.11), which therefore has two
 phases. The engine **prepares** an edit: it parses, builds the new tree, keeps
 its journal, and exposes the new tree or its MCB3 message. The binding then
-materializes the new version without touching its live table: new value
-objects go into a staging map beside it. If materialization fails (a host
-allocation, a decoding error), the binding drops the staging map and asks the
+materializes the new version without touching its live table. The table is a
+persistent map (a hash array mapped trie), so the binding builds the complete
+next table, with the new values added and the retired ids removed, as a new
+root that shares every untouched branch with the live one: O(changed nodes ×
+log n) allocation, all of it before commit. If anything fails (a host
+allocation, a decoding error), the binding drops the next table and asks the
 engine to **roll back**, which replays the journal; engine and binding are
 both at the previous version, and `reuse(id)` records of the next attempt
 refer to the table as it was. If it succeeds, the binding asks the engine to
-**commit**, and only then merges the staging map into its table, releases the
-retired ids and publishes the document. Commit and the merge only release and
-move references, so neither can fail. C callers that do not materialize
-anything prepare and commit in one call.
+**commit** and then replaces its table and document references with the new
+ones. Commit only releases the journal, and the swap is two reference
+assignments, so nothing after the commit can fail. C callers that do not
+materialize anything prepare and commit in one call.
 
 ### 6.2 Wire format MCB3
 
@@ -980,7 +991,8 @@ pretend otherwise:
   Text nodes on the edited line and the Document).
 - **Work counters.** Deterministic counters, like the existing
   `input_line_work` and `delimiter_work`, gate lines re-read, inline bytes
-  re-parsed and nodes materialized per edit against the bounds of 7.1,
+  re-parsed, child summaries recombined, finish nodes visited and nodes
+  materialized per edit against the bounds of 7.1,
   including adversarial shapes: a stray early opener, a 10,000-item list edited
   in the middle, 1,000 nested block quotes, a definition with thousands of
   references.
