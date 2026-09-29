@@ -263,7 +263,9 @@ pending-byte chunks and the invalid arguments of 4.9) with a failure injected
 at every allocation boundary. Each independently mutating path of the
 transaction is therefore swept. After each
 failure the subject's text, dump, ids, versions and retained-state digest
-equal the previous version's, and the unmodified step then succeeds. The same
+equal the previous version's. Then the unmodified step is retried: a valid
+step succeeds, and an invalid step of 4.9 is rejected as invalid again, with
+the session still unchanged. The same
 sweep runs through each binding's two-phase publication (plan 6.1) with the
 host allocation failing after the engine prepared the edit.
 
@@ -388,7 +390,7 @@ quantities, per step:
 | Quantity | Definition |
 | --- | --- |
 | `E` | The **language damage**: the union of the edited lines (the step's range widened to whole lines as in plan 5.2, before and after the step) and the smallest range of lines such that the block trees of the two fresh parses (kinds, depths and mapped start lines of every block) agree before it and after it. A content-only edit therefore still has the lines it touched as its damage |
-| `U` | Lines and bytes of the whole units that intersect `E`: paragraphs, tables with their captions, code, HTML, comment, formula and directive blocks (plan 5.3) |
+| `U` | Lines and bytes of every leaf that intersects `E`: every leaf that owns an inline root (paragraphs, headings, table cells, terms, captions and the like), and the units plan 5.3 always re-reads whole (tables with their captions, code, HTML, comment, formula and directive blocks) |
 | `B` | Blocks of either fresh parse that start inside `E`, at any depth |
 | `d` | Depth of the deepest block that contains `E` |
 | `C` | Per ancestor of `E`: its child count, and how many of its children start inside `E` |
@@ -414,9 +416,15 @@ The bounds:
 
 For a stream chunk, `E` is the last line before the chunk together with the
 lines it appends, and the inline term is the chunk plus the distance from the
-frontier leaf's stable prefix (plan 5.6) to its end, which the harness
-computes as the offset of the earliest delimiter in the new fresh parse's
-last inline root that is still unpaired.
+frontier leaf's stable prefix (plan 5.6) to its end. The harness takes the
+stable prefix as the earliest of plan 5.6's three candidates, each computed
+from the fresh parse of the text before the chunk: the start of the leaf's last
+line; the earliest opener that the fresh parse left as literal text in the last
+inline root (an emphasis or other delimiter run, a bracket, a citation token or
+a field); and the start of the earliest token that runs to the end of the
+content (an unmatched backtick run, an unclosed HTML or comment token, a
+formula without a closer). Reading openers from literal text can only move the
+candidate earlier, so the bound can be loose but never too small.
 
 These bounds are exactly as large as the language makes a step, so the
 language-inherent cases of plan 7.2 get their real bound through the same
