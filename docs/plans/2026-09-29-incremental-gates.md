@@ -49,8 +49,9 @@ changes the subject under test, not the harness.
 ## 2. Subjects and the baseline
 
 The harness drives a **subject** through one interface: open a session in a
-coordinate unit with an initial text, apply `replace`, `append` or a batch,
-read the current document, close. There are exactly two subjects:
+coordinate unit with an initial text, call `edit` (a batch of
+non-overlapping edits against the text before the batch) or `append`, each
+of which returns the new document, and close. There are exactly two subjects:
 
 | Subject | What it does | Role |
 | --- | --- | --- |
@@ -113,8 +114,8 @@ property of the generated input, checked once when the workload is built.
 
 ### 3.2 Edit scripts
 
-A script is a sequence of steps. A step is `replace(start, end, text)`,
-`append(text)` or `batch([replace…])`, with offsets in UTF-8 bytes of the text
+A script is a sequence of steps. A step is `edit([(start, end, text)…])`, a
+single edit being a batch of one, or `append(text)`, with offsets in UTF-8 bytes of the text
 before the step. Every offset falls on a scalar boundary unless the step is an
 invalid-argument case (4.9). Bindings convert offsets to their unit through
 the text model, so the same script tests both units.
@@ -283,8 +284,8 @@ and leaves the session unchanged (4.9).
 
 ### 4.7 Batches
 
-The dump after `batch(edits)` equals the dump after applying the same edits
-one at a time in descending order of their start offsets, whatever order the
+The dump after `edit(edits)` with several edits equals the dump after
+applying the same edits one at a time in descending order of their start offsets, whatever order the
 batch lists them in (so the offsets not yet applied stay valid), and
 4.1–4.4 hold for the batch as one step.
 
