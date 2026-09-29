@@ -224,9 +224,8 @@ Extent(lead: Int32, span: UInt32)       bytes of UTF-8 source
   and the source text the document was parsed from, which the side-by-side
   editor already holds (`session.text` for a session's current document).
   They return today's editor line and column conventions and sentinels, in
-  the session's coordinate unit (4.4). The first query on a document builds
-  its absolute-offset index in one walk, published once under a lock because
-  documents are `Sendable` (R8); the line and unit conversion scans the
+  the session's coordinate unit (4.4). Each query computes absolute offsets
+  in one walk over the extents, and the line and unit conversion scans the
   source. This cost is paid only by the query.
 - Walker callbacks no longer carry a scope.
 - A scope is a function of the byte range alone. The empty-document
@@ -820,8 +819,8 @@ operation recurses over tree edges**.
   references, inside `deinit`. Records are therefore immutable to every
   observer and `Sendable` (`@unchecked`, with the invariant stated at its one
   use and an audit that no other code writes the storage).
-- **Traversal.** Deep equality, the walker, conversion (6.1), the scope
-  index and hit testing (4.3) and `description` use
+- **Traversal.** Deep equality, the walker, conversion (6.1), scope
+  queries and hit testing (4.3) and `description` use
   explicit work stacks. Hashing reads only the id. Kotlin (`equals`, `toString`) and
   ECMAScript (`markupEquals`) follow the same rule, because their stacks are
   finite too; their garbage collectors need no rule for release.
