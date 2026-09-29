@@ -187,8 +187,10 @@ same scopes converted through the model text. A document
 answers these queries from its own values alone, so the previous document
 with the previous text still answers exactly as it did before the step.
 `Document.footnote(for:)` and `Document.specimen(for:)` are likewise computed
-from the tree on demand, and for every label of the model text they return the
-node that the fresh parse's answer names, or none when it has none.
+from the tree on demand. For every label of the text before or after the step,
+and for a label that appears in neither, they return the node that the fresh
+parse's answer names, or none when it has none, so a label whose definition
+the step removed is probed too.
 
 ### 4.2 Identity (R4)
 
@@ -517,11 +519,13 @@ to exactly O(log n) per operation by `tree_visited` (6.2).
 
 For `tokens` and `rows` on every scale shape, the chunks do not correspond
 across sizes, so the rule compares positions within one stream of `n` bytes.
-The band at position `p` is the chunks that end in the last tenth before `p`,
-and `m(p)` is the maximum, and separately the p95, of the band's costs. With
-`Δ = max(0, m(n/4) − m(n/16))`, the rule is `m(n) ≤ 1.25 × m(n/16) + 2Δ`: the
-same logarithmic allowance, which catches per-chunk work that grows with the
-text already streamed. A stream measured in windows (5.1) is checked on its
+`m(p)` is taken twice: as the maximum cost of every chunk that ends at or
+before `p` (a prefix maximum, so no chunk between the sample points is
+skipped), and as the p95 of the chunks that end in the last tenth before `p`.
+For each, with `Δ = max(0, m(n/4) − m(n/16))`, the rule is
+`m(n) ≤ 1.25 × m(n/16) + 2Δ`: the same logarithmic allowance, which catches
+per-chunk work that grows with the text already streamed, including a single
+O(n) chunk anywhere after the first sixteenth. A stream measured in windows (5.1) is checked on its
 per-step `step_edges` instead of Ir, with every chunk its own sample, so one
 O(n) chunk is not averaged away inside a window.
 
