@@ -210,15 +210,21 @@ its own work, copied as is, because a binding answers scope queries in UI
 code where the parser is no longer reachable:
 
 ```text
-Extent(lead: UInt32, span: UInt32)      bytes of UTF-8 source
-    lead:   from the end of the previous node in the same relation (or the
-            owner's start, for the first node) to this node's start
+Extent(lead: Int32, span: UInt32)       bytes of UTF-8 source
+    lead:   signed, from the end of the previous node in the same relation
+            (or the owner's start, for the first node) to this node's start
     span:   of this node's source range
 ```
 
 - The engine stores exactly these two numbers on every C node, and the
   bindings copy them verbatim, like any other field. No unit conversion and
   no line counting happens while parsing or publishing.
+- `lead` is signed because a relative offset between two ranges has no
+  sign of its own: ranges may overlap or nest in any way the spec defines,
+  and the encoding does not assume otherwise. An inline note's `Footnote`
+  covers `^[content]` while its owning `Citation` covers only the content
+  (`canonical-ast.md`), so the note's `lead` is −2. No node needs a rule of
+  its own for this.
 - Neither number changes when text before the node shifts. An edit inside a
   node changes its own `span` (it is a new value anyway); an edit in the
   gap before a node, such as an added blank line, changes that node's `lead`.
@@ -242,9 +248,14 @@ Extent(lead: UInt32, span: UInt32)      bytes of UTF-8 source
   `L-1`, a mid-line byte that an ordinary `(L-1):col` end can also name. That
   cell end is therefore reported as its real last byte, `(L-1):col`, and
   `canonical-ast.md` drops the cell-local sentinel.
-- The canonical dump is produced in C from the same extents and prints
-  absolute scopes as today, except for those table cells, whose fixtures
-  change.
+- The canonical dump prints absolute scopes as today (except for those table
+  cells, whose fixtures change), so it is a scope query and takes the source
+  like one: `document.dump(in: source)` and `document.dump(node, in: source)`
+  on every binding, and `markdown_core_document_dump(document, source, ...)`
+  in C. Byte extents alone cannot tell a line terminator from other bytes,
+  and a document does not retain its source, so no dump without the source
+  exists. A subtree dump is asked of its document because a node's absolute
+  start depends on its ancestors.
 
 This is a breaking change to the canonical AST contract and to every binding
 (section 10, D1).
@@ -1021,9 +1032,9 @@ Each step is one pull request that leaves `main` releasable.
 ## 10. Decisions for the owner
 
 - **D1 Positions. Decided 2026-09-29: raw extents, scopes on request.** Nodes
-  carry only the engine's own byte extent (lead from the previous sibling,
-  span), copied verbatim to every binding. `document.scope(of:in:)` and
-  `document.node(at:in:)` compute today's editor line and column scope from
+  carry only the engine's own byte extent (signed lead from the previous
+  sibling, span), copied verbatim to every binding. `document.scope(of:in:)`,
+  `document.node(at:in:)` and the canonical dump `document.dump(in:)` compute today's editor line and column scope from
   it on request, because side-by-side editing is the only consumer and is
   not on the hot path. Rejected: absolute scopes in nodes, which replace
   every node after an inserted line, and line and column spans in nodes,
