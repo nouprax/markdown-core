@@ -105,7 +105,7 @@ handles it.
 | Container facts from children | `List.tight`, list layout, definition and definition-list scopes | Children → container | Spine re-finalization (5.3) |
 | Unclosed opaque leaves | Fenced code, HTML block, comment, formula block and directive block without a closer run to the end | Opener → rest of document | No special case: the damage runs until the state converges, which is the language's meaning (7.2) |
 | Registry lookups in inline parsing | `[label]` and heading labels in the reference map (`link.c`, `heading.c`), `[^label]` in the footnote label map (`footnote.c`), `@id` in the specimen id index (`citation.c`) | Any definition → any occurrence | Lookup dependency index (5.7) |
-| Document ordinals | `inline-N` footnote ids, heading anchor `-N` suffixes, footnote and specimen order | Earlier declarations → later values | Registry recomputation by family (5.7) |
+| Document ordinals | `inline-N` footnote ids, heading anchor `-N` suffixes, footnote and specimen order | Earlier declarations → later values | `inline-N` is removed from the model (4.5); the rest by registry recomputation by family (5.7) |
 | Shared resources | A definition's destination, title and attributes read by every occurrence | Definition → occurrences | Lookup dependency index (5.7) |
 | Absolute coordinates | Every `Scope` after an inserted or deleted line | Every earlier byte → every later scope | Relative geometry (4.3) |
 | Mapped cell inputs | Grid and multiline cell bodies | Table → cells | A table is one leaf unit (5.3) |
@@ -219,7 +219,8 @@ The anchor of the first node in a relation is its owner's start. The anchor
 of every later node in the same relation is the previous node's end.
 Definition bodies continue the anchor chain across their groups. Document
 footnotes and specimens anchor to the document start and then to each other.
-The encoding is exact arithmetic on the current coordinates, so the native
+Columns and column deltas count the session's coordinate unit (4.4); line
+numbers have no unit. The encoding is exact arithmetic on the current coordinates, so the native
 sentinels (`1:1..0:0`, ends at column 0, spanning grid cells that end beyond
 their row) round-trip unchanged. Nothing is normalized.
 
@@ -256,12 +257,15 @@ A session owns a text, its current document and the retained parse state.
 
 ```swift
 public final class MarkdownSession {           // one writer; not Sendable
-    public init(_ source: String = "") throws
+    public init(_ source: String = "", unit: TextUnit = .utf16) throws
+    public let unit: TextUnit                   // offsets in, columns out
     public var document: Document { get }       // immutable, Sendable
     public var text: String { get }
     @discardableResult
-    public func replace(_ range: Range<Int>, with text: String,
-                        unit: TextUnit = .utf16) throws -> Document
+    public func replace(_ range: Range<Int>, with text: String) throws -> Document
+    @discardableResult
+    public func replace(_ range: Range<String.Index>,
+                        with text: String) throws -> Document
     @discardableResult
     public func append(_ text: String) throws -> Document
     @discardableResult
@@ -275,10 +279,36 @@ backstop), because its state lives in WebAssembly memory. C exposes
 `markdown_core_session_new`, `_replace`, `_append`, `_document` and `_free`.
 C views borrow from the session until its next edit.
 
-- **Units.** Editors report UTF-16 offsets (UIKit `NSRange`, Compose
-  `TextFieldValue`, CodeMirror and Monaco). Bindings default to UTF-16 and
-  also accept UTF-8. C takes UTF-8 bytes. The text tree (5.1) converts in
-  O(log n + line length).
+- **One coordinate unit.** A session, and every document it publishes, counts
+  columns and offsets in one `TextUnit`, `.utf8` or `.utf16`, chosen when the
+  session is created. The unit applies in both directions: the offsets an edit
+  passes in, and every column the model returns (spans, `Document.scope(of:)`,
+  walker scopes, `Document.node(at:)`). An API never takes UTF-16 offsets and
+  returns UTF-8 columns. `Document.parse` takes the same parameter. C
+  defaults to UTF-8. Bindings default to UTF-16, because the editor surfaces
+  on all three platforms count UTF-16 code units: UIKit and AppKit `NSRange`
+  and TextKit, Android `Editable` and Compose `TextFieldValue`, Monaco,
+  CodeMirror, and the default position encoding of the Language Server
+  Protocol. Every binding also offers `.utf8`, and Swift additionally accepts
+  `Range<String.Index>` for edits, which carries no unit.
+- **Storage stays UTF-8.** The unit is how positions are counted, not how the
+  text is stored. A binding takes its platform's own string. Swift's `String`
+  is already UTF-8; Kotlin and ECMAScript strings are transcoded once at the
+  boundary, as today. Storing UTF-16 in the engine would double the memory of
+  ASCII text and rewrite every byte scanner of the grammar, and it would buy
+  nothing, because conversion is cheap where the text is summarized. Editors
+  that keep UTF-8 text and serve UTF-16 clients do the same: Zed's rope keeps
+  UTF-16 summaries beside byte counts, and tree-sitter's edit coordinates
+  follow whichever encoding its input uses. Here the text tree (5.1) keeps
+  UTF-16 counts per chunk, so an offset converts in O(log n + line length).
+- **Columns in the unit.** The engine keeps byte offsets for its own
+  bookkeeping (ledger, registries, matching). A published span is counted in
+  the session's unit when the node is built, from the bytes of the node's own
+  first and last lines: a delta on one line is the UTF-16 length of the bytes
+  between, and an absolute column is the UTF-16 length of the line prefix.
+  Neither reads outside the node's lines, so R3 is unchanged. The canonical
+  dump and the conformance fixtures stay in UTF-8 columns; the oracles of
+  section 8 compare each unit with a fresh parse in the same unit.
 - **Batches.** `apply` takes disjoint edits in the coordinates of the text
   before the batch and parses once, for multi-cursor edits and bulk
   replacements. The transaction keeps every edit as its own piece of the
@@ -297,8 +327,44 @@ C views borrow from the session until its next edit.
   cannot continue the sequence) is rejected as an invalid argument, and the
   session is unchanged. Binding strings are whole scalars, so bindings never
   have pending bytes.
-- **`Document.parse`** is unchanged in signature. It is a session that
-  inserts the whole source once and is then discarded.
+- **`Document.parse`** keeps its signature apart from the unit parameter. It
+  is a session that inserts the whole source once and is then discarded.
+
+### 4.5 Inline notes own their body
+
+Today an inline note `^[body]` produces a `Cite` whose `Citation` names a
+generated id `inline-N`, and a `Footnote` with that id in
+`Document.footnotes`. N is the note's ordinal among all inline notes, and a
+collision with an authored label adds a `-K` suffix. The id of every inline
+note therefore depends on every inline note before it and on every authored
+label in the document: inserting one note changes the value of every later
+inline note and its Cite, and adding a definition `[^inline-3]:` anywhere
+renames a note elsewhere. Neither dependency has anything to do with what the
+note means, and `dialect/footnotes.md` already tells applications to treat
+these ids as opaque, not as display numbers.
+
+The design removes the generated id. An inline note becomes one inline kind
+at its call site:
+
+```text
+InlineNote(content: [Markup], span)     inline content, owned in place
+```
+
+- `^[body]` produces an `InlineNote` where it produced a `Cite` before. Its
+  body is its content, owned in the tree like emphasis content, so a nested
+  inline note is ordinary nesting and visits in source order.
+- `Document.footnotes` holds only referenced definitions, whose ids are their
+  authored labels. Nothing in the AST is generated from a document-wide
+  count, and inline-note recognition no longer reads the footnote label
+  registry.
+- A consumer that numbers notes for display walks the document in order, as
+  it already does for referenced calls.
+- Inserting, deleting or editing an inline note changes only its own inline
+  root. The `inline-N` assignment, its reservation against authored ids and
+  the `-K` rule are deleted, not moved into the session.
+
+This changes `canonical-ast.md`, `dialect/footnotes.md`, the canonical dump
+of inline notes and their fixtures, and every binding (D2).
 
 ## 5. Engine
 
@@ -596,9 +662,8 @@ registry. Then:
   its heading target resource, and the resource's occurrences follow through
   the lookup index.
 - **Footnote and specimen order.** `Document.footnotes` and
-  `Document.specimens` are the source-ordered registries, spliced. `inline-N`
-  ids are ordinals, so inserting an inline note renumbers the inline notes
-  after it and their Cites (7.2, D2).
+  `Document.specimens` are the source-ordered registries, spliced. Inline
+  notes are not in either registry (4.5), so no ordinal is recomputed.
 
 ### 5.8 Finish steps and passes
 
@@ -742,14 +807,40 @@ it with one immutable final class record per node that holds its scalars and
 references to its children's records. That gives exact sharing between
 versions, `===` for the equality fast path, and liveness by ARC.
 
-The flat store existed partly to keep destruction depth bounded. The records
-keep that property with an iterative `deinit`: a record releasing its last
-reference moves its uniquely referenced children to a thread-local work stack
-instead of releasing them recursively. The existing 30,000 and 65,536 level
-release tests stay as the gate. Kotlin and ECMAScript already hold one object
-per node, so this brings Swift to the same model instead of keeping a
-Swift-only layout. The cost is one allocation per node on a fresh parse where
-there used to be one per document; the benchmark gate measures it (D3).
+The flat store was introduced to bound destruction depth: ARC releases a
+tree of class instances recursively, and a 65,536-level chain overflowed the
+stack. Records keep that bound with one rule, stated once and applied to every
+operation that follows tree edges: **no operation recurses over tree edges**.
+
+- **Release.** Every record inherits one internal base, `MarkupRecord`, that
+  holds all of the node's owned relations in storage only the base can empty.
+  Its `deinit` moves its own children into a local array and drains it: for
+  each child it takes out, if `isKnownUniquelyReferenced` holds, it first
+  moves that child's children onto the array, so when the child is dropped its
+  own `deinit` has nothing to release. A child still referenced elsewhere (a
+  subtree shared with another version, or retained by a view) is only
+  released, which ends at a count decrement. Stack depth is constant in tree
+  depth; the array holds at most the nodes being freed. Moving children out is
+  the only mutation, and it happens only to a record that nothing else
+  references, inside `deinit`. Records are therefore immutable to every
+  observer and `Sendable` (`@unchecked`, with the invariant stated at its one
+  use and an audit that no other code writes the storage).
+- **Traversal.** Deep equality, the walker, the `Document.scope(of:)` index,
+  `Document.node(at:)`, materialization (6.1) and `description` use explicit
+  work stacks. Hashing reads only the id. Kotlin (`equals`, `toString`) and
+  ECMAScript (`markupEquals`) follow the same rule, because their stacks are
+  finite too; their garbage collectors need no rule for release.
+- **Gate.** The existing 30,000 and 65,536-level tests extend from release to:
+  releasing a deep document whose subtree is shared with a newer version,
+  equality of two deep documents that differ only at the deepest leaf,
+  walking, scope lookup, hit testing and `description`, on every binding. They
+  run on a thread with a small fixed stack, so a recursion regression fails
+  deterministically instead of depending on the platform's default stack size.
+
+Kotlin and ECMAScript already hold one object per node, so this brings Swift
+to the same model instead of keeping a Swift-only layout. The cost is one
+allocation per node on a fresh parse where there used to be one per document;
+the benchmark gate measures it.
 
 ### 6.4 Kotlin
 
@@ -795,8 +886,6 @@ pretend otherwise:
   top changes the meaning of everything after it until something closes it.
 - A definition referenced 10,000 times changes 10,000 Links when its
   destination changes.
-- Inserting an inline footnote renumbers every later inline note's `inline-N`
-  id and its Cite. This follows from the current id contract (D2).
 - A leaf's literal is one string value, so a code block streamed to the end
   of a response produces a new literal of the whole block per chunk. The
   renderer re-highlights that block per chunk anyway.
@@ -809,7 +898,8 @@ pretend otherwise:
   fuzz inputs, random edit scripts (inserts, deletes, replacements at line and
   byte granularity, including CR/LF splits and NUL) are applied through a
   session. After every edit, the canonical dump must equal the dump of a fresh
-  `Document.parse` of the session's text. This runs in C and in each binding.
+  `Document.parse` of the session's text in the same unit. This runs in C
+  and in each binding, in both units.
 - **Streaming.** Every corpus document is fed in chunks of every size from
   one byte up, and split at every byte offset for small documents, including
   inside UTF-8 scalars in C. Every intermediate document must equal a fresh
@@ -842,7 +932,9 @@ Each step is one pull request that leaves `main` releasable.
 
 - [ ] **Step 1: Model.** Ids for fresh parses, deep equality and hashing, relative spans
    with walker and document scope resolution, MCB3, and the Swift record
-   storage. The canonical dump and conformance fixtures do not change.
+   storage, the coordinate unit (4.4), and inline notes at their call site
+   (4.5). The canonical dump and conformance fixtures change only for inline
+   notes.
 - [ ] **Step 2: Sessions with a whole-document restart.** Session API on every platform,
    the text tree, the journal and transactional edits, identity matching,
    value deduplication, versions and `reuse` materialization. The restart
@@ -865,14 +957,18 @@ Each step is one pull request that leaves `main` releasable.
   column range as today's `Markup.scope`, with the same conventions and
   sentinels. The rejected alternative kept `Markup.scope` in node values, so
   any edit that changes the line count would replace every node after it.
-- **D2 Inline footnote ids.** Keep `inline-N` ordinals (recommended for now:
-  the cascade is limited to later inline notes and their Cites), or change the
-  contract to an id that does not depend on earlier notes.
-- **D3 Swift storage.** Per-node records (recommended: exact sharing and one
-  model across bindings), or keep the flat store and add a cross-version
-  segment scheme, which retains dead records until compaction.
-- **D4 Edit units.** UTF-16 offsets by default in bindings with UTF-8
-  available (recommended, matching editor APIs), or UTF-8 only.
+- **D2 Inline notes. Decided 2026-09-29: no generated ids.** An inline note
+  is an `InlineNote` owned at its call site (4.5). The rejected alternative
+  kept `inline-N` ordinals, so inserting one note changed every later note.
+- **D3 Swift storage. Decided 2026-09-29: per-node records,** on the
+  condition that no operation recurses over tree edges (6.3). The rejected
+  alternative kept the flat store with a cross-version segment scheme, which
+  retains dead records until compaction.
+- **D4 Coordinate unit. Recommended, awaiting confirmation:** one unit per
+  session for edit offsets and returned columns alike, UTF-16 by default in
+  bindings and UTF-8 in C, with text stored as UTF-8 (4.4). The alternative is
+  UTF-8 everywhere, which leaves every editor integration to convert
+  `NSRange` and JavaScript offsets itself.
 
 ## 11. Rejected alternatives
 
