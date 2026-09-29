@@ -93,14 +93,14 @@
             "displayName": "Correctness suites with the node integrity check compiled in",
             "configurePreset": "debug",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^conformance$" } }
+            "filter": { "exclude": { "label": "^(conformance|incremental)$" } }
         },
         {
             "name": "correctness-asan",
             "displayName": "Correctness suites under AddressSanitizer",
             "configurePreset": "asan",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^conformance$" } }
+            "filter": { "exclude": { "label": "^(conformance|incremental)$" } }
         },
         {
             "name": "correctness-ubsan",
@@ -110,14 +110,14 @@
                 "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
             },
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^conformance$" } }
+            "filter": { "exclude": { "label": "^(conformance|incremental)$" } }
         },
         {
             "name": "correctness-tsan",
             "displayName": "Correctness suites under ThreadSanitizer",
             "configurePreset": "tsan",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^conformance$" } }
+            "filter": { "exclude": { "label": "^(conformance|incremental)$" } }
         }
     ]
 }

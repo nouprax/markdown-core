@@ -1,0 +1,5 @@
+markdown-core edit script 1
+script merge-paragraphs
+edit 4 5 -
+expect kept Paragraph 0 0
+expect retired Paragraph 5

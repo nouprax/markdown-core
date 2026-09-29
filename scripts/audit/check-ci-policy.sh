@@ -81,7 +81,8 @@ done
 node --test scripts/shared/tests/ci-changes.test.mjs scripts/benchmark/tests/callgrind.test.mjs \
     scripts/benchmark/tests/corpus.test.mjs \
     scripts/benchmark/tests/run.test.mjs scripts/benchmark/tests/compile-identity.test.mjs \
-    scripts/benchmark/tests/source-budget.test.mjs \
+    scripts/benchmark/tests/stage-budget.test.mjs \
+    scripts/benchmark/tests/edit-gates.test.mjs \
     scripts/benchmark/tests/publish-comment.test.mjs
 
 # THE PERFORMANCE PIPELINE MEASURES WORK, NOT TIME. Every hosted-runner
@@ -149,9 +150,9 @@ for boundary in \
         exit 1
     }
 done
-# A source regression cannot be hidden by total-stage or median improvements.
+# A stage regression cannot be hidden by the other stage, total or median improvements.
 grep -Fq -- '--baseline-ref "$BASE_REVISION"' "$benchmark"
-grep -Fq 'sourceBudget(cases, baseline.cases)' scripts/benchmark/run.mjs
+grep -Fq 'stageBudget(cases, baseline.cases)' scripts/benchmark/run.mjs
 
 # Both engines must be compiled from one pinned description, and the flags must
 # keep the boundaries out of line: -O3 alone folds S_finish_parse into its

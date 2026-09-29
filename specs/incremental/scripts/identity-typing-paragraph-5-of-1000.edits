@@ -1,0 +1,7 @@
+markdown-core edit script 1
+script typing-paragraph-5-of-1000
+edit 21 21 78
+expect changed Document 0
+expect changed Paragraph 20
+expect changed Text 20
+expect only

@@ -1,0 +1,258 @@
+import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
+import fs from "node:fs";
+import test from "node:test";
+
+import {
+    ADVERSARIAL_SHAPES,
+    EDIT_FAMILIES,
+    RANDOM_SEEDS,
+    SCALE_SHAPES,
+    SIZES,
+    TOKEN_SIZES,
+    applyBatch,
+    correctnessSet,
+    editScripts,
+    formatScripts,
+    identityScripts,
+    inverseBatch,
+    parseScripts,
+    rejectionScript,
+    scalarBoundaries,
+    shapeDocument,
+    shapeSizes,
+    streamChunks
+} from "../workloads.mjs";
+
+const SHAPES = [...Object.keys(SCALE_SHAPES), ...Object.keys(ADVERSARIAL_SHAPES)];
+const smallest = (shape, alphabet) => shapeDocument(shape, alphabet, shapeSizes(shape)[0]);
+
+/* Replays a script over its document and checks what 3.2 promises of every
+ * valid step: offsets on scalar boundaries of the text before the step, well
+ * formed texts and non-overlapping batches (applyBatch rejects the rest). */
+function replay(text, script) {
+    let buffer = Buffer.from(text);
+    for (const step of script.steps) {
+        if (step.kind !== "edit") continue;
+        for (const edit of step.edits) {
+            assert.ok(Buffer.from(edit.text).toString("utf8") === edit.text, `${script.name}: ill-formed text`);
+        }
+        buffer = applyBatch(buffer, step.edits);
+    }
+    return buffer;
+}
+
+test("the scale sizes are the four of section 3.1", () => {
+    assert.deepEqual(SIZES, [16384, 65536, 262144, 1048576]);
+});
+
+test("a batch and its inverse restore the text, whatever order the batch is listed in", () => {
+    const text = Buffer.from("alpha été \u{20000} omega\n");
+    const edits = [
+        { start: 12, end: 16, text: "x" },
+        { start: 0, end: 5, text: "中文" },
+        { start: 6, end: 6, text: "" }
+    ];
+    const edited = applyBatch(text, edits);
+    assert.equal(edited.toString("utf8"), "中文 été x omega\n");
+    assert.deepEqual(applyBatch(edited, inverseBatch(text, edits)), text);
+});
+
+test("a batch rejects overlapping edits and offsets inside a scalar", () => {
+    const text = Buffer.from("aéb\n");
+    assert.throws(() =>
+        applyBatch(text, [
+            { start: 0, end: 2, text: "" },
+            { start: 1, end: 3, text: "" }
+        ])
+    );
+    assert.throws(() => applyBatch(text, [{ start: 2, end: 2, text: "x" }]));
+});
+
+test("token chunk sizes run from 1 to 16 bytes with a mean of exactly four", () => {
+    assert.ok(TOKEN_SIZES.every((size) => Number.isInteger(size) && size >= 1 && size <= 16));
+    assert.equal(
+        TOKEN_SIZES.reduce((sum, size) => sum + size, 0),
+        4 * TOKEN_SIZES.length
+    );
+});
+
+test("every stream chunks the whole document into whole scalars", () => {
+    for (const text of ["", "a", "one\r\ntwo\rthree\nfour", "中文\u{20000}\né", smallest("prose", "utf8").text]) {
+        const buffer = Buffer.from(text);
+        const boundaries = new Set(scalarBoundaries(buffer));
+        for (const family of ["tokens", "scalars", "rows"]) {
+            const ends = streamChunks(buffer, family);
+            let previous = 0;
+            for (const end of ends) {
+                assert.ok(end > previous && boundaries.has(end), `${family}: ${end} is not a scalar boundary`);
+                previous = end;
+            }
+            assert.equal(previous, buffer.length, `${family} covers the document`);
+        }
+        assert.deepEqual(streamChunks(buffer, "scalars"), scalarBoundaries(buffer).slice(1));
+        const rows = streamChunks(buffer, "rows");
+        rows.forEach((end, index) => {
+            const row = buffer.subarray(index ? rows[index - 1] : 0, end).toString("latin1");
+            assert.ok(!/[\r\n]./s.test(row.replace(/\r\n$/, "")), "a row holds one physical line");
+        });
+        assert.deepEqual(
+            streamChunks(buffer, "splits"),
+            scalarBoundaries(buffer)
+                .slice(1, -1)
+                .map((point) => [point, buffer.length])
+        );
+    }
+});
+
+test("every shape reaches its size in both alphabets and records parts that cover it", () => {
+    for (const shape of SHAPES)
+        for (const alphabet of ["ascii", "utf8"]) {
+            const document = smallest(shape, alphabet);
+            const length = Buffer.byteLength(document.text);
+            assert.ok(length >= document.size, `${document.name} is ${length} bytes`);
+            assert.ok(length < document.size * 1.25, `${document.name} is ${length} bytes`);
+            assert.equal(
+                document.parts.reduce((sum, part) => sum + part, 0),
+                length
+            );
+            if (alphabet === "utf8") assert.ok(length > document.text.length, `${document.name} has multi-byte words`);
+        }
+});
+
+test("the adversarial shapes hold the counts and depths section 3.1 names", () => {
+    const largest = SIZES.at(-1);
+    const items = shapeDocument("long-list", "ascii", largest).text.match(/^- /gm).length;
+    assert.equal(items, 10000);
+    const references = shapeDocument("wide-definition", "ascii", largest).text.match(/\]\[t\]/g).length;
+    assert.ok(references >= 10000, `${references} references`);
+    for (const size of shapeSizes("deep-quotes"))
+        assert.ok(shapeDocument("deep-quotes", "ascii", size).text.includes(`${"> ".repeat(1000)}`));
+    for (const [shape, opener] of [
+        ["opener-fence", "```\n"],
+        ["opener-html", "<pre>\n"],
+        ["opener-comment", "%%\n"],
+        ["opener-directive", ":::note\n"]
+    ])
+        assert.ok(smallest(shape, "ascii").text.startsWith(opener), shape);
+    assert.deepEqual(shapeSizes("unclosed-strong"), [65536]);
+    assert.deepEqual(shapeSizes("single-line"), [65536]);
+    assert.ok(smallest("unclosed-strong", "ascii").text.startsWith("**"));
+    assert.equal(smallest("single-line", "ascii").text.trimEnd().split("\n").length, 1);
+});
+
+test("the same edit lands at the same relative position at every size", () => {
+    for (const shape of ["prose", "list", "table"]) {
+        const places = SIZES.slice(0, 2).map((size) => {
+            const document = shapeDocument(shape, "ascii", size);
+            const script = editScripts(document, ["typing"]).find((item) => item.name === "typing-paragraph");
+            return script ? script.steps[0].edits[0].start / Buffer.byteLength(document.text) : null;
+        });
+        if (places[0] === null) continue;
+        assert.ok(Math.abs(places[0] - places[1]) < 0.05, `${shape}: ${places.join(" vs ")}`);
+    }
+});
+
+test("every shape runs every edit family, with valid steps", () => {
+    for (const shape of SHAPES) {
+        const document = smallest(shape, "utf8");
+        const scripts = editScripts(document);
+        const families = new Set(scripts.map((script) => script.family));
+        for (const family of EDIT_FAMILIES.filter((item) => item !== "declarations"))
+            assert.ok(families.has(family), `${document.name} has no ${family} script`);
+        assert.equal(scripts.filter((script) => script.family === "random").length, RANDOM_SEEDS);
+        for (const script of scripts) replay(document.text, script);
+    }
+    for (const shape of ["prose", "refs"])
+        assert.ok(
+            editScripts(smallest(shape, "ascii")).some((script) => script.family === "declarations"),
+            shape
+        );
+});
+
+test("a batch step lists sixteen disjoint edits", () => {
+    const [script] = editScripts(smallest("prose", "ascii"), ["batch"]);
+    assert.ok(script.steps.every((step) => step.edits.length === 16));
+});
+
+test("an undo script returns to the text before each step", () => {
+    const document = smallest("prose", "ascii");
+    for (const script of editScripts(document, ["undo"])) {
+        let buffer = Buffer.from(document.text);
+        const before = [];
+        for (const step of script.steps) {
+            before.push(buffer);
+            buffer = applyBatch(buffer, step.edits);
+        }
+        const texts = before.map((item) => item.toString("utf8"));
+        assert.ok(
+            texts.some((text, index) => index > 0 && text === document.text),
+            `${script.name} never undoes`
+        );
+    }
+});
+
+test("scripts survive their text format unchanged", () => {
+    const document = smallest("quote", "utf8");
+    const scripts = [...editScripts(document), ...identityScripts().map((entry) => entry.script)];
+    const text = formatScripts(scripts);
+    assert.equal(formatScripts(parseScripts(text)), text);
+});
+
+test("the invalid arguments are each invalid in the unit they are written in", () => {
+    const text = "aé\u{20000}\n";
+    const buffer = Buffer.from(text);
+    const script = rejectionScript(text);
+    for (const step of script.steps) {
+        assert.equal(step.kind, "reject");
+        if (step.operation === "append") {
+            assert.throws(() => new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(step.values[0], "hex")));
+            continue;
+        }
+        const [start, end, hexText] = step.values.map((value, index) => (index < 2 ? Number(value) : value));
+        const length = step.unit === "utf8" ? buffer.length : text.length;
+        const boundary = (at) =>
+            step.unit === "utf8"
+                ? scalarBoundaries(buffer).includes(at)
+                : at <= text.length && !(at > 0 && /[\ud800-\udbff]/.test(text[at - 1]));
+        const wellFormed = (() => {
+            try {
+                new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(hexText, "hex"));
+                return true;
+            } catch {
+                return false;
+            }
+        })();
+        assert.ok(
+            start > end || end > length || !boundary(start) || !boundary(end) || !wellFormed,
+            step.values.join(" ")
+        );
+    }
+});
+
+test("the correctness set runs every family on every document and splits the short ones", () => {
+    const files = correctnessSet();
+    const manifest = files.get("manifest.txt").trimEnd().split("\n").slice(1);
+    const streams = new Map();
+    for (const line of manifest) {
+        const [kind, path, family] = line.split(" ");
+        if (kind === "stream") streams.set(path, [...(streams.get(path) ?? []), family]);
+    }
+    for (const shape of SHAPES)
+        for (const alphabet of ["ascii", "utf8"]) {
+            const name = smallest(shape, alphabet).name;
+            assert.deepEqual(streams.get(`documents/${name}.md`), ["tokens", "rows"]);
+            assert.ok(files.has(`scripts/${name}.edits`));
+        }
+    for (const [path, families] of streams) {
+        if (!path.startsWith("../canonical-ast/")) continue;
+        const length = fs.statSync(new URL(`../../../specs/incremental/${path}`, import.meta.url)).size;
+        assert.deepEqual(families, ["tokens", "scalars", "rows", ...(length <= 2048 ? ["splits"] : [])], path);
+    }
+    assert.ok([...streams.values()].some((families) => families.includes("splits")));
+    assert.ok(files.has("scripts/rejections.edits"));
+    assert.equal(
+        identityScripts().filter((entry) => files.has(`scripts/${entry.name}.edits`)).length,
+        identityScripts().length
+    );
+});

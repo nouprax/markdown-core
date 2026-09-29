@@ -66,6 +66,7 @@ jobs:
                   pnpm audit:allocator-seam
                   pnpm audit:source-lists
                   pnpm audit:node-kinds
+                  pnpm audit:incremental-set
                   pnpm audit:ast-projections
 
     health-check-c:

@@ -130,3 +130,48 @@ jobs:
                       build/benchmark-attributes/input
                   if-no-files-found: error
                   retention-days: 30
+
+    edits:
+        name: Measure - edits and streams
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version: 26.8.1
+            - name: Install callgrind
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install --no-install-recommends --yes valgrind
+            # The edit benchmark is built by the stage benchmark's own build,
+            # references included, so its binaries are the ones that report
+            # describes.
+            - name: Build the pinned reference checkouts
+              run: scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
+            # The grammar corpus's workloads: every feature under every edit
+            # and stream family it runs. The shapes are measured at their four
+            # sizes together, outside this job.
+            - name: Measure edits and streams
+              run: node scripts/benchmark/edits.mjs --set corpus --quiet
+            - name: Upload structured results for the PR comment
+              if: ${{ always() }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: benchmark-report-edits-${{ github.run_attempt }}
+                  path: build/benchmark-edits/edits.json
+                  if-no-files-found: warn
+                  retention-days: 30
+            - name: Upload the report and the raw profiles
+              if: ${{ always() }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: benchmark-edits-${{ github.sha }}-${{ github.run_attempt }}
+                  path: |
+                      build/benchmark-edits/edits.md
+                      build/benchmark-edits/edits.json
+                      build/benchmark-edits/callgrind
+                      build/benchmark-edits/workloads
+                  if-no-files-found: error
+                  retention-days: 30

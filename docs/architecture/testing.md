@@ -57,8 +57,12 @@ consistent suite names across platforms: `api`, `ast`, `consumer`, `errors`,
 platform-specific categories where needed.
 
 C labels are `api`, `facade`, `consumer`, `spec`, `elements`, `regression`,
-`pathological`, `fuzz`, and `packaging`. Each registered test has one label.
-The independent `conformance` label is excluded from correctness presets.
+`pathological`, `fuzz`, `packaging`, and `incremental`. Each registered test has
+one label. The independent `conformance` label is excluded from correctness
+presets. `incremental` runs the
+[incremental correctness set](../../specs/incremental/README.md) in shards of
+its manifest, in the release correctness preset; the debug and sanitizer
+presets exclude it.
 The [C test graph](../../packages/markdown-core/tests/CMakeLists.txt) owns exact
 case names and timeouts; documentation does not duplicate that registry.
 
@@ -215,15 +219,16 @@ their own options. A hosted runner and a developer's machine reproduce each
 other only as far as the measurement identities match.
 
 The counts are still not time: they do not price cache misses, branch misses,
-or stalls. Reference ratios remain diagnostic evidence. The source stage also
-has a required regression budget: CI rebuilds its event base with the current
+or stalls. Reference ratios remain diagnostic evidence. Both parse stages also
+have a required regression budget: CI rebuilds its event base with the current
 harness and corpus in the same job, verifies identical compile options and
 runtime libraries, and allows at most 2% more `source_to_buffer` instructions
-for each document/scale. A cheaper AST stage cannot offset a source regression.
-Both reports and raw dumps are published even when that budget fails.
+and at most 2% more `buffer_to_ast` instructions for each document/scale. A
+cheaper stage cannot offset a regression in the other. Both reports and raw
+dumps are published even when that budget fails.
 
 The runners exist only with `MARKDOWN_CORE_BENCHMARKS=ON`; CTest owns
-correctness, while the reusable `Benchmark` workflow supplies the source budget
+correctness, while the reusable `Benchmark` workflow supplies the stage budget
 and attribute/lexbor measurement to `Required gates`. CI invokes it only when
 its shared preflight requires execution, so Benchmark does not repeat preflight
 or overwrite CI's input evidence. Manual Benchmark runs always measure. A
@@ -232,7 +237,7 @@ required run must finish both measurements and artifact uploads successfully.
 After a PR's CI run completes, `Benchmark Comment` publishes validated numeric
 results to one ordinary PR comment and updates it on later runs. It creates no
 review thread to resolve. The comment includes base/current source, AST and
-complete-parse counts, the source budget, attribute results and a link to all
+complete-parse counts, the stage budget, attribute results and a link to all
 reports and raw profiles. Missing or invalid reports are explicitly unavailable;
 failed measurements do not silently retain an older result as current. A
 documentation-only follow-up that reuses validation publishes the original
