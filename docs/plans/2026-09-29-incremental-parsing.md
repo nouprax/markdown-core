@@ -236,9 +236,17 @@ Extent(lead: UInt32, span: UInt32)      bytes of UTF-8 source
   documents are `Sendable` (R9); the line and unit conversion scans the
   source. This cost is paid only by the query.
 - Walker callbacks no longer carry a scope.
+- A scope is a function of the byte range alone. The empty-document
+  `1:1..0:0` and a top-level end at `L:0` (a range ending right after line
+  `L-1`'s terminator) follow from the bytes. The one native sentinel that
+  does not is a grid or multiline cell whose part of line `L` is blank: its
+  end is reported as `L:0` but denotes the end of the cell's segment on line
+  `L-1`, a mid-line byte that an ordinary `(L-1):col` end can also name. That
+  cell end is therefore reported as its real last byte, `(L-1):col`, and
+  `canonical-ast.md` drops the cell-local sentinel.
 - The canonical dump is produced in C from the same extents and prints
-  absolute scopes exactly as today, so every conformance fixture stays
-  byte-identical in that respect.
+  absolute scopes as today, except for those table cells, whose fixtures
+  change.
 
 This is a breaking change to the canonical AST contract and to every binding
 (section 10, D1).
