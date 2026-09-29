@@ -592,8 +592,16 @@ both sides as the one-shot gate already does, and always between the same
 subject on both sides:
 
 - each workload's per-step p95 and total `step_ir` are at most 1.02 times the
-  base;
-- `retained` and `transient` are at most 1.02 times the base;
+  base. A stream measured in windows (5.1) has no per-step Ir, so its rule is
+  on what it does measure: the p95, the maximum and the total of its window
+  `step_ir`, and the p95 and maximum of its per-step `step_edges`, each at
+  most 1.02 times the base. Extra instructions inside existing edges show in
+  the window totals, and a few expensive chunks show in the edge maximum;
+- `transient` is at most 1.02 times the base, and `retained` is at most 1.02
+  times the base per allocation kind of 6.5. A kind the base does not retain
+  (the ledger in the step 3 pull request, the registries and lookup index in
+  step 4) has no base value; in the pull request that introduces it, it is
+  bounded by the exact counts of 6.5 alone, and by 1.02 from the next one;
 - the one-shot gate keeps its `source_to_buffer` rule and adds the same rule
   to `buffer_to_ast`, per document.
 
