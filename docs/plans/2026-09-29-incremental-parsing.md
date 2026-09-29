@@ -238,7 +238,12 @@ Absolute scopes remain available, unchanged in meaning:
   O(1) per step from the span chain it is already traversing.
 - `Document.scope(of: node)` answers any node's absolute scope. Its index is
   built on first use for that document version in one linear walk of the
-  relative values, with no parsing.
+  relative values, with no parsing. Because a document is `Sendable` (R9),
+  publication is once-only and synchronized: the index is an immutable value
+  installed under a lock (Swift `Mutex`, Kotlin `lazy` in synchronized mode;
+  ECMAScript is single-threaded), and a reader sees either no index or the
+  complete one. Concurrent first calls build it once and never observe a
+  partial index.
 - `Document.node(at: Position)` descends the tree by spans, for editor hit
   testing.
 - The canonical dump prints absolute scopes exactly as today, so every
