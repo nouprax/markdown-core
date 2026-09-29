@@ -167,9 +167,9 @@ subject's document equals the dump of a fresh `Document.parse` of the model
 text in the same unit. The dump prints no ids and prints absolute scopes, so
 it compares meaning and positions and nothing that depends on history.
 
-A node stores only its relative extent: `Extent(lead, size)`, where `lead` is the UTF-8 distance from the end of its
+A node stores only its relative extent: `Extent(lead, span)`, where `lead` is the UTF-8 distance from the end of its
 previous sibling in the same relation (or from its owner's start, for the
-first) and `size` is its UTF-8 length. `Document.scope(of:in:)` and
+first) and `span` is its UTF-8 length. `Document.scope(of:in:)` and
 `Document.node(at:in:)` compute absolute positions from the extents and the
 source text the caller passes (plan 4.3). On every step of the correctness
 set, for every node of the subject's document, `scope(of:in:)` with the model
