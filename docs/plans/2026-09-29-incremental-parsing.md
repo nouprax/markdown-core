@@ -250,9 +250,13 @@ C views borrow from the session until its next edit.
   `TextFieldValue`, CodeMirror and Monaco). Bindings default to UTF-16 and
   also accept UTF-8. C takes UTF-8 bytes. The text tree (5.1) converts in
   O(log n + line length).
-- **Batches.** `apply` takes edits in the coordinates of the text before the
-  batch, applies them in descending start order, unions their damage and
-  parses once, for multi-cursor edits and bulk replacements.
+- **Batches.** `apply` takes disjoint edits in the coordinates of the text
+  before the batch and parses once, for multi-cursor edits and bulk
+  replacements. The transaction keeps every edit as its own piece of the
+  position mapping (5.2), so bytes between two edits stay surviving bytes
+  with their own shift. Damage is per edit; regions whose restart and
+  convergence windows overlap are merged, and the others are re-read
+  independently in source order (5.3).
 - **Partial UTF-8.** C `append` may split a scalar. The bytes of an
   incomplete trailing sequence are **pending**: they are not part of the
   session's text, `markdown_core_session_text` does not return them, and the
@@ -275,7 +279,7 @@ C views borrow from the session until its next edit.
 | --- | --- | --- |
 | Text tree | The source as a balanced tree of bounded byte chunks; each subtree records its byte, line-terminator and UTF-16 counts | O(source) |
 | Tree | The live C tree: relative spans, ids, versions | O(nodes) |
-| Block ledger | One entry per block node at any depth: start offset, node id, entry frontier, read end | O(blocks) |
+| Block ledger | One entry per block node at any depth: start offset, node id, entry frontier, read end, spine snapshot (5.3) | O(blocks + changed frames) |
 | Registries | Reference, heading, anchor, footnote and specimen declarations in source order; label winners | O(declarations) |
 | Lookup index | Registry key → inline roots that looked it up, hit or miss | O(lookups) |
 | Frontier | The suspended block parser at the last line boundary, when the document ends in open blocks (5.5) | O(open spine + open leaf content) |
@@ -313,26 +317,21 @@ first widened to whole physical lines: from the start of the line containing
 join CR and LF into one terminator) to the end of the line containing the new
 `a + n`.
 
-Old positions map to new ones in two classes. A **surviving** position is one
-whose byte was not replaced; it has one exact image. A **replaced** position
-was inside the replaced range; it has an interval of candidate images and is
-used only for identity (5.9):
+The position mapping is defined on **bytes**, and only on bytes that survive.
+A byte at old offset `x` survives when it is not inside a replaced range. Its
+image is exact:
 
 ```text
-x < a                 surviving  → x
-x >= b, and b > a     surviving  → x + n - (b - a)
-x == a == b           surviving  → [a, a + n]   (insertion at x: the text
-                                                  may join the node's start)
-x > a == b            surviving  → x + n
-a <= x < b            replaced   → [a, a + n]
+x < a    → x
+x >= b   → x + n - (b - a)
+a <= x < b: replaced, no image
 ```
 
-An insertion is the only case where a surviving start has an interval: typing
-at the start of a paragraph either extends the paragraph backwards (the new
-start is `a`) or creates text before it (the new start is `a + n`), and both
-are the same paragraph. A deletion's end `b` is surviving and maps exactly to
-`a + n`, so it is never confused with a replaced start that maps into
-`[a, a + n]`; 5.9 gives surviving starts priority.
+A batch is a list of disjoint replacements. The mapping is piecewise: a
+surviving byte's image is its offset plus the sum of the length changes of
+the replacements before it. There is no interval and no ambiguous image;
+inserted bytes are the preimage of nothing. Identity (5.9) is defined through
+this mapping alone.
 
 ### 5.3 Blocks: restart, re-parse, converge
 
@@ -362,11 +361,25 @@ table or definition lookahead reached the edited line. The restart is a block
 at any depth, so an edit in the thirtieth item of a list restarts at that item
 (or at the block in it), not at the list.
 
+**Spine snapshots.** An open container's carried state changes while it is
+open: list continuation, for example, reads and updates the list's
+last-line-blank flag on every line, and that flag decides whether a later blank
+line is consumed. A container's node therefore holds the state at the end of
+the old parse, not at `R`. So each ledger entry stores the carried state of
+its whole spine at the moment the block opened, as a **spine snapshot**: an
+immutable list of frames, innermost first, each holding one open container's
+id and its carried facts (E3). Snapshots share frames: a new frame is made
+only for a container whose facts differ from the frame the previous snapshot
+used, together with the frames inside it. Storage is one frame per block plus
+the frames of changed containers, and a work counter gates it against deep
+nesting with changing flags.
+
 Restarting at `R` reopens `R`'s ancestors, which are exactly the open spine
-at that line: each ancestor is marked open and keeps its continuation facts
-from its node data. `R` and everything after it in the ancestors' child chains
-are detached and kept as reuse candidates. Every one of these changes goes
-through the transaction journal (5.11), so a failed edit can restore them. The line machine then runs from
+at that line: each ancestor is marked open and its carried facts are restored
+from `R`'s snapshot, not read from its final node data. `R` and everything
+after it in the ancestors' child chains are detached and kept as reuse
+candidates. Every one of these changes goes through the transaction journal
+(5.11), so a failed edit can restore them. The line machine then runs from
 `R`'s first line with the ordinary `S_process_line`. No other entry point
 exists.
 
@@ -375,10 +388,11 @@ line `j`, the engine looks up the old ledger entry that starts at the mapped
 old line `j'`. It converges when all of these hold:
 
 - (1) such an old block `O` exists and was not damaged;
-- (2) the new spine and the spine `O` opened under are equal: the same kinds at
-   every depth, equal continuation facts through each element's
-   `carry_equal` hook, and equal last-line-blank flags. The comparison is exact
-   and walks the spine; a hash only filters;
+- (2) the live new spine and `O`'s spine snapshot are equal: the same kinds at
+   every depth and equal carried facts through each element's `carry_equal`
+   hook, including last-line-blank flags. The comparison is exact and walks
+   the spine; a hash only filters. Frames shared between the two sides
+   compare by identity;
 - (3) the new high-water mark is at most `j`, and `O`'s entry frontier is at
    most `j'`, so no decision on either side is still reading across the
    boundary.
@@ -403,6 +417,13 @@ paragraph, a code block, an HTML block, and a table with its caption and
 mapped cell inputs. Cells are internal inputs of the table's transaction, as
 now. Value deduplication (5.9) then keeps every unchanged row and cell.
 
+**Several damaged regions.** A batch (4.4) can damage several regions. The
+engine handles them in source order with the same procedure: restart before
+the first, converge after it, then restart before the next. When a region's
+restart point falls before the previous region's convergence, the two are one
+region. Convergence is never taken inside a region that is still to be
+re-read.
+
 **Degenerate cases are the same algorithm.** A fresh parse restarts at the
 document with nothing to converge with. An edit in the Properties envelope
 restarts at the document because the envelope is the first block. An opener
@@ -426,7 +447,8 @@ These are requirements on every element, each checked by an audit script in
 - **E3 Carried state is declared.** Per-parse element state (`state_size`) is
   one of three things: a cache that the transaction may drop; a declaration
   registry that moves to the session (5.7); or carried block state, which is
-  stored on the open node and compared by `carry_equal`. Nothing else may
+  stored on the open node, saved into spine snapshots by `carry_save`,
+  restored by `carry_restore` and compared by `carry_equal`. Nothing else may
   carry information from one line to a later one.
 - **E4 Container finalize is idempotent.** It reads children and recorded
   facts and writes the container's own fields. Running it twice gives the same
@@ -505,7 +527,13 @@ registry. Then:
 - **Lookup dependencies.** During inline parsing every registry query records
   `(registry, key) → inline root`, whether it hit or missed. A miss matters as
   much as a hit: adding `[x]: /u` turns every `[x]` into a Link. When a
-  winner changes, its dependents are queued for inline re-parse. A heading's
+  winner changes, its dependents are queued for inline re-parse. The index
+  holds edges in both directions: each inline root owns the list of keys it
+  queried, and each key the set of root ids that queried it. Re-parsing a
+  root first removes all of its old edges and then records the new ones;
+  retiring a root removes its edges. Both go through the journal (5.11). The
+  index therefore holds exactly the current document's lookups, and an edge
+  never names a retired node. A heading's
   declarability depends only on its own content ("a valid declaration cannot
   depend on a reference lookup", `heading-resolution.md`), so this settles in
   one round, with no fixed point.
@@ -537,24 +565,30 @@ node:
 
 - Matching runs per owner relation between a new owner and the old node it
   matched, starting from the reopened spine, whose nodes kept their ids.
+- Each old node has an **anchor byte**: the first byte of its source range
+  that survived the edit. A node none of whose bytes survived has no anchor
+  and cannot be matched; its id retires.
 - An old node `O` can match a new node `N` when their kinds are equal and
-  `N`'s start lies in the image of `O`'s start under the edit mapping (5.2).
-- Matching runs in two passes. The first pass considers only old nodes with
-  **surviving** starts; the second considers old nodes with **replaced**
-  starts against the new nodes the first pass left unmatched. A node whose
-  start byte survived therefore always wins over a node whose start byte was
-  deleted, even when both images contain the same new start.
-- Within a pass both sequences are in source order and the match is greedy
-  and monotone: each new node takes the earliest unmatched old candidate, and
-  no later match may precede an earlier one. Each pass is linear in the
-  region.
-- Consequences: typing at the very start of a paragraph keeps its id (its
-  start is surviving with the insertion interval). Deleting a node's first
-  word keeps its id when nothing with a surviving start begins at the same
-  place. Deleting a whole sibling does not hand its id to the next sibling:
-  the next sibling's start survives and maps exactly, so it matches itself in
-  the first pass, and the deleted sibling is left unmatched. Two paragraphs
-  merged by deleting the blank line between them keep the first one's id.
+  `N`'s source range contains the exact image of `O`'s anchor byte (5.2).
+  Siblings in one relation have disjoint ranges, so an anchor image lies in
+  at most one candidate.
+- When `N` contains the anchors of several old siblings, it takes the
+  earliest. Both sequences are in source order and the match is monotone, so
+  it is linear in the region.
+- Consequences, each from the one rule:
+  - Typing at the start of a paragraph keeps its id: the old first byte
+    survives and its image lies inside the extended paragraph.
+  - Inserting `new\n\n` before a paragraph gives the new paragraph a new id
+    and keeps the old paragraph's id: the old first byte's image is the start
+    of the second paragraph, not inside the first.
+  - Deleting a paragraph's first word keeps its id: its anchor moves to its
+    first surviving byte.
+  - Deleting a whole sibling retires its id and never hands it to the next
+    sibling, whose own anchor lies inside it.
+  - Merging two paragraphs by deleting the blank line keeps the first one's
+    id; the second retires.
+  - Bytes between the edits of a batch keep their own exact images, so nodes
+    there match as if each edit were alone.
 - Children of an unmatched owner get new ids. A paragraph that moves into a
   new blockquote is a new node, as it is to every UI framework.
 
