@@ -410,6 +410,7 @@ binding (D2).
 | Lookup index | Registry key → inline roots that looked it up, hit or miss | O(lookups) |
 | Frontier | The suspended block parser at the last line boundary, when the document ends in open blocks (5.5) | O(open spine + open leaf content) |
 | Inline ledger | Per inline root: stable prefix end (5.6) | O(inline roots) |
+| Retirement log | Ids retired after the version a binding last published (6.1), dropped once it publishes a later one | O(ids retired since then) |
 
 The text, the block ledger and the source-ordered registries are sequences
 whose elements have source extents. They share one structure: a balanced
@@ -843,8 +844,9 @@ document. To publish a version, it walks the new C tree from the root. A node
 whose version is not newer than the binding's last published version is taken
 from the table with its whole subtree, and the walk does not descend into it.
 Every other node is built from its fields and its children, which are table
-hits or newly built nodes. The engine reports the ids retired by the edit so
-the table can release them.
+hits or newly built nodes. The binding names the version it last published
+when it asks for the new one, and the engine reports the ids retired since
+that version, so the table can release them.
 
 The cost is proportional to the changed nodes plus their children, which is
 also what SwiftUI, Compose and React reconcile. The public result is one
@@ -855,7 +857,11 @@ immutable values for Compose, React or SwiftUI to reconcile. It is not a
 sequence of instructions applied to live state, so it has no transaction and
 no failure contract of its own: the transaction (5.11) ends when the engine
 commits, and anything the platform raises while building values is the
-platform's own error.
+platform's own error. Like any caller of a function, the binding takes the
+result (the new document, its table and its version) only once the function
+returns it, so a projection the platform aborts leaves the binding holding
+the version it last published, and the next projection is taken against
+that version.
 
 ### 6.2 Wire format MCB3
 
@@ -865,7 +871,7 @@ Kotlin and ECMAScript receive a parse as one message. MCB3 extends MCB2
 - Every node record adds `u64 id` and the node's `Extent` in place of `Scope`.
 - A new record `reuse(u64 id)` pushes the binding's existing value for that id,
   subtree included, and writes nothing else.
-- A trailer lists retired ids.
+- A trailer lists the ids retired since the version the binding named.
 
 A fresh parse is a message with no `reuse` records and no trailer. It is one
 format, not two. The magic becomes `MCB3` because the record layout changes.
@@ -997,6 +1003,15 @@ pretend otherwise:
   including adversarial shapes: a stray early opener, a 10,000-item list edited
   in the middle, 1,000 nested block quotes, a definition with thousands of
   references.
+- **Definition queries.** After every edit, `footnotes`, `specimens` and
+  `footnote(for:)` and `specimen(for:)` for every label in the text equal
+  those of a fresh parse, and fixtures with nested, duplicate, anonymous and
+  unreferenced definitions check each binding's answers against the winners
+  of the C registries, since the canonical dump does not call the queries.
+- **Aborted projections.** A projection interrupted at every node leaves the
+  binding's published document, table and version unchanged, and the next
+  projection, after further edits, equals a fresh parse with no table entry
+  for a retired id.
 - **Transactions.** The allocator-seam OOM sweep runs every edit at every
   allocation boundary and asserts that the session's text, document, ids and
   retained state equal the previous version afterwards, and that the next edit
