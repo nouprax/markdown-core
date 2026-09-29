@@ -486,7 +486,7 @@ section 7 turns on the counters its step makes meaningful; a step that has not
 yet removed a term (step 2 re-reads the whole document) is gated only on the
 counters that row names.
 
-### 6.3 Flatness, on Ir
+### 6.3 Flatness, on Ir and transient allocation
 
 For every local edit family (`typing`, `lines`, `ranges`, `far`, `batch`)
 on every scale shape, **every step** costs at most logarithmically more as the
@@ -516,8 +516,9 @@ The band at position `p` is the chunks that end in the last tenth before `p`,
 and `m(p)` is the maximum, and separately the p95, of the band's costs. With
 `Δ = max(0, m(n/4) − m(n/16))`, the rule is `m(n) ≤ 1.25 × m(n/16) + 2Δ`: the
 same logarithmic allowance, which catches per-chunk work that grows with the
-text already streamed. A stream measured in windows (5.1) takes each window's
-mean step cost as its sample.
+text already streamed. A stream measured in windows (5.1) is checked on its
+per-step `step_edges` instead of Ir, with every chunk its own sample, so one
+O(n) chunk is not averaged away inside a window.
 
 The same rule covers the adversarial shapes whose cost the language keeps
 local: the 10,000-item list edited in the middle and the 1,000 nested quotes
@@ -526,6 +527,13 @@ language (the stray opener, the definition with 10,000 references, the shifted
 anchor suffixes, the unclosed `**`, the single-line paragraph) and streaming
 into the `table` shape, which re-reads the table at the tail per appended row.
 Those are bounded by their counters (6.2) and by 6.4.
+
+Every rule of this section applies, unchanged, to `transient` of each step,
+the peak bytes the step allocates, which the allocator seam reports exactly
+for every step of every script. A step that allocates a source-sized scratch
+buffer fails it as a linear Ir term does, even when the buffer is reserved and
+never touched, so scratch is held to the damage without a baseline. The 1.02
+rule of 6.6 only keeps it there afterwards.
 
 This is the gate that makes R2 observable: a step whose cost depends on the
 document size fails it at any constant factor.
