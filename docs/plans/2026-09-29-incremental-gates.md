@@ -291,22 +291,15 @@ applying the same edits one at a time in descending order of their start offsets
 batch lists them in (so the offsets not yet applied stay valid), and
 4.1–4.4 hold for the batch as one step.
 
-### 4.8 Transactions (R7)
+### 4.8 Allocation failure
 
-The allocator-seam OOM sweep runs every step of every script in the
-correctness set (every edit and stream family, batches, declaration changes,
-pending-byte chunks and the invalid arguments of 4.9) with a failure injected
-at every allocation boundary. Each independently mutating path of the
-transaction is therefore swept. After each
-failure the subject's text, dump, ids and retained-state digest
-equal the previous version's. Then the unmodified step is retried: a valid
-step succeeds, and an invalid step of 4.9 is rejected as invalid again, with
-the session still unchanged.
-
-R7 is the engine's contract. A binding is a pure projection of the engine's
-result into immutable platform values for Compose, React and SwiftUI; it has
-no transaction or failure contract of its own, so the sweep runs in C and no
-gate injects failures into a binding's projection.
+An allocation failure at any stage is an error, never a rollback. In C, an
+allocator-seam sweep over a sample of steps (one of each edit and stream
+family, a batch, a declaration change and a pending-byte chunk) injects a
+failure at each allocation boundary and checks that the call reports the
+out-of-memory error, never a document. What the session holds afterwards is
+unspecified; the harness closes it. A binding reports a platform allocation
+failure the platform's way and has no failure contract of its own.
 
 ### 4.9 Invalid arguments
 
@@ -410,7 +403,6 @@ Deterministic counters, in the style of the existing `input_line_work` and
 | `lookups_invalidated` | Inline roots re-parsed for a resolution change |
 | `finish_visited` | Nodes visited by finish steps and passes |
 | `nodes_new` | Nodes the engine created or rewrote in the step |
-| `journal_entries` | Transaction journal entries |
 | `tree_visited` | Nodes of the shared balanced tree (text, ledger, registries; plan 5.1) visited by lookups, splices and shifts |
 
 Counters are cheap, exact and platform-independent. They are where the plan's
@@ -447,7 +439,6 @@ quantities, per step:
 | `K` | Registry keys whose winner, family or ordinal differs between the two fresh parses: reference and heading labels, anchors, footnote labels, specimen ids |
 | `R(K)` | Inline roots of the new fresh parse that look up a key in `K`, and their content bytes |
 | `N` | Changed nodes of the step: nodes of the new document with no predecessor under 4.4's matching, or whose value differs from their predecessor's (4.3) |
-| `T` | Text-tree journal entries the step may need: for each edit range, 1 + 2`H`, plus 1 for the pending bytes. The 1 is the entry that takes the replaced chunks (plan 5.11); the rest are the internal nodes on the paths to the range's two ends, at most `H` each. Inserted chunks are new allocations and need no entry. `T` depends on the text and the edit only, never on the text tree's chunk size |
 
 The bounds:
 
@@ -461,7 +452,6 @@ The bounds:
 | `lookups_invalidated` | ≤ number of inline roots in `R(K)` |
 | `finish_visited` | ≤ `N` + nodes of the inline roots re-parsed (in `U` or `R(K)`) |
 | `nodes_new` | = `N` |
-| `journal_entries` | ≤ `ledger_touched` + `registry_recomputed` + `lookups_invalidated` + `T` + `A` |
 | `tree_visited` | ≤ `H` × (edit ranges + `lines_reread` + `ledger_touched` + `registry_recomputed` + `lookups_invalidated`) |
 
 `H` is a height bound only for a tree whose nodes other than the root have at
@@ -560,7 +550,7 @@ construct). Its `reparse_ir` column at each window's last step is reported,
 not gated. Its per-step cost is gated instead by 6.3 on `step_edges`, which
 fails any chunk that costs more as the streamed text grows, by the counters
 of 6.2, and by 6.6. The margin pays for
-matching, deduplication and the journal when an edit really does change the
+matching and deduplication when an edit really does change the
 whole document; beyond it, an incremental edit would be a regression against
 the application that just reparses.
 
@@ -583,14 +573,14 @@ of the current text:
 | Inline ledger entries | = its inline roots |
 | Frontier | ≤ its open spine and the content of its open leaf |
 | Pending bytes | ≤ 3 |
-| Journal entries and parse scratch | 0 |
+| Parse scratch | 0 |
 | Text tree bytes | ≤ 2 × those of a session opened on the same text |
 
 A kind is checked from the rollout step that introduces it. The text tree is
 the only retained structure whose shape depends on its history, and 2 is its
 occupancy bound: every chunk and node other than the root is at least half
 full, the invariant that keeps a balanced tree balanced. A session that keeps
-an earlier tree, ledger entry or journal fails on the first step it does so,
+an earlier tree or ledger entry fails on the first step it does so,
 whatever the script's length, so the rule holds from step 2, before there is
 a session baseline.
 
@@ -641,7 +631,7 @@ its numbers are reported with the `reparse` subject.
 | 1 Model | 4.2 for fresh parses; deep equality and 4.10 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
 | 2 Sessions, whole-document restart | 4.1–4.12 on the correctness set, every platform, both units | 6.4 on every workload, which sets the session baseline for 6.6 (G4); 6.2 for `nodes_new`; 6.5 for the kinds it introduces |
 | 3 Block restart and convergence | Unchanged | 6.2 for `lines_reread`, `ledger_touched`, `summaries_combined` and `tree_visited`, and for `inline_bytes` and `finish_visited` on shapes without declarations; 6.3 for the local edit families on shapes without declarations |
-| 4 Session registries | Unchanged | 6.2 for `registry_recomputed` and `lookups_invalidated`, and for `inline_bytes`, `finish_visited` and `journal_entries` on every shape; 6.3 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`) and for the local steps of `declarations` |
+| 4 Session registries | Unchanged | 6.2 for `registry_recomputed` and `lookups_invalidated`, and for `inline_bytes` and `finish_visited` on every shape; 6.3 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`) and for the local steps of `declarations` |
 | 5 Frontier and inline restart | Unchanged | 6.2 in its stream form for `lines_reread` and `inline_bytes`; 6.3 for `tokens` and `rows` |
 
 From step 2 on, the one-shot benchmark measures `Document.parse` through the
@@ -664,7 +654,7 @@ named oracle:
 | Gives an edited heading a new id | 4.4 |
 | Keeps a node whose text changed | 4.1, and 4.3 (`nodes_new` < `N`) |
 | Reuses a retired id for a new node | 4.2 |
-| Applies a step and then reports failure | 4.8 |
+| Returns a document after an injected allocation failure | 4.8 |
 | Accepts an end inside a scalar | 4.9 |
 | Re-reads the whole document on every step | 6.2 and 6.3 |
 | Keeps every earlier document alive | 6.5 |
@@ -690,8 +680,7 @@ It holds every edit and stream family, `splits` on every document up to 2 KB,
 arguments of 4.9. Scripts are offsets and short texts, so the set stays small
 enough to track.
 
-- C runs it as `incremental_runner` under the `api` label, with 4.1–4.9, and
-  the OOM sweep of 4.8 on every step.
+- C runs it as `incremental_runner` under the `api` label, with 4.1–4.9.
 - Swift, Kotlin and ECMAScript consume it through the same lifecycle that
   delivers the canonical manifest to their conformance runners, in both units,
   with 4.1–4.7 and 4.9–4.11.
