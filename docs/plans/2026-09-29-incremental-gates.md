@@ -349,8 +349,15 @@ megabyte in `tokens` or `rows`) dumps after each of 1,024 contiguous windows of
 consecutive steps, so every step's cost lands in exactly one measured window.
 Its `reparse` column is measured at each window's last step, because
 reparsing after every chunk of a megabyte stream is the quadratic cost the
-design removes and cannot be run. Per-step work of those scripts is still
-gated on every step, by the counters (6.2), which are exact and cheap.
+design removes and cannot be run.
+
+Every step of those scripts still gets its own cost: the runner also replays
+them natively in a build compiled with `-fsanitize-coverage=trace-pc-guard`,
+whose callback adds one to a counter per executed edge. `step_edges`, the
+counter's increase over one step, is deterministic like Ir and cheap enough to
+record for every chunk of a megabyte stream, and `reparse_edges` is recorded
+the same way at each window's last step. Edges are a different unit from Ir,
+so the two are never compared with each other.
 
 The gates measure the C engine only. A binding builds its platform values from
 what the engine returns; that construction is the platform's inherent cost, the
@@ -388,6 +395,7 @@ Deterministic counters, in the style of the existing `input_line_work` and
 | `finish_visited` | Nodes visited by finish steps and passes |
 | `nodes_new` | Nodes whose version is the current edit |
 | `journal_entries` | Transaction journal entries |
+| `tree_visited` | Nodes of the shared balanced tree (text, ledger, registries; plan 5.1) visited by lookups, splices and shifts |
 
 Counters are cheap, exact and platform-independent. They are where the plan's
 bounds are enforced (6.2). Ir is where constant factors and the asymptotic
@@ -417,12 +425,13 @@ quantities, per step:
 | `E` | The **language damage**: the union of the edited lines (the step's range widened to whole lines as in plan 5.2, before and after the step) and the smallest range of lines such that the block trees of the two fresh parses (kinds, depths and mapped start lines of every block) agree before it and after it. A content-only edit therefore still has the lines it touched as its damage |
 | `U` | Lines and bytes of every leaf that intersects `E`: every leaf that owns an inline root (paragraphs, headings, table cells, terms, captions and the like), and the units plan 5.3 always re-reads whole (tables with their captions, code, HTML, comment, formula and directive blocks) |
 | `B` | Blocks of either fresh parse that start inside `E`, at any depth |
-| `d` | Depth of the deepest block that contains `E` |
+| `A` | Ancestors of the damage: the blocks of either fresh parse that contain some connected region of `E`, counted once each over the union of every region's ancestor path. A batch whose edits land in several leaves has one path per region |
+| `H` | The height bound of the shared balanced tree over `n` elements: ⌈log₂(n + 1)⌉ + 1, for the text (`n` bytes), the ledger and each registry (`n` entries) |
 | `C` | Per ancestor of `E`: its child count, and how many of its children start inside `E` |
 | `K` | Registry keys whose winner, family or ordinal differs between the two fresh parses: reference and heading labels, anchors, footnote labels, specimen ids |
 | `R(K)` | Inline roots of the new fresh parse that look up a key in `K`, and their content bytes |
 | `N` | New objects the step must produce, as 4.3 and 4.4 predict them |
-| `T` | Text-tree journal entries the step may need: for each edit range, 1 + 2 × ⌈log₂(text bytes + 1)⌉, plus 1 for the pending bytes. The 1 is the entry that takes the replaced chunks (plan 5.11); the rest are the internal nodes on the paths to the range's two ends, and no balanced tree over n bytes is taller than log₂ n. Inserted chunks are new allocations and need no entry. `T` depends on the text and the edit only, never on the text tree's chunk size |
+| `T` | Text-tree journal entries the step may need: for each edit range, 1 + 2`H`, plus 1 for the pending bytes. The 1 is the entry that takes the replaced chunks (plan 5.11); the rest are the internal nodes on the paths to the range's two ends, at most `H` each. Inserted chunks are new allocations and need no entry. `T` depends on the text and the edit only, never on the text tree's chunk size |
 
 The bounds:
 
@@ -430,13 +439,23 @@ The bounds:
 | --- | --- |
 | `lines_reread` | ≤ lines of `E` ∪ `U` + 1 |
 | `inline_bytes` | ≤ content bytes of the inline roots in `U` + bytes of `R(K)` |
-| `ledger_touched` | ≤ `B` + `d` |
+| `ledger_touched` | ≤ `B` + `A` |
 | `summaries_combined` | ≤ Σ over ancestors (children in `E` + 1) × ⌈log₂(child count + 1)⌉ |
 | `registry_recomputed` | ≤ declarations inside `E` + members of the families of `K` |
 | `lookups_invalidated` | ≤ number of inline roots in `R(K)` |
 | `finish_visited` | ≤ `N` + nodes of the inline roots re-parsed (in `U` or `R(K)`) |
 | `nodes_new` | = `N` |
-| `journal_entries` | ≤ `ledger_touched` + `registry_recomputed` + `lookups_invalidated` + `T` + `d` |
+| `journal_entries` | ≤ `ledger_touched` + `registry_recomputed` + `lookups_invalidated` + `T` + `A` |
+| `tree_visited` | ≤ `H` × (edit ranges + `lines_reread` + `ledger_touched` + `registry_recomputed` + `lookups_invalidated`) |
+
+`H` is a height bound only for a tree whose nodes other than the root have at
+least two children and whose leaves are all at one depth, the B-tree shape of
+the plan's balanced tree (5.1). The gate requires that shape; the occupancy
+rule of 6.5 is the same invariant. A binary tree balanced by rotation (AVL,
+red-black) can be up to twice as tall and fails the bounds that use `H`.
+`tree_visited` is what makes the O(log n) claim exact: each operation the step
+performs on the tree costs at most one root-to-leaf path, so an O(log² n)
+traversal fails here even when its Ir hides under the margin of 6.3.
 
 For a stream chunk, `E` is the last line before the chunk together with the
 lines it appends, and the inline term is the chunk plus the distance from the
@@ -477,7 +496,10 @@ term that is a share `ℓ` of the step's cost at 16 KB rises by `3ℓ` of that
 cost to 64 KB but by `63ℓ` to 1 MB, so the step fails once `54ℓ > 0.25`, that
 is, once the linear part is more than about half a percent of the step. A
 size-dependent cost on any single step (a lazy O(n) initialization on the first
-edit, say) fails the same way, however few steps it affects.
+edit, say) fails the same way, however few steps it affects. A finite set of
+sizes with any margin cannot tell a small `log² n` term from a logarithmic one;
+the Ir rule rejects polynomial terms, and the logarithmic structures are held
+to exactly O(log n) per operation by `tree_visited` (6.2).
 
 For `tokens` and `rows` on every scale shape, the chunks do not correspond
 across sizes, so the rule compares positions within one stream of `n` bytes.
@@ -507,10 +529,11 @@ the same step (decision G2). For a longer stream, each window's total
 `step_ir` is at most 1.25 times its step count times the `reparse_ir` of the
 window's last step. The text only grows within a stream, so that is at least
 the sum of the window's per-step reparse costs, and a correct session that
-rescans a growing prefix as a reparse would is never rejected. A single
-expensive step inside a window is caught by the per-step counter bounds of
-6.2, and every window is 1/1,024 of the stream, so the bound is tight except in
-the first few windows. The margin pays for
+rescans a growing prefix as a reparse would is never rejected. Every window
+is 1/1,024 of the stream, so the bound is tight except in the first few
+windows. A single expensive step inside a window is caught by the same rule in
+edges, which applies to every step: `step_edges` is at most 1.25 times the
+`reparse_edges` of the last step of its window. The margin pays for
 matching, deduplication and the journal when an edit really does change the
 whole document; beyond it, an incremental edit would be a regression against
 the application that just reparses.
@@ -576,7 +599,7 @@ its numbers are reported with the `reparse` subject.
 | 0 Harness (this plan) | Scripts, text model and pending-byte model self-tests; 4.1 with `reparse` | Edit and stream runners report the R column; one-shot adds the `buffer_to_ast` rule (6.6) |
 | 1 Model | 4.2 for fresh parses; deep equality and 4.10 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
 | 2 Sessions, whole-document restart | 4.1–4.12 on the correctness set, every platform, both units | 6.4 on every workload, which sets the session baseline for 6.6 (G4); 6.2 for `nodes_new`; 6.5 for the kinds it introduces |
-| 3 Block restart and convergence | Unchanged | 6.2 for `lines_reread`, `ledger_touched` and `summaries_combined`, and for `inline_bytes` and `finish_visited` on shapes without declarations; 6.3 for the local edit families on shapes without declarations |
+| 3 Block restart and convergence | Unchanged | 6.2 for `lines_reread`, `ledger_touched`, `summaries_combined` and `tree_visited`, and for `inline_bytes` and `finish_visited` on shapes without declarations; 6.3 for the local edit families on shapes without declarations |
 | 4 Session registries | Unchanged | 6.2 for `registry_recomputed` and `lookups_invalidated`, and for `inline_bytes`, `finish_visited` and `journal_entries` on every shape; 6.3 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`) and for the local steps of `declarations` |
 | 5 Frontier and inline restart | Unchanged | 6.2 in its stream form for `lines_reread` and `inline_bytes`; 6.3 for `tokens` and `rows` |
 
