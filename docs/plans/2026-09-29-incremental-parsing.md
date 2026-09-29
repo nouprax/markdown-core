@@ -827,7 +827,7 @@ operation recurses over tree edges**.
 - **Gate.** The existing 30,000 and 65,536-level tests extend from release to:
   releasing a deep document while a view still holds one of its subtrees,
   equality of two deep documents that differ only at the deepest leaf,
-  walking, the first `scope(of:in:)` query (which builds the offset index),
+  walking, `scope(of:in:)`,
   `node(at:in:)` and `description`, on every binding. They
   run on a thread with a small fixed stack, so a recursion regression fails
   deterministically instead of depending on the platform's default stack size.
