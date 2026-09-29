@@ -152,7 +152,7 @@ things of the ids in one collection, and the rules above give each one:
 | Framework requirement | Guarantee |
 | --- | --- |
 | Ids in one collection are unique in every render. SwiftUI's behaviour with duplicates is undefined. | Ids are unique across the whole document, so they are unique in any collection taken from it: `content`, a list's `items`, a table's rows, footnotes, or a heterogeneous array a consumer builds from several relations. Every published document is complete, so there is no intermediate state with a duplicate. |
-| An id names the same element across updates, so its view state (focus, scroll anchor, expansion, animation) carries over. | An id persists while its node persists with the same kind in the same owner, through edits of its own content, edits elsewhere, and line shifts (5.9). |
+| An id names the same element across updates, so its view state (focus, scroll anchor, expansion, animation) carries over. | An id persists while its node persists with the same kind in the same owner and some of its source survives, through edits of its own content, edits elsewhere, and line shifts (5.9). |
 | An id that leaves never comes back as something else, or a new element inherits a removed element's state. | A session never reissues a retired id. A kind change is a new id, so the view type built for an id never changes. |
 
 Usage is direct. `Markup` refines `Identifiable` with `id: MarkupID`, so a
