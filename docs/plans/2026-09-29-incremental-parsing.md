@@ -1004,10 +1004,12 @@ Each step is one pull request that leaves `main` releasable.
    in nodes with on-demand scope queries, MCB3, and the Swift record
    storage, the coordinate unit (4.4), and definitions kept where written
    (4.5). The canonical dump and conformance fixtures change only for
-   documents with footnote or specimen definitions.
+   documents with footnote or specimen definitions and for grid and
+   multiline table cells that end on a blank line part (4.3), whose
+   `canonical-ast.md` rule changes in the same step.
 - [ ] **Step 2: Sessions with a whole-document restart.** Session API on every platform,
    the text tree, the journal and transactional edits, identity matching,
-   value deduplication, and MCB3 with ids and extents. The restart
+   and value deduplication. The restart
    point is always the document and nothing converges: this is the degenerate
    case of the final algorithm, and it already gives R1, R3, R4 and R5, with
    O(n) parse work.
