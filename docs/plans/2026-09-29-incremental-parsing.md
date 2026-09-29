@@ -44,7 +44,10 @@ make. Section 11 records rejected alternatives.
   fallback parser and no size threshold that selects a different algorithm
   (see `AGENTS.md`).
 - **R7 Transactions.** An edit either commits a new document and text, or
-  fails and leaves the session exactly at its previous version.
+  fails (an invalid argument, an engine allocation failure) and leaves the
+  session exactly at its previous version. The platform failing while it
+  projects a committed document into binding values (6.1) is not an edit
+  failure; it is fatal to the session.
 - **R8 Explicit retention.** What a session retains between edits, its owner
   and its size are specified. Parse scratch still never survives a
   transaction.
@@ -838,10 +841,12 @@ engine is not shaped around it: the binding builds the new objects first and
 then updates its table with them and removes the retired ids. Materialization
 can fail only by the platform running out of memory (Kotlin
 `OutOfMemoryError`, an ECMAScript `RangeError`, a Swift trap) or by a
-malformed message, which is an engine defect. Neither is a recoverable edit
-failure, so the binding does not roll the engine back; if it cannot finish
-publishing, it marks the session unusable, and every later call throws until
-the session is recreated.
+malformed message, which is an engine defect. Neither is an edit failure
+under R7, and neither is reported as one: the binding closes the session and
+raises the platform's fatal error (the out-of-memory error itself, or an
+internal-error exception for a malformed message) instead of the edit's
+ordinary failure type, so no caller mistakes it for a rejected edit and
+retries against a session whose engine has moved on.
 
 ### 6.2 Wire format MCB3
 
@@ -852,6 +857,13 @@ Kotlin and ECMAScript receive a parse as one message. MCB3 extends MCB2
 - A new record `reuse(u64 id)` pushes the binding's existing value for that id,
   subtree included, and writes nothing else.
 - A trailer lists retired ids.
+
+- A definitions section lists the footnote and specimen definitions in source
+  order as (label, id) pairs, copied from the session's registries (4.5); the
+  binding resolves each id through its table. The registries carry a version
+  like nodes do, and a message omits the section when they have not changed
+  since the last published version, in which case the new document takes the
+  previous one's lookups.
 
 A fresh parse is a message with no `reuse` records and no trailer. It is one
 format, not two. The magic becomes `MCB3` because the record layout changes.
@@ -883,15 +895,16 @@ operation that follows tree edges: **no operation recurses over tree edges**.
   references, inside `deinit`. Records are therefore immutable to every
   observer and `Sendable` (`@unchecked`, with the invariant stated at its one
   use and an audit that no other code writes the storage).
-- **Traversal.** Deep equality, the walker, materialization (6.1) and
-  `description` use explicit
+- **Traversal.** Deep equality, the walker, materialization (6.1), the scope
+  index and hit testing (4.3) and `description` use explicit
   work stacks. Hashing reads only the id. Kotlin (`equals`, `toString`) and
   ECMAScript (`markupEquals`) follow the same rule, because their stacks are
   finite too; their garbage collectors need no rule for release.
 - **Gate.** The existing 30,000 and 65,536-level tests extend from release to:
   releasing a deep document whose subtree is shared with a newer version,
   equality of two deep documents that differ only at the deepest leaf,
-  walking and `description`, on every binding. They
+  walking, the first `scope(of:in:)` query (which builds the offset index),
+  `node(at:in:)` and `description`, on every binding. They
   run on a thread with a small fixed stack, so a recursion regression fails
   deterministically instead of depending on the platform's default stack size.
 
@@ -970,7 +983,8 @@ pretend otherwise:
   predecessor. For scripted edits the exact set of new objects is asserted
   (for example, typing in paragraph 5 of 1,000 replaces that paragraph, its
   Text nodes on the edited line and the Document). Scripted cases include
-  unwrapping a nested inline note (the inner note keeps its id), inserting a
+  unwrapping a nested inline note (the inner note is a new node, because its
+  owner changed, 4.1), inserting a
   line at the top of a long document (only the Document and the edited
   paragraph are new values), and changing a heading anchor that Links target (every such Link is a new
   value carrying the new destination).
