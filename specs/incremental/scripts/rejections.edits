@@ -1,5 +1,5 @@
 markdown-core edit script 1
-script rejections
+script rejections rejections
 reject utf8 edit 178 178 61
 reject utf8 edit 2 1 61
 reject utf16 edit 176 176 61

@@ -1,5 +1,5 @@
 markdown-core edit script 1
-script heading-anchor-targets
+script heading-anchor-targets identity
 edit 2 8 476f616c
 expect changed Link 12
 expect changed Link 29

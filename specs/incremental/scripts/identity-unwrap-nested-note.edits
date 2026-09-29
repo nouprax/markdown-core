@@ -1,4 +1,4 @@
 markdown-core edit script 1
-script unwrap-nested-note
+script unwrap-nested-note identity
 edit 1 3 - 11 12 -
 expect new Footnote 3

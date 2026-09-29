@@ -230,9 +230,31 @@ test("the invalid arguments are each invalid in the unit they are written in", (
     }
 });
 
+test("the correctness set declares exactly the families its cases belong to", () => {
+    const files = correctnessSet();
+    const lines = files.get("manifest.txt").trimEnd().split("\n").slice(1);
+    const declared = lines.filter((line) => line.startsWith("family ")).map((line) => line.split(" ")[1]);
+    assert.equal(new Set(declared).size, declared.length);
+    const used = new Set();
+    for (const line of lines) {
+        const [kind, , family] = line.split(" ");
+        if (kind === "document") used.add("documents");
+        if (kind === "stream") used.add(family);
+        if (kind === "edits") for (const script of parseScripts(files.get(family))) used.add(script.family);
+    }
+    assert.deepEqual([...used].sort(), [...declared].sort());
+    for (const family of [...EDIT_FAMILIES, "identity", "rejections", "tokens", "scalars", "rows", "splits"])
+        assert.ok(declared.includes(family), `${family} is not declared`);
+});
+
 test("the correctness set runs every family on every document and splits the short ones", () => {
     const files = correctnessSet();
-    const manifest = files.get("manifest.txt").trimEnd().split("\n").slice(1);
+    const manifest = files
+        .get("manifest.txt")
+        .trimEnd()
+        .split("\n")
+        .slice(1)
+        .filter((line) => !line.startsWith("family "));
     const streams = new Map();
     for (const line of manifest) {
         const [kind, path, family] = line.split(" ");

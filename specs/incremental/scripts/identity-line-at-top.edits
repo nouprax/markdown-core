@@ -1,5 +1,5 @@
 markdown-core edit script 1
-script line-at-top
+script line-at-top identity
 edit 0 0 6e6577206c696e650a
 expect changed Document 0
 expect changed Paragraph 0

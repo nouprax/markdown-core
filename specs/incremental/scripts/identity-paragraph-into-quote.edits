@@ -1,5 +1,5 @@
 markdown-core edit script 1
-script paragraph-into-quote
+script paragraph-into-quote identity
 edit 0 0 3e20
 expect new Callout 0
 expect new Paragraph 2

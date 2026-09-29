@@ -1084,11 +1084,11 @@ export function rejectionScript(text) {
 
 const hex = (text) => (text === "" ? "-" : Buffer.from(text).toString("hex"));
 
-/** Scripts in the tracked text format: a `script NAME` line, then one step per line. */
+/** Scripts in the tracked text format: a `script NAME FAMILY` line, then one step per line. */
 export function formatScripts(scripts) {
     const lines = [SCRIPT_HEADER];
     for (const script of scripts) {
-        lines.push(`script ${script.name}`);
+        lines.push(`script ${script.name} ${script.family}`);
         for (const step of script.steps) {
             if (step.kind === "edit") {
                 lines.push(`edit ${step.edits.map((edit) => `${edit.start} ${edit.end} ${hex(edit.text)}`).join(" ")}`);
@@ -1112,8 +1112,8 @@ export function parseScripts(text) {
         const [kind, ...fields] = line.split(" ");
         const steps = scripts.at(-1)?.steps;
         if (kind === "script") {
-            assert.equal(fields.length, 1, `malformed script name: ${line}`);
-            scripts.push({ name: fields[0], steps: [] });
+            assert.equal(fields.length, 2, `malformed script line: ${line}`);
+            scripts.push({ name: fields[0], family: fields[1], steps: [] });
         } else if (kind === "edit") {
             assert.ok(steps && fields.length && fields.length % 3 === 0, `malformed edit: ${line}`);
             const edits = [];
@@ -1149,7 +1149,14 @@ const canonicalNames = () =>
  */
 export function correctnessSet() {
     const files = new Map();
-    const manifest = [MANIFEST_HEADER];
+    const manifest = [];
+    /* Every family a case belongs to. The manifest declares them in the
+     * order of sections 3.1 to 3.3, and the C tests run one family each. */
+    const families = new Set();
+    const addScripts = (file, scripts) => {
+        files.set(file, formatScripts(scripts));
+        for (const script of scripts) families.add(script.family);
+    };
     const documents = [];
     for (const name of canonicalNames()) {
         documents.push({
@@ -1170,28 +1177,34 @@ export function correctnessSet() {
     /* The targeted cases run first, then the sweeps. */
     for (const { name, text, script } of identityScripts()) {
         files.set(`documents/${name}.md`, text);
-        files.set(`scripts/${name}.edits`, formatScripts([script]));
+        addScripts(`scripts/${name}.edits`, [script]);
         manifest.push(`document documents/${name}.md`, `edits documents/${name}.md scripts/${name}.edits`);
     }
     /* The invalid arguments run against a document that ends in a four-byte
      * scalar, so an offset can fall inside one in either unit. */
     const rejected = `${fs.readFileSync(path.join(root, CANONICAL, "inlines.md"), "utf8")}\u{20000}\n`;
     files.set("documents/rejections.md", rejected);
-    files.set("scripts/rejections.edits", formatScripts([rejectionScript(rejected)]));
+    addScripts("scripts/rejections.edits", [rejectionScript(rejected)]);
     manifest.push("document documents/rejections.md", "edits documents/rejections.md scripts/rejections.edits");
     for (const document of documents) {
         manifest.push(`document ${document.path}${document.parts ? ` parts ${document.parts.join(" ")}` : ""}`);
         const file = `scripts/${document.name}.edits`;
-        files.set(file, formatScripts(editScripts(document)));
+        addScripts(file, editScripts(document));
         manifest.push(`edits ${document.path} ${file}`);
         const buffer = Buffer.from(document.text);
         const streams = document.shape
             ? ["tokens", "rows"]
             : ["tokens", "scalars", "rows", ...(buffer.length <= SPLIT_LIMIT ? ["splits"] : [])];
-        for (const family of streams) manifest.push(`stream ${document.path} ${family}`);
+        for (const family of streams) {
+            manifest.push(`stream ${document.path} ${family}`);
+            families.add(family);
+        }
     }
     files.set("token-sizes.txt", `${TOKEN_SIZES.join(" ")}\n`);
-    files.set("manifest.txt", `${manifest.join("\n")}\n`);
+    const declared = ["documents", "identity", "rejections", ...EDIT_FAMILIES, ...STREAM_FAMILIES]
+        .filter((family) => family === "documents" || families.has(family))
+        .map((family) => `family ${family}`);
+    files.set("manifest.txt", `${[MANIFEST_HEADER, ...declared, ...manifest].join("\n")}\n`);
     return files;
 }
 

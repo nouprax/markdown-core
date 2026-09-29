@@ -1,5 +1,5 @@
 markdown-core edit script 1
-script delete-sibling
+script delete-sibling identity
 edit 5 10 -
 expect kept Paragraph 0 0
 expect retired Paragraph 5

@@ -332,6 +332,7 @@ static void script_free(eh_script *script) {
     }
     free(script->steps);
     free(script->name);
+    free(script->family);
 }
 
 void eh_scripts_free(eh_scripts *scripts) {
@@ -459,7 +460,8 @@ static bool parse_step(char **fields, size_t count, eh_script *script) {
 static bool parse_line(char **fields, size_t count, eh_scripts *scripts) {
     if (strcmp(fields[0], "script") == 0) {
         eh_script *grown;
-        if (count != 2) {
+        eh_script *script;
+        if (count != 3) {
             return false;
         }
         grown = (eh_script *)realloc(scripts->scripts, (scripts->count + 1) * sizeof(*grown));
@@ -467,9 +469,11 @@ static bool parse_line(char **fields, size_t count, eh_scripts *scripts) {
             return false;
         }
         scripts->scripts = grown;
-        memset(&scripts->scripts[scripts->count], 0, sizeof(eh_script));
-        scripts->scripts[scripts->count].name = copy_string(fields[1]);
-        return scripts->scripts[scripts->count++].name != NULL;
+        script = &scripts->scripts[scripts->count++];
+        memset(script, 0, sizeof(*script));
+        script->name = copy_string(fields[1]);
+        script->family = copy_string(fields[2]);
+        return script->name && script->family;
     }
     return scripts->count && parse_step(fields, count, &scripts->scripts[scripts->count - 1]);
 }
@@ -619,8 +623,36 @@ void eh_manifest_free(eh_manifest *manifest) {
         free(manifest->cases[index].parts);
     }
     free(manifest->cases);
-    manifest->cases = NULL;
-    manifest->count = 0;
+    for (index = 0; index < manifest->family_count; index++) {
+        free(manifest->families[index]);
+    }
+    free(manifest->families);
+    memset(manifest, 0, sizeof(*manifest));
+}
+
+size_t eh_family_index(const eh_manifest *manifest, const char *family) {
+    size_t index;
+    for (index = 0; index < manifest->family_count; index++) {
+        if (strcmp(manifest->families[index], family) == 0) {
+            break;
+        }
+    }
+    return index;
+}
+
+const char *eh_case_family(const eh_case *entry) {
+    return entry->kind == EH_CASE_DOCUMENT ? "documents" : entry->kind == EH_CASE_STREAM ? entry->script : NULL;
+}
+
+/* A `family NAME` line: one more declared category. */
+static bool declare_family(eh_manifest *manifest, const char *name) {
+    char **grown = (char **)realloc(manifest->families, (manifest->family_count + 1) * sizeof(*grown));
+    if (!grown) {
+        return false;
+    }
+    manifest->families = grown;
+    manifest->families[manifest->family_count] = copy_string(name);
+    return manifest->families[manifest->family_count++] != NULL;
 }
 
 static bool parse_case(char **fields, size_t count, eh_case *entry) {
@@ -680,7 +712,20 @@ bool eh_manifest_load(const char *path, eh_manifest *manifest) {
     while ((line = next_line(&cursor)) != NULL) {
         char **fields = NULL;
         size_t count = split_fields(line, &fields);
+        const char *family;
         number++;
+        if (count == 2 && strcmp(fields[0], "family") == 0) {
+            bool declared =
+                eh_family_index(manifest, fields[1]) == manifest->family_count && declare_family(manifest, fields[1]);
+            free(fields);
+            if (!declared) {
+                fprintf(stderr, "%s:%zu: malformed or repeated family\n", path, number);
+                free(text);
+                eh_manifest_free(manifest);
+                return false;
+            }
+            continue;
+        }
         if (manifest->count == capacity) {
             eh_case *grown;
             capacity = capacity ? capacity * 2 : 256;
@@ -703,6 +748,13 @@ bool eh_manifest_load(const char *path, eh_manifest *manifest) {
         }
         manifest->count++;
         free(fields);
+        family = eh_case_family(&manifest->cases[manifest->count - 1]);
+        if (family && eh_family_index(manifest, family) == manifest->family_count) {
+            fprintf(stderr, "%s:%zu: the entry's family is not declared\n", path, number);
+            free(text);
+            eh_manifest_free(manifest);
+            return false;
+        }
     }
     free(text);
     return true;

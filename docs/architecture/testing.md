@@ -60,9 +60,9 @@ C labels are `api`, `facade`, `consumer`, `spec`, `elements`, `regression`,
 `pathological`, `fuzz`, `packaging`, and `incremental`. Each registered test has
 one label. The independent `conformance` label is excluded from correctness
 presets. `incremental` runs the
-[incremental correctness set](../../specs/incremental/README.md) in shards of
-its manifest, in the release correctness preset; the debug and sanitizer
-presets exclude it.
+[incremental correctness set](../../specs/incremental/README.md) as one test
+per family its manifest declares, side by side, in its own release
+`incremental` preset; the correctness presets exclude it.
 The [C test graph](../../packages/markdown-core/tests/CMakeLists.txt) owns exact
 case names and timeouts; documentation does not duplicate that registry.
 

@@ -16,11 +16,15 @@
  *        descending order of their start offsets
  *   4.8  every invalid argument is rejected
  *
- *   incremental_runner --set DIR [--shard I/N]  check the `reparse` subject
- *                                              on the manifest's cases I,
- *                                              I + N, I + 2N, ...
- *   incremental_runner --set DIR --self-test    require every faulty subject
- *                                              to fail with its oracle
+ *   incremental_runner --set DIR [--family F]  check the `reparse` subject
+ *                                             on every case, or on the cases
+ *                                             of one declared family
+ *   incremental_runner --set DIR --self-test   require every faulty subject
+ *                                             to fail with its oracle
+ *
+ * The manifest declares the set's families, and every run checks that each
+ * case belongs to a declared family and each declared family has a case, so a
+ * family is never left out of the tests that run one family each.
  *
  * The faulty subjects (section 8) live here and nowhere else: they are never
  * linked into a product target.
@@ -43,12 +47,10 @@ typedef struct run {
     char first[512];
     /* A self-test run stops at its first failure. */
     bool stop_at_failure;
-    /* The share of the set this run checks. The set's items are its scripts
-     * and its other cases, in manifest order; item k is this run's when
-     * k % shards is shard. */
-    size_t shard;
-    size_t shards;
-    size_t item;
+    /* The family this run checks, or NULL for every family, and how many of
+     * its cases ran. */
+    const char *family;
+    size_t checked;
     const char *label;
 } run;
 
@@ -438,14 +440,28 @@ static char *join_path(const char *directory, const char *relative) {
     return path;
 }
 
-/* Whether the next item of the set is this run's. */
-static bool mine(run *state) { return state->item++ % state->shards == state->shard; }
+/* Whether a case of `family` is this run's. The family is marked as seen
+ * whatever the answer. */
+static bool wanted(run *state, const eh_manifest *manifest, bool *seen, const char *where, const char *family) {
+    size_t index = eh_family_index(manifest, family);
+    if (index == manifest->family_count) {
+        fail(state, "harness", "%s: family %s is not declared", where, family);
+        return false;
+    }
+    seen[index] = true;
+    if (state->family && strcmp(state->family, family) != 0) {
+        return false;
+    }
+    state->checked++;
+    return true;
+}
 
 static void run_set(run *state, const char *directory) {
     char *manifest_path = join_path(directory, "manifest.txt");
     char *sizes_path = join_path(directory, "token-sizes.txt");
     eh_manifest manifest;
     eh_sizes tokens;
+    bool *seen = NULL, ready;
     size_t index;
     if (!manifest_path || !sizes_path || !eh_manifest_load(manifest_path, &manifest)) {
         fail(state, "harness", "%s: cannot load the manifest", directory);
@@ -460,15 +476,22 @@ static void run_set(run *state, const char *directory) {
         free(sizes_path);
         return;
     }
-    for (index = 0; index < manifest.count && !stopped(state); index++) {
+    seen = (bool *)calloc(manifest.family_count + 1, sizeof(*seen));
+    ready = seen && (!state->family || eh_family_index(&manifest, state->family) < manifest.family_count);
+    if (!ready) {
+        fail(state, "harness", "%s: %s", directory,
+             seen ? "the manifest does not declare the family" : "out of memory");
+    }
+    for (index = 0; ready && index < manifest.count && !stopped(state); index++) {
         const eh_case *entry = &manifest.cases[index];
         char *document_path;
         size_t length = 0;
         uint8_t *document;
         char where[400];
         eh_unit unit;
-        /* A script file is as many items as it holds scripts. */
-        if (entry->kind != EH_CASE_EDITS && !mine(state)) {
+        /* A script file holds scripts of several families; every other case
+         * is of one. */
+        if (entry->kind != EH_CASE_EDITS && !wanted(state, &manifest, seen, entry->document, eh_case_family(entry))) {
             continue;
         }
         document_path = join_path(directory, entry->document);
@@ -490,7 +513,7 @@ static void run_set(run *state, const char *directory) {
                 fail(state, "harness", "%s: cannot load", entry->script);
             } else {
                 for (which = 0; which < scripts.count && !stopped(state); which++) {
-                    if (!mine(state)) {
+                    if (!wanted(state, &manifest, seen, entry->script, scripts.scripts[which].family)) {
                         continue;
                     }
                     for (unit = EH_UTF8; unit <= EH_UTF16 && !stopped(state); unit = (eh_unit)(unit + 1)) {
@@ -531,6 +554,15 @@ static void run_set(run *state, const char *directory) {
         free(document);
         free(document_path);
     }
+    for (index = 0; ready && index < manifest.family_count && !stopped(state); index++) {
+        if (!seen[index]) {
+            fail(state, "harness", "%s: family %s has no case", directory, manifest.families[index]);
+        }
+    }
+    if (ready && state->family && !state->checked) {
+        fail(state, "harness", "%s: no case of family %s ran", directory, state->family);
+    }
+    free(seen);
     eh_sizes_free(&tokens);
     eh_manifest_free(&manifest);
     free(manifest_path);
@@ -745,24 +777,22 @@ static int check_harness(void) {
 int main(int argc, char **argv) {
     const char *directory = NULL;
     bool self_test = false;
-    size_t shard = 0, shards = 1;
+    const char *family = NULL;
     int index;
     for (index = 1; index < argc; index++) {
-        char end;
         if (strcmp(argv[index], "--set") == 0 && index + 1 < argc) {
             directory = argv[++index];
         } else if (strcmp(argv[index], "--self-test") == 0) {
             self_test = true;
-        } else if (strcmp(argv[index], "--shard") == 0 && index + 1 < argc &&
-                   sscanf(argv[++index], "%zu/%zu%c", &shard, &shards, &end) == 2 && shard < shards) {
-            continue;
+        } else if (strcmp(argv[index], "--family") == 0 && index + 1 < argc && !family) {
+            family = argv[++index];
         } else {
             directory = NULL;
             break;
         }
     }
-    if (!directory || (self_test && shards != 1)) {
-        fputs("usage: incremental_runner --set DIR [--shard I/N | --self-test]\n", stderr);
+    if (!directory || (self_test && family)) {
+        fputs("usage: incremental_runner --set DIR [--family F | --self-test]\n", stderr);
         return 2;
     }
     if (check_harness()) {
@@ -781,7 +811,6 @@ int main(int argc, char **argv) {
             memset(&state, 0, sizeof(state));
             state.subject = faulty[which].subject;
             state.stop_at_failure = true;
-            state.shards = 1;
             run_set(&state, directory);
             if (!state.failures || strcmp(state.first_oracle, faulty[which].oracle) != 0) {
                 fprintf(stderr, "FAILED: the subject that %s was not caught by %s%s%s\n", faulty[which].subject->name,
@@ -799,14 +828,14 @@ int main(int argc, char **argv) {
         run state;
         memset(&state, 0, sizeof(state));
         state.subject = &eh_reparse;
-        state.shard = shard;
-        state.shards = shards;
+        state.family = family;
         run_set(&state, directory);
         if (state.failures) {
             fprintf(stderr, "%zu incremental check(s) failed\n", state.failures);
             return 1;
         }
-        printf("incremental correctness set passed with the %s subject\n", eh_reparse.name);
+        printf("incremental correctness set passed with the %s subject: %zu case(s)%s%s\n", eh_reparse.name,
+               state.checked, family ? " of family " : "", family ? family : "");
     }
     return 0;
 }

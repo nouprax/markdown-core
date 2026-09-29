@@ -93,6 +93,7 @@ typedef struct eh_step {
 
 typedef struct eh_script {
     char *name;
+    char *family; /* the category it belongs to: an edit family, `identity` or `rejections` */
     eh_step *steps;
     size_t count;
 } eh_script;
@@ -134,12 +135,23 @@ typedef struct eh_case {
     size_t part_count;
 } eh_case;
 
+/* The set's categories, declared by `family` lines, and its cases. Every case
+ * belongs to one category: a document to `documents`, a stream to its family,
+ * a script to the family its script file names. */
 typedef struct eh_manifest {
+    char **families;
+    size_t family_count;
     eh_case *cases;
     size_t count;
 } eh_manifest;
 
+/* Also refuses a document or stream whose family is not declared. */
 bool eh_manifest_load(const char *path, eh_manifest *manifest);
+/* The family of a document or stream case; NULL for an edits case, whose
+ * scripts each name their own. */
+const char *eh_case_family(const eh_case *entry);
+/* The declared family's index, or `family_count` when it is not declared. */
+size_t eh_family_index(const eh_manifest *manifest, const char *family);
 void eh_manifest_free(eh_manifest *manifest);
 
 /* Read a whole file. The buffer is NUL-terminated one byte past `*length`. */

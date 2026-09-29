@@ -1,4 +1,20 @@
 markdown-core incremental manifest 1
+family documents
+family identity
+family rejections
+family typing
+family lines
+family markers
+family ranges
+family far
+family batch
+family declarations
+family undo
+family random
+family tokens
+family scalars
+family rows
+family splits
 document documents/identity-type-at-paragraph-start.md
 edits documents/identity-type-at-paragraph-start.md scripts/identity-type-at-paragraph-start.edits
 document documents/identity-insert-before-paragraph.md

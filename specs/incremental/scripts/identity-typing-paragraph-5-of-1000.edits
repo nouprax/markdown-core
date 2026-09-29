@@ -1,5 +1,5 @@
 markdown-core edit script 1
-script typing-paragraph-5-of-1000
+script typing-paragraph-5-of-1000 identity
 edit 21 21 78
 expect changed Document 0
 expect changed Paragraph 20

@@ -76,10 +76,10 @@
     "testPresets": [
         {
             "name": "correctness",
-            "displayName": "Correctness suites (excludes conformance)",
+            "displayName": "Correctness suites (excludes conformance and the incremental set)",
             "configurePreset": "default",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^conformance$" } }
+            "filter": { "exclude": { "label": "^(conformance|incremental)$" } }
         },
         {
             "name": "conformance",
@@ -87,6 +87,13 @@
             "configurePreset": "default",
             "output": { "outputOnFailure": true },
             "filter": { "include": { "label": "^conformance$" } }
+        },
+        {
+            "name": "incremental",
+            "displayName": "The incremental correctness set, one test per family",
+            "configurePreset": "default",
+            "output": { "outputOnFailure": true },
+            "filter": { "include": { "label": "^incremental$" } }
         },
         {
             "name": "correctness-debug",
