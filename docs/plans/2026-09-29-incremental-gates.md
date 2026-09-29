@@ -240,7 +240,10 @@ every node of every step:
   contains the image of an old sibling's anchor continues the earliest such
   sibling.
 - Old and new nodes left between two consecutive matched pairs of one
-  relation are paired in order by kind (slot pairing).
+  relation are paired in order by kind (slot pairing). The relation's start
+  and end count as matched boundaries, so the gaps before the first matched
+  pair and after the last are paired the same way, and a sole, leading or
+  trailing sibling whose bytes were all replaced still continues its old node.
 - A new node that continues an old node has the old node's id. Every other
   new node has an id the lineage has never seen. An old node that nothing
   continues is retired.
@@ -366,9 +369,8 @@ Every step of those scripts still gets its own cost: the runner also replays
 them natively in a build compiled with `-fsanitize-coverage=trace-pc-guard`,
 whose callback adds one to a counter per executed edge. `step_edges`, the
 counter's increase over one step, is deterministic like Ir and cheap enough to
-record for every chunk of a megabyte stream, and `reparse_edges` is recorded
-the same way at each window's last step. Edges are a different unit from Ir,
-so the two are never compared with each other.
+record for every chunk of a megabyte stream. Edges are a different unit from
+Ir, so the two are never compared with each other.
 
 The gates measure the C engine only. A binding builds its platform values from
 what the engine returns; that construction is the platform's inherent cost, the
@@ -544,15 +546,15 @@ document size fails it at any constant factor.
 
 For every step of every script of at most 1,024 steps, including `markers`,
 `declarations` and `random`, `step_ir` is at most 1.25 times `reparse_ir` of
-the same step (decision G2). For a longer stream, each window's total
-`step_ir` is at most 1.25 times its step count times the `reparse_ir` of the
-window's last step. The text only grows within a stream, so that is at least
-the sum of the window's per-step reparse costs, and a correct session that
-rescans a growing prefix as a reparse would is never rejected. Every window
-is 1/1,024 of the stream, so the bound is tight except in the first few
-windows. A single expensive step inside a window is caught by the same rule in
-edges, which applies to every step: `step_edges` is at most 1.25 times the
-`reparse_edges` of the last step of its window. The margin pays for
+the same step (decision G2). That includes every stream of at most 1,024
+chunks. A longer stream is not held to this rule: it would need a reparse
+after every chunk, the quadratic cost the design removes, and no sample of
+those reparses bounds the others, because a fresh parse's cost is not
+monotonic in the prefix (an earlier prefix can end in a costlier unclosed
+construct). Its `reparse_ir` column at each window's last step is reported,
+not gated. Its per-step cost is gated instead by 6.3 on `step_edges`, which
+fails any chunk that costs more as the streamed text grows, by the counters
+of 6.2, and by 6.6. The margin pays for
 matching, deduplication and the journal when an edit really does change the
 whole document; beyond it, an incremental edit would be a regression against
 the application that just reparses.
