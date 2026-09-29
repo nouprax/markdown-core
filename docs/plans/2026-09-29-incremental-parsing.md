@@ -971,6 +971,10 @@ pretend otherwise:
 
 ## 8. Testing
 
+The oracles below, the workloads they run on and the edit and stream
+benchmarks are specified in [Gates for incremental parsing](2026-09-29-incremental-gates.md),
+which also says at which rollout step each one becomes a gate.
+
 - **Differential oracle.** For every document in the benchmark corpus and
   fuzz inputs, random edit scripts (inserts, deletes, replacements at line and
   byte granularity, including CR/LF splits and NUL) are applied through a
@@ -1006,8 +1010,15 @@ pretend otherwise:
 
 ## 9. Rollout
 
-Each step is one pull request that leaves `main` releasable.
+Each step is one pull request that leaves `main` releasable. Each step must
+pass the gates that
+[Gates for incremental parsing](2026-09-29-incremental-gates.md#7-activation-by-rollout-step)
+activates for it.
 
+- [ ] **Step 0: Gates.** The edit and stream workloads, the correctness
+   harness with the `reparse` subject and its faulty-subject self-tests, and
+   the edit and stream benchmarks reporting the reparse baseline, in the
+   existing benchmark workflow.
 - [ ] **Step 1: Model.** Ids for fresh parses, deep equality and hashing, relative spans
    with walker and document scope resolution, MCB3, and the Swift record
    storage, the coordinate unit (4.4), and footnote targets by identity for
@@ -1025,8 +1036,6 @@ Each step is one pull request that leaves `main` releasable.
    dependencies, anchor families, per-root finish steps.
 - [ ] **Step 5: Frontier and inline restart.** The suspended frontier, E5, and the
    stable prefix.
-- [ ] **Step 6: Gates.** Work-counter bounds and benchmark cases for streaming and random
-   edits, in the existing benchmark workflow.
 
 ## 10. Decisions for the owner
 
