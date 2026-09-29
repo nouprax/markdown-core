@@ -45,9 +45,7 @@ make. Section 11 records rejected alternatives.
   (see `AGENTS.md`).
 - **R7 Transactions.** An edit either commits a new document and text, or
   fails (an invalid argument, an engine allocation failure) and leaves the
-  session exactly at its previous version. The platform failing while it
-  projects a committed document into binding values (6.1) is not an edit
-  failure; it is fatal to the session.
+  session exactly at its previous version.
 - **R8 Explicit retention.** What a session retains between edits, its owner
   and its size are specified. Parse scratch still never survives a
   transaction.
@@ -347,7 +345,7 @@ document, and identity decided in a list that is not where the parser
 produced anything.
 
 The design keeps every definition in the tree where it was written, and the
-document publishes a lookup instead of owning the nodes:
+document answers lookups over its content instead of owning the nodes:
 
 ```text
 CitationReferent = bib(key, mode) | footnote(FootnoteTarget) | specimen(label)
@@ -366,18 +364,17 @@ Specimen(label: String?, start: Int?, content: [Markup])
   labels and no `-K` rule.
 - `Footnote.id` and `Specimen.id` are renamed `label`, because every node now
   has `id: MarkupID` (4.1).
-- `Document` publishes derived lookups, not owned sequences:
+- `Document` answers lookups instead of owning sequences:
   `document.footnote(for: label)` and `document.specimen(for: label)` return
-  the first definition with that label in source order, as today, and
-  `document.footnotes` and `document.specimens` list every definition in
-  source order as references into the tree. They are functions of `content`,
-  so they take no part in equality. The lookups are the session's label
-  registries (5.7), which the parse updates in place as it re-reads
-  declarations; the C document exposes them directly. A binding projects them
-  into its immutable document like any other C data, with no bookkeeping of
-  its own. That projection is the platform's cost of building an immutable
-  value, not the engine's, and the engine's design is never shaped around
-  it.
+  the first definition in source order whose stored label equals the
+  referent's (the parser has already normalized both), as the spec defines
+  today, and `document.footnotes` and `document.specimens` list every
+  definition in source order as references into the tree. These are
+  functions of `content`, so they are queries, not data: they take no part
+  in equality and nothing transports them. Like `scope(of:in:)` (4.3), the first query on a document builds its
+  label index in one walk, published once under a lock, and only the query
+  pays for it. In C the session's label registries (5.7) already hold the
+  same answer.
 - Definitions therefore follow the tree's ordinary identity rules (5.9),
   with no rule of their own.
 - Walks and the canonical dump visit a definition where it was written. A
@@ -701,10 +698,9 @@ registry. Then:
   once its anchor is final, and the Links that looked it up are re-parsed
   against the new value through the lookup index.
 - **Definition lookups.** The footnote and specimen label registries are
-  source-ordered sequences like the others; a changed winner updates the
-  published lookup (4.5) and queues its dependents. Definitions themselves
-  stay in the tree, so nothing is spliced into the document and no ordinal is
-  recomputed.
+  source-ordered sequences like the others; a changed winner queues its
+  dependents. Definitions themselves stay in the tree, so nothing is spliced
+  into the document and no ordinal is recomputed.
 
 ### 5.8 Finish steps and passes
 
@@ -843,18 +839,12 @@ The cost is proportional to the changed nodes plus their children, which is
 also what SwiftUI, Compose and React reconcile. The public result is one
 `Document`.
 
-The transaction (5.11) ends when the engine commits. Materialization is a
-projection of committed C data, not part of the engine's transaction, and the
-engine is not shaped around it: the binding builds the new objects first and
-then updates its table with them and removes the retired ids. Materialization
-can fail only by the platform running out of memory (Kotlin
-`OutOfMemoryError`, an ECMAScript `RangeError`, a Swift trap) or by a
-malformed message, which is an engine defect. Neither is an edit failure
-under R7, and neither is reported as one: the binding closes the session and
-raises the platform's fatal error (the out-of-memory error itself, or an
-internal-error exception for a malformed message) instead of the edit's
-ordinary failure type, so no caller mistakes it for a rejected edit and
-retries against a session whose engine has moved on.
+Materialization is a pure projection of a committed C document into
+immutable values for Compose, React or SwiftUI to reconcile. It is not a
+sequence of instructions applied to live state, so it has no transaction and
+no failure contract of its own: the transaction (5.11) ends when the engine
+commits, and anything the platform raises while building values is the
+platform's own error.
 
 ### 6.2 Wire format MCB3
 
@@ -865,13 +855,6 @@ Kotlin and ECMAScript receive a parse as one message. MCB3 extends MCB2
 - A new record `reuse(u64 id)` pushes the binding's existing value for that id,
   subtree included, and writes nothing else.
 - A trailer lists retired ids.
-
-- A definitions section lists the footnote and specimen definitions in source
-  order as (label, id) pairs, copied from the session's registries (4.5); the
-  binding resolves each id through its table. The registries carry a version
-  like nodes do, and a message omits the section when they have not changed
-  since the last published version, in which case the new document takes the
-  previous one's lookups.
 
 A fresh parse is a message with no `reuse` records and no trailer. It is one
 format, not two. The magic becomes `MCB3` because the record layout changes.
@@ -904,8 +887,8 @@ operation that follows tree edges: **no operation recurses over tree edges**.
   observer and `Sendable` (`@unchecked`, with the invariant stated at its one
   use and an audit that no other code writes the storage).
 - **Traversal.** Deep equality, the walker, materialization (6.1), the scope
-  index and hit testing (4.3) and `description` use explicit
-  work stacks. Hashing reads only the id. Kotlin (`equals`, `toString`) and
+  index and hit testing (4.3), the label index (4.5) and `description` use
+  explicit work stacks. Hashing reads only the id. Kotlin (`equals`, `toString`) and
   ECMAScript (`markupEquals`) follow the same rule, because their stacks are
   finite too; their garbage collectors need no rule for release.
 - **Gate.** The existing 30,000 and 65,536-level tests extend from release to:
@@ -1048,7 +1031,8 @@ Each step is one pull request that leaves `main` releasable.
 - **D2 Definitions. Decided 2026-09-29: definitions stay where written.**
   Footnote and specimen definitions remain in the tree where they were
   written, an inline note's `Footnote` is owned at its call site, and the
-  document publishes label lookups instead of owning the definitions (4.5).
+  document answers label lookups as queries over its content instead of
+  owning the definitions (4.5).
   Rejected: keeping `inline-N`, where inserting one note changed every later
   note; a separate `InlineNote` kind, which would express footnote semantics
   with a second model; and lifted definitions named by `MarkupID`, which kept
