@@ -430,7 +430,7 @@ quantities, per step:
 
 | Quantity | Definition |
 | --- | --- |
-| `E` | The **language damage**: the union of the edited lines (the step's range widened to whole lines as in plan 5.2, before and after the step) and the smallest range of lines such that the block trees of the two fresh parses (kinds, depths and mapped start lines of every block) agree before it and after it. A content-only edit therefore still has the lines it touched as its damage |
+| `E` | The **language damage**: the union of the edited lines (the step's range widened to whole lines as in plan 5.2, before and after the step) and, per connected edit region, the smallest range of lines around it such that the block trees of the two fresh parses (kinds, depths and mapped start lines of every block) agree before it and after it. Regions whose ranges do not overlap stay separate, so a batch with structural edits far apart does not damage the blocks between them. A content-only edit still has the lines it touched as its damage |
 | `U` | Lines and bytes of every leaf that intersects `E`: every leaf that owns an inline root (paragraphs, headings, table cells, terms, captions and the like), and the units plan 5.3 always re-reads whole (tables with their captions, code, HTML, comment, formula and directive blocks) |
 | `B` | Blocks of either fresh parse that start inside `E`, at any depth |
 | `A` | Ancestors of the damage: the blocks of either fresh parse that contain some connected region of `E`, counted once each over the union of every region's ancestor path. A batch whose edits land in several leaves has one path per region |
@@ -597,7 +597,7 @@ Against the base revision, measured with the current harness and workloads on
 both sides as the one-shot gate already does, and always between the same
 subject on both sides:
 
-- each workload's per-step p95 and total `step_ir` are at most 1.02 times the
+- each workload's per-step p95, per-step maximum and total `step_ir` are at most 1.02 times the
   base. A stream measured in windows (5.1) has no per-step Ir, so its rule is
   on what it does measure: the p95, the maximum and the total of its window
   `step_ir`, and the p95 and maximum of its per-step `step_edges`, each at
