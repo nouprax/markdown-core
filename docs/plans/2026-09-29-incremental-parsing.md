@@ -12,8 +12,7 @@ The consumers are SwiftUI, Jetpack Compose and React. They reconcile a view
 tree against a value tree by identity and equality, so the result of an edit is
 **a new `Document` and nothing else**. There is no public diff, patch, change
 list or event stream. A consumer that compares the new document with the
-previous one finds every unchanged subtree to be the same value (the same
-object where the platform has objects), finds every node that persists under
+previous one finds every unchanged subtree to be an equal value, finds every node that persists under
 the same identifier, and finds a changed node to be unequal to its predecessor.
 
 Sections 1–3 state requirements and ground them in the current parser. Section
@@ -32,13 +31,15 @@ make. Section 11 records rejected alternatives.
   resolution it changes, not to the document.
 - **R3 Minimal replacement.** A node is a new value only if its value
   changed. Its ancestors are new values because their child collections
-  changed. Every other node of the new document is the previous document's
-  value, reused.
+  changed. Every other node of the new document equals the previous
+  document's node with the same id; in the C document it is that node,
+  reused.
 - **R4 Stable identity.** Every node has an identifier, unique within its
   document, that survives every edit that does not remove the node. An
   identifier never changes kind.
-- **R5 No diff.** The API returns a `Document`. Any delta that crosses an
-  internal boundary (C to Kotlin or ECMAScript) is transport, not API.
+- **R5 No diff.** The API returns a `Document`, and nothing that crosses into
+  a binding is a delta either: every binding builds each document whole from
+  the C document (6.1).
 - **R6 One algorithm.** Streaming is an insertion at the end. A full parse is
   an insertion into an empty session. There is no streaming parser, no
   fallback parser and no size threshold that selects a different algorithm
@@ -88,8 +89,7 @@ without a second parser:
 
 What is missing is (a) a record of what each decision read, (b) a way to
 restart the line machine from the middle, (c) resolution that can be
-recomputed for part of a registry, (d) identity, and (e) value storage in the
-bindings that can share subtrees between two documents.
+recomputed for part of a registry, and (d) identity.
 
 ## 3. Dependency inventory
 
@@ -182,18 +182,17 @@ Equality is **deep value equality including `id`**: two nodes are equal when
 they have the same kind, id, scalar fields, extent (4.3) and pairwise equal
 children in every relation.
 
-- Every implementation first compares references: a reused subtree is the same
-  object, so comparing two versions of a document costs the size of the
-  changed paths and their siblings, not the document.
-- The engine keeps an invariant (5.9) that makes the fast path nearly always
-  decisive: within one session, a node that has the same id as its
-  predecessor but is a different object has a different value.
+- Consumers reconcile with ids and this equality: SwiftUI with `Identifiable`
+  and `Equatable`, Compose with keys and `equals`, React with keys and
+  `React.memo(component, (a, b) => markupEquals(a.node, b.node))`. A node the
+  edit did not change is equal to its predecessor and has its id, so each
+  framework skips it; it is not the same object, because each binding builds
+  every document whole (6.1).
 - Hashing uses `id` only, so it is O(1) and consistent with equality.
 - Swift: every kind is `Hashable`; `any Markup` gets an `isEqual(_:)`
   helper. Kotlin: `equals` and `hashCode` on every kind, with the reference
-  check first. ECMAScript has no equality protocol; React's `Object.is`
-  and `React.memo` see structural sharing directly. An exported
-  `markupEquals(a, b)` gives the deep comparison for tests.
+  check first. ECMAScript has no equality protocol, so it exports
+  `markupEquals(a, b)`.
 
 ### 4.3 Nodes carry raw extents; scopes are computed on request
 
@@ -404,13 +403,12 @@ binding (D2).
 | --- | --- | --- |
 | Text tree | The source as a balanced tree of bounded byte chunks; each subtree records its byte, line-terminator and UTF-16 counts | O(source) |
 | Pending bytes | The incomplete trailing UTF-8 sequence of the last append (4.4) | At most 3 bytes |
-| Tree | The live C tree: ids, versions, and each node's extent (4.3) | O(nodes) |
+| Tree | The live C tree: ids and each node's extent (4.3) | O(nodes) |
 | Block ledger | One entry per block node at any depth: start offset, node id, entry frontier, read end, spine snapshot (5.3) | O(blocks + changed frames) |
 | Registries | Reference, heading, anchor, footnote and specimen declarations in source order; label winners | O(declarations) |
 | Lookup index | Registry key → inline roots that looked it up, hit or miss | O(lookups) |
 | Frontier | The suspended block parser at the last line boundary, when the document ends in open blocks (5.5) | O(open spine + open leaf content) |
 | Inline ledger | Per inline root: stable prefix end (5.6) | O(inline roots) |
-| Retirement log | Ids retired after the version a binding last published (6.1), dropped once it publishes a later one | O(ids retired since then) |
 
 The text, the block ledger and the source-ordered registries are sequences
 whose elements have source extents. They share one structure: a balanced
@@ -704,9 +702,8 @@ registry. Then:
   `markdown_core_headings_finish` instead treats the heading target as a
   mutable object and rewrites its URL in place. Reuse (5.9) assumes that a
   node's content cannot change without the node being rebuilt, so in a
-  session that write would change Links the engine then reports as unchanged,
-  and the binding would put its cached Links with the old destination into
-  the new document. The session therefore builds the heading target's value
+  session that write would change Links the engine keeps as unchanged, so
+  the new document's Links would disagree with a fresh parse. The session therefore builds the heading target's value
   once its anchor is final, and the Links that looked it up are re-parsed
   against the new value through the lookup index.
 - **Definition lookups.** The footnote and specimen label registries are
@@ -784,14 +781,9 @@ node:
 Then, in post-order, each matched `N` is compared with its `O`: equal kind,
 equal scalars, equal extent, and every child relation holding the same
 objects.
-If they are equal, `N` is released and `O` stays. This establishes the
-invariant of 4.2: within a session, a node that differs from its predecessor
-as an object differs as a value.
-
-Every node carries a `version`, the session edit number at which its value
-last changed. New and changed nodes take the current version. Reused and
-deduplicated nodes keep theirs. An ancestor of a changed node is changed,
-because its child collection changed.
+If they are equal, `N` is released and `O` stays. Within the C session, a
+node that differs from its predecessor as an object therefore differs as a
+value, which is what R3 measures and the work counters (8) count.
 
 ### 5.10 Why the result equals a fresh parse
 
@@ -827,7 +819,7 @@ elements in the entry.
   retained old elements (replaced chunks, removed ledger entries, old nodes
   that did not survive) are released and the version advances.
 - **Rollback** replays the journal in reverse. It allocates nothing and cannot
-  fail, and afterwards the session's text, document, ids, versions and
+  fail, and afterwards the session's text, document, ids and
   retained state are the previous version's, bit for bit.
 
 Id allocation takes part: ids handed out by a failed transaction are returned,
@@ -839,51 +831,36 @@ as E2 does for closed nodes.
 
 ### 6.1 Materialization without a public diff
 
-Each binding session keeps a table from id to its value object for the live
-document. To publish a version, it walks the new C tree from the root. A node
-whose version is not newer than the binding's last published version is taken
-from the table with its whole subtree, and the walk does not descend into it.
-Every other node is built from its fields and its children, which are table
-hits or newly built nodes. The binding names the version it last published
-when it asks for the new one, and the engine reports the ids retired since
-that version, so the table can release them.
+A binding builds every published document whole from the committed C
+document, node by node, exactly as it builds a parse today. It keeps no
+table, takes no previous document as input and receives no report of what
+changed: it is a pure projection of C data into platform values, and its
+cost is the platform's cost of building an immutable value, which the
+engine's design never counts or optimizes. What the edit left unchanged
+reaches the consumer as equal values with unchanged ids (4.2), which is what
+SwiftUI, Compose and React reconcile. The public result is one `Document`.
 
-The cost is proportional to the changed nodes plus their children, which is
-also what SwiftUI, Compose and React reconcile. The public result is one
-`Document`.
-
-Materialization is a pure projection of a committed C document into
-immutable values for Compose, React or SwiftUI to reconcile. It is not a
-sequence of instructions applied to live state, so it has no transaction and
-no failure contract of its own: the transaction (5.11) ends when the engine
-commits, and anything the platform raises while building values is the
-platform's own error. Like any caller of a function, the binding takes the
-result (the new document, its table and its version) only once the function
-returns it, so a projection the platform aborts leaves the binding holding
-the version it last published, and the next projection is taken against
-that version.
+The transaction (5.11) ends when the engine commits. Because the projection
+reads only committed C data, it has no transaction and no failure contract
+of its own: anything the platform raises while building values is the
+platform's own error, and the next projection is built from the C document
+like any other.
 
 ### 6.2 Wire format MCB3
 
 Kotlin and ECMAScript receive a parse as one message. MCB3 extends MCB2
-(`docs/architecture/wire-format.md`) and keeps its post-order stack model:
-
-- Every node record adds `u64 id` and the node's `Extent` in place of `Scope`.
-- A new record `reuse(u64 id)` pushes the binding's existing value for that id,
-  subtree included, and writes nothing else.
-- A trailer lists the ids retired since the version the binding named.
-
-A fresh parse is a message with no `reuse` records and no trailer. It is one
-format, not two. The magic becomes `MCB3` because the record layout changes.
+(`docs/architecture/wire-format.md`) and keeps its post-order stack model.
+Every node record adds `u64 id` and the node's `Extent` in place of `Scope`.
+Every message is a whole document. The magic becomes `MCB3` because the
+record layout changes.
 
 ### 6.3 Swift storage
 
 Swift currently copies each parse into one flat `StoredMarkup` array owned by a
-`MarkupStore` (`docs/architecture/swift-storage.md`). A store belongs to one
-parse, so two documents cannot share a subtree through it. The design replaces
+`MarkupStore` (`docs/architecture/swift-storage.md`). The design replaces
 it with one immutable final class record per node that holds its scalars and
-references to its children's records. That gives exact sharing between
-versions, `===` for the equality fast path, and liveness by ARC.
+references to its children's records, like Kotlin and ECMAScript, with
+liveness by ARC.
 
 The flat store was introduced to bound destruction depth: ARC releases a
 tree of class instances recursively, and a 65,536-level chain overflowed the
@@ -895,8 +872,8 @@ operation that follows tree edges: **no operation recurses over tree edges**.
   Its `deinit` moves its own children into a local array and drains it: for
   each child it takes out, if `isKnownUniquelyReferenced` holds, it first
   moves that child's children onto the array, so when the child is dropped its
-  own `deinit` has nothing to release. A child still referenced elsewhere (a
-  subtree shared with another version, or retained by a view) is only
+  own `deinit` has nothing to release. A child still referenced elsewhere
+  (retained by a view) is only
   released, which ends at a count decrement. Stack depth is constant in tree
   depth; the array holds at most the nodes being freed. Moving children out is
   the only mutation, and it happens only to a record that nothing else
@@ -909,7 +886,7 @@ operation that follows tree edges: **no operation recurses over tree edges**.
   ECMAScript (`markupEquals`) follow the same rule, because their stacks are
   finite too; their garbage collectors need no rule for release.
 - **Gate.** The existing 30,000 and 65,536-level tests extend from release to:
-  releasing a deep document whose subtree is shared with a newer version,
+  releasing a deep document while a view still holds one of its subtrees,
   equality of two deep documents that differ only at the deepest leaf,
   walking, the first `scope(of:in:)` query (which builds the offset index),
   `node(at:in:)` and `description`, on every binding. They
@@ -931,9 +908,8 @@ unstable. No Compose dependency is added.
 
 ### 6.5 ECMAScript
 
-Values stay plain readonly objects. A reused subtree is the same object, so
-`React.memo`, `useMemo` dependency arrays and keyed lists work without an
-adapter. The session holds a WebAssembly handle and must be disposed. A
+Values stay plain readonly objects. Lists key by id, and `React.memo` takes
+`markupEquals` as its comparator (4.2). The session holds a WebAssembly handle and must be disposed. A
 `Document` never holds a handle, as now.
 
 ## 7. Complexity
@@ -945,7 +921,7 @@ changed paths, `L` the size of the re-read leaves, `W` the lookahead window
 before convergence, and `k` the size of inline roots invalidated by
 resolution changes.
 
-| Operation | Block work | Inline work | Resolution | Materialization (platform) |
+| Operation | Block work | Inline work | Resolution | C tree changes |
 | --- | --- | --- | --- | --- |
 | Append `c` bytes inside an open paragraph | O(c + last line) | O(c + distance to stable prefix) | O(changed declarations) | O(d + F) |
 | Append that closes and opens blocks | O(c + last line + closed leaves) | as above | as above | O(d + F) |
@@ -954,7 +930,9 @@ resolution changes.
 | Fresh parse | O(n), as today | O(n) | O(n) | O(n) |
 
 The text tree, the ledger and the registries add O(log n) per lookup,
-insertion, deletion and shift, wherever the edit is. No bound depends on a size threshold.
+insertion, deletion and shift, wherever the edit is. A binding builds each
+published document whole (6.1); that O(nodes) is the platform's construction
+cost and is outside these bounds. No bound depends on a size threshold.
 
 ### 7.2 Costs that are the language's, not the algorithm's
 
@@ -986,9 +964,11 @@ pretend otherwise:
   session's text must equal the longest complete-scalar prefix of the bytes
   appended so far.
 - **Identity and minimality.** After every edit: ids are unique; no id
-  changed kind; every reused object equals the fresh-parse node at the same
-  position; every matched node that is a new object differs in value from its
-  predecessor. For scripted edits the exact set of new objects is asserted
+  changed kind; in C, every reused node equals the fresh-parse node at the
+  same position and every matched node that is a new object differs in value
+  from its predecessor; in every binding, every node equals the previous
+  document's node with its id exactly when C reused it. For scripted edits
+  the exact set of new C nodes is asserted
   (for example, typing in paragraph 5 of 1,000 replaces that paragraph, its
   Text nodes on the edited line and the Document). Scripted cases include
   unwrapping a nested inline note (the inner note is a new node, because its
@@ -998,8 +978,8 @@ pretend otherwise:
   value carrying the new destination).
 - **Work counters.** Deterministic counters, like the existing
   `input_line_work` and `delimiter_work`, gate lines re-read, inline bytes
-  re-parsed, child summaries recombined, finish nodes visited and nodes
-  materialized per edit against the bounds of 7.1,
+  re-parsed, child summaries recombined, finish nodes visited and C nodes
+  replaced per edit against the bounds of 7.1,
   including adversarial shapes: a stray early opener, a 10,000-item list edited
   in the middle, 1,000 nested block quotes, a definition with thousands of
   references.
@@ -1008,10 +988,6 @@ pretend otherwise:
   those of a fresh parse, and fixtures with nested, duplicate, anonymous and
   unreferenced definitions check each binding's answers against the winners
   of the C registries, since the canonical dump does not call the queries.
-- **Aborted projections.** A projection interrupted at every node leaves the
-  binding's published document, table and version unchanged, and the next
-  projection, after further edits, equals a fresh parse with no table entry
-  for a retired id.
 - **Transactions.** The allocator-seam OOM sweep runs every edit at every
   allocation boundary and asserts that the session's text, document, ids and
   retained state equal the previous version afterwards, and that the next edit
@@ -1031,7 +1007,7 @@ Each step is one pull request that leaves `main` releasable.
    documents with footnote or specimen definitions.
 - [ ] **Step 2: Sessions with a whole-document restart.** Session API on every platform,
    the text tree, the journal and transactional edits, identity matching,
-   value deduplication, versions and `reuse` materialization. The restart
+   value deduplication, and MCB3 with ids and extents. The restart
    point is always the document and nothing converges: this is the degenerate
    case of the final algorithm, and it already gives R1, R3, R4 and R5, with
    O(n) parse work.
@@ -1064,15 +1040,22 @@ Each step is one pull request that leaves `main` releasable.
   with a second model; and lifted definitions named by `MarkupID`, which kept
   special identity and position rules for the lifted list.
 - **D3 Swift storage. Decided 2026-09-29: per-node records,** on the
-  condition that no operation recurses over tree edges (6.3). The rejected
-  alternative kept the flat store with a cross-version segment scheme, which
-  retains dead records until compaction.
+  condition that no operation recurses over tree edges (6.3). Swift then has
+  the one object per node that Kotlin and ECMAScript have, instead of a
+  Swift-only layout whose array exists only to bound release depth.
 - **D4 Coordinate unit. Decided 2026-09-29: one unit per session.** Edit
   offsets and returned columns use the same unit, UTF-16 by default in
   bindings and UTF-8 in C. Text is stored as UTF-8, and the C text tree keeps
   byte and UTF-16 counts so conversion happens once, in C (4.4). The rejected
   alternative was UTF-8 everywhere, which leaves every editor integration to
   convert `NSRange` and JavaScript offsets itself.
+- **D5 Materialization. Decided 2026-09-29: every binding builds each
+  document whole from C (6.1).** Unchanged nodes reach consumers as equal
+  values with unchanged ids, and frameworks compare them with deep equality.
+  Rejected: sharing objects between published documents, which needs either
+  a binding-side id table with retired-id reports from the engine or a
+  projection that pairs each document with the previous one; both give the
+  binding state and logic of its own.
 
 ## 11. Rejected alternatives
 
