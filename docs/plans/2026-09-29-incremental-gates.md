@@ -198,34 +198,35 @@ node that the fresh parse's answer names, or none when it has none.
   order (plan 4.1), every id below 2^53. Two fresh parses of the same text are
   therefore equal, ids included.
 
-### 4.3 Reuse is exactly value equality (R3)
+### 4.3 Minimal change is exactly value inequality (R3)
 
-For every node `N` of the new document whose id also names a node `O` of the
-previous document: `N` is the same object as `O` if and only if `N` is deep
-equal to `O` (plan 4.2). The "only if" direction catches a stale node reused
-after its value changed. The "if" direction catches a wasteful new object for
-an unchanged value, which forces every consumer to re-render it. Every
-ancestor of a new object is a new object.
+Identity is an id and equality, nothing else (plan D5): a binding rebuilds its
+whole tree from the engine on every publish, so no gate asks a binding to keep
+an object. What R3 constrains is the engine's work. For every node of the new
+document, the harness classifies it against the node of the previous document
+with the same id: **unchanged** when the two are deep equal (plan 4.2), and
+**changed** when they differ or no previous node has that id. `N` (6.2) is the
+number of changed nodes. The engine's `nodes_new`, the nodes it created or
+rewrote in the step, must equal `N` exactly: fewer means a stale node survived
+a change (which 4.1 also catches), more means it rewrote a node whose value did
+not change. An ancestor of a changed node is changed, because its children are
+part of its value.
 
-The comparison is always against a **snapshot** of `O` taken before the step:
-its kind, id, scalars, extent and the ids of its children, keyed by id, on
-every platform, together with its absolute scope from `scope(of:in:)` and the
-text before the step. The extent is part of the value; the absolute scope is
-not, and serves only the matching of 4.4. Comparing against the live object would be meaningless if a subject
-mutated a published node in place, because `O` would already show the new
-value. "Same object" is object identity in Swift, Kotlin and ECMAScript, and
-an unchanged node `version` in C (plan 5.9), whose views the next edit
-invalidates.
+The comparison is always against a **snapshot** of the previous node taken
+before the step: its kind, id, scalars, extent and the ids of its children,
+keyed by id, on every platform, together with its absolute scope from
+`scope(of:in:)` and the text before the step. The extent is part of the value;
+the absolute scope is not, and serves only the matching of 4.4.
 
 Published documents are immutable (R9). Every binding keeps the previous
 document alive across the step and checks, after the step, that its
 canonical dump against the text before the step and its per-node snapshot are
-unchanged. A subject that edits a published
-value in place fails here even when the new document is correct.
+unchanged. A subject that edits a published value in place fails here even
+when the new document is correct.
 
 ### 4.4 Identity follows the matching rule
 
-4.3 constrains objects only where an id persists, so on its own it would
+4.3 classifies nodes by the ids the subject assigned, so on its own it would
 accept an implementation that gives a node a new id, changed or not, and
 loses its view state. The plan states which old node each new node continues
 (5.9) in terms the harness can evaluate from the public model alone: the
@@ -245,9 +246,9 @@ every node of every step:
   continues is retired.
 
 This holds whether the node's value changed or not, so an edited heading,
-list item or table cell keeps its id exactly as an edited paragraph does. In
-addition, a continued node whose subtree value equals its predecessor's is
-the predecessor itself (4.3). Extents are relative, so text that moves a
+list item or table cell keeps its id exactly as an edited paragraph does. A
+continued node whose value equals its predecessor's is unchanged and outside
+`N` (4.3). Extents are relative, so text that moves a
 node without touching it leaves its value unchanged. The one exception is
 structural: the first continued node after a changed or inserted sibling in
 the same relation may get a new `lead` (recomputed at convergence, plan 5.3), and
@@ -264,7 +265,7 @@ a first word keeps the id; deleting a sibling retires its id and does not hand
 it to the next; merging two paragraphs keeps the first id; replacing a whole
 paragraph's text keeps its id; a paragraph that becomes a Setext heading is a
 new node; a paragraph moved into a new quote is a new node. For the plan's
-example, typing in paragraph 5 of 1,000, the new objects are exactly that
+example, typing in paragraph 5 of 1,000, the changed nodes are exactly that
 paragraph, its Text nodes on the edited line and the Document.
 
 ### 4.6 Streaming
@@ -291,7 +292,7 @@ correctness set (every edit and stream family, batches, declaration changes,
 pending-byte chunks and the invalid arguments of 4.9) with a failure injected
 at every allocation boundary. Each independently mutating path of the
 transaction is therefore swept. After each
-failure the subject's text, dump, ids, versions and retained-state digest
+failure the subject's text, dump, ids and retained-state digest
 equal the previous version's. Then the unmodified step is retried: a valid
 step succeeds, and an invalid step of 4.9 is rejected as invalid again, with
 the session still unchanged.
@@ -311,7 +312,7 @@ bit-for-bit at its previous version.
 ### 4.10 Depth and concurrency
 
 Every binding runs the plan's deep-tree set (6.3) through a session: release
-of a deep document whose subtree is shared with a newer version, equality of
+of a deep document while a newer version is alive, equality of
 two deep documents that differ at the deepest leaf, walking, scope lookup, hit
 testing and `description`, on a thread with a small fixed stack.
 
@@ -324,14 +325,15 @@ index, on the same fresh document of every step, and every answer must equal
 the single-threaded answer. Each index is built exactly once per document:
 the test build counts index constructions, and the count after the concurrent
 first use is one per index, not one per thread. This runs under the thread
-sanitizer where the platform has one. It also covers documents that share subtrees with the
-previous version while that version is being read on another thread.
+sanitizer where the platform has one. It also covers reading the previous
+version on another thread while the session publishes the next.
 
 ### 4.11 Platforms and units
 
 C and every binding run the same scripts in both units. A binding checks 4.1
-against its own dumper, as conformance does today, and checks 4.3–4.5 with its
-own object identity. A binding builds its values from what the engine returns
+against its own dumper, as conformance does today, and checks 4.2, 4.4 and 4.5
+on ids and values; object identity is not part of its contract (4.3). A
+binding builds its values from what the engine returns
 and adds no bookkeeping of its own, so its construction cost is the platform's
 own cost and is not gated (5.1).
 
@@ -402,7 +404,7 @@ Deterministic counters, in the style of the existing `input_line_work` and
 | `registry_recomputed` | Registry entries whose winner or ordinal was recomputed |
 | `lookups_invalidated` | Inline roots re-parsed for a resolution change |
 | `finish_visited` | Nodes visited by finish steps and passes |
-| `nodes_new` | Nodes whose version is the current edit |
+| `nodes_new` | Nodes the engine created or rewrote in the step |
 | `journal_entries` | Transaction journal entries |
 | `tree_visited` | Nodes of the shared balanced tree (text, ledger, registries; plan 5.1) visited by lookups, splices and shifts |
 
@@ -439,7 +441,7 @@ quantities, per step:
 | `C` | Per block in `A`: its child count, and how many of its children intersect some connected region of `E` (not only those that start inside it) |
 | `K` | Registry keys whose winner, family or ordinal differs between the two fresh parses: reference and heading labels, anchors, footnote labels, specimen ids |
 | `R(K)` | Inline roots of the new fresh parse that look up a key in `K`, and their content bytes |
-| `N` | New objects the step must produce, as 4.3 and 4.4 predict them |
+| `N` | Changed nodes of the step: nodes of the new document with no predecessor under 4.4's matching, or whose value differs from their predecessor's (4.3) |
 | `T` | Text-tree journal entries the step may need: for each edit range, 1 + 2`H`, plus 1 for the pending bytes. The 1 is the entry that takes the replaced chunks (plan 5.11); the rest are the internal nodes on the paths to the range's two ends, at most `H` each. Inserted chunks are new allocations and need no entry. `T` depends on the text and the edit only, never on the text tree's chunk size |
 
 The bounds:
@@ -644,9 +646,9 @@ named oracle:
 | --- | --- |
 | Returns the previous document for one step | 4.1 |
 | Renumbers every id on every step (a fresh parse with fresh ids) | 4.2 lineage, 4.4, 4.5 |
-| Returns deep copies with the same ids | 4.3 "if" direction |
+| Rewrites every node with the same ids | 4.3 (`nodes_new` > `N`) |
 | Gives an edited heading a new id | 4.4 |
-| Keeps a node object whose text changed | 4.3 "only if" direction |
+| Keeps a node whose text changed | 4.1, and 4.3 (`nodes_new` < `N`) |
 | Reuses a retired id for a new node | 4.2 |
 | Applies a step and then reports failure | 4.8 |
 | Accepts an end inside a scalar | 4.9 |
