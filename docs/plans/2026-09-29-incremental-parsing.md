@@ -248,14 +248,22 @@ C views borrow from the session until its next edit.
 
 - **Units.** Editors report UTF-16 offsets (UIKit `NSRange`, Compose
   `TextFieldValue`, CodeMirror and Monaco). Bindings default to UTF-16 and
-  also accept UTF-8. C takes UTF-8 bytes. The line table (5.1) converts in
-  O(log lines + line length).
+  also accept UTF-8. C takes UTF-8 bytes. The text tree (5.1) converts in
+  O(log n + line length).
 - **Batches.** `apply` takes edits in the coordinates of the text before the
   batch, applies them in descending start order, unions their damage and
   parses once, for multi-cursor edits and bulk replacements.
-- **Partial UTF-8.** C `append` may split a scalar. Bytes of an incomplete
-  trailing sequence are held back from parsing until it completes, so the
-  valid-UTF-8 precondition applies to every parsed prefix.
+- **Partial UTF-8.** C `append` may split a scalar. The bytes of an
+  incomplete trailing sequence are **pending**: they are not part of the
+  session's text, `markdown_core_session_text` does not return them, and the
+  document is the parse of the text without them. When a later append
+  completes the sequence, the whole scalar enters the text in that edit. The
+  session's text is therefore always valid UTF-8, the existing precondition
+  holds for every parse, and R1 compares against the text as defined here.
+  An append that makes the pending bytes impossible to complete (a byte that
+  cannot continue the sequence) is rejected as an invalid argument, and the
+  session is unchanged. Binding strings are whole scalars, so bindings never
+  have pending bytes.
 - **`Document.parse`** is unchanged in signature. It is a session that
   inserts the whole source once and is then discarded.
 
@@ -265,8 +273,7 @@ C views borrow from the session until its next edit.
 
 | State | Contents | Size |
 | --- | --- | --- |
-| Text | Byte gap buffer; the gap sits at the last edit, so localized edits and appends cost the edit size amortized | Source + gap |
-| Line table | Line start offsets with UTF-8 and UTF-16 prefix lengths | O(lines) |
+| Text tree | The source as a balanced tree of bounded byte chunks; each subtree records its byte, line-terminator and UTF-16 counts | O(source) |
 | Tree | The live C tree: relative spans, ids, versions | O(nodes) |
 | Block ledger | One entry per block node at any depth: start offset, node id, entry frontier, read end | O(blocks) |
 | Registries | Reference, heading, anchor, footnote and specimen declarations in source order; label winners | O(declarations) |
@@ -274,22 +281,29 @@ C views borrow from the session until its next edit.
 | Frontier | The suspended block parser at the last line boundary, when the document ends in open blocks (5.5) | O(open spine + open leaf content) |
 | Inline ledger | Per inline root: stable prefix end (5.6) | O(inline roots) |
 
-The line table, the block ledger and the source-ordered registries are
-offset-keyed sequences. They share one structure: a sorted run of offsets
-with one pending shift, so that an edit shifts every later key in O(1) and the
-shift is applied lazily as the edit point moves (the partitioning used by
-text editors for line starts). Lookup is by binary search. There is one such
-structure, not one per consumer.
+The text, the block ledger and the source-ordered registries are sequences
+whose elements have source extents. They share one structure: a balanced
+tree whose elements store their length (for text, a chunk's bytes; for a
+ledger or registry entry, the byte distance from the previous entry) and
+whose internal nodes store the sums. Absolute offsets, line numbers and
+UTF-16 offsets are prefix sums. Finding an offset, inserting, deleting, and
+shifting everything after an edit all cost O(log n), wherever the edit is, so
+alternating edits at opposite ends of a document cost the same as edits in
+one place. There is one such structure, not one per consumer. (A gap buffer,
+or a sorted array with one lazy shift, would move Θ(n) bytes or keys whenever
+consecutive edits are far apart.)
 
 Every other workspace in `docs/architecture/parser-input-storage.md`
 (lookahead facts, table geometry, source-order scratch, delimiter pools)
 stays scoped to the transaction that re-parses the damaged region. Caches keyed
 by line are therefore never stale.
 
-Reading source now goes through the line table for every consumer, as it
-already does for the driver, lookahead, Properties and tables. A line that
-straddles the gap gets a contiguous view through the mechanism that already
-provides normalized views for NUL-bearing lines, so no scanner sees a gap.
+Reading source now goes through the input index for every consumer, as it
+already does for the driver, lookahead, Properties and tables. The index
+resolves a line against the text tree. A line inside one chunk is borrowed. A
+line that spans chunks gets one contiguous view through the mechanism that
+already provides normalized views for NUL-bearing lines, so no scanner sees a
+chunk boundary. The view lives for the transaction, like other scratch.
 
 ### 5.2 From an edit to damage
 
@@ -297,13 +311,28 @@ An edit replaces bytes `[a, b)` of the old text with `n` bytes. Damage is
 first widened to whole physical lines: from the start of the line containing
 `a` (or the previous line when `a` follows a CR, since an inserted LF can
 join CR and LF into one terminator) to the end of the line containing the new
-`a + n`. The mapping of old positions is:
+`a + n`.
+
+Old positions map to new ones in two classes. A **surviving** position is one
+whose byte was not replaced; it has one exact image. A **replaced** position
+was inside the replaced range; it has an interval of candidate images and is
+used only for identity (5.9):
 
 ```text
-x < a       → x
-x >= b      → x + n - (b - a)
-a <= x < b  → the interval [a, a + n]   (used only for identity, 5.9)
+x < a                 surviving  → x
+x >= b, and b > a     surviving  → x + n - (b - a)
+x == a == b           surviving  → [a, a + n]   (insertion at x: the text
+                                                  may join the node's start)
+x > a == b            surviving  → x + n
+a <= x < b            replaced   → [a, a + n]
 ```
+
+An insertion is the only case where a surviving start has an interval: typing
+at the start of a paragraph either extends the paragraph backwards (the new
+start is `a`) or creates text before it (the new start is `a + n`), and both
+are the same paragraph. A deletion's end `b` is surviving and maps exactly to
+`a + n`, so it is never confused with a replaced start that maps into
+`[a, a + n]`; 5.9 gives surviving starts priority.
 
 ### 5.3 Blocks: restart, re-parse, converge
 
@@ -336,7 +365,8 @@ at any depth, so an edit in the thirtieth item of a list restarts at that item
 Restarting at `R` reopens `R`'s ancestors, which are exactly the open spine
 at that line: each ancestor is marked open and keeps its continuation facts
 from its node data. `R` and everything after it in the ancestors' child chains
-are detached and kept as reuse candidates. The line machine then runs from
+are detached and kept as reuse candidates. Every one of these changes goes
+through the transaction journal (5.11), so a failed edit can restore them. The line machine then runs from
 `R`'s first line with the ordinary `S_process_line`. No other entry point
 exists.
 
@@ -507,14 +537,24 @@ node:
 
 - Matching runs per owner relation between a new owner and the old node it
   matched, starting from the reopened spine, whose nodes kept their ids.
-- An old node `O` matches a new node `N` when their kinds are equal and `N`'s
-  start lies in the image of `O`'s start under the edit mapping (5.2). An
-  old start inside the replaced range maps to the whole inserted interval, so
-  typing at the very start of a paragraph keeps the paragraph's id, and two
-  paragraphs merged by deleting the blank line between them keep the first
-  one's id.
-- Both sequences are in source order and the match is greedy and monotone,
-  so it is linear in the region.
+- An old node `O` can match a new node `N` when their kinds are equal and
+  `N`'s start lies in the image of `O`'s start under the edit mapping (5.2).
+- Matching runs in two passes. The first pass considers only old nodes with
+  **surviving** starts; the second considers old nodes with **replaced**
+  starts against the new nodes the first pass left unmatched. A node whose
+  start byte survived therefore always wins over a node whose start byte was
+  deleted, even when both images contain the same new start.
+- Within a pass both sequences are in source order and the match is greedy
+  and monotone: each new node takes the earliest unmatched old candidate, and
+  no later match may precede an earlier one. Each pass is linear in the
+  region.
+- Consequences: typing at the very start of a paragraph keeps its id (its
+  start is surviving with the insertion interval). Deleting a node's first
+  word keeps its id when nothing with a surviving start begins at the same
+  place. Deleting a whole sibling does not hand its id to the next sibling:
+  the next sibling's start survives and maps exactly, so it matches itself in
+  the first pass, and the deleted sibling is left unmatched. Two paragraphs
+  merged by deleting the blank line between them keep the first one's id.
 - Children of an unmatched owner get new ids. A paragraph that moves into a
   new blockquote is a new node, as it is to every UI framework.
 
@@ -543,6 +583,33 @@ because its child collection changed.
 - Finish: per-root steps on unchanged roots gave the same results before.
 
 This argument is also the test oracle (section 8).
+
+### 5.11 Transactions
+
+An edit is a transaction over session-owned state: the text tree, the live
+tree's links, flags and fields, the ledger, the registries, the lookup index,
+the frontier and the inline ledger. Everything else a re-parse allocates is
+scratch or new nodes, which a failure simply releases.
+
+Every mutation of session-owned state goes through one journal. The journal
+entry that can undo a mutation is reserved before the mutation happens, so
+recording never fails after the state has changed. Examples: detaching a child
+chain records the old links; marking a spine node open records its flags;
+replacing a text range first moves the replaced chunks into the entry instead
+of freeing them; splicing a ledger or registry range keeps the removed
+elements in the entry.
+
+- **Commit** happens once, after the new document is complete: the journal's
+  retained old elements (replaced chunks, removed ledger entries, old nodes
+  that did not survive) are released and the version advances.
+- **Rollback** replays the journal in reverse. It allocates nothing and cannot
+  fail, and afterwards the session's text, document, ids, versions and
+  retained state are the previous version's, bit for bit.
+
+Id allocation takes part: ids handed out by a failed transaction are returned,
+so a failed edit does not skip ids either. The journal is the only mutation
+path to session state; an audit rejects direct writes to it from parse code,
+as E2 does for closed nodes.
 
 ## 6. Bindings
 
@@ -623,8 +690,8 @@ resolution changes.
 | Edit that changes container structure | O(blocks until convergence) | O(re-read leaves + k) | as above | O(changed nodes + F) |
 | Fresh parse | O(n), as today | O(n) | O(n) | O(n) |
 
-The block ledger, registries and line table add O(log n) per lookup and O(1)
-amortized per shifted key. No bound depends on a size threshold.
+The text tree, the ledger and the registries add O(log n) per lookup,
+insertion, deletion and shift, wherever the edit is. No bound depends on a size threshold.
 
 ### 7.2 Costs that are the language's, not the algorithm's
 
@@ -653,7 +720,9 @@ pretend otherwise:
 - **Streaming.** Every corpus document is fed in chunks of every size from
   one byte up, and split at every byte offset for small documents, including
   inside UTF-8 scalars in C. Every intermediate document must equal a fresh
-  parse of the prefix.
+  parse of the session's text, which excludes pending bytes (4.4), and the
+  session's text must equal the longest complete-scalar prefix of the bytes
+  appended so far.
 - **Identity and minimality.** After every edit: ids are unique; no id
   changed kind; every reused object equals the fresh-parse node at the same
   position; every matched node that is a new object differs in value from its
@@ -682,7 +751,7 @@ Each step is one pull request that leaves `main` releasable.
    with walker and document scope resolution, MCB3, and the Swift record
    storage. The canonical dump and conformance fixtures do not change.
 - [ ] **Step 2: Sessions with a whole-document restart.** Session API on every platform,
-   the gap buffer and line table, transactional edits, identity matching,
+   the text tree, the journal and transactional edits, identity matching,
    value deduplication, versions and `reuse` materialization. The restart
    point is always the document and nothing converges: this is the degenerate
    case of the final algorithm, and it already gives R1, R3, R4 and R5, with
