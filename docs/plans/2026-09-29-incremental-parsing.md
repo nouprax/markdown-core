@@ -344,7 +344,7 @@ C views borrow from the session until its next edit.
 - **`Document.parse`** keeps its signature apart from the unit parameter. It
   is a session that inserts the whole source once and is then discarded.
 
-### 4.5 Inline notes own their body
+### 4.5 Inline notes name their footnote by identity
 
 Today an inline note `^[body]` produces a `Cite` whose `Citation` names a
 generated id `inline-N`, and a `Footnote` with that id in
@@ -357,28 +357,43 @@ renames a note elsewhere. Neither dependency has anything to do with what the
 note means, and `dialect/footnotes.md` already tells applications to treat
 these ids as opaque, not as display numbers.
 
-The design removes the generated id. An inline note becomes one inline kind
-at its call site:
+The unified footnote model stays exactly as it is: `^[body]` produces a
+one-item `Cite` whose `Citation` has the footnote referent, and a `Footnote`
+in `Document.footnotes`, in source order, that holds the body. Only the way
+the referent names its footnote changes. A referenced footnote is named by
+its authored label, as now. An inline note has no label, so its footnote is
+named by its node identity, which already exists (4.1) and depends on nothing
+else in the document:
 
 ```text
-InlineNote(content: [Markup], span)     inline content, owned in place
+CitationReferent = bib(key, mode) | footnote(FootnoteTarget) | specimen(label)
+FootnoteTarget   = label(String) | note(MarkupID)
+
+Footnote(label: String?, content: [Markup], span)
+    label: the normalized authored label; null for an inline note
 ```
 
-- `^[body]` produces an `InlineNote` where it produced a `Cite` before. Its
-  body is its content, owned in the tree like emphasis content, so a nested
-  inline note is ordinary nesting and visits in source order.
-- `Document.footnotes` holds only referenced definitions, whose ids are their
-  authored labels. Nothing in the AST is generated from a document-wide
-  count, and inline-note recognition no longer reads the footnote label
-  registry.
-- A consumer that numbers notes for display walks the document in order, as
-  it already does for referenced calls.
-- Inserting, deleting or editing an inline note changes only its own inline
-  root. The `inline-N` assignment, its reservation against authored ids and
-  the `-K` rule are deleted, not moved into the session.
+- `Footnote.id` and `Specimen.id` are renamed `label`, because every node now
+  has `id: MarkupID` (4.1). A null label already has a precedent: an
+  anonymous `Specimen`.
+- An inline note's `Citation` holds `footnote(note(n))`, where `n` is the
+  `MarkupID` of its `Footnote`. Within a session that id is stable, and in a
+  fresh parse it is deterministic, so inserting, deleting or editing one note
+  changes only that note's `Cite`, its `Footnote` and the spliced
+  `Document.footnotes` sequence. No other note or Cite changes value.
+- `Document.footnote(for:)` resolves either target in O(1): a label to the
+  first definition with that label, as today, and a note id to its
+  `Footnote`. Its index is published once, like the scope index (4.3).
+- Nesting and cycles are unchanged: a note inside a note is an id edge from
+  the outer body's `Cite` to the inner `Footnote`, never an owned body.
+- The canonical dump prints a `note` target as its footnote's source start,
+  which is id-free and deterministic, so R1's id-free comparison still holds.
+- The `inline-N` assignment, its reservation against authored labels and the
+  `-K` rule are deleted, not moved into the session. Inline-note recognition
+  no longer reads the footnote label registry.
 
 This changes `canonical-ast.md`, `dialect/footnotes.md`, the canonical dump
-of inline notes and their fixtures, and every binding (D2).
+of inline-note referents and their fixtures, and every binding (D2).
 
 ## 5. Engine
 
@@ -682,7 +697,8 @@ registry. Then:
   the lookup index.
 - **Footnote and specimen order.** `Document.footnotes` and
   `Document.specimens` are the source-ordered registries, spliced. Inline
-  notes are not in either registry (4.5), so no ordinal is recomputed.
+  notes are in the footnote registry without a label (4.5), so no ordinal is
+  recomputed.
 
 ### 5.8 Finish steps and passes
 
@@ -982,9 +998,9 @@ Each step is one pull request that leaves `main` releasable.
 
 - [ ] **Step 1: Model.** Ids for fresh parses, deep equality and hashing, relative spans
    with walker and document scope resolution, MCB3, and the Swift record
-   storage, the coordinate unit (4.4), and inline notes at their call site
-   (4.5). The canonical dump and conformance fixtures change only for inline
-   notes.
+   storage, the coordinate unit (4.4), and footnote targets by identity for
+   inline notes (4.5). The canonical dump and conformance fixtures change only
+   for inline-note referents.
 - [ ] **Step 2: Sessions with a whole-document restart.** Session API on every platform,
    the text tree, the journal and transactional edits, identity matching,
    value deduplication, versions and `reuse` materialization. The restart
@@ -1007,9 +1023,12 @@ Each step is one pull request that leaves `main` releasable.
   column range as today's `Markup.scope`, with the same conventions and
   sentinels. The rejected alternative kept `Markup.scope` in node values, so
   any edit that changes the line count would replace every node after it.
-- **D2 Inline notes. Decided 2026-09-29: no generated ids.** An inline note
-  is an `InlineNote` owned at its call site (4.5). The rejected alternative
-  kept `inline-N` ordinals, so inserting one note changed every later note.
+- **D2 Inline notes. Decided 2026-09-29: no generated ids, same model.** An
+  inline note keeps the `Cite`, `Citation` and `Footnote` model; its referent
+  names the `Footnote` by `MarkupID` instead of a generated `inline-N` label
+  (4.5). Rejected: keeping `inline-N`, where inserting one note changed every
+  later note, and a separate `InlineNote` kind, which would express footnote
+  semantics with a second model.
 - **D3 Swift storage. Decided 2026-09-29: per-node records,** on the
   condition that no operation recurses over tree edges (6.3). The rejected
   alternative kept the flat store with a cross-version segment scheme, which
