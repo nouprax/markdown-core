@@ -31,8 +31,8 @@ lets four steps land without the evidence the design depends on:
 
 - Step 1 adds ids, deep equality, relative spans and Swift per-node records.
   Every one of them costs the one-shot parse something, and the current gate
-  sees only `source_to_buffer`. Nothing today would notice the AST stage or
-  materialization getting slower.
+  sees only `source_to_buffer`. Nothing today would notice the AST stage
+  getting slower.
 - Steps 2–5 each claim a property (R1 equivalence, R3 minimal replacement, R4
   stable identity, R2 bounded re-reading). Section 5.10 of the plan argues
   those properties; only an oracle that runs every edit shows that the code
@@ -266,8 +266,8 @@ failure the subject's text, dump, ids, versions and retained-state digest
 equal the previous version's. Then the unmodified step is retried: a valid
 step succeeds, and an invalid step of 4.9 is rejected as invalid again, with
 the session still unchanged. The same
-sweep runs through each binding's two-phase publication (plan 6.1) with the
-host allocation failing after the engine prepared the edit.
+sweep runs through each binding's publication with the host allocation
+failing after the engine prepared the edit.
 
 ### 4.9 Invalid arguments
 
@@ -283,11 +283,11 @@ of a deep document whose subtree is shared with a newer version, equality of
 two deep documents that differ at the deepest leaf, walking, scope lookup, hit
 testing and `description`, on a thread with a small fixed stack.
 
-The lazily published document indexes (the scope index of plan 4.3 and the
-footnote index of plan 4.5) are exercised by concurrent first use in Swift and
-Kotlin: several threads released together by a barrier make their first
-`Document.scope(of:)`, `Document.node(at:)` and `Document.footnote(for:)`
-calls on the same fresh document of every step, and every answer must equal
+Every document index a binding builds lazily (the scope index of plan 4.3,
+and any other the plan publishes that way) is exercised by concurrent first
+use in Swift and Kotlin: several threads released together by a barrier make
+their first `Document.scope(of:)` and `Document.node(at:)` calls, and their
+first call into each other lazy index, on the same fresh document of every step, and every answer must equal
 the single-threaded answer. Each index is built exactly once per document:
 the test build counts index constructions, and the count after the concurrent
 first use is one per index, not one per thread. This runs under the thread
@@ -298,8 +298,9 @@ previous version while that version is being read on another thread.
 
 C and every binding run the same scripts in both units. A binding checks 4.1
 against its own dumper, as conformance does today, and checks 4.3–4.5 with its
-own object identity. The binding also counts the objects it materialized per
-step; that count equals the number of new objects 4.3 observed.
+own object identity. A binding builds its values from what the engine returns
+and adds no bookkeeping of its own, so its construction cost is the platform's
+own cost and is not gated (5.1).
 
 ### 4.12 Fuzzing
 
@@ -327,9 +328,10 @@ reparsing after every chunk of a megabyte stream is the quadratic cost the
 design removes and cannot be run. Per-step work of those scripts is still
 gated on every step, by the counters (6.2), which are exact and cheap.
 
-The C benchmark measures the engine. Materialization in the bindings is gated
-by deterministic counters (5.3), not by timings, as the testing architecture
-already requires.
+The gates measure the C engine only. A binding builds its platform values from
+what the engine returns; that construction is the platform's inherent cost, the
+same for any engine design, and no gate measures it or shapes the engine
+around it. Bindings are gated for correctness (section 4), never for cost.
 
 ### 5.2 Metrics per workload
 
@@ -361,7 +363,6 @@ Deterministic counters, in the style of the existing `input_line_work` and
 | `lookups_invalidated` | Inline roots re-parsed for a resolution change |
 | `finish_visited` | Nodes visited by finish steps and passes |
 | `nodes_new` | Nodes whose version is the current edit |
-| `nodes_materialized` | Objects a binding built (per binding) |
 | `journal_entries` | Transaction journal entries |
 
 Counters are cheap, exact and platform-independent. They are where the plan's
@@ -411,7 +412,6 @@ The bounds:
 | `lookups_invalidated` | ≤ number of inline roots in `R(K)` |
 | `finish_visited` | ≤ `N` + nodes of the inline roots re-parsed (in `U` or `R(K)`) |
 | `nodes_new` | = `N` |
-| `nodes_materialized` | = `N`, per binding |
 | `journal_entries` | ≤ `ledger_touched` + `registry_recomputed` + `lookups_invalidated` + `T` + `d` |
 
 For a stream chunk, `E` is the last line before the chunk together with the
@@ -495,7 +495,7 @@ When the base revision has no `session` subject, which is the case for the
 pull request of rollout step 2, there is nothing of the same kind to compare
 with. That pull request is gated by 6.2 and 6.4 alone, reports its session
 numbers beside the base's `reparse` numbers, and becomes the session baseline;
-the 1.02 rules apply to `session` from the next pull request (decision G5).
+the 1.02 rules apply to `session` from the next pull request (decision G4).
 
 Speedup and `stream_ratio` are reported, not gated. They follow from 6.3–6.5,
 and a fixed target on either would be a number chosen from a measurement.
@@ -509,7 +509,7 @@ its numbers are reported with the `reparse` subject.
 | --- | --- | --- |
 | 0 Harness (this plan) | Scripts, text model and pending-byte model self-tests; 4.1 with `reparse` | Edit and stream runners report the R column; one-shot adds the `buffer_to_ast` rule (6.5) |
 | 1 Model | 4.2 for fresh parses; deep equality and 4.10 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
-| 2 Sessions, whole-document restart | 4.1–4.12 on the correctness set, every platform, both units | 6.4 on every workload, which sets the session baseline for 6.5 (G5); 6.2 for `nodes_new` and `nodes_materialized` |
+| 2 Sessions, whole-document restart | 4.1–4.12 on the correctness set, every platform, both units | 6.4 on every workload, which sets the session baseline for 6.5 (G4); 6.2 for `nodes_new` |
 | 3 Block restart and convergence | Unchanged | 6.2 for `lines_reread`, `ledger_touched` and `summaries_combined`, and for `inline_bytes` and `finish_visited` on shapes without declarations; 6.3 for the local edit families on shapes without declarations |
 | 4 Session registries | Unchanged | 6.2 for `registry_recomputed` and `lookups_invalidated`, and for `inline_bytes`, `finish_visited` and `journal_entries` on every shape; 6.3 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`) and for the local steps of `declarations` |
 | 5 Frontier and inline restart | Unchanged | 6.2 in its stream form for `lines_reread` and `inline_bytes`; 6.3 for `tokens` and `rows` |
@@ -618,14 +618,6 @@ as section 7 says, in their own pull requests.
 - **G3 Flatness factor.** Proposed 1.25 across a 64 times size range (6.3).
   It is a statement of "no linear term", and it should not be loosened to pass
   a measurement.
-- **G4 Materialization in the flat shape.** In the bindings, publishing a new
-  version rebuilds each changed node's child collection, so a stream into a
-  document with thousands of top-level blocks builds a collection of that size
-  per chunk. Every consumer framework also reconciles that collection per
-  update, so this is the consumers' cost as much as ours. Proposed: gate the
-  engine as flat (6.3) and gate `nodes_materialized` against the plan's
-  O(d + F) term, reporting binding collection sizes, rather than changing
-  the value model's collections to persistent ones.
-- **G5 The session baseline.** Proposed: the step 2 pull request sets the
+- **G4 The session baseline.** Proposed: the step 2 pull request sets the
   session baseline under 6.2 and 6.4 only, and the 1.02 regression rules
   apply to the session from then on (6.5).
