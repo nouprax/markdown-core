@@ -146,6 +146,35 @@ Rules:
   comparable. Nothing may use an id as a key across documents that did not
   come from one session.
 
+#### The list identity contract
+
+The id is designed for SwiftUI's `ForEach` and `List`, and the same contract
+serves Compose `key` in lazy lists and React `key`. Those APIs require three
+things of the ids in one collection, and the rules above give each one:
+
+| Framework requirement | Guarantee |
+| --- | --- |
+| Ids in one collection are unique in every render. SwiftUI's behaviour with duplicates is undefined. | Ids are unique across the whole document, so they are unique in any collection taken from it: `content`, a list's `items`, a table's rows, footnotes, or a heterogeneous array a consumer builds from several relations. Every published document is complete, so there is no intermediate state with a duplicate. |
+| An id names the same element across updates, so its view state (focus, scroll anchor, expansion, animation) carries over. | An id persists while its node persists with the same kind in the same owner, through edits of its own content, edits elsewhere, and line shifts (5.9). |
+| An id that leaves never comes back as something else, or a new element inherits a removed element's state. | A session never reissues a retired id. A kind change is a new id, so the view type built for an id never changes. |
+
+Usage is direct. `Markup` refines `Identifiable` with `id: MarkupID`, so a
+collection of a concrete kind works as `ForEach(list.items) { … }`. A
+heterogeneous `MarkupCollection<any Markup>` uses the key path, because an
+existential does not itself conform to `Identifiable`:
+
+```swift
+ForEach(document.content, id: \.id) { block in
+    BlockView(block)          // switch on the concrete kind
+}
+```
+
+Because ids are scoped to a lineage, a view that replaces its whole document
+with one from a different session or a fresh `Document.parse` gives its
+container a new SwiftUI identity (`.id(session.identity)`), so no view state
+is matched across unrelated documents. Within one session nothing extra is
+needed.
+
 ### 4.2 Equality
 
 Equality is **deep value equality including `id`**: two nodes are equal when
@@ -589,6 +618,14 @@ node:
     id; the second retires.
   - Bytes between the edits of a batch keep their own exact images, so nodes
     there match as if each edit were alone.
+- **Slot pairing.** After anchor matching, the old and new nodes left
+  unmatched between two consecutive matched pairs of one relation (or its
+  ends) occupy the same slot in the list. They are paired in order by kind:
+  the k-th leftover old node of a kind takes the k-th leftover new node of
+  that kind. Selecting a paragraph's whole text and typing a replacement
+  therefore keeps the paragraph's id, like any other in-place edit of a row
+  in a list. A deletion with nothing inserted in its slot still retires the
+  deleted id. The pass is linear and keeps the match monotone.
 - Children of an unmatched owner get new ids. A paragraph that moves into a
   new blockquote is a new node, as it is to every UI framework.
 
