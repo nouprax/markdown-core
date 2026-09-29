@@ -187,17 +187,33 @@ an unchanged node `version` (plan 5.9); the harness snapshots the previous
 document's per-node values, keyed by id, because C views are invalidated by
 the next edit.
 
-### 4.4 Unchanged subtrees are reused
+### 4.4 Identity follows the matching rule
 
-4.3 allows an implementation to give an unchanged node a new id, which would
-lose its view state. This oracle closes that gap without knowing the
-algorithm. Using the plan's position mapping (5.2), each node `O` of the
-previous document is mapped to the image of its source range. If the new
-document has, at that image, a node of the same kind whose relative-span
-subtree value equals `O`'s, then that node is `O` itself: same id, same object.
-Relative spans make this precise: a node after an inserted line keeps its
-value, while the first node after a changed sibling may change its lead, and
-then is legitimately a new value with the same id.
+4.3 constrains objects only where an id persists, so on its own it would
+accept an implementation that gives a node a new id, changed or not, and
+loses its view state. The plan states which old node each new node continues
+(5.9) in terms the harness can evaluate from the public model alone: the
+position mapping of the step (5.2), absolute scopes, kinds and owner
+relations. The harness therefore computes the expected matching itself, for
+every node of every step:
+
+- An old node's anchor is its first byte that survived the step. Within the
+  relation of a matched owner, a new node of the same kind whose source range
+  contains the image of an old sibling's anchor continues the earliest such
+  sibling.
+- Old and new nodes left between two consecutive matched pairs of one
+  relation are paired in order by kind (slot pairing).
+- A new node that continues an old node has the old node's id. Every other
+  new node has an id the lineage has never seen. An old node that nothing
+  continues is retired.
+
+This holds whether the node's value changed or not, so an edited heading,
+list item or table cell keeps its id exactly as an edited paragraph does. In
+addition, a continued node whose relative-span subtree value equals its
+predecessor's is the predecessor itself (4.3). Relative spans make that
+precise: a node after an inserted line keeps its value, while the first node
+after a changed sibling may change its lead, and then is legitimately a new
+value with the same id.
 
 ### 4.5 Scripted identity
 
@@ -216,8 +232,11 @@ paragraph, its Text nodes on the edited line and the Document.
 
 After every chunk, 4.1–4.4 hold against the model text, where the model text
 is the longest complete-scalar prefix of the bytes appended so far. The pending
-bytes are never part of the text. An append whose bytes cannot complete the
-pending sequence is rejected and leaves the session unchanged (4.9).
+bytes are never part of the text. A chunk that extends the pending bytes to a
+longer prefix of a valid sequence is accepted and leaves them pending, as when
+a four-byte scalar arrives one byte per chunk in `bytes`. Only a byte that
+cannot continue the pending sequence makes the append invalid; it is rejected
+and leaves the session unchanged (4.9).
 
 ### 4.7 Batches
 
@@ -227,9 +246,11 @@ one at a time from the last to the first (so earlier offsets stay valid), and
 
 ### 4.8 Transactions (R7)
 
-The allocator-seam OOM sweep runs every step of the correctness set's
-`typing` and `tokens` scripts with a failure injected at every allocation
-boundary. After each
+The allocator-seam OOM sweep runs every step of every script in the
+correctness set (every edit and stream family, batches, declaration changes,
+pending-byte chunks and the invalid arguments of 4.9) with a failure injected
+at every allocation boundary. Each independently mutating path of the
+transaction is therefore swept. After each
 failure the subject's text, dump, ids, versions and retained-state digest
 equal the previous version's, and the unmodified step then succeeds. The same
 sweep runs through each binding's two-phase publication (plan 6.1) with the
@@ -274,8 +295,13 @@ a step is the cost under that edge.
 
 Per-step costs come from callgrind client requests (`CALLGRIND_DUMP_STATS`),
 which are no-ops outside valgrind. A script of at most 1,024 steps dumps after
-every step. A longer script (a streamed megabyte) dumps after 64 steps spaced
-evenly by position plus the last, and its total is measured from the edge.
+every step; every edit script is this size. A longer script (a streamed
+megabyte in `tokens` or `rows`) dumps after each of 1,024 contiguous windows of
+consecutive steps, so every step's cost lands in exactly one measured window.
+Its `reparse` column is measured at each window's first step, because
+reparsing after every chunk of a megabyte stream is the quadratic cost the
+design removes and cannot be run. Per-step work of those scripts is still
+gated on every step, by the counters (6.2), which are exact and cheap.
 
 The C benchmark measures the engine. Materialization in the bindings is gated
 by deterministic counters (5.3), not by timings, as the testing architecture
@@ -358,9 +384,10 @@ For every local edit family (`typing`, `lines`, `ranges`, `far`, `batch`) and
 for `tokens` and `rows` on every scale shape, per-step p95 Ir at 1 MB is at
 most 1.25 times the per-step p95 at 16 KB. The factor 64 in size leaves room
 for the O(log n) text tree, ledger and registries (six more tree levels) and
-nothing linear. For streams, the p95 of the chunks in the last tenth of the
-document is at most 1.25 times the p95 of the chunks in the second tenth, which
-catches per-chunk work that grows with the text already streamed.
+nothing linear. For streams, the p95 of the chunks in the last tenth of the document is at
+most 1.25 times the p95 of the chunks in the second tenth, which catches
+per-chunk work that grows with the text already streamed. A stream measured in
+windows (5.1) takes each window's mean step cost as its sample.
 
 The same rule covers the adversarial shapes whose cost the language keeps
 local: the 10,000-item list edited in the middle and the 1,000 nested quotes
@@ -375,9 +402,13 @@ document size fails it at any constant factor.
 
 ### 6.4 Never worse than reparsing
 
-For every step of every script, including `markers`, `declarations` and
-`random`, `step_ir` is at most 1.25 times `reparse_ir` of the same step
-(decision G2). The margin pays for
+For every step of every script of at most 1,024 steps, including `markers`,
+`declarations` and `random`, `step_ir` is at most 1.25 times `reparse_ir` of
+the same step (decision G2). For a longer stream, each window's total
+`step_ir` is at most 1.25 times its step count times the `reparse_ir` of the
+window's first step, which is the least a reparse of any step in the window
+costs; a single expensive step inside a window is caught by the per-step
+counter bounds of 6.2. The margin pays for
 matching, deduplication and the journal when an edit really does change the
 whole document; beyond it, an incremental edit would be a regression against
 the application that just reparses.
@@ -385,13 +416,20 @@ the application that just reparses.
 ### 6.5 Regressions
 
 Against the base revision, measured with the current harness and workloads on
-both sides as the one-shot gate already does:
+both sides as the one-shot gate already does, and always between the same
+subject on both sides:
 
 - each workload's per-step p95 and total `step_ir` are at most 1.02 times the
   base;
 - `retained` and `transient` are at most 1.02 times the base;
 - the one-shot gate keeps its `source_to_buffer` rule and adds the same rule
   to `buffer_to_ast`, per document.
+
+When the base revision has no `session` subject, which is the case for the
+pull request of rollout step 2, there is nothing of the same kind to compare
+with. That pull request is gated by 6.2 and 6.4 alone, reports its session
+numbers beside the base's `reparse` numbers, and becomes the session baseline;
+the 1.02 rules apply to `session` from the next pull request (decision G5).
 
 Speedup and `stream_ratio` are reported, not gated. They follow from 6.3–6.5,
 and a fixed target on either would be a number chosen from a measurement.
@@ -405,7 +443,7 @@ its numbers are reported with the `reparse` subject.
 | --- | --- | --- |
 | 0 Harness (this plan) | Scripts, text model and pending-byte model self-tests; 4.1 with `reparse` | Edit and stream runners report the R column; one-shot adds the `buffer_to_ast` rule (6.5) |
 | 1 Model | 4.2 for fresh parses; deep equality and 4.10 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
-| 2 Sessions, whole-document restart | 4.1–4.12 on the correctness set, every platform, both units | 6.4 and 6.5 on every workload; 6.2 for `nodes_new`, `nodes_materialized`, `journal_entries` |
+| 2 Sessions, whole-document restart | 4.1–4.12 on the correctness set, every platform, both units | 6.4 on every workload, which sets the session baseline for 6.5 (G5); 6.2 for `nodes_new`, `nodes_materialized`, `journal_entries` |
 | 3 Block restart and convergence | Unchanged | 6.2 for block counters; 6.3 for the local edit families on shapes without declarations |
 | 4 Session registries | Unchanged | 6.2 for registry counters; 6.3 on `refs` and the local steps of `declarations` |
 | 5 Frontier and inline restart | Unchanged | 6.2 for streaming; 6.3 for `tokens` and `rows` |
@@ -427,6 +465,7 @@ named oracle:
 | Returns the previous document for one step | 4.1 |
 | Renumbers every id on every step (a fresh parse with fresh ids) | 4.2 lineage, 4.4, 4.5 |
 | Returns deep copies with the same ids | 4.3 "if" direction |
+| Gives an edited heading a new id | 4.4 |
 | Keeps a node object whose text changed | 4.3 "only if" direction |
 | Reuses a retired id for a new node | 4.2 |
 | Applies a step and then reports failure | 4.8 |
@@ -455,7 +494,7 @@ arguments of 4.9. Scripts are offsets and short texts, so the set stays small
 enough to track.
 
 - C runs it as `incremental_runner` under the `api` label, with 4.1–4.9, and
-  the OOM sweep of 4.8 on `typing` and `tokens`.
+  the OOM sweep of 4.8 on every step.
 - Swift, Kotlin and ECMAScript consume it through the same lifecycle that
   delivers the canonical manifest to their conformance runners, in both units,
   with 4.1–4.7, 4.9–4.11 and the publication failures of 4.8.
@@ -519,3 +558,6 @@ as section 7 says, in their own pull requests.
   engine as flat (6.3) and gate `nodes_materialized` against the plan's
   O(d + F) term, reporting binding collection sizes, rather than changing
   the value model's collections to persistent ones.
+- **G5 The session baseline.** Proposed: the step 2 pull request sets the
+  session baseline under 6.2 and 6.4 only, and the 1.02 regression rules
+  apply to the session from then on (6.5).
