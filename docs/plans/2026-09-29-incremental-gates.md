@@ -125,7 +125,7 @@ the text model, so the same script tests both units.
 | `markers` | Add and remove `> `, `- `, `1. `, `# `, four spaces, a fence opener, a Setext underline, a table delimiter row, a definition term marker | Each block kind of the shape |
 | `ranges` | Paste a 2 KB section; delete a section; select a paragraph's whole text and type a replacement | Middle of the document |
 | `far` | Alternate single-scalar edits at the first and last line, 64 steps | Both ends |
-| `batch` | 16 disjoint edits in one `batch`, as multi-cursor typing | Spread across the document |
+| `batch` | 16 disjoint edits in one `batch`, as multi-cursor typing, listed in a seeded shuffled order | Spread across the document |
 | `declarations` | Change a reference destination; add and remove a duplicate reference label; add and remove a heading whose label collides; add and remove a footnote definition and an inline note | Declaration sites of `refs` and `prose` |
 | `undo` | Each `typing` to `declarations` step followed by its inverse | As the original step |
 | `random` | Seeded mixture of inserts, deletes and replacements at line and byte granularity, including CR/LF splits and NUL | Uniform over the text |
@@ -171,7 +171,9 @@ it compares meaning and positions and nothing that depends on history.
 - Ids are unique within the document, across every owned relation.
 - Over the whole lineage, the harness keeps a map from id to kind and a set of
   retired ids. An id never changes kind, and a retired id never appears again.
-- Two fresh parses of the same text are equal, ids included.
+- A fresh parse numbers its nodes 1, 2, 3, … without gaps in canonical walk
+  order (plan 4.1), every id below 2^53. Two fresh parses of the same text are
+  therefore equal, ids included.
 
 ### 4.3 Reuse is exactly value equality (R3)
 
@@ -241,7 +243,8 @@ and leaves the session unchanged (4.9).
 ### 4.7 Batches
 
 The dump after `batch(edits)` equals the dump after applying the same edits
-one at a time from the last to the first (so earlier offsets stay valid), and
+one at a time in descending order of their start offsets, whatever order the
+batch lists them in (so the offsets not yet applied stay valid), and
 4.1–4.4 hold for the batch as one step.
 
 ### 4.8 Transactions (R7)
@@ -445,7 +448,7 @@ its numbers are reported with the `reparse` subject.
 | 1 Model | 4.2 for fresh parses; deep equality and 4.10 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
 | 2 Sessions, whole-document restart | 4.1–4.12 on the correctness set, every platform, both units | 6.4 on every workload, which sets the session baseline for 6.5 (G5); 6.2 for `nodes_new`, `nodes_materialized`, `journal_entries` |
 | 3 Block restart and convergence | Unchanged | 6.2 for block counters; 6.3 for the local edit families on shapes without declarations |
-| 4 Session registries | Unchanged | 6.2 for registry counters; 6.3 on `refs` and the local steps of `declarations` |
+| 4 Session registries | Unchanged | 6.2 for registry counters; 6.3 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`) and for the local steps of `declarations` |
 | 5 Frontier and inline restart | Unchanged | 6.2 for streaming; 6.3 for `tokens` and `rows` |
 
 From step 2 on, the one-shot benchmark measures `Document.parse` through the
