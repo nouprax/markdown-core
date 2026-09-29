@@ -182,6 +182,9 @@ canonical dump prints, which stay in UTF-8 columns, and in UTF-16 against the
 same scopes converted through the model text. A document
 answers these queries from its own values alone, so the previous document
 with the previous text still answers exactly as it did before the step.
+`Document.footnote(for:)` and `Document.specimen(for:)` are likewise computed
+from the tree on demand, and for every label of the model text they return the
+node that the fresh parse's answer names, or none when it has none.
 
 ### 4.2 Identity (R4)
 
@@ -288,9 +291,12 @@ transaction is therefore swept. After each
 failure the subject's text, dump, ids, versions and retained-state digest
 equal the previous version's. Then the unmodified step is retried: a valid
 step succeeds, and an invalid step of 4.9 is rejected as invalid again, with
-the session still unchanged. The same
-sweep runs through each binding's publication with the host allocation
-failing after the engine prepared the edit.
+the session still unchanged.
+
+R7 is the engine's contract. A binding is a pure projection of the engine's
+result into immutable platform values for Compose, React and SwiftUI; it has
+no transaction or failure contract of its own, so the sweep runs in C and no
+gate injects failures into a binding's projection.
 
 ### 4.9 Invalid arguments
 
@@ -653,7 +659,7 @@ enough to track.
   the OOM sweep of 4.8 on every step.
 - Swift, Kotlin and ECMAScript consume it through the same lifecycle that
   delivers the canonical manifest to their conformance runners, in both units,
-  with 4.1–4.7, 4.9–4.11 and the publication failures of 4.8.
+  with 4.1–4.7 and 4.9–4.11.
 - The fuzz target of 4.12 covers what a fixed set cannot.
 
 **The benchmark workloads** are the generator's large output, built when the
