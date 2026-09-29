@@ -322,7 +322,7 @@ which are no-ops outside valgrind. A script of at most 1,024 steps dumps after
 every step; every edit script is this size. A longer script (a streamed
 megabyte in `tokens` or `rows`) dumps after each of 1,024 contiguous windows of
 consecutive steps, so every step's cost lands in exactly one measured window.
-Its `reparse` column is measured at each window's first step, because
+Its `reparse` column is measured at each window's last step, because
 reparsing after every chunk of a megabyte stream is the quadratic cost the
 design removes and cannot be run. Per-step work of those scripts is still
 gated on every step, by the counters (6.2), which are exact and cheap.
@@ -436,14 +436,21 @@ counters that row names.
 
 ### 6.3 Flatness, on Ir
 
-For every local edit family (`typing`, `lines`, `ranges`, `far`, `batch`) and
-for `tokens` and `rows` on every scale shape, per-step p95 Ir at 1 MB is at
-most 1.25 times the per-step p95 at 16 KB. The factor 64 in size leaves room
-for the O(log n) text tree, ledger and registries (six more tree levels) and
-nothing linear. For streams, the p95 of the chunks in the last tenth of the document is at
-most 1.25 times the p95 of the chunks in the second tenth, which catches
-per-chunk work that grows with the text already streamed. A stream measured in
-windows (5.1) takes each window's mean step cost as its sample.
+For every local edit family (`typing`, `lines`, `ranges`, `far`, `batch`)
+on every scale shape, **every step** at 1 MB costs at most 1.25 times the same
+step at 16 KB. The scripts apply the same edits at the same relative positions
+at every size, so step `i` of one size corresponds to step `i` of the other,
+and a size-dependent cost on any single step (a lazy O(n) initialization on the
+first edit, say) fails, however few steps it affects. The factor 64 in size
+leaves room for the O(log n) text tree, ledger and registries (six more tree
+levels) and nothing linear.
+
+For `tokens` and `rows` on every scale shape, the chunks do not correspond
+across sizes, so the rule compares positions within one stream: both the
+maximum and the p95 of the chunks in the last tenth of the document are at most
+1.25 times those of the chunks in the second tenth, which catches per-chunk work
+that grows with the text already streamed. A stream measured in windows (5.1)
+takes each window's mean step cost as its sample.
 
 The same rule covers the adversarial shapes whose cost the language keeps
 local: the 10,000-item list edited in the middle and the 1,000 nested quotes
@@ -462,9 +469,12 @@ For every step of every script of at most 1,024 steps, including `markers`,
 `declarations` and `random`, `step_ir` is at most 1.25 times `reparse_ir` of
 the same step (decision G2). For a longer stream, each window's total
 `step_ir` is at most 1.25 times its step count times the `reparse_ir` of the
-window's first step, which is the least a reparse of any step in the window
-costs; a single expensive step inside a window is caught by the per-step
-counter bounds of 6.2. The margin pays for
+window's last step. The text only grows within a stream, so that is at least
+the sum of the window's per-step reparse costs, and a correct session that
+rescans a growing prefix as a reparse would is never rejected. A single
+expensive step inside a window is caught by the per-step counter bounds of
+6.2, and every window is 1/1,024 of the stream, so the bound is tight except in
+the first few windows. The margin pays for
 matching, deduplication and the journal when an edit really does change the
 whole document; beyond it, an incremental edit would be a regression against
 the application that just reparses.
