@@ -21,7 +21,8 @@ Sections 1–2 say why the gates come first and what they are measured against.
 Section 3 defines the workloads, section 4 the correctness oracles, sections
 5–6 the measurement and the gate rules, section 7 how the gates tighten step by
 step, section 8 how the harness proves it can fail, and section 9 where they
-run. Section 10 lists the decisions for the owner.
+run. Section 10 lists the work items and section 11 the decisions for the
+owner.
 
 ## 1. Why the gates come first
 
@@ -478,7 +479,25 @@ benchmark workflow, and the trusted publisher adds its tables to the existing
 PR comment. The report shows, per workload, the S column (session), the R
 column (reparse), the speedup, and the flatness ratios by size.
 
-## 10. Decisions for the owner
+## 10. Work items
+
+Step 0 of the incremental plan is these items. Later steps activate the gates
+as section 7 says, in their own pull requests.
+
+- [ ] The workload generator: documents, edit and stream scripts, the
+      composite-part check (3.1), and its `node --test` suite.
+- [ ] The tracked correctness set under `specs/incremental/` and its
+      `--check` audit.
+- [ ] The C `incremental_runner` with the text model, the `reparse` subject,
+      the oracles that apply before sessions exist, and the faulty subjects
+      of section 8 that wrap `reparse`.
+- [ ] The edit and stream benchmark runner, `pnpm benchmark:edits`, reporting
+      the R column, with driver tests on synthetic profiles.
+- [ ] The `buffer_to_ast` regression rule in the one-shot gate (6.5, G1).
+- [ ] The "Measure - edits and streams" CI job and its tables in the PR
+      comment.
+
+## 11. Decisions for the owner
 
 - **G1 One-shot budget for the model change.** Step 1 makes every fresh parse
   assign ids, compute relative spans and, in Swift, allocate one record per
