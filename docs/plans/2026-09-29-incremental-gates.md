@@ -175,8 +175,11 @@ source text the caller passes (plan 4.3), and return them in the session's
 unit; the extents themselves are UTF-8 in every unit, as the engine produces
 them. On every step of the correctness set, for every node of the subject's
 document, `scope(of:in:)` with the model text equals `scope(of:in:)` of the
-corresponding node of a fresh parse of the model text in the same unit, and
-`node(at:in:)` at the scope's start returns the corresponding node. The fresh
+corresponding node of a fresh parse of the model text in the same unit. At
+every position where some node's scope starts or ends, and on each side of it,
+`node(at:in:)` returns the node corresponding to the fresh parse's answer at
+the same position, so nested nodes that share a start, and adjacent nodes that
+share a boundary, are compared rather than required to be distinct. The fresh
 parse's own answers are checked once, in UTF-8, against the scopes the
 canonical dump prints, which stay in UTF-8 columns, and in UTF-16 against the
 same scopes converted through the model text. A document
@@ -433,7 +436,7 @@ quantities, per step:
 | `B` | Blocks of either fresh parse that start inside `E`, at any depth |
 | `A` | Ancestors of the damage: the blocks of either fresh parse that contain some connected region of `E`, counted once each over the union of every region's ancestor path. A batch whose edits land in several leaves has one path per region |
 | `H` | The height bound of the shared balanced tree over `n` elements: ⌈log₂(n + 1)⌉ + 1, for the text (`n` bytes), the ledger and each registry (`n` entries) |
-| `C` | Per ancestor of `E`: its child count, and how many of its children start inside `E` |
+| `C` | Per block in `A`: its child count, and how many of its children intersect some connected region of `E` (not only those that start inside it) |
 | `K` | Registry keys whose winner, family or ordinal differs between the two fresh parses: reference and heading labels, anchors, footnote labels, specimen ids |
 | `R(K)` | Inline roots of the new fresh parse that look up a key in `K`, and their content bytes |
 | `N` | New objects the step must produce, as 4.3 and 4.4 predict them |
@@ -446,7 +449,7 @@ The bounds:
 | `lines_reread` | ≤ lines of `E` ∪ `U` + 1 |
 | `inline_bytes` | ≤ content bytes of the inline roots in `U` + bytes of `R(K)` |
 | `ledger_touched` | ≤ `B` + `A` |
-| `summaries_combined` | ≤ Σ over ancestors (children in `E` + 1) × ⌈log₂(child count + 1)⌉ |
+| `summaries_combined` | ≤ Σ over blocks in `A` (children intersecting `E` + 1) × ⌈log₂(child count + 1)⌉ |
 | `registry_recomputed` | ≤ declarations inside `E` + members of the families of `K` |
 | `lookups_invalidated` | ≤ number of inline roots in `R(K)` |
 | `finish_visited` | ≤ `N` + nodes of the inline roots re-parsed (in `U` or `R(K)`) |
