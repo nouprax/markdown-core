@@ -6,16 +6,38 @@ specifies the correctness suite and the two benchmarks that decide whether
 before any engine work so that every rollout step is measured against the same
 harness from its first pull request.
 
+## Requirement under test
+
+The owner's requirement, as stated:
+
+> We need to do a thorough and systematical design to markdown-core to make it
+> support incremental edit in code editor/llm streaming scenario. Which means
+> for random edit and tail streaming, we should make sure the re-parse and AST
+> mutate is minimum. Please note, this packages downstream consumer is
+> SwiftUI, Compose, and React, which means the AST update is self described
+> via AST's identifier and equatable itself, you should not provide diff as
+> the result. the only result should be a new AST(can be in place update or a
+> new one, I do not limit the direction to avoid you misunderstanding and add
+> some constraints I did not intended).
+
+Every gate below checks one of these properties, for the two workloads the
+requirement names (random edits and tail streaming):
+
+- **Correct AST.** The AST a session returns is the AST a fresh parse of the
+  same text returns.
+- **Identifier.** A node's identifier is unique, keeps naming the same node
+  across edits, and is never handed to a different node.
+- **Minimal AST mutation.** A node is a new value exactly when its value
+  changed.
+- **Minimal re-parse.** The source re-read per step is what the language
+  makes the edit affect, and the cost per step does not grow with the
+  document.
+
 The existing one-shot benchmark (`packages/markdown-core/benchmarks/README.md`)
-answers "what does a parse cost". Incremental parsing adds two workloads that
-it cannot see:
-
-- **Edit**: a code editor replaces any range with any text.
-- **Stream**: a language model appends text to the end.
-
-The gate therefore has three benchmarks (one-shot, edit, stream) and one
-correctness suite for the two new workloads. A step of the rollout is accepted
-only when all four pass at the level section 7 assigns to that step.
+answers "what does a parse cost". The gate therefore has three benchmarks
+(one-shot, edit, stream) and one correctness suite for the two new workloads.
+A step of the rollout is accepted only when all four pass at the level section
+7 assigns to that step.
 
 Sections 1–2 say why the gates come first and what they are measured against.
 Section 3 defines the workloads, section 4 the correctness oracles, sections
@@ -26,24 +48,21 @@ owner.
 
 ## 1. Why the gates come first
 
-The incremental plan first put its gates in its last rollout step. That order
-lets four steps land without the evidence the design depends on:
+The incremental plan puts its gates in its last rollout step. That order lets
+the earlier steps land without the evidence the design depends on:
 
 - Step 1 adds ids, deep equality and Swift per-node records, and replaces
   absolute scopes with relative extents. Every one of them costs the one-shot
-  parse something, and the current gate
-  sees only `source_to_buffer`. Nothing today would notice the AST stage
-  getting slower.
-- Steps 2–5 each claim a property (R1 equivalence, R3 minimal replacement, R4
-  stable identity, R2 bounded re-reading). Section 5.10 of the plan argues
-  those properties; only an oracle that runs every edit shows that the code
-  keeps them.
+  parse something, and the current gate sees only `source_to_buffer`. Nothing
+  today would notice the AST stage getting slower.
+- Each later step claims one of the properties above. Only an oracle that
+  runs every edit shows that the code keeps them.
 - The complexity bounds of the plan's section 7.1 are the reason for the whole
   design. A bound that is first measured after the implementation is complete
   is a bound nobody designed against.
 
 The gates also fix the vocabulary before the code exists: what an edit script
-is, what "reused" means observably, what is counted. Each later step then
+is, what "unchanged" means observably, what is counted. Each later step then
 changes the subject under test, not the harness.
 
 ## 2. Subjects and the baseline
@@ -58,16 +77,15 @@ of which returns the new document, and close. There are exactly two subjects:
 | `session` | The engine's `MarkdownSession` (plan 4.4) | Under test, from rollout step 2 |
 | `reparse` | Keeps the text, and on every step calls `Document.parse` on the whole of it | The oracle for correctness, the R column for benchmarks |
 
-`reparse` is not a second algorithm. It is the one parser, called the way an
-application calls it today, and it stays as the equivalence oracle (R1) and as
-the reference cost an incremental edit must beat. Until the session API exists
-the harness runs `reparse` alone, which already produces every baseline number
-and exercises the scripts, the text model and the reports.
+`reparse` is the one parser, called the way an application calls it today. It
+is the equivalence oracle and the reference cost an incremental edit must
+beat. Until the session API exists the harness runs `reparse` alone, which
+already produces every baseline number and exercises the scripts, the text
+model and the reports.
 
 The harness keeps its own **text model**: a plain byte buffer to which it
-applies every script step, independent of the subject. The model is the
-source of truth for "the session's text"; the subject's text must equal it
-after every step.
+applies every script step, independent of the subject. The subject's text
+must equal it after every step.
 
 ## 3. Workloads
 
@@ -97,28 +115,28 @@ document and a script; its identity is the digest of both.
     from every section.
   - `flat`: thousands of short top-level blocks, which makes the document's
     own child collection large.
-- **Adversarial shapes.** The inputs the plan's section 8 names, each at the
-  scale sizes: a stray early opener (an unclosed fence, HTML block, comment
-  and directive on the first line, toggled open and closed); a 10,000-item
-  list edited in the middle; 1,000 nested block quotes edited at the deepest
-  leaf; one definition with 10,000 references whose destination changes; a
-  heading label repeated so that anchor suffixes shift; an unclosed `**`
-  early in a paragraph that is then streamed for 64 KB; a single-line
-  paragraph streamed to 64 KB.
+- **Adversarial shapes.** The inputs the plan's section 7.2 and testing
+  section name, each at the scale sizes: a stray early opener (an unclosed
+  fence, HTML block, comment and directive on the first line, toggled open
+  and closed); a 10,000-item list edited in the middle; 1,000 nested block
+  quotes edited at the deepest leaf; one definition with 10,000 references
+  whose destination changes; a heading label repeated so that anchor suffixes
+  shift; an unclosed `**` early in a paragraph that is then streamed for
+  64 KB; a single-line paragraph streamed to 64 KB.
 
 A composite document that joins parts records, for each part, the number of
 root children a fresh parse of the part alone produces. The generator checks
 that the composite's fresh parse has their sum, so a part cannot silently
-change the meaning of its neighbour and move every edit site. This is a
-property of the generated input, checked once when the workload is built.
+change the meaning of its neighbour and move every edit site.
 
 ### 3.2 Edit scripts
 
 A script is a sequence of steps. A step is `edit([(start, end, text)…])`, a
-single edit being a batch of one, or `append(text)`, with offsets in UTF-8 bytes of the text
-before the step. Every offset falls on a scalar boundary unless the step is an
-invalid-argument case (4.9). Bindings convert offsets to their unit through
-the text model, so the same script tests both units.
+single edit being a batch of one, or `append(text)`, with offsets in UTF-8
+bytes of the text before the step. Every offset falls on a scalar boundary and
+every text is well formed, except in the invalid-argument cases (4.8).
+Bindings convert offsets to their unit through the text model, so the same
+script tests both units.
 
 | Family | Steps | Positions |
 | --- | --- | --- |
@@ -127,7 +145,7 @@ the text model, so the same script tests both units.
 | `markers` | Add and remove `> `, `- `, `1. `, `# `, four spaces, a fence opener, a Setext underline, a table delimiter row, a definition term marker | Each block kind of the shape |
 | `ranges` | Paste a 2 KB section; delete a section; select a paragraph's whole text and type a replacement | Middle of the document |
 | `far` | Alternate single-scalar edits at the first and last line, 64 steps | Both ends |
-| `batch` | 16 disjoint edits in one `batch`, as multi-cursor typing, listed in a seeded shuffled order | Spread across the document |
+| `batch` | 16 disjoint edits in one `edit`, as multi-cursor typing, listed in a seeded shuffled order | Spread across the document |
 | `declarations` | Change a reference destination; add and remove a duplicate reference label; add and remove a heading whose label collides; add and remove a footnote definition and an inline note | Declaration sites of `refs` and `prose` |
 | `undo` | Each `typing` to `declarations` step followed by its inverse | As the original step |
 | `random` | Seeded mixture of inserts, deletes and replacements at line and byte granularity, including CR/LF splits and NUL | Uniform over the text |
@@ -140,19 +158,14 @@ itself limits their effect to a bounded neighbourhood. `markers`,
 ### 3.3 Stream scripts
 
 A stream script appends the whole of a document, starting from an empty
-session, in chunks.
+session, in chunks. Every chunk is whole scalars, on every platform.
 
 | Family | Chunking | Documents |
 | --- | --- | --- |
-| `tokens` | A fixed pseudo-random sequence of chunk sizes from 1 to 16 bytes, mean 4 | Scale families, grammar corpus |
-| `bytes` | One byte per chunk | Grammar corpus |
+| `tokens` | A fixed pseudo-random sequence of chunk sizes from 1 to 16 bytes, mean 4, each moved to the next scalar boundary | Scale families, grammar corpus |
+| `scalars` | One scalar per chunk | Grammar corpus |
 | `rows` | One physical line per chunk | Scale families |
-| `splits` | Two chunks, split at every byte offset | Grammar corpus documents up to 2 KB |
-
-In C, chunk boundaries fall anywhere, including inside a UTF-8 scalar, which
-exercises pending bytes (plan 4.4). Bindings append whole scalars, because
-their strings have no partial scalars; their chunk boundaries move to the next
-scalar boundary.
+| `splits` | Two chunks, split at every scalar boundary | Grammar corpus documents up to 2 KB |
 
 ## 4. Correctness oracles
 
@@ -161,185 +174,132 @@ Every oracle is checked after every step of every script that runs it
 engine's internals, so they hold for any correct implementation and fail for
 any incorrect one.
 
-### 4.1 Equivalence (R1)
+### 4.1 Equivalence
 
 The subject's text equals the text model, and the canonical dump of the
 subject's document equals the dump of a fresh `Document.parse` of the model
 text in the same unit. The dump prints no ids and prints absolute scopes, so
 it compares meaning and positions and nothing that depends on history.
 
-A node stores only its relative extent: `Extent(lead, span)`, where `lead` is the UTF-8 distance from the end of its
-previous sibling in the same relation (or from its owner's start, for the
-first) and `span` is its UTF-8 length. `Document.scope(of:in:)` and
-`Document.node(at:in:)` compute absolute positions from the extents and the
-source text the caller passes (plan 4.3), and return them in the session's
-unit; the extents themselves are UTF-8 in every unit, as the engine produces
-them. On every step of the correctness set, for every node of the subject's
-document, `scope(of:in:)` with the model text equals `scope(of:in:)` of the
-corresponding node of a fresh parse of the model text in the same unit. At
-every position where some node's scope starts or ends, and on each side of it,
-`node(at:in:)` returns the node corresponding to the fresh parse's answer at
-the same position, so nested nodes that share a start, and adjacent nodes that
-share a boundary, are compared rather than required to be distinct. The fresh
-parse's own answers are checked once, in UTF-8, against the scopes the
-canonical dump prints, which stay in UTF-8 columns, and in UTF-16 against the
-same scopes converted through the model text. A document
-answers these queries from its own values alone, so the previous document
-with the previous text still answers exactly as it did before the step.
-`Document.footnote(for:)` and `Document.specimen(for:)` are likewise computed
-from the tree on demand. For every label of the text before or after the step,
-and for a label that appears in neither, they return the node that the fresh
-parse's answer names, or none when it has none, so a label whose definition
-the step removed is probed too.
+A node stores its relative extent, `Extent(lead, span)` in UTF-8 bytes (plan
+4.3). `Document.scope(of:in:)` and `Document.node(at:in:)` compute absolute
+positions from the extents and the source text the caller passes, in the
+session's unit. For every node of the subject's document, `scope(of:in:)` with
+the model text equals `scope(of:in:)` of the corresponding node of the fresh
+parse. At every position where some node's scope starts or ends, and on each
+side of it, `node(at:in:)` returns the node corresponding to the fresh parse's
+answer at the same position. The fresh parse's own answers are checked once
+against the scopes the canonical dump prints, which are UTF-8 columns, and in
+UTF-16 against the same scopes converted through the model text.
 
-### 4.2 Identity (R4)
+`Document.footnotes`, `Document.specimens`, `footnote(for:)` and
+`specimen(for:)` for every label in the text equal those of the fresh parse
+(plan 8).
+
+### 4.2 Identifier
 
 - Ids are unique within the document, across every owned relation.
 - Over the whole lineage, the harness keeps a map from id to kind and a set of
   retired ids. An id never changes kind, and a retired id never appears again.
-- A fresh parse numbers its nodes 1, 2, 3, … without gaps in canonical walk
-  order (plan 4.1), every id below 2^53. Two fresh parses of the same text are
-  therefore equal, ids included.
+- A fresh parse numbers its nodes from 1 in canonical walk order (plan 4.1),
+  so two fresh parses of the same text are equal, ids included.
 
-### 4.3 Minimal change is exactly value inequality (R3)
+### 4.3 Minimal AST mutation
 
-Identity is an id and equality, nothing else (plan D5): a binding rebuilds its
-whole tree from the engine on every publish, so no gate asks a binding to keep
-an object. What R3 constrains is the engine's work. For every node of the new
-document, the harness classifies it against the node of the previous document
-with the same id: **unchanged** when the two are deep equal (plan 4.2), and
-**changed** when they differ or no previous node has that id. `N` (6.2) is the
-number of changed nodes. The engine's `nodes_new`, the nodes it created or
-rewrote in the step, must equal `N` exactly: fewer means a stale node survived
-a change (which 4.1 also catches), more means it rewrote a node whose value did
-not change. An ancestor of a changed node is changed, because its children are
-part of its value.
+For every node of the new document, the harness classifies it against the
+node of the previous document with the same id: **unchanged** when the two are
+deep equal (plan 4.2), and **changed** when they differ or no previous node has
+that id. `N` is the number of changed nodes. An ancestor of a changed node is
+changed, because its children are part of its value. The engine's `nodes_new`,
+the nodes it created or rewrote in the step, equals `N` exactly: fewer means a
+stale node survived a change (which 4.1 also catches), more means it rewrote a
+node whose value did not change.
 
-The comparison is always against a **snapshot** of the previous node taken
-before the step: its kind, id, scalars, extent and the ids of its children,
-keyed by id, on every platform, together with its absolute scope from
-`scope(of:in:)` and the text before the step. The extent is part of the value;
-the absolute scope is not, and serves only the matching of 4.4.
-
-Published documents are immutable (R9). Every binding keeps the previous
-document alive across the step and checks, after the step, that its
-canonical dump against the text before the step and its per-node snapshot are
-unchanged. A subject that edits a published value in place fails here even
-when the new document is correct.
+The comparison uses a **snapshot** of the previous document the harness takes
+before the step: each node's kind, id, scalars, extent and the ids of its
+children, keyed by id, together with its absolute scope from `scope(of:in:)`
+and the text before the step. The snapshot makes the check independent of
+whether the engine updates in place or builds a new document. The extent is
+part of the value; the absolute scope serves only the matching of 4.4.
 
 ### 4.4 Identity follows the matching rule
 
 4.3 classifies nodes by the ids the subject assigned, so on its own it would
-accept an implementation that gives a node a new id, changed or not, and
-loses its view state. The plan states which old node each new node continues
-(5.9) in terms the harness can evaluate from the public model alone: the
-position mapping of the step (5.2), the absolute scopes of the pre-step
-snapshot (4.3) and of `scope(of:in:)` on the new document, kinds and owner
-relations. The harness therefore computes the expected matching itself, for
-every node of every step:
+accept an implementation that gives a surviving node a new id and so loses its
+view state. The plan states which old node each new node continues (5.9) in
+terms the harness evaluates from the public model alone: the position mapping
+of the step (plan 5.2), the absolute scopes of the snapshot and of
+`scope(of:in:)` on the new document, kinds and owner relations. The harness
+computes the expected matching itself, for every node of every step:
 
-- An old node's anchor is its first byte that survived the step. Within the
-  relation of a matched owner, a new node of the same kind whose source range
-  contains the image of an old sibling's anchor continues the earliest such
-  sibling.
-- Old and new nodes left between two consecutive matched pairs of one
-  relation are paired in order by kind (slot pairing). The relation's start
-  and end count as matched boundaries, so the gaps before the first matched
-  pair and after the last are paired the same way, and a sole, leading or
-  trailing sibling whose bytes were all replaced still continues its old node.
+- An old node's anchor is its first byte that survived the step. A node none
+  of whose bytes survived has no anchor.
+- Within the relation of a matched owner, a new node of the same kind whose
+  source range contains the image of an old sibling's anchor continues the
+  earliest such sibling.
 - A new node that continues an old node has the old node's id. Every other
-  new node has an id the lineage has never seen. An old node that nothing
-  continues is retired.
+  new node, including every child of an unmatched owner, has an id the
+  lineage has never seen. An old node that nothing continues is retired.
 
-This holds whether the node's value changed or not, so an edited heading,
-list item or table cell keeps its id exactly as an edited paragraph does. A
-continued node whose value equals its predecessor's is unchanged and outside
-`N` (4.3). Extents are relative, so text that moves a
-node without touching it leaves its value unchanged. The one exception is
-structural: the first continued node after a changed or inserted sibling in
-the same relation may get a new `lead` (recomputed at convergence, plan 5.3), and
-is then legitimately a new value with the same id. The oracle predicts that
-`lead` from the fresh parse, so it needs no special case.
+A continued node whose value equals its predecessor's is unchanged and outside
+`N` (4.3). Extents are relative, so text that moves a node without touching it
+leaves its value unchanged, except that the first continued node after a
+changed or inserted sibling in the same relation may get a new `lead` (plan
+5.3). The oracle predicts that `lead` from the fresh parse.
 
 ### 4.5 Scripted identity
 
 Some edits have an exact expected outcome, written into the script as the sets
-of kept, new and retired ids by position. They cover every consequence the
-plan's matching rules list (5.9): typing at the start of a paragraph keeps its
-id; inserting `new\n\n` before a paragraph gives the new one a new id; deleting
-a first word keeps the id; deleting a sibling retires its id and does not hand
-it to the next; merging two paragraphs keeps the first id; replacing a whole
-paragraph's text keeps its id; a paragraph that becomes a Setext heading is a
-new node; a paragraph moved into a new quote is a new node. For the plan's
-example, typing in paragraph 5 of 1,000, the changed nodes are exactly that
+of kept, new and retired ids by position. They are the consequences the plan
+lists (5.9, 8): typing at the start of a paragraph keeps its id; inserting
+`new\n\n` before a paragraph gives the new one a new id and keeps the old one's;
+deleting a first word keeps the id; deleting a sibling retires its id and does
+not hand it to the next; merging two paragraphs keeps the first id; a
+paragraph that becomes a Setext heading is a new node; a paragraph moved into
+a new quote is a new node; unwrapping a nested inline note makes the inner note
+a new node; inserting a line at the top of a long document changes only the
+Document and the edited paragraph; changing a heading anchor that Links target
+changes every such Link. Typing in paragraph 5 of 1,000 changes exactly that
 paragraph, its Text nodes on the edited line and the Document.
 
 ### 4.6 Streaming
 
-After every chunk, 4.1–4.4 hold against the model text, where the model text
-is the longest complete-scalar prefix of the bytes appended so far. The pending
-bytes are never part of the text. A chunk that extends the pending bytes to a
-longer prefix of a valid sequence is accepted and leaves them pending, as when
-a four-byte scalar arrives one byte per chunk in `bytes`. Only a byte that
-cannot continue the pending sequence makes the append invalid; it is rejected
-and leaves the session unchanged (4.9).
+After every chunk, 4.1–4.4 hold against the model text, which is everything
+appended so far.
 
 ### 4.7 Batches
 
 The dump after `edit(edits)` with several edits equals the dump after
-applying the same edits one at a time in descending order of their start offsets, whatever order the
-batch lists them in (so the offsets not yet applied stay valid), and
-4.1–4.4 hold for the batch as one step.
+applying the same edits one at a time in descending order of their start
+offsets, whatever order the batch lists them in (so the offsets not yet
+applied stay valid), and 4.1–4.4 hold for the batch as one step.
 
-### 4.8 Allocation failure
-
-An allocation failure at any stage is an error, never a rollback. In C, an
-allocator-seam sweep over a sample of steps (one of each edit and stream
-family, a batch, a declaration change and a pending-byte chunk) injects a
-failure at each allocation boundary and checks that the call reports the
-out-of-memory error, never a document. What the session holds afterwards is
-unspecified; the harness closes it. A binding reports a platform allocation
-failure the platform's way and has no failure contract of its own.
-
-### 4.9 Invalid arguments
+### 4.8 Errors
 
 Ranges out of bounds, ends inside a scalar (a UTF-8 continuation byte, the
-middle of a surrogate pair), ill-formed replacement text and impossible
-pending continuations are rejected as invalid arguments, and the session is
-bit-for-bit at its previous version.
+middle of a surrogate pair) and ill-formed text, including an append that ends
+inside a scalar, are rejected as invalid arguments (plan 4.4). In C, the
+allocator-seam sweep of plan 8 fails a sample of steps at every allocation
+boundary; each call throws the out-of-memory error, and freeing the session
+leaks nothing.
 
-### 4.10 Depth and concurrency
+### 4.9 Deep trees
 
-Every binding runs the plan's deep-tree set (6.3) through a session: release
-of a deep document while a newer version is alive, equality of
-two deep documents that differ at the deepest leaf, walking, scope lookup, hit
-testing and `description`, on a thread with a small fixed stack.
+Every binding runs the plan's deep-tree set through a session: release of a
+deep document while a newer version is alive, equality of two deep documents
+that differ at the deepest leaf, walking, scope lookup, hit testing and
+`description`, on a thread with a small fixed stack.
 
-Every document index built lazily on first use, if the plan keeps any (a
-cached position index behind `scope(of:in:)` and `node(at:in:)`, say), is
-exercised by concurrent first use in Swift and Kotlin: several threads
-released together by a barrier make their first `Document.scope(of:in:)` and
-`Document.node(at:in:)` calls, and their first call into each other lazy
-index, on the same fresh document of every step, and every answer must equal
-the single-threaded answer. Each index is built exactly once per document:
-the test build counts index constructions, and the count after the concurrent
-first use is one per index, not one per thread. This runs under the thread
-sanitizer where the platform has one. It also covers reading the previous
-version on another thread while the session publishes the next.
-
-### 4.11 Platforms and units
+### 4.10 Platforms and units
 
 C and every binding run the same scripts in both units. A binding checks 4.1
-against its own dumper, as conformance does today, and checks 4.2, 4.4 and 4.5
-on ids and values; object identity is not part of its contract (4.3). A
-binding builds its values from what the engine returns
-and adds no bookkeeping of its own, so its construction cost is the platform's
-own cost and is not gated (5.1).
+against its own dumper, as conformance does today, and 4.2–4.5 on ids and
+values.
 
-### 4.12 Fuzzing
+### 4.11 Fuzzing
 
 A fuzz target decodes its input as a document and a script and checks 4.1–4.4
-and 4.9 after every step. The current fuzz corpus seeds the document half.
+and 4.8 after every step. The current fuzz corpus seeds the document half.
 
 ## 5. Measurement
 
@@ -349,65 +309,48 @@ The runners follow the one-shot benchmark's rules: callgrind instruction and
 data-reference counts, the benchmark preset, the same build provenance and
 isolation, and a measured edge instead of a timer. The edit runner loads a
 document and a script, opens the subject with the document outside the
-measurement, and calls `bench_apply_step` once per step. The measured cost of
-a step is the cost under that edge.
+measurement, and calls `bench_apply_step` once per step.
 
-Per-step costs come from callgrind client requests (`CALLGRIND_DUMP_STATS`),
-which are no-ops outside valgrind. A script of at most 1,024 steps dumps after
-every step; every edit script is this size. A longer script (a streamed
-megabyte in `tokens` or `rows`) dumps after each of 1,024 contiguous windows of
-consecutive steps, so every step's cost lands in exactly one measured window.
+Costs come from callgrind client requests (`CALLGRIND_DUMP_STATS`), which are
+no-ops outside valgrind. The runner dumps after each of at most 1,024
+**windows** of consecutive steps. A script of at most 1,024 steps, which is
+every edit script and every short stream, has one step per window, so a
+window's cost is that step's cost. A longer stream (a streamed megabyte in
+`tokens` or `rows`) splits into 1,024 contiguous windows of equal step count.
 Its `reparse` column is measured at each window's last step, because
 reparsing after every chunk of a megabyte stream is the quadratic cost the
-design removes and cannot be run.
+design removes.
 
-Every step of those scripts still gets its own cost: the runner also replays
-them natively in a build compiled with `-fsanitize-coverage=trace-pc-guard`,
-whose callback adds one to a counter per executed edge. `step_edges`, the
-counter's increase over one step, is deterministic like Ir and cheap enough to
-record for every chunk of a megabyte stream. Edges are a different unit from
-Ir, so the two are never compared with each other.
-
-The gates measure the C engine only. A binding builds its platform values from
-what the engine returns; that construction is the platform's inherent cost, the
-same for any engine design, and no gate measures it or shapes the engine
-around it. Bindings are gated for correctness (section 4), never for cost.
+The gates measure the C engine. A binding builds its platform values from what
+the engine returns (plan 6.1); bindings are gated for correctness (section 4).
 
 ### 5.2 Metrics per workload
 
 | Metric | Definition |
 | --- | --- |
-| `step_ir` | Ir per step: p50, p95, max and total over the script |
+| `step_ir` | Ir per window: p50, p95, max and total over the script |
 | `reparse_ir` | The same for the `reparse` subject: what an application pays today |
 | `oneshot_ir` | One-shot parse of the script's final text, both stages |
-| `speedup` | `reparse_ir / step_ir` per step, p50 and p5 |
+| `speedup` | `reparse_ir / step_ir` per step, p50 and p5, for scripts of at most 1,024 steps |
 | `stream_ratio` | Stream total `step_ir` / `oneshot_ir` of the final text |
-| `retained` | Session-retained bytes after the script / text bytes |
-| `transient` | Peak allocation within one step, in bytes |
-
-Allocation figures come from the allocator seam, so they are exact counts,
-not samples.
 
 ### 5.3 Work counters
 
 Deterministic counters, in the style of the existing `input_line_work` and
-`delimiter_work`, record per step:
+`delimiter_work`, record per step what the requirement asks to be minimal:
 
 | Counter | What it counts |
 | --- | --- |
 | `lines_reread` | Physical lines passed through the line machine |
 | `inline_bytes` | Content bytes the inline parser scanned |
-| `ledger_touched` | Ledger entries inserted, removed or rewritten |
-| `summaries_combined` | Child summaries recombined during re-finalization |
-| `registry_recomputed` | Registry entries whose winner or ordinal was recomputed |
-| `lookups_invalidated` | Inline roots re-parsed for a resolution change |
 | `finish_visited` | Nodes visited by finish steps and passes |
 | `nodes_new` | Nodes the engine created or rewrote in the step |
-| `tree_visited` | Nodes of the shared balanced tree (text, ledger, registries; plan 5.1) visited by lookups, splices and shifts |
 
-Counters are cheap, exact and platform-independent. They are where the plan's
-bounds are enforced (6.2). Ir is where constant factors and the asymptotic
-shape are checked (6.3, 6.4 and 6.6).
+The first three are the re-parse, the last is the AST mutation. Counters are
+exact and platform-independent, and are recorded for every step, including
+every chunk of a long stream. They are where the bounds are enforced (6.2).
+Ir is where constant factors and the asymptotic shape are checked (6.3, 6.4
+and 6.5).
 
 ## 6. Gate rules
 
@@ -422,23 +365,17 @@ There is no tolerance.
 
 ### 6.2 Bounds, on counters
 
-Every activated counter has a bound, and every bound is written in quantities
-the harness computes without the engine: from the fresh parses of the text
-before and after the step (the `reparse` subject), the position mapping, and
-the script. No bound contains a constant chosen by the implementer. The
-quantities, per step:
+Every bound is written in quantities the harness computes without the engine:
+from the fresh parses of the text before and after the step, the position
+mapping, and the script. The quantities, per step:
 
 | Quantity | Definition |
 | --- | --- |
-| `E` | The **language damage**: the union of the edited lines (the step's range widened to whole lines as in plan 5.2, before and after the step) and, per connected edit region, the smallest range of lines around it such that the block trees of the two fresh parses (kinds, depths and mapped start lines of every block) agree before it and after it. Regions whose ranges do not overlap stay separate, so a batch with structural edits far apart does not damage the blocks between them. A content-only edit still has the lines it touched as its damage |
-| `U` | Lines and bytes of every leaf that intersects `E`: every leaf that owns an inline root (paragraphs, headings, table cells, terms, captions and the like), and the units plan 5.3 always re-reads whole (tables with their captions, code, HTML, comment, formula and directive blocks) |
-| `B` | Blocks of either fresh parse that start inside `E`, at any depth |
-| `A` | Ancestors of the damage: the blocks of either fresh parse that contain some connected region of `E`, counted once each over the union of every region's ancestor path. A batch whose edits land in several leaves has one path per region |
-| `H` | The height bound of the shared balanced tree over `n` elements: ⌈log₂(n + 1)⌉ + 1, for the text (`n` bytes), the ledger and each registry (`n` entries) |
-| `C` | Per block in `A`: its child count, and how many of its children intersect some connected region of `E` (not only those that start inside it) |
+| `E` | The **language damage**: the edited lines (the step's range widened to whole lines as in plan 5.2, before and after the step) and, per connected edit region, the smallest range of lines around it such that the block trees of the two fresh parses (kinds, depths and mapped start lines of every block) agree before it and after it. Regions whose ranges do not overlap stay separate |
+| `U` | Lines and bytes of every leaf that intersects `E`: every leaf that owns an inline root, and the units plan 5.3 re-reads whole (tables with their captions, code, HTML, comment, formula and directive blocks) |
 | `K` | Registry keys whose winner, family or ordinal differs between the two fresh parses: reference and heading labels, anchors, footnote labels, specimen ids |
 | `R(K)` | Inline roots of the new fresh parse that look up a key in `K`, and their content bytes |
-| `N` | Changed nodes of the step: nodes of the new document with no predecessor under 4.4's matching, or whose value differs from their predecessor's (4.3) |
+| `N` | Changed nodes of the step (4.3) |
 
 The bounds:
 
@@ -446,44 +383,25 @@ The bounds:
 | --- | --- |
 | `lines_reread` | ≤ lines of `E` ∪ `U` + 1 |
 | `inline_bytes` | ≤ content bytes of the inline roots in `U` + bytes of `R(K)` |
-| `ledger_touched` | ≤ `B` + `A` |
-| `summaries_combined` | ≤ Σ over blocks in `A` (children intersecting `E` + 1) × ⌈log₂(child count + 1)⌉ |
-| `registry_recomputed` | ≤ declarations inside `E` + members of the families of `K` |
-| `lookups_invalidated` | ≤ number of inline roots in `R(K)` |
 | `finish_visited` | ≤ `N` + nodes of the inline roots re-parsed (in `U` or `R(K)`) |
 | `nodes_new` | = `N` |
-| `tree_visited` | ≤ `H` × (edit ranges + `lines_reread` + `ledger_touched` + `registry_recomputed` + `lookups_invalidated`) |
-
-`H` is a height bound only for a tree whose nodes other than the root have at
-least two children and whose leaves are all at one depth, the B-tree shape of
-the plan's balanced tree (5.1). The gate requires that shape; the occupancy
-rule of 6.5 is the same invariant. A binary tree balanced by rotation (AVL,
-red-black) can be up to twice as tall and fails the bounds that use `H`.
-`tree_visited` is what makes the O(log n) claim exact: each operation the step
-performs on the tree costs at most one root-to-leaf path, so an O(log² n)
-traversal fails here even when its Ir hides under the margin of 6.3.
 
 For a stream chunk, `E` is the last line before the chunk together with the
 lines it appends, and the inline term is the chunk plus the distance from the
 frontier leaf's stable prefix (plan 5.6) to its end. The harness takes the
-stable prefix as the earliest of plan 5.6's three candidates, each computed
-from the fresh parse of the text before the chunk: the start of the leaf's last
-line; the earliest opener that the fresh parse left as literal text in the last
-inline root (an emphasis or other delimiter run, a bracket, a citation token or
-a field); and the start of the earliest token that runs to the end of the
-content (an unmatched backtick run, an unclosed HTML or comment token, a
-formula without a closer). Reading openers from literal text can only move the
-candidate earlier, so the bound can be loose but never too small.
+stable prefix from the fresh parse of the text before the chunk as the
+earliest of: the start of the leaf's last line; the earliest opener the fresh
+parse left as literal text in the last inline root; and the start of the
+earliest token that runs to the end of the content (an unmatched backtick run,
+an unclosed HTML or comment token, a formula without a closer).
 
 These bounds are exactly as large as the language makes a step, so the
 language-inherent cases of plan 7.2 get their real bound through the same
 formulas: an unclosed fence makes `E` run to the end of the document, and a
 changed definition puts its references in `R(K)`. Each activation row of
-section 7 turns on the counters its step makes meaningful; a step that has not
-yet removed a term (step 2 re-reads the whole document) is gated only on the
-counters that row names.
+section 7 turns on the counters its step makes meaningful.
 
-### 6.3 Flatness, on Ir and transient allocation
+### 6.3 Flatness, on Ir
 
 For every local edit family (`typing`, `lines`, `ranges`, `far`, `batch`)
 on every scale shape, **every step** costs at most logarithmically more as the
@@ -496,28 +414,19 @@ another. With `c(s)` the cost of step `i` at size `s` and
 - `c(1 MB) ≤ 1.25 × c(16 KB) + 3Δ`.
 
 A cost `a + b log n` rises by the same amount at every fourfold size step, so
-extrapolating the first rise is exactly its growth: the O(log n) text tree,
-ledger and registries pass at any branching factor and tree height. A linear
-term that is a share `ℓ` of the step's cost at 16 KB rises by `3ℓ` of that
-cost to 64 KB but by `63ℓ` to 1 MB, so the step fails once `54ℓ > 0.25`, that
-is, once the linear part is more than about half a percent of the step. A
-size-dependent cost on any single step (a lazy O(n) initialization on the first
-edit, say) fails the same way, however few steps it affects. A finite set of
-sizes with any margin cannot tell a small `log² n` term from a logarithmic one;
-the Ir rule rejects polynomial terms, and the logarithmic structures are held
-to exactly O(log n) per operation by `tree_visited` (6.2).
+extrapolating the first rise is exactly its growth: the O(log n) structures of
+the plan pass at any branching factor. A linear term that is a share `ℓ` of
+the step's cost at 16 KB rises by `3ℓ` of that cost to 64 KB but by `63ℓ` to
+1 MB, so the step fails once `54ℓ > 0.25`, that is, once the linear part is
+more than about half a percent of the step. A size-dependent cost on any single
+step fails the same way, however few steps it affects.
 
 For `tokens` and `rows` on every scale shape, the chunks do not correspond
 across sizes, so the rule compares positions within one stream of `n` bytes.
-`m(p)` is taken twice: as the maximum cost of every chunk that ends at or
-before `p` (a prefix maximum, so no chunk between the sample points is
-skipped), and as the p95 of the chunks that end in the last tenth before `p`.
-For each, with `Δ = max(0, m(n/4) − m(n/16))`, the rule is
+With `m(p)` the highest window cost among the windows that end in the last
+tenth before `p` and `Δ = max(0, m(n/4) − m(n/16))`, the rule is
 `m(n) ≤ 1.25 × m(n/16) + 2Δ`: the same logarithmic allowance, which catches
-per-chunk work that grows with the text already streamed, including a single
-O(n) chunk anywhere after the first sixteenth. A stream measured in windows (5.1) is checked on its
-per-step `step_edges` instead of Ir, with every chunk its own sample, so one
-O(n) chunk is not averaged away inside a window.
+per-chunk work that grows with the text already streamed.
 
 The same rule covers the adversarial shapes whose cost the language keeps
 local: the 10,000-item list edited in the middle and the 1,000 nested quotes
@@ -527,97 +436,34 @@ anchor suffixes, the unclosed `**`, the single-line paragraph) and streaming
 into the `table` shape, which re-reads the table at the tail per appended row.
 Those are bounded by their counters (6.2) and by 6.4.
 
-Every rule of this section applies, unchanged, to `transient` of each step,
-the peak bytes the step allocates, which the allocator seam reports exactly
-for every step of every script. A step that allocates a source-sized scratch
-buffer fails it as a linear Ir term does, even when the buffer is reserved and
-never touched, so scratch is held to the damage without a baseline. The 1.02
-rule of 6.6 only keeps it there afterwards.
-
-This is the gate that makes R2 observable: a step whose cost depends on the
-document size fails it at any constant factor.
-
 ### 6.4 Never worse than reparsing
 
 For every step of every script of at most 1,024 steps, including `markers`,
-`declarations` and `random`, `step_ir` is at most 1.25 times `reparse_ir` of
-the same step (decision G2). That includes every stream of at most 1,024
-chunks. A longer stream is not held to this rule: it would need a reparse
-after every chunk, the quadratic cost the design removes, and no sample of
-those reparses bounds the others, because a fresh parse's cost is not
-monotonic in the prefix (an earlier prefix can end in a costlier unclosed
-construct). Its `reparse_ir` column at each window's last step is reported,
-not gated. Its per-step cost is gated instead by 6.3 on `step_edges`, which
-fails any chunk that costs more as the streamed text grows, by the counters
-of 6.2, and by 6.6. The margin pays for
-matching and deduplication when an edit really does change the
-whole document; beyond it, an incremental edit would be a regression against
-the application that just reparses.
+`declarations`, `random` and every stream of at most 1,024 chunks, `step_ir`
+is at most 1.25 times `reparse_ir` of the same step (decision G2). A longer
+stream is bounded per chunk by 6.2 and 6.3; its `reparse_ir` column is
+reported. The margin pays for matching and deduplication when an edit really
+does change the whole document; beyond it, an incremental edit would be a
+regression against the application that just reparses.
 
-### 6.5 Retention
-
-R8 asks that what a session retains is specified. The gate checks it
-directly, with no measured number: after every step of the correctness set
-and at the end of every benchmark script, once the harness has released every
-earlier document it held, the session retains what the current text alone
-implies. The allocator seam tags each session-owned allocation with its kind
-from plan 5.1, and the harness compares the live counts with the fresh parse
-of the current text:
-
-| Kind | Bound |
-| --- | --- |
-| Tree nodes | = nodes of the fresh document |
-| Block ledger entries | = its block nodes |
-| Registry entries | = its declarations |
-| Lookup index entries | = its registry lookups |
-| Inline ledger entries | = its inline roots |
-| Frontier | ≤ its open spine and the content of its open leaf |
-| Pending bytes | ≤ 3 |
-| Parse scratch | 0 |
-| Text tree bytes | ≤ 2 × those of a session opened on the same text |
-
-A kind is checked from the rollout step that introduces it. The text tree is
-the only retained structure whose shape depends on its history, and 2 is its
-occupancy bound: every chunk and node other than the root is at least half
-full, the invariant that keeps a balanced tree balanced. A session that keeps
-an earlier tree or ledger entry fails on the first step it does so,
-whatever the script's length, so the rule holds from step 2, before there is
-a session baseline.
-
-Counts alone would let each correctly counted element carry a buffer that
-grows with the document. So each kind's retained bytes per element (per text
-byte, for the text tree) are held to the flatness rule of 6.3 across the scale
-sizes, at the end of every scale script, from the pull request that introduces
-the kind. An element whose size depends on the document fails there as a
-linear Ir term does, before the kind has a baseline.
-
-### 6.6 Regressions
+### 6.5 Regressions
 
 Against the base revision, measured with the current harness and workloads on
 both sides as the one-shot gate already does, and always between the same
 subject on both sides:
 
-- each workload's per-step p95, per-step maximum and total `step_ir` are at most 1.02 times the
-  base. A stream measured in windows (5.1) has no per-step Ir, so its rule is
-  on what it does measure: the p95, the maximum and the total of its window
-  `step_ir`, and the p95 and maximum of its per-step `step_edges`, each at
-  most 1.02 times the base. Extra instructions inside existing edges show in
-  the window totals, and a few expensive chunks show in the edge maximum;
-- `transient` is at most 1.02 times the base, and `retained` is at most 1.02
-  times the base per allocation kind of 6.5. A kind the base does not retain
-  (the ledger in the step 3 pull request, the registries and lookup index in
-  step 4) has no base value; in the pull request that introduces it, it is
-  bounded by the exact counts of 6.5 alone, and by 1.02 from the next one;
+- each workload's p95, maximum and total `step_ir` are at most 1.02 times the
+  base;
 - the one-shot gate keeps its `source_to_buffer` rule and adds the same rule
   to `buffer_to_ast`, per document.
 
 When the base revision has no `session` subject, which is the case for the
 pull request of rollout step 2, there is nothing of the same kind to compare
-with. That pull request is gated by 6.2, 6.4 and 6.5 alone, reports its session
-numbers beside the base's `reparse` numbers, and becomes the session baseline;
-the 1.02 rules apply to `session` from the next pull request (decision G4).
+with. That pull request is gated by 6.2 and 6.4, reports its session numbers
+beside the base's `reparse` numbers, and becomes the session baseline; the 1.02
+rules apply to `session` from the next pull request (decision G4).
 
-Speedup and `stream_ratio` are reported, not gated. They follow from 6.3, 6.4 and 6.6,
+Speedup and `stream_ratio` are reported. They follow from 6.3, 6.4 and 6.5,
 and a fixed target on either would be a number chosen from a measurement.
 
 ## 7. Activation by rollout step
@@ -627,18 +473,16 @@ its numbers are reported with the `reparse` subject.
 
 | Step | Correctness | Benchmarks |
 | --- | --- | --- |
-| 0 Harness (this plan) | Scripts, text model and pending-byte model self-tests; 4.1 with `reparse` | Edit and stream runners report the R column; one-shot adds the `buffer_to_ast` rule (6.6) |
-| 1 Model | 4.2 for fresh parses; deep equality and 4.10 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
-| 2 Sessions, whole-document restart | 4.1–4.12 on the correctness set, every platform, both units | 6.4 on every workload, which sets the session baseline for 6.6 (G4); 6.2 for `nodes_new`; 6.5 for the kinds it introduces |
-| 3 Block restart and convergence | Unchanged | 6.2 for `lines_reread`, `ledger_touched`, `summaries_combined` and `tree_visited`, and for `inline_bytes` and `finish_visited` on shapes without declarations; 6.3 for the local edit families on shapes without declarations |
-| 4 Session registries | Unchanged | 6.2 for `registry_recomputed` and `lookups_invalidated`, and for `inline_bytes` and `finish_visited` on every shape; 6.3 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`) and for the local steps of `declarations` |
+| 0 Harness (this plan) | Scripts and text model self-tests; 4.1 with `reparse` | Edit and stream runners report the R column; one-shot adds the `buffer_to_ast` rule (6.5) |
+| 1 Model | 4.2 for fresh parses; deep equality and 4.9 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
+| 2 Sessions, whole-document restart | 4.1–4.11 on the correctness set, every platform, both units | 6.4 on every workload, which sets the session baseline for 6.5 (G4); 6.2 for `nodes_new` |
+| 3 Block restart and convergence | Unchanged | 6.2 for `lines_reread`, and for `inline_bytes` and `finish_visited` on shapes without declarations; 6.3 for the local edit families on shapes without declarations |
+| 4 Session registries | Unchanged | 6.2 for `inline_bytes` and `finish_visited` on every shape; 6.3 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`) and for the local steps of `declarations` |
 | 5 Frontier and inline restart | Unchanged | 6.2 in its stream form for `lines_reread` and `inline_bytes`; 6.3 for `tokens` and `rows` |
 
 From step 2 on, the one-shot benchmark measures `Document.parse` through the
 session path it becomes (plan 4.4), so the one-shot gate also guards what the
 session machinery costs a fresh parse.
-
-The plan lists this harness as its rollout step 0.
 
 ## 8. The harness proves it can fail
 
@@ -654,10 +498,8 @@ named oracle:
 | Gives an edited heading a new id | 4.4 |
 | Keeps a node whose text changed | 4.1, and 4.3 (`nodes_new` < `N`) |
 | Reuses a retired id for a new node | 4.2 |
-| Returns a document after an injected allocation failure | 4.8 |
-| Accepts an end inside a scalar | 4.9 |
+| Accepts an end inside a scalar | 4.8 |
 | Re-reads the whole document on every step | 6.2 and 6.3 |
-| Keeps every earlier document alive | 6.5 |
 
 The faulty subjects wrap `reparse` (and, from step 1, fresh ids), live only in
 the harness's test sources, and are never linked into a product target. The
@@ -677,26 +519,25 @@ tables are. Its documents are the canonical AST cases, which every platform
 already consumes, and the scale and adversarial shapes at their smallest size.
 It holds every edit and stream family, `splits` on every document up to 2 KB,
 `random` with 16 seeds, the scripted-identity cases of 4.5, and the invalid
-arguments of 4.9. Scripts are offsets and short texts, so the set stays small
+arguments of 4.8. Scripts are offsets and short texts, so the set stays small
 enough to track.
 
 - C runs it as `incremental_runner` under the `api` label, with 4.1–4.9.
 - Swift, Kotlin and ECMAScript consume it through the same lifecycle that
   delivers the canonical manifest to their conformance runners, in both units,
-  with 4.1–4.7 and 4.9–4.11.
-- The fuzz target of 4.12 covers what a fixed set cannot.
+  with 4.1–4.10 except the allocator sweep of 4.8.
+- The fuzz target of 4.11 covers what a fixed set cannot.
 
 **The benchmark workloads** are the generator's large output, built when the
 benchmark runs, as the grammar corpus is: every grammar corpus document with
-`typing`, `lines`, `markers`, `undo`, `random`, `tokens` and `bytes`, and every
-scale and adversarial shape at all four sizes with every family but `undo`.
-`random` runs with 16 seeds in both, so 6.4 is measured on arbitrary ranges
-and not only on the scripted families.
-Before measuring, the runner applies each workload natively, outside
-callgrind, and checks 4.1–4.4 after every step. A workload that fails is not
-reported, and the run fails, as the one-shot runner already refuses an empty
-tree. Every benchmark run is therefore also a correctness sweep over the whole
-grammar corpus.
+`typing`, `lines`, `markers`, `undo`, `random`, `tokens` and `scalars`, and
+every scale and adversarial shape at all four sizes with every family but
+`undo`. `random` runs with 16 seeds in both, so 6.4 is measured on arbitrary
+ranges and not only on the scripted families. Before measuring, the runner
+applies each workload natively, outside callgrind, and checks 4.1–4.4 after
+every step. A workload that fails is not reported, and the run fails, as the
+one-shot runner already refuses an empty tree. Every benchmark run is
+therefore also a correctness sweep over the whole grammar corpus.
 
 The benchmarks run as `pnpm benchmark:edits`, sharing `run.mjs`'s build,
 provenance, isolation and callgrind code. Outputs go to
@@ -708,8 +549,8 @@ column (reparse), the speedup, and the flatness ratios by size.
 
 ## 10. Work items
 
-Step 0 of the incremental plan is these items. Later steps activate the gates
-as section 7 says, in their own pull requests.
+Step 0 is these items. Later steps activate the gates as section 7 says, in
+their own pull requests.
 
 - [ ] The workload generator: documents, edit and stream scripts, the
       composite-part check (3.1), and its `node --test` suite.
@@ -720,7 +561,7 @@ as section 7 says, in their own pull requests.
       of section 8 that wrap `reparse`.
 - [ ] The edit and stream benchmark runner, `pnpm benchmark:edits`, reporting
       the R column, with driver tests on synthetic profiles.
-- [ ] The `buffer_to_ast` regression rule in the one-shot gate (6.6, G1).
+- [ ] The `buffer_to_ast` regression rule in the one-shot gate (6.5, G1).
 - [ ] The "Measure - edits and streams" CI job and its tables in the PR
       comment.
 
@@ -728,10 +569,10 @@ as section 7 says, in their own pull requests.
 
 - **G1 One-shot budget for the model change.** Step 1 makes every fresh parse
   assign ids, store relative extents instead of absolute scopes and, in
-  Swift, allocate one record per node. Proposed: step 1 may raise `buffer_to_ast` Ir up to 1.10 times the
-  pre-step baseline per document, stated in its pull request, and
-  `source_to_buffer` keeps its 1.02 rule. After step 1, both stages are at
-  1.02 per pull request.
+  Swift, allocate one record per node. Proposed: step 1 may raise
+  `buffer_to_ast` Ir up to 1.10 times the pre-step baseline per document,
+  stated in its pull request, and `source_to_buffer` keeps its 1.02 rule.
+  After step 1, both stages are at 1.02 per pull request.
 - **G2 The reparse margin.** Proposed 1.25 (6.4). A smaller margin forbids
   paying for matching on whole-document changes; a larger one hides a
   regression in the language-inherent cases.
@@ -739,5 +580,5 @@ as section 7 says, in their own pull requests.
   logarithmic allowance across a 64 times size range (6.3). It is a statement
   of "no linear term", and it should not be loosened to pass a measurement.
 - **G4 The session baseline.** Proposed: the step 2 pull request sets the
-  session baseline under 6.2, 6.4 and 6.5 only, and the 1.02 regression
-  rules apply to the session from then on (6.6).
+  session baseline under 6.2 and 6.4, and the 1.02 regression rules apply to
+  the session from then on (6.5).
