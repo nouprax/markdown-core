@@ -348,29 +348,22 @@ There is no tolerance.
 ### 6.2 Flatness, on Ir
 
 For every local edit family (`typing`, `lines`, `ranges`, `far`, `batch`)
-on every scale shape, **every step** costs at most logarithmically more as the
-document grows. The scripts apply the same edits at the same relative
+on every scale shape, **every step** costs at most 1.25 times as much at every
+larger size as at 16 KB. The scripts apply the same edits at the same relative
 positions at every size, so step `i` of one size corresponds to step `i` of
-another. With `c(s)` the cost of step `i` at size `s` and
-`Δ = max(0, c(64 KB) − c(16 KB))`, the rule is
-
-- `c(256 KB) ≤ 1.25 × c(16 KB) + 2Δ`, and
-- `c(1 MB) ≤ 1.25 × c(16 KB) + 3Δ`.
-
-A cost `a + b log n` rises by the same amount at every fourfold size step, so
-extrapolating the first rise is exactly its growth: the O(log n) structures of
-the plan pass at any branching factor. A linear term that is a share `ℓ` of
-the step's cost at 16 KB rises by `3ℓ` of that cost to 64 KB but by `63ℓ` to
-1 MB, so the step fails once `54ℓ > 0.25`, that is, once the linear part is
-more than about half a percent of the step. A size-dependent cost on any single
-step fails the same way, however few steps it affects.
+another. With `c(s)` the cost of step `i` at size `s`, each of `c(64 KB)`,
+`c(256 KB)` and `c(1 MB)` is at most `1.25 × c(16 KB)`. A linear term that is a
+share `ℓ` of the step's cost at 16 KB grows by `63ℓ` of that cost at 1 MB, so
+the step fails once the linear part is more than about 0.4 percent of the
+step. A size-dependent cost on any single step fails the same way, however few
+steps it affects.
 
 For `tokens` and `rows` on every scale shape, the chunks do not correspond
 across sizes, so the rule compares positions within one stream of `n` bytes.
-With `m(p)` the highest cost of every window that ends at or before `p` and
-`Δ = max(0, m(n/4) − m(n/16))`, the rule is `m(n) ≤ 1.25 × m(n/16) + 2Δ`: the
-same logarithmic allowance, which catches per-chunk work that grows with the
-text already streamed, wherever in the stream it occurs.
+With `m(p)` the highest cost of every window that ends at or before `p`, each
+of `m(n/4)` and `m(n)` is at most `1.25 × m(n/16)`, which catches per-chunk
+work that grows with the text already streamed, wherever in the stream it
+occurs.
 
 The same rule covers the adversarial shapes whose cost the language keeps
 local: the 10,000-item list edited in the middle and the 1,000 nested quotes
@@ -477,11 +470,7 @@ benchmark runs, as the grammar corpus is: every grammar corpus document with
 `typing`, `lines`, `markers`, `undo`, `random`, `tokens` and `scalars`, and
 every scale and adversarial shape at all four sizes with every family but
 `undo`. `random` runs with 16 seeds in both, so 6.3 is measured on arbitrary
-ranges and not only on the scripted families. Before measuring, the runner
-applies each workload natively, outside callgrind, and checks 4.1–4.4 after
-every step. A workload that fails is not reported, and the run fails, as the
-one-shot runner already refuses an empty tree. Every benchmark run is
-therefore also a correctness sweep over the whole grammar corpus.
+ranges and not only on the scripted families.
 
 The benchmarks run as `pnpm benchmark:edits`, sharing `run.mjs`'s build,
 provenance, isolation and callgrind code. Outputs go to
@@ -520,9 +509,10 @@ their own pull requests.
 - **G2 The reparse margin. Decided 2026-09-29: as proposed.** Proposed 1.25 (6.3). A smaller margin forbids
   paying for matching on whole-document changes; a larger one hides a
   regression in the language-inherent cases.
-- **G3 Flatness factor. Decided 2026-09-29: as proposed.** Proposed 1.25 as the margin on top of the
-  logarithmic allowance across a 64 times size range (6.2). It is a statement
-  of "no linear term", and it should not be loosened to pass a measurement.
+- **G3 Flatness factor. Decided 2026-09-29: 1.25, with no allowance for
+  growth.** A step costs at most 1.25 times its cost at 16 KB at every size up
+  to 1 MB (6.2). It is a statement of "no linear term", and it should not be
+  loosened to pass a measurement.
 - **G4 The session baseline. Decided 2026-09-29: as proposed.** Proposed: the step 2 pull request sets the
   session baseline under 6.3, and the 1.02 regression rules apply to
   the session from then on (6.4).
