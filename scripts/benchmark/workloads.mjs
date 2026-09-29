@@ -1234,10 +1234,11 @@ export function benchmarkWorkloads(set = "all") {
     for (const shape of set === "all" ? [...Object.keys(SCALE_SHAPES), ...Object.keys(ADVERSARIAL_SHAPES)] : [])
         for (const alphabet of Object.keys(alphabets))
             for (const size of shapeSizes(shape)) {
-                const document = shapeDocument(shape, alphabet, size);
+                /* The sites only place the scripts: the set keeps the rest. */
+                const { sites, ...document } = shapeDocument(shape, alphabet, size);
                 documents.push(document);
                 for (const script of editScripts(
-                    document,
+                    { ...document, sites },
                     EDIT_FAMILIES.filter((family) => family !== "undo")
                 ))
                     workloads.push({
@@ -1253,13 +1254,21 @@ export function benchmarkWorkloads(set = "all") {
 }
 
 /**
- * Write the benchmark workloads under `directory`: each document, each
- * document's scripts in one file, and the token sizes. Returns their index,
- * whose digest identifies the workload the way the corpus digest identifies
- * the one-shot benchmark's.
+ * Write the benchmark workloads of `set` under `directory`, or only those
+ * `names` lists: each document, each document's scripts in one file, and the
+ * token sizes. Returns the index of what it wrote, whose digest identifies
+ * the workload the way the corpus digest identifies the one-shot benchmark's.
  */
-export function writeBenchmarkWorkloads(directory, set = "all") {
-    const { documents, workloads } = benchmarkWorkloads(set);
+export function writeBenchmarkWorkloads(directory, set = "all", names = []) {
+    const generated = benchmarkWorkloads(set);
+    const wanted = new Set(names);
+    const unknown = names.filter((name) => !generated.workloads.some((workload) => workload.name === name));
+    if (unknown.length) throw new Error(`the ${set} set has no workload named ${unknown.join(", ")}`);
+    const workloads = wanted.size
+        ? generated.workloads.filter((workload) => wanted.has(workload.name))
+        : generated.workloads;
+    const used = new Set(workloads.map((workload) => workload.document));
+    const documents = generated.documents.filter((document) => used.has(document));
     fs.rmSync(directory, { recursive: true, force: true });
     fs.mkdirSync(path.join(directory, "documents"), { recursive: true });
     fs.mkdirSync(path.join(directory, "scripts"), { recursive: true });

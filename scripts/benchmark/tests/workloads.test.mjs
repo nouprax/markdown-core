@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
+import { TextDecoder } from "node:util";
 
 import {
     ADVERSARIAL_SHAPES,
@@ -21,7 +24,8 @@ import {
     scalarBoundaries,
     shapeDocument,
     shapeSizes,
-    streamChunks
+    streamChunks,
+    writeBenchmarkWorkloads
 } from "../workloads.mjs";
 
 const SHAPES = [...Object.keys(SCALE_SHAPES), ...Object.keys(ADVERSARIAL_SHAPES)];
@@ -277,4 +281,26 @@ test("the correctness set runs every family on every document and splits the sho
         identityScripts().filter((entry) => files.has(`scripts/${entry.name}.edits`)).length,
         identityScripts().length
     );
+});
+
+test("a narrowed benchmark set writes and identifies only the named workloads", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "workloads-"));
+    try {
+        const whole = writeBenchmarkWorkloads(directory, "corpus");
+        const [first, second] = whole.workloads.filter((workload) => workload.script);
+        const narrowed = writeBenchmarkWorkloads(directory, "corpus", [first.name, second.name]);
+        assert.deepEqual(
+            narrowed.workloads.map((workload) => workload.name),
+            [first.name, second.name]
+        );
+        assert.deepEqual(
+            narrowed.documents.map((document) => document.name),
+            [...new Set([first.document.name, second.document.name])]
+        );
+        assert.notEqual(narrowed.digest, whole.digest);
+        assert.deepEqual(fs.readdirSync(path.join(directory, "documents")), [`${first.document.name}.md`]);
+        assert.throws(() => writeBenchmarkWorkloads(directory, "corpus", ["no-such-workload"]), /no workload named/);
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
 });

@@ -1182,6 +1182,13 @@ export function profileRun(profile, runner, args, dump, out) {
     );
 }
 
+/* Every corpus document has content, so a corpus parse that produced no
+ * block would make every stage number a measurement of the empty case, which
+ * is exactly the failure a silent comparison hides. */
+function refuseEmptyTree(engine, document, measured) {
+    if (!measured.rootChildren) fail(`${engine}: ${document.case} parsed to an empty tree`);
+}
+
 export function measure(profile, engine, document, out) {
     const definition = ENGINES[engine];
     const dump = path.join(out, "callgrind", `${engine}.${document.case}.out`);
@@ -1540,6 +1547,7 @@ function main() {
             if (measured.receiptBytes !== document.bytes) {
                 fail(`${engine}: ${document.case} saw ${measured.receiptBytes} bytes, expected ${document.bytes}`);
             }
+            refuseEmptyTree(engine, document, measured);
             engines[engine] = {
                 rootChildren: measured.rootChildren,
                 stages: Object.fromEntries(
@@ -1556,6 +1564,7 @@ function main() {
         if (baseline) {
             const measured = measure(baseline.profile, "markdown-core", document, baseline.directory);
             if (measured.receiptBytes !== document.bytes) fail(`baseline received different bytes: ${document.case}`);
+            refuseEmptyTree("baseline markdown-core", document, measured);
             baseline.cases.push({
                 ...entry,
                 file: path.relative(baseline.directory, document.file),

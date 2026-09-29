@@ -26,6 +26,7 @@
  * narrows either set to the named workloads.
  */
 
+import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -214,17 +215,13 @@ export function markdownReport(report) {
 async function main() {
     const options = parseArguments(process.argv.slice(2));
     const { profile, versions, binaries } = prepareBuild({ out: options.out });
-    const index = writeBenchmarkWorkloads(path.join(options.out, "workloads"), options.set);
-    const named = new Set(options.workloads);
-    const unknown = options.workloads.filter((name) => !index.workloads.some((workload) => workload.name === name));
-    if (unknown.length) fail(`no workload is named ${unknown.join(", ")}`);
-    const selected = index.workloads.filter((workload) => !named.size || named.has(workload.name));
+    const index = writeBenchmarkWorkloads(path.join(options.out, "workloads"), options.set, options.workloads);
     fs.rmSync(path.join(options.out, "callgrind"), { recursive: true, force: true });
     fs.rmSync(path.join(options.out, "final"), { recursive: true, force: true });
     const measured = await measureAll(
         profile,
         options.out,
-        selected.map((workload) => ({
+        index.workloads.map((workload) => ({
             name: workload.name,
             document: workload.document.path,
             file: workload.file,
@@ -233,7 +230,7 @@ async function main() {
         })),
         options.quiet
     );
-    const results = selected.map((workload) => {
+    const results = index.workloads.map((workload) => {
         const result = measured.get(workload.name);
         if (workload.stream) {
             /* Each window's end byte, for the stream form of 6.2. */

@@ -2,8 +2,10 @@
  *
  * Nothing here is measured. The driver reads its numbers out of the callgrind
  * call graph, from the edges into each engine's own stage entry, so this file
- * only has to make sure both engines see byte-identical input and that a parse
- * which silently did nothing cannot be reported as a measurement.
+ * only has to make sure both engines see byte-identical input and report what
+ * the parse produced. Each driver checks that receipt against what it expects
+ * of its documents, so a parse which silently did nothing cannot be reported
+ * as a measurement.
  *
  *   <runner> --document PATH
  */
@@ -79,14 +81,6 @@ int main(int argc, char **argv) {
         return 1;
     }
     free(source);
-
-    /* A document that parsed to nothing would make every stage number a
-     * measurement of the empty case, which is exactly the failure a silent
-     * comparison hides. */
-    if (receipt.bytes == 0 || receipt.root_children == 0) {
-        fprintf(stderr, "stage_runner: %s produced an empty tree for %s\n", bench_engine_name(), document);
-        return 1;
-    }
     printf("stage-runner engine=%s bytes=%zu root_children=%zu\n", bench_engine_name(), receipt.bytes,
            receipt.root_children);
     return 0;
