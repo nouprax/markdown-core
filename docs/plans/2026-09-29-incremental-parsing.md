@@ -267,22 +267,19 @@ A session owns a text, its current document and the retained parse state.
 public final class MarkdownSession {           // one writer; not Sendable
     public init(_ source: String = "", unit: TextUnit = .utf16) throws
     public let unit: TextUnit                   // offsets in, columns out
-    public var document: Document { get throws } // immutable, Sendable
+    public var document: Document { get }       // immutable, Sendable
     public var text: String { get }
-    public func replace(_ range: Range<Int>, with text: String) throws
-    public func replace(_ range: Range<String.Index>, with text: String) throws
-    public func append(_ text: String) throws
-    public func apply(_ edits: [TextEdit]) throws
+    @discardableResult
+    public func replace(_ range: Range<Int>, with text: String) throws -> Document
+    @discardableResult
+    public func replace(_ range: Range<String.Index>,
+                        with text: String) throws -> Document
+    @discardableResult
+    public func append(_ text: String) throws -> Document
+    @discardableResult
+    public func apply(_ edits: [TextEdit]) throws -> Document
 }
 ```
-
-An edit commits or fails as a transaction (R7) and returns nothing. Reading
-`document` projects the session's current C document into a platform value
-(6.1); each read builds one, so a caller keeps the value it read. The two
-steps have separate failures: an edit that throws left the session at its
-previous version, and a read that throws (the platform, or the C encoder,
-running out of memory) left the session exactly where it was, so the read
-can simply be repeated.
 
 Kotlin has the same shape as an `AutoCloseable` class. ECMAScript exports
 `class MarkdownSession` with `dispose()` (and a `FinalizationRegistry`
@@ -843,10 +840,11 @@ engine's design never counts or optimizes. What the edit left unchanged
 reaches the consumer as equal values with unchanged ids (4.2), which is what
 SwiftUI, Compose and React reconcile. The public result is one `Document`.
 
-The transaction (5.11) ends when the engine commits, and the edit returns
-there. The projection is a separate read of committed data (4.4): encoding
-MCB3 in C and building platform values may fail for lack of memory, and such
-a failure is the read's, reported by `document`, with nothing to roll back.
+The transaction (5.11) ends when the engine commits. Because the projection
+reads only committed C data, it has no transaction and no failure contract
+of its own: anything the platform raises while building values is the
+platform's own error, and the next projection is built from the C document
+like any other.
 
 ### 6.2 Wire format MCB3
 
