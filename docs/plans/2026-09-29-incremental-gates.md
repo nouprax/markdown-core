@@ -43,8 +43,7 @@ Sections 1–2 say why the gates come first and what they are measured against.
 Section 3 defines the workloads, section 4 the correctness oracles, sections
 5–6 the measurement and the gate rules, section 7 how the gates tighten step by
 step, section 8 how the harness proves it can fail, and section 9 where they
-run. Section 10 lists the work items and section 11 the decisions for the
-owner.
+run. Section 10 lists the work items and section 11 the owner's decisions.
 
 ## 1. Why the gates come first
 
@@ -567,20 +566,20 @@ their own pull requests.
 - [ ] The "Measure - edits and streams" CI job and its tables in the PR
       comment.
 
-## 11. Decisions for the owner
+## 11. Owner decisions
 
-- **G1 One-shot budget for the model change.** Step 1 makes every fresh parse
+- **G1 One-shot budget for the model change. Decided 2026-09-29: as proposed.** Step 1 makes every fresh parse
   assign ids, store relative extents instead of absolute scopes and, in
   Swift, allocate one record per node. Proposed: step 1 may raise
   `buffer_to_ast` Ir up to 1.10 times the pre-step baseline per document,
   stated in its pull request, and `source_to_buffer` keeps its 1.02 rule.
   After step 1, both stages are at 1.02 per pull request.
-- **G2 The reparse margin.** Proposed 1.25 (6.4). A smaller margin forbids
+- **G2 The reparse margin. Decided 2026-09-29: as proposed.** Proposed 1.25 (6.4). A smaller margin forbids
   paying for matching on whole-document changes; a larger one hides a
   regression in the language-inherent cases.
-- **G3 Flatness factor.** Proposed 1.25 as the margin on top of the
+- **G3 Flatness factor. Decided 2026-09-29: as proposed.** Proposed 1.25 as the margin on top of the
   logarithmic allowance across a 64 times size range (6.3). It is a statement
   of "no linear term", and it should not be loosened to pass a measurement.
-- **G4 The session baseline.** Proposed: the step 2 pull request sets the
+- **G4 The session baseline. Decided 2026-09-29: as proposed.** Proposed: the step 2 pull request sets the
   session baseline under 6.2 and 6.4, and the 1.02 regression rules apply to
   the session from then on (6.5).
