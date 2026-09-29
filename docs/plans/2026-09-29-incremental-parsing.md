@@ -105,9 +105,9 @@ handles it.
 | Container facts from children | `List.tight`, list layout, definition and definition-list scopes | Children → container | Spine re-finalization (5.3) |
 | Unclosed opaque leaves | Fenced code, HTML block, comment, formula block and directive block without a closer run to the end | Opener → rest of document | No special case: the damage runs until the state converges, which is the language's meaning (7.2) |
 | Registry lookups in inline parsing | `[label]` and heading labels in the reference map (`link.c`, `heading.c`), `[^label]` in the footnote label map (`footnote.c`), `@id` in the specimen id index (`citation.c`) | Any definition → any occurrence | Lookup dependency index (5.7) |
-| Document ordinals | `inline-N` footnote ids, heading anchor `-N` suffixes, footnote and specimen order | Earlier declarations → later values | `inline-N` is removed from the model (4.5); the rest by registry recomputation by family (5.7) |
+| Document ordinals | `inline-N` footnote ids, heading anchor `-N` suffixes, footnote and specimen order | Earlier declarations → later values | `inline-N` and the lifted footnote and specimen sequences are removed from the model (4.5); anchor suffixes by recomputation by family (5.7) |
 | Shared resources | A definition's destination, title and attributes read by every occurrence | Definition → occurrences | Lookup dependency index (5.7) |
-| Absolute coordinates | Every `Scope` after an inserted or deleted line | Every earlier byte → every later scope | Relative geometry (4.3) |
+| Absolute coordinates | Every `Scope` after an inserted or deleted line | Every earlier byte → every later scope | Positions leave the AST (4.3) |
 | Mapped cell inputs | Grid and multiline cell bodies | Table → cells | A table is one leaf unit (5.3) |
 
 A dialect change that adds a dependency not covered by one of these
@@ -131,7 +131,7 @@ Rules:
 
 - **Unique within a document.** No two nodes of one document share an id,
   across every owned relation (content, labels, captions, titles, terms,
-  bodies, affixes, footnotes, specimens, metadata).
+  bodies, affixes, footnote referents, metadata).
 - **Deterministic for a fresh parse.** `Document.parse` numbers nodes from 1
   in canonical walk order. Two fresh parses of the same text are equal,
   identifiers included.
@@ -178,7 +178,7 @@ needed.
 ### 4.2 Equality
 
 Equality is **deep value equality including `id`**: two nodes are equal when
-they have the same kind, id, scalar fields, geometry (4.3) and pairwise equal
+they have the same kind, id, scalar fields, extent (4.3) and pairwise equal
 children in every relation.
 
 - Every implementation first compares references: a reused subtree is the same
@@ -194,67 +194,51 @@ children in every relation.
   and `React.memo` see structural sharing directly. An exported
   `markupEquals(a, b)` gives the deep comparison for tests.
 
-### 4.3 Positions leave node values
+### 4.3 Nodes carry raw extents; scopes are computed on request
 
 Today every node stores an absolute `Scope`. If that stays, typing Enter on
-line 3 changes the scope, and therefore the value, of every node after line
-3, and R3 cannot hold for any edit that adds or removes a line. Excluding
-scope from equality is not an option: a view that shows a node's position
-would then be skipped after the position changed.
+line 3 changes the value of every node after line 3, and R3 cannot hold for
+any edit that adds or removes a line.
 
-The design therefore makes each node's stored geometry **relative**, so that
-it changes only when the node itself or its immediate neighbourhood changes:
+A scope has one consumer: side-by-side editing, which maps an element the
+user points at back to its source range. That feature is not on the hot path
+of parsing or rendering, and it needs a scope only when it asks for one. So
+`Markup.scope` is removed and no node stores a line, a column or an absolute
+offset. What a node does carry is the raw extent the engine itself keeps for
+its own work, copied as is, because a binding answers scope queries in UI
+code where the parser is no longer reachable:
 
 ```text
-Offset(lines: Int32, column: Int32)
-    lines == 0: column is a column delta on the same line
-    lines != 0: column is the absolute column on the target line
-
-Span(lead: Offset, extent: Offset)
-    lead:   from the anchor to this node's start
-    extent: from this node's start to this node's end
+Extent(lead: UInt32, span: UInt32)      bytes of UTF-8 source
+    lead:   from the end of the previous node in the same relation (or the
+            owner's start, for the first node) to this node's start
+    span:   of this node's source range
 ```
 
-The anchor of the first node in a relation is its owner's start. The anchor
-of every later node in the same relation is the previous node's end.
-Definition bodies continue the anchor chain across their groups. Document
-footnotes and specimens anchor to the document start and then to each other.
-Columns and column deltas count the session's coordinate unit (4.4); line
-numbers have no unit. The encoding is exact arithmetic on the current coordinates, so the native
-sentinels (`1:1..0:0`, ends at column 0, spanning grid cells that end beyond
-their row) round-trip unchanged. Nothing is normalized.
+- The engine stores exactly these two numbers on every C node, and the
+  bindings copy them verbatim, like any other field. No unit conversion and
+  no line counting happens while parsing or publishing.
+- Neither number changes when text before the node shifts. An edit inside a
+  node changes its own `span` (it is a new value anyway); an edit in the
+  gap before a node, such as an added blank line, changes that node's `lead`.
+  Every other node keeps its value. Extents are part of equality (4.2), so a
+  reused node's extent is always the right one.
+- `document.scope(of: node, in: source) -> Scope` and
+  `document.node(at: Position, in: source)` compute a scope from the extents
+  and the source text the document was parsed from, which the side-by-side
+  editor already holds (`session.text` for a session's current document).
+  They return today's editor line and column conventions and sentinels, in
+  the session's coordinate unit (4.4). The first query on a document builds
+  its absolute-offset index in one walk, published once under a lock because
+  documents are `Sendable` (R9); the line and unit conversion scans the
+  source. This cost is paid only by the query.
+- Walker callbacks no longer carry a scope.
+- The canonical dump is produced in C from the same extents and prints
+  absolute scopes exactly as today, so every conformance fixture stays
+  byte-identical in that respect.
 
-With this encoding an edit inside node N changes N's extent and its
-ancestors' extents (they are new values anyway) and, when N's end moves on
-its last line, the lead of the sibling that starts on that line. An edit in
-the gap between two siblings, such as an added blank line, changes only the
-second sibling's lead; its subtree is reused. Nodes after
-the edit that start on a later line keep their lead and extent. Their values
-do not change.
-
-Absolute scopes remain available, unchanged in meaning:
-
-- The walker passes the absolute `Scope` with each callback. It computes it in
-  O(1) per step from the span chain it is already traversing.
-- `Document.scope(of: node)` answers any node's absolute scope. Its index is
-  built on first use for that document version in one linear walk of the
-  relative values, with no parsing. Because a document is `Sendable` (R9),
-  publication is once-only and synchronized: the index is an immutable value
-  installed under a lock (Swift `Mutex`, Kotlin `lazy` in synchronized mode;
-  ECMAScript is single-threaded), and a reader sees either no index or the
-  complete one. Concurrent first calls build it once and never observe a
-  partial index.
-- `Document.node(at: Position)` descends the tree by spans, for editor hit
-  testing.
-- The canonical dump prints absolute scopes exactly as today, so every
-  conformance fixture and golden stays byte-identical.
-
-`Markup.scope` is removed from node values and `Markup.span` is added. This
-is a breaking change to the canonical AST contract and to every binding, and
-the owner decides it (section 10, D1). The alternative, keeping absolute
-scopes in nodes, keeps the API but makes every edit that changes the line
-count replace every node after it. Tail streaming is unaffected either way,
-because an append never moves an earlier position.
+This is a breaking change to the canonical AST contract and to every binding
+(section 10, D1).
 
 ### 4.4 Sessions
 
@@ -287,8 +271,8 @@ C views borrow from the session until its next edit.
 - **One coordinate unit.** A session, and every document it publishes, counts
   columns and offsets in one `TextUnit`, `.utf8` or `.utf16`, chosen when the
   session is created. The unit applies in both directions: the offsets an edit
-  passes in, and every column the model returns (spans, `Document.scope(of:)`,
-  walker scopes, `Document.node(at:)`). An API never takes UTF-16 offsets and
+  passes in, and every column a scope query returns (`Document.scope(of:in:)`,
+  `Document.node(at:in:)`). An API never takes UTF-16 offsets and
   returns UTF-8 columns. `Document.parse` takes the same parameter. C
   defaults to UTF-8. Bindings default to UTF-16, because the editor surfaces
   on all three platforms count UTF-16 code units: UIKit and AppKit `NSRange`
@@ -315,14 +299,9 @@ C views borrow from the session until its next edit.
   UTF-16 summaries beside byte counts, and tree-sitter's edit coordinates
   follow whichever encoding its input uses. Here the text tree (5.1) keeps
   UTF-16 counts per chunk, so an offset converts in O(log n + line length).
-- **Columns in the unit.** The engine keeps byte offsets for its own
-  bookkeeping (ledger, registries, matching). A published span is counted in
-  the session's unit when the node is built, from the bytes of the node's own
-  first and last lines: a delta on one line is the UTF-16 length of the bytes
-  between, and an absolute column is the UTF-16 length of the line prefix.
-  Neither reads outside the node's lines, so R3 is unchanged. The canonical
-  dump and the conformance fixtures stay in UTF-8 columns; the oracles of
-  section 8 compare each unit with a fresh parse in the same unit.
+- **Columns in the unit.** Extents are bytes (4.3). A column is converted to
+  the session's unit only when a scope query asks for it. The canonical dump
+  and the conformance fixtures stay in UTF-8 columns.
 - **Batches.** `apply` takes disjoint edits in the coordinates of the text
   before the batch and parses once, for multi-cursor edits and bulk
   replacements. The transaction keeps every edit as its own piece of the
@@ -344,56 +323,59 @@ C views borrow from the session until its next edit.
 - **`Document.parse`** keeps its signature apart from the unit parameter. It
   is a session that inserts the whole source once and is then discarded.
 
-### 4.5 Inline notes name their footnote by identity
+### 4.5 Definitions stay where they are written
 
-Today an inline note `^[body]` produces a `Cite` whose `Citation` names a
-generated id `inline-N`, and a `Footnote` with that id in
-`Document.footnotes`. N is the note's ordinal among all inline notes, and a
-collision with an authored label adds a `-K` suffix. The id of every inline
-note therefore depends on every inline note before it and on every authored
-label in the document: inserting one note changes the value of every later
-inline note and its Cite, and adding a definition `[^inline-3]:` anywhere
-renames a note elsewhere. Neither dependency has anything to do with what the
-note means, and `dialect/footnotes.md` already tells applications to treat
-these ids as opaque, not as display numbers.
+Today `Document.footnotes` and `Document.specimens` own every footnote and
+specimen definition, lifted out of the place where it was written, and an
+inline note `^[body]` gets a generated id `inline-N` so its `Citation` can
+name the lifted `Footnote`. That lift is what gives definitions their special
+cases: the generated ordinal (every later inline note changes when one is
+inserted, and an authored `[^inline-3]` label renames a note elsewhere),
+positions measured along a list whose entries are scattered across the
+document, and identity decided in a list that is not where the parser
+produced anything.
 
-The unified footnote model stays exactly as it is: `^[body]` produces a
-one-item `Cite` whose `Citation` has the footnote referent, and a `Footnote`
-in `Document.footnotes`, in source order, that holds the body. Only the way
-the referent names its footnote changes. A referenced footnote is named by
-its authored label, as now. An inline note has no label, so its footnote is
-named by its node identity, which already exists (4.1) and depends on nothing
-else in the document:
+The design keeps every definition in the tree where it was written, and the
+document publishes a lookup instead of owning the nodes:
 
 ```text
 CitationReferent = bib(key, mode) | footnote(FootnoteTarget) | specimen(label)
-FootnoteTarget   = label(String) | note(MarkupID)
+FootnoteTarget   = label(String) | note(Footnote)
 
-Footnote(label: String?, content: [Markup], span)
-    label: the normalized authored label; null for an inline note
+Footnote(label: String?, content: [Markup])
+Specimen(label: String?, start: Int?, content: [Markup])
 ```
 
+- A referenced definition `[^x]: body` is a `Footnote` block in the content
+  relation where it was read, like any other block. A specimen definition is
+  the same.
+- An inline note is a `Footnote` owned at its call site by its referent,
+  `footnote(note(Footnote))`, with a null label. A note inside a note is
+  ordinary nesting. There is no generated id, no reservation against authored
+  labels and no `-K` rule.
 - `Footnote.id` and `Specimen.id` are renamed `label`, because every node now
-  has `id: MarkupID` (4.1). A null label already has a precedent: an
-  anonymous `Specimen`.
-- An inline note's `Citation` holds `footnote(note(n))`, where `n` is the
-  `MarkupID` of its `Footnote`. Within a session that id is stable, and in a
-  fresh parse it is deterministic, so inserting, deleting or editing one note
-  changes only that note's `Cite`, its `Footnote` and the spliced
-  `Document.footnotes` sequence. No other note or Cite changes value.
-- `Document.footnote(for:)` resolves either target in O(1): a label to the
-  first definition with that label, as today, and a note id to its
-  `Footnote`. Its index is published once, like the scope index (4.3).
-- Nesting and cycles are unchanged: a note inside a note is an id edge from
-  the outer body's `Cite` to the inner `Footnote`, never an owned body.
-- The canonical dump prints a `note` target as its footnote's source start,
-  which is id-free and deterministic, so R1's id-free comparison still holds.
-- The `inline-N` assignment, its reservation against authored labels and the
-  `-K` rule are deleted, not moved into the session. Inline-note recognition
-  no longer reads the footnote label registry.
+  has `id: MarkupID` (4.1).
+- `Document` publishes derived lookups, not owned sequences:
+  `document.footnote(for: label)` and `document.specimen(for: label)` return
+  the first definition with that label in source order, as today, and
+  `document.footnotes` and `document.specimens` list every definition in
+  source order as references into the tree. They are functions of `content`,
+  so they take no part in equality. The lookups are the session's label
+  registries (5.7), which the parse updates in place as it re-reads
+  declarations; the C document exposes them directly. A binding projects them
+  into its immutable document like any other C data, with no bookkeeping of
+  its own. That projection is the platform's cost of building an immutable
+  value, not the engine's, and the engine's design is never shaped around
+  it.
+- Definitions therefore follow the tree's ordinary identity rules (5.9),
+  with no rule of their own.
+- Walks and the canonical dump visit a definition where it was written. A
+  renderer that prints notes at the end of the page reads the lookup, and
+  display numbering stays the renderer's job, as the spec already says.
 
-This changes `canonical-ast.md`, `dialect/footnotes.md`, the canonical dump
-of inline-note referents and their fixtures, and every binding (D2).
+This changes `canonical-ast.md`, `dialect/footnotes.md`, `dialect/specimens.md`,
+the canonical dump of documents with definitions and their fixtures, and every
+binding (D2).
 
 ## 5. Engine
 
@@ -403,7 +385,7 @@ of inline-note referents and their fixtures, and every binding (D2).
 | --- | --- | --- |
 | Text tree | The source as a balanced tree of bounded byte chunks; each subtree records its byte, line-terminator and UTF-16 counts | O(source) |
 | Pending bytes | The incomplete trailing UTF-8 sequence of the last append (4.4) | At most 3 bytes |
-| Tree | The live C tree: relative spans, ids, versions | O(nodes) |
+| Tree | The live C tree: ids, versions, and each node's extent (4.3) | O(nodes) |
 | Block ledger | One entry per block node at any depth: start offset, node id, entry frontier, read end, spine snapshot (5.3) | O(blocks + changed frames) |
 | Registries | Reference, heading, anchor, footnote and specimen declarations in source order; label winners | O(declarations) |
 | Lookup index | Registry key → inline roots that looked it up, hit or miss | O(lookups) |
@@ -541,19 +523,10 @@ reads. With equal state and identical bytes from `j` on, the old parse's
 future is the new parse's future. So at convergence the engine stops reading:
 `O`, its following siblings and every later sibling of each spine ancestor are
 spliced back from the candidates, and their ledger entries are shifted, not
-rebuilt.
-
-**The seam.** Spans are relative (4.3), so the only reused node whose stored
-value can be wrong after the splice is the first one at each spine level: its
-`lead` is measured from the previous sibling's end, and that sibling is now
-the new parse's last node, which may end elsewhere (an inserted blank line
-before `O` moves `O` down one line). The splice therefore recomputes the lead
-of the first reused node in each relation from the new predecessor's end and
-the node's new absolute start, which the transaction knows. If the lead is
-unchanged the node is reused as is. Otherwise it becomes a new value with the
-same id and new lead, whose children are all reused. Every later reused
-sibling keeps its value, because its predecessor is also reused and ends
-where it did relative to it.
+rebuilt. The first spliced node in each relation now follows a re-parsed
+predecessor, so its `lead` (4.3) is recomputed from that predecessor's end; it
+differs only when the edit touched the gap before it, and then that node
+alone becomes a new value with the same id and all of its children reused.
 
 **Re-finalization.** The spine containers are still the new parse's open
 nodes. Their closing facts come from the old parse's corresponding closes,
@@ -611,7 +584,7 @@ These are requirements on every element, each checked by an audit script in
   summary. `List.tight` is one: a child's summary is (starts after a blank
   line, contains a blank between its own children), and the list is loose
   when any child contains one or any child after the first starts after one.
-  Scopes of definitions and lists combine as first start and last end.
+  Extents of definitions and lists combine from their children's extents.
 - **E5 Leaf finalize does not consume accumulation.** It produces the node's
   value from the accumulated content without destroying that content, so the
   frontier (5.5) can publish a provisional value and keep accumulating.
@@ -700,12 +673,26 @@ registry. Then:
   spelling. A family is the set of spellings with the same stem after
   stripping trailing `-N` groups. An edit recomputes, in source order, only the
   families of changed headings and changed explicit anchors, with the same
-  reservation and suffix-cursor algorithm as today. A changed anchor updates
-  its heading target resource, and the resource's occurrences follow through
-  the lookup index.
-- **Footnote and specimen order.** `Document.footnotes` and
-  `Document.specimens` are the source-ordered registries, spliced. Inline
-  notes are in the footnote registry without a label (4.5), so no ordinal is
+  reservation and suffix-cursor algorithm as today. The resource's occurrences
+  follow through the lookup index.
+- **Resources are values.** A shared resource (a definition's destination,
+  title and attributes, or a heading target) is not an AST node and has no
+  identity: it is a value, equal to another resource exactly when its fields
+  are equal, and occurrences that share one only share storage for an equal
+  value (interning by content). A declaration that changes therefore yields a
+  different value; there is nothing to update. Today
+  `markdown_core_headings_finish` instead treats the heading target as a
+  mutable object and rewrites its URL in place. Reuse (5.9) assumes that a
+  node's content cannot change without the node being rebuilt, so in a
+  session that write would change Links the engine then reports as unchanged,
+  and the binding would put its cached Links with the old destination into
+  the new document. The session therefore builds the heading target's value
+  once its anchor is final, and the Links that looked it up are re-parsed
+  against the new value through the lookup index.
+- **Definition lookups.** The footnote and specimen label registries are
+  source-ordered sequences like the others; a changed winner updates the
+  published lookup (4.5) and queues its dependents. Definitions themselves
+  stay in the tree, so nothing is spliced into the document and no ordinal is
   recomputed.
 
 ### 5.8 Finish steps and passes
@@ -745,8 +732,8 @@ node:
   and cannot be matched; its id retires.
 - An old node `O` can match a new node `N` when their kinds are equal and
   `N`'s source range contains the exact image of `O`'s anchor byte (5.2).
-  Siblings in one relation have disjoint ranges, so an anchor image lies in
-  at most one candidate.
+  Siblings in one parsed relation have disjoint ranges, so an anchor image
+  lies in at most one candidate.
 - When `N` contains the anchors of several old siblings, it takes the
   earliest. Both sequences are in source order and the match is monotone, so
   it is linear in the region.
@@ -776,7 +763,8 @@ node:
   new blockquote is a new node, as it is to every UI framework.
 
 Then, in post-order, each matched `N` is compared with its `O`: equal kind,
-equal scalars, equal span, and every child relation holding the same objects.
+equal scalars, equal extent, and every child relation holding the same
+objects.
 If they are equal, `N` is released and `O` stays. This establishes the
 invariant of 4.2: within a session, a node that differs from its predecessor
 as an object differs as a value.
@@ -816,8 +804,7 @@ replacing a text range first moves the replaced chunks into the entry instead
 of freeing them; splicing a ledger or registry range keeps the removed
 elements in the entry.
 
-- **Commit** happens once, after the new document is complete and, for a
-  binding, materialized (6.1): the journal's
+- **Commit** happens once, after the new document is complete: the journal's
   retained old elements (replaced chunks, removed ledger entries, old nodes
   that did not survive) are released and the version advances.
 - **Rollback** replays the journal in reverse. It allocates nothing and cannot
@@ -845,29 +832,23 @@ The cost is proportional to the changed nodes plus their children, which is
 also what SwiftUI, Compose and React reconcile. The public result is one
 `Document`.
 
-Publication is part of the edit's transaction (5.11), which therefore has two
-phases. The engine **prepares** an edit: it parses, builds the new tree, keeps
-its journal, and exposes the new tree or its MCB3 message. The binding then
-materializes the new version without touching its live table. The table is a
-persistent map (a hash array mapped trie), so the binding builds the complete
-next table, with the new values added and the retired ids removed, as a new
-root that shares every untouched branch with the live one: O(changed nodes ×
-log n) allocation, all of it before commit. If anything fails (a host
-allocation, a decoding error), the binding drops the next table and asks the
-engine to **roll back**, which replays the journal; engine and binding are
-both at the previous version, and `reuse(id)` records of the next attempt
-refer to the table as it was. If it succeeds, the binding asks the engine to
-**commit** and then replaces its table and document references with the new
-ones. Commit only releases the journal, and the swap is two reference
-assignments, so nothing after the commit can fail. C callers that do not
-materialize anything prepare and commit in one call.
+The transaction (5.11) ends when the engine commits. Materialization is a
+projection of committed C data, not part of the engine's transaction, and the
+engine is not shaped around it: the binding builds the new objects first and
+then updates its table with them and removes the retired ids. Materialization
+can fail only by the platform running out of memory (Kotlin
+`OutOfMemoryError`, an ECMAScript `RangeError`, a Swift trap) or by a
+malformed message, which is an engine defect. Neither is a recoverable edit
+failure, so the binding does not roll the engine back; if it cannot finish
+publishing, it marks the session unusable, and every later call throws until
+the session is recreated.
 
 ### 6.2 Wire format MCB3
 
 Kotlin and ECMAScript receive a parse as one message. MCB3 extends MCB2
 (`docs/architecture/wire-format.md`) and keeps its post-order stack model:
 
-- Every node record adds `u64 id` and relative `Span` in place of `Scope`.
+- Every node record adds `u64 id` and the node's `Extent` in place of `Scope`.
 - A new record `reuse(u64 id)` pushes the binding's existing value for that id,
   subtree included, and writes nothing else.
 - A trailer lists retired ids.
@@ -902,15 +883,15 @@ operation that follows tree edges: **no operation recurses over tree edges**.
   references, inside `deinit`. Records are therefore immutable to every
   observer and `Sendable` (`@unchecked`, with the invariant stated at its one
   use and an audit that no other code writes the storage).
-- **Traversal.** Deep equality, the walker, the `Document.scope(of:)` index,
-  `Document.node(at:)`, materialization (6.1) and `description` use explicit
+- **Traversal.** Deep equality, the walker, materialization (6.1) and
+  `description` use explicit
   work stacks. Hashing reads only the id. Kotlin (`equals`, `toString`) and
   ECMAScript (`markupEquals`) follow the same rule, because their stacks are
   finite too; their garbage collectors need no rule for release.
 - **Gate.** The existing 30,000 and 65,536-level tests extend from release to:
   releasing a deep document whose subtree is shared with a newer version,
   equality of two deep documents that differ only at the deepest leaf,
-  walking, scope lookup, hit testing and `description`, on every binding. They
+  walking and `description`, on every binding. They
   run on a thread with a small fixed stack, so a recursion regression fails
   deterministically instead of depending on the platform's default stack size.
 
@@ -943,7 +924,7 @@ changed paths, `L` the size of the re-read leaves, `W` the lookahead window
 before convergence, and `k` the size of inline roots invalidated by
 resolution changes.
 
-| Operation | Block work | Inline work | Resolution | Materialization |
+| Operation | Block work | Inline work | Resolution | Materialization (platform) |
 | --- | --- | --- | --- | --- |
 | Append `c` bytes inside an open paragraph | O(c + last line) | O(c + distance to stable prefix) | O(changed declarations) | O(d + F) |
 | Append that closes and opens blocks | O(c + last line + closed leaves) | as above | as above | O(d + F) |
@@ -988,7 +969,11 @@ pretend otherwise:
   position; every matched node that is a new object differs in value from its
   predecessor. For scripted edits the exact set of new objects is asserted
   (for example, typing in paragraph 5 of 1,000 replaces that paragraph, its
-  Text nodes on the edited line and the Document).
+  Text nodes on the edited line and the Document). Scripted cases include
+  unwrapping a nested inline note (the inner note keeps its id), inserting a
+  line at the top of a long document (only the Document and the edited
+  paragraph are new values), and changing a heading anchor that Links target (every such Link is a new
+  value carrying the new destination).
 - **Work counters.** Deterministic counters, like the existing
   `input_line_work` and `delimiter_work`, gate lines re-read, inline bytes
   re-parsed, child summaries recombined, finish nodes visited and nodes
@@ -1008,11 +993,11 @@ pretend otherwise:
 
 Each step is one pull request that leaves `main` releasable.
 
-- [ ] **Step 1: Model.** Ids for fresh parses, deep equality and hashing, relative spans
-   with walker and document scope resolution, MCB3, and the Swift record
-   storage, the coordinate unit (4.4), and footnote targets by identity for
-   inline notes (4.5). The canonical dump and conformance fixtures change only
-   for inline-note referents.
+- [ ] **Step 1: Model.** Ids for fresh parses, deep equality and hashing, raw extents
+   in nodes with on-demand scope queries, MCB3, and the Swift record
+   storage, the coordinate unit (4.4), and definitions kept where written
+   (4.5). The canonical dump and conformance fixtures change only for
+   documents with footnote or specimen definitions.
 - [ ] **Step 2: Sessions with a whole-document restart.** Session API on every platform,
    the text tree, the journal and transactional edits, identity matching,
    value deduplication, versions and `reuse` materialization. The restart
@@ -1030,17 +1015,22 @@ Each step is one pull request that leaves `main` releasable.
 
 ## 10. Decisions for the owner
 
-- **D1 Positions. Decided 2026-09-29: relative spans.** Nodes store relative
-  spans; `Document.scope(of:)` and the walker return the same editor line and
-  column range as today's `Markup.scope`, with the same conventions and
-  sentinels. The rejected alternative kept `Markup.scope` in node values, so
-  any edit that changes the line count would replace every node after it.
-- **D2 Inline notes. Decided 2026-09-29: no generated ids, same model.** An
-  inline note keeps the `Cite`, `Citation` and `Footnote` model; its referent
-  names the `Footnote` by `MarkupID` instead of a generated `inline-N` label
-  (4.5). Rejected: keeping `inline-N`, where inserting one note changed every
-  later note, and a separate `InlineNote` kind, which would express footnote
-  semantics with a second model.
+- **D1 Positions. Decided 2026-09-29: raw extents, scopes on request.** Nodes
+  carry only the engine's own byte extent (lead from the previous sibling,
+  span), copied verbatim to every binding. `document.scope(of:in:)` and
+  `document.node(at:in:)` compute today's editor line and column scope from
+  it on request, because side-by-side editing is the only consumer and is
+  not on the hot path. Rejected: absolute scopes in nodes, which replace
+  every node after an inserted line, and line and column spans in nodes,
+  which make every parse and publish count lines and convert units.
+- **D2 Definitions. Decided 2026-09-29: definitions stay where written.**
+  Footnote and specimen definitions remain in the tree where they were
+  written, an inline note's `Footnote` is owned at its call site, and the
+  document publishes label lookups instead of owning the definitions (4.5).
+  Rejected: keeping `inline-N`, where inserting one note changed every later
+  note; a separate `InlineNote` kind, which would express footnote semantics
+  with a second model; and lifted definitions named by `MarkupID`, which kept
+  special identity and position rules for the lifted list.
 - **D3 Swift storage. Decided 2026-09-29: per-node records,** on the
   condition that no operation recurses over tree edges (6.3). The rejected
   alternative kept the flat store with a cross-version segment scheme, which
