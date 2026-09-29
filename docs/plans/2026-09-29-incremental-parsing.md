@@ -856,16 +856,19 @@ record layout changes.
 
 ### 6.3 Swift storage
 
-Swift currently copies each parse into one flat `StoredMarkup` array owned by a
-`MarkupStore` (`docs/architecture/swift-storage.md`). The design replaces
-it with one immutable final class record per node that holds its scalars and
-references to its children's records, like Kotlin and ECMAScript, with
-liveness by ARC.
+The Swift AST was originally a tree of per-node objects, as Kotlin and
+ECMAScript still are. #240 (issue #233) replaced it with one flat
+`StoredMarkup` array owned by a `MarkupStore`
+(`docs/architecture/swift-storage.md`) for one reason: ARC released the tree
+recursively, and a 65,536-level chain overflowed the stack. The flat store
+fixed that symptom by changing the data model, and brought the indirection
+of stored field references and store ownership with it.
 
-The flat store was introduced to bound destruction depth: ARC releases a
-tree of class instances recursively, and a 65,536-level chain overflowed the
-stack. Records keep that bound with one rule, stated once and applied to every
-operation that follows tree edges: **no operation recurses over tree edges**.
+The design restores the tree: one immutable final class record per node that
+holds its scalars and references to its children's records, with liveness by
+ARC. The stack bound is kept by fixing its cause instead, with one rule
+stated once and applied to every operation that follows tree edges: **no
+operation recurses over tree edges**.
 
 - **Release.** Every record inherits one internal base, `MarkupRecord`, that
   holds all of the node's owned relations in storage only the base can empty.
@@ -1042,9 +1045,9 @@ Each step is one pull request that leaves `main` releasable.
   with a second model; and lifted definitions named by `MarkupID`, which kept
   special identity and position rules for the lifted list.
 - **D3 Swift storage. Decided 2026-09-29: per-node records,** on the
-  condition that no operation recurses over tree edges (6.3). Swift then has
-  the one object per node that Kotlin and ECMAScript have, instead of a
-  Swift-only layout whose array exists only to bound release depth.
+  condition that no operation recurses over tree edges (6.3). This restores
+  Swift's original tree, which #240 had flattened only to bound ARC release
+  depth; iterative release bounds it directly.
 - **D4 Coordinate unit. Decided 2026-09-29: one unit per session.** Edit
   offsets and returned columns use the same unit, UTF-16 by default in
   bindings and UTF-8 in C. Text is stored as UTF-8, and the C text tree keeps
