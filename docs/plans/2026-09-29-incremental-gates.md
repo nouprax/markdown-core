@@ -94,8 +94,8 @@ document and a script; its identity is the digest of both.
 
 ### 3.1 Documents
 
-- **Grammar corpus.** Every document of the grammar corpus (848 documents
-  over 194 certificates, ASCII and UTF-8 alphabets). It covers every feature
+- **Grammar corpus.** The dialect encoding of every grammar corpus
+  certificate, in both alphabets. It covers every feature
   and element, so every dependency row of the plan's section 3 is exercised
   somewhere. These documents are small (under 6 KB), which is what
   exhaustive correctness sweeps need.
