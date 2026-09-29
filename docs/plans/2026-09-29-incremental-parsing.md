@@ -801,10 +801,11 @@ Each step is one pull request that leaves `main` releasable.
 
 ## 10. Decisions for the owner
 
-- **D1 Positions.** Move absolute scopes out of node values into relative
-  spans with `Document.scope(of:)` and walker scopes (recommended), or keep
-  `Markup.scope`, and accept that any edit that changes the line count
-  replaces every node after it.
+- **D1 Positions. Decided 2026-09-29: relative spans.** Nodes store relative
+  spans; `Document.scope(of:)` and the walker return the same editor line and
+  column range as today's `Markup.scope`, with the same conventions and
+  sentinels. The rejected alternative kept `Markup.scope` in node values, so
+  any edit that changes the line count would replace every node after it.
 - **D2 Inline footnote ids.** Keep `inline-N` ordinals (recommended for now:
   the cascade is limited to later inline notes and their Cites), or change the
   contract to an id that does not depend on earlier notes.
