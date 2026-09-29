@@ -193,8 +193,8 @@ against the scopes the canonical dump prints, which are UTF-8 columns, and in
 UTF-16 against the same scopes converted through the model text.
 
 `Document.footnotes`, `Document.specimens`, `footnote(for:)` and
-`specimen(for:)` for every label in the text equal those of the fresh parse
-(plan 8).
+`specimen(for:)` for every label in the text return the nodes corresponding
+to the fresh parse's answers, in the same order (plan 8).
 
 ### 4.2 Identifier
 
@@ -232,6 +232,8 @@ of the step (plan 5.2), the absolute scopes of the snapshot and of
 `scope(of:in:)` on the new document, kinds and owner relations. The harness
 computes the expected matching itself, for every node of every step:
 
+- The new document continues the old document (plan 5.9 starts matching
+  from the reopened spine, whose root is the document).
 - An old node's anchor is its first byte that survived the step. A node none
   of whose bytes survived has no anchor.
 - Within the relation of a matched owner, a new node of the same kind whose
