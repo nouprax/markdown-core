@@ -167,9 +167,9 @@ subject's document equals the dump of a fresh `Document.parse` of the model
 text in the same unit. The dump prints no ids and prints absolute scopes, so
 it compares meaning and positions and nothing that depends on history.
 
-A node stores only its relative extent: the UTF-8 gap from the end of its
+A node stores only its relative extent: `Extent(lead, size)`, where `lead` is the UTF-8 distance from the end of its
 previous sibling in the same relation (or from its owner's start, for the
-first) and its UTF-8 length. `Document.scope(of:in:)` and
+first) and `size` is its UTF-8 length. `Document.scope(of:in:)` and
 `Document.node(at:in:)` compute absolute positions from the extents and the
 source text the caller passes (plan 4.3). On every step of the correctness
 set, for every node of the subject's document, `scope(of:in:)` with the model
@@ -239,9 +239,9 @@ addition, a continued node whose subtree value equals its predecessor's is
 the predecessor itself (4.3). Extents are relative, so text that moves a
 node without touching it leaves its value unchanged. The one exception is
 structural: the first continued node after a changed or inserted sibling in
-the same relation may get a new gap (recomputed at convergence, plan 5.3), and
+the same relation may get a new `lead` (recomputed at convergence, plan 5.3), and
 is then legitimately a new value with the same id. The oracle predicts that
-gap from the fresh parse, so it needs no special case.
+`lead` from the fresh parse, so it needs no special case.
 
 ### 4.5 Scripted identity
 
