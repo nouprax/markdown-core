@@ -367,7 +367,7 @@ Deterministic counters, in the style of the existing `input_line_work` and
 
 Counters are cheap, exact and platform-independent. They are where the plan's
 bounds are enforced (6.2). Ir is where constant factors and the asymptotic
-shape are checked (6.3–6.5).
+shape are checked (6.3, 6.4 and 6.6).
 
 ## 6. Gate rules
 
@@ -398,7 +398,7 @@ quantities, per step:
 | `K` | Registry keys whose winner, family or ordinal differs between the two fresh parses: reference and heading labels, anchors, footnote labels, specimen ids |
 | `R(K)` | Inline roots of the new fresh parse that look up a key in `K`, and their content bytes |
 | `N` | New objects the step must produce, as 4.3 and 4.4 predict them |
-| `T` | Text chunks the step touches: ⌈(removed + inserted bytes) / chunk size⌉ + 2, where the chunk size is the text tree's one declared constant |
+| `T` | Text-tree journal entries the step may need: for each edit range, 1 + 2 × ⌈log₂(text bytes + 1)⌉, plus 1 for the pending bytes. The 1 is the entry that takes the replaced chunks (plan 5.11); the rest are the internal nodes on the paths to the range's two ends, and no balanced tree over n bytes is taller than log₂ n. Inserted chunks are new allocations and need no entry. `T` depends on the text and the edit only, never on the text tree's chunk size |
 
 The bounds:
 
@@ -437,20 +437,32 @@ counters that row names.
 ### 6.3 Flatness, on Ir
 
 For every local edit family (`typing`, `lines`, `ranges`, `far`, `batch`)
-on every scale shape, **every step** at 1 MB costs at most 1.25 times the same
-step at 16 KB. The scripts apply the same edits at the same relative positions
-at every size, so step `i` of one size corresponds to step `i` of the other,
-and a size-dependent cost on any single step (a lazy O(n) initialization on the
-first edit, say) fails, however few steps it affects. The factor 64 in size
-leaves room for the O(log n) text tree, ledger and registries (six more tree
-levels) and nothing linear.
+on every scale shape, **every step** costs at most logarithmically more as the
+document grows. The scripts apply the same edits at the same relative
+positions at every size, so step `i` of one size corresponds to step `i` of
+another. With `c(s)` the cost of step `i` at size `s` and
+`Δ = max(0, c(64 KB) − c(16 KB))`, the rule is
+
+- `c(256 KB) ≤ 1.25 × c(16 KB) + 2Δ`, and
+- `c(1 MB) ≤ 1.25 × c(16 KB) + 3Δ`.
+
+A cost `a + b log n` rises by the same amount at every fourfold size step, so
+extrapolating the first rise is exactly its growth: the O(log n) text tree,
+ledger and registries pass at any branching factor and tree height. A linear
+term that is a share `ℓ` of the step's cost at 16 KB rises by `3ℓ` of that
+cost to 64 KB but by `63ℓ` to 1 MB, so the step fails once `54ℓ > 0.25`, that
+is, once the linear part is more than about half a percent of the step. A
+size-dependent cost on any single step (a lazy O(n) initialization on the first
+edit, say) fails the same way, however few steps it affects.
 
 For `tokens` and `rows` on every scale shape, the chunks do not correspond
-across sizes, so the rule compares positions within one stream: both the
-maximum and the p95 of the chunks in the last tenth of the document are at most
-1.25 times those of the chunks in the second tenth, which catches per-chunk work
-that grows with the text already streamed. A stream measured in windows (5.1)
-takes each window's mean step cost as its sample.
+across sizes, so the rule compares positions within one stream of `n` bytes.
+The band at position `p` is the chunks that end in the last tenth before `p`,
+and `m(p)` is the maximum, and separately the p95, of the band's costs. With
+`Δ = max(0, m(n/4) − m(n/16))`, the rule is `m(n) ≤ 1.25 × m(n/16) + 2Δ`: the
+same logarithmic allowance, which catches per-chunk work that grows with the
+text already streamed. A stream measured in windows (5.1) takes each window's
+mean step cost as its sample.
 
 The same rule covers the adversarial shapes whose cost the language keeps
 local: the 10,000-item list edited in the middle and the 1,000 nested quotes
@@ -479,7 +491,37 @@ matching, deduplication and the journal when an edit really does change the
 whole document; beyond it, an incremental edit would be a regression against
 the application that just reparses.
 
-### 6.5 Regressions
+### 6.5 Retention
+
+R8 asks that what a session retains is specified. The gate checks it
+directly, with no measured number: after every step of the correctness set
+and at the end of every benchmark script, once the harness has released every
+earlier document it held, the session retains what the current text alone
+implies. The allocator seam tags each session-owned allocation with its kind
+from plan 5.1, and the harness compares the live counts with the fresh parse
+of the current text:
+
+| Kind | Bound |
+| --- | --- |
+| Tree nodes | = nodes of the fresh document |
+| Block ledger entries | = its block nodes |
+| Registry entries | = its declarations |
+| Lookup index entries | = its registry lookups |
+| Inline ledger entries | = its inline roots |
+| Frontier | ≤ its open spine and the content of its open leaf |
+| Pending bytes | ≤ 3 |
+| Journal entries and parse scratch | 0 |
+| Text tree bytes | ≤ 2 × those of a session opened on the same text |
+
+A kind is checked from the rollout step that introduces it. The text tree is
+the only retained structure whose shape depends on its history, and 2 is its
+occupancy bound: every chunk and node other than the root is at least half
+full, the invariant that keeps a balanced tree balanced. A session that keeps
+an earlier tree, ledger entry or journal fails on the first step it does so,
+whatever the script's length, so the rule holds from step 2, before there is
+a session baseline.
+
+### 6.6 Regressions
 
 Against the base revision, measured with the current harness and workloads on
 both sides as the one-shot gate already does, and always between the same
@@ -493,11 +535,11 @@ subject on both sides:
 
 When the base revision has no `session` subject, which is the case for the
 pull request of rollout step 2, there is nothing of the same kind to compare
-with. That pull request is gated by 6.2 and 6.4 alone, reports its session
+with. That pull request is gated by 6.2, 6.4 and 6.5 alone, reports its session
 numbers beside the base's `reparse` numbers, and becomes the session baseline;
 the 1.02 rules apply to `session` from the next pull request (decision G4).
 
-Speedup and `stream_ratio` are reported, not gated. They follow from 6.3–6.5,
+Speedup and `stream_ratio` are reported, not gated. They follow from 6.3, 6.4 and 6.6,
 and a fixed target on either would be a number chosen from a measurement.
 
 ## 7. Activation by rollout step
@@ -507,9 +549,9 @@ its numbers are reported with the `reparse` subject.
 
 | Step | Correctness | Benchmarks |
 | --- | --- | --- |
-| 0 Harness (this plan) | Scripts, text model and pending-byte model self-tests; 4.1 with `reparse` | Edit and stream runners report the R column; one-shot adds the `buffer_to_ast` rule (6.5) |
+| 0 Harness (this plan) | Scripts, text model and pending-byte model self-tests; 4.1 with `reparse` | Edit and stream runners report the R column; one-shot adds the `buffer_to_ast` rule (6.6) |
 | 1 Model | 4.2 for fresh parses; deep equality and 4.10 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
-| 2 Sessions, whole-document restart | 4.1–4.12 on the correctness set, every platform, both units | 6.4 on every workload, which sets the session baseline for 6.5 (G4); 6.2 for `nodes_new` |
+| 2 Sessions, whole-document restart | 4.1–4.12 on the correctness set, every platform, both units | 6.4 on every workload, which sets the session baseline for 6.6 (G4); 6.2 for `nodes_new`; 6.5 for the kinds it introduces |
 | 3 Block restart and convergence | Unchanged | 6.2 for `lines_reread`, `ledger_touched` and `summaries_combined`, and for `inline_bytes` and `finish_visited` on shapes without declarations; 6.3 for the local edit families on shapes without declarations |
 | 4 Session registries | Unchanged | 6.2 for `registry_recomputed` and `lookups_invalidated`, and for `inline_bytes`, `finish_visited` and `journal_entries` on every shape; 6.3 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`) and for the local steps of `declarations` |
 | 5 Frontier and inline restart | Unchanged | 6.2 in its stream form for `lines_reread` and `inline_bytes`; 6.3 for `tokens` and `rows` |
@@ -537,6 +579,7 @@ named oracle:
 | Applies a step and then reports failure | 4.8 |
 | Accepts an end inside a scalar | 4.9 |
 | Re-reads the whole document on every step | 6.2 and 6.3 |
+| Keeps every earlier document alive | 6.5 |
 
 The faulty subjects wrap `reparse` (and, from step 1, fresh ids), live only in
 the harness's test sources, and are never linked into a product target. The
@@ -600,7 +643,7 @@ as section 7 says, in their own pull requests.
       of section 8 that wrap `reparse`.
 - [ ] The edit and stream benchmark runner, `pnpm benchmark:edits`, reporting
       the R column, with driver tests on synthetic profiles.
-- [ ] The `buffer_to_ast` regression rule in the one-shot gate (6.5, G1).
+- [ ] The `buffer_to_ast` regression rule in the one-shot gate (6.6, G1).
 - [ ] The "Measure - edits and streams" CI job and its tables in the PR
       comment.
 
@@ -615,9 +658,9 @@ as section 7 says, in their own pull requests.
 - **G2 The reparse margin.** Proposed 1.25 (6.4). A smaller margin forbids
   paying for matching on whole-document changes; a larger one hides a
   regression in the language-inherent cases.
-- **G3 Flatness factor.** Proposed 1.25 across a 64 times size range (6.3).
-  It is a statement of "no linear term", and it should not be loosened to pass
-  a measurement.
+- **G3 Flatness factor.** Proposed 1.25 as the margin on top of the
+  logarithmic allowance across a 64 times size range (6.3). It is a statement
+  of "no linear term", and it should not be loosened to pass a measurement.
 - **G4 The session baseline.** Proposed: the step 2 pull request sets the
-  session baseline under 6.2 and 6.4 only, and the 1.02 regression rules
-  apply to the session from then on (6.5).
+  session baseline under 6.2, 6.4 and 6.5 only, and the 1.02 regression
+  rules apply to the session from then on (6.6).
