@@ -45,10 +45,8 @@ make. Section 11 records rejected alternatives.
   an insertion into an empty session. There is no streaming parser, no
   fallback parser and no size threshold that selects a different algorithm
   (see `AGENTS.md`).
-- **R7 Errors.** An invalid argument or an allocation failure, in the engine
-  or in the platform, throws an error. Nothing is rolled back. An engine
-  allocation failure leaves the C session half-edited, so the engine reports
-  that error again on every later call (5.11).
+- **R7 Errors.** Out of memory at any stage throws an error. Nothing is
+  rolled back.
 - **R8 Explicit retention.** What a session retains between edits, its owner
   and its size are specified. Parse scratch never survives an edit.
 - **R9 Concurrency.** Published documents stay immutable and `Sendable`. A
@@ -803,21 +801,12 @@ value, which is what R3 measures and the work counters (8) count.
 
 This argument is also the test oracle (section 8).
 
-### 5.11 Failures
+### 5.11 Session state
 
 An edit changes session state in place: the text tree, the pending UTF-8
 bytes, the live tree, the ledger, the registries, the lookup index, the
 frontier and the inline ledger. Nodes and elements it removes are freed when
 it completes.
-
-An invalid argument is detected before the first change (4.4). An allocation
-failure can happen mid-edit, when part of that state is already changed; the
-session then keeps the failure, as a parse keeps its sticky allocation
-failure today, and returns it from this and every later call. The engine
-keeps no undo record for this case: out of memory is rare, and the editor
-holds the full text, so a new session is the recovery. Freeing the failed
-session releases everything it owns. Documents a binding already returned
-are platform values and are unaffected.
 
 ## 6. Bindings
 
@@ -830,10 +819,6 @@ platform's cost of building an immutable value, which the engine's design
 does not count or optimize (D5). Nodes the edit left unchanged reach the
 consumer as equal values with unchanged ids (4.2), which is what SwiftUI,
 Compose and React reconcile.
-
-The conversion is ordinary platform code: whatever the platform throws while
-it runs, such as running out of memory, reaches the caller as that
-platform's error.
 
 ### 6.2 Wire format MCB3
 
@@ -981,10 +966,8 @@ pretend otherwise:
   unreferenced definitions check each binding's answers against the winners
   of the C registries, since the canonical dump does not call the queries.
 - **Allocation failures.** The allocator-seam OOM sweep fails every edit at
-  every allocation boundary and asserts that the edit reports the failure,
-  that every later call on the session reports it too, that freeing the
-  session releases everything (under the leak checker), and that a new
-  session from the same text parses normally.
+  every allocation boundary and asserts that the edit throws and that
+  freeing the session leaks nothing.
 - **Audits.** E1–E5 (5.4), the finish-step root rule (5.8), and the
   dependency inventory (section 3) are enforced by scripts in
   `scripts/audit/`.
