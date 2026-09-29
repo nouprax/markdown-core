@@ -72,16 +72,16 @@ for editing the AST itself.
 Three properties of this design are what make incrementality possible
 without a second parser:
 
-1. S1 is a streaming line machine. Between two lines its whole state is the
+- (1) S1 is a streaming line machine. Between two lines its whole state is the
    open spine, each open node's continuation facts and the open leaf's
    accumulated content. `docs/architecture/block-containers.md` already
    requires that no body is copied into a second input and no subtree is
    reparsed.
-2. Every inline root is parsed once, from its own content, against a
+- (2) Every inline root is parsed once, from its own content, against a
    reference map that is complete before inline parsing starts. Heading
    suspension (`docs/architecture/heading-resolution.md`) already proves that
    an inline state can stop and resume without a second recognizer.
-3. Document-wide facts are collected as registrations (source-ordered
+- (3) Document-wide facts are collected as registrations (source-ordered
    entries with borrowed nodes) and resolved once. They are not rediscovered
    by tree searches.
 
@@ -321,10 +321,10 @@ declare what it read, so a new element cannot forget to.
 
 **Restart.** A restart point is the start of a ledger block `R` such that:
 
-1. `R` starts at or before the damaged start line;
-2. `R`'s entry frontier is before the damaged start line, so nothing
+- (1) `R` starts at or before the damaged start line;
+- (2) `R`'s entry frontier is before the damaged start line, so nothing
    decided before `R` read the damage;
-3. no block that closed before `R` has a read end at or after the damaged
+- (3) no block that closed before `R` has a read end at or after the damaged
    start line.
 
 The engine takes the latest such `R` by walking the ledger backwards from the
@@ -344,12 +344,12 @@ exists.
 line `j`, the engine looks up the old ledger entry that starts at the mapped
 old line `j'`. It converges when all of these hold:
 
-1. such an old block `O` exists and was not damaged;
-2. the new spine and the spine `O` opened under are equal: the same kinds at
+- (1) such an old block `O` exists and was not damaged;
+- (2) the new spine and the spine `O` opened under are equal: the same kinds at
    every depth, equal continuation facts through each element's
    `carry_equal` hook, and equal last-line-blank flags. The comparison is exact
    and walks the spine; a hash only filters;
-3. the new high-water mark is at most `j`, and `O`'s entry frontier is at
+- (3) the new high-water mark is at most `j`, and `O`'s entry frontier is at
    most `j'`, so no decision on either side is still reading across the
    boundary.
 
@@ -678,22 +678,22 @@ pretend otherwise:
 
 Each step is one pull request that leaves `main` releasable.
 
-1. **Model.** Ids for fresh parses, deep equality and hashing, relative spans
+- [ ] **Step 1: Model.** Ids for fresh parses, deep equality and hashing, relative spans
    with walker and document scope resolution, MCB3, and the Swift record
    storage. The canonical dump and conformance fixtures do not change.
-2. **Sessions with a whole-document restart.** Session API on every platform,
+- [ ] **Step 2: Sessions with a whole-document restart.** Session API on every platform,
    the gap buffer and line table, transactional edits, identity matching,
    value deduplication, versions and `reuse` materialization. The restart
    point is always the document and nothing converges: this is the degenerate
    case of the final algorithm, and it already gives R1, R3, R4 and R5, with
    O(n) parse work.
-3. **Block restart and convergence.** The ledger, the high-water mark, E1–E4
+- [ ] **Step 3: Block restart and convergence.** The ledger, the high-water mark, E1–E4
    and their audits, spine re-finalization.
-4. **Session registries.** Source-ordered registries, winners, lookup
+- [ ] **Step 4: Session registries.** Source-ordered registries, winners, lookup
    dependencies, anchor families, per-root finish steps.
-5. **Frontier and inline restart.** The suspended frontier, E5, and the
+- [ ] **Step 5: Frontier and inline restart.** The suspended frontier, E5, and the
    stable prefix.
-6. **Gates.** Work-counter bounds and benchmark cases for streaming and random
+- [ ] **Step 6: Gates.** Work-counter bounds and benchmark cases for streaming and random
    edits, in the existing benchmark workflow.
 
 ## 10. Decisions for the owner
