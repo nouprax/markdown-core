@@ -224,9 +224,8 @@ Extent(lead: Int32, span: UInt32)       bytes of UTF-8 source
   and the source text the document was parsed from, which the side-by-side
   editor already holds (`session.text` for a session's current document).
   They return today's editor line and column conventions and sentinels, in
-  the session's coordinate unit (4.4). The first query on a document builds
-  its absolute-offset index in one walk, published once under a lock because
-  documents are `Sendable` (R8); the line and unit conversion scans the
+  the session's coordinate unit (4.4). Each query computes absolute offsets
+  in one walk over the extents, and the line and unit conversion scans the
   source. This cost is paid only by the query.
 - Walker callbacks no longer carry a scope.
 - A scope is a function of the byte range alone. The empty-document
@@ -351,17 +350,14 @@ Specimen(label: String?, start: Int?, content: [Markup])
   labels and no `-K` rule.
 - `Footnote.id` and `Specimen.id` are renamed `label`, because every node now
   has `id: MarkupID` (4.1).
-- `Document` answers lookups instead of owning sequences:
+- `Document` carries the parser's footnote and specimen tables: the ids of
+  every definition in source order, as the C registries (5.7) hold them. A
+  binding receives them with the document (6.2) and resolves them to its
+  nodes while it builds the tree (6.1). `document.footnotes` and
+  `document.specimens` list those definitions in source order, and
   `document.footnote(for: label)` and `document.specimen(for: label)` return
-  the first definition in source order whose stored label equals the
-  referent's (the parser has already normalized both), as the spec defines
-  today, and `document.footnotes` and `document.specimens` list every
-  definition in source order as references into the tree. These are
-  functions of `content`, so they are queries, not data: they take no part
-  in equality and nothing transports them. Like `scope(of:in:)` (4.3), the first query on a document builds its
-  label index in one walk, published once under a lock, and only the query
-  pays for it. In C the session's label registries (5.7) already hold the
-  same answer.
+  the first one whose stored label equals the referent's (the parser has
+  already normalized both), as the spec defines today.
 - Definitions therefore follow the tree's ordinary identity rules (5.9),
   with no rule of their own.
 - Walks and the canonical dump visit a definition where it was written. A
@@ -486,8 +482,7 @@ immutable list of frames, innermost first, each holding one open container's
 id and its carried facts (E3). Snapshots share frames: a new frame is made
 only for a container whose facts differ from the frame the previous snapshot
 used, together with the frames inside it. Storage is one frame per block plus
-the frames of changed containers, and a work counter gates it against deep
-nesting with changing flags.
+the frames of changed containers.
 
 Restarting at `R` reopens `R`'s ancestors, which are exactly the open spine
 at that line: each ancestor is marked open and its carried facts are restored
@@ -750,7 +745,7 @@ equal scalars, equal extent, and every child relation holding the same
 objects.
 If they are equal, `N` is released and `O` stays. Within the C session, a
 node that differs from its predecessor as an object therefore differs as a
-value, which is what R3 measures and the work counters (8) count.
+value, which is what R3 measures.
 
 ### 5.10 Why the result equals a fresh parse
 
@@ -790,6 +785,7 @@ Compose and React reconcile.
 Kotlin and ECMAScript receive a parse as one message. MCB3 extends MCB2
 (`docs/architecture/wire-format.md`) and keeps its post-order stack model.
 Every node record adds `u64 id` and the node's `Extent` in place of `Scope`.
+The message ends with the footnote and specimen tables (4.5).
 Every message is a whole document. The magic becomes `MCB3` because the
 record layout changes.
 
@@ -822,15 +818,15 @@ operation recurses over tree edges**.
   references, inside `deinit`. Records are therefore immutable to every
   observer and `Sendable` (`@unchecked`, with the invariant stated at its one
   use and an audit that no other code writes the storage).
-- **Traversal.** Deep equality, the walker, conversion (6.1), the scope
-  index and hit testing (4.3), the label index (4.5) and `description` use
+- **Traversal.** Deep equality, the walker, conversion (6.1), scope
+  queries and hit testing (4.3) and `description` use
   explicit work stacks. Hashing reads only the id. Kotlin (`equals`, `toString`) and
   ECMAScript (`markupEquals`) follow the same rule, because their stacks are
   finite too; their garbage collectors need no rule for release.
 - **Gate.** The existing 30,000 and 65,536-level tests extend from release to:
   releasing a deep document while a view still holds one of its subtrees,
   equality of two deep documents that differ only at the deepest leaf,
-  walking, the first `scope(of:in:)` query (which builds the offset index),
+  walking, `scope(of:in:)`,
   `node(at:in:)` and `description`, on every binding. They
   run on a thread with a small fixed stack, so a recursion regression fails
   deterministically instead of depending on the platform's default stack size.
@@ -893,6 +889,10 @@ pretend otherwise:
 
 ## 8. Testing
 
+The oracles below, the workloads they run on and the edit and stream
+benchmarks are specified in [Gates for incremental parsing](2026-09-29-incremental-gates.md),
+which also says at which rollout step each one becomes a gate.
+
 - **Differential oracle.** For every document in the benchmark corpus and
   fuzz inputs, random edit scripts (inserts, deletes, replacements at line and
   byte granularity, including CR/LF splits and NUL) are applied through a
@@ -916,13 +916,6 @@ pretend otherwise:
   line at the top of a long document (only the Document and the edited
   paragraph are new values), and changing a heading anchor that Links target (every such Link is a new
   value carrying the new destination).
-- **Work counters.** Deterministic counters, like the existing
-  `input_line_work` and `delimiter_work`, gate lines re-read, inline bytes
-  re-parsed, child summaries recombined, finish nodes visited and C nodes
-  replaced per edit against the bounds of 7.1,
-  including adversarial shapes: a stray early opener, a 10,000-item list edited
-  in the middle, 1,000 nested block quotes, a definition with thousands of
-  references.
 - **Definition queries.** After every edit, `footnotes`, `specimens` and
   `footnote(for:)` and `specimen(for:)` for every label in the text equal
   those of a fresh parse, and fixtures with nested, duplicate, anonymous and
@@ -937,8 +930,15 @@ pretend otherwise:
 
 ## 9. Rollout
 
-Each step is one pull request that leaves `main` releasable.
+Each step is one pull request that leaves `main` releasable. Each step must
+pass the gates that
+[Gates for incremental parsing](2026-09-29-incremental-gates.md#7-activation-by-rollout-step)
+activates for it.
 
+- [ ] **Step 0: Gates.** The edit and stream workloads, the correctness
+   harness with the `reparse` subject and its faulty-subject self-tests, and
+   the edit and stream benchmarks reporting the reparse baseline, in the
+   existing benchmark workflow.
 - [ ] **Step 1: Model.** Ids for fresh parses, deep equality and hashing, raw extents
    in nodes with on-demand scope queries, MCB3, and the Swift record
    storage, the coordinate unit (4.4), and definitions kept where written
@@ -958,8 +958,6 @@ Each step is one pull request that leaves `main` releasable.
    dependencies, anchor families, per-root finish steps.
 - [ ] **Step 5: Frontier and inline restart.** The suspended frontier, E5, and the
    stable prefix.
-- [ ] **Step 6: Gates.** Work-counter bounds and benchmark cases for streaming and random
-   edits, in the existing benchmark workflow.
 
 ## 10. Decisions for the owner
 
@@ -974,8 +972,8 @@ Each step is one pull request that leaves `main` releasable.
 - **D2 Definitions. Decided 2026-09-29: definitions stay where written.**
   Footnote and specimen definitions remain in the tree where they were
   written, an inline note's `Footnote` is owned at its call site, and the
-  document answers label lookups as queries over its content instead of
-  owning the definitions (4.5).
+  document carries the parser's footnote and specimen tables for label
+  lookups instead of owning the definitions (4.5).
   Rejected: keeping `inline-N`, where inserting one note changed every later
   note; a separate `InlineNote` kind, which would express footnote semantics
   with a second model; and lifted definitions named by `MarkupID`, which kept
