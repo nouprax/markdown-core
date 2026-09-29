@@ -47,9 +47,7 @@ make. Section 11 records rejected alternatives.
   (see `AGENTS.md`).
 - **R7 Errors.** Out of memory at any stage throws an error. Nothing is
   rolled back.
-- **R8 Explicit retention.** What a session retains between edits, its owner
-  and its size are specified. Parse scratch never survives an edit.
-- **R9 Concurrency.** Published documents stay immutable and `Sendable`. A
+- **R8 Concurrency.** Published documents stay immutable and `Sendable`. A
   session has one writer.
 
 Non-goals: error recovery, a different dialect, rendering, and a public API
@@ -142,9 +140,8 @@ Rules:
   becomes a Setext heading is a new node with a new id. Every platform
   already renders different kinds with different view types, so keeping the
   id would buy nothing and would weaken the invariant.
-- **Scoped to a lineage.** Ids from different sessions or fresh parses are not
-  comparable. Nothing may use an id as a key across documents that did not
-  come from one session.
+- **Scoped to a session.** Ids from different sessions or fresh parses are not
+  comparable.
 
 #### The list identity contract
 
@@ -168,12 +165,6 @@ ForEach(document.content, id: \.id) { block in
     BlockView(block)          // switch on the concrete kind
 }
 ```
-
-Because ids are scoped to a lineage, a view that replaces its whole document
-with one from a different session or a fresh `Document.parse` gives its
-container a new SwiftUI identity (`.id(session.identity)`), so no view state
-is matched across unrelated documents. Within one session nothing extra is
-needed.
 
 ### 4.2 Equality
 
@@ -235,7 +226,7 @@ Extent(lead: Int32, span: UInt32)       bytes of UTF-8 source
   They return today's editor line and column conventions and sentinels, in
   the session's coordinate unit (4.4). The first query on a document builds
   its absolute-offset index in one walk, published once under a lock because
-  documents are `Sendable` (R9); the line and unit conversion scans the
+  documents are `Sendable` (R8); the line and unit conversion scans the
   source. This cost is paid only by the query.
 - Walker callbacks no longer carry a scope.
 - A scope is a function of the byte range alone. The empty-document
@@ -250,10 +241,7 @@ Extent(lead: Int32, span: UInt32)       bytes of UTF-8 source
   cells, whose fixtures change), so it is a scope query and takes the source
   like one: `document.dump(in: source)` and `document.dump(node, in: source)`
   on every binding, and `markdown_core_document_dump(document, source, ...)`
-  in C. Byte extents alone cannot tell a line terminator from other bytes,
-  and a document does not retain its source, so no dump without the source
-  exists. A subtree dump is asked of its document because a node's absolute
-  start depends on its ancestors.
+  in C.
 
 This is a breaking change to the canonical AST contract and to every binding
 (section 10, D1).
@@ -304,12 +292,10 @@ C views borrow from the session until its next edit.
 - **Scalar boundaries.** Both ends of an edit range must fall on Unicode
   scalar boundaries in the session's unit: never on a UTF-8 continuation byte,
   never between the two halves of a UTF-16 surrogate pair. Replacement text
-  must be well formed: valid UTF-8 in C (apart from the pending tail of an
-  append, below), and no unpaired surrogate in a Kotlin or ECMAScript string.
-  An edit that breaks either rule is rejected as an invalid argument before
-  any state changes, so the session stays at its previous version. Nothing is
-  rounded to a nearby boundary, because that would silently edit a different
-  range. The text is therefore always valid UTF-8.
+  must be well formed: valid UTF-8 in C, and no unpaired surrogate in a
+  Kotlin or ECMAScript string. An edit that breaks either rule is rejected as
+  an invalid argument. Nothing is rounded to a nearby boundary, because that
+  would silently edit a different range.
 - **Storage stays UTF-8.** The unit is how positions are counted, not how the
   text is stored. A binding takes its platform's own string. Swift's `String`
   is already UTF-8; Kotlin and ECMAScript strings are transcoded once at the
@@ -330,17 +316,6 @@ C views borrow from the session until its next edit.
   with their own shift. Damage is per edit; regions whose restart and
   convergence windows overlap are merged, and the others are re-read
   independently in source order (5.3).
-- **Partial UTF-8.** C `append` may split a scalar. The bytes of an
-  incomplete trailing sequence are **pending**: they are not part of the
-  session's text, `markdown_core_session_text` does not return them, and the
-  document is the parse of the text without them. When a later append
-  completes the sequence, the whole scalar enters the text in that edit. The
-  session's text is therefore always valid UTF-8, the existing precondition
-  holds for every parse, and R1 compares against the text as defined here.
-  An append that makes the pending bytes impossible to complete (a byte that
-  cannot continue the sequence) is rejected as an invalid argument, and the
-  session is unchanged. Binding strings are whole scalars, so bindings never
-  have pending bytes.
 - **`Document.parse`** keeps its signature apart from the unit parameter. It
   is a session that inserts the whole source once and is then discarded.
 
@@ -404,7 +379,6 @@ binding (D2).
 | State | Contents | Size |
 | --- | --- | --- |
 | Text tree | The source as a balanced tree of bounded byte chunks; each subtree records its byte, line-terminator and UTF-16 counts | O(source) |
-| Pending bytes | The incomplete trailing UTF-8 sequence of the last append (4.4) | At most 3 bytes |
 | Tree | The live C tree: ids and each node's extent (4.3) | O(nodes) |
 | Block ledger | One entry per block node at any depth: start offset, node id, entry frontier, read end, spine snapshot (5.3) | O(blocks + changed frames) |
 | Registries | Reference, heading, anchor, footnote and specimen declarations in source order; label winners | O(declarations) |
@@ -768,14 +742,6 @@ node:
     id; the second retires.
   - Bytes between the edits of a batch keep their own exact images, so nodes
     there match as if each edit were alone.
-- **Slot pairing.** After anchor matching, the old and new nodes left
-  unmatched between two consecutive matched pairs of one relation (or its
-  ends) occupy the same slot in the list. They are paired in order by kind:
-  the k-th leftover old node of a kind takes the k-th leftover new node of
-  that kind. Selecting a paragraph's whole text and typing a replacement
-  therefore keeps the paragraph's id, like any other in-place edit of a row
-  in a list. A deletion with nothing inserted in its slot still retires the
-  deleted id. The pass is linear and keeps the match monotone.
 - Children of an unmatched owner get new ids. A paragraph that moves into a
   new blockquote is a new node, as it is to every UI framework.
 
@@ -803,8 +769,7 @@ This argument is also the test oracle (section 8).
 
 ### 5.11 Session state
 
-An edit changes session state in place: the text tree, the pending UTF-8
-bytes, the live tree, the ledger, the registries, the lookup index, the
+An edit changes session state in place: the text tree, the live tree, the ledger, the registries, the lookup index, the
 frontier and the inline ledger. Nodes and elements it removes are freed when
 it completes.
 
@@ -935,11 +900,9 @@ pretend otherwise:
   `Document.parse` of the session's text in the same unit. This runs in C
   and in each binding, in both units.
 - **Streaming.** Every corpus document is fed in chunks of every size from
-  one byte up, and split at every byte offset for small documents, including
-  inside UTF-8 scalars in C. Every intermediate document must equal a fresh
-  parse of the session's text, which excludes pending bytes (4.4), and the
-  session's text must equal the longest complete-scalar prefix of the bytes
-  appended so far.
+  one scalar up, and split at every scalar boundary for small documents.
+  Every intermediate document must equal a fresh parse of the session's
+  text.
 - **Identity and minimality.** After every edit: ids are unique; no id
   changed kind; in C, every reused node equals the fresh-parse node at the
   same position and every matched node that is a new object differs in value
