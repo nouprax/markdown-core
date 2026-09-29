@@ -307,6 +307,7 @@ C views borrow from the session until its next edit.
 | State | Contents | Size |
 | --- | --- | --- |
 | Text tree | The source as a balanced tree of bounded byte chunks; each subtree records its byte, line-terminator and UTF-16 counts | O(source) |
+| Pending bytes | The incomplete trailing UTF-8 sequence of the last append (4.4) | At most 3 bytes |
 | Tree | The live C tree: relative spans, ids, versions | O(nodes) |
 | Block ledger | One entry per block node at any depth: start offset, node id, entry frontier, read end, spine snapshot (5.3) | O(blocks + changed frames) |
 | Registries | Reference, heading, anchor, footnote and specimen declarations in source order; label winners | O(declarations) |
@@ -325,6 +326,15 @@ alternating edits at opposite ends of a document cost the same as edits in
 one place. There is one such structure, not one per consumer. (A gap buffer,
 or a sorted array with one lazy shift, would move Θ(n) bytes or keys whenever
 consecutive edits are far apart.)
+
+Line counts must compose, and CRLF is one line terminator. The text tree
+keeps the invariant that **no chunk boundary falls between a CR and the LF
+after it**. Every operation that creates a boundary (an edit's split and join,
+and rebalancing) checks the two bytes around it and, when they are CR and LF,
+moves the LF into the CR's chunk. That check is local, so the invariant costs
+O(1) per boundary created. With it, each chunk counts its own terminators
+exactly, and summed counts equal the parser's line numbering for CR, LF and
+CRLF alike.
 
 Every other workspace in `docs/architecture/parser-input-storage.md`
 (lookahead facts, table geometry, source-order scratch, delimiter pools)
@@ -432,6 +442,18 @@ future is the new parse's future. So at convergence the engine stops reading:
 `O`, its following siblings and every later sibling of each spine ancestor are
 spliced back from the candidates, and their ledger entries are shifted, not
 rebuilt.
+
+**The seam.** Spans are relative (4.3), so the only reused node whose stored
+value can be wrong after the splice is the first one at each spine level: its
+`lead` is measured from the previous sibling's end, and that sibling is now
+the new parse's last node, which may end elsewhere (an inserted blank line
+before `O` moves `O` down one line). The splice therefore recomputes the lead
+of the first reused node in each relation from the new predecessor's end and
+the node's new absolute start, which the transaction knows. If the lead is
+unchanged the node is reused as is. Otherwise it becomes a new value with the
+same id and new lead, whose children are all reused. Every later reused
+sibling keeps its value, because its predecessor is also reused and ends
+where it did relative to it.
 
 **Re-finalization.** The spine containers are still the new parse's open
 nodes. Their closing facts come from the old parse's corresponding closes,
@@ -657,9 +679,9 @@ This argument is also the test oracle (section 8).
 
 ### 5.11 Transactions
 
-An edit is a transaction over session-owned state: the text tree, the live
-tree's links, flags and fields, the ledger, the registries, the lookup index,
-the frontier and the inline ledger. Everything else a re-parse allocates is
+An edit is a transaction over session-owned state: the text tree, the pending
+UTF-8 bytes, the live tree's links, flags and fields, the ledger, the
+registries, the lookup index, the frontier and the inline ledger. Everything else a re-parse allocates is
 scratch or new nodes, which a failure simply releases.
 
 Every mutation of session-owned state goes through one journal. The journal
