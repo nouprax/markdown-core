@@ -149,19 +149,25 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
             status = MARKDOWN_CORE_ALLOCATION_FAILED;
         }
     }
-    /* The size after the batch, checked against the capacity as it grows. */
+    /* The size after the batch: the text less every replaced range, which
+     * disjoint ranges keep within the text, and then each edit's bytes,
+     * checked against the capacity as they are added. */
     size_t after = size;
     for (size_t i = 0; i < count && status == MARKDOWN_CORE_OK; i++) {
         const markdown_core_byte_edit *edit = &sorted[i].edit;
-        after -= edit->end - edit->start;
         if (i + 1 < count && edit->end > sorted[i + 1].edit.start) {
             status = MARKDOWN_CORE_OUT_OF_BOUNDS;
-        } else if (edit->size > MARKDOWN_CORE_SOURCE_CAPACITY - after) {
-            status = MARKDOWN_CORE_ALLOCATION_FAILED;
         } else {
-            after += edit->size;
+            after -= edit->end - edit->start;
             revision[i] = *edit;
             texts[i] = sorted[i].text;
+        }
+    }
+    for (size_t i = 0; i < count && status == MARKDOWN_CORE_OK; i++) {
+        if (revision[i].size > MARKDOWN_CORE_SOURCE_CAPACITY - after) {
+            status = MARKDOWN_CORE_ALLOCATION_FAILED;
+        } else {
+            after += revision[i].size;
         }
     }
     if (status == MARKDOWN_CORE_OK) {
