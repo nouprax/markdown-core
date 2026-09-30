@@ -34,9 +34,8 @@ typedef enum {
     MARKDOWN_CORE_NODE_PARAGRAPH = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0007,
     MARKDOWN_CORE_NODE_HEADING = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0008,
     MARKDOWN_CORE_NODE_THEMATIC_BREAK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0009,
-    /* A footnote definition: a block container while it is parsed, and a
-     * document-owned Footnote value once the document finalizes, when every one
-     * leaves the tree for the root's own footnote chain. */
+    /* A footnote definition: a block container that stays in the tree where it
+     * was written; an inline note is owned by its citation. */
     MARKDOWN_CORE_NODE_FOOTNOTE = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000a,
     /* Its payload comes from the table element's opaque_alloc_func. */
     MARKDOWN_CORE_NODE_TABLE = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000b,
@@ -52,7 +51,8 @@ typedef enum {
      * which content the node sits in, which is what containment checks and the
      * inline parser ask. */
     MARKDOWN_CORE_NODE_COMMENT_BLOCK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0010,
-    /* A specimen definition: a document-owned citation value. */
+    /* A specimen definition: a block that stays in the tree where it was
+     * written. */
     MARKDOWN_CORE_NODE_SPECIMEN = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0011,
     MARKDOWN_CORE_NODE_DEFINITION_LIST = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0012,
     MARKDOWN_CORE_NODE_DEFINITION = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0013,

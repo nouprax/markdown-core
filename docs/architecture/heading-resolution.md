@@ -108,8 +108,8 @@ The same walk resolves contextual script-space escape tokens after
 bracket/delimiter ownership is final, before consolidation merges the token's
 Text into its neighbours. Heading projection and all later consumers
 therefore read decoded literals; it never reinterprets authored escape spellings.
-Script depth follows child and owned-field edges; document-owned footnotes
-begin their own context. Failed enclosing candidates therefore leave field
+Script depth follows child and owned-field edges; a block, such as an inline
+note's Footnote, begins its own context. Failed enclosing candidates therefore leave field
 escapes literal, while a completed script also decodes escapes in nested labels.
 Span, Superscript and Subscript contribute their ordinary child content.
 

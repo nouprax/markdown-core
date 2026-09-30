@@ -60,7 +60,7 @@
             "kind": "Footnote",
             "record": "markdown_core_footnote_value",
             "structure": "FOOTNOTE",
-            "note": "A footnote definition: a block container while it is parsed, and a document-owned Footnote value once the document finalizes, when every one leaves the tree for the root's own footnote chain."
+            "note": "A footnote definition: a block container that stays in the tree where it was written; an inline note is owned by its citation."
         },
         {
             "name": "TABLE",
@@ -107,7 +107,7 @@
             "kind": "Specimen",
             "record": "markdown_core_specimen_value",
             "structure": "SPECIMEN",
-            "note": "A specimen definition: a document-owned citation value."
+            "note": "A specimen definition: a block that stays in the tree where it was written."
         },
         {
             "name": "DEFINITION_LIST",
