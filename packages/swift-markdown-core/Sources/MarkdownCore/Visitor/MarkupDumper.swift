@@ -1,6 +1,3 @@
-// Keep the complete canonical dump together so its value-formatting helpers stay file-private.
-// swiftlint:disable file_length
-
 /// Draws the canonical debug tree over the canonical walk, one line per node
 /// or named relation, as the C dump does. The walk's frames are the tree's
 /// depth; the call stack stays constant.
@@ -13,12 +10,11 @@ enum MarkupDumper {
         bytes: UnsafeBufferPointer<UInt8>,
         lines: SourceLines
     ) -> String {
-        var output: [UInt8] = []
+        var output = ""
         // `more[n]` says whether the latest line at level `n + 1` has a later
-        // sibling; `ends[n]` where the prefix of a line at level `n + 1` ends.
+        // sibling; `segments[n]` is the prefix segment lines below it draw.
         var more: [Bool] = []
-        var prefix: [UInt8] = []
-        var ends = [0]
+        var segments: [String] = []
         var walk = CanonicalWalk(root: root, anchor: anchor)
         while let item = walk.next() {
             if item.level > 0 {
@@ -28,25 +24,23 @@ enum MarkupDumper {
                 if depth > 0 {
                     // The lines nested below the item's parent lead with the
                     // segments above it plus the one its own connector decides.
-                    prefix.removeSubrange(ends[depth - 1]...)
-                    prefix.append(contentsOf: (more[depth - 1] ? "│   " : "    ").utf8)
-                    while ends.count <= depth { ends.append(0) }
-                    ends[depth] = prefix.count
+                    segments.removeLast(segments.count - (depth - 1))
+                    segments.append(more[depth - 1] ? "│   " : "    ")
                 }
-                output.append(contentsOf: prefix[..<ends[depth]])
-                output.append(contentsOf: (item.hasNext ? "├── " : "└── ").utf8)
+                output += segments[..<depth].joined()
+                output += item.hasNext ? "├── " : "└── "
             }
             if let record = item.record {
                 let scope = lines.scope(from: item.start, to: item.end, in: bytes, unit: .utf8)
                 var visitor = LineVisitor(place: dump(scope: scope))
                 dispatch(record.markup, to: &visitor, phase: .enter)
-                output.append(contentsOf: visitor.text.utf8)
+                output += visitor.text
             } else if let name = item.name {
-                output.append(contentsOf: "\(name) children=\(item.count)".utf8)
+                output += "\(name) children=\(item.count)"
             }
-            output.append(0x0A)
+            output += "\n"
         }
-        return String(decoding: output, as: UTF8.self)
+        return output
     }
 }
 

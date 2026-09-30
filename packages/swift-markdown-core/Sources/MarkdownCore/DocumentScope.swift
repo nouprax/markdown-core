@@ -152,13 +152,13 @@ struct SourceLines {
     /// The columns between two offsets of one line, in `unit`. A UTF-8 byte
     /// that begins a four-byte scalar is two UTF-16 units; a continuation byte
     /// is none.
-    static func columns(_ bytes: UnsafeBufferPointer<UInt8>, from: Int, to: Int, unit: TextUnit) -> Int {
+    static func columns(_ bytes: UnsafeBufferPointer<UInt8>, from start: Int, to end: Int, unit: TextUnit) -> Int {
         switch unit {
         case .utf8:
-            return to - from
+            return end - start
         case .utf16:
             var units = 0
-            for index in from..<to {
+            for index in start..<end {
                 let byte = bytes[index]
                 units += (byte & 0xC0) == 0x80 ? 0 : byte >= 0xF0 ? 2 : 1
             }

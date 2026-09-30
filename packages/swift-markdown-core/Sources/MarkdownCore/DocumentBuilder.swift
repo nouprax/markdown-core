@@ -54,7 +54,6 @@ struct DocumentBuilder {
     }
 
     // Enumerate each facade-owned relation alongside its native kind.
-    // swiftlint:disable:next cyclomatic_complexity
     private mutating func scan(_ node: OpaquePointer) -> Relations {
         var relations = Relations()
         relations.children = enqueue(chain: markdown_core_node_get_first_child(node))

@@ -17,7 +17,7 @@ struct MarkupWalker<V: MarkupVisitor> {
 }
 
 // The AST projection audit checks dispatch against the complete kind inventory.
-// swiftlint:disable:next cyclomatic_complexity function_body_length
+// swiftlint:disable:next cyclomatic_complexity
 func dispatch<V: MarkupVisitor>(_ node: any Markup, to visitor: inout V, phase: MarkupVisitPhase) {
     switch node {
     case let node as Document: visitor.visit(node, phase: phase)
