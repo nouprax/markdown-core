@@ -12,6 +12,7 @@ typedef struct {
 } markdown_core_record;
 
 struct markdown_core_resource;
+struct markdown_core_slab_pool;
 
 /* One normalized value. Empty anchor bytes mean no anchor. The lists retain
  * every occurrence.
@@ -92,6 +93,11 @@ typedef struct {
 static MARKDOWN_CORE_INLINE bool markdown_core_attributes_owns(const markdown_core_attributes *value) {
     return value->storage || value->anchor.data;
 }
+/* Releases what the value owns, its hold on the resource its anchor borrows
+ * from going back to `resources` (a pool's resource slabs, node.h) or, when
+ * that is NULL, dropping its slab hold. */
+void markdown_core_attributes_release(struct markdown_core_slab_pool *resources, markdown_core_attributes *value);
+/* `markdown_core_attributes_release` with no pool. */
 void markdown_core_attributes_free(markdown_core_attributes *value);
 /* A value holding one class, `bytes`, and nothing else: the value an element
  * makes when its syntax names a class without an attribute container. The

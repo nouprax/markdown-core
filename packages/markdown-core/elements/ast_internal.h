@@ -23,11 +23,17 @@ struct markdown_core_document {
 };
 
 /* PUBLISHING, the last step of the parse transaction: the one canonical walk
- * that numbers every node from 1, rewrites its parse-time place as its extent
- * and records the definition tables it finds on the way in the root. It
- * works in the parser's scratch. False when an allocation failed. Nothing
- * reads a place after this. */
+ * that gives every node its id, rewrites its parse-time place as its extent
+ * and records the definition tables it finds on the way in the root,
+ * continuing the tree the parser's revision names (parser.h): a fresh parse
+ * numbers every node from 1 in walk order. The parser's root is the result.
+ * It works in the parser's scratch. False, having changed neither tree's
+ * structure, when an allocation failed. Nothing reads a place after this. */
 bool markdown_core_publish_tree(markdown_core_parser *parser);
+
+/* Whether two nodes of one kind hold equal scalars: every field of their
+ * values but the id, the extent and the node-valued fields (identity.c). */
+bool markdown_core_scalars_equal(const markdown_core_node *a, const markdown_core_node *b);
 
 /* The scope of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`; markdown_core_document_scope is this query over a

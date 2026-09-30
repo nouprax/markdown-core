@@ -91,6 +91,7 @@ struct markdown_core_resource {
 #define MARKDOWN_CORE_RESOURCE_TYPEDEF
 typedef struct markdown_core_resource markdown_core_resource;
 #endif
+struct markdown_core_node_pool;
 
 typedef struct {
     bool has_value;
@@ -308,9 +309,8 @@ typedef union {
 } markdown_core_node_data;
 
 struct markdown_core_node {
-    markdown_core_attributes attributes;
-    markdown_core_strbuf content;
-
+    /* The node's PLACE: its links and its id. Every field after `id` is its
+     * value (markdown_core_node_swap_values). */
     struct markdown_core_node *next;
     struct markdown_core_node *prev;
     struct markdown_core_node *parent;
@@ -321,6 +321,9 @@ struct markdown_core_node {
     /* The node's identifier, unique within its document; 0 until the
      * document is published (markdown_core_publish_tree). */
     uint64_t id;
+
+    markdown_core_attributes attributes;
+    markdown_core_strbuf content;
     /* Where the node is in the source; see markdown_core_node_where. */
     markdown_core_node_where where;
     int internal_offset;
@@ -353,15 +356,15 @@ static inline markdown_core_cross_reference *markdown_core_node_cross_reference(
 
 /* Takes ownership of `url` and `title` and answers a resource with one holder,
  * or NULL having taken nothing -- the caller still owns both chunks and frees
- * them. The resource's slot comes from `pool`, the parse's resource pool, or
- * from the allocator when it is NULL (slab.h). A resource outlives the parse
- * with the tree that reads through it, so its slot is never given back to a
- * pool: the last holder's release drops its slab hold. */
-markdown_core_resource *markdown_core_resource_new(markdown_core_slab_pool *pool, markdown_core_chunk url,
+ * them. The resource's slot comes from `pool`'s resource slabs, or from the
+ * allocator when it is NULL (slab.h). */
+markdown_core_resource *markdown_core_resource_new(struct markdown_core_node_pool *pool, markdown_core_chunk url,
                                                    markdown_core_optional_chunk title);
 void markdown_core_resource_retain(markdown_core_resource *resource);
-/* Drops one holder and frees the resource with the last. NULL is a no-op. */
-void markdown_core_resource_release(markdown_core_resource *resource);
+/* Drops one holder and frees the resource with the last, its slot going back
+ * to `resources` (a pool's resource slabs) or, when that is NULL, dropping its
+ * slab hold. NULL is a no-op. */
+void markdown_core_resource_release(markdown_core_slab_pool *resources, markdown_core_resource *resource);
 int markdown_core_node_check(markdown_core_node *node, FILE *out);
 
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_TYPE_BLOCK_P(markdown_core_node_type node_type) {
@@ -475,27 +478,40 @@ size_t markdown_core_node_release(markdown_core_node *node);
 /* WHERE A NODE'S STORAGE COMES FROM, and where it goes back to.
  *
  * A node lives in a SLOT (slab.h) holding the node and room for its kind's
- * record. A parse takes node slots from slabs through a pool it owns, and a
- * caller with no parse takes one slot from the allocator. A slot released
- * during the parse goes back to the pool for reuse; a slot released with no
- * pool drops its slab hold. So a subtree unlinked from a parsed document is as
- * good as one built by hand: it outlives the document it came from and is
- * released by `markdown_core_node_free` like any other. The size of what it
- * keeps alive is the slab, not the node.
+ * record, and the resources links read through live in slots of their own.
+ * A pool holds the slabs of both. A parse takes every slot from the pool its
+ * caller lends it -- a session's, which outlives each of its edits, or one
+ * the caller makes for a single parse -- and a caller with no pool takes one
+ * slot from the allocator. A slot released into a pool goes back to it for
+ * reuse, so a session's edits reuse the slots of the nodes they retire
+ * instead of pinning a slab per edit; a slot released with no pool drops its
+ * slab hold. So a subtree unlinked from a parsed document is as good as one
+ * built by hand: it outlives the pool it came from and is released by
+ * `markdown_core_node_free` like any other. The size of what it keeps alive
+ * is the slab, not the node.
  *
- * Why: a node's chunk was larger than the C library's fast-path size classes,
- * so every release of one walked the allocator's merge path, and the
+ * Why slabs: a node's chunk was larger than the C library's fast-path size
+ * classes, so every release of one walked the allocator's merge path, and the
  * document's teardown cost more than a third of its parse. */
-typedef markdown_core_slab_pool markdown_core_node_pool;
+typedef struct markdown_core_node_pool {
+    markdown_core_slab_pool nodes;
+    markdown_core_slab_pool resources;
+} markdown_core_node_pool;
 
 /* `markdown_core_node_new_with_ext` from a pool's slots. A NULL pool is the
  * allocator's own slot, which is what the parser-less constructor takes. */
 markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, markdown_core_node_type type,
                                                 const markdown_core_element *element);
-/* `markdown_core_node_release` into a pool: the slots go back to it for
- * reuse rather than dropping their slabs. A NULL pool is the plain release. */
+/* Exchanges the values of two nodes of one kind with the same node-valued
+ * fields: everything but their places, which are their links, their ids and
+ * the nodes their fields hold. Each value keeps the storage it borrows from,
+ * so a node takes the other's value with the other's storage. */
+void markdown_core_node_swap_values(markdown_core_node *a, markdown_core_node *b);
+/* `markdown_core_node_release` into a pool: the node slots and the slots of
+ * the resources the nodes held last go back to it for reuse rather than
+ * dropping their slabs. A NULL pool is the plain release. */
 size_t markdown_core_node_pool_release(markdown_core_node_pool *pool, markdown_core_node *node);
-/* Drops what the pool holds: its released slots and its current slab. Slots
+/* Drops what the pool holds: its released slots and its current slabs. Slots
  * still in use keep their slabs alive after this. */
 void markdown_core_node_pool_dispose(markdown_core_node_pool *pool);
 

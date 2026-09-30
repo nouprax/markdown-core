@@ -4,8 +4,9 @@
  * - `"allocationFailed"`: the parse could not allocate, or the source exceeds
  *   the engine's capacity;
  * - `"outOfBounds"`: an argument is outside the range the call reads, such as
- *   a source too short for the node or a position whose line or column is not
- *   an integer of at least 1;
+ *   a source too short for the node, a position whose line or column is not
+ *   an integer of at least 1, or an edit range the session's text does not
+ *   hold;
  * - `"kindMismatch"`: a value is not of the kind the call reads; no call of
  *   this binding reads a kind the tree has not already typed, so none reports
  *   it.

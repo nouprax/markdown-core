@@ -31,6 +31,7 @@
 #include "element.h"
 #include "markdown-core-elements.h"
 #include "document.h"
+#include "text_tree.h"
 #include "../../elements/attributes.h"
 #include "block_identifier.h"
 #include "link.h"
@@ -2820,7 +2821,7 @@ static void node_reuse_initializes_the_active_record(test_batch_runner *runner) 
 static void resource_slots_come_from_slabs_and_outlive_the_pool(test_batch_runner *runner) {
     enum { COUNT = 256 };
     static markdown_core_resource *taken[COUNT];
-    markdown_core_slab_pool pool = {0};
+    markdown_core_node_pool pool = {0};
     payload_probe_arm();
     for (size_t i = 0; i < COUNT; i++) {
         taken[i] =
@@ -2831,10 +2832,10 @@ static void resource_slots_come_from_slabs_and_outlive_the_pool(test_batch_runne
     OK(runner, payload_allocations > 0 && payload_allocations <= COUNT / 32, "%d resources took %zu allocations", COUNT,
        payload_allocations);
     size_t releases = payload_releases;
-    markdown_core_slab_pool_dispose(&pool);
+    markdown_core_node_pool_dispose(&pool);
     INT_EQ(runner, payload_releases, releases, "disposing the pool frees no slab a resource is still in");
     for (size_t i = 0; i < COUNT; i++) {
-        markdown_core_resource_release(taken[i]);
+        markdown_core_resource_release(NULL, taken[i]);
     }
     INT_EQ(runner, payload_live, 0, "every slab went with the last resource in it");
     payload_probe_disarm();
@@ -3318,7 +3319,7 @@ static void map_records_are_carved_from_its_blocks(test_batch_runner *runner) {
     markdown_core_chunk lookup = {(unsigned char *)"LABEL 399", 9, 0};
     markdown_core_map_record *found = markdown_core_map_lookup(map, &lookup);
     OK(runner, found && found->label_len == 9 && !memcmp(found->label, "label 399", 9), "a carved record is found");
-    markdown_core_map_free(map);
+    markdown_core_map_free(NULL, map);
     INT_EQ(runner, payload_live, 0, "the map's blocks, index and resources are all released");
     payload_probe_disarm();
 }
@@ -9148,7 +9149,6 @@ static void formula_promotion_transfers_storage(test_batch_runner *runner) {
                 }
             }
             markdown_core_node_free(root);
-            markdown_core_node_pool_dispose(&parser.nodes);
             INT_EQ(runner, payload_live, 0, "all transferred or rejected storage is released exactly once");
             payload_probe_disarm();
         }
@@ -11103,6 +11103,225 @@ static void table_nested_inputs(test_batch_runner *runner) {
     }
 }
 
+/* THE TEXT TREE against a flat buffer: random batches of one to four
+ * disjoint edits of mixed scalars and bytes that begin none, long enough to
+ * need many pieces, keep the same bytes, sizes, units and offsets. */
+static size_t flat_units(const uint8_t *bytes, size_t size) {
+    size_t units = 0;
+    for (size_t i = 0; i < size; i++) {
+        units += (bytes[i] & 0xC0) == 0x80 ? 0 : bytes[i] >= 0xF0 ? 2 : 1;
+    }
+    return units;
+}
+
+static void text_tree_matches_a_flat_buffer(test_batch_runner *runner) {
+    static const char *const pieces[] = {"a", "\xc3\xa9", "\xe4\xb8\x80", "\xf0\xa0\x80\x80", "\n", "\xff", "\x80"};
+    enum { batch = 4, written_limit = 4096 };
+    uint64_t state = 0x9E3779B97F4A7C15u;
+    size_t capacity = 1 << 16, size = 0, mismatches = 0, offsets = 0;
+    uint8_t *flat = malloc(capacity), *copy = malloc(capacity), *insert = malloc(batch * written_limit);
+    markdown_core_text_tree text;
+    OK(runner, flat && copy && insert && markdown_core_text_tree_init(&text, NULL, 0), "an empty text");
+    for (int round = 0; round < 600 && flat && copy && insert; round++) {
+        markdown_core_byte_edit edits[batch];
+        const uint8_t *texts[batch];
+        size_t count = 0, from = 0, grown = size;
+        state ^= state << 13, state ^= state >> 7, state ^= state << 17;
+        for (size_t wanted = 1 + (state >> 60) % batch; count < wanted && from <= size; count++) {
+            state = state * 6364136223846793005u + 1442695040888963407u;
+            size_t start = from + (state >> 8) % (size - from + 1) % (round % 5 == 0 ? 3000 : 400);
+            size_t end = start + (state >> 24) % (size - start + 1) % 1500;
+            size_t written = 0, target = (state >> 40) % (round % 7 == 0 ? written_limit : 60);
+            uint8_t *bytes = insert + count * written_limit;
+            while (written < target) {
+                const char *piece = pieces[(state >> (written % 50)) % 7];
+                size_t length = strlen(piece);
+                if (written + length > written_limit) {
+                    break;
+                }
+                memcpy(bytes + written, piece, length);
+                written += length;
+                state = state * 6364136223846793005u + 1442695040888963407u;
+            }
+            if (grown - (end - start) + written > capacity) {
+                break;
+            }
+            grown = grown - (end - start) + written;
+            edits[count] = (markdown_core_byte_edit){start, end, written};
+            texts[count] = bytes;
+            from = end + (state >> 50) % 2;
+        }
+        if (!count) {
+            markdown_core_byte_edit clear = {0, size, 0};
+            edits[count] = clear;
+            texts[count++] = insert;
+        }
+        if (!markdown_core_text_tree_replace(&text, edits, texts, count)) {
+            mismatches++;
+            break;
+        }
+        /* The flat buffer takes the batch last edit first. */
+        for (size_t i = count; i--;) {
+            memmove(flat + edits[i].start + edits[i].size, flat + edits[i].end, size - edits[i].end);
+            memcpy(flat + edits[i].start, texts[i], edits[i].size);
+            size = size - (edits[i].end - edits[i].start) + edits[i].size;
+        }
+        markdown_core_text_tree_copy(&text, copy);
+        mismatches += markdown_core_text_tree_size(&text) != size || memcmp(copy, flat, size) != 0 ||
+                      markdown_core_text_tree_units(&text) != flat_units(flat, size);
+        /* An offset is the first byte that begins a scalar with that many
+         * units before it; between two units of one scalar there is none. */
+        size_t units = size ? (state >> 11) % (flat_units(flat, size) + 2) : 0, at = 0, counted = 0, byte = 0;
+        for (; at < size; at++) {
+            size_t width = (flat[at] & 0xC0) == 0x80 ? 0 : flat[at] >= 0xF0 ? 2 : 1;
+            if (width && counted >= units) {
+                break;
+            }
+            counted += width;
+        }
+        bool found = markdown_core_text_tree_offset(&text, units, &byte);
+        offsets += found != (counted == units) || (found && byte != at);
+    }
+    INT_EQ(runner, (int)mismatches, 0, "the text tree holds the flat buffer's bytes, size and units");
+    INT_EQ(runner, (int)offsets, 0, "the text tree converts units to bytes as the flat buffer does");
+    markdown_core_text_tree_dispose(&text);
+    free(flat);
+    free(copy);
+    free(insert);
+}
+
+/* A batch that cannot allocate changes nothing, and releases what it
+ * took. */
+static void text_tree_refusal_changes_nothing(test_batch_runner *runner) {
+    static const char base[] = "0123456789abcdefghijklmnopqrstuvwxyz\n";
+    uint8_t *source = malloc(64 * 1024), *copy = malloc(64 * 1024);
+    size_t size = 64 * 1024;
+    for (size_t i = 0; source && i < size; i++) {
+        source[i] = (uint8_t)base[i % (sizeof(base) - 1)];
+    }
+    payload_probe_arm();
+    markdown_core_text_tree text;
+    OK(runner, source && copy && markdown_core_text_tree_init(&text, source, size), "a long text");
+    /* Each allocation of one batch refused in turn, until it succeeds. */
+    const markdown_core_byte_edit edits[] = {{1000, 30000, 3000}, {40000, 40000, 5000}};
+    const uint8_t *texts[] = {source, source};
+    size_t refused = 0;
+    int unchanged = 1;
+    for (size_t fail = 1;; fail++) {
+        size_t live = payload_live;
+        payload_fail_at = payload_allocations + fail;
+        bool replaced = markdown_core_text_tree_replace(&text, edits, texts, 2);
+        payload_fail_at = 0;
+        if (replaced) {
+            break;
+        }
+        refused++;
+        unchanged &= payload_live == live && markdown_core_text_tree_size(&text) == size;
+        if (unchanged) {
+            markdown_core_text_tree_copy(&text, copy);
+            unchanged = !memcmp(copy, source, size);
+        }
+    }
+    size_t needed = refused;
+    OK(runner, needed > 0 && unchanged, "each refused allocation leaves the text as it was (%zu)", needed);
+    markdown_core_text_tree_dispose(&text);
+    INT_EQ(runner, (int)payload_live, 0, "the text releases every piece");
+    payload_probe_disarm();
+    free(source);
+    free(copy);
+}
+
+/* SESSIONS: a range that names no range of the text is OUT_OF_BOUNDS, a
+ * text past the capacity is ALLOCATION_FAILED, and an edit that leaves a
+ * node's value alone leaves its object. */
+static void session_edits_and_spans(test_batch_runner *runner) {
+    static const char source[] = "one\n\ntwo \xf0\xa0\x80\x80\n";
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    OK(runner,
+       markdown_core_session_new(NULL, MARKDOWN_CORE_SOURCE_CAPACITY + 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+           MARKDOWN_CORE_ALLOCATION_FAILED,
+       "a source past the capacity is refused before it is read");
+    OK(runner,
+       markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF16,
+                                 &session) == MARKDOWN_CORE_OK,
+       "a session opens");
+    if (!session) {
+        return;
+    }
+    document = markdown_core_session_document(session);
+    const markdown_core_node *first = markdown_core_node_get_first_child(markdown_core_document_root(document));
+    size_t units = 12;
+    static const struct {
+        size_t start, end, start2, end2, count;
+    } refused[] = {{13, 13, 0, 0, 1}, {2, 1, 0, 0, 1}, {0, 3, 2, 4, 2}, {10, 10, 0, 0, 1}, {0, 10, 0, 0, 1}};
+    for (size_t i = 0; i < sizeof(refused) / sizeof(*refused); i++) {
+        markdown_core_text_edit edits[2] = {{refused[i].start, refused[i].end, (const uint8_t *)"x", 1},
+                                            {refused[i].start2, refused[i].end2, (const uint8_t *)"y", 1}};
+        OK(runner,
+           markdown_core_session_edit(session, edits, refused[i].count, &document) == MARKDOWN_CORE_OUT_OF_BOUNDS,
+           "range %zu names no range of the text", i);
+    }
+    OK(runner, markdown_core_session_text_size(session) == sizeof(source) - 1, "a refused edit changes nothing");
+    markdown_core_text_edit vast = {0, 0, NULL, MARKDOWN_CORE_SOURCE_CAPACITY};
+    OK(runner, markdown_core_session_edit(session, &vast, 1, &document) == MARKDOWN_CORE_ALLOCATION_FAILED,
+       "a text past the capacity is refused before it is read");
+    markdown_core_text_edit edit = {units - 1, units - 1, (const uint8_t *)"s", 1};
+    OK(runner,
+       markdown_core_session_edit(session, &edit, 1, &document) == MARKDOWN_CORE_OK &&
+           markdown_core_node_get_first_child(markdown_core_document_root(document)) == first,
+       "an edit of the second paragraph keeps the first's object");
+    OK(runner,
+       markdown_core_session_append(session, (const uint8_t *)"\xe4\xb8", 2, &document) == MARKDOWN_CORE_OK &&
+           markdown_core_session_text_size(session) == sizeof(source) + 2,
+       "an append takes its bytes as they are");
+    uint8_t text[64];
+    markdown_core_session_text(session, text);
+    OK(runner, memcmp(text, "one\n\ntwo \xf0\xa0\x80\x80s\n\xe4\xb8", sizeof(source) + 2) == 0, "the text");
+    markdown_core_session_free(session);
+}
+
+/* The allocator-seam sweep (plan 8, gates 4.8): an edit, a batch and an
+ * append each fail at every allocation, report ALLOCATION_FAILED, and the
+ * session frees everything it holds. */
+static void session_allocation_failures(test_batch_runner *runner) {
+    static const char source[] = "# Head\n\nSome *text* [a][r].\n\n- item\n- item\n\n[r]: /url\n";
+    const markdown_core_text_edit single = {10, 12, (const uint8_t *)"new", 3};
+    const markdown_core_text_edit batch[2] = {{0, 1, (const uint8_t *)"##", 2}, {30, 30, (const uint8_t *)"x\n\n", 3}};
+    payload_probe_arm();
+    for (int kind = 0; kind < 3; kind++) {
+        size_t needed = 0;
+        int failed = 1;
+        for (size_t fail = 0; fail == 0 || fail <= needed; fail++) {
+            markdown_core_session *session = NULL;
+            const markdown_core_document *document = NULL;
+            if (markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                          &session) != MARKDOWN_CORE_OK) {
+                failed = 0;
+                break;
+            }
+            size_t before = payload_allocations;
+            payload_fail_at = fail ? before + fail : 0;
+            markdown_core_status status =
+                kind == 0   ? markdown_core_session_edit(session, &single, 1, &document)
+                : kind == 1 ? markdown_core_session_edit(session, batch, 2, &document)
+                            : markdown_core_session_append(session, (const uint8_t *)"more *text*\n", 12, &document);
+            payload_fail_at = 0;
+            if (!fail) {
+                needed = payload_allocations - before;
+                failed &= status == MARKDOWN_CORE_OK;
+            } else {
+                failed &= status == MARKDOWN_CORE_ALLOCATION_FAILED;
+            }
+            markdown_core_session_free(session);
+            failed &= payload_live == 0;
+        }
+        OK(runner, needed > 0 && failed, "step kind %d fails at each of its %zu allocations and leaks nothing", kind,
+           needed);
+    }
+    payload_probe_disarm();
+}
+
 int main(void) {
     int retval;
     test_batch_runner *runner = test_batch_runner_new();
@@ -11280,6 +11499,10 @@ int main(void) {
     no_node_is_its_own_ancestor(runner);
     scope_queries_count_in_the_document_unit(runner);
     iterator_contract_is_total(runner);
+    text_tree_matches_a_flat_buffer(runner);
+    text_tree_refusal_changes_nothing(runner);
+    session_edits_and_spans(runner);
+    session_allocation_failures(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

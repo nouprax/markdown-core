@@ -1,3 +1,3 @@
-# Target
+# Target {#one}
 
-see [a](#target) and [b](#target)
+see [a][Target] and [b][Target]

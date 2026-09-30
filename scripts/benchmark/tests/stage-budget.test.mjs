@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { allowance, STAGE_IR_LIMIT, STAGE_IR_LIMITS, STAGES, stageBudget } from "../stage-budget.mjs";
+import { STAGES, stageBudget } from "../stage-budget.mjs";
 
 const row = (name, source, ast = 100, sha256 = "same-input") => ({
     case: name,
@@ -25,28 +25,16 @@ test("one source regression fails even when the aggregate improves", () => {
         "b buffer_to_ast true"
     ]);
 });
-test("every stage has a limit, and source_to_buffer holds the standing rule", () => {
-    assert.deepEqual(Object.keys(STAGE_IR_LIMITS), STAGES);
-    assert.equal(STAGE_IR_LIMITS.source_to_buffer, STAGE_IR_LIMIT);
-    assert.equal(allowance(STAGE_IR_LIMIT), "+2%");
-});
 test("one AST regression fails even when the source stage and the aggregate improve", () => {
-    assert.deepEqual(verdicts(stageBudget([row("a", 50, 111), row("b", 50, 50)], [row("a", 100), row("b", 100)])), [
+    assert.deepEqual(verdicts(stageBudget([row("a", 50, 103), row("b", 50, 50)], [row("a", 100), row("b", 100)])), [
         "a source_to_buffer true",
         "a buffer_to_ast false",
         "b source_to_buffer true",
         "b buffer_to_ast true"
     ]);
 });
-test("each stage is held to its own limit, and one exactly at it passes", () => {
-    const at = (limit) => Math.round(1000 * limit);
-    const exact = row("a", at(STAGE_IR_LIMITS.source_to_buffer), at(STAGE_IR_LIMITS.buffer_to_ast));
-    assert.ok(stageBudget([exact], [row("a", 1000, 1000)]).every((entry) => entry.passed));
-    const over = row("a", at(STAGE_IR_LIMITS.buffer_to_ast), at(STAGE_IR_LIMITS.buffer_to_ast) + 1);
-    assert.deepEqual(verdicts(stageBudget([over], [row("a", 1000, 1000)])), [
-        "a source_to_buffer false",
-        "a buffer_to_ast false"
-    ]);
+test("a stage exactly at the limit passes", () => {
+    assert.ok(stageBudget([row("a", 102, 102)], [row("a", 100)]).every((entry) => entry.passed));
 });
 test("the stage budget refuses mismatched, missing and duplicate workloads", () => {
     assert.throws(() => stageBudget([row("a", 100, 100, "changed")], [row("a", 100)]), /input mismatch/u);

@@ -288,13 +288,16 @@ C views borrow from the session until its next edit.
   CodeMirror, and the default position encoding of the Language Server
   Protocol. Every binding also offers `.utf8`, and Swift additionally accepts
   `Range<String.Index>` for edits, which carries no unit.
-- **Scalar boundaries.** Both ends of an edit range must fall on Unicode
-  scalar boundaries in the session's unit: never on a UTF-8 continuation byte,
-  never between the two halves of a UTF-16 surrogate pair. Replacement text
-  must be well formed: valid UTF-8 in C, and no unpaired surrogate in a
-  Kotlin or ECMAScript string. An edit that breaks either rule is rejected as
-  an invalid argument. Nothing is rounded to a nearby boundary, because that
-  would silently edit a different range.
+- **Edit ranges.** Both ends of an edit range are offsets into the text in
+  the session's unit, and the batch's ranges are disjoint. An edit whose start
+  is after its end, whose end is past the text, or that overlaps another edit
+  of the batch is rejected as out of bounds, and so is a UTF-16 offset between
+  the two units of one scalar. Nothing is rounded to a nearby boundary,
+  because that would silently edit a different range. The engine treats the
+  text exactly like a valid stream, with no validation and no conversion:
+  replacement text is stored as given, a UTF-8 offset is a byte offset, and a
+  UTF-16 offset counts each byte as the units of the scalar it begins, which
+  is how scope queries count columns.
 - **Storage stays UTF-8.** The unit is how positions are counted, not how the
   text is stored. A binding takes its platform's own string. Swift's `String`
   is already UTF-8; Kotlin and ECMAScript strings are transcoded once at the

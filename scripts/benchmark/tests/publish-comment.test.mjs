@@ -96,27 +96,50 @@ const attributes = () => ({
 });
 
 const edits = () => ({
-    schemaVersion: 1,
-    subject: "reparse",
+    schemaVersion: 2,
+    subjects: ["reparse", "session"],
     workloads: { version: "incremental-workloads-v1", set: "corpus", digest: "e".repeat(64), count: 3 },
     results: [
-        { name: "a.typing-word", family: "typing", size: null, windows: [10, 20, 30], oneshot: { ir: 25 } },
-        { name: "b.typing-word", family: "typing", size: null, windows: [40], oneshot: { ir: 35 } },
-        { name: "prose-ascii-16k.far", family: "far", size: 16384, windows: [7, 9], oneshot: { ir: 8 } }
+        {
+            name: "a.typing-word",
+            family: "typing",
+            size: null,
+            windows: [10, 20, 30],
+            session: { windows: [11, 20, 33] },
+            oneshot: { ir: 25 }
+        },
+        {
+            name: "b.typing-word",
+            family: "typing",
+            size: null,
+            windows: [40],
+            session: { windows: [40] },
+            oneshot: { ir: 35 }
+        },
+        { name: "prose-ascii-16k.far", family: "far", size: 16384, windows: [7, 9], session: null, oneshot: { ir: 8 } }
     ]
 });
 
-test("the edit table reports the R column by family and size, pooled over windows", () => {
+test("the edit table reports the R and S columns by family and size, pooled over windows", () => {
     const body = editSection(edits());
-    assert.match(body, /\| Grammar corpus \| typing \| {2}\| 2 \| 4 \| 20 \| 40 \| 40 \| 100 \| 60 \|/);
-    assert.match(body, /\| Shapes \| far \| 16,384 \| 1 \| 2 \| 7 \| 9 \| 9 \| 16 \| 8 \|/);
+    assert.match(
+        body,
+        /\| Grammar corpus \| typing \| {2}\| 2 \| 4 \| 20 \| 40 \| 40 \| 100 \| 20 \| 40 \| 40 \| 104 \| 1\.100× \| 60 \|/
+    );
+    assert.match(
+        body,
+        /\| Shapes \| far \| 16,384 \| 1 \| 2 \| 7 \| 9 \| 9 \| 16 \| {2}\| {2}\| {2}\| {2}\| {2}\| 8 \|/
+    );
     assert.doesNotMatch(body, /a\.typing-word|prose-ascii/);
     for (const mutate of [
-        (r) => (r.schemaVersion = 2),
+        (r) => (r.schemaVersion = 1),
+        (r) => (r.subjects = ["reparse"]),
         (r) => (r.workloads.count = 4),
         (r) => (r.results[0].family = "<b>"),
         (r) => (r.results[0].windows = [10, "20"]),
         (r) => (r.results[0].windows = []),
+        (r) => (r.results[0].session.windows = [1, 2]),
+        (r) => (r.results[0].session = {}),
         (r) => (r.results[2].size = -1),
         (r) => (r.results[1].oneshot.ir = 1.5)
     ]) {
@@ -142,11 +165,11 @@ test("PR tables report the two stages, their sum and source regressions, and not
 
 test("an AST-stage regression fails its document even when the source stage holds", () => {
     const current = stageReport(100);
-    for (const row of current.cases) row.engines["markdown-core"].stages.buffer_to_ast.cost.Ir = 56;
+    for (const row of current.cases) row.engines["markdown-core"].stages.buffer_to_ast.cost.Ir = 53;
     const body = stageSection(current, stageReport(100));
     assert.match(body, /2 document workloads/);
     assert.match(body, /\*\*2\/4 passed\*\*, 2 exceeded/);
-    assert.match(body, /\| inline-links-paired-dialect \| Buffer → AST \| 50 \| 56 \| 1.1200× \|/);
+    assert.match(body, /\| inline-links-paired-dialect \| Buffer → AST \| 50 \| 53 \| 1.0600× \|/);
 });
 
 test("Core-only rejections are reported against their control, apart from reference comparisons", () => {

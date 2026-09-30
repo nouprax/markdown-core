@@ -4,7 +4,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { TextDecoder } from "node:util";
 
 import {
     ADVERSARIAL_SHAPES,
@@ -203,34 +202,30 @@ test("scripts survive their text format unchanged", () => {
     assert.equal(formatScripts(parseScripts(text)), text);
 });
 
-test("the invalid arguments are each invalid in the unit they are written in", () => {
-    const text = "aé\u{20000}\n";
+test("every rejected range names no range of the text in the unit it is written in", () => {
+    const text = "a\u00e9\u{20000}\n";
     const buffer = Buffer.from(text);
     const script = rejectionScript(text);
     for (const step of script.steps) {
         assert.equal(step.kind, "reject");
-        if (step.operation === "append") {
-            assert.throws(() => new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(step.values[0], "hex")));
-            continue;
-        }
-        const [start, end, hexText] = step.values.map((value, index) => (index < 2 ? Number(value) : value));
         const length = step.unit === "utf8" ? buffer.length : text.length;
-        const boundary = (at) =>
-            step.unit === "utf8"
-                ? scalarBoundaries(buffer).includes(at)
-                : at <= text.length && !(at > 0 && /[\ud800-\udbff]/.test(text[at - 1]));
-        const wellFormed = (() => {
-            try {
-                new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(hexText, "hex"));
-                return true;
-            } catch {
-                return false;
-            }
-        })();
-        assert.ok(
-            start > end || end > length || !boundary(start) || !boundary(end) || !wellFormed,
-            step.values.join(" ")
+        /* Only UTF-16 has offsets inside a scalar that name no offset. */
+        const inside = (at) =>
+            step.unit === "utf16" && at > 0 && at < text.length && /[\ud800-\udbff]/u.test(text[at - 1]);
+        const ranges = [];
+        for (let index = 0; index < step.values.length; index += 3) {
+            ranges.push([Number(step.values[index]), Number(step.values[index + 1])]);
+        }
+        ranges.sort((left, right) => left[0] - right[0]);
+        const invalid = ranges.some(
+            ([start, end], index) =>
+                start > end ||
+                end > length ||
+                inside(start) ||
+                inside(end) ||
+                (index > 0 && start < ranges[index - 1][1])
         );
+        assert.ok(invalid, step.values.join(" "));
     }
 });
 

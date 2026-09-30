@@ -152,12 +152,6 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     parser->lookahead_chain = NULL;
     parser->lookahead_chain_flags = NULL;
     parser->lookahead_chain_alloc = 0;
-
-    /* Last, after every release above: the slots the parse gave back, and the
-     * slabs it was taking from. The finished tree, returned before this, holds
-     * its own slabs, for its nodes and for the resources they read through. */
-    markdown_core_node_pool_dispose(&parser->nodes);
-    markdown_core_slab_pool_dispose(&parser->resources);
 }
 
 /* ONE INSTANCE'S FIXED STATE: the parser and the dialect sealed for it,
@@ -177,7 +171,8 @@ typedef struct markdown_core_instance {
 /* A parser instance over the dialect `builder` describes, sealed into the
  * instance's own allocation before anything else runs, and the setup's
  * context. The builder is only read. */
-static markdown_core_parser *S_parser_new(const markdown_core_dialect_builder *builder, void *context) {
+static markdown_core_parser *S_parser_new(const markdown_core_dialect_builder *builder, void *context,
+                                          markdown_core_revision *revision) {
     markdown_core_dialect_sizes sizes;
     markdown_core_instance *instance;
     markdown_core_parser *parser;
@@ -195,6 +190,8 @@ static markdown_core_parser *S_parser_new(const markdown_core_dialect_builder *b
     parser = &instance->parser;
     parser->dialect = &instance->dialect;
     parser->context = context;
+    parser->revision = revision;
+    parser->pool = revision->pool;
     markdown_core_strbuf_init(&parser->curline, 256);
     markdown_core_strbuf_init(&parser->lookahead_last_line, 0);
     /* The line index is a parse-owned workspace, like curline. Establish its
@@ -1329,7 +1326,8 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
 
 markdown_core_node *markdown_core_parser_parse(const char *source, size_t length,
                                                const markdown_core_element *const *elements, size_t count,
-                                               markdown_core_parser_setup_func setup, void *context) {
+                                               markdown_core_parser_setup_func setup, void *context,
+                                               markdown_core_revision *revision) {
     markdown_core_dialect_builder builder;
     markdown_core_parser *parser;
     markdown_core_node *document;
@@ -1343,7 +1341,7 @@ markdown_core_node *markdown_core_parser_parse(const char *source, size_t length
         markdown_core_dialect_builder_dispose(&builder);
         return NULL;
     }
-    parser = S_parser_new(&builder, context);
+    parser = S_parser_new(&builder, context, revision);
     markdown_core_dialect_builder_dispose(&builder);
     if (!parser || parser->error) {
         S_parser_free(parser);

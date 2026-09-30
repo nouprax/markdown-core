@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "markdown_core.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -20,7 +22,25 @@ extern "C" {
  * markdown_core_wire_free. */
 uint8_t *markdown_core_wire_parse(const uint8_t *source, size_t length);
 
-/* Releases a message returned by markdown_core_wire_parse. */
+/* SESSIONS, for the same bindings. Each step answers with one caller-owned
+ * message of the document it published, or of its failure's status, as
+ * markdown_core_wire_parse does; the session itself is the C session, which
+ * the binding holds and releases with markdown_core_session_free.
+ *
+ * markdown_core_wire_session_new makes `*session` from `length` bytes of
+ * `source`, offsets and columns counted in `unit`; `*session` is NULL unless
+ * the message is its document. markdown_core_wire_session_edit applies `count`
+ * edits, each three sizes in `edits` -- start, end and the size of its text,
+ * as markdown_core_text_edit has them -- whose texts follow one another in
+ * `texts` in the order listed. markdown_core_wire_session_append appends
+ * `size` bytes of `text`. */
+uint8_t *markdown_core_wire_session_new(const uint8_t *source, size_t length, markdown_core_text_unit unit,
+                                        markdown_core_session **session);
+uint8_t *markdown_core_wire_session_edit(markdown_core_session *session, const size_t *edits, size_t count,
+                                         const uint8_t *texts);
+uint8_t *markdown_core_wire_session_append(markdown_core_session *session, const uint8_t *text, size_t size);
+
+/* Releases a message returned by any function above. */
 void markdown_core_wire_free(uint8_t *message);
 
 #ifdef __cplusplus

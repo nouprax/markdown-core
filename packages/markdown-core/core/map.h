@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 struct markdown_core_resource;
+struct markdown_core_slab_pool;
 
 /* A record is a normalized LABEL and, for a link reference definition, the
  * RESOURCE the definition stated -- destination and title -- owned once, here,
@@ -82,7 +83,10 @@ markdown_core_map *markdown_core_map_new(void);
 /* `size` bytes of storage aligned for any record, owned by the map, or NULL
  * when it cannot be allocated. */
 void *markdown_core_map_carve(markdown_core_map *map, size_t size);
-void markdown_core_map_free(markdown_core_map *map);
+/* Frees the map, its holds on the resources its records keep going back to
+ * `resources` (a pool's resource slabs, node.h), or dropping their slab holds
+ * when that is NULL. */
+void markdown_core_map_free(struct markdown_core_slab_pool *resources, markdown_core_map *map);
 markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label);
 
 #ifdef __cplusplus

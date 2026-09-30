@@ -29,9 +29,9 @@ an edit family of section 3.2, `identity` (4.5) or `rejections` (4.8).
   non-overlapping edits against the text before the step. Offsets are UTF-8
   bytes; TEXT is hexadecimal UTF-8, and `-` is the empty text. A runner in
   another unit converts the offsets through its text model.
-- `reject UNIT edit START END TEXT` and `reject UNIT append TEXT` are invalid
-  arguments (4.8), written in UTF-8 bytes or UTF-16 code units, which a
-  subject opened in that unit must reject.
+- `reject UNIT edit START END TEXT [START END TEXT…]` is an edit batch out of
+  bounds (4.8), written in UTF-8 bytes or UTF-16 code units, which a subject
+  opened in that unit must reject.
 - `expect kept KIND OLD NEW`, `expect new KIND AT`, `expect retired KIND AT`,
   `expect changed KIND AT` and `expect only` state the identities of the step
   above them (4.5), by the byte offset where a node's scope starts.

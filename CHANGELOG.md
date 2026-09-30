@@ -44,6 +44,22 @@ promised to remain compatible between releases.
   with no generated `inline-N` id. The wire format becomes MCB3, and Swift
   holds one immutable record per node again, released without recursion.
 
+- Add sessions (incremental parsing, step 2). A session holds a text and the
+  document parsed from it: `MarkdownSession` in Swift, Kotlin (`AutoCloseable`)
+  and ECMAScript (`dispose()`), and `markdown_core_session_new`, `_edit`,
+  `_append`, `_document`, `_text` and `_free` in C. `edit` takes a batch of
+  disjoint `TextEdit`s in the offsets of the text before the batch, counted in
+  the session's unit (UTF-16 by default in the bindings, UTF-8 in C), and
+  `append` adds text at the end. Each step parses the whole text again and
+  publishes a document that continues the previous one: a node that
+  continues an old node keeps its id, and a node whose value is unchanged is
+  the old node, equal to its predecessor. An edit range whose start is after
+  its end, whose end is past the text, that overlaps another edit, or, in
+  UTF-16, that falls between the two units of one scalar is `OUT_OF_BOUNDS`;
+  text is stored as given. `Document.parse` is a session that reads its
+  source once. MCB3 gains the session entry points
+  `markdown_core_wire_session_new`, `_edit` and `_append`.
+
 - Keep a tab in a pipe table's header cell after a leading caption, as every
   other pipe cell does. That one header was filled the way a simple table's
   cells are, column by column, so each tab became the spaces it reached:

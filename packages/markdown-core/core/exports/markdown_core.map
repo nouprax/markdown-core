@@ -79,6 +79,14 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_table_column_at;
     markdown_core_node_table_properties;
     markdown_core_node_title;
+    markdown_core_session_append;
+    markdown_core_session_document;
+    markdown_core_session_edit;
+    markdown_core_session_free;
+    markdown_core_session_new;
+    markdown_core_session_text;
+    markdown_core_session_text_size;
+    markdown_core_session_unit;
     markdown_core_specimen_content;
     markdown_core_specimen_properties;
   local:

@@ -150,14 +150,14 @@ for (const file of cSources(pkg)) {
 if (
     dialectAttachSites.length !== 1 ||
     dialectAttachSites[0].file !== "elements/core-elements.c" ||
-    dialectAttachSites[0].function !== "markdown_core_parse_document_with_setup"
+    dialectAttachSites[0].function !== "markdown_core_parse_revision"
 ) {
     failures.push("the sole composition root must select the complete core dialect");
 }
 if (
     engineParseSites.length !== 1 ||
     engineParseSites[0].file !== "elements/core-elements.c" ||
-    engineParseSites[0].function !== "markdown_core_parse_document_with_setup"
+    engineParseSites[0].function !== "markdown_core_parse_revision"
 ) {
     failures.push("only the composition root may run the engine's parse transaction");
 }

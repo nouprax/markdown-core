@@ -29,6 +29,8 @@ set(LIBRARY_SOURCES
     html.c
     html_block.c
     html_scanners.c
+    identity.c
+    session.c
     insertion.c
     line_break.c
     link.c

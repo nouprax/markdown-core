@@ -38,7 +38,7 @@ bool markdown_core_footnotes_lost(const markdown_core_element_instance *self) {
 void markdown_core_footnotes_dispose(const markdown_core_element_instance *self) {
     markdown_core_footnote_state *state = self->state;
     if (state->labels) {
-        markdown_core_map_free(state->labels);
+        markdown_core_map_free(NULL, state->labels);
         state->labels = NULL;
     }
 }

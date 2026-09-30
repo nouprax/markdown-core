@@ -25,6 +25,23 @@ allocated; every other failure, including a result too large to encode, is an
 error message. The message borrows nothing: the document is freed before the
 call returns.
 
+```c
+uint8_t *markdown_core_wire_session_new(const uint8_t *source, size_t length, markdown_core_text_unit unit,
+                                        markdown_core_session **session);
+uint8_t *markdown_core_wire_session_edit(markdown_core_session *session, const size_t *edits, size_t count,
+                                         const uint8_t *texts);
+uint8_t *markdown_core_wire_session_append(markdown_core_session *session, const uint8_t *text, size_t size);
+```
+
+A session's steps answer the same way: each returns one caller-owned message
+of the document the step published, or of the step's failure. The binding
+holds the C session itself and releases it with `markdown_core_session_free`.
+An edit batch is `count` triples of sizes in `edits` -- start, end and the
+size of the edit's text, as `markdown_core_text_edit` has them -- with the
+texts one after another in `texts`, in the order listed. Every message is a
+whole document: the binding builds its value tree from it as it does after a
+parse.
+
 ## Primitives
 
 All integers are little-endian and unaligned.

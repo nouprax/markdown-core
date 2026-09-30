@@ -316,17 +316,19 @@ bufsize_t markdown_core_attributes_end(markdown_core_attribute_parser *p, bufsiz
  * attributes -- and the node's release visits each of them, so the empty value
  * is the common call. A value owns its one block, its hold on the resource a
  * computed anchor borrows from and, when a consumer replaced it, its anchor. */
-void markdown_core_attributes_free(markdown_core_attributes *v) {
+void markdown_core_attributes_release(markdown_core_slab_pool *resources, markdown_core_attributes *v) {
     if (!markdown_core_attributes_owns(v)) {
         return;
     }
     markdown_core_chunk_free(&v->anchor);
     markdown_core_free(v->storage);
     if (v->anchor_owner) {
-        markdown_core_resource_release(v->anchor_owner);
+        markdown_core_resource_release(resources, v->anchor_owner);
     }
     memset(v, 0, sizeof(*v));
 }
+
+void markdown_core_attributes_free(markdown_core_attributes *v) { markdown_core_attributes_release(NULL, v); }
 
 /* The memo exists only once recognition ran (see the recogniser above): a
  * parser that never asked owns nothing and releases nothing. The scratch is

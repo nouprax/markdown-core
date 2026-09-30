@@ -15,7 +15,7 @@ static markdown_core_map_record *record_create(markdown_core_map *map, const uns
     /* A missing map means parser construction has already poisoned the parse;
      * keep cleanup paths null-safe while the transaction unwinds. */
     if (map == NULL || map->oom) {
-        markdown_core_resource_release(resource);
+        markdown_core_resource_release(NULL, resource);
         return NULL;
     }
     /* All declarations precede lookup, including virtual heading records. */
@@ -24,7 +24,7 @@ static markdown_core_map_record *record_create(markdown_core_map *map, const uns
     record = markdown_core_map_carve(map, sizeof(*record) + (size_t)key_len + 1);
     if (!record) {
         map->oom = 1;
-        markdown_core_resource_release(resource);
+        markdown_core_resource_release(NULL, resource);
         return NULL;
     }
     memcpy(record->label, key, (size_t)key_len);
@@ -45,13 +45,13 @@ static markdown_core_map_record *record_create(markdown_core_map *map, const uns
 static markdown_core_map_record *definition_create(markdown_core_map *map, markdown_core_chunk *label,
                                                    markdown_core_resource *resource) {
     if (map == NULL || map->oom) {
-        markdown_core_resource_release(resource);
+        markdown_core_resource_release(NULL, resource);
         return NULL;
     }
     markdown_core_strbuf *reflabel = &map->label_buffer;
     if (!normalize_map_label_into(reflabel, label)) {
         map->oom = reflabel->oom;
-        markdown_core_resource_release(resource);
+        markdown_core_resource_release(NULL, resource);
         return NULL;
     }
     return record_create(map, reflabel->ptr, reflabel->size, resource);

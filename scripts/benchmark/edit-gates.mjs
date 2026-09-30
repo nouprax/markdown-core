@@ -124,25 +124,34 @@ export function regressions(current, base) {
 }
 
 /**
- * The R column by group, pooled over every window of every workload in the
- * group: `key` names a workload's group. The one-shot figure sums the final
- * texts' parses.
+ * The R and S columns by group, each pooled over every window of every
+ * workload in the group that has it: `key` names a workload's group. `ratio`
+ * is the group's highest S / R of one step (6.3), and the one-shot figure
+ * sums the final texts' parses.
  */
 export function groupWindows(results, key) {
     const groups = new Map();
     for (const row of results) {
         const name = key(row);
-        const group = groups.get(name) ?? { key: name, workloads: 0, windows: [], oneshot: 0 };
+        const group = groups.get(name) ?? { key: name, workloads: 0, windows: [], session: [], ratio: 0, oneshot: 0 };
         group.workloads++;
         group.windows.push(...row.windows);
+        if (row.session) {
+            group.session.push(...row.session.windows);
+            row.session.windows.forEach(
+                (cost, step) => (group.ratio = Math.max(group.ratio, cost / row.windows[step]))
+            );
+        }
         group.oneshot += row.oneshot.ir;
         groups.set(name, group);
     }
-    return [...groups.values()].map(({ key: name, workloads, windows, oneshot }) => ({
+    return [...groups.values()].map(({ key: name, workloads, windows, session, ratio, oneshot }) => ({
         key: name,
         workloads,
         windows: windows.length,
         reparse: summary(windows),
+        session: session.length ? summary(session) : null,
+        ratio: session.length ? ratio : null,
         oneshot
     }));
 }

@@ -8,15 +8,6 @@
 export const STAGE_IR_LIMIT = 1.02;
 /* The measured parse stages, in order; the budget holds for every one. */
 export const STAGES = Object.freeze(["source_to_buffer", "buffer_to_ast"]);
-/* Each stage's limit. Decision G1 of the incremental gates plan
- * (docs/plans/2026-09-29-incremental-gates.md) gives the pull request of
- * rollout step 1, which makes every fresh parse assign ids and publish
- * extents, a one-shot budget of 1.10 in buffer_to_ast. After step 1 both
- * stages are at STAGE_IR_LIMIT again. */
-export const STAGE_IR_LIMITS = Object.freeze({ source_to_buffer: STAGE_IR_LIMIT, buffer_to_ast: 1.1 });
-
-/* A limit as the growth it allows, as reports state it: 1.02 is "+2%". */
-export const allowance = (limit) => `+${Math.round((limit - 1) * 100)}%`;
 
 export function stageBudget(current, baseline) {
     const indexed = new Map(baseline.map((row) => [row.case, row]));
@@ -43,8 +34,7 @@ export function stageBudget(current, baseline) {
                 before,
                 after,
                 ratio: after / before,
-                limit: STAGE_IR_LIMITS[stage],
-                passed: after <= before * STAGE_IR_LIMITS[stage]
+                passed: after <= before * STAGE_IR_LIMIT
             };
         });
     });

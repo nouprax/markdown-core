@@ -43,6 +43,7 @@ set(LIBRARY_SOURCES
     map.c
     houdini_html_u.c
     markdown_core_ctype.c
+    text_tree.c
     ${HEADERS})
 
 # Keep the engine target private, but make its sources available to the

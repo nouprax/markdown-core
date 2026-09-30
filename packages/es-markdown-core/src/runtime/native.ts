@@ -6,7 +6,18 @@ export interface NativeExports extends WebAssembly.Exports {
      * when not even a failure message can be allocated. A failed parse is a
      * failure message carrying its status. */
     markdown_core_wire_parse(source: number, length: number): number;
+    /** A session's steps, each answering with one owned MCB3 message as
+     * `markdown_core_wire_parse` does. `session` receives the new session, or
+     * zero with a failure message. An edit batch is `count` triples of start,
+     * end and text size at `edits`, with the texts one after another at
+     * `texts`. */
+    markdown_core_wire_session_new(source: number, length: number, unit: number, session: number): number;
+    markdown_core_wire_session_edit(session: number, edits: number, count: number, texts: number): number;
+    markdown_core_wire_session_append(session: number, text: number, size: number): number;
     markdown_core_wire_free(message: number): void;
+    markdown_core_session_text_size(session: number): number;
+    markdown_core_session_text(session: number, bytes: number): void;
+    markdown_core_session_free(session: number): void;
 }
 
 const wasmURL = new URL("../markdown-core.wasm", import.meta.url);

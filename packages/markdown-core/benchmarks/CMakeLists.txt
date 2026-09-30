@@ -11,13 +11,10 @@
 # comparison.
 
 add_executable(markdown_core_stage_runner stage_runner.c markdown_core_stages.c)
-# The engine's internal parse entry, which stays the same across the revisions
-# the stage gate compares, is declared by the element headers.
-target_include_directories(
-    markdown_core_stage_runner
-    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../include" "${MARKDOWN_CORE_CORE_SOURCE_DIR}"
-            "${MARKDOWN_CORE_CORE_BINARY_DIR}" "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}"
-            "${MARKDOWN_CORE_ELEMENTS_BINARY_DIR}")
+# The runner calls the public parse entry, which every revision the stage gate
+# compares has, so it reads the facade header alone.
+target_include_directories(markdown_core_stage_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
+                                                              "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 # The static engine on purpose: the stage boundaries the driver reads are
 # internal symbols of the parse transaction, and a static link keeps them in
 # the measured binary regardless of the library's exported surface.

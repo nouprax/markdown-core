@@ -6,7 +6,7 @@ import path from "node:path";
 import { inputVersion, sameInputs, validationSource } from "../shared/ci-inputs.mjs";
 import { groupWindows } from "./edit-gates.mjs";
 import { grammarComparisons } from "./report.mjs";
-import { allowance, stageBudget, STAGE_IR_LIMITS } from "./stage-budget.mjs";
+import { stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
 
 const marker = "<!-- markdown-core-benchmark -->";
 const STAGE_NAMES = { source_to_buffer: "Source → buffer", buffer_to_ast: "Buffer → AST" };
@@ -114,7 +114,7 @@ export function stageSection(current, baseline) {
         "Totals sum this finite workload; they are not elapsed time or a general speedup claim. " +
             "Parser creation and release are not parsing and are in no figure here.",
         "",
-        `Stage budget (per document: ${allowance(STAGE_IR_LIMITS.source_to_buffer)} source → buffer, ${allowance(STAGE_IR_LIMITS.buffer_to_ast)} buffer → AST): **${number(rows.length - failures.length)}/${number(rows.length)} passed**, ${number(failures.length)} exceeded. Required when CI inputs require execution.`,
+        `Stage budget (+${((STAGE_IR_LIMIT - 1) * 100).toFixed(0)}% per document and stage): **${number(rows.length - failures.length)}/${number(rows.length)} passed**, ${number(failures.length)} exceeded. Required when CI inputs require execution.`,
         "",
         "<details><summary>Largest stage ratios (up to 10 document stages)</summary>",
         "",
@@ -214,21 +214,31 @@ const EDIT_FAMILIES = [
     "rows"
 ];
 
-// The R column by family and size, the grammar corpus apart from the shapes.
-// Every workload's windows are validated counts; names never reach the comment.
+// The R and S columns by family and size, the grammar corpus apart from the
+// shapes. Every workload's windows are validated counts; names never reach the
+// comment.
 export function editSection(report) {
-    if (report?.schemaVersion !== 1 || report.subject !== "reparse" || !Array.isArray(report.results)) {
+    if (
+        report?.schemaVersion !== 2 ||
+        JSON.stringify(report.subjects) !== JSON.stringify(["reparse", "session"]) ||
+        !Array.isArray(report.results)
+    ) {
         throw new Error("Invalid edit report");
     }
     digest(report.workloads?.digest);
     if (!report.results.length || report.results.length !== report.workloads.count) {
         throw new Error("Incomplete edit report");
     }
+    const windows = (values) => Array.isArray(values) && values.length && values.every((value) => count(value));
     for (const row of report.results) {
         if (!EDIT_FAMILIES.includes(row.family)) throw new Error("Invalid edit family");
         if (row.size !== null) count(row.size);
-        if (!Array.isArray(row.windows) || !row.windows.length || row.windows.some((value) => !count(value))) {
-            throw new Error("Invalid edit windows");
+        if (!windows(row.windows)) throw new Error("Invalid edit windows");
+        if (
+            row.session !== null &&
+            (!windows(row.session?.windows) || row.session.windows.length !== row.windows.length)
+        ) {
+            throw new Error("Invalid session windows");
         }
         count(row.oneshot?.ir);
     }
@@ -236,17 +246,28 @@ export function editSection(report) {
     const groups = groupWindows(report.results, (row) =>
         JSON.stringify([row.size === null ? "grammar" : "shapes", row.family, row.size])
     );
+    const figures = (column) =>
+        column ? [column.p50, column.p95, column.max, column.total].map(number) : ["", "", "", ""];
     const lines = [
         "### Edits and streams",
         "",
-        `Subject: \`reparse\`, the R column: Ir per window of steps. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`,
+        `Subjects: \`reparse\` (R) and \`session\` (S), Ir per window of steps; S runs the workloads of at most 1,024 steps. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`,
         "",
-        "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | One-shot total |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total | Highest S / R | One-shot total |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ...groups.map((group) => {
             const [source, family, size] = JSON.parse(group.key);
-            const { p50, p95, max, total } = group.reparse;
-            return `| ${sources[source]} | ${family} | ${size === null ? "" : number(size)} | ${[group.workloads, group.windows, p50, p95, max, total, group.oneshot].map(number).join(" | ")} |`;
+            return `| ${[
+                sources[source],
+                family,
+                size === null ? "" : number(size),
+                number(group.workloads),
+                number(group.windows),
+                ...figures(group.reparse),
+                ...figures(group.session),
+                group.ratio === null ? "" : `${group.ratio.toFixed(3)}×`,
+                number(group.oneshot)
+            ].join(" | ")} |`;
         })
     ];
     return lines.join("\n");

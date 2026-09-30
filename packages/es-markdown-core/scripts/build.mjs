@@ -18,6 +18,7 @@ const core = [
     "buffer.c",
     "references.c",
     "map.c",
+    "text_tree.c",
     "houdini_html_u.c",
     "markdown_core_ctype.c"
 ].map((file) => path.join(root, "packages/markdown-core/core", file));
@@ -39,6 +40,7 @@ const elements = [
     "formula_scanners.c",
     "heading_scanners.c",
     "html_scanners.c",
+    "identity.c",
     "link_scanners.c",
     "table_scanners.c",
     "text_scanners.c",
@@ -62,6 +64,7 @@ const elements = [
     "mark.c",
     "embedded.c",
     "properties.c",
+    "session.c",
     "span.c",
     "specimen.c",
     "strikethrough.c",
@@ -74,7 +77,18 @@ const elements = [
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 const output = path.join(dist, "markdown-core.wasm");
-const exported = ["malloc", "free", "markdown_core_wire_parse", "markdown_core_wire_free"].map((name) => `_${name}`);
+const exported = [
+    "malloc",
+    "free",
+    "markdown_core_wire_parse",
+    "markdown_core_wire_session_new",
+    "markdown_core_wire_session_edit",
+    "markdown_core_wire_session_append",
+    "markdown_core_wire_free",
+    "markdown_core_session_text_size",
+    "markdown_core_session_text",
+    "markdown_core_session_free"
+].map((name) => `_${name}`);
 const result = spawnSync(
     "emcc",
     [

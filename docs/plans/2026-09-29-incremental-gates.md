@@ -276,9 +276,9 @@ applied stay valid), and 4.1–4.4 hold for the batch as one step.
 
 ### 4.8 Errors
 
-Ranges out of bounds, ends inside a scalar (a UTF-8 continuation byte, the
-middle of a surrogate pair) and ill-formed text, including an append that ends
-inside a scalar, are rejected as invalid arguments (plan 4.4). In C, the
+A range whose start is after its end or whose end is past the text, two
+overlapping edits of one batch, and a UTF-16 offset between the two units of
+one scalar are rejected as out of bounds (plan 4.4). In C, the
 allocator-seam sweep of plan 8 fails a sample of steps at every allocation
 boundary; each call throws the out-of-memory error, and freeing the session
 leaks nothing.

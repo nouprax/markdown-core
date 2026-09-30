@@ -378,6 +378,51 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_document_parse_in(const uin
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
 MARKDOWN_CORE_API markdown_core_text_unit markdown_core_document_unit(const markdown_core_document *document);
 
+/** SESSIONS. A session holds a text, counted in the unit it was made with,
+ * and the document parsed from it, and changes both with each edit: the new
+ * document continues the previous one, so a node that continues an old node
+ * keeps its identifier, and one whose value is unchanged is the old node.
+ * The document a session returns borrows from the session until its next
+ * edit or its release.
+ *
+ * `markdown_core_session_new` parses `size` bytes of `source` as
+ * markdown_core_document_parse does, into a session whose offsets and
+ * columns count in `unit`. */
+typedef struct markdown_core_session markdown_core_session;
+
+/** One replacement: the text in [start, end), offsets in the session's unit
+ * into the text before the batch, becomes the `size` bytes of `text`. */
+typedef struct markdown_core_text_edit {
+    size_t start;
+    size_t end;
+    const uint8_t *text;
+    size_t size;
+} markdown_core_text_edit;
+
+MARKDOWN_CORE_API markdown_core_status markdown_core_session_new(const uint8_t *source, size_t size,
+                                                                 markdown_core_text_unit unit,
+                                                                 markdown_core_session **session);
+/** Applies `count` disjoint edits, listed in any order, to the text and parses
+ * it once; `*document` receives the new document. Two edits at one offset
+ * apply in the order listed. OUT_OF_BOUNDS when an edit's start is after its
+ * end, its end is past the text, two edits overlap, or, in UTF-16, an offset
+ * falls between the two units of one scalar; ALLOCATION_FAILED when an
+ * allocation fails or the text would exceed the 1 GiB a document can hold. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_session_edit(markdown_core_session *session,
+                                                                  const markdown_core_text_edit *edits, size_t count,
+                                                                  const markdown_core_document **document);
+/** Appends `size` bytes of `text`: the edit at the end of the text. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_session_append(markdown_core_session *session, const uint8_t *text,
+                                                                    size_t size,
+                                                                    const markdown_core_document **document);
+MARKDOWN_CORE_API const markdown_core_document *markdown_core_session_document(const markdown_core_session *session);
+MARKDOWN_CORE_API markdown_core_text_unit markdown_core_session_unit(const markdown_core_session *session);
+/** The size of the session's text in bytes, and a copy of it into `bytes`,
+ * which holds that many. */
+MARKDOWN_CORE_API size_t markdown_core_session_text_size(const markdown_core_session *session);
+MARKDOWN_CORE_API void markdown_core_session_text(const markdown_core_session *session, uint8_t *bytes);
+MARKDOWN_CORE_API void markdown_core_session_free(markdown_core_session *session);
+
 /** Return the immutable semantic root owned by `document`.
  *
  * The returned node and every string read from it borrow from `document` and
@@ -385,7 +430,10 @@ MARKDOWN_CORE_API markdown_core_text_unit markdown_core_document_unit(const mark
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_root(const markdown_core_document *document);
 
 /** The node's identifier: unique within its document, and numbered from 1 in
- * canonical walk order by a parse. Every identifier is below 2^53. */
+ * canonical walk order by a parse. In a session a node that continues a node
+ * of the previous document keeps its identifier, and a node that continues
+ * none takes one the session has never issued. Every identifier is below
+ * 2^53. */
 MARKDOWN_CORE_API uint64_t markdown_core_node_id(const markdown_core_node *node);
 /** The node's extent (markdown_core_extent). */
 MARKDOWN_CORE_API markdown_core_extent markdown_core_node_extent(const markdown_core_node *node);

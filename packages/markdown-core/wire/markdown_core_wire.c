@@ -891,28 +891,83 @@ static uint8_t *error_message(markdown_core_status status) {
     return buffer.data;
 }
 
+/* The document's message, or NULL when it cannot be made. */
+static uint8_t *document_bytes(const markdown_core_document *document) {
+    wire_buffer buffer = {0};
+    put_header(&buffer, WIRE_STATUS_DOCUMENT);
+    put_tree(&buffer, markdown_core_document_root(document));
+    put_definitions(&buffer, document);
+    seal(&buffer);
+    if (!buffer.failed) {
+        return buffer.data;
+    }
+    free(buffer.data);
+    return NULL;
+}
+
+/* The document's message, or ALLOCATION_FAILED's when it cannot be made. */
+static uint8_t *document_message(const markdown_core_document *document) {
+    uint8_t *message = document_bytes(document);
+    return message ? message : error_message(MARKDOWN_CORE_ALLOCATION_FAILED);
+}
+
+/* The message a session's step answers with: its document, or its failure. */
+static uint8_t *step_message(markdown_core_status status, const markdown_core_document *document) {
+    return status == MARKDOWN_CORE_OK ? document_message(document) : error_message(status);
+}
+
 uint8_t *markdown_core_wire_parse(const uint8_t *source, size_t length) {
     markdown_core_document *document;
     /* Extents are bytes whatever the unit; the unit only counts scope queries,
      * which the bindings answer themselves. */
     markdown_core_status status = markdown_core_document_parse(source, length, &document);
-    wire_buffer buffer = {0};
-
     if (status != MARKDOWN_CORE_OK) {
         return error_message(status);
     }
-
-    put_header(&buffer, WIRE_STATUS_DOCUMENT);
-    put_tree(&buffer, markdown_core_document_root(document));
-    put_definitions(&buffer, document);
+    uint8_t *message = document_message(document);
     markdown_core_document_free(document);
-    seal(&buffer);
-    if (!buffer.failed) {
-        return buffer.data;
-    }
+    return message;
+}
 
-    free(buffer.data);
-    return error_message(MARKDOWN_CORE_ALLOCATION_FAILED);
+uint8_t *markdown_core_wire_session_new(const uint8_t *source, size_t length, markdown_core_text_unit unit,
+                                        markdown_core_session **session) {
+    markdown_core_session *made = NULL;
+    markdown_core_status status = markdown_core_session_new(source, length, unit, &made);
+    *session = NULL;
+    if (status != MARKDOWN_CORE_OK) {
+        return error_message(status);
+    }
+    /* The session is the caller's only with its document's message. */
+    uint8_t *message = document_bytes(markdown_core_session_document(made));
+    if (!message) {
+        markdown_core_session_free(made);
+        return error_message(MARKDOWN_CORE_ALLOCATION_FAILED);
+    }
+    *session = made;
+    return message;
+}
+
+uint8_t *markdown_core_wire_session_edit(markdown_core_session *session, const size_t *edits, size_t count,
+                                         const uint8_t *texts) {
+    markdown_core_text_edit *batch = count ? malloc(count * sizeof(*batch)) : NULL;
+    if (count && !batch) {
+        return error_message(MARKDOWN_CORE_ALLOCATION_FAILED);
+    }
+    for (size_t index = 0; index < count; ++index) {
+        const size_t *edit = &edits[index * 3];
+        batch[index] = (markdown_core_text_edit){edit[0], edit[1], texts, edit[2]};
+        texts += edit[2];
+    }
+    const markdown_core_document *document = NULL;
+    markdown_core_status status = markdown_core_session_edit(session, batch, count, &document);
+    free(batch);
+    return step_message(status, document);
+}
+
+uint8_t *markdown_core_wire_session_append(markdown_core_session *session, const uint8_t *text, size_t size) {
+    const markdown_core_document *document = NULL;
+    markdown_core_status status = markdown_core_session_append(session, text, size, &document);
+    return step_message(status, document);
 }
 
 void markdown_core_wire_free(uint8_t *message) { free(message); }
