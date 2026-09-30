@@ -95,11 +95,11 @@ struct DocumentBuilder {
         return index
     }
 
-    private mutating func record(field node: OpaquePointer?) -> Int? {
+    private mutating func enqueue(field node: OpaquePointer?) -> Int? {
         node.map { enqueue($0) }
     }
 
-    private mutating func record(chain first: OpaquePointer?) -> [Int] {
+    private mutating func enqueue(chain first: OpaquePointer?) -> [Int] {
         var indices: [Int] = []
         var node = first
         while let current = node {

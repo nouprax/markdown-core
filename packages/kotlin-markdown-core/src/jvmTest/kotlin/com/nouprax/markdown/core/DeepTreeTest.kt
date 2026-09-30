@@ -66,7 +66,14 @@ class DeepTreeTest {
     ): Pair<WeakReference<Document>, Markup> {
         val document = Document.parse(source)
         var node: Markup = document.content.single()
-        repeat(levels) { node = assertIs<List>(node).items.single().content.single() }
+        repeat(levels) {
+            node =
+                assertIs<List>(node)
+                    .items
+                    .single()
+                    .content
+                    .single()
+        }
         return WeakReference(document) to node
     }
 

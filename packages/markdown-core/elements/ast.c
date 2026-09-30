@@ -200,11 +200,14 @@ typedef enum {
 #define SHAPE_INDEX(kind) ((((kind) >> 9) | (kind)) & 0x3f)
 #define SLOT_SHAPE 0x0f
 #define SLOT_LOOKUP 0x10
-_Static_assert(MARKDOWN_CORE_NODE_KIND_COUNT <= 0x20 &&
-                   (MARKDOWN_CORE_NODE_TYPE_INLINE ^ MARKDOWN_CORE_NODE_TYPE_BLOCK) == 0x20 << 9 &&
-                   (MARKDOWN_CORE_NODE_TYPE_PRESENT >> 9 & 0x3f) == 0,
-               "every kind has its own shape slot");
-_Static_assert(SHAPE_DEFINITION <= SLOT_SHAPE, "every shape fits its slot");
+/* C99 has no _Static_assert: an array of negative size fails the build when a
+ * condition is false. */
+typedef char kind_slots_are_distinct[(MARKDOWN_CORE_NODE_KIND_COUNT <= 0x20 &&
+                                      (MARKDOWN_CORE_NODE_TYPE_INLINE ^ MARKDOWN_CORE_NODE_TYPE_BLOCK) == 0x20 << 9 &&
+                                      (MARKDOWN_CORE_NODE_TYPE_PRESENT >> 9 & 0x3f) == 0)
+                                         ? 1
+                                         : -1];
+typedef char shapes_fit_their_slot[SHAPE_DEFINITION <= SLOT_SHAPE ? 1 : -1];
 
 static const uint8_t kind_slots[SHAPE_SLOTS] = {
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_DOCUMENT)] = SHAPE_DOCUMENT,
