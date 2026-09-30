@@ -36,6 +36,7 @@ import Testing
         requireSendable(MarkupGroups<any Markup>.self)
         weak var root: MarkupRecord?
         weak var owner: MarkupRecord?
+        weak var leaf: MarkupRecord?
         var groups: MarkupGroups<any Markup>?
         var body: MarkupCollection<any Markup>?
         do {
@@ -55,12 +56,15 @@ import Testing
             }
             #expect(counts == Array(repeating: 1, count: 20))
             body = retained[0]
+            leaf = body?.records.first
         }
+        // A body shares its own records, not its owner's.
         groups = nil
-        #expect(owner != nil)
+        #expect(owner == nil)
+        #expect(leaf != nil)
         #expect(((body?.first as? Paragraph)?.content.first as? Text)?.literal == "one")
         body = nil
-        #expect(owner == nil)
+        #expect(leaf == nil)
     }
 
     @Test("nodes of released documents keep their own values and ids")
