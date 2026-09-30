@@ -12,9 +12,9 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_wire_parse
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_append
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_edit
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_new
-import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.COpaquePointerVar
+import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.UByteVar
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
@@ -70,6 +70,10 @@ private fun copy(message: CPointer<UByteVar>?): ByteArray {
     }
 }
 
+/** The engine's code for this unit. */
+private val TextUnit.code
+    get() = if (this == TextUnit.UTF16) MARKDOWN_CORE_TEXT_UNIT_UTF16 else MARKDOWN_CORE_TEXT_UNIT_UTF8
+
 internal actual fun newPlatformSession(
     source: ByteArray,
     unit: TextUnit,
@@ -96,7 +100,7 @@ private class CSession(
                             markdown_core_wire_session_new(
                                 it,
                                 source.size.convert(),
-                                if (unit == TextUnit.UTF16) MARKDOWN_CORE_TEXT_UNIT_UTF16 else MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                unit.code,
                                 address.ptr.reinterpret(),
                             )
                         }.also { session = address.value }
