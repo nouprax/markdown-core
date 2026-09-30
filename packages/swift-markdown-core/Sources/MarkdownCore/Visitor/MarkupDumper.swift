@@ -168,7 +168,11 @@ private struct LineVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: CrossLink, phase: MarkupVisitPhase) {
-        line("CrossLink", node, fields: ["dest=\(dump(destination: node.dest))", "label=\(dump(optional: node.label))"])
+        line(
+            "CrossLink",
+            node,
+            fields: ["dest=\(dump(destination: node.dest))", "label=\(dump(optional: node.label))"]
+        )
     }
 
     mutating func visit(_ node: CrossEmbedded, phase: MarkupVisitPhase) {

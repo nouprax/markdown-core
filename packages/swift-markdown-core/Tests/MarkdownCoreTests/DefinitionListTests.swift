@@ -1,6 +1,5 @@
-import Testing
-
 import MarkdownCore
+import Testing
 
 @Suite("ast") struct DefinitionListTests {
     @Test("definition terms and ordered bodies survive native release and walk without body wrapper nodes")
