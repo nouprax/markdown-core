@@ -492,7 +492,7 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
  * source stays under half of that. A (NULL, 0) source is the empty buffer. */
 markdown_core_status markdown_core_document_parse_in(const uint8_t *source, size_t length, markdown_core_text_unit unit,
                                                      markdown_core_document **document) {
-    static const uint8_t empty[1];
+    static const uint8_t empty[1] = {0};
     if (length > MARKDOWN_CORE_SOURCE_CAPACITY) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
