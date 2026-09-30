@@ -14,7 +14,7 @@ extension Document {
         let target = MarkupRecord.of(node)
         var text = source
         return text.withUTF8 { bytes in
-            guard let range = place(of: target), range.end <= bytes.count else { return nil }
+            guard fits(bytes), let range = place(of: target) else { return nil }
             return SourceLines(bytes).scope(from: range.start, to: range.end, in: bytes, unit: unit)
         }
     }
@@ -25,12 +25,15 @@ extension Document {
     /// - Parameters:
     ///   - position: a line and column of `source`.
     ///   - source: the source the document was parsed from.
-    /// - Returns: the node, or `nil` when no node holds the byte or the
-    ///   position names no byte of the source at a scalar boundary.
+    /// - Returns: the node, or `nil` when no node holds the byte, the
+    ///   position names no byte of the source at a scalar boundary, or the
+    ///   source is shorter than the document's.
     public func node(at position: Position, in source: String) -> (any Markup)? {
         var text = source
         return text.withUTF8 { bytes in
-            guard let offset = SourceLines(bytes).offset(of: position, in: bytes, unit: unit) else { return nil }
+            guard fits(bytes), let offset = SourceLines(bytes).offset(of: position, in: bytes, unit: unit) else {
+                return nil
+            }
             var walk = CanonicalWalk(root: record, anchor: 0)
             var found: MarkupRecord?
             while let item = walk.next() {
@@ -54,9 +57,7 @@ extension Document {
         let target = MarkupRecord.of(node)
         var text = source
         return text.withUTF8 { bytes in
-            guard let whole = place(of: record), whole.end <= bytes.count, let range = place(of: target) else {
-                return nil
-            }
+            guard fits(bytes), let range = place(of: target) else { return nil }
             // A node's walk starts at its own extent, which is relative to the
             // anchor its relation had where it was written.
             return MarkupDumper.render(
@@ -66,6 +67,12 @@ extension Document {
                 lines: SourceLines(bytes)
             )
         }
+    }
+
+    /// Whether `bytes` hold the whole document, as the source it was parsed
+    /// from does.
+    private func fits(_ bytes: UnsafeBufferPointer<UInt8>) -> Bool {
+        Int(record.extent.lead) + Int(record.extent.span) <= bytes.count
     }
 
     /// The absolute byte range of `target`, found by one canonical walk.

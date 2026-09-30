@@ -9206,6 +9206,22 @@ static void scope_queries_count_in_the_document_unit(test_batch_runner *runner) 
            scope.end.column);
         markdown_core_document_free(document);
     }
+    /* A source shorter than the document is not the one it was parsed from,
+     * even where it still holds the node asked about. */
+    static const char blocks[] = "first\n\nsecond\n";
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)blocks, sizeof(blocks) - 1, NULL);
+    const markdown_core_node *first = markdown_core_node_get_first_child(markdown_core_document_root(document));
+    markdown_core_scope scope = {{0, 0}, {0, 0}};
+    uint8_t *dump = NULL;
+    size_t dump_length = 0;
+    OK(runner,
+       !markdown_core_document_scope(document, first, (const uint8_t *)blocks, 6, &scope) &&
+           markdown_core_document_node_at(document, (markdown_core_position){1, 1}, (const uint8_t *)blocks, 6) ==
+               NULL &&
+           !markdown_core_document_dump(document, first, (const uint8_t *)blocks, 6, &dump, &dump_length, NULL) &&
+           markdown_core_document_scope(document, first, (const uint8_t *)blocks, sizeof(blocks) - 1, &scope),
+       "a source shorter than the document answers no query");
+    markdown_core_document_free(document);
     markdown_core_error *error = NULL;
     OK(runner,
        markdown_core_document_parse_in((const uint8_t *)source, length, (markdown_core_text_unit)3, &error) == NULL &&

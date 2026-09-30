@@ -11,7 +11,7 @@ import type {
     OrderedListVariant,
     Scope
 } from "../markup/values.js";
-import { placeOf } from "./document-queries.js";
+import { fits, placeOf } from "./document-queries.js";
 import { walkWithPlaces } from "./markup-walker.js";
 import type { MarkupVisitor } from "./markup-visitor.js";
 
@@ -30,9 +30,7 @@ export class MarkupDumper {
         const text = typeof nodeOrSource === "string" ? nodeOrSource : source;
         if (typeof text !== "string") throw new TypeError("source must be a string");
         const lines = new SourceLines(text);
-        if (document.extent.lead + document.extent.span > lines.bytes.length) {
-            throw new RangeError("the source is shorter than the document");
-        }
+        if (!fits(document, lines)) throw new RangeError("the source is shorter than the document");
         const place = placeOf(document, root);
         if (place === null) throw new RangeError("the node is not in the document");
         const state = new State(lines);

@@ -35,8 +35,9 @@ export interface Document extends MarkupBase<"document"> {
     readonly scope: (node: Markup, source: string) => Scope | null;
     /**
      * The last node in canonical walk order whose source range holds the byte
-     * at `position`, or null when no node holds it, or the position names no
-     * byte of `source` or does not fall on a scalar boundary.
+     * at `position`, or null when no node holds it, the position names no
+     * byte of `source` or does not fall on a scalar boundary, or `source` is
+     * shorter than the document's.
      */
     readonly nodeAt: (position: Position, source: string) => Markup | null;
     /**

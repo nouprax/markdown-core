@@ -166,6 +166,11 @@ class ScopeTest {
         assertNull(document.scope(document.content.single(), "te"))
         assertFailsWith<IllegalArgumentException> { document.dump(other.content.single(), source) }
         assertFailsWith<IllegalArgumentException> { document.dump("te") }
+        // Even where the short source still holds the node asked about.
+        val blocks = Document.parse("first\n\nsecond\n")
+        assertNull(blocks.scope(blocks.content.first(), "first\n"))
+        assertNull(blocks.node(Position(1, 1), "first\n"))
+        assertFailsWith<IllegalArgumentException> { blocks.dump(blocks.content.first(), "first\n") }
     }
 
     @Test

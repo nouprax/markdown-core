@@ -1545,6 +1545,11 @@ test("api: scope queries count columns in the document's unit from the extents a
     const document = Document.parse("é🚀x\n");
     assert.equal(document.scope(Document.parse("é🚀x\n").content[0], "é🚀x\n"), null);
     assert.equal(document.scope(document.content[0], "é🚀"), null);
+    // Even where the short source still holds the node asked about.
+    const blocks = Document.parse("first\n\nsecond\n");
+    assert.equal(blocks.scope(blocks.content[0], "first\n"), null);
+    assert.equal(blocks.nodeAt({ line: 1, column: 1 }, "first\n"), null);
+    assert.throws(() => blocks.dump(blocks.content[0], "first\n"), RangeError);
     // The default unit is UTF-16.
     assert.equal(document.unit, "utf16");
 });

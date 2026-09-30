@@ -76,5 +76,10 @@ import Testing
         #expect(document.scope(of: document, in: "on") == nil)
         #expect(document.dump(in: "on") == nil)
         #expect(document.dump(other, in: "one\n") == nil)
+        let blocks = try Document.parse("first\n\nsecond\n")
+        let first = try #require(blocks.content.first as? Paragraph)
+        #expect(blocks.scope(of: first, in: "first\n") == nil)
+        #expect(blocks.node(at: Position(line: 1, column: 1), in: "first\n") == nil)
+        #expect(blocks.dump(first, in: "first\n") == nil)
     }
 }

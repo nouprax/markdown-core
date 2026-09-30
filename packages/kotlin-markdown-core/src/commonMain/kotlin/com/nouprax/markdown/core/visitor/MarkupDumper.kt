@@ -22,8 +22,7 @@ public object MarkupDumper {
         source: String,
     ): String {
         val lines = SourceLines(source)
-        val root = checkNotNull(document.place(document))
-        require(root.end <= lines.bytes.size) { "the source is shorter than the document" }
+        require(document.fits(lines)) { "the source is shorter than the document" }
         val place = requireNotNull(document.place(node)) { "the node is not in the document" }
         // A node's walk starts at its own extent, which is relative to the
         // anchor its relation had where it was written.

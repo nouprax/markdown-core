@@ -47,29 +47,31 @@ public class Document internal constructor(
      * The editor coordinates of [node], computed from the extents and
      * [source], the text this document was parsed from, with columns in the
      * document's [unit]. Null when the node is not in this document or the
-     * source is shorter than the node's range.
+     * source is shorter than the document's.
      */
     public fun scope(
         node: Markup,
         source: String,
     ): Scope? {
-        val place = place(node) ?: return null
         val lines = SourceLines(source)
-        if (place.start < 0 || place.end > lines.bytes.size) return null
+        if (!fits(lines)) return null
+        val place = place(node) ?: return null
         return lines.scope(place.start.toInt(), place.end.toInt(), unit)
     }
 
     /**
      * The last node in canonical walk order whose source range holds the byte
      * at [position], with the column in the document's [unit]. Null when no
-     * node holds it, or the position names no byte of [source] or falls
-     * inside a scalar.
+     * node holds it, the position names no byte of [source] or falls inside
+     * a scalar, or the source is shorter than the document's.
      */
     public fun node(
         position: Position,
         source: String,
     ): Markup? {
-        val offset = SourceLines(source).offset(position, unit) ?: return null
+        val lines = SourceLines(source)
+        if (!fits(lines)) return null
+        val offset = lines.offset(position, unit) ?: return null
         var found: Markup? = null
         val traversal = MarkupTraversal(this, 0)
         while (traversal.next()) {
@@ -79,6 +81,9 @@ public class Document internal constructor(
         }
         return found
     }
+
+    /** Whether [lines] hold the whole document, as the source it was parsed from does. */
+    internal fun fits(lines: SourceLines): Boolean = extent.lead.toLong() + extent.span.toLong() <= lines.bytes.size
 
     /**
      * The absolute byte range of [target], found by one canonical walk, or

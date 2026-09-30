@@ -10,6 +10,12 @@ export interface Place {
     readonly end: number;
 }
 
+/** Whether `lines` hold the whole document, as the source it was parsed
+ * from does. */
+export function fits(document: Document, lines: SourceLines): boolean {
+    return document.extent.lead + document.extent.span <= lines.bytes.length;
+}
+
 /** The absolute range of `target` in the tree under `root`, found by one
  * canonical walk; null when the node is not in it. */
 export function placeOf(root: Markup, target: Markup): Place | null {
@@ -23,16 +29,16 @@ export function placeOf(root: Markup, target: Markup): Place | null {
 /** `Document.scope`: one walk for the node's range, then a scan of the source
  * for its lines, with columns in the document's unit. */
 export function scopeOf(document: Document, node: Markup, source: string): Scope | null {
-    const place = placeOf(document, node);
-    if (place === null) return null;
     const lines = new SourceLines(source);
-    return place.end > lines.bytes.length ? null : lines.scope(place.start, place.end, document.unit);
+    const place = fits(document, lines) ? placeOf(document, node) : null;
+    return place === null ? null : lines.scope(place.start, place.end, document.unit);
 }
 
 /** `Document.nodeAt`: the position's byte offset, then one walk that keeps
  * the last node holding it. */
 export function nodeAt(document: Document, position: Position, source: string): Markup | null {
-    const offset = new SourceLines(source).offset(position, document.unit);
+    const lines = new SourceLines(source);
+    const offset = fits(document, lines) ? lines.offset(position, document.unit) : null;
     if (offset === null) return null;
     let found: Markup | null = null;
     traverse(document, 0, (node, phase, start, end) => {

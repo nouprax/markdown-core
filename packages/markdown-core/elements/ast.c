@@ -929,6 +929,13 @@ static markdown_core_scope source_scope(const source_lines *lines, const uint8_t
     return scope;
 }
 
+/* Whether a source of `length` bytes holds the whole tree `root`, whose
+ * extent is relative to offset 0: the source a document was parsed from
+ * always does. */
+static bool tree_fits(const markdown_core_node *root, size_t length) {
+    return root && (int64_t)root->where.extent.lead + root->where.extent.span <= (int64_t)length;
+}
+
 /* The absolute range of `target` in the tree `root`, found by one canonical
  * walk. False when the node is not in the tree or the walk could not run. */
 static bool tree_place(const markdown_core_node *root, const markdown_core_node *target, markdown_core_place *place) {
@@ -950,7 +957,7 @@ bool markdown_core_tree_scope(const markdown_core_node *root, const markdown_cor
                               size_t length, markdown_core_text_unit unit, markdown_core_scope *scope) {
     markdown_core_place place;
     source_lines lines;
-    if (!node || !scope || (!source && length) || !tree_place(root, node, &place) || place.end > length ||
+    if (!node || !scope || (!source && length) || !tree_fits(root, length) || !tree_place(root, node, &place) ||
         !source_lines_read(&lines, source, length)) {
         return false;
     }
@@ -969,7 +976,7 @@ const markdown_core_node *markdown_core_document_node_at(const markdown_core_doc
                                                          size_t length) {
     source_lines lines;
     if (!document || (!source && length) || position.line < 1 || position.column < 1 ||
-        !source_lines_read(&lines, source, length)) {
+        !tree_fits(document->root, length) || !source_lines_read(&lines, source, length)) {
         return NULL;
     }
     size_t line = (size_t)position.line - 1;
@@ -2327,7 +2334,7 @@ bool markdown_core_document_dump(const markdown_core_document *document, const m
                                  const uint8_t *source, size_t source_length, uint8_t **output, size_t *length,
                                  markdown_core_error **error) {
     dump_buffer buffer = {0};
-    markdown_core_place root, place;
+    markdown_core_place place;
     source_lines lines;
     clear_error(error);
     if (output) {
@@ -2338,8 +2345,7 @@ bool markdown_core_document_dump(const markdown_core_document *document, const m
     }
     node = node ? node : document ? document->root : NULL;
     if (!document || !document->root || !output || !length || (!source && source_length) ||
-        !tree_place(document->root, document->root, &root) || root.end > source_length ||
-        !tree_place(document->root, node, &place)) {
+        !tree_fits(document->root, source_length) || !tree_place(document->root, node, &place)) {
         set_error(error, &ERROR_INVALID_DUMP);
         return false;
     }
