@@ -61,6 +61,81 @@
  * test reads an element's work, from outside the dialect. */
 #define ELEMENT_STATE(parser, type, element) ((type *)markdown_core_parser_instance((parser), &(element))->state)
 
+/* WHERE A NODE IS, as editor coordinates. A parsed tree is published: each
+ * node holds its extent, and its scope is a query over the tree and the
+ * source its root was parsed from, in UTF-8 columns. Each parse this file
+ * runs records its root and source; the newest record of a root is the live
+ * one, since a freed root's address can return only through a later parse. A
+ * node no parent chain leads to a recorded root reads against the newest
+ * parse. */
+typedef struct {
+    /* The node a parent chain ends at: a parsed root, or a field root. */
+    const markdown_core_node *top;
+    const markdown_core_node *root;
+    const char *source;
+    size_t length;
+} test_parse;
+
+#define TEST_PARSES 256
+static test_parse test_parses[TEST_PARSES];
+static size_t test_parse_count;
+
+static markdown_core_node *test_remember_parse(markdown_core_node *root, const char *source, size_t length) {
+    test_parses[test_parse_count++ % TEST_PARSES] = (test_parse){root, root, source, length};
+    return root;
+}
+
+#define markdown_core_parse_document(source, length)                                                                   \
+    test_remember_parse(markdown_core_parse_document((source), (length)), (source), (length))
+#define markdown_core_parse_document_with_setup(source, length, setup, context)                                        \
+    test_remember_parse(markdown_core_parse_document_with_setup((source), (length), (setup), (context)), (source),     \
+                        (length))
+
+static test_parse test_parse_of(const markdown_core_node *node) {
+    while (node && node->parent) {
+        node = node->parent;
+    }
+    size_t kept = test_parse_count < TEST_PARSES ? test_parse_count : TEST_PARSES;
+    for (size_t i = 1; i <= kept; i++) {
+        const test_parse *parse = &test_parses[(test_parse_count - i) % TEST_PARSES];
+        if (parse->top == node) {
+            return *parse;
+        }
+    }
+    return test_parses[(test_parse_count - 1) % TEST_PARSES];
+}
+
+/* Records a field root, which no parent chain reaches, as part of the parse
+ * of the node that owns it. */
+static void test_remember_field(const markdown_core_node *field, const markdown_core_node *owner) {
+    test_parse parse = test_parse_of(owner);
+    parse.top = field;
+    test_parses[test_parse_count++ % TEST_PARSES] = parse;
+}
+
+static markdown_core_scope test_node_scope(const markdown_core_node *node) {
+    test_parse parse = test_parse_of(node);
+    markdown_core_scope scope = {{0, 0}, {0, 0}};
+    markdown_core_tree_scope(parse.root, node, (const uint8_t *)parse.source, parse.length,
+                             MARKDOWN_CORE_TEXT_UNIT_UTF8, &scope);
+    return scope;
+}
+
+#define SCOPE(node) test_node_scope(node)
+#define START_LINE(node) (SCOPE(node).start.line)
+#define START_COLUMN(node) (SCOPE(node).start.column)
+#define END_LINE(node) (SCOPE(node).end.line)
+#define END_COLUMN(node) (SCOPE(node).end.column)
+
+/* A published document's node carries only its extent; its scope is a query
+ * over the document and the source it was parsed from. */
+static markdown_core_scope document_scope_of(const markdown_core_document *document, const markdown_core_node *node,
+                                             const char *source) {
+    markdown_core_scope scope = {{0, 0}, {0, 0}};
+    markdown_core_document_scope(document, node, (const uint8_t *)source, strlen(source), &scope);
+    return scope;
+}
+
 /* Literal access for engine tests goes through the installed facade, which
  * reads a node without materializing or changing anything. A code block's
  * literal is one of its block properties there; everything else with bytes of
@@ -552,7 +627,7 @@ static void accessors(test_batch_runner *runner) {
     LITERAL_EQ(runner, html, "<div>html</div>\n", "html block literal");
 
     markdown_core_node *paragraph = html->next;
-    markdown_core_scope scope = markdown_core_node_scope(paragraph);
+    markdown_core_scope scope = SCOPE(paragraph);
     OK(runner, scope.start.line == 17 && scope.start.column == 1 && scope.end.line == 17, "paragraph scope");
 
     markdown_core_node *link = paragraph->first_child;
@@ -1234,9 +1309,9 @@ static void comment_nodes(test_batch_runner *runner) {
     LITERAL_EQ(runner, block_comment, " block\nhidden ",
                "block comment literal keeps its line ending and excludes delimiters");
     STR_EQ(runner, markdown_core_node_get_type_string(block_comment), "comment_block", "block comment type string");
-    INT_EQ(runner, block_comment->start_line, 3, "block comment starts on its opener line");
-    INT_EQ(runner, block_comment->end_line, 4, "block comment ends on its closer line");
-    INT_EQ(runner, block_comment->end_column, 10, "block comment ends at its closer");
+    INT_EQ(runner, START_LINE(block_comment), 3, "block comment starts on its opener line");
+    INT_EQ(runner, END_LINE(block_comment), 4, "block comment ends on its closer line");
+    INT_EQ(runner, END_COLUMN(block_comment), 10, "block comment ends at its closer");
 
     INT_EQ(runner, block_html->kind, MARKDOWN_CORE_NODE_HTML_BLOCK, "a div stays an HTML block");
     LITERAL_EQ(runner, block_html, "<div>raw</div>\n", "HTML block literal");
@@ -1255,8 +1330,8 @@ static void comment_nodes(test_batch_runner *runner) {
     empty = paragraph->first_child->next;
     INT_EQ(runner, empty->kind, MARKDOWN_CORE_NODE_COMMENT, "`<!-->` is an inline comment");
     LITERAL_EQ(runner, empty, "", "`<!-->` has an empty literal");
-    INT_EQ(runner, empty->start_column, 3, "`<!-->` starts at its `<`");
-    INT_EQ(runner, empty->end_column, 7, "`<!-->` ends at its `>`");
+    INT_EQ(runner, START_COLUMN(empty), 3, "`<!-->` starts at its `<`");
+    INT_EQ(runner, END_COLUMN(empty), 7, "`<!-->` ends at its `>`");
     empty = empty->next->next;
     INT_EQ(runner, empty->kind, MARKDOWN_CORE_NODE_COMMENT, "`<!--->` is an inline comment");
     LITERAL_EQ(runner, empty, "", "`<!--->` has an empty literal");
@@ -1282,10 +1357,10 @@ static void comment_nodes(test_batch_runner *runner) {
         code = block_comment->next;
         INT_EQ(runner, comment->kind, MARKDOWN_CORE_NODE_COMMENT, "CRLF: inline comment");
         LITERAL_EQ(runner, comment, "x\ny", "CRLF inside an inline comment is stored as LF");
-        INT_EQ(runner, comment->end_line, 2, "CRLF: the inline comment ends on line 2");
+        INT_EQ(runner, END_LINE(comment), 2, "CRLF: the inline comment ends on line 2");
         INT_EQ(runner, block_comment->kind, MARKDOWN_CORE_NODE_COMMENT_BLOCK, "CRLF: block comment");
         LITERAL_EQ(runner, block_comment, "\nx\n", "CRLF inside a block comment is stored as LF");
-        INT_EQ(runner, block_comment->end_line, 6, "CRLF: the block comment ends on its closer line");
+        INT_EQ(runner, END_LINE(block_comment), 6, "CRLF: the block comment ends on its closer line");
         INT_EQ(runner, code->kind, MARKDOWN_CORE_NODE_CODE_BLOCK, "CRLF: code block");
         LITERAL_EQ(runner, code, "x\n", "CRLF inside a code block is stored as LF too");
         markdown_core_node_free(doc);
@@ -1296,7 +1371,7 @@ static void comment_nodes(test_batch_runner *runner) {
         block_comment = paragraph->next;
         LITERAL_EQ(runner, comment, "x\ny", "a lone CR inside an inline comment is stored as LF");
         LITERAL_EQ(runner, block_comment, "\nx\n", "a lone CR inside a block comment is stored as LF");
-        INT_EQ(runner, block_comment->end_line, 6, "CR: the block comment ends on its closer line");
+        INT_EQ(runner, END_LINE(block_comment), 6, "CR: the block comment ends on its closer line");
         markdown_core_node_free(doc);
     }
 }
@@ -1394,7 +1469,8 @@ static void test_facade_dump(test_batch_runner *runner, const char *markdown, co
         markdown_core_error_free(error);
         return;
     }
-    if (!markdown_core_document_dump(document, &dump, &dump_length, &error)) {
+    if (!markdown_core_document_dump(document, NULL, (const uint8_t *)markdown, strlen(markdown), &dump, &dump_length,
+                                     &error)) {
         OK(runner, 0, "%s (facade dump succeeds)", msg);
         markdown_core_error_free(error);
         markdown_core_document_free(document);
@@ -2263,7 +2339,7 @@ static void source_pos(test_batch_runner *runner) {
         "title=null children=1\n"
         "│   │   └── Text scope=3:16..3:36 anchor=null attributes={} literal=\"http://www.google.com\" "
         "children=0\n"
-        "│   ├── SoftBreak scope=3:38..3:38 anchor=null attributes={} children=0\n"
+        "│   ├── SoftBreak scope=3:38..4:0 anchor=null attributes={} children=0\n"
         "│   ├── Text scope=4:1..4:6 anchor=null attributes={} literal=\"there \" children=0\n"
         "│   ├── Code scope=4:7..4:10 anchor=null attributes={} literal=\"hi\" children=0\n"
         "│   ├── Text scope=4:11..4:14 anchor=null attributes={} literal=\" -- \" children=0\n"
@@ -2277,12 +2353,12 @@ static void source_pos(test_batch_runner *runner) {
         "        ├── ListItem scope=6:3..8:1 anchor=null attributes={} marker=null children=1\n"
         "        │   └── Paragraph scope=6:6..7:10 anchor=null attributes={} children=3\n"
         "        │       ├── Text scope=6:6..6:10 anchor=null attributes={} literal=\"Okay.\" children=0\n"
-        "        │       ├── SoftBreak scope=6:11..6:11 anchor=null attributes={} children=0\n"
+        "        │       ├── SoftBreak scope=6:11..7:0 anchor=null attributes={} children=0\n"
         "        │       └── Text scope=7:6..7:10 anchor=null attributes={} literal=\"Sure.\" children=0\n"
         "        └── ListItem scope=9:3..10:20 anchor=null attributes={} marker=null children=1\n"
         "            └── Paragraph scope=9:6..10:20 anchor=null attributes={} children=3\n"
         "                ├── Text scope=9:6..9:15 anchor=null attributes={} literal=\"Yes, okay.\" children=0\n"
-        "                ├── SoftBreak scope=9:16..9:16 anchor=null attributes={} children=0\n"
+        "                ├── SoftBreak scope=9:16..10:0 anchor=null attributes={} children=0\n"
         "                └── Embedded scope=10:6..10:20 anchor=null attributes={} dest=url(\"hi\") title=\"yes\" "
         "dimensions=null "
         "children=1\n"
@@ -2298,7 +2374,7 @@ static void source_pos_inlines(test_batch_runner *runner) {
                      "└── Paragraph scope=1:1..2:6 anchor=null attributes={} children=3\n"
                      "    ├── Emphasis scope=1:1..1:7 anchor=null attributes={} children=1\n"
                      "    │   └── Text scope=1:2..1:6 anchor=null attributes={} literal=\"first\" children=0\n"
-                     "    ├── SoftBreak scope=1:8..1:8 anchor=null attributes={} children=0\n"
+                     "    ├── SoftBreak scope=1:8..2:0 anchor=null attributes={} children=0\n"
                      "    └── Text scope=2:1..2:6 anchor=null attributes={} literal=\"second\" children=0\n",
                      "closed emphasis scopes are as expected");
     test_facade_dump(runner,
@@ -2308,17 +2384,16 @@ static void source_pos_inlines(test_batch_runner *runner) {
                      "└── Paragraph scope=1:1..2:7 anchor=null attributes={} children=1\n"
                      "    └── Emphasis scope=1:1..2:7 anchor=null attributes={} children=3\n"
                      "        ├── Text scope=1:2..1:6 anchor=null attributes={} literal=\"first\" children=0\n"
-                     "        ├── SoftBreak scope=1:7..1:7 anchor=null attributes={} children=0\n"
+                     "        ├── SoftBreak scope=1:7..2:0 anchor=null attributes={} children=0\n"
                      "        └── Text scope=2:1..2:6 anchor=null attributes={} literal=\"second\" children=0\n",
                      "multiline emphasis scopes are as expected");
 }
 
 /* THE CITATION MODEL's values (M4). A defined call is a one-item `Cite`
  * whose `Citation` names the footnote by the normalized label without its
- * caret and carries empty affixes; the document owns every winning or
- * unreferenced definition as a `Footnote` in scope order and no definition
- * remains a child; a losing duplicate is ordinary content in which the
- * leading `[^label]` is a call to the winner; and every value accessor
+ * caret and carries empty affixes; every definition, a losing duplicate and
+ * an unreferenced one included, is a `Footnote` block where it was written,
+ * and the document lists them in source order; and every value accessor
  * refuses a node that is not its owner and a value that is missing. */
 static void citation_and_footnote_values(test_batch_runner *runner) {
     static const char markdown[] = "[^Note] [^b] [c](/inline)\n"
@@ -2330,7 +2405,9 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
                                    "[^b]: kept\n"
                                    "\n"
                                    "[^unused]: still here\n";
-    static const char *const ids[] = {"note", "note", "b", "unused"};
+    static const char *const labels[] = {"note", "note", "b", "unused"};
+    static const int32_t lines[] = {3, 5, 7, 9};
+    const size_t length = sizeof(markdown) - 1;
     markdown_core_document *document;
     const markdown_core_node *root;
     const markdown_core_node *paragraph;
@@ -2339,18 +2416,16 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
     const markdown_core_node *footnote;
     markdown_core_referent referent;
     markdown_core_scope scope;
-    markdown_core_string id;
+    markdown_core_optional_string label;
     size_t count = 0;
 
-    document = markdown_core_document_parse((const uint8_t *)markdown, strlen(markdown), NULL);
+    document = markdown_core_document_parse((const uint8_t *)markdown, length, NULL);
     if (!document) {
         OK(runner, 0, "citation corpus parses");
         return;
     }
     root = markdown_core_document_root(document);
-    /* Every definition left the tree, the losing duplicate included: one
-     * paragraph remains. */
-    INT_EQ(runner, (int)markdown_core_node_child_count(root), 1, "no definition remains a child of the document");
+    INT_EQ(runner, (int)markdown_core_node_child_count(root), 5, "every definition is a block where it was written");
     paragraph = markdown_core_node_get_first_child(root);
     cite = markdown_core_node_get_first_child(paragraph);
     INT_EQ(runner, markdown_core_node_get_kind(cite), MARKDOWN_CORE_KIND_CITE, "a defined call is a Cite");
@@ -2361,44 +2436,50 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
        "an inherited call holds exactly one item");
     OK(runner, markdown_core_citation_referent(item, &referent), "an item answers its referent");
     INT_EQ(runner, referent.kind, MARKDOWN_CORE_REFERENT_FOOTNOTE, "an inherited call names a footnote");
-    OK(runner, referent.id.length == 4 && memcmp(referent.id.data, "note", 4) == 0,
-       "the id is the normalized label without the caret");
+    OK(runner, referent.label.length == 4 && memcmp(referent.label.data, "note", 4) == 0 && referent.note == NULL,
+       "the label is the normalized label without the caret");
     OK(runner, referent.key.length == 0 && referent.key.data == NULL && referent.mode == 0,
        "the footnote branch zeroes the bib fields");
     OK(runner, markdown_core_citation_prefix(item) == NULL && markdown_core_citation_suffix(item) == NULL,
        "an inherited call has empty affixes");
-    scope = markdown_core_node_scope(cite);
+    OK(runner, markdown_core_document_scope(document, cite, (const uint8_t *)markdown, length, &scope),
+       "the cite has a scope");
     OK(runner, scope.start.line == 1 && scope.start.column == 1 && scope.end.line == 1 && scope.end.column == 7,
        "the cite covers the brackets");
-    scope = markdown_core_node_scope(item);
+    OK(runner, markdown_core_document_scope(document, item, (const uint8_t *)markdown, length, &scope),
+       "the item has a scope");
     OK(runner, scope.start.line == 1 && scope.start.column == 2 && scope.end.line == 1 && scope.end.column == 6,
        "the item covers the caret and the label");
 
-    OK(runner, markdown_core_node_get_next_sibling(paragraph) == NULL, "the paragraph is the only content");
-
-    for (footnote = markdown_core_node_document_footnotes(root); footnote;
+    INT_EQ(runner, (int)markdown_core_document_footnote_count(document), 4,
+           "the winner, its duplicate, the referenced, and the unreferenced definitions are footnotes");
+    for (footnote = markdown_core_node_get_next_sibling(paragraph); footnote;
          footnote = markdown_core_node_get_next_sibling(footnote)) {
-        OK(runner, markdown_core_footnote_id(footnote, &id), "a footnote answers its id");
-        OK(runner, count < 4 && id.length == strlen(ids[count]) && memcmp(id.data, ids[count], id.length) == 0,
-           "footnote %zu carries the expected id", count);
+        OK(runner, count < 4 && markdown_core_document_footnote_at(document, count) == footnote,
+           "the document lists footnote %zu in source order", count);
+        OK(runner, markdown_core_footnote_label(footnote, &label), "a footnote answers its label");
+        OK(runner,
+           count < 4 && label.has_value && label.value.length == strlen(labels[count]) &&
+               memcmp(label.value.data, labels[count], label.value.length) == 0,
+           "footnote %zu carries the expected label", count);
+        OK(runner,
+           count < 4 && markdown_core_document_scope(document, footnote, (const uint8_t *)markdown, length, &scope) &&
+               scope.start.line == lines[count] && scope.start.column == 1,
+           "footnote %zu starts where it was written", count);
         count++;
     }
-    INT_EQ(runner, (int)count, 4,
-           "the winner, its duplicate, the referenced, and the unreferenced definitions are footnotes");
-    footnote = markdown_core_node_document_footnotes(root);
-    scope = markdown_core_node_scope(footnote);
-    OK(runner, scope.start.line == 3 && scope.start.column == 1, "the first footnote is the winning definition");
-    scope = markdown_core_node_scope(markdown_core_node_get_next_sibling(footnote));
-    OK(runner, scope.start.line == 5 && scope.start.column == 1,
-       "a later definition of the same id is the footnote after the winner");
+    INT_EQ(runner, (int)count, 4, "four footnotes follow the paragraph");
+    footnote = markdown_core_node_get_next_sibling(paragraph);
+    OK(runner,
+       markdown_core_document_footnote_for(document, referent.label) == footnote &&
+           markdown_core_document_footnote_for(document, (markdown_core_string){(const uint8_t *)"missing", 7}) == NULL,
+       "a label finds the first definition in source order, and no other");
     OK(runner,
        markdown_core_footnote_content(footnote) != NULL &&
            markdown_core_node_get_kind(markdown_core_footnote_content(footnote)) == MARKDOWN_CORE_KIND_PARAGRAPH,
        "a footnote's content is its block content");
 
-    OK(runner,
-       markdown_core_node_cite_citations(paragraph) == NULL && markdown_core_node_document_footnotes(paragraph) == NULL,
-       "the owner accessors refuse other kinds");
+    OK(runner, markdown_core_node_cite_citations(paragraph) == NULL, "the owner accessors refuse other kinds");
     OK(runner,
        markdown_core_node_get_next_sibling(NULL) == NULL && markdown_core_citation_prefix(NULL) == NULL &&
            markdown_core_citation_suffix(NULL) == NULL && !markdown_core_citation_referent(NULL, &referent) &&
@@ -2406,7 +2487,8 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
        "the citation accessors refuse a missing value");
     OK(runner,
        markdown_core_node_get_next_sibling(NULL) == NULL && markdown_core_footnote_content(NULL) == NULL &&
-           !markdown_core_footnote_id(NULL, &id) && !markdown_core_footnote_id(footnote, NULL),
+           !markdown_core_footnote_label(NULL, &label) && !markdown_core_footnote_label(footnote, NULL) &&
+           !markdown_core_footnote_label(paragraph, &label),
        "the footnote accessors refuse a missing value");
     markdown_core_document_free(document);
 }
@@ -2655,8 +2737,8 @@ static void node_reuse_initializes_the_active_record(test_batch_runner *runner) 
         markdown_core_node *control = markdown_core_node_new(cases[i].kind);
         OK(runner, node == dirty && control, "a dirty slot is reused for kind %d", cases[i].kind);
         OK(runner,
-           !node->parent && !node->prev && !node->next && !node->first_child && !node->last_child &&
-               !node->start_line && !node->flags && !node->element &&
+           !node->parent && !node->prev && !node->next && !node->first_child && !node->last_child && !node->id &&
+               !node->where.place.start && !node->where.place.end && !node->flags && !node->element &&
                node->content.ptr == markdown_core_strbuf__initbuf && !node->content.size && !node->content.asize &&
                !node->content.oom,
            "all node state is initialized independently of its former kind");
@@ -2699,6 +2781,57 @@ static void resource_slots_come_from_slabs_and_outlive_the_pool(test_batch_runne
 }
 
 static markdown_core_node *first_of_kind(markdown_core_node *root, markdown_core_node_type kind);
+
+/* EVERY NODE OF ONE KIND IN AN ENGINE TREE, in source order: the content and
+ * every field root the engine's own field visitor names, an inline note's
+ * included. The caller frees the array. */
+typedef struct {
+    markdown_core_node **nodes;
+    size_t count, capacity;
+} node_list;
+
+static int node_list_push(markdown_core_node **slot, void *context) {
+    node_list *list = context;
+    if (!slot || !*slot) {
+        return 1;
+    }
+    if (list->count == list->capacity) {
+        size_t capacity = list->capacity ? list->capacity * 2 : 16;
+        markdown_core_node **nodes = realloc(list->nodes, capacity * sizeof(*nodes));
+        if (!nodes) {
+            return 0;
+        }
+        list->nodes = nodes;
+        list->capacity = capacity;
+    }
+    list->nodes[list->count++] = *slot;
+    return 1;
+}
+
+/* Every node of `kind`, in canonical walk order. */
+static node_list nodes_of_kind(markdown_core_node *root, markdown_core_node_type kind) {
+    node_list found = {0};
+    markdown_core_walk walk;
+    markdown_core_walk_item item;
+    markdown_core_walk_begin(&walk, root);
+    while (markdown_core_walk_next(&walk, &item)) {
+        if (item.node && item.node->kind == kind) {
+            markdown_core_node *node = (markdown_core_node *)item.node;
+            node_list_push(&node, &found);
+        }
+    }
+    markdown_core_walk_end(&walk);
+    return found;
+}
+
+/* Every footnote, definitions and inline notes alike, in source order, which
+ * the canonical walk order is for footnotes. */
+static node_list footnotes_of(markdown_core_node *root) { return nodes_of_kind(root, MARKDOWN_CORE_NODE_FOOTNOTE); }
+
+/* A footnote's label as a C string, or NULL for an inline note. */
+static const char *footnote_label_of(const markdown_core_node *note) {
+    return note->as.footnote->label.has_value ? (const char *)note->as.footnote->label.value.data : NULL;
+}
 
 /* A HEADING'S COMPUTED ANCHOR IS STORED ONCE, as its implicit reference's
  * destination after the `#`, and the heading holds that resource (node.h).
@@ -3141,6 +3274,11 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
        "the document has no allocated content buffer");
     const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_THEMATIC_BREAK,
                                              MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_DEFINITION_LIST};
+    /* Blocks open and take content on the line the driver visits; no input
+     * has begun, so stand on an empty line at the start of the source. */
+    parser->input_lines[0] = (markdown_core_input_line){0};
+    parser->input_first_line = parser->line_number;
+    parser->input_line_count = 1;
     for (size_t i = 0; i < sizeof(kinds) / sizeof(*kinds); i++) {
         size_t before = payload_probe_snapshot().allocations;
         markdown_core_node *node = markdown_core_parser_add_child_validated(parser, parser->root, kinds[i], 1);
@@ -3194,6 +3332,7 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
         }
         markdown_core_parser_release_node(parser, node);
     }
+    parser->input_line_count = 0;
 }
 
 static bool begin_with_lazy_block_inspection(markdown_core_dialect_builder *builder, void *context) {
@@ -3553,25 +3692,28 @@ static void kind_conversion_containment(test_batch_runner *runner) {
     static const struct {
         markdown_core_node_type rejected_kind, retained_kind;
         const char *source, *retained_literal;
+        /* The source also defines a footnote, which stays where it is
+         * written, after the retained block. */
+        bool defines;
     } cases[] = {
-        {MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_PARAGRAPH, "| h |\n| - |\n", "| h |\n| - |"},
-        {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_PARAGRAPH, "heading\n===\n", "heading\n==="},
-        {MARKDOWN_CORE_NODE_COMMENT_BLOCK, MARKDOWN_CORE_NODE_HTML_BLOCK, "<!-- body -->\n", "<!-- body -->\n"},
-        {MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_PARAGRAPH, "!~~text~~\n", "!~~text~~"},
-        {MARKDOWN_CORE_NODE_SPAN, MARKDOWN_CORE_NODE_PARAGRAPH, "![text]{}\n", "![text]{}"},
-        {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_PARAGRAPH, "! [text](u)\n", "! [text](u)"},
-        {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_PARAGRAPH, "! a@b.co\n", "! a@b.co"},
-        {MARKDOWN_CORE_NODE_EMBEDDED, MARKDOWN_CORE_NODE_PARAGRAPH, "![text](u)\n", "![text](u)"},
-        {MARKDOWN_CORE_NODE_CITE, MARKDOWN_CORE_NODE_PARAGRAPH, "!^[text]\n", "!^[text]"},
-        {MARKDOWN_CORE_NODE_CITE, MARKDOWN_CORE_NODE_PARAGRAPH, "![^n]\n\n[^n]: text\n", "![^n]"},
-        {MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_PARAGRAPH, "!*text*\n", "!*text*"},
-        {MARKDOWN_CORE_NODE_STRONG, MARKDOWN_CORE_NODE_PARAGRAPH, "!**text**\n", "!**text**"},
-        {MARKDOWN_CORE_NODE_MARK, MARKDOWN_CORE_NODE_PARAGRAPH, "!==text==\n", "!==text=="},
-        {MARKDOWN_CORE_NODE_INSERTION, MARKDOWN_CORE_NODE_PARAGRAPH, "!++text++\n", "!++text++"},
-        {MARKDOWN_CORE_NODE_SUPERSCRIPT, MARKDOWN_CORE_NODE_PARAGRAPH, "!^text^\n", "!^text^"},
-        {MARKDOWN_CORE_NODE_SUBSCRIPT, MARKDOWN_CORE_NODE_PARAGRAPH, "!~text~\n", "!~text~"},
-        {MARKDOWN_CORE_NODE_FORMULA, MARKDOWN_CORE_NODE_PARAGRAPH, "!$text$\n", "!$text$"},
-        {MARKDOWN_CORE_NODE_FORMULA_BLOCK, MARKDOWN_CORE_NODE_CODE_BLOCK, "```formula\nx\n```\n", "x\n"},
+        {MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_PARAGRAPH, "| h |\n| - |\n", "| h |\n| - |", false},
+        {MARKDOWN_CORE_NODE_HEADING, MARKDOWN_CORE_NODE_PARAGRAPH, "heading\n===\n", "heading\n===", false},
+        {MARKDOWN_CORE_NODE_COMMENT_BLOCK, MARKDOWN_CORE_NODE_HTML_BLOCK, "<!-- body -->\n", "<!-- body -->\n", false},
+        {MARKDOWN_CORE_NODE_STRIKETHROUGH, MARKDOWN_CORE_NODE_PARAGRAPH, "!~~text~~\n", "!~~text~~", false},
+        {MARKDOWN_CORE_NODE_SPAN, MARKDOWN_CORE_NODE_PARAGRAPH, "![text]{}\n", "![text]{}", false},
+        {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_PARAGRAPH, "! [text](u)\n", "! [text](u)", false},
+        {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_PARAGRAPH, "! a@b.co\n", "! a@b.co", false},
+        {MARKDOWN_CORE_NODE_EMBEDDED, MARKDOWN_CORE_NODE_PARAGRAPH, "![text](u)\n", "![text](u)", false},
+        {MARKDOWN_CORE_NODE_CITE, MARKDOWN_CORE_NODE_PARAGRAPH, "!^[text]\n", "!^[text]", false},
+        {MARKDOWN_CORE_NODE_CITE, MARKDOWN_CORE_NODE_PARAGRAPH, "![^n]\n\n[^n]: text\n", "![^n]", true},
+        {MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_PARAGRAPH, "!*text*\n", "!*text*", false},
+        {MARKDOWN_CORE_NODE_STRONG, MARKDOWN_CORE_NODE_PARAGRAPH, "!**text**\n", "!**text**", false},
+        {MARKDOWN_CORE_NODE_MARK, MARKDOWN_CORE_NODE_PARAGRAPH, "!==text==\n", "!==text==", false},
+        {MARKDOWN_CORE_NODE_INSERTION, MARKDOWN_CORE_NODE_PARAGRAPH, "!++text++\n", "!++text++", false},
+        {MARKDOWN_CORE_NODE_SUPERSCRIPT, MARKDOWN_CORE_NODE_PARAGRAPH, "!^text^\n", "!^text^", false},
+        {MARKDOWN_CORE_NODE_SUBSCRIPT, MARKDOWN_CORE_NODE_PARAGRAPH, "!~text~\n", "!~text~", false},
+        {MARKDOWN_CORE_NODE_FORMULA, MARKDOWN_CORE_NODE_PARAGRAPH, "!$text$\n", "!$text$", false},
+        {MARKDOWN_CORE_NODE_FORMULA_BLOCK, MARKDOWN_CORE_NODE_CODE_BLOCK, "```formula\nx\n```\n", "x\n", false},
 
     };
     payload_fail_at = 0;
@@ -3586,8 +3728,13 @@ static void kind_conversion_containment(test_batch_runner *runner) {
             continue;
         }
         markdown_core_node *block = root->first_child;
-        OK(runner, block && block->kind == cases[i].retained_kind && !block->next,
-           "case %zu retains the original block", i);
+        const markdown_core_node *after = block ? block->next : NULL;
+        if (cases[i].defines && after && after->kind == MARKDOWN_CORE_NODE_FOOTNOTE) {
+            after = after->next;
+        } else if (cases[i].defines) {
+            after = block;
+        }
+        OK(runner, block && block->kind == cases[i].retained_kind && !after, "case %zu retains the original block", i);
         markdown_core_strbuf literal = MARKDOWN_CORE_BUF_INIT();
         if (block && (block->kind == MARKDOWN_CORE_NODE_HTML_BLOCK || block->kind == MARKDOWN_CORE_NODE_CODE_BLOCK)) {
             put_literal(&literal, block);
@@ -3695,7 +3842,9 @@ static void task_marker_tab_structure(test_batch_runner *runner) {
 }
 
 static void task_marker_ownership(test_batch_runner *runner) {
-    char source[] = "- [ ] open\n- [X] done\n- ordinary\n- [🚀] custom\n";
+    static const char original[] = "- [ ] open\n- [X] done\n- ordinary\n- [🚀] custom\n";
+    char source[sizeof(original)];
+    memcpy(source, original, sizeof(original));
     markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
     OK(runner, document != NULL, "task marker ownership document parses");
     if (!document) {
@@ -3720,7 +3869,10 @@ static void task_marker_ownership(test_batch_runner *runner) {
        "parsed custom marker survives input reuse with its complete UTF-8 spelling");
     uint8_t *dump = NULL;
     size_t length = 0;
-    OK(runner, markdown_core_document_dump(document, &dump, &length, NULL), "UTF-8 marker document dumps");
+    OK(runner,
+       markdown_core_document_dump(document, NULL, (const uint8_t *)original, sizeof(original) - 1, &dump, &length,
+                                   NULL),
+       "UTF-8 marker document dumps");
     OK(runner, dump && strstr((const char *)dump, "marker=\"🚀\""), "dump preserves UTF-8 marker spelling");
     markdown_core_dump_free(dump);
     markdown_core_document_free(document);
@@ -3735,69 +3887,64 @@ static void task_marker_ownership(test_batch_runner *runner) {
     INT_EQ(runner, marker_free_count, 1, "destroying an item frees its owned marker exactly once");
 }
 
-/* Specimen syntax lands with P9b. Build its reserved native values directly
- * to test the shared document ownership and failure boundary independently. */
+/* SPECIMEN VALUES. A definition is a block where it was written: it owns its
+ * authored label and explicit reset and its block content, the document lists
+ * every definition in source order, and a reference names one by label. */
 static void specimen_values(test_batch_runner *runner) {
-    markdown_core_node *root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
-    markdown_core_node *first = markdown_core_node_new(MARKDOWN_CORE_NODE_SPECIMEN);
-    markdown_core_node *anonymous = markdown_core_node_new(MARKDOWN_CORE_NODE_SPECIMEN);
-    markdown_core_node *body = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-    markdown_core_node *footnote = markdown_core_node_new(MARKDOWN_CORE_NODE_FOOTNOTE);
-    markdown_core_chunk bytes = markdown_core_chunk_literal("étude");
-    markdown_core_optional_string id;
+    static const char source[] = "(5@étude) Body.\n(@) Anonymous.\n\n@étude\n";
+    const size_t length = sizeof(source) - 1;
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, length, NULL);
+    markdown_core_optional_string label;
     markdown_core_optional_i64 start;
-    OK(runner, markdown_core_chunk_to_cstr(&bytes) != NULL, "specimen id allocates");
-    first->as.specimen->id = markdown_core_optional_chunk_present(bytes);
-    first->as.specimen->start = 5;
-    first->as.specimen->has_start = true;
-    first->next = anonymous;
-    anonymous->prev = first;
-    root->as.document->specimens = first;
-    root->as.document->footnotes = footnote;
-    OK(runner, markdown_core_node_append_child(first, body), "specimen owns block content");
-    const markdown_core_node *value = markdown_core_node_document_specimens(root);
-    OK(runner, markdown_core_specimen_properties(value, &id, &start), "specimen answers properties");
-    OK(runner, id.has_value && id.value.length == 6 && memcmp(id.value.data, "étude", 6) == 0,
+    OK(runner, document != NULL, "specimen document parses");
+    if (!document) {
+        return;
+    }
+    const markdown_core_node *root = markdown_core_document_root(document);
+    const markdown_core_node *value = markdown_core_node_get_first_child(root);
+    INT_EQ(runner, markdown_core_node_get_kind(value), MARKDOWN_CORE_KIND_SPECIMEN, "a definition is content");
+    OK(runner, markdown_core_specimen_properties(value, &label, &start), "specimen answers properties");
+    OK(runner, label.has_value && label.value.length == 6 && memcmp(label.value.data, "étude", 6) == 0,
        "specimen label retains owned UTF-8 bytes");
     OK(runner, start.has_value && start.value == 5, "specimen retains effective reset");
-    OK(runner, markdown_core_specimen_content(value) == body, "specimen retains its content relation");
-    value = markdown_core_node_get_next_sibling(value);
-    OK(runner, value && markdown_core_specimen_properties(value, &id, &start), "anonymous definition remains present");
-    OK(runner, !id.has_value && !start.has_value, "anonymous label and absent reset remain absent");
-    INT_EQ(runner, markdown_core_node_child_count(root), 0, "definitions are not document children");
+    OK(runner, markdown_core_node_get_kind(markdown_core_specimen_content(value)) == MARKDOWN_CORE_KIND_PARAGRAPH,
+       "specimen retains its content relation");
+    const markdown_core_node *anonymous = markdown_core_node_get_next_sibling(value);
+    OK(runner, anonymous && markdown_core_specimen_properties(anonymous, &label, &start),
+       "anonymous definition remains present");
+    OK(runner, !label.has_value && !start.has_value, "anonymous label and absent reset remain absent");
+    INT_EQ(runner, (int)markdown_core_document_specimen_count(document), 2, "the document lists both definitions");
     OK(runner,
-       !markdown_core_specimen_properties(NULL, &id, &start) &&
-           !markdown_core_specimen_properties(value, NULL, &start) &&
-           !markdown_core_specimen_properties(value, &id, NULL) && markdown_core_node_document_specimens(body) == NULL,
-       "typed accessors reject missing values and incorrect owners");
-    markdown_core_node *citation = markdown_core_node_new(MARKDOWN_CORE_NODE_CITATION);
-    citation->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_SPECIMEN;
-    OK(runner, markdown_core_chunk_set_cstr(&citation->as.citation->value, "étude"),
-       "specimen reference owns its label");
+       markdown_core_document_specimen_at(document, 0) == value &&
+           markdown_core_document_specimen_at(document, 1) == anonymous &&
+           markdown_core_document_specimen_at(document, 2) == NULL,
+       "the list is in source order");
+    const markdown_core_node *citation = markdown_core_node_cite_citations(
+        markdown_core_node_get_first_child(markdown_core_node_get_next_sibling(anonymous)));
     markdown_core_referent referent;
     OK(runner,
-       markdown_core_citation_referent((const markdown_core_node *)citation, &referent) &&
-           referent.kind == MARKDOWN_CORE_REFERENT_SPECIMEN && referent.id.length == 6 && referent.key.data == NULL &&
-           referent.mode == 0,
+       markdown_core_citation_referent(citation, &referent) && referent.kind == MARKDOWN_CORE_REFERENT_SPECIMEN &&
+           referent.label.length == 6 && referent.key.data == NULL && referent.mode == 0 && referent.note == NULL,
        "specimen reference uses only its own branch fields");
-    citation->as.citation->referent = 99;
-    OK(runner, !markdown_core_citation_referent((const markdown_core_node *)citation, &referent),
-       "unknown referent cannot masquerade as a specimen");
-    markdown_core_node_free(citation);
-    markdown_core_document document = {0};
-    document.root = root;
-    uint8_t *dump = NULL;
-    size_t length = 0;
-    OK(runner, markdown_core_document_dump(&document, &dump, &length, NULL), "specimen document dumps");
+    OK(runner, markdown_core_document_specimen_for(document, referent.label) == value,
+       "a reference's label finds its definition");
     OK(runner,
-       dump && strstr((const char *)dump, "id=\"étude\" start=5 children=1") &&
-           strstr((const char *)dump, "id=null start=null children=0"),
+       !markdown_core_specimen_properties(NULL, &label, &start) &&
+           !markdown_core_specimen_properties(value, NULL, &start) &&
+           !markdown_core_specimen_properties(value, &label, NULL) &&
+           !markdown_core_specimen_properties(root, &label, &start),
+       "typed accessors reject missing values and incorrect owners");
+    uint8_t *dump = NULL;
+    size_t dump_length = 0;
+    OK(runner, markdown_core_document_dump(document, NULL, (const uint8_t *)source, length, &dump, &dump_length, NULL),
+       "specimen document dumps");
+    OK(runner,
+       dump && strstr((const char *)dump, "label=\"étude\" start=5 children=1") &&
+           strstr((const char *)dump, "label=null start=null children=1") &&
+           strstr((const char *)dump, "referent=specimen(label=\"étude\")"),
        "dump carries only authored definition facts");
     markdown_core_dump_free(dump);
-    marker_to_free = bytes.data;
-    marker_free_count = 0;
-    markdown_core_node_free(root);
-    INT_EQ(runner, marker_free_count, 1, "document frees its owned specimen label exactly once");
+    markdown_core_document_free(document);
 }
 
 /* Blank continuation belongs to the definition after ancestor prefixes have
@@ -3835,10 +3982,10 @@ static void definition_blank_continuation(test_batch_runner *runner) {
                             continue;
                         }
                         markdown_core_node *value =
-                            family ? root->as.document->footnotes : root->as.document->specimens;
+                            first_of_kind(root, family ? MARKDOWN_CORE_NODE_FOOTNOTE : MARKDOWN_CORE_NODE_SPECIMEN);
                         markdown_core_node *first = value->first_child;
                         markdown_core_node *second = first->next;
-                        OK(runner, value && !value->next && first && second && !second->next,
+                        OK(runner, value && first && second && !second->next,
                            "definition owns exactly two blocks: family=%zu shape=%zu ending=%zu blank=%zu list=%d",
                            family, shape, ending, blank, definition_list);
                         LITERAL_EQ(runner, first->first_child, "first", "blank line ends the first paragraph");
@@ -3846,8 +3993,8 @@ static void definition_blank_continuation(test_batch_runner *runner) {
                                definition_list ? MARKDOWN_CORE_NODE_DEFINITION_LIST : MARKDOWN_CORE_NODE_PARAGRAPH,
                                "continued body and lookahead retain the block kind");
                         if (second) {
-                            INT_EQ(runner, second->start_line, 3, "continued block retains its source start");
-                            INT_EQ(runner, second->end_line, definition_list ? 5 : 3,
+                            INT_EQ(runner, START_LINE(second), 3, "continued block retains its source start");
+                            INT_EQ(runner, END_LINE(second), definition_list ? 5 : 3,
                                    "unindented text stays outside the definition body");
                             if (!definition_list) {
                                 LITERAL_EQ(runner, second->first_child, "second",
@@ -3905,8 +4052,8 @@ static void ref_source_pos(test_batch_runner *runner) {
     markdown_core_node *root = parse("[r]: /u\n===\ntext\n");
     markdown_core_node *paragraph = root ? root->first_child : NULL;
     OK(runner,
-       paragraph && paragraph->kind == MARKDOWN_CORE_NODE_PARAGRAPH && paragraph->start_line == 2 &&
-           paragraph->end_line == 3 && paragraph->first_child && paragraph->first_child->start_line == 2,
+       paragraph && paragraph->kind == MARKDOWN_CORE_NODE_PARAGRAPH && START_LINE(paragraph) == 2 &&
+           END_LINE(paragraph) == 3 && paragraph->first_child && START_LINE(paragraph->first_child) == 2,
        "a consumed definition prefix still relocates content arriving after the setext probe");
     if (root) {
         markdown_core_node_free(root);
@@ -3962,11 +4109,12 @@ static void autolink_source_pos(test_batch_runner *runner) {
 
 static void table_values(test_batch_runner *runner) {
     const char source[] = "| a | b |\n| - | - |\n| c | d |\n| e | f |\n";
-    markdown_core_node *root = markdown_core_parse_document(source, sizeof(source) - 1);
-    OK(runner, root != NULL, "table value fixture parses");
-    if (!root) {
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, NULL);
+    OK(runner, document != NULL, "table value fixture parses");
+    if (!document) {
         return;
     }
+    markdown_core_node *root = document->root;
     markdown_core_node *table = root->first_child;
     markdown_core_table *properties = (markdown_core_table *)table->opaque;
     properties->content_count = 1;
@@ -4004,20 +4152,21 @@ static void table_values(test_batch_runner *runner) {
            markdown_core_node_table_column_at(table, 0, &column) && column.relative.has_value &&
                column.relative.value == widths[i].width,
            "column width is an authored double");
-        markdown_core_document document = {0};
-        document.root = root;
         uint8_t *dump = NULL;
         size_t length = 0;
         char expected[128];
         snprintf(expected, sizeof(expected), "columns=[none:%s,none:null] children=3", widths[i].dump);
-        OK(runner, markdown_core_document_dump(&document, &dump, &length, NULL), "table values dump");
+        OK(runner,
+           markdown_core_document_dump(document, NULL, (const uint8_t *)source, sizeof(source) - 1, &dump, &length,
+                                       NULL),
+           "table values dump");
         OK(runner,
            dump && strstr((const char *)dump, expected) && strstr((const char *)dump, "TableFoot children=1") &&
                strstr((const char *)dump, "rowspan=1 colspan=2"),
            "dump retains groups, spans, and canonical relative-width digits");
         markdown_core_dump_free(dump);
     }
-    markdown_core_node_free(root);
+    markdown_core_document_free(document);
 }
 
 /* Many contractions followed by many address splits must retain one linear
@@ -4059,8 +4208,8 @@ static void table_source_map_growth(test_batch_runner *runner) {
                 if (node->kind != MARKDOWN_CORE_NODE_LINK) {
                     continue;
                 }
-                INT_EQ(runner, node->start_column, 12 + links * unit_length, "address begins at its authored byte");
-                INT_EQ(runner, node->end_column, 27 + links * unit_length, "address ends at its authored byte");
+                INT_EQ(runner, START_COLUMN(node), 12 + links * unit_length, "address begins at its authored byte");
+                INT_EQ(runner, END_COLUMN(node), 27 + links * unit_length, "address ends at its authored byte");
                 links++;
             }
             INT_EQ(runner, links, count, "every address is retained");
@@ -4106,8 +4255,8 @@ static void properties_values(test_batch_runner *runner) {
        markdown_core_metadata_value_scalar(record, &scalar) && scalar.kind == MARKDOWN_CORE_METADATA_TEXT &&
            scalar.value.string.length == 9 && !memcmp(scalar.value.string.data, "one\n\ntwo\n", 9),
        "literal prose keeps internal newlines and a clipped final newline");
-    INT_EQ(runner, markdown_core_node_scope(metadata).end.line, 20, "metadata ends at the closing fence");
-    INT_EQ(runner, markdown_core_node_scope(markdown_core_node_get_first_child(root)).start.line, 21,
+    INT_EQ(runner, document_scope_of(document, metadata, source).end.line, 20, "metadata ends at the closing fence");
+    INT_EQ(runner, document_scope_of(document, markdown_core_node_get_first_child(root), source).start.line, 21,
            "body stays outside metadata");
     OK(runner, !markdown_core_metadata_name(NULL), "absent metadata has no field");
     markdown_core_document_free(document);
@@ -4228,8 +4377,8 @@ static void properties_source_boundaries(test_batch_runner *runner) {
                      value.value.string.length == 5 && !memcmp(value.value.string.data, "ready", 5)
                : state == NULL,
            "only a closed bracketed member allows the next independent field");
-        INT_EQ(runner, markdown_core_node_scope(markdown_core_node_get_first_child(root)).start.line,
-               markdown_core_node_scope(metadata).end.line + 1, "the closing fence always separates the body");
+        INT_EQ(runner, document_scope_of(doc, markdown_core_node_get_first_child(root), source).start.line,
+               document_scope_of(doc, metadata, source).end.line + 1, "the closing fence always separates the body");
         markdown_core_document_free(doc);
     }
     const char *source =
@@ -4249,7 +4398,10 @@ static void properties_source_boundaries(test_batch_runner *runner) {
     size_t lengths[2] = {0};
     for (size_t i = 0; i < 2; i++) {
         doc = markdown_core_document_parse((const uint8_t *)ordered[i], strlen(ordered[i]), NULL);
-        OK(runner, markdown_core_document_dump(doc, &dumps[i], &lengths[i], NULL), "named fields dump");
+        OK(runner,
+           markdown_core_document_dump(doc, NULL, (const uint8_t *)ordered[i], strlen(ordered[i]), &dumps[i],
+                                       &lengths[i], NULL),
+           "named fields dump");
         markdown_core_document_free(doc);
     }
     OK(runner, dumps[0] && dumps[1] && lengths[0] == lengths[1] && !memcmp(dumps[0], dumps[1], lengths[0]),
@@ -4429,8 +4581,7 @@ static void universal_values(test_batch_runner *runner) {
     markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
     markdown_core_node *root = document->root;
     markdown_core_node *metadata = markdown_core_node_new(MARKDOWN_CORE_NODE_METADATA);
-    metadata->start_line = metadata->start_column = metadata->end_line = 1;
-    metadata->end_column = 4;
+    metadata->where.extent = (markdown_core_extent){0, 4};
     root->as.document->metadata = metadata;
     markdown_core_metadata_value *values[] = {&metadata->as.metadata->name,    &metadata->as.metadata->time,
                                               &metadata->as.metadata->date,    &metadata->as.metadata->title,
@@ -4525,7 +4676,9 @@ static void universal_values(test_batch_runner *runner) {
        "only a sized image has dimensions");
     uint8_t *dump = NULL;
     size_t length = 0;
-    OK(runner, markdown_core_document_dump(document, &dump, &length, NULL), "metadata and dimensions dump");
+    OK(runner,
+       markdown_core_document_dump(document, NULL, (const uint8_t *)source, strlen(source), &dump, &length, NULL),
+       "metadata and dimensions dump");
     OK(runner, strstr((const char *)dump, "date=scalar(number(\"9007199254740993\"))") != NULL,
        "decimal text never rounded");
     OK(runner, strstr((const char *)dump, "authors=list([])") != NULL, "empty list distinct from null");
@@ -4542,7 +4695,7 @@ typedef struct {
     size_t registered_definitions, definition_lists, citation_brace_bytes, tables, table_frontier;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans, table_horizontal_work;
     size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
-    bool footnote_collection_allocated, footnotes_owned, heading_collection_disposed;
+    bool heading_collection_disposed;
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
     size_t inline_hooks;
@@ -4641,13 +4794,6 @@ static int record_inline_work(const markdown_core_element_instance *self, markdo
     work->registered_definitions = parser->definition_registration_work;
     work->definition_lists =
         ELEMENT_STATE(parser, markdown_core_definition_list_work, MARKDOWN_CORE_ELEMENT_DEFINITION_LIST)->work;
-    work->footnote_collection_allocated =
-        ELEMENT_STATE(parser, markdown_core_footnote_state, MARKDOWN_CORE_ELEMENT_FOOTNOTE)->definitions.values != NULL;
-    work->footnotes_owned = true;
-    for (markdown_core_node *note = root->as.document->footnotes; note; note = note->next) {
-        work->footnotes_owned &=
-            note->kind == MARKDOWN_CORE_NODE_FOOTNOTE && note->parent == NULL && note->as.footnote->id.data != NULL;
-    }
     return 1;
 }
 static const markdown_core_element WORK_RECORDER = {.name = "work-recorder", .postprocess_func = record_inline_work};
@@ -4999,47 +5145,34 @@ static void inline_footnote_linear_work(test_batch_runner *runner) {
             OK(runner, work.footnote_body <= (size_t)source.size,
                "nonblank evidence inspects disjoint source ranges: case=%zu size=%d work=%zu", c, source.size,
                work.footnote_body);
-            INT_EQ(runner, work.registered_definitions, count * cases[c].notes_per_unit,
-                   "all committed notes are registered before finalization");
-            OK(runner, work.footnotes_owned, "postprocessors receive resolved document-owned footnotes");
-            OK(runner, !work.footnote_collection_allocated,
-               "parse-time footnote edges are discarded before postprocessing");
             if (root) {
-                size_t actual = 0;
-                int previous_column = 0;
-                for (markdown_core_node *note = root->as.document->footnotes; note; note = note->next) {
-                    char expected[40];
-                    snprintf(expected, sizeof(expected), "inline-%zu", ++actual);
-                    STR_EQ(runner, (const char *)note->as.footnote->id.data, expected, "ids follow source order");
-                    OK(runner, note->start_column > previous_column && note->parent == NULL,
-                       "document owns each value once in increasing source order");
-                    previous_column = note->start_column;
+                node_list notes = footnotes_of(root);
+                bool unlabeled = true;
+                for (size_t i = 0; i < notes.count; i++) {
+                    unlabeled &= footnote_label_of(notes.nodes[i]) == NULL && notes.nodes[i]->parent == NULL;
                 }
-                INT_EQ(runner, actual, count * cases[c].notes_per_unit, "all and only completed notes are retained");
+                OK(runner, unlabeled, "every inline note is an unlabeled Footnote its citation owns");
+                INT_EQ(runner, notes.count, count * cases[c].notes_per_unit,
+                       "all and only completed notes are retained");
+                free(notes.nodes);
                 markdown_core_node_free(root);
             }
             markdown_core_strbuf_free(&source);
         }
     }
-    for (size_t count = 128; count <= 4096; count *= 2) {
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        markdown_core_strbuf_puts(&source, "^[x]\n\n[^inline-1]: reserved\n");
-        for (size_t i = 1; i <= count; i++) {
-            char definition[64];
-            snprintf(definition, sizeof(definition), "[^inline-1-%zu]: reserved\n", i);
-            markdown_core_strbuf_puts(&source, definition);
-        }
-        markdown_core_node *root =
-            markdown_core_parse_document_with_setup((const char *)source.ptr, (size_t)source.size, NULL, NULL);
-        OK(runner, root != NULL, "long authored suffix sets parse");
-        if (root) {
-            char expected[40];
-            snprintf(expected, sizeof(expected), "inline-1-%zu", count + 1);
-            STR_EQ(runner, (const char *)root->as.document->footnotes->as.footnote->id.data, expected,
-                   "generated ids skip the complete authored suffix set");
-            markdown_core_node_free(root);
-        }
-        markdown_core_strbuf_free(&source);
+    /* An authored label is only a label: an inline note never takes one, so
+     * no label an author writes is reserved against the notes. */
+    static const char authored[] = "^[x]\n\n[^inline-1]: authored\n";
+    markdown_core_node *root = markdown_core_parse_document(authored, sizeof(authored) - 1);
+    OK(runner, root != NULL, "an authored inline-looking label parses");
+    if (root) {
+        node_list notes = footnotes_of(root);
+        OK(runner,
+           notes.count == 2 && footnote_label_of(notes.nodes[0]) == NULL && footnote_label_of(notes.nodes[1]) &&
+               !strcmp(footnote_label_of(notes.nodes[1]), "inline-1"),
+           "the note stays unlabeled and the definition keeps its authored label");
+        free(notes.nodes);
+        markdown_core_node_free(root);
     }
 }
 
@@ -5050,17 +5183,15 @@ static void footnote_registration(test_batch_runner *runner) {
     static const struct {
         const char *source;
         size_t count;
-        const char *ids[6];
+        const char *labels[6];
     } cases[] = {
         {"^[outer ^[inner]] :d[^[label]] ^[last]\n\n[^inline-1]: ^[body]\n",
          6,
-         {"inline-1-1", "inline-2", "inline-3", "inline-4", "inline-1", "inline-5"}},
-        {"^[unclosed ^[inner]", 1, {"inline-1"}},
-        {"[^a]: ^[body]\n\n[^a ^[x]] [^[link]](u) ![^[image]](v)\n",
-         5,
-         {"a", "inline-1", "inline-2", "inline-3", "inline-4"}},
+         {NULL, NULL, NULL, NULL, "inline-1", NULL}},
+        {"^[unclosed ^[inner]", 1, {NULL}},
+        {"[^a]: ^[body]\n\n[^a ^[x]] [^[link]](u) ![^[image]](v)\n", 5, {"a", NULL, NULL, NULL, NULL}},
         {"`^[code]` $^[formula]$ %%^[comment]%% <!-- ^[html] --> <i data-x=\"^[token]\">\n", 0, {NULL}},
-        {"[[^[target]]]\n", 1, {"inline-1"}},
+        {"[[^[target]]]\n", 1, {NULL}},
         {"[^a]: first\n[^a]: duplicate\n", 2, {"a", "a"}},
     };
     for (size_t c = 0; c < sizeof(cases) / sizeof(*cases); c++) {
@@ -5068,18 +5199,15 @@ static void footnote_registration(test_batch_runner *runner) {
         markdown_core_node *root = markdown_core_parse_document_with_setup(cases[c].source, strlen(cases[c].source),
                                                                            measure_inline_work, &work);
         OK(runner, root != NULL, "footnote registration boundaries parse: case=%zu", c);
-        INT_EQ(runner, work.registered_definitions, cases[c].count, "only committed notes enter the parser collection");
-        OK(runner, work.footnotes_owned, "postprocessors receive resolved document-owned footnotes");
         if (root) {
-            size_t actual = 0;
-            for (markdown_core_node *note = root->as.document->footnotes; note; note = note->next) {
-                if (actual < cases[c].count) {
-                    STR_EQ(runner, (const char *)note->as.footnote->id.data, cases[c].ids[actual],
-                           "finalization orders committed notes by source start");
-                }
-                actual++;
+            node_list notes = footnotes_of(root);
+            for (size_t i = 0; i < notes.count && i < cases[c].count; i++) {
+                const char *label = footnote_label_of(notes.nodes[i]);
+                OK(runner, cases[c].labels[i] ? label && !strcmp(label, cases[c].labels[i]) : label == NULL,
+                   "case=%zu footnote %zu carries its label where it was written", c, i);
             }
-            INT_EQ(runner, actual, cases[c].count, "each registered note becomes one document value");
+            INT_EQ(runner, notes.count, cases[c].count, "each committed note is one Footnote in the tree");
+            free(notes.nodes);
             markdown_core_node_free(root);
         }
     }
@@ -5260,9 +5388,10 @@ static void standalone_formula_as_owned_root(test_batch_runner *runner) {
 
 typedef struct {
     size_t removed;
-    bool resolved, index_released;
 } footnote_postprocess_probe;
 
+/* A pass may remove every footnote: definitions from the content, and inline
+ * notes from their citations. Nothing in the parser points at them by then. */
 static int remove_footnotes(const markdown_core_element_instance *self, markdown_core_parser *parser,
                             markdown_core_node *root) {
     (void)self;
@@ -5270,17 +5399,26 @@ static int remove_footnotes(const markdown_core_element_instance *self, markdown
         return 1;
     }
     footnote_postprocess_probe *probe = parser->context;
-    const markdown_core_definition_collection *index =
-        &ELEMENT_STATE(parser, markdown_core_footnote_state, MARKDOWN_CORE_ELEMENT_FOOTNOTE)->definitions;
-    probe->index_released = index->values == NULL && index->count == 0 && index->last_inline == NULL;
-    probe->resolved = true;
-    while (root->as.document->footnotes) {
-        markdown_core_node *note = root->as.document->footnotes;
-        probe->resolved &= note->parent == NULL && note->as.footnote->id.data != NULL;
-        root->as.document->footnotes = note->next;
-        markdown_core_node_free(note);
+    node_list notes = footnotes_of(root);
+    node_list cites = nodes_of_kind(root, MARKDOWN_CORE_NODE_CITE);
+    /* Detach every note from its owner first, so freeing one never reaches
+     * another through it. */
+    for (size_t i = 0; i < cites.count; i++) {
+        for (markdown_core_node *item = cites.nodes[i]->as.cite->citations; item; item = item->next) {
+            item->as.citation->note = NULL;
+        }
+    }
+    for (size_t i = 0; i < notes.count; i++) {
+        if (notes.nodes[i]->parent) {
+            markdown_core_node_unlink(notes.nodes[i]);
+        }
+    }
+    for (size_t i = 0; i < notes.count; i++) {
+        markdown_core_node_free(notes.nodes[i]);
         probe->removed++;
     }
+    free(cites.nodes);
+    free(notes.nodes);
     return 1;
 }
 
@@ -5295,15 +5433,14 @@ static void footnote_postprocessing(test_batch_runner *runner) {
     footnote_postprocess_probe probe = {0};
     markdown_core_node *root =
         markdown_core_parse_document_with_setup(source, sizeof(source) - 1, observe_footnote_removal, &probe);
-    OK(runner, root != NULL, "postprocessing may remove document footnotes without stale parser pointers");
-    INT_EQ(runner, probe.removed, 5, "postprocessor receives all authored and inline values");
-    OK(runner, probe.resolved && probe.index_released, "ids and ownership are final before mutable callbacks run");
+    OK(runner, root != NULL, "postprocessing may remove footnotes without stale parser pointers");
+    INT_EQ(runner, probe.removed, 5, "postprocessor reaches every definition and inline note");
     if (root) {
         markdown_core_node *cite = root->first_child->first_child;
-        OK(runner, !root->as.document->footnotes && !cite->first_child,
-           "Cite has no transient structural body before or after postprocessing");
-        STR_EQ(runner, (const char *)cite->as.cite->citations->as.citation->value.data, "inline-1",
-               "citation ids survive deletion of their document value");
+        node_list notes = footnotes_of(root);
+        OK(runner, notes.count == 0 && !cite->first_child && !cite->as.cite->citations->as.citation->note,
+           "no footnote remains and a Cite has no structural body");
+        free(notes.nodes);
         markdown_core_node *note = markdown_core_node_new(MARKDOWN_CORE_NODE_FOOTNOTE);
         OK(runner, !markdown_core_node_append_child(cite, note), "Cite containment rejects a Footnote child");
         markdown_core_node_free(note);
@@ -5500,7 +5637,7 @@ static void literal_text_allocations(test_batch_runner *runner) {
                 if (root) {
                     markdown_core_node *text = root->first_child->last_child;
                     if (!pass) {
-                        ordinary_text_start = text->start_column;
+                        ordinary_text_start = START_COLUMN(text);
                     }
                     size_t text_offset = (size_t)ordinary_text_start - 1;
                     OK(runner,
@@ -5509,8 +5646,8 @@ static void literal_text_allocations(test_batch_runner *runner) {
                            memcmp(text->as.literal->data, source + text_offset, length - text_offset) == 0,
                        "one Text retains every literal byte");
                     OK(runner,
-                       text->start_line == 1 && text->start_column == ordinary_text_start && text->end_line == 1 &&
-                           text->end_column == (int)length,
+                       START_LINE(text) == 1 && START_COLUMN(text) == ordinary_text_start && END_LINE(text) == 1 &&
+                           END_COLUMN(text) == (int)length,
                        "one Text retains the complete source scope");
                     markdown_core_node_free(root);
                 }
@@ -5915,28 +6052,28 @@ static void percent_comment_nodes(test_batch_runner *runner) {
     INT_EQ(runner, comment->kind, MARKDOWN_CORE_NODE_COMMENT, "inline `%%` comment type");
     STR_EQ(runner, markdown_core_node_get_type_string(comment), "comment", "inline `%%` comment type string");
     LITERAL_EQ(runner, comment, "b", "inline literal excludes the delimiters");
-    INT_EQ(runner, comment->start_column, 3, "inline scope starts at the opener");
-    INT_EQ(runner, comment->end_column, 7, "inline scope ends at the closer");
+    INT_EQ(runner, START_COLUMN(comment), 3, "inline scope starts at the opener");
+    INT_EQ(runner, END_COLUMN(comment), 7, "inline scope ends at the closer");
     INT_EQ(runner, empty->kind, MARKDOWN_CORE_NODE_COMMENT, "`%%%%` is a comment");
     LITERAL_EQ(runner, empty, "", "`%%%%` has an empty literal");
     LITERAL_EQ(runner, spanning, "x\ny", "a body spanning lines keeps one LF per line ending");
-    INT_EQ(runner, spanning->start_line, 1, "a spanning body starts on its opener line");
-    INT_EQ(runner, spanning->end_line, 2, "a spanning body ends on its closer line");
-    INT_EQ(runner, spanning->end_column, 3, "a spanning body ends at its closer");
+    INT_EQ(runner, START_LINE(spanning), 1, "a spanning body starts on its opener line");
+    INT_EQ(runner, END_LINE(spanning), 2, "a spanning body ends on its closer line");
+    INT_EQ(runner, END_COLUMN(spanning), 3, "a spanning body ends at its closer");
 
     INT_EQ(runner, block->kind, MARKDOWN_CORE_NODE_COMMENT_BLOCK, "block `%%` comment type");
     STR_EQ(runner, markdown_core_node_get_type_string(block), "comment_block", "block `%%` comment type string");
     LITERAL_EQ(runner, block, "  block\n\n",
                "block literal keeps indentation, blank lines, and LF line endings, and excludes both fences");
-    INT_EQ(runner, block->start_line, 4, "block starts on its opener line");
-    INT_EQ(runner, block->end_line, 7, "block ends on its closer line");
-    INT_EQ(runner, block->end_column, 3, "block ends at its closer line's last byte");
+    INT_EQ(runner, START_LINE(block), 4, "block starts on its opener line");
+    INT_EQ(runner, END_LINE(block), 7, "block ends on its closer line");
+    INT_EQ(runner, END_COLUMN(block), 3, "block ends at its closer line's last byte");
     OK(runner, block->first_child == NULL, "a block comment is a leaf");
 
     INT_EQ(runner, quote->kind, MARKDOWN_CORE_NODE_CALLOUT, "the quoted form is inside its container");
     INT_EQ(runner, quoted->kind, MARKDOWN_CORE_NODE_COMMENT_BLOCK, "a quoted block comment");
     LITERAL_EQ(runner, quoted, "q\n", "a quoted literal has its prefix removed");
-    INT_EQ(runner, quoted->start_column, 3, "a quoted block starts after the prefix");
+    INT_EQ(runner, START_COLUMN(quoted), 3, "a quoted block starts after the prefix");
 
     INT_EQ(runner, open->kind, MARKDOWN_CORE_NODE_PARAGRAPH, "an unclosed candidate is a paragraph");
     LITERAL_EQ(runner, open->first_child, "%%", "an unmatched opener is text");
@@ -6288,37 +6425,32 @@ static void source_entries_order_by_the_key_bytes_that_differ(test_batch_runner 
     } shapes[] = {
         {"already ordered", 1, 0},
         {"top byte only", 2, 1},
-        {"every byte", 2, 8},
+        {"every byte", 2, 4},
         {"ties", 2, 1},
     };
     for (size_t shape = 0; shape < sizeof(shapes) / sizeof(*shapes); shape++) {
         uint32_t state = 0x9E3779B9u;
         for (int i = 0; i < COUNT; i++) {
             state = state * 1664525u + 1013904223u;
-            int line, column;
+            uint32_t key;
             switch (shape) {
             case 0:
-                line = i / 7;
-                column = i % 7;
+                key = (uint32_t)i;
                 break;
             case 1:
-                /* The key's top byte is the line's bits 24..31, and a line is
-                 * a nonnegative int, so seven of those bits vary: the keys
-                 * differ in the top byte alone, with ties. */
-                line = (int)(((COUNT - i) % 127 + 1) << 24);
-                column = 1;
+                /* The key's top byte is the offset's bits 24..31, and seven of
+                 * those bits vary: the keys differ in the top byte alone, with
+                 * ties. */
+                key = (uint32_t)((COUNT - i) % 127 + 1) << 24;
                 break;
             case 2:
-                line = (int)(state >> 1);
-                column = (int)((state * 2654435761u) >> 1);
+                key = state;
                 break;
             default:
-                line = (i * 31) % 5;
-                column = 0;
+                key = (uint32_t)((i * 31) % 5);
                 break;
             }
-            nodes[i].start_line = line;
-            nodes[i].start_column = column;
+            nodes[i].where.place.start = key;
             entries[i] = (source_entry){&nodes[i], i};
         }
         markdown_core_source_order workspace = {0};
@@ -6514,8 +6646,8 @@ static void probe_placements(const markdown_core_element_instance *self, markdow
                 markdown_core_inline_state_place(inline_state, &placed, from, to);
                 markdown_core_parser_content_span(parser, &owner->content_map, from, to, &span, NULL);
                 placements_checked++;
-                if (placed.start_line != span.start_line || placed.start_column != span.start_column ||
-                    (to >= 0 && (placed.end_line != span.end_line || placed.end_column != span.end_column))) {
+                if (placed.where.place.start != (uint32_t)span.start ||
+                    (to >= 0 && placed.where.place.end != (uint32_t)span.end)) {
                     placement_disagreements++;
                 }
             }
@@ -7211,14 +7343,14 @@ static void block_identifier_ownership(test_batch_runner *runner) {
             markdown_core_node *root = markdown_core_parse_document(source, strlen(source));
             markdown_core_node *list = root->first_child;
             markdown_core_node *item = list->first_child;
+            INT_EQ(runner, END_LINE(list), 3, "detached line belongs to the list scope for every line ending");
+            INT_EQ(runner, END_COLUMN(list), 6, "list scope includes the closing hash at EOF");
+            INT_EQ(runner, END_COLUMN(item->first_child->first_child), 6, "text scope ends before the separator");
             memset(source, 'x', strlen(source));
             STR_EQ(runner, (const char *)list->attributes.anchor.data, "list",
                    "detached EOF identifier owns its bytes");
             STR_EQ(runner, (const char *)item->attributes.anchor.data, "item", "item identifier owns its bytes");
             OK(runner, list->attributes.anchor.alloc && item->attributes.anchor.alloc, "anchors are owned chunks");
-            INT_EQ(runner, list->end_line, 3, "detached line belongs to the list scope for every line ending");
-            INT_EQ(runner, list->end_column, 6, "list scope includes the closing hash at EOF");
-            INT_EQ(runner, item->first_child->first_child->end_column, 6, "text scope ends before the separator");
             markdown_core_node_free(root);
         }
     }
@@ -8445,11 +8577,15 @@ static void growth_preserves_input_views(test_batch_runner *runner) {
     markdown_core_document *reference = markdown_core_document_parse(source.ptr, source.size, NULL);
     uint8_t *expected = NULL, *actual = NULL;
     size_t expected_length = 0, actual_length = 0;
-    OK(runner, reference && markdown_core_document_dump(reference, &expected, &expected_length, NULL),
+    OK(runner,
+       reference && markdown_core_document_dump(reference, NULL, (const uint8_t *)source.ptr, source.size, &expected,
+                                                &expected_length, NULL),
        "reference metadata and tables have a complete canonical dump");
     properties_force_moves = 1;
     markdown_core_document *moved = markdown_core_document_parse(source.ptr, source.size, NULL);
-    OK(runner, moved && markdown_core_document_dump(moved, &actual, &actual_length, NULL),
+    OK(runner,
+       moved && markdown_core_document_dump(moved, NULL, (const uint8_t *)source.ptr, source.size, &actual,
+                                            &actual_length, NULL),
        "metadata and separator views survive every growth moving storage");
     OK(runner, expected && actual && expected_length == actual_length && !memcmp(expected, actual, expected_length),
        "moving shared workspaces preserves every value, child and source position");
@@ -9016,10 +9152,122 @@ static void directive_recognition_survives_construction(test_batch_runner *runne
     }
 }
 
+/* A document counts the columns of its scope queries in the unit it was
+ * parsed in; positions stay UTF-8 bytes underneath, so both units name the
+ * same nodes. */
+static void scope_queries_count_in_the_document_unit(test_batch_runner *runner) {
+    static const char source[] = "\xc3\xa9\xf0\x9f\x9a\x80 x\r\nb\n";
+    const size_t length = sizeof(source) - 1;
+    static const struct {
+        markdown_core_text_unit unit;
+        int32_t text_end, rocket, after;
+    } units[] = {{MARKDOWN_CORE_TEXT_UNIT_UTF8, 8, 3, 7}, {MARKDOWN_CORE_TEXT_UNIT_UTF16, 5, 2, 4}};
+    for (size_t u = 0; u < sizeof(units) / sizeof(*units); u++) {
+        markdown_core_document *document =
+            markdown_core_document_parse_in((const uint8_t *)source, length, units[u].unit, NULL);
+        OK(runner, document && markdown_core_document_unit(document) == units[u].unit, "unit=%zu parses", u);
+        if (!document) {
+            continue;
+        }
+        const markdown_core_node *paragraph = markdown_core_node_get_first_child(markdown_core_document_root(document));
+        const markdown_core_node *text = markdown_core_node_get_first_child(paragraph);
+        markdown_core_scope scope = {{0, 0}, {0, 0}};
+        OK(runner,
+           markdown_core_document_scope(document, text, (const uint8_t *)source, length, &scope) &&
+               scope.start.line == 1 && scope.start.column == 1 && scope.end.line == 1 &&
+               scope.end.column == units[u].text_end,
+           "unit=%zu the first line's text ends at column %d: %d:%d..%d:%d", u, units[u].text_end, scope.start.line,
+           scope.start.column, scope.end.line, scope.end.column);
+        OK(runner,
+           markdown_core_document_scope(document, paragraph, (const uint8_t *)source, length, &scope) &&
+               scope.end.line == 2 && scope.end.column == 1,
+           "unit=%zu a CR LF ends one line", u);
+        OK(runner,
+           markdown_core_document_node_at(document, (markdown_core_position){1, units[u].rocket},
+                                          (const uint8_t *)source, length) == text &&
+               markdown_core_document_node_at(document, (markdown_core_position){1, units[u].rocket + 1},
+                                              (const uint8_t *)source, length) == NULL &&
+               markdown_core_document_node_at(document, (markdown_core_position){1, units[u].after},
+                                              (const uint8_t *)source, length) == text,
+           "unit=%zu a position names a scalar's first unit and no other", u);
+        markdown_core_document_free(document);
+    }
+    static const char *const empty[] = {"", "\n"};
+    for (size_t i = 0; i < sizeof(empty) / sizeof(*empty); i++) {
+        markdown_core_document *document = markdown_core_document_parse_in((const uint8_t *)empty[i], strlen(empty[i]),
+                                                                           MARKDOWN_CORE_TEXT_UNIT_UTF16, NULL);
+        markdown_core_scope scope = {{0, 0}, {0, 0}};
+        OK(runner,
+           document &&
+               markdown_core_document_scope(document, markdown_core_document_root(document), (const uint8_t *)empty[i],
+                                            strlen(empty[i]), &scope) &&
+               scope.start.line == 1 && scope.start.column == 1 && scope.end.line == 1 && scope.end.column == 0,
+           "an empty document %zu is 1:1..1:0: %d:%d..%d:%d", i, scope.start.line, scope.start.column, scope.end.line,
+           scope.end.column);
+        markdown_core_document_free(document);
+    }
+    markdown_core_error *error = NULL;
+    OK(runner,
+       markdown_core_document_parse_in((const uint8_t *)source, length, (markdown_core_text_unit)3, &error) == NULL &&
+           markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+       "an unknown unit is an invalid argument");
+    markdown_core_error_free(error);
+}
+
+/* A dump with every ` scope=L:C..L:C` removed, in place; its new length. */
+static size_t without_scopes(uint8_t *dump, size_t length) {
+    size_t kept = 0;
+    static const char mark[] = " scope=";
+    for (size_t i = 0; dump && i < length;) {
+        if (i + sizeof(mark) - 1 <= length && !memcmp(dump + i, mark, sizeof(mark) - 1)) {
+            i += sizeof(mark) - 1;
+            while (i < length && dump[i] != ' ' && dump[i] != '\n') {
+                i++;
+            }
+            continue;
+        }
+        dump[kept++] = dump[i++];
+    }
+    return kept;
+}
+
+/* Whether the node holding each NUL byte of `source` is Text whose literal
+ * holds the replacement scalar. */
+static bool nul_bytes_are_replacement_text(const markdown_core_document *document, const markdown_core_strbuf *source) {
+    markdown_core_position position = {1, 1};
+    for (size_t i = 0; i < (size_t)source->size; i++) {
+        uint8_t byte = source->ptr[i];
+        if (!byte) {
+            const markdown_core_node *node =
+                markdown_core_document_node_at(document, position, source->ptr, (size_t)source->size);
+            markdown_core_string literal;
+            bool replaced = false;
+            if (!node || node->kind != MARKDOWN_CORE_NODE_TEXT || !markdown_core_node_literal(node, &literal)) {
+                return false;
+            }
+            for (size_t at = 0; at + 3 <= literal.length && !replaced; at++) {
+                replaced = !memcmp(literal.data + at, "\xef\xbf\xbd", 3);
+            }
+            if (!replaced) {
+                return false;
+            }
+        }
+        if (byte == '\n' || (byte == '\r' && !(i + 1 < (size_t)source->size && source->ptr[i + 1] == '\n'))) {
+            position.line++;
+            position.column = 1;
+        } else {
+            position.column++;
+        }
+    }
+    return true;
+}
+
 /* NUL is one scalar represented as U+FFFD before grammar sees a line. Driver,
- * lookahead, inline cells and queued block cells must see identical bytes and
- * the same native byte-column convention. Views remain stable while another
- * line's view is allocated and while the line index grows. */
+ * lookahead, inline cells and queued block cells must see identical bytes, so
+ * a NUL and its replacement produce the same values; positions stay source
+ * bytes, so the one NUL byte is where the replacement's text is. Views remain
+ * stable while another line's view is allocated and while the line index
+ * grows. */
 static void lookahead_and_driver_share_normalized_lines(test_batch_runner *runner) {
     payload_probe_arm();
     static const char *const forms[] = {
@@ -9065,14 +9313,21 @@ static void lookahead_and_driver_share_normalized_lines(test_batch_runner *runne
                         markdown_core_document_parse(sources[i]->ptr, sources[i]->size, NULL);
                     OK(runner, document != NULL, "normalized table parses: %zu/%zu/%d/%zu", f, e, quoted, i);
                     if (document) {
-                        OK(runner, markdown_core_document_dump(document, &dumps[i], &lengths[i], NULL),
+                        OK(runner,
+                           markdown_core_document_dump(document, NULL, (const uint8_t *)sources[i]->ptr,
+                                                       sources[i]->size, &dumps[i], &lengths[i], NULL),
                            "normalized table has a complete canonical dump");
+                        if (i == 0) {
+                            OK(runner, nul_bytes_are_replacement_text(document, &input),
+                               "each NUL byte is the source of its replacement's text: %zu/%zu/%d", f, e, quoted);
+                        }
                         markdown_core_document_free(document);
                     }
                 }
+                lengths[0] = without_scopes(dumps[0], lengths[0]);
+                lengths[1] = without_scopes(dumps[1], lengths[1]);
                 OK(runner, dumps[0] && dumps[1] && lengths[0] == lengths[1] && !memcmp(dumps[0], dumps[1], lengths[0]),
-                   "NUL and its normalized scalar produce identical table values and coordinates: %zu/%zu/%d", f, e,
-                   quoted);
+                   "NUL and its normalized scalar produce identical table values: %zu/%zu/%d", f, e, quoted);
                 markdown_core_dump_free(dumps[0]);
                 markdown_core_dump_free(dumps[1]);
                 markdown_core_strbuf_free(&input);
@@ -9290,7 +9545,6 @@ static void census_mailto_links(markdown_core_node *root, mailto_census *census)
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type event;
     bool seen_link = false;
-    markdown_core_visit_block_subtrees(root, census_owned_root, census);
     while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node = markdown_core_iter_get_node(iter);
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
@@ -9342,10 +9596,10 @@ static int source_byte_at(const char *source, int line, int column) {
 }
 
 static bool scope_within(const markdown_core_node *inner, const markdown_core_node *outer) {
-    return (inner->start_line > outer->start_line ||
-            (inner->start_line == outer->start_line && inner->start_column >= outer->start_column)) &&
-           (inner->end_line < outer->end_line ||
-            (inner->end_line == outer->end_line && inner->end_column <= outer->end_column));
+    return (START_LINE(inner) > START_LINE(outer) ||
+            (START_LINE(inner) == START_LINE(outer) && START_COLUMN(inner) >= START_COLUMN(outer))) &&
+           (END_LINE(inner) < END_LINE(outer) ||
+            (END_LINE(inner) == END_LINE(outer) && END_COLUMN(inner) <= END_COLUMN(outer)));
 }
 
 /* Every node under `label` lies between its brackets: from the byte after the
@@ -9359,10 +9613,10 @@ static bool label_holds_its_content(markdown_core_node *label) {
         if (event != MARKDOWN_CORE_EVENT_ENTER || node == label) {
             continue;
         }
-        held &= (node->start_line > label->start_line ||
-                 (node->start_line == label->start_line && node->start_column > label->start_column)) &&
-                (node->end_line < label->end_line ||
-                 (node->end_line == label->end_line && node->end_column < label->end_column));
+        held &= (START_LINE(node) > START_LINE(label) ||
+                 (START_LINE(node) == START_LINE(label) && START_COLUMN(node) > START_COLUMN(label))) &&
+                (END_LINE(node) < END_LINE(label) ||
+                 (END_LINE(node) == END_LINE(label) && END_COLUMN(node) < END_COLUMN(label)));
     }
     markdown_core_iter_free(iter);
     return held;
@@ -9442,13 +9696,13 @@ static void directive_scopes_are_editor_positions(test_batch_runner *runner) {
                 if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE) {
                     /* Attributes follow the label's `]` directly, or stand
                      * alone; the directive ends on the last of these. */
-                    bool attributed = !label || source_byte_at(source, label->end_line, label->end_column + 1) == '{';
-                    int last = source_byte_at(source, node->end_line, node->end_column);
-                    OK(runner, source_byte_at(source, node->start_line, node->start_column) == ':',
+                    bool attributed = !label || source_byte_at(source, END_LINE(label), END_COLUMN(label) + 1) == '{';
+                    int last = source_byte_at(source, END_LINE(node), END_COLUMN(node));
+                    OK(runner, source_byte_at(source, START_LINE(node), START_COLUMN(node)) == ':',
                        "an inline directive in %.*s starts on its colon", shown, source);
                     OK(runner,
                        attributed ? last == '}'
-                                  : node->end_line == label->end_line && node->end_column == label->end_column,
+                                  : END_LINE(node) == END_LINE(label) && END_COLUMN(node) == END_COLUMN(label),
                        "an inline directive in %.*s ends on its last byte", shown, source);
                 }
                 if (!label) {
@@ -9456,13 +9710,13 @@ static void directive_scopes_are_editor_positions(test_batch_runner *runner) {
                 }
                 markdown_core_node *content = label->first_child;
                 OK(runner,
-                   source_byte_at(source, label->start_line, label->start_column) == '[' &&
-                       source_byte_at(source, label->end_line, label->end_column) == ']',
+                   source_byte_at(source, START_LINE(label), START_COLUMN(label)) == '[' &&
+                       source_byte_at(source, END_LINE(label), END_COLUMN(label)) == ']',
                    "a label in %.*s starts on its [ and ends on its ]", shown, source);
                 OK(runner, scope_within(label, node), "a label in %.*s lies in its directive", shown, source);
                 OK(runner,
                    !content ||
-                       (content->start_line == label->start_line && content->start_column == label->start_column + 1),
+                       (START_LINE(content) == START_LINE(label) && START_COLUMN(content) == START_COLUMN(label) + 1),
                    "a label's content in %.*s starts on the byte after its [", shown, source);
                 OK(runner, label_holds_its_content(label), "a label's content in %.*s lies between its brackets", shown,
                    source);
@@ -9511,14 +9765,14 @@ static void paragraphs_start_on_their_first_byte(test_batch_runner *runner) {
                 continue;
             }
             paragraphs++;
-            const int first = source_byte_at(source, node->start_line, node->start_column);
+            const int first = source_byte_at(source, START_LINE(node), START_COLUMN(node));
             markdown_core_node *text = node->first_child;
             markdown_core_string literal;
             OK(runner, first > 0 && first != ' ' && first != '\t', "a paragraph in %.*s starts on a non-space byte",
                shown, source);
             OK(runner,
-               text && text->kind == MARKDOWN_CORE_NODE_TEXT && text->start_line == node->start_line &&
-                   text->start_column == node->start_column && literal_of(text, &literal) && literal.length &&
+               text && text->kind == MARKDOWN_CORE_NODE_TEXT && START_LINE(text) == START_LINE(node) &&
+                   START_COLUMN(text) == START_COLUMN(node) && literal_of(text, &literal) && literal.length &&
                    literal.data[0] == first,
                "a paragraph in %.*s starts with its text", shown, source);
         }
@@ -9535,7 +9789,8 @@ static char *dump_with_line_shifted(const char *source, int line, int shift) {
     markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), &error);
     uint8_t *dump = NULL;
     size_t length = 0;
-    if (!document || !markdown_core_document_dump(document, &dump, &length, &error)) {
+    if (!document ||
+        !markdown_core_document_dump(document, NULL, (const uint8_t *)source, strlen(source), &dump, &length, &error)) {
         markdown_core_error_free(error);
         markdown_core_document_free(document);
         return NULL;
@@ -9631,8 +9886,8 @@ static char *describe_after_first(markdown_core_node *doc) {
                 continue;
             }
             char place[96];
-            snprintf(place, sizeof(place), "%d %d:%d..%d:%d ", node->kind, node->start_line, node->start_column,
-                     node->end_line, node->end_column);
+            snprintf(place, sizeof(place), "%d %d:%d..%d:%d ", node->kind, START_LINE(node), START_COLUMN(node),
+                     END_LINE(node), END_COLUMN(node));
             markdown_core_strbuf_puts(&out, place);
             put_literal(&out, node);
             markdown_core_strbuf_putc(&out, '\n');
@@ -9696,8 +9951,8 @@ static void lazy_after_marker_as_after_paragraph(test_batch_runner *runner) {
                                *quote = prose ? innermost_callout(prose) : NULL;
             char *marked_rest = marked ? describe_after_first(marked) : NULL,
                  *prose_rest = prose ? describe_after_first(prose) : NULL;
-            const bool marker_keeps = callout && callout->end_line >= 2,
-                       paragraph_keeps = quote && quote->end_line >= 2;
+            const bool marker_keeps = callout && END_LINE(callout) >= 2,
+                       paragraph_keeps = quote && END_LINE(quote) >= 2;
             OK(runner,
                callout && quote && marker_keeps == paragraph_keeps && marked_rest && prose_rest &&
                    !strcmp(marked_rest, prose_rest),
@@ -9717,19 +9972,8 @@ static void lazy_after_marker_as_after_paragraph(test_batch_runner *runner) {
 /* A grid or multiline cell is a rectangle of the source: its lines, between
  * its first and last column. */
 static bool cell_holds_place(const markdown_core_node *cell, int line, int column) {
-    return line >= cell->start_line && line <= cell->end_line && column >= cell->start_column &&
-           column <= cell->end_column;
-}
-
-/* Whether `cell`'s columns on `line` hold nothing but spaces. */
-static bool cell_segment_is_blank(const char *source, const markdown_core_node *cell, int line) {
-    for (int column = cell->start_column; column <= cell->end_column; column++) {
-        int byte = source_byte_at(source, line, column);
-        if (byte != ' ' && byte != -1) {
-            return false;
-        }
-    }
-    return true;
+    return line >= START_LINE(cell) && line <= END_LINE(cell) && column >= START_COLUMN(cell) &&
+           column <= END_COLUMN(cell);
 }
 
 static bool node_holds(const markdown_core_node *ancestor, const markdown_core_node *node) {
@@ -9741,33 +9985,17 @@ static bool node_holds(const markdown_core_node *ancestor, const markdown_core_n
     return false;
 }
 
-/* A BLOCK IN A CELL ENDS IN ITS CELL, OR ON THE LINE-ENDING SENTINEL. The
- * parser reads a grid or multiline cell's content as an input of its own,
- * whose columns it projects to the source's. A block that a following empty
- * line closes ends at column 0 of that line -- the sentinel for the end of
- * the line above, whatever input the block was read from, as
- * `- item\n\nnext` gives the list `1:1..2:0`. A cell's blank segment is empty
- * in its input, and column 0 names no byte there, so it has nowhere to be
- * projected to: projected as if it did, it landed on the row's last byte, the
- * table's right border, or on the next cell's text. So every node that
- * starts in a cell -- a footnote defined there too, though the document holds
- * it -- starts on a byte and ends at a place in that cell, or at column 0 of a
- * later line whose segment in that cell is blank. Cells nest, so the cell is
- * the innermost one holding the node's start, other than the node's own: a
- * row starts on its first cell. */
-typedef struct {
-    markdown_core_node *roots[8];
-    size_t count;
-} cell_test_roots;
-
-static int collect_cell_test_root(markdown_core_node **slot, void *context) {
-    cell_test_roots *roots = context;
-    if (slot && *slot && roots->count < sizeof(roots->roots) / sizeof(roots->roots[0])) {
-        roots->roots[roots->count++] = *slot;
-    }
-    return 1;
-}
-
+/* A BLOCK IN A CELL ENDS IN ITS CELL. The parser reads a grid or multiline
+ * cell's content as an input of its own, whose bytes it projects to the
+ * source's. A block that a following empty line closes ends where the
+ * content before that line ends: at the top level that is right after the
+ * line terminator, `L:0`, as `- item\n\nnext` gives the list `1:1..2:0`; in a
+ * cell it is the end of the cell's segment on the line above, a byte of that
+ * cell, because a cell's blank segment is empty in its input. So every node
+ * that starts in a cell -- a footnote defined there too -- starts on a byte
+ * and ends at a place in that cell. Cells nest, so the cell is the innermost
+ * one holding the node's start, other than the node's own: a row starts on
+ * its first cell. */
 static void cell_blocks_end_in_their_cell(test_batch_runner *runner) {
     static const char *const sources[] = {
         "+--------+-----+\n| - item | x   |\n|        |     |\n| next   | y   |\n+--------+-----+\n",
@@ -9787,13 +10015,10 @@ static void cell_blocks_end_in_their_cell(test_batch_runner *runner) {
         const char *source = sources[i];
         const int shown = (int)strcspn(source, "\n");
         markdown_core_node *doc = parse(source);
-        /* The document, and the definitions it holds apart from its children. */
-        cell_test_roots roots = {{doc}, 1};
-        markdown_core_visit_block_subtrees(doc, collect_cell_test_root, &roots);
         const markdown_core_node *cells[32];
         size_t cell_count = 0, checked = 0;
-        for (size_t r = 0; r < roots.count; r++) {
-            markdown_core_iter *iter = markdown_core_iter_new(roots.roots[r]);
+        {
+            markdown_core_iter *iter = markdown_core_iter_new(doc);
             markdown_core_event_type event;
             while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
                 markdown_core_node *node = markdown_core_iter_get_node(iter);
@@ -9804,21 +10029,21 @@ static void cell_blocks_end_in_their_cell(test_batch_runner *runner) {
             }
             markdown_core_iter_free(iter);
         }
-        for (size_t r = 0; r < roots.count; r++) {
-            markdown_core_iter *iter = markdown_core_iter_new(roots.roots[r]);
+        {
+            markdown_core_iter *iter = markdown_core_iter_new(doc);
             markdown_core_event_type event;
             while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
                 markdown_core_node *node = markdown_core_iter_get_node(iter);
-                if (event != MARKDOWN_CORE_EVENT_ENTER || node->start_line <= 0) {
+                if (event != MARKDOWN_CORE_EVENT_ENTER || START_LINE(node) <= 0) {
                     continue;
                 }
-                OK(runner, node->start_column >= 1, "a node from %d:%d in %.*s starts on a byte", node->start_line,
-                   node->start_column, shown, source);
+                OK(runner, START_COLUMN(node) >= 1, "a node from %d:%d in %.*s starts on a byte", START_LINE(node),
+                   START_COLUMN(node), shown, source);
                 const markdown_core_node *cell = NULL;
                 for (size_t c = 0; c < cell_count; c++) {
                     if (!node_holds(node, cells[c]) &&
-                        cell_holds_place(cells[c], node->start_line, node->start_column) &&
-                        (!cell || cell_holds_place(cell, cells[c]->start_line, cells[c]->start_column))) {
+                        cell_holds_place(cells[c], START_LINE(node), START_COLUMN(node)) &&
+                        (!cell || cell_holds_place(cell, START_LINE(cells[c]), START_COLUMN(cells[c])))) {
                         cell = cells[c];
                     }
                 }
@@ -9826,13 +10051,10 @@ static void cell_blocks_end_in_their_cell(test_batch_runner *runner) {
                     continue;
                 }
                 checked++;
-                OK(runner,
-                   node->end_column == 0 ? node->end_line > cell->start_line && node->end_line <= cell->end_line &&
-                                               cell_segment_is_blank(source, cell, node->end_line)
-                                         : cell_holds_place(cell, node->end_line, node->end_column),
-                   "a node from %d:%d in %.*s ends in its cell %d:%d..%d:%d, not at %d:%d", node->start_line,
-                   node->start_column, shown, source, cell->start_line, cell->start_column, cell->end_line,
-                   cell->end_column, node->end_line, node->end_column);
+                OK(runner, cell_holds_place(cell, END_LINE(node), END_COLUMN(node)),
+                   "a node from %d:%d in %.*s ends in its cell %d:%d..%d:%d, not at %d:%d", START_LINE(node),
+                   START_COLUMN(node), shown, source, START_LINE(cell), START_COLUMN(cell), END_LINE(cell),
+                   END_COLUMN(cell), END_LINE(node), END_COLUMN(node));
             }
             markdown_core_iter_free(iter);
         }
@@ -9892,9 +10114,9 @@ static size_t shifted_table_differences(markdown_core_node *base, markdown_core_
         }
         markdown_core_string lx, ly;
         bool hx = literal_of(x, &lx), hy = literal_of(y, &ly);
-        bool same = x->kind == y->kind && x->start_line == y->start_line && x->end_line == y->end_line &&
-                    y->start_column == shifted_column(x->start_column, shift) &&
-                    y->end_column == shifted_column(x->end_column, shift) && hx == hy && (!hx || strings_equal(lx, ly));
+        bool same = x->kind == y->kind && START_LINE(x) == START_LINE(y) && END_LINE(x) == END_LINE(y) &&
+                    START_COLUMN(y) == shifted_column(START_COLUMN(x), shift) &&
+                    END_COLUMN(y) == shifted_column(END_COLUMN(x), shift) && hx == hy && (!hx || strings_equal(lx, ly));
         if (same && x->kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
             same = x->as.table_cell->rowspan == y->as.table_cell->rowspan &&
                    x->as.table_cell->colspan == y->as.table_cell->colspan;
@@ -9903,6 +10125,8 @@ static size_t shifted_table_differences(markdown_core_node *base, markdown_core_
             const markdown_core_table *tx = x->opaque, *ty = y->opaque;
             same = same_columns(tx, ty) && !tx->caption == !ty->caption;
             if (same && tx->caption) {
+                test_remember_field(tx->caption, x);
+                test_remember_field(ty->caption, y);
                 differences += shifted_table_differences(tx->caption, ty->caption, shift);
             }
         }
@@ -10042,13 +10266,13 @@ static void table_margin_is_shared_indentation(test_batch_runner *runner) {
             markdown_core_node *row = table->first_child, *cell = row ? row->first_child : NULL;
             OK(runner, value->columns[0].flow == cases[i].flows[0] && value->columns[1].flow == cases[i].flows[1],
                "%.*s aligns against its dash runs", shown, source);
-            OK(runner, table->start_line == cases[i].table[0] && table->start_column == cases[i].table[1],
+            OK(runner, START_LINE(table) == cases[i].table[0] && START_COLUMN(table) == cases[i].table[1],
                "%.*s starts at its margin", shown, source);
-            OK(runner, row && row->start_line == cases[i].row[0] && row->start_column == cases[i].row[1],
+            OK(runner, row && START_LINE(row) == cases[i].row[0] && START_COLUMN(row) == cases[i].row[1],
                "%.*s's first row starts at the margin", shown, source);
             OK(runner,
-               cell && cell->start_line == cases[i].cell[0] && cell->start_column == cases[i].cell[1] &&
-                   cell->end_line == cases[i].cell[2] && cell->end_column == cases[i].cell[3],
+               cell && START_LINE(cell) == cases[i].cell[0] && START_COLUMN(cell) == cases[i].cell[1] &&
+                   END_LINE(cell) == cases[i].cell[2] && END_COLUMN(cell) == cases[i].cell[3],
                "%.*s's first cell covers its text", shown, source);
             OK(runner, table_nodes_nest(table), "%.*s nests", shown, source);
         }
@@ -10079,7 +10303,7 @@ static char *describe_row_on(markdown_core_node *doc, int line) {
     while (!row && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node = markdown_core_iter_get_node(iter);
         if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_TABLE_ROW &&
-            node->start_line == line) {
+            START_LINE(node) == line) {
             row = node;
         }
     }
@@ -10095,8 +10319,8 @@ static char *describe_row_on(markdown_core_node *doc, int line) {
             continue;
         }
         char place[96];
-        snprintf(place, sizeof(place), "%d %d:%d..%d:%d ", node->kind, node->start_line - line, node->start_column,
-                 node->end_line - line, node->end_column);
+        snprintf(place, sizeof(place), "%d %d:%d..%d:%d ", node->kind, START_LINE(node) - line, START_COLUMN(node),
+                 END_LINE(node) - line, END_COLUMN(node));
         markdown_core_strbuf_puts(&out, place);
         put_literal(&out, node);
         markdown_core_strbuf_putc(&out, '\n');
@@ -10143,9 +10367,9 @@ static void pipe_rows_are_one_row(test_batch_runner *runner) {
 }
 
 /* EVERY NODE THE FINISH STAGE WAS HANDED, counted by the test's own walk:
- * the root's children through the public iterator, each node's owned field
- * roots through the inline-subtree visitor, and the document's definition
- * chains through the block-subtree visitor. */
+ * the root's children through the public iterator, and each node's owned
+ * field roots, an inline note's included, through the inline-subtree
+ * visitor. */
 static size_t owned_node_census(markdown_core_node *root);
 
 static int census_owned_nodes(markdown_core_node **slot, void *context) {
@@ -10159,7 +10383,6 @@ static size_t owned_node_census(markdown_core_node *root) {
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type event;
     size_t count = 0;
-    markdown_core_visit_block_subtrees(root, census_owned_nodes, &count);
     while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         if (event == MARKDOWN_CORE_EVENT_ENTER) {
             markdown_core_node *node = markdown_core_iter_get_node(iter);
@@ -10673,7 +10896,7 @@ static void simple_table_body_boundaries(test_batch_runner *runner) {
                                "body owns every adjacent source line");
                         OK(runner, gap ? table->next && table->next->kind == kinds[tail] : !table->next,
                            "only blank-separated block syntax opens a sibling");
-                        INT_EQ(runner, table->end_line, gap ? 3 : (tail == 2 ? 6 : 5),
+                        INT_EQ(runner, END_LINE(table), gap ? 3 : (tail == 2 ? 6 : 5),
                                "simple table retains authored scope");
                     }
                     markdown_core_node_free(root);
@@ -10737,13 +10960,13 @@ static void table_caption_boundaries(test_batch_runner *runner) {
                     OK(runner, caption && caption->first_child, "caption owns its paragraph content");
                     if (caption && caption->first_child) {
                         LITERAL_EQ(runner, caption->first_child, "cap", "block bytes do not enter caption text");
-                        INT_EQ(runner, caption->end_line, caption_line, "caption scope ends before the block");
+                        INT_EQ(runner, END_LINE(caption), caption_line, "caption scope ends before the block");
                     }
-                    INT_EQ(runner, table->end_line, caption_line, "table scope ends with its caption");
+                    INT_EQ(runner, END_LINE(table), caption_line, "table scope ends with its caption");
                     OK(runner, table->next && table->next->kind == blocks[b].kind,
                        "ordinary block owns its source: table=%zu block=%zu quoted=%d", t, b, quoted);
                     if (table->next) {
-                        INT_EQ(runner, table->next->start_line, caption_line + 1, "block retains source line");
+                        INT_EQ(runner, START_LINE(table->next), caption_line + 1, "block retains source line");
                     }
                 }
                 markdown_core_node_free(root);
@@ -10765,7 +10988,7 @@ static void table_caption_boundaries(test_batch_runner *runner) {
            "non-interrupting source stays in caption: case=%zu", i);
         if (table && table->kind == MARKDOWN_CORE_NODE_TABLE) {
             markdown_core_node *caption = ((markdown_core_table *)table->opaque)->caption;
-            OK(runner, caption && caption->end_line > 4, "caption continues past its first line: case=%zu", i);
+            OK(runner, caption && END_LINE(caption) > 4, "caption continues past its first line: case=%zu", i);
         }
         markdown_core_node_free(root);
         markdown_core_strbuf_free(&source);
@@ -10790,7 +11013,7 @@ static void table_mapped_ownership(test_batch_runner *runner) {
            "first cell heading owns unsuffixed anchor");
     STR_EQ(runner, (const char *)second->first_child->attributes.anchor.data, "same-1",
            "same-line later heading is ordered by original column");
-    INT_EQ(runner, second->first_child->start_column, 28, "mapped block starts in original source column");
+    INT_EQ(runner, START_COLUMN(second->first_child), 28, "mapped block starts in original source column");
     for (markdown_core_node *cell = first; cell; cell = cell->next) {
         markdown_core_destination dest;
         OK(runner, markdown_core_node_destination(cell->last_child->first_child, &dest),
@@ -10798,12 +11021,13 @@ static void table_mapped_ownership(test_batch_runner *runner) {
         OK(runner, dest.url.length == 6 && !memcmp(dest.url.data, "/first", 6),
            "first authored definition wins across queued cells");
     }
-    markdown_core_node *notes = root->as.document->footnotes;
-    OK(runner, notes && notes->next && !notes->next->next, "both cell definitions are owned by document");
-    if (notes && notes->next) {
-        INT_EQ(runner, notes->start_column, 3, "first definition original column");
-        INT_EQ(runner, notes->next->start_column, 28, "second definition original column");
+    node_list notes = footnotes_of(root);
+    OK(runner, notes.count == 2, "both cell definitions stay in their cells");
+    if (notes.count == 2) {
+        INT_EQ(runner, START_COLUMN(notes.nodes[0]), 3, "first definition original column");
+        INT_EQ(runner, START_COLUMN(notes.nodes[1]), 28, "second definition original column");
     }
+    free(notes.nodes);
     markdown_core_node_free(root);
 }
 
@@ -10848,8 +11072,8 @@ static void table_nested_inputs(test_batch_runner *runner) {
             while (leaf->first_child) {
                 leaf = leaf->first_child;
             }
-            INT_EQ(runner, leaf->start_line, depth + 1, "nested physical line is preserved");
-            INT_EQ(runner, leaf->start_column, 2 * depth + 1, "nested physical column is preserved");
+            INT_EQ(runner, START_LINE(leaf), depth + 1, "nested physical line is preserved");
+            INT_EQ(runner, START_COLUMN(leaf), 2 * depth + 1, "nested physical column is preserved");
         }
         markdown_core_node_free(root);
         markdown_core_strbuf_free(&source);
@@ -11031,6 +11255,7 @@ int main(void) {
     inline_dispatch_ownership(runner);
     inline_dispatch_orders_every_precedence(runner);
     no_node_is_its_own_ancestor(runner);
+    scope_queries_count_in_the_document_unit(runner);
     iterator_contract_is_total(runner);
 
     test_print_summary(runner);

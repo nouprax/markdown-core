@@ -58,14 +58,16 @@ for size-only labels). Ordinary cross-link labels and invalid suffixes stay raw.
 ```js
 import { Document, MarkupDumper } from "@nouprax/es-markdown-core";
 
-const document = Document.parse("# Hello");
+const source = "# Hello";
+const document = Document.parse(source);
 
 console.log(document.content[0].kind);
-console.log(document.dump());
-console.log(MarkupDumper.dump(document.content[0]));
+console.log(document.dump(source));
+console.log(MarkupDumper.dump(document, document.content[0], source));
 ```
 
-`Document.parse` takes no options. It parses the one Markdown Core dialect,
+`Document.parse` takes one option, the text `unit` that scope queries count
+columns in: `"utf16"` by default, or `"utf8"`. It parses the one Markdown Core dialect,
 in which every feature is always recognized: footnotes, tables,
 strikethrough, autolinks, task lists, formulas, and directives, on the
 CommonMark base. Quotation marks, hyphens, and periods are stored as written.
@@ -95,19 +97,22 @@ nest (`++++text++++`), and an odd leftover plus stays outside the matching
 pairs (`+++text+++`). Insertion participates in exhaustive visitor callbacks;
 its scope includes the delimiters. Escapes and opaque bodies retain literal plus signs.
 
-`^[inline note]` produces a one-item `Cite` and a document-owned `Footnote`
-whose content holds the parsed inline body directly. Referenced definitions and
-inline notes share `Document.footnotes` in source order. Generated `inline-N`
-ids avoid every authored id; nested calls remain id edges and can be visited
-without following semantic cycles.
+`^[inline note]` produces a one-item `Cite` whose citation's referent owns the
+note's `Footnote`, `{ kind: "footnote", target: { kind: "note", footnote } }`,
+with a null `label` and the parsed inline body as its content. A referenced
+definition `[^x]: body` is a `Footnote` block where it was written, and a
+`[^x]` call names it by label. `Document.footnotes` lists every footnote,
+inline notes included, in source order, and `document.footnote(label)`
+returns the first one with that label; `Document.specimens` and
+`document.specimen(label)` do the same for specimens.
 
 `%%comment%%` produces `Comment`, the kind an HTML comment already produces,
 inline or as a block when both `%%` fences stand on lines of their own under
 the same container prefixes. The body is opaque and stored as written, nothing
 is stripped, and a consumer that does not want comments drops the nodes.
 
-`Document.parse` returns a discriminated `Markup` union with source scopes and
-recursively readonly TypeScript properties. The JavaScript objects are not
+`Document.parse` returns a discriminated `Markup` union with recursively
+readonly TypeScript properties. The JavaScript objects are not
 runtime-frozen. The package exposes parsing and typed AST inspection, not
 rendering or AST mutation.
 Ordered lists expose their `variant` and `delimiter`.
@@ -133,6 +138,20 @@ ordered `definitions`. Each `Definition` has an inline `term`, ordered block-bod
 arrays in `content`, and `compact` determined by the blank line before its first
 body. A body can be empty. Walking visits the term and then the bodies without
 introducing extra Markup wrappers.
+
+## Identity, equality and scopes
+
+Every node has `id`, a number below 2^53 that is unique within its document
+and numbered from 1 in canonical walk order by a parse, so two parses of one
+text are equal, ids included. Use it as a list key. `markupEquals(a, b)` is
+deep value equality including ids, the comparator for
+`React.memo(component, (a, b) => markupEquals(a.node, b.node))`.
+
+A node stores its `extent`, `{ lead, span }` in bytes of UTF-8 source, never a
+line or column. `document.scope(node, source)` and
+`document.nodeAt(position, source)` compute them on request from the extents
+and the source the document was parsed from, with columns in the document's
+unit.
 
 ## Traverse and Inspect
 
@@ -168,8 +187,10 @@ Visitors process callbacks without recursively visiting descendants; the dumper
 uses the same traversal. The walker schedules each node's typed fields in canonical order. A directive
 label remains the named `label` field, outside directive content.
 
-`MarkupDumper.dump(markup)` and each Markup's non-enumerable `dump()` method emit
-the canonical debug tree for a complete document or focused subtree. The
+`MarkupDumper.dump(document, source)`, `MarkupDumper.dump(document, node, source)`
+and the document's `dump(source)` and `dump(node, source)` emit the canonical
+debug tree for a complete document or focused subtree, with scopes computed
+from the source in UTF-8 columns. The
 text is intended for logs, snapshots, and debugging rather than persistence or
 data interchange.
 

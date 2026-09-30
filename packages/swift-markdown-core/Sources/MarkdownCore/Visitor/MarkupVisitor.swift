@@ -63,6 +63,6 @@ extension Markup {
     /// Traversal keeps call-stack depth independent of document depth.
     public func walk<V: MarkupVisitor>(with visitor: inout V) {
         var walker = MarkupWalker<V>()
-        walker.walk(self, with: &visitor)
+        walker.walk(MarkupRecord.of(self), with: &visitor)
     }
 }

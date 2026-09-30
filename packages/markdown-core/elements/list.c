@@ -311,7 +311,7 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
                        markdown_core_node *node) {
     (void)self;
     return !(node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !node->first_child &&
-             node->start_line == parser->line_number);
+             markdown_core_parser_starts_on_line(parser, node, parser->line_number));
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {

@@ -1,17 +1,19 @@
 import type { Document } from "../markup/document.js";
+import type { TextUnit } from "../markup/values.js";
 import { ParseError } from "../common/parse-error.js";
 import { Decoder, headerSize, lengthOffset } from "../wire/node-decoder.js";
 import { native, type NativeExports } from "./native.js";
 
 const utf8Encoder = new TextEncoder();
 
-export function parseDocument(source: string): Document {
-    return parseDocumentWithNative(native, source);
+export function parseDocument(source: string, unit: TextUnit): Document {
+    return parseDocumentWithNative(native, source, unit);
 }
 
 /** Internal dependency boundary used to verify terminal native failures. */
-export function parseDocumentWithNative(nativeExports: NativeExports, source: string): Document {
+export function parseDocumentWithNative(nativeExports: NativeExports, source: string, unit: TextUnit): Document {
     if (typeof source !== "string") throw new TypeError("source must be a string");
+    if (unit !== "utf8" && unit !== "utf16") throw new TypeError('unit must be "utf8" or "utf16"');
     const bytes = utf8Encoder.encode(source);
     let sourcePointer = 0;
     let resultPointer = 0;
@@ -32,7 +34,7 @@ export function parseDocumentWithNative(nativeExports: NativeExports, source: st
         if (totalSize < headerSize || totalSize > memorySize - resultPointer) {
             throw new Error("native result lies outside WebAssembly memory");
         }
-        return new Decoder(new Uint8Array(nativeExports.memory.buffer, resultPointer, totalSize)).decode();
+        return new Decoder(new Uint8Array(nativeExports.memory.buffer, resultPointer, totalSize), unit).decode();
     } finally {
         if (resultPointer) nativeExports.markdown_core_wire_free(resultPointer);
         if (sourcePointer) nativeExports.free(sourcePointer);

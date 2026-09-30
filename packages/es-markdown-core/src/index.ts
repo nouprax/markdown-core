@@ -43,15 +43,19 @@ export type {
     BibMode,
     CitationReferent,
     Destination,
+    Extent,
+    FootnoteTarget,
     ListFlavor,
     OrderedListDelimiter,
     OrderedListVariant,
     Placement,
     Position,
-    Scope
+    Scope,
+    TextUnit
 } from "./markup/values.js";
 export type { Dimensions, Flow } from "./common/constraints.js";
 export { walk } from "./visitor/markup-walker.js";
+export { markupEquals } from "./visitor/markup-equals.js";
 export type { MarkupVisitor, MarkupVisitPhase } from "./visitor/markup-visitor.js";
 
 export { Attributes } from "./markup/attributes.js";

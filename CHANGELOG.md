@@ -6,6 +6,28 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Give every node an id and a raw extent, and compute scopes on request
+  (incremental parsing, step 1). `Markup` loses `scope` and gains `id:
+  MarkupID`, numbered from 1 in canonical walk order, and `extent: Extent`,
+  its signed `lead` from the previous node in the same relation (or its
+  owner's start) and its `span`, in bytes of UTF-8 source. Equality is deep
+  and includes ids, and hashing reads the id. `Document.parse` takes a text
+  unit, UTF-16 by default in the bindings (C adds
+  `markdown_core_document_parse_in`; `markdown_core_document_parse` counts
+  UTF-8), and
+  `document.scope(of:in:)` and `document.node(at:in:)` compute positions in
+  that unit from the extents and the source; the dump takes the source too.
+  Scopes follow one byte rule, so `SoftBreak`, `LineBreak` and a `Citation`
+  that end on a line terminator now end at `L:0`, a zero-byte document is
+  `1:1..1:0`, and a grid or multiline cell that ends on a blank line part
+  ends at its last byte. Footnote and specimen definitions stay where they
+  are written: `Document.footnotes` and `Document.specimens` are lookups in
+  source order with `footnote(for:)` and `specimen(for:)`, `Footnote.id` and
+  `Specimen.id` become `label`, and an inline note is a `Footnote` with a
+  null label owned by its `Citation` through the `footnote(note)` referent,
+  with no generated `inline-N` id. The wire format becomes MCB3, and Swift
+  holds one immutable record per node again, released without recursion.
+
 - Keep a tab in a pipe table's header cell after a leading caption, as every
   other pipe cell does. That one header was filled the way a simple table's
   cells are, column by column, so each tab became the spaces it reached:

@@ -5,38 +5,45 @@ import MarkdownCoreC
 /// Both spellings produce this one kind, and the node does not record which the
 /// author used: `# Title` and `Title` over `=====` are the same heading.
 public struct Heading: Markup {
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let content: MarkupReferences<any Markup>
-        let level: Int32
-    }
+    let record: HeadingRecord
 
-    let fields: Stored<Fields>
-
-    /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public var scope: Scope { fields.scope }
+    /// The node's identifier within its document.
+    public var id: MarkupID { record.id }
+    /// Where it is, relative to its neighbours. See ``Extent``.
+    public var extent: Extent { record.extent }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { record.attributes }
     /// The heading's inline content, its `#` markers excluded.
-    public var content: MarkupCollection<any Markup> { fields.content }
+    public var content: MarkupCollection<any Markup> { record.collection(record.children.indices) }
     /// 1 through 6. A `#######` line is not a heading at all.
-    public var level: Int32 { fields.level }
+    public var level: Int32 { record.level }
 }
 
-extension Heading.Fields {
-    init(from node: OpaquePointer, content: [Int]) {
+final class HeadingRecord: MarkupRecord, @unchecked Sendable {
+    let level: Int32
+
+    init(_ fields: InheritedFields, level: Int32, content: [MarkupRecord]) {
+        self.level = level
+        super.init(fields, children: content)
+    }
+
+    override var markup: any Markup { Heading(record: self) }
+
+    override func hasEqualFields(_ other: MarkupRecord) -> Bool {
+        level == unsafeDowncast(other, to: HeadingRecord.self).level
+    }
+}
+
+extension HeadingRecord {
+    convenience init(from node: OpaquePointer, content: [MarkupRecord]) {
         var level: Int32 = 0
         markdown_core_node_heading_level(node, &level)
-        self.init(
-            scope: Scope(from: markdown_core_node_scope(node)),
-            anchor: markdown_core_node_anchor(node).string,
-            attributes: Attributes(from: node),
-            content: .init(indices: content),
-            level: level
-        )
+        self.init(InheritedFields(from: node), level: level, content: content)
     }
+}
+
+extension Heading: RecordBacked {
+    var base: MarkupRecord { record }
 }

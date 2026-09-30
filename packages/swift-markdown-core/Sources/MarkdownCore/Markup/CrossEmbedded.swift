@@ -2,29 +2,55 @@ import MarkdownCoreC
 
 /// A workspace transclusion written as `![[...]]`.
 public struct CrossEmbedded: Markup {
+    let record: CrossEmbeddedRecord
+
+    /// The node's identifier within its document.
+    public var id: MarkupID { record.id }
     /// The full authored extent, including the delimiters.
-    public let scope: Scope
+    public var extent: Extent { record.extent }
     /// The declaration-side anchor, independent of the reference destination.
-    public let anchor: String?
+    public var anchor: String? { record.anchor }
     /// Ordered attached classes and records.
-    public let attributes: Attributes
+    public var attributes: Attributes { record.attributes }
     /// The raw workspace path and optional destination anchor.
-    public let dest: Destination
+    public var dest: Destination { record.dest }
     /// Raw prefix after a valid dimension suffix; nil when no separator was written.
-    public let label: String?
+    public var label: String? { record.label }
     /// Authored size, absent when no complete valid suffix was recognized.
-    public let dimensions: Dimensions?
+    public var dimensions: Dimensions? { record.dimensions }
 }
 
-extension CrossEmbedded {
-    init(from node: OpaquePointer) {
+final class CrossEmbeddedRecord: MarkupRecord, @unchecked Sendable {
+    let dest: Destination
+    let label: String?
+    let dimensions: Dimensions?
+
+    init(_ fields: InheritedFields, dest: Destination, label: String?, dimensions: Dimensions?) {
+        self.dest = dest
+        self.label = label
+        self.dimensions = dimensions
+        super.init(fields, children: [])
+    }
+
+    override var markup: any Markup { CrossEmbedded(record: self) }
+
+    override func hasEqualFields(_ other: MarkupRecord) -> Bool {
+        let other = unsafeDowncast(other, to: CrossEmbeddedRecord.self)
+        return dest == other.dest && label == other.label && dimensions == other.dimensions
+    }
+}
+
+extension CrossEmbeddedRecord {
+    convenience init(from node: OpaquePointer) {
         self.init(
-            scope: Self.scope(from: node),
-            anchor: markdown_core_node_anchor(node).string,
-            attributes: Attributes(from: node),
+            InheritedFields(from: node),
             dest: Destination(from: node),
             label: markdown_core_node_cross_label(node).string,
             dimensions: markdown_core_node_dimensions(node).map { Dimensions($0.pointee) }
         )
     }
+}
+
+extension CrossEmbedded: RecordBacked {
+    var base: MarkupRecord { record }
 }

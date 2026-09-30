@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { Document, MarkupDumper, walk } from "../dist/index.js";
+import { Document, MarkupDumper, markupEquals, walk } from "../dist/index.js";
 import { emptyVisitor } from "./visitor.mjs";
 
 const canonicalFixtures = new URL("../build/generated/conformance/canonical-ast-fixtures.json", import.meta.url);
@@ -19,7 +19,7 @@ test("conformance: public node schema is reachable", () => {
         "a <!-- b --> c\n\n<!-- block -->\n"
     ];
     const documents = sources.map((source) => Document.parse(source));
-    const kinds = documents.flatMap((document) => dumpKinds(document.dump()));
+    const kinds = documents.flatMap((document, index) => dumpKinds(document.dump(sources[index])));
     assert.deepEqual(
         new Set(kinds),
         new Set([
@@ -59,7 +59,12 @@ test("conformance: public node schema is reachable", () => {
             "cite"
         ])
     );
-    assert.ok(documents.every((document) => document.scope.start.line === 1 && document.scope.start.column === 1));
+    assert.ok(
+        documents.every((document, index) => {
+            const scope = document.scope(document, sources[index]);
+            return scope.start.line === 1 && scope.start.column === 1;
+        })
+    );
 });
 
 test("conformance: fields, nullability, and typed table nodes map to JavaScript", () => {
@@ -113,7 +118,8 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
 });
 
 test("conformance: directive labels preserve missing, empty, and populated states", () => {
-    const document = Document.parse(":missing{id=1}\n\n:empty[]\n\n:label[text]\n\n::block[title]\n");
+    const source = ":missing{id=1}\n\n:empty[]\n\n:label[text]\n\n::block[title]\n";
+    const document = Document.parse(source);
     const missing = document.content[0].content[0];
     const empty = document.content[1].content[0];
     const label = document.content[2].content[0];
@@ -135,14 +141,39 @@ test("conformance: directive labels preserve missing, empty, and populated state
         label.label.content.map((node) => node.kind),
         ["text"]
     );
-    assert.match(MarkupDumper.dump(label), /DirectiveLabel/u);
+    assert.match(MarkupDumper.dump(document, label, source), /DirectiveLabel/u);
 });
 
 for (const testCase of canonicalManifest.cases) {
     test(`conformance: shared canonical AST case ${testCase.name}`, async () => {
         const document = Document.parse(testCase.source);
-        assert.equal(MarkupDumper.dump(document), testCase.expected, testCase.name);
-        assert.equal(document.dump(), testCase.expected, testCase.name);
+        assert.equal(MarkupDumper.dump(document, testCase.source), testCase.expected, testCase.name);
+        assert.equal(document.dump(testCase.source), testCase.expected, testCase.name);
+        // The dump is in UTF-8 columns whatever the document's unit.
+        assert.equal(Document.parse(testCase.source, { unit: "utf8" }).dump(testCase.source), testCase.expected);
+    });
+
+    test(`conformance: fresh parse ids of shared case ${testCase.name}`, () => {
+        // Ids are unique across every owned relation and numbered from 1 in
+        // canonical walk order, so two fresh parses are equal, ids included.
+        const document = Document.parse(testCase.source);
+        const ids = [];
+        walk(
+            document,
+            Object.fromEntries(
+                Object.keys(emptyVisitor).map((kind) => [
+                    kind,
+                    (node, phase) => {
+                        if (phase === "enter") ids.push(node.id);
+                    }
+                ])
+            )
+        );
+        assert.deepEqual(
+            ids,
+            ids.map((_, index) => index + 1)
+        );
+        assert.ok(markupEquals(document, Document.parse(testCase.source)));
     });
 }
 

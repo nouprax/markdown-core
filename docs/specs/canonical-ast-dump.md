@@ -51,7 +51,7 @@ content-bearing kind, `items.count` for `List`, `cells.count` for `TableRow`,
 `definitions.count` for `DefinitionList`, the number of bodies for `Definition`,
 and zero for every leaf and for `Directive`. A directive's optional `label`
 is a separate Markup-valued field and is not included in that number, and
-neither are `Document.metadata`, `Document.footnotes` and `Document.specimens`.
+neither is `Document.metadata`.
 
 The dump deliberately carries no property or array-index edge labels. Each
 node kind's dump function decides which structural children and Markup-valued
@@ -83,15 +83,17 @@ only dump syntax; it never changes the stored class or the attribute grammar.
   `dest=cross(path="...",anchor=null)` with `anchor` a string or `null`.
 - Every optional and default-bearing field is printed; fields are never
   omitted because they are null, empty, false, or default.
-- The inherited fields `scope`, `anchor`, `attributes` lead in that order.
+- The inherited fields lead: `scope`, the node's scope computed from its
+  `extent` and the source, then `anchor` and `attributes`. `id` is not
+  printed.
   Kind-specific scalar fields follow; `children` is last.
 
-The dump prints the native C parser's public editor coordinates exactly,
-without validation, conversion, or normalization. The coordinate contract is
+The dump is a scope query: it takes the source the document was parsed from
+and prints each node's scope in UTF-8 columns, whatever the document's text
+unit. The coordinate contract is
 [`canonical-ast.md`](canonical-ast.md#coordinates); these coordinates are not
-string ranges and are not converted to half-open intervals. A zero-byte
-document dumps as `1:1..0:0`, while a document containing one newline dumps as
-`1:1..1:0`. Native sentinel coordinates are printed as reported.
+string ranges. A zero-byte document and a document containing one newline
+both dump as `1:1..1:0`.
 
 A directive's label is a node-valued FIELD, not a member of directive content.
 The directive-specific dump function nests that field before content to
@@ -179,8 +181,8 @@ that the dump represents as nested descendants.
 | `DefinitionList` | `anchor`, `attributes` |
 | `Definition` | `anchor`, `attributes`, `compact` |
 | `Citation` | `anchor`, `attributes`, `referent` |
-| `Footnote` | `anchor`, `attributes`, `id` |
-| `Specimen` | `anchor`, `attributes`, `id`, `start` |
+| `Footnote` | `anchor`, `attributes`, `label` |
+| `Specimen` | `anchor`, `attributes`, `label`, `start` |
 | `Metadata` | `anchor`, `attributes`, `name`, `title`, `subtitle`, `time`, `date`, `authors`, `keywords`, `abstract`, `state`, `comment` |
 
 Example:
@@ -207,30 +209,29 @@ ordinary content. A group line, `Kind children=N`, organizes a node-valued
 list and has no scope or common node fields. Groups are not Markup.
 
 - A tagged value prints its branch and named fields with no spaces, as `dest`
-  does: `referent=bib(key="...",mode=normal)` and
-  `referent=footnote(id="...")`.
+  does: `referent=bib(key="...",mode=normal)`,
+  `referent=footnote(label="...")`, `referent=footnote(note)` and
+  `referent=specimen(label="...")`.
 - `Cite` prints one `Citation` node line per item, in source order, with
-  `referent` as its one field and a `children` of zero; each item nests a
-  `CitationPrefix` group and then a `CitationSuffix` group holding the affix
-  nodes, both printed even when empty. The cite's own `children` counts the
-  items.
-- `Document` prints its content, then one `Footnote` node line per element
-  of `footnotes`, in that order, each with `id` as its one field and a
-  `children` counting its content, which nests one level below it. The
-  document's own `children` counts the content alone. An inline footnote nests
-  its inline body directly under the node line; no `Paragraph` is synthesized.
-  Referenced and inline definitions share scope-start order.
+  `referent` as its one field and a `children` of zero; each item nests the
+  `Footnote` of a `footnote(note)` referent, then a `CitationPrefix` group and
+  then a `CitationSuffix` group holding the affix nodes, both printed even
+  when empty. The cite's own `children` counts the items.
+- A `Footnote` prints `label` as its one field and a `children` counting its
+  content, which nests one level below it. A definition prints where it was
+  written, as content. An inline note has `label=null` and nests its inline
+  body directly under the node line; no `Paragraph` is synthesized.
 
 Example, for the source `[^a]` followed by a blank line and `[^a]: note`:
 
 ```text
-Document scope=1:1..3:10 anchor=null attributes={} children=1
+Document scope=1:1..3:10 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:4 anchor=null attributes={} children=1
 │   └── Cite scope=1:1..1:4 anchor=null attributes={} children=1
-│       └── Citation scope=1:2..1:3 anchor=null attributes={} referent=footnote(id="a") children=0
+│       └── Citation scope=1:2..1:3 anchor=null attributes={} referent=footnote(label="a") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-└── Footnote scope=3:1..3:10 anchor=null attributes={} id="a" children=1
+└── Footnote scope=3:1..3:10 anchor=null attributes={} label="a" children=1
     └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
         └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0
 ```
@@ -245,12 +246,11 @@ A missing field prints `null`. A present field prints `scalar(null)`,
 or `list([number("lexeme"),text("...")])`; lists may be empty. Metadata is a leaf node with no nested record lines or separate field scopes.
 Absent metadata emits no line.
 
-After content and footnotes, a document prints each specimen definition as
-`Specimen scope=L:C..L:C anchor=null attributes={} id=<string or null> start=<integer or null> children=N`,
-followed by its block content. Definitions do not increase the document's
-`children` count. A specimen reference prints a `Cite` containing a `Citation`
-with `referent=specimen(id="...")` and empty affix groups. No derived display
-number is printed.
+A specimen definition prints where it was written, as
+`Specimen scope=L:C..L:C anchor=null attributes={} label=<string or null> start=<integer or null> children=N`,
+followed by its block content. A specimen reference prints a `Cite`
+containing a `Citation` with `referent=specimen(label="...")` and empty affix
+groups. No derived display number is printed.
 
 ## Maintaining dump examples
 

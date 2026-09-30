@@ -139,6 +139,9 @@ struct markdown_core_element {
                                    const unsigned char *, size_t);
     void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* The last step of the parse: the tree is final, and the owner publishes
+     * it (ids, extents, definition tables). */
+    void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*observe_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     markdown_core_node *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
                                            markdown_core_node *, markdown_core_chunk *);
@@ -333,7 +336,8 @@ static inline int markdown_core_visit_inline_subtrees(markdown_core_node *node,
         }
         if (node->kind == MARKDOWN_CORE_NODE_CITE) {
             for (markdown_core_node *item = node->as.cite->citations; item; item = item->next) {
-                if ((item->as.citation->prefix && !visitor(&item->as.citation->prefix, context)) ||
+                if ((item->as.citation->note && !visitor(&item->as.citation->note, context)) ||
+                    (item->as.citation->prefix && !visitor(&item->as.citation->prefix, context)) ||
                     (item->as.citation->suffix && !visitor(&item->as.citation->suffix, context))) {
                     return 0;
                 }

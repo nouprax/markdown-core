@@ -6,7 +6,7 @@
     "walk": {
         "visitor": "One exhaustive MarkupVisitor supplies typed visit(node, phase) callbacks for the explicit-stack walker. Only the walker dispatches nodes and schedules descendants. Callbacks accumulate results in visitor state and return no value: Void in Swift, Unit in Kotlin, undefined in TypeScript. No public single-node dispatch or result-returning visitor exists.",
         "phases": ["enter", "exit"],
-        "order": "Depth first. Every Markup node enters, visits its owned Markup fields in canonical traversal order with arrays retaining stored order, then exits. Relations remain named fields, never projected into generic children. Document visits metadata when present, content, footnotes, then specimens. Cite visits citations; Citation visits prefix then suffix. Reference IDs are not traversed."
+        "order": "Depth first. Every Markup node enters, visits its owned Markup fields in canonical traversal order with arrays retaining stored order, then exits. Relations remain named fields, never projected into generic children. Document visits metadata when present, then content. Cite visits citations; Citation visits the Footnote of a footnote(note) referent, then prefix, then suffix. Referent labels are not traversed."
     },
     "enums": {
         "Placement": ["embedded", "standalone"],
@@ -28,19 +28,9 @@
                     "name": "metadata",
                     "type": "Metadata",
                     "optional": true
-                },
-                {
-                    "name": "footnotes",
-                    "type": "[Footnote]",
-                    "optional": false
-                },
-                {
-                    "name": "specimens",
-                    "type": "[Specimen]",
-                    "optional": false
                 }
             ],
-            "invariants": "block content; document-owned footnotes and specimens each retain all definitions in scope-start order; visit metadata, then content, then footnotes, then specimens; neither definition sequence counts as children"
+            "invariants": "block content; visit metadata, then content"
         },
         {
             "name": "Callout",
@@ -614,7 +604,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote` referent whose id is the normalized label without the caret and with empty affixes; its Citation nodes remain in the citations field, outside ordinary content"
+            "invariants": "one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote(label)` referent whose label is the normalized label without the caret and with empty affixes; its Citation nodes remain in the citations field, outside ordinary content"
         },
         {
             "name": "DefinitionList",
@@ -670,16 +660,16 @@
                     "optional": false
                 }
             ],
-            "invariants": "One Markup node owned by Cite.citations. Its non-null prefix and suffix contain inline markup, empty when absent. It is not ordinary content."
+            "invariants": "One Markup node owned by Cite.citations. Its non-null prefix and suffix contain inline markup, empty when absent. A footnote(note) referent owns its inline note's Footnote. It is not ordinary content."
         },
         {
             "name": "Footnote",
             "ordinal": 41,
             "fields": [
                 {
-                    "name": "id",
+                    "name": "label",
                     "type": "String",
-                    "optional": false
+                    "optional": true
                 },
                 {
                     "name": "content",
@@ -687,14 +677,14 @@
                     "optional": false
                 }
             ],
-            "invariants": "A document-owned Markup definition. Referenced definitions keep normalized IDs and block content; inline notes keep direct inline content and collision-free generated IDs. All definitions remain in scope-start order, including duplicates and unused definitions. Calls store IDs, never owned bodies."
+            "invariants": "A Markup definition where it was written. A referenced definition `[^x]: body` is a block in the content that holds it, with its normalized label and block content; an inline note `^[body]` is owned by its Citation's footnote(note) referent, with a null label and direct inline content. Duplicates and unused definitions remain."
         },
         {
             "name": "Specimen",
             "ordinal": 42,
             "fields": [
                 {
-                    "name": "id",
+                    "name": "label",
                     "type": "String",
                     "optional": true
                 },
@@ -709,7 +699,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "A document-owned Markup definition in scope-start order, including duplicates and anonymous definitions. id is the authored label or null; start is an explicit effective counter reset or null. Display numbers are derived."
+            "invariants": "A Markup definition where it was written, including duplicates and anonymous definitions. label is the authored label or null; start is an explicit effective counter reset or null. Display numbers are derived."
         },
         {
             "name": "Metadata",
@@ -771,7 +761,7 @@
     ],
     "values": {
         "Destination": {
-            "purpose": "A tagged value, not a node: it has no scope, children, anchor, or attributes, and a branch's fields exist only in that branch. Every Link and Embedded owns the url branch; the cross branch is the workspace address CrossLink and CrossEmbedded produce.",
+            "purpose": "A tagged value, not a node: it has no id, extent, children, anchor, or attributes, and a branch's fields exist only in that branch. Every Link and Embedded owns the url branch; the cross branch is the workspace address CrossLink and CrossEmbedded produce.",
             "branches": {
                 "url": [
                     {
@@ -796,7 +786,7 @@
             "dump": "url(\"...\") or cross(path=\"...\",anchor=null)"
         },
         "CitationReferent": {
-            "purpose": "A tagged value, not a node: it has no scope, and a branch's fields exist only in that branch. The bib branch is produced by bibliography citations; every referenced or inline footnote call produces the footnote branch, whose id names the Footnote in Document.footnotes with the equal id. The specimen branch names the first Specimen in Document.specimens with the equal non-null id.",
+            "purpose": "A tagged value, not a node: it has no id or extent, and a branch's fields exist only in that branch. The bib branch is produced by bibliography citations; every referenced or inline footnote call produces the footnote branch. Its label target names the first Footnote in document source order whose label is equal, and its note target owns an inline note's Footnote. The specimen branch names the first Specimen in document source order whose label is equal.",
             "branches": {
                 "bib": [
                     {
@@ -812,20 +802,40 @@
                 ],
                 "footnote": [
                     {
-                        "name": "id",
-                        "type": "String",
+                        "name": "target",
+                        "type": "FootnoteTarget",
                         "optional": false
                     }
                 ],
                 "specimen": [
                     {
-                        "name": "id",
+                        "name": "label",
                         "type": "String",
                         "optional": false
                     }
                 ]
             },
-            "dump": "bib(key=\"...\",mode=normal) or footnote(id=\"...\") or specimen(id=\"...\")"
+            "dump": "bib(key=\"...\",mode=normal) or footnote(label=\"...\") or footnote(note) or specimen(label=\"...\")"
+        },
+        "FootnoteTarget": {
+            "purpose": "The footnote a footnote referent names: a label looked up in the document, or the inline note's Footnote, which the referent owns.",
+            "branches": {
+                "label": [
+                    {
+                        "name": "value",
+                        "type": "String",
+                        "optional": false
+                    }
+                ],
+                "note": [
+                    {
+                        "name": "footnote",
+                        "type": "Footnote",
+                        "optional": false
+                    }
+                ]
+            },
+            "dump": "label=\"...\" or note within the footnote referent; the note's Footnote nests under its Citation before the affix groups"
         },
         "OrderedListDelimiter": {
             "purpose": "The authored punctuation of an ordered marker: a period, parenthesis punctuation recording whether an opening parenthesis was authored, or the default marker form.",
@@ -1043,13 +1053,36 @@
                 }
             ],
             "dump": "(width=100,height=null) or (width=100,height=145); an optional absent value prints null"
+        },
+        "Extent": {
+            "purpose": "The source range a node covers, in bytes of UTF-8 source. lead is signed, from the end of the previous node in the same relation (or the owner's start, for the first node) to this node's start; span is the length of the node's range. Scopes are computed from extents and the source on request.",
+            "fields": [
+                {
+                    "name": "lead",
+                    "type": "Int32",
+                    "optional": false
+                },
+                {
+                    "name": "span",
+                    "type": "UInt32",
+                    "optional": false
+                }
+            ],
+            "dump": "never printed; the dump prints the scope computed from it"
         }
     },
     "inheritedFields": [
         {
-            "name": "scope",
-            "type": "Scope",
-            "optional": false
+            "name": "id",
+            "type": "MarkupID",
+            "optional": false,
+            "dumpAs": null
+        },
+        {
+            "name": "extent",
+            "type": "Extent",
+            "optional": false,
+            "dumpAs": "scope"
         },
         {
             "name": "anchor",

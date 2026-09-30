@@ -4,7 +4,8 @@ import com.nouprax.markdown.core.Document
 import com.nouprax.markdown.core.MarkupDumper
 
 fun main() {
-    val document = Document.parse("héllo 🚀\n")
+    val source = "héllo 🚀\n"
+    val document = Document.parse(source)
     check(document.content.size == 1)
-    check(document.dump() == MarkupDumper.dump(document))
+    check(document.dump(source) == MarkupDumper.dump(document, source))
 }

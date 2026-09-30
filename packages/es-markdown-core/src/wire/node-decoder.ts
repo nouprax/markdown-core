@@ -14,26 +14,30 @@ import type { TableCaption, TableCell, TableColumn, TableRow } from "../markup/t
 import type { Definition } from "../markup/definition-list.js";
 import { ParseError, type ParseErrorCode } from "../common/parse-error.js";
 import { MarkupDumper } from "../visitor/markup-dumper.js";
+import { nodeAt, scopeOf } from "../visitor/document-queries.js";
 import type {
     BibMode,
     CitationReferent,
     Destination,
+    Extent,
     ListFlavor,
     OrderedListDelimiter,
     OrderedListVariant,
     Placement,
-    Scope
+    Position,
+    TextUnit
 } from "../markup/values.js";
 import { contentKinds, kinds, type NativeKind } from "./kinds.js";
 
 /*
- * The MCB2 reader (docs/architecture/wire-format.md). Records arrive in
+ * The MCB3 reader (docs/architecture/wire-format.md). Records arrive in
  * post-order, so each node is built bottom-up from the nodes already on the
  * stack, without recursion and without another call into WebAssembly. The
- * reader retains no view of the message after decode returns.
+ * document's definition tables follow its record. The reader retains no view
+ * of the message after decode returns.
  */
 
-const magic = [0x4d, 0x43, 0x42, 0x32] as const;
+const magic = [0x4d, 0x43, 0x42, 0x33] as const;
 /** The magic, the u32 message length and the u8 status. */
 export const headerSize = 9;
 /** The byte offset of the u32 message length. */
@@ -45,8 +49,14 @@ const bibModes: readonly BibMode[] = ["normal", "authorInText", "suppressAuthor"
 const flavors: readonly ListFlavor[] = ["bullet", "ordered"];
 const errorCodes: readonly ParseErrorCode[] = ["internal", "invalidArgument", "allocationFailed", "internal"];
 
-type MarkupValue = Markup extends infer Node ? (Node extends Markup ? Omit<Node, "dump"> : never) : never;
-type Base<Kind extends Markup["kind"]> = Omit<MarkupBase<Kind>, "dump">;
+/** The document's members that are not contract fields: the decoder adds them
+ * once the definition tables are read. */
+type DocumentMembers = "unit" | "footnotes" | "specimens" | "footnote" | "specimen" | "scope" | "nodeAt" | "dump";
+type MarkupValue = Markup extends infer Node ? (Node extends Document ? Omit<Document, DocumentMembers> : Node) : never;
+type Base<Kind extends Markup["kind"]> = MarkupBase<Kind>;
+
+/** Ids are exact JavaScript numbers: every one is below 2^53. */
+const idLimit = 2 ** 53;
 
 /** A reference definition's shared values, decoded once however often it is used. */
 interface Resource {
@@ -62,19 +72,34 @@ export class Decoder {
     private offset = 0;
     private readonly stack: Markup[] = [];
     private readonly resources: Resource[] = [];
+    /** Every Footnote and Specimen by id, for the definition tables. */
+    private readonly definitions = new Map<number, Footnote | Specimen>();
 
-    constructor(private readonly bytes: Uint8Array) {
+    /** `unit` is the text unit of the document the message decodes to. */
+    constructor(
+        private readonly bytes: Uint8Array,
+        private readonly unit: TextUnit
+    ) {
         this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     }
 
     decode(): Document {
         this.header();
-        while (this.offset < this.bytes.byteLength) this.stack.push(this.record());
-        const document = this.stack.pop();
-        if (document?.kind !== "document" || this.stack.length !== 0) {
+        // A Document is no field's node, so its record is the last one.
+        let root: Markup | undefined;
+        while (root?.kind !== "document" && this.offset < this.bytes.byteLength) {
+            root = this.record();
+            this.stack.push(root);
+        }
+        this.stack.pop();
+        if (root?.kind !== "document" || this.stack.length !== 0) {
             throw new Error("native result is not one document tree");
         }
-        return document;
+        const footnotes = this.table("footnote") as Footnote[];
+        const specimens = this.table("specimen") as Specimen[];
+        if (this.offset !== this.bytes.byteLength)
+            throw new Error("native result has bytes after its definition tables");
+        return this.document(root, footnotes, specimens);
     }
 
     private header(): void {
@@ -105,10 +130,13 @@ export class Decoder {
         const kind = kinds[ordinal];
         if (kind === undefined || kind === "none")
             throw new Error(`native result contains unknown node kind ${ordinal}`);
-        const scope = this.scope();
+        const id = this.id();
+        const extent = this.extent();
         const anchor = this.optional(() => this.string());
         const attributes = this.attributes();
-        return this.markup(this.fields(kind, { kind, scope, anchor, attributes }));
+        const node = this.fields(kind, { kind, id, extent, anchor, attributes }) as Markup;
+        if (node.kind === "footnote" || node.kind === "specimen") this.definitions.set(id, node);
+        return node;
     }
 
     /** A kind's fields in the contract's order; node-valued fields read their counts. */
@@ -117,15 +145,11 @@ export class Decoder {
             case "document": {
                 const content = this.count();
                 const metadata = this.presence();
-                const footnotes = this.count();
-                const specimens = this.count();
-                const nodes = this.nodes(content + metadata + footnotes + specimens);
+                const nodes = this.nodes(content + metadata);
                 return {
                     ...(base as Base<"document">),
                     content: nodes.content(content),
-                    metadata: nodes.optional("metadata", metadata) as Metadata | null,
-                    footnotes: nodes.typed("footnote", footnotes) as Footnote[],
-                    specimens: nodes.typed("specimen", specimens) as Specimen[]
+                    metadata: nodes.optional("metadata", metadata) as Metadata | null
                 };
             }
             case "callout": {
@@ -332,10 +356,15 @@ export class Decoder {
                 };
             }
             case "citation": {
-                const referent = this.referent();
+                const written = this.referent();
                 const prefix = this.count();
                 const suffix = this.count();
-                const nodes = this.nodes(prefix + suffix);
+                // An inline note's Footnote is the first node the record takes.
+                const nodes = this.nodes((written === null ? 1 : 0) + prefix + suffix);
+                const referent: CitationReferent = written ?? {
+                    kind: "footnote",
+                    target: { kind: "note", footnote: nodes.optional("footnote", 1) as Footnote }
+                };
                 return {
                     ...(base as Base<"citation">),
                     referent,
@@ -344,15 +373,15 @@ export class Decoder {
                 };
             }
             case "footnote": {
-                const id = this.string();
+                const label = this.optional(() => this.string());
                 const content = this.count();
-                return { ...(base as Base<"footnote">), id, content: this.nodes(content).content(content) };
+                return { ...(base as Base<"footnote">), label, content: this.nodes(content).content(content) };
             }
             case "specimen": {
-                const id = this.optional(() => this.string());
+                const label = this.optional(() => this.string());
                 const start = this.optional(() => this.int());
                 const content = this.count();
-                return { ...(base as Base<"specimen">), id, start, content: this.nodes(content).content(content) };
+                return { ...(base as Base<"specimen">), label, start, content: this.nodes(content).content(content) };
             }
             case "metadata": {
                 const value = (): MetadataValue | null => this.optional(() => this.metadataValue());
@@ -373,14 +402,45 @@ export class Decoder {
         }
     }
 
-    private markup(value: MarkupValue): Markup {
-        Object.defineProperty(value, "dump", {
-            enumerable: false,
-            value(this: Markup): string {
-                return MarkupDumper.dump(this);
-            }
+    // ---- Definition tables -------------------------------------------------
+
+    /** A table's definitions in source order; each id names a node of `kind`. */
+    private table(kind: "footnote" | "specimen"): (Footnote | Specimen)[] {
+        return this.list(() => {
+            const id = this.id();
+            const node = this.definitions.get(id);
+            if (node?.kind !== kind) throw new Error(`native result ${kind} table names no ${kind} node ${id}`);
+            return node;
         });
-        return value as Markup;
+    }
+
+    /**
+     * The document with its members: the unit, the tables and the label
+     * lookups, built here, once, over data the document carries. They are not
+     * enumerable, so the document's enumerable fields stay its contract fields.
+     */
+    private document(root: Omit<Document, DocumentMembers>, footnotes: Footnote[], specimens: Specimen[]): Document {
+        const footnoteFor = firstByLabel(footnotes);
+        const specimenFor = firstByLabel(specimens);
+        const member = (value: unknown): PropertyDescriptor => ({ value, enumerable: false });
+        return Object.defineProperties(root, {
+            unit: member(this.unit),
+            footnotes: member(footnotes),
+            specimens: member(specimens),
+            footnote: member((label: string): Footnote | null => footnoteFor.get(label) ?? null),
+            specimen: member((label: string): Specimen | null => specimenFor.get(label) ?? null),
+            scope: member(function (this: Document, node: Markup, source: string) {
+                return scopeOf(this, node, source);
+            }),
+            nodeAt: member(function (this: Document, position: Position, source: string) {
+                return nodeAt(this, position, source);
+            }),
+            dump: member(function (this: Document, nodeOrSource: Markup | string, source?: string) {
+                return typeof nodeOrSource === "string"
+                    ? MarkupDumper.dump(this, nodeOrSource)
+                    : MarkupDumper.dump(this, nodeOrSource, source as string);
+            })
+        }) as Document;
     }
 
     /** The `count` nodes on top of the stack, handed out in field order. */
@@ -421,11 +481,8 @@ export class Decoder {
 
     // ---- Values ------------------------------------------------------------
 
-    private scope(): Scope {
-        return {
-            start: { line: this.i32(), column: this.i32() },
-            end: { line: this.i32(), column: this.i32() }
-        };
+    private extent(): Extent {
+        return { lead: this.i32(), span: this.u32() };
     }
 
     private attributes(): Attributes {
@@ -444,14 +501,18 @@ export class Decoder {
         }
     }
 
-    private referent(): CitationReferent {
+    /** The referent as written, or null for an inline note: its `Footnote`
+     * is a node of the record, which the record takes off the stack. */
+    private referent(): CitationReferent | null {
         switch (this.branch(3)) {
             case 0:
                 return { kind: "bib", key: this.string(), mode: this.index(bibModes) };
             case 1:
-                return { kind: "footnote", id: this.string() };
+                return this.branch(2) === 0
+                    ? { kind: "footnote", target: { kind: "label", value: this.string() } }
+                    : null;
             default:
-                return { kind: "specimen", id: this.string() };
+                return { kind: "specimen", label: this.string() };
         }
     }
 
@@ -565,6 +626,14 @@ export class Decoder {
         return value;
     }
 
+    /** A u64 node id, which a JavaScript number carries exactly below 2^53. */
+    private id(): number {
+        const start = this.take(8);
+        const value = this.view.getUint32(start + 4, true) * 0x1_0000_0000 + this.view.getUint32(start, true);
+        if (value >= idLimit) throw new Error("native node id is not below 2^53");
+        return value;
+    }
+
     private double(): number {
         return this.view.getFloat64(this.take(8), true);
     }
@@ -616,4 +685,14 @@ class Nodes {
         }
         return taken;
     }
+}
+
+/** The first node of each label, in the table's source order. A null label
+ * is an inline note's or an anonymous definition's and names nothing. */
+function firstByLabel<Node extends Footnote | Specimen>(nodes: readonly Node[]): ReadonlyMap<string, Node> {
+    const map = new Map<string, Node>();
+    for (const node of nodes) {
+        if (node.label !== null && !map.has(node.label)) map.set(node.label, node);
+    }
+    return map;
 }

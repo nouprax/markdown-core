@@ -467,31 +467,32 @@ int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser);
 int markdown_core_parser_adopt_content_marks(markdown_core_parser *parser, const markdown_core_content_map *owner,
                                              markdown_core_content_map *map, bufsize_t from, bufsize_t length);
 
-int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_core_node *node, int line, int column);
+int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_core_node *node, int line,
+                                      bufsize_t source);
 
-/** Name the source line and BYTE column, both counted from 1, of the byte at
- * 'content_offset' in 'node''s content buffer, and return 1. Returns 0,
+/** Name the source line, counted from 1, and the source byte offset of the
+ * byte at 'content_offset' in 'node''s content buffer, and return 1. Returns 0,
  * leaving both outputs untouched, for a node that never took a line.
  *
  * A block's content is the concatenation of the line slices the parser copied
  * into it with the container prefix stripped, so an offset in it is NOT a
  * column: `"> foo\nbar"` strips two bytes from the first line and none from
  * the second, and the two lines of one paragraph's content then start at
- * different source columns. This is the only thing that knows which.
+ * different distances from their line starts. This is the only thing that knows which.
  *
  * The map is live for as long as the parse is: an element may ask while the
  * block is open, and the inline phase may ask after every block has closed.
  * the parse transaction releases it with the rest of the parse state.
  */
 int markdown_core_parser_content_place(markdown_core_parser *parser, const markdown_core_content_map *map,
-                                       bufsize_t content_offset, int *line, int *column);
+                                       bufsize_t content_offset, int *line, bufsize_t *source);
 
 /** Append a source run for content already assembled by a producer. Runs
  * must be contiguous in the parser vector and have increasing content offsets.
  * source_width is the authored width represented by each logical byte, and
- * source_step is the source-column stride. Allocation failure marks the parse lost. */
+ * source_step is the source-byte stride. Allocation failure marks the parse lost. */
 int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
-                                             int line, int column, int source_width, int source_step);
+                                             int line, bufsize_t source, int source_width, int source_step);
 /** Append the source runs covering a literal slice to a growing result map.
  * Each source run is copied once; producers use adopt_content_marks for a
  * read-only slice that needs no allocation. */
@@ -501,10 +502,10 @@ int markdown_core_parser_append_content_marks(markdown_core_parser *parser, cons
 /** Project a logical inline range, including its Text literal mapping. */
 void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
                                       int to);
-/** The inclusive end of the authored bytes represented by a content byte.
- * Uses the same run lookup as content_place, which returns its start. */
+/** The exclusive source end of the authored bytes represented by a content
+ * byte. Uses the same run lookup as content_place, which returns its start. */
 int markdown_core_parser_content_end_place(markdown_core_parser *parser, const markdown_core_content_map *map,
-                                           bufsize_t offset, int *line, int *column);
+                                           bufsize_t offset, int *line, bufsize_t *end);
 
 /** Return the absolute index of the first nonspace column coming after 'offset'
  * in the line currently being processed, counting tabs as multiple
@@ -562,13 +563,12 @@ int markdown_core_parser_is_blank(markdown_core_parser *parser);
  */
 int markdown_core_parser_has_partially_consumed_tab(markdown_core_parser *parser);
 
-/** Return the source column of the previously processed line's last byte,
- * excluding its line ending, or 0 for an empty line. At the top level that is
- * the line's length in bytes; in a table cell's content, which the parser
- * reads as an input of its own, it is where the cell line's last byte is in
- * the source line.
+/** Return the source offset just after the previously processed line's last
+ * byte, excluding its line ending: the line's start for an empty line. In a
+ * table cell's content, which the parser reads as an input of its own, it is
+ * the end of the cell line's last byte in the source line.
  */
-int markdown_core_parser_get_last_line_length(markdown_core_parser *parser);
+bufsize_t markdown_core_parser_get_last_line_end(markdown_core_parser *parser);
 
 /** Add a child to 'parent' during the parsing process.
  *
@@ -727,10 +727,6 @@ void markdown_core_inline_state_push_delimiter(markdown_core_inline_state *inlin
  */
 int markdown_core_inline_state_has_unmatched_opener(markdown_core_inline_state *inline_state,
                                                     markdown_core_delimiter_rule rule);
-
-int markdown_core_inline_state_get_line(markdown_core_inline_state *inline_state);
-
-int markdown_core_inline_state_get_column(markdown_core_inline_state *inline_state);
 
 /** Make the Text node a delimiter run stands as: its literal is the bytes
  * [from, to] of the block's content and its position is a projection of that

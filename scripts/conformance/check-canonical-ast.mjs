@@ -49,27 +49,11 @@ const orderValidators = {
     "markup.attributes.source-order": (tree) =>
         /DirectiveBlock scope=.*attributes=\{[^}]*properties=".*" metadata=".*"\}/.test(tree),
     "inline.source-order": (tree) => /Paragraph scope=.* children=(?:[2-9]|[1-9]\d+)(?:\n|$)/.test(tree),
-    // Every `Footnote` node nests under `Document` after the last content line.
-    "document.content-before-footnotes": (tree) => {
-        const top = tree
-            .split("\n")
-            .filter((line) => /^(?:├──|└──) /.test(line))
-            .map((line) => line.slice(4).split(" ", 1)[0]);
-        const first = top.indexOf("Footnote");
-        return first >= 0 && top.slice(first).every((kind) => kind === "Footnote" || kind === "Specimen");
-    },
-    "document.specimens-source-order": (tree) => {
-        const definitions = [...tree.matchAll(/^(?:├──|└──) Specimen scope=(\d+):(\d+)\.\./gm)];
-        return (
-            definitions.length > 1 &&
-            definitions.every(
-                (entry, i) =>
-                    i === 0 ||
-                    Number(entry[1]) > Number(definitions[i - 1][1]) ||
-                    (entry[1] === definitions[i - 1][1] && Number(entry[2]) > Number(definitions[i - 1][2]))
-            )
-        );
-    },
+    // An inline note's `Footnote` precedes its `Citation`'s affixes.
+    "citation.note-before-affixes": (tree) =>
+        /Citation scope=.* referent=footnote\(note\) children=0\n[^\n]*Footnote scope=[\s\S]*?CitationPrefix children=\d+[\s\S]*?CitationSuffix children=\d+/.test(
+            tree
+        ),
     // A `Cite` nests its items in source order: their scopes ascend (M4).
     "cite.items-in-order": (tree) => {
         let cites = 0;
@@ -241,7 +225,9 @@ for (const testCase of manifest.cases ?? []) {
                 kind.fields.filter((field) => !isNodeValuedField(field.type)).map((field) => field.name)
             ])
         );
-        const inherited = contract.inheritedFields.map((field) => field.name);
+        const inherited = contract.inheritedFields
+            .map((field) => (field.dumpAs === undefined ? field.name : field.dumpAs))
+            .filter((name) => name !== null);
         const expectedFieldNames = [...inherited, ...(dumpFields[kind] ?? []), "children"];
         if (!sameArray(fieldNames, expectedFieldNames)) {
             failures.push(

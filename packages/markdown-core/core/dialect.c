@@ -45,7 +45,7 @@ static bool S_finish_kind_indexable(markdown_core_node_type kind) {
 
 static bool S_owns_document_lifecycle(const markdown_core_element *element) {
     return element->init_document && element->dispose_document && element->read_document_prefix &&
-           element->prepare_document && element->finish_document;
+           element->prepare_document && element->finish_document && element->publish_document;
 }
 
 static bool S_element_refused(const markdown_core_element *element) {
@@ -83,7 +83,8 @@ static bool S_element_refused(const markdown_core_element *element) {
     }
     /* Only part of the document lifecycle. */
     if ((element->init_document || element->dispose_document || element->read_document_prefix ||
-         element->prepare_document || element->finish_document || element->observe_inline) &&
+         element->prepare_document || element->finish_document || element->publish_document ||
+         element->observe_inline) &&
         !S_owns_document_lifecycle(element)) {
         return true;
     }

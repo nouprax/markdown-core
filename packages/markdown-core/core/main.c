@@ -81,13 +81,13 @@ static const char *read_all(source_buffer *source, FILE *input) {
     return ferror(input) ? strerror(errno) : NULL;
 }
 
-static bool print_document(const markdown_core_document *document) {
+static bool print_document(const markdown_core_document *document, const uint8_t *source, size_t size) {
     markdown_core_error *error = NULL;
     uint8_t *dump = NULL;
     size_t length = 0;
     markdown_core_string message;
 
-    if (!markdown_core_document_dump(document, &dump, &length, &error)) {
+    if (!markdown_core_document_dump(document, NULL, source, size, &dump, &length, &error)) {
         message = markdown_core_error_get_message(error);
         fprintf(stderr, "AST dump failed: %.*s\n", (int)message.length,
                 message.data ? (const char *)message.data : "unknown error");
@@ -187,7 +187,7 @@ int main(int argc, char *argv[]) {
         markdown_core_error_free(error);
         goto done;
     }
-    if (print_document(document)) {
+    if (print_document(document, source.data, source.size)) {
         result = 0;
     }
 

@@ -15,15 +15,6 @@ extension ParseError {
     }
 }
 
-extension Scope {
-    init(from scope: markdown_core_scope) {
-        self.init(
-            start: Position(line: scope.start.line, column: scope.start.column),
-            end: Position(line: scope.end.line, column: scope.end.column)
-        )
-    }
-}
-
 extension markdown_core_string {
     var required: String {
         guard let data else { return "" }
@@ -41,6 +32,15 @@ extension markdown_core_string {
 extension Placement {
     init(from mode: markdown_core_placement) {
         self = mode == MARKDOWN_CORE_PLACEMENT_EMBEDDED ? .embedded : .standalone
+    }
+}
+
+extension TextUnit {
+    var native: markdown_core_text_unit {
+        switch self {
+        case .utf8: MARKDOWN_CORE_TEXT_UNIT_UTF8
+        case .utf16: MARKDOWN_CORE_TEXT_UNIT_UTF16
+        }
     }
 }
 

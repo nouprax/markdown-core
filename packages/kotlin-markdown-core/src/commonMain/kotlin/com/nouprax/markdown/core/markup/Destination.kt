@@ -13,7 +13,8 @@ public sealed interface Destination {
      * nothing in it, so [value] is empty. Every link and image owns this
      * branch.
      */
-    public class Url internal constructor(
+    @ConsistentCopyVisibility
+    public data class Url internal constructor(
         public val value: String,
     ) : Destination
 
@@ -22,7 +23,8 @@ public sealed interface Destination {
      * when the [anchor] addresses the current document, and the anchor or
      * `null`.
      */
-    public class Cross internal constructor(
+    @ConsistentCopyVisibility
+    public data class Cross internal constructor(
         public val path: String,
         public val anchor: String?,
     ) : Destination

@@ -457,7 +457,7 @@ Document scope=1:1..10:0 anchor=null attributes={} children=4
 │   └── Text scope=5:3..5:15 anchor=null attributes={} literal="T {.escaped}" children=0
 └── Heading scope=7:1..9:3 anchor="setext" attributes={.c} level=2 children=3
     ├── Text scope=7:1..7:5 anchor=null attributes={} literal="First" children=0
-    ├── SoftBreak scope=7:6..7:6 anchor=null attributes={} children=0
+    ├── SoftBreak scope=7:6..8:0 anchor=null attributes={} children=0
     └── Text scope=8:1..8:4 anchor=null attributes={} literal="Last" children=0
 ````````````````````````````````
 

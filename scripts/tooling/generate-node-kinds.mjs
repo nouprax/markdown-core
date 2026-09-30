@@ -7,7 +7,7 @@
  *
  * - `docs/specs/canonical-ast.json` is the public contract. Each kind's
  *   `ordinal` is its wire number: the value of `markdown_core_node_kind`, the
- *   MCB2 kind ordinal every binding decoder reads (Kotlin and ES).
+ *   MCB3 kind ordinal every binding decoder reads (Kotlin and ES).
  * - `packages/markdown-core/node-types.json` is the native representation: the
  *   internal `markdown_core_node_type` of each class, the public kind it
  *   reports, the payload record it allocates and the element that defines its

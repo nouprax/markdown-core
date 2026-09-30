@@ -384,8 +384,7 @@ void markdown_core_prepare_heading(const markdown_core_element_instance *self, m
                 markdown_core_map_record *record = markdown_core_reference_create(parser->refmap, &label, resource);
                 if (record) {
                     record->implicit = true;
-                    record->source_key =
-                        ((uint64_t)(uint32_t)heading->node->start_line << 32) | (uint32_t)heading->node->start_column;
+                    record->source_key = heading->node->where.place.start;
                     heading->resource = record->resource;
                 }
             }

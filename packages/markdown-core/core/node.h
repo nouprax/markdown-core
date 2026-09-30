@@ -127,46 +127,48 @@ typedef struct {
 
 /* THE REFERENT of one citation (M4): a tagged value. A `bib` referent, which
  * the citations module first produces with P7, carries a key and a mode; a
- * `footnote` referent carries the id of the `Footnote` it names. */
+ * `footnote` referent carries the label of the `Footnote` it names, or owns
+ * the inline note it stands for; a `specimen` referent carries a label. */
 typedef enum {
     MARKDOWN_CORE_NODE_REFERENT_BIB = 1,
     MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE = 2,
     MARKDOWN_CORE_NODE_REFERENT_SPECIMEN = 3
 } markdown_core_node_referent_kind;
 
-/* ONE ITEM of a cite (M4): the referent, and two affix chains the item owns
- * beside its children, which it never has. Each populated affix uses the same
- * private inline root as other owned fields; the facade exposes its children.
- * `value` is the referent's key or
- * id: for a footnote referent it is the label under the map's own
- * normalization WITHOUT the caret, which is the `Footnote.id` it names,
- * computed once per occurrence. NORMATIVE: an id is compared with memcmp over
- * its bytes and is never case mapped, renormalized, or re-encoded. A chain is
- * NULL when the affix is empty. */
+/* ONE ITEM of a cite (M4): the referent, and the item's owned fields: the
+ * inline note a `footnote(note)` referent owns, then the two affix chains.
+ * Each populated affix uses the same private inline root as other owned
+ * fields; the facade exposes its children. `value` is the referent's key or
+ * label: for a footnote referent that names a definition it is the label
+ * under the map's own normalization WITHOUT the caret, which is the
+ * `Footnote.label` it names, computed once per occurrence. NORMATIVE: a label
+ * is compared with memcmp over its bytes and is never case mapped,
+ * renormalized, or re-encoded. `note` is NULL unless the item is an inline
+ * note, whose `Footnote` it owns. A chain is NULL when the affix is empty. */
 typedef struct {
     markdown_core_node_referent_kind referent;
     markdown_core_chunk value;
     /* The bib mode as the public `markdown_core_bib_mode` numbers it; 0 for a
      * footnote referent. */
     int mode;
+    struct markdown_core_node *note;
     struct markdown_core_node *prefix;
     struct markdown_core_node *suffix;
 } markdown_core_citation_item;
 
 /* A FOOTNOTE: content is the node's children, block or inline. A definition
- * has its normalized authored id. A committed inline body is owned directly
- * by Document.footnotes. Before tree transforms, finalization assigns its id
- * and copies that id to the Citation owned by its Cite. The Citation refers
- * to the Footnote by id; neither the Cite nor the Citation owns its body. */
+ * `[^x]: body` is a block where it was written and has its normalized
+ * authored label; an inline note `^[body]` is owned by its Citation and has
+ * no label. */
 typedef struct {
-    markdown_core_chunk id;
+    markdown_core_optional_chunk label;
 } markdown_core_footnote_value;
 
 /* A specimen owns its optional authored label and effective explicit counter
  * reset. Anonymous definitions and absent resets remain absent; numbering is
  * derived from the document's definition order by consumers. */
 typedef struct {
-    markdown_core_optional_chunk id;
+    markdown_core_optional_chunk label;
     int64_t start;
     bool has_start;
 } markdown_core_specimen_value;
@@ -182,14 +184,24 @@ typedef struct {
     int continuation_line;
 } markdown_core_definition_body_value;
 
-/* THE DOCUMENT's own footnotes (M4): committed inline bodies enter this
- * node-valued field immediately. Before tree transforms, finalization moves
- * authored definitions out of the block tree and orders all values by scope.
- * The root owns this chain beside its content. */
+/* A DEFINITION TABLE of a published document: every Footnote, or every
+ * Specimen, in source order, borrowed from the tree. */
+typedef struct markdown_core_definitions {
+    /* Every definition of the kind, in source order. */
+    const struct markdown_core_node **nodes;
+    size_t count;
+    /* The labeled ones by label, in source order among equal labels. */
+    const struct markdown_core_node **labeled;
+    size_t labeled_count;
+} markdown_core_definitions;
+
+/* THE DOCUMENT's own field: the metadata the properties envelope produced.
+ * Footnote and specimen definitions stay in the tree where they were
+ * written; publishing the document records its definition tables here. */
 typedef struct {
     struct markdown_core_node *metadata;
-    struct markdown_core_node *footnotes;
-    struct markdown_core_node *specimens;
+    markdown_core_definitions footnotes;
+    markdown_core_definitions specimens;
 } markdown_core_document_value;
 
 /* A link reference definition is not a node (M2). The block phase reads it off
@@ -198,9 +210,35 @@ typedef struct {
  * `Embedded` it names, sharing that resource. This is the inherited grammar's
  * model: a definition exists to be referred to, an unreferenced one produces
  * nothing, and the first definition of a label in source order wins. A footnote
- * definition stays a node while it is parsed, because its body is flow
- * content, and becomes a document-owned `Footnote` value when the document
- * finalizes (M4). */
+ * definition is a node, because its body is flow content, and stays where it
+ * was written. */
+
+/* A node's source extent in UTF-8 bytes (the published form of its place). */
+#ifndef MARKDOWN_CORE_EXTENT_TYPEDEF
+#define MARKDOWN_CORE_EXTENT_TYPEDEF
+typedef struct markdown_core_extent {
+    int32_t lead;
+    uint32_t span;
+} markdown_core_extent;
+#endif
+
+/* An absolute byte range [start, end) of the document source. */
+typedef struct {
+    uint32_t start, end;
+} markdown_core_place;
+
+/* WHERE A NODE IS, in bytes of the UTF-8 source, and never in lines or
+ * columns. While a parse builds the tree every node holds its absolute
+ * `place`. Publishing the document (markdown_core_publish_tree) rewrites
+ * each node's place as its `extent`: `lead`, the signed distance from the end
+ * of the previous node in the same relation (or from its owner's start, for
+ * the first node), and `span`, the length of its range. Relative extents are
+ * what lets a node keep its value when text before it moves. A published node
+ * holds only its extent; nothing reads a place after publishing. */
+typedef union {
+    markdown_core_place place;
+    markdown_core_extent extent;
+} markdown_core_node_where;
 
 enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__OPEN = (1 << 0),
@@ -280,10 +318,11 @@ struct markdown_core_node {
     struct markdown_core_node *first_child;
     struct markdown_core_node *last_child;
 
-    int start_line;
-    int start_column;
-    int end_line;
-    int end_column;
+    /* The node's identifier, unique within its document; 0 until the
+     * document is published (markdown_core_publish_tree). */
+    uint64_t id;
+    /* Where the node is in the source; see markdown_core_node_where. */
+    markdown_core_node_where where;
     int internal_offset;
     /* This node's slice of parser-owned content-to-source runs. Zero count
      * means there is no mapped content (for example, an empty cell). */
@@ -357,19 +396,6 @@ bool markdown_core_node_can_contain_builtin(const markdown_core_node *node, mark
 bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type);
 
 typedef int (*markdown_core_owned_subtree_visitor)(markdown_core_node **root_slot, void *context);
-/* The chains a document owns as roots of their own, in the order the visitor
- * below takes them. */
-#define MARKDOWN_CORE_DOCUMENT_CHAINS 2
-/* Visit the roots of each chain appended since `last`, one entry per chain
- * naming the last root visited there (NULL for none yet), and advance `last`
- * over each root visited. Registration appends to a chain, so this finds
- * exactly what came after the previous visit. Returns 0 when the visitor
- * refuses, and sets `*found` when it visited anything. */
-int markdown_core_visit_block_subtrees_since(markdown_core_node *node,
-                                             markdown_core_node *last[MARKDOWN_CORE_DOCUMENT_CHAINS],
-                                             markdown_core_owned_subtree_visitor visitor, void *context, bool *found);
-int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
-                                       void *context);
 
 /* Commit an exclusively owned, detached subtree after the caller has proved
  * containment and disjointness. No callbacks, allocation, or rejection occurs

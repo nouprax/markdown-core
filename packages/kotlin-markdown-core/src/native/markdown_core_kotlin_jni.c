@@ -15,7 +15,7 @@ static uint32_t message_length(const uint8_t *message) {
     return (uint32_t)message[4] | (uint32_t)message[5] << 8 | (uint32_t)message[6] << 16 | (uint32_t)message[7] << 24;
 }
 
-/* Returns the MCB2 message (docs/architecture/wire-format.md) for `source`;
+/* Returns the MCB3 message (docs/architecture/wire-format.md) for `source`;
  * the Kotlin decoder owns everything after the copy. */
 static jbyteArray JNICALL native_parse(JNIEnv *environment, jobject receiver, jbyteArray source) {
     jbyte *source_bytes;

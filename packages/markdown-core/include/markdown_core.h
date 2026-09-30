@@ -81,19 +81,44 @@ typedef struct markdown_core_string {
     size_t length;
 } markdown_core_string;
 
-/** Editor source coordinates in the native cmark UTF-8 convention, copied
- * without validation or conversion. These are not string indices. In
- * particular a zero-byte document has scope 1:1..0:0; column-zero block ends
- * are also retained. End coordinates are not converted to half-open ranges. */
+/** How a document counts columns: UTF-8 bytes or UTF-16 code units. A
+ * document counts every column a scope query returns or takes in the unit it
+ * was parsed with. */
+typedef enum markdown_core_text_unit {
+    MARKDOWN_CORE_TEXT_UNIT_UTF8 = 1,
+    MARKDOWN_CORE_TEXT_UNIT_UTF16 = 2
+} markdown_core_text_unit;
+
+/** Editor source coordinates: a line counted from 1, and a column counted
+ * from 1 in the document's text unit. These are not string indices. */
 typedef struct markdown_core_position {
     int32_t line;
     int32_t column;
 } markdown_core_position;
 
+/** A node's editor source coordinates, computed on request from its extent
+ * and the source (markdown_core_document_scope). `start` is the position of
+ * the node's first byte, where a line terminator is the column after its
+ * line's last character. `end` is the line holding the byte just past the
+ * node's last byte and the column count from that line's start to it, so a
+ * node that ends right after a line terminator ends at `L:0` of the next
+ * line, and a zero-byte document is `1:1..1:0`. */
 typedef struct markdown_core_scope {
     markdown_core_position start;
     markdown_core_position end;
 } markdown_core_scope;
+
+/** WHERE A NODE IS, in bytes of the UTF-8 source. `lead` is the signed
+ * distance from the end of the previous node in the same relation -- or from
+ * the owner's start, for the first node of a relation -- to this node's
+ * start, and `span` the length of its source range. */
+#ifndef MARKDOWN_CORE_EXTENT_TYPEDEF
+#define MARKDOWN_CORE_EXTENT_TYPEDEF
+typedef struct markdown_core_extent {
+    int32_t lead;
+    uint32_t span;
+} markdown_core_extent;
+#endif
 
 /** Metadata is a leaf node owned by Document.metadata.
  * Ten optional fields hold values; list items retain order and numbers their exact
@@ -303,21 +328,48 @@ typedef struct markdown_core_optional_string {
  * repair malformed input. What such input parses to is unspecified, but the
  * parse reads only the `length` bytes at `source`, terminates, and returns a
  * document or fails as described below. There are no options:
- * every feature of the dialect is recognized on every call.
+ * every feature of the dialect is recognized on every call. The document
+ * counts columns in UTF-8 bytes.
  * The returned document owns every node and every `markdown_core_string`
  * handed out of it. On failure,
  * NULL is returned and `*error` is set when `error` is non-NULL.
  */
 MARKDOWN_CORE_API markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
                                                                        markdown_core_error **error);
+/** Parses as markdown_core_document_parse does, into a document that counts
+ * columns in `unit`; an unknown unit is an invalid argument. */
+MARKDOWN_CORE_API markdown_core_document *markdown_core_document_parse_in(const uint8_t *source, size_t length,
+                                                                          markdown_core_text_unit unit,
+                                                                          markdown_core_error **error);
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
+MARKDOWN_CORE_API markdown_core_text_unit markdown_core_document_unit(const markdown_core_document *document);
 
 /** Return the immutable semantic root owned by `document`.
  *
- * Every node carries a `scope`: line-and-column boundaries reported by the
- * cmark-family parser. The returned node and every string read from it borrow
- * from `document` and end when the document is freed. */
+ * The returned node and every string read from it borrow from `document` and
+ * end when the document is freed. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_root(const markdown_core_document *document);
+
+/** The node's identifier: unique within its document, and numbered from 1 in
+ * canonical walk order by a parse. Every identifier is below 2^53. */
+MARKDOWN_CORE_API uint64_t markdown_core_node_id(const markdown_core_node *node);
+/** The node's extent (markdown_core_extent). */
+MARKDOWN_CORE_API markdown_core_extent markdown_core_node_extent(const markdown_core_node *node);
+
+/** SCOPE QUERIES. Each takes the source the document was parsed from and
+ * computes absolute positions from the extents in one walk of the document,
+ * with columns in the document's text unit. They return false, or NULL, for
+ * a node that is not in the document or a source shorter than the
+ * document's. */
+MARKDOWN_CORE_API bool markdown_core_document_scope(const markdown_core_document *document,
+                                                    const markdown_core_node *node, const uint8_t *source,
+                                                    size_t length, markdown_core_scope *scope);
+/** The last node in canonical walk order whose source range holds the byte
+ * at `position`, or NULL when no node holds it or the position names no
+ * byte of the source. */
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_node_at(const markdown_core_document *document,
+                                                                           markdown_core_position position,
+                                                                           const uint8_t *source, size_t length);
 /** A parse failure. There is NO document, and there is no scope: an input the
  * parser could not turn into a document has no extent to point at. The value
  * is immutable and library-owned; `markdown_core_error_free` is a no-op. */
@@ -336,7 +388,6 @@ MARKDOWN_CORE_API const char *markdown_core_node_kind_name(markdown_core_node_ki
  * collections are read through the definition accessors below. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node);
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node);
-MARKDOWN_CORE_API markdown_core_scope markdown_core_node_scope(const markdown_core_node *node);
 MARKDOWN_CORE_API size_t markdown_core_node_child_count(const markdown_core_node *node);
 
 MARKDOWN_CORE_API bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level);
@@ -518,15 +569,17 @@ typedef enum markdown_core_referent_kind {
     MARKDOWN_CORE_REFERENT_SPECIMEN = 3
 } markdown_core_referent_kind;
 
-/** The tagged `CitationReferent` value (M4): a value, not a node, so it has
- * no scope, and a branch's fields exist only in that branch. `BIB` fills
- * `key` and `mode` and zeroes `id`; `FOOTNOTE` and `SPECIMEN` fill `id`, the definition id
- * the item names, and zeroes `key` and `mode`. */
+/** The tagged `CitationReferent` value (M4): a value, not a node, and a
+ * branch's fields exist only in that branch. `BIB` fills `key` and `mode`.
+ * `FOOTNOTE` names a definition by `label`, or owns an inline note: then
+ * `note` is its `Footnote` and `label` is empty. `SPECIMEN` fills `label`.
+ * The fields a branch does not use are zero. */
 typedef struct markdown_core_referent {
     markdown_core_referent_kind kind;
     markdown_core_string key;
     markdown_core_bib_mode mode;
-    markdown_core_string id;
+    markdown_core_string label;
+    const markdown_core_node *note;
 } markdown_core_referent;
 
 /** The first item of a `Cite`, or NULL for a non-cite input; a cite holds at
@@ -541,36 +594,50 @@ MARKDOWN_CORE_API bool markdown_core_citation_referent(const markdown_core_node 
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_citation_prefix(const markdown_core_node *citation);
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_citation_suffix(const markdown_core_node *citation);
 
-/** The first element of `Document.footnotes`, or NULL when the document has
- * none or the node is not the document root. Footnotes follow by
- * `markdown_core_node_get_next_sibling` in ascending scope order: every winning or
- * unreferenced definition, wherever it was written, and none of them is a
- * child of any node. */
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_document_footnotes(const markdown_core_node *node);
-/** The id: the definition's label under the reference-label normalization --
- * full Unicode case fold, trimmed, internal whitespace collapsed -- WITHOUT
- * the caret, exactly the `id` of every `footnote` referent that names it.
+/** THE DOCUMENT'S DEFINITION TABLES. Every `Footnote` -- a definition or an
+ * inline note -- and every `Specimen` stays in the tree where it was written;
+ * the document lists them in source order. `_for` returns the first one whose
+ * label equals `label` byte for byte, or NULL. */
+MARKDOWN_CORE_API size_t markdown_core_document_footnote_count(const markdown_core_document *document);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_footnote_at(const markdown_core_document *document,
+                                                                               size_t index);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_footnote_for(const markdown_core_document *document,
+                                                                                markdown_core_string label);
+MARKDOWN_CORE_API size_t markdown_core_document_specimen_count(const markdown_core_document *document);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_specimen_at(const markdown_core_document *document,
+                                                                               size_t index);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_specimen_for(const markdown_core_document *document,
+                                                                                markdown_core_string label);
+/** The label: a definition's label under the reference-label normalization
+ * -- full Unicode case fold, trimmed, internal whitespace collapsed --
+ * WITHOUT the caret, exactly the `label` of every `footnote` referent that
+ * names it; absent for an inline note.
  *
- * NORMATIVE: an id is compared with memcmp over its bytes. It is never case
+ * NORMATIVE: a label is compared with memcmp over its bytes. It is never case
  * mapped, never NFC/NFD normalized, never re-encoded, and never used as a key
  * in a language map whose equality has an opinion about Unicode. */
-MARKDOWN_CORE_API bool markdown_core_footnote_id(const markdown_core_node *footnote, markdown_core_string *id);
+MARKDOWN_CORE_API bool markdown_core_footnote_label(const markdown_core_node *footnote,
+                                                    markdown_core_optional_string *label);
 /** The first node of the footnote's block content, the rest following by
  * `markdown_core_node_get_next_sibling`, or NULL when the content is empty. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_footnote_content(const markdown_core_node *footnote);
 
-/** Specimens are document-owned scoped citation definitions, visited after
- * footnotes and never counted as content children. An anonymous definition has no id, and an absent start means no
- * explicit counter reset. Display numbers are not stored in the AST. */
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_document_specimens(const markdown_core_node *node);
+/** A specimen is a block where it was written. An anonymous definition has no
+ * label, and an absent start means no explicit counter reset. Display numbers
+ * are not stored in the AST. */
 MARKDOWN_CORE_API bool markdown_core_specimen_properties(const markdown_core_node *specimen,
-                                                         markdown_core_optional_string *id,
+                                                         markdown_core_optional_string *label,
                                                          markdown_core_optional_i64 *start);
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_specimen_content(const markdown_core_node *specimen);
 
-/** Allocates the canonical file-tree dump. Free it with markdown_core_dump_free. */
-MARKDOWN_CORE_API bool markdown_core_document_dump(const markdown_core_document *document, uint8_t **output,
-                                                   size_t *length, markdown_core_error **error);
+/** Allocates the canonical file-tree dump of `node` -- the document's root
+ * when `node` is NULL -- with scopes computed from `source`, the source the
+ * document was parsed from, always in UTF-8 columns. Free it with
+ * markdown_core_dump_free. */
+MARKDOWN_CORE_API bool markdown_core_document_dump(const markdown_core_document *document,
+                                                   const markdown_core_node *node, const uint8_t *source,
+                                                   size_t source_length, uint8_t **output, size_t *length,
+                                                   markdown_core_error **error);
 MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
 
 #ifdef __cplusplus

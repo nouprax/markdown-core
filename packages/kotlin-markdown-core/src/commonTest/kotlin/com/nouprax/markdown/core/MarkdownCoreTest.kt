@@ -5,6 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -35,10 +36,11 @@ class ApiTest {
     @Test
     fun deepDumpsConsumeWalkerCallbacks() {
         val depth = 512
+        val source = "- ".repeat(depth) + "leaf\n"
         val lines =
             Document
-                .parse("- ".repeat(depth) + "leaf\n")
-                .dump()
+                .parse(source)
+                .dump(source)
                 .trimEnd('\n')
                 .lines()
         assertEquals(depth * 2 + 3, lines.size)
@@ -78,6 +80,9 @@ class ApiTest {
         val citation = assertIs<Cite>(assertIs<Paragraph>(document.content.first()).content.first()).citations.single()
         val nodes: kotlin.collections.List<Markup> =
             listOf(document.metadata!!, citation, document.footnotes.single(), document.specimens.single())
+        // Definitions stay where they were written: the document lists them, it does not own them.
+        assertSame(document.content[1], document.footnotes.single())
+        assertSame(document.content[2], document.specimens.single())
         val names = listOf("Metadata", "Citation", "Footnote", "Specimen")
         for ((index, node) in nodes.withIndex()) {
             assertEquals(null, node.anchor)
@@ -89,8 +94,12 @@ class ApiTest {
             assertEquals("enter:${names[index]}", walker.events.first())
             assertEquals("exit:${names[index]}", walker.events.last())
         }
-        assertEquals("label", assertIs<CitationReferent.Footnote>(citation.referent).id)
-        assertEquals("label", document.footnotes.single().id)
+        val target = assertIs<CitationReferent.Footnote>(citation.referent).target
+        assertEquals("label", assertIs<FootnoteTarget.Label>(target).value)
+        assertEquals("label", document.footnotes.single().label)
+        assertSame(document.footnotes.single(), document.footnote("label"))
+        assertEquals("sample", document.specimens.single().label)
+        assertSame(document.specimens.single(), document.specimen("sample"))
     }
 
     @Test
@@ -111,7 +120,8 @@ class ApiTest {
 
     @Test
     fun imageDimensionsBelongToOccurrencesWithSharedDestinations() {
-        val document = Document.parse("![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared \"title\"\n")
+        val source = "![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared \"title\"\n"
+        val document = Document.parse(source)
         val images = assertIs<Paragraph>(document.content.single()).content.filterIsInstance<Embedded>()
         assertEquals(listOf(Dimensions(2147483647, 2), Dimensions(3), null), images.map { it.dimensions })
         assertEquals(1, setOf(Dimensions(640, 480), Dimensions(640, 480)).size)
@@ -122,7 +132,7 @@ class ApiTest {
         assertEquals("title", images[0].title)
         val alt = assertIs<Emphasis>(images[0].content.single())
         assertEquals("alt", assertIs<Text>(alt.content.single()).literal)
-        assertEquals(7, alt.scope.end.column)
+        assertEquals(7, document.scope(alt, source)?.end?.column)
         assertTrue(images[1].content.isEmpty())
         assertEquals("bad|01", assertIs<Text>(images[2].content.single()).literal)
         val visitor = RecordingWalkingVisitor()
@@ -156,12 +166,8 @@ class ApiTest {
             ),
             listOf(metadata.name, metadata.`abstract`, metadata.comment),
         )
-        assertEquals(14, metadata.scope.end.line)
-        assertEquals(
-            15,
-            document.content[0]
-                .scope.start.line,
-        )
+        assertEquals(14, document.scope(metadata, source)?.end?.line)
+        assertEquals(15, document.scope(document.content[0], source)?.start?.line)
         val empty = assertNotNull(Document.parse("---\nunknown: 1\nfree text\n---").metadata)
         assertTrue(
             listOf(
@@ -218,7 +224,7 @@ class ApiTest {
                 "\"quotes\" -- ...\n" to "literal=\"\\\"quotes\\\" -- ...\"",
             )
         for ((source, witness) in witnesses) {
-            assertTrue(Document.parse(source).dump().contains(witness), "expected $witness for $source")
+            assertTrue(Document.parse(source).dump(source).contains(witness), "expected $witness for $source")
         }
     }
 
@@ -238,7 +244,8 @@ class ApiTest {
 
     @Test
     fun marksRetainTypedContentAndWalkBothPhasesAfterNativeRelease() {
-        val paragraph = Document.parse("==a *b*==").content.first() as Paragraph
+        val document = Document.parse("==a *b*==")
+        val paragraph = document.content.first() as Paragraph
         val mark = paragraph.content.first() as Mark
         val visitor = RecordingWalkingVisitor()
         mark.walk(visitor)
@@ -257,12 +264,13 @@ class ApiTest {
         )
         assertEquals(2, mark.content.size)
         assertEquals("b", ((mark.content[1] as Emphasis).content.first() as Text).literal)
-        assertEquals(Scope(Position(1, 1), Position(1, 9)), mark.scope)
+        assertEquals(Scope(Position(1, 1), Position(1, 9)), document.scope(mark, "==a *b*=="))
     }
 
     @Test
     fun insertionsRetainTypedContentAndWalkBothPhasesAfterNativeRelease() {
-        val paragraph = Document.parse("++a *b*++").content.first() as Paragraph
+        val document = Document.parse("++a *b*++")
+        val paragraph = document.content.first() as Paragraph
         val insertion = paragraph.content.first() as Insertion
         val visitor = RecordingWalkingVisitor()
         insertion.walk(visitor)
@@ -281,12 +289,13 @@ class ApiTest {
         )
         assertEquals(2, insertion.content.size)
         assertEquals("b", ((insertion.content[1] as Emphasis).content.first() as Text).literal)
-        assertEquals(Scope(Position(1, 1), Position(1, 9)), insertion.scope)
+        assertEquals(Scope(Position(1, 1), Position(1, 9)), document.scope(insertion, "++a *b*++"))
     }
 
     @Test
     fun spansRetainTypedContentAndWalkBothPhasesAfterNativeRelease() {
-        val paragraph = Document.parse("[a *b*]{}").content.first() as Paragraph
+        val document = Document.parse("[a *b*]{}")
+        val paragraph = document.content.first() as Paragraph
         val span = paragraph.content.first() as Span
         val visitor = RecordingWalkingVisitor()
         span.walk(visitor)
@@ -305,12 +314,13 @@ class ApiTest {
         )
         assertEquals(2, span.content.size)
         assertEquals("b", ((span.content[1] as Emphasis).content.first() as Text).literal)
-        assertEquals(Scope(Position(1, 1), Position(1, 9)), span.scope)
+        assertEquals(Scope(Position(1, 1), Position(1, 9)), document.scope(span, "[a *b*]{}"))
     }
 
     @Test
     fun superscriptsRetainTypedContentAndWalkBothPhasesAfterNativeRelease() {
-        val paragraph = Document.parse("^a*b*^").content.first() as Paragraph
+        val document = Document.parse("^a*b*^")
+        val paragraph = document.content.first() as Paragraph
         val superscript = paragraph.content.first() as Superscript
         val visitor = RecordingWalkingVisitor()
         superscript.walk(visitor)
@@ -329,12 +339,13 @@ class ApiTest {
         )
         assertEquals(2, superscript.content.size)
         assertEquals("b", ((superscript.content[1] as Emphasis).content.first() as Text).literal)
-        assertEquals(Scope(Position(1, 1), Position(1, 6)), superscript.scope)
+        assertEquals(Scope(Position(1, 1), Position(1, 6)), document.scope(superscript, "^a*b*^"))
     }
 
     @Test
     fun subscriptsRetainTypedContentAndWalkBothPhasesAfterNativeRelease() {
-        val paragraph = Document.parse("~a*b*~").content.first() as Paragraph
+        val document = Document.parse("~a*b*~")
+        val paragraph = document.content.first() as Paragraph
         val subscript = paragraph.content.first() as Subscript
         val visitor = RecordingWalkingVisitor()
         subscript.walk(visitor)
@@ -353,7 +364,7 @@ class ApiTest {
         )
         assertEquals(2, subscript.content.size)
         assertEquals("b", ((subscript.content[1] as Emphasis).content.first() as Text).literal)
-        assertEquals(Scope(Position(1, 1), Position(1, 6)), subscript.scope)
+        assertEquals(Scope(Position(1, 1), Position(1, 6)), document.scope(subscript, "~a*b*~"))
     }
 
     @Test
@@ -382,7 +393,7 @@ class ApiTest {
         val table = assertIs<Table>(Document.parse("| a |\n| --- |\n| b |\n").content.single())
         val tableVisitor = RecordingWalkingVisitor()
         table.walk(tableVisitor)
-        assertEquals(listOf(1, 3), tableVisitor.tableRowKinds)
+        assertEquals(listOf(3L, 6L), tableVisitor.tableRowIds)
         tableVisitor.events.clear()
         val typed: MarkupVisitor = tableVisitor
         typed.visit(tableRow = table.head.single(), phase = MarkupVisitPhase.ENTER)
@@ -403,8 +414,10 @@ class UnicodeTest {
 class ErrorsTest {
     @Test
     fun emptyInputIsAValidDocument() {
-        assertEquals(Scope(Position(1, 1), Position(0, 0)), Document.parse("").scope)
-        assertEquals(Scope(Position(1, 1), Position(1, 2)), Document.parse("é").scope)
+        val empty = Document.parse("")
+        assertEquals(Scope(Position(1, 1), Position(1, 0)), empty.scope(empty, ""))
+        val accented = Document.parse("é")
+        assertEquals(Scope(Position(1, 1), Position(1, 1)), accented.scope(accented, "é"))
         assertTrue(
             Document
                 .parse("")
@@ -428,7 +441,7 @@ class BindingMappingTest {
                 "└── Callout scope=1:1..1:7 anchor=null attributes={} variant=null collapsed=null children=1\n" +
                 "    └── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1\n" +
                 "        └── Text scope=1:3..1:7 anchor=null attributes={} literal=\"quote\" children=0\n",
-            document.dump(),
+            document.dump("> quote\n"),
         )
     }
 
@@ -536,7 +549,7 @@ class BindingMappingTest {
 
         // The owning node keeps its label field separate from block content;
         // the per-node dumper deliberately emits both relations.
-        val dump = document.dump()
+        val dump = document.dump(source)
         for (fragment in listOf("Link scope=", "Embedded scope=", "DirectiveLabel")) {
             assertTrue(dump.contains(fragment), "dump is missing $fragment")
         }
@@ -545,15 +558,22 @@ class BindingMappingTest {
     }
 
     @Test
-    fun inlineFootnotesKeepDirectContentSourceIdsAndFiniteVisitation() {
+    fun inlineNotesAreOwnedByTheirCitationsAndDefinitionsStayWhereWritten() {
+        // An inline note is a footnote its citation owns, with no label; a
+        // note inside a note is ordinary nesting. An authored label that looks
+        // like a generated one is only a label.
         val document = Document.parse("^[^[x]]\n\n[^inline-1]: authored\n")
-        assertEquals(listOf("inline-1-1", "inline-2", "inline-1"), document.footnotes.map { it.id })
-        val outer = assertIs<Cite>(assertIs<Paragraph>(document.content.single()).content.single())
-        assertEquals("inline-1-1", assertIs<CitationReferent.Footnote>(outer.citations.single().referent).id)
-        val inner = assertIs<Cite>(document.footnotes[0].content.single())
-        assertEquals("inline-2", assertIs<CitationReferent.Footnote>(inner.citations.single().referent).id)
-        assertEquals("x", assertIs<Text>(document.footnotes[1].content.single()).literal)
-        assertIs<Paragraph>(document.footnotes[2].content.single())
+        val outerCitation =
+            assertIs<Cite>(assertIs<Paragraph>(document.content.first()).content.single()).citations.single()
+        val outer = note(outerCitation)
+        val inner = note(assertIs<Cite>(outer.content.single()).citations.single())
+        assertEquals("x", assertIs<Text>(inner.content.single()).literal)
+        val authored = assertIs<Footnote>(document.content[1])
+        assertIs<Paragraph>(authored.content.single())
+        assertEquals(listOf(null, null, "inline-1"), document.footnotes.map { it.label })
+        assertEquals(listOf(outer, inner, authored), document.footnotes)
+        assertSame(authored, document.footnote("inline-1"))
+        assertNull(document.footnote("inline-2"))
         val visitor = RecordingWalkingVisitor()
         document.walk(visitor)
         assertEquals(
@@ -562,19 +582,19 @@ class BindingMappingTest {
                 "enter:Paragraph",
                 "enter:Cite",
                 "enter:Citation",
-                "exit:Citation",
-                "exit:Cite",
-                "exit:Paragraph",
                 "enter:Footnote",
                 "enter:Cite",
                 "enter:Citation",
-                "exit:Citation",
-                "exit:Cite",
-                "exit:Footnote",
                 "enter:Footnote",
                 "enter:Text",
                 "exit:Text",
                 "exit:Footnote",
+                "exit:Citation",
+                "exit:Cite",
+                "exit:Footnote",
+                "exit:Citation",
+                "exit:Cite",
+                "exit:Paragraph",
                 "enter:Footnote",
                 "enter:Paragraph",
                 "enter:Text",
@@ -588,62 +608,59 @@ class BindingMappingTest {
     }
 
     @Test
-    fun citationsAreValuesAndTheDocumentOwnsItsFootnotes() {
-        // M4: an inherited call is a one-item cite naming its footnote by id
-        // with empty affixes; the footnote is a value the document owns, never
-        // content, and the walk reaches it after the content. Repeated calls
-        // share one footnote: the first definition of an id is the one they
-        // resolve to, and a later definition of the same id is a footnote
-        // after it, as the inherited grammar parses it.
-        val document = Document.parse("[^a] [^a]\n\n[^a]: once\n\n[^a]: twice\n")
-        val cites = assertIs<Paragraph>(document.content.single()).content.filterIsInstance<Cite>()
+    fun footnoteCallsNameTheFirstDefinitionOfTheirLabel() {
+        // M4: an inherited call is a one-item cite naming its footnote by
+        // label with empty affixes. Every definition is a block where it was
+        // written, a later duplicate included, and the lookup answers the
+        // first one in source order.
+        val source = "[^a] [^a]\n\n[^a]: once\n\n[^a]: twice\n"
+        val document = Document.parse(source)
+        val cites = assertIs<Paragraph>(document.content.first()).content.filterIsInstance<Cite>()
         assertEquals(2, cites.size)
         for (cite in cites) {
             val citation = cite.citations.single()
-            assertEquals("a", assertIs<CitationReferent.Footnote>(citation.referent).id)
+            val target = assertIs<CitationReferent.Footnote>(citation.referent).target
+            assertEquals("a", assertIs<FootnoteTarget.Label>(target).value)
             assertEquals(emptyList(), citation.prefix)
             assertEquals(emptyList(), citation.suffix)
         }
-        assertEquals(listOf("a", "a"), document.footnotes.map { it.id })
+        assertEquals(3, document.content.size)
+        assertEquals(document.content.drop(1), document.footnotes)
+        assertEquals(listOf("a", "a"), document.footnotes.map { it.label })
         val footnote = document.footnotes.first()
-        assertEquals(Scope(Position(3, 1), Position(4, 0)), footnote.scope)
+        assertSame(footnote, document.footnote("a"))
+        assertEquals(Scope(Position(3, 1), Position(4, 0)), document.scope(footnote, source))
         assertEquals("once", assertIs<Text>(assertIs<Paragraph>(footnote.content.single()).content.single()).literal)
         val later = document.footnotes.last()
-        assertEquals(Scope(Position(5, 1), Position(5, 11)), later.scope)
+        assertEquals(Scope(Position(5, 1), Position(5, 11)), document.scope(later, source))
         assertEquals("twice", assertIs<Text>(assertIs<Paragraph>(later.content.single()).content.single()).literal)
         assertTrue(
-            document.dump().endsWith(
-                "└── Footnote scope=5:1..5:11 anchor=null attributes={} id=\"a\" children=1\n" +
+            document.dump(source).endsWith(
+                "└── Footnote scope=5:1..5:11 anchor=null attributes={} label=\"a\" children=1\n" +
                     "    └── Paragraph scope=5:7..5:11 anchor=null attributes={} children=1\n" +
                     "        └── Text scope=5:7..5:11 anchor=null attributes={} literal=\"twice\" children=0\n",
             ),
         )
-        assertTrue(document.dump().startsWith("Document scope=1:1..5:11 anchor=null attributes={} children=1\n"))
+        assertTrue(document.dump(source).startsWith("Document scope=1:1..5:11 anchor=null attributes={} children=3\n"))
+    }
 
-        val visitor = RecordingWalkingVisitor()
-        document.walk(visitor)
-        val cite = listOf("enter:Cite", "enter:Citation", "exit:Citation", "exit:Cite")
-        val footnoteEvents =
-            listOf(
-                "enter:Footnote",
-                "enter:Paragraph",
-                "enter:Text",
-                "exit:Text",
-                "exit:Paragraph",
-                "exit:Footnote",
-            )
-        assertEquals(
-            listOf("enter:Document", "enter:Paragraph") + cite + listOf("enter:Text", "exit:Text") + cite +
-                listOf("exit:Paragraph") + footnoteEvents + footnoteEvents + listOf("exit:Document"),
-            visitor.events,
-        )
+    @Test
+    fun specimenCallsNameTheFirstDefinitionOfTheirLabel() {
+        val source = "(@a) one\n\n(@) anonymous\n\n(@a) two\n\nSee [@a].\n"
+        val document = Document.parse(source)
+        assertEquals(listOf("a", null, "a"), document.specimens.map { it.label })
+        assertEquals(document.content.take(3), document.specimens)
+        assertSame(document.specimens.first(), document.specimen("a"))
+        assertNull(document.specimen("b"))
     }
 
     @Test
     fun aDirectiveBlockWithNoLabelTakesTheOtherArm() {
-        val bare = assertIs<DirectiveBlock>(Document.parse(":::note\nBody\n:::\n").content.single())
+        val source = ":::note\nBody\n:::\n"
+        val document = Document.parse(source)
+        val bare = assertIs<DirectiveBlock>(document.content.single())
         assertEquals(null, bare.label)
-        assertTrue(bare.dump().contains("children=1"))
+        assertTrue(document.dump(bare, source).contains("children=1"))
     }
 
     @Test
@@ -720,7 +737,8 @@ class BindingMappingTest {
         // A fenced code block carries its literal through untouched, so it is
         // the one place a test can put every escape the dumper knows.
         val literal = "a\"b\\c\td\u0008e\u000cf\u0001g"
-        val dump = Document.parse("```\n$literal\n```\n").dump()
+        val source = "```\n$literal\n```\n"
+        val dump = Document.parse(source).dump(source)
         for (escape in listOf("\\\"", "\\\\", "\\t", "\\b", "\\f", "\\n", "\\u0001")) {
             assertTrue(dump.contains(escape), "dump is missing the escape $escape")
         }
@@ -830,17 +848,17 @@ class RobustnessTest {
 
     @Test
     fun attributeSitesKeepNativeValuesAndOccurrenceScopes() {
-        val document =
-            Document.parse(
-                "# T ## {#heading}\n\n`x`{.code} [x][r]{#own .same k=2} ![alt|20x30][r]{width=50% height=2in}\n\n[r]: /u {#definition .same k=1 k=1}\n",
-            )
+        val source =
+            "# T ## {#heading}\n\n`x`{.code} [x][r]{#own .same k=2} ![alt|20x30][r]{width=50% height=2in}\n\n" +
+                "[r]: /u {#definition .same k=1 k=1}\n"
+        val document = Document.parse(source)
         assertEquals("heading", document.content[0].anchor)
         val paragraph = assertIs<Paragraph>(document.content[1])
         val code = assertIs<Code>(paragraph.content[0])
         val link = assertIs<Link>(paragraph.content[2])
         val image = assertIs<Embedded>(paragraph.content[4])
         assertEquals(listOf("code"), code.attributes.classes)
-        assertEquals(10, code.scope.end.column)
+        assertEquals(10, document.scope(code, source)?.end?.column)
         assertEquals("own", link.anchor)
         assertEquals(listOf("same", "same"), link.attributes.classes)
         assertEquals(listOf("1", "1", "2"), link.attributes.records.map { it.value })
@@ -852,7 +870,15 @@ class RobustnessTest {
                 .takeLast(2)
                 .map { it.value },
         )
-        assertEquals(3, link.scope.end.line)
-        assertEquals(3, image.scope.end.line)
+        assertEquals(3, document.scope(link, source)?.end?.line)
+        assertEquals(3, document.scope(image, source)?.end?.line)
     }
+}
+
+/** The inline note a citation owns. */
+private fun note(citation: Citation): Footnote {
+    val target = assertIs<CitationReferent.Footnote>(citation.referent).target
+    val footnote = assertIs<FootnoteTarget.Note>(target).footnote
+    assertNull(footnote.label)
+    return footnote
 }

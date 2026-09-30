@@ -9,11 +9,14 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
- * Writes MCB2 messages the parser never produces (docs/architecture/wire-format.md),
+ * Writes MCB3 messages the parser never produces (docs/architecture/wire-format.md),
  * so decoder tests state records instead of patching byte offsets.
  */
 private class MessageWriter {
     private val bytes = ArrayList<Byte>()
+
+    /** The id the next record takes: records are numbered in the order they are written. */
+    private var next = 1L
 
     fun u8(value: Int) = apply { bytes += value.toByte() }
 
@@ -64,22 +67,36 @@ private class MessageWriter {
         ordinal: Int,
         anchor: String? = null,
         classes: kotlin.collections.List<String> = emptyList(),
+        id: Long = next,
+        lead: Int = 0,
+        span: Long = 0,
     ) = apply {
+        next = id + 1
         u8(ordinal)
-        repeat(4) { u32(1) }
+        int(id)
+        u32(lead).u32(span)
         optional(anchor) { string(it) }
         attributes(classes)
     }
 
     fun text(literal: String) = record(WireNodeKind.TEXT).string(literal)
 
-    /** A document record over the `content` nodes written before it. */
-    fun root(content: Int) =
-        record(WireNodeKind.DOCUMENT)
-            .u32(content)
-            .bool(false)
-            .u32(0)
-            .u32(0)
+    /** A document record over the `content` nodes written before it, and its definition tables. */
+    fun root(
+        content: Int,
+        footnotes: kotlin.collections.List<Long> = emptyList(),
+        specimens: kotlin.collections.List<Long> = emptyList(),
+    ) = record(WireNodeKind.DOCUMENT)
+        .u32(content)
+        .bool(false)
+        .table(footnotes)
+        .table(specimens)
+
+    private fun table(ids: kotlin.collections.List<Long>) =
+        apply {
+            u32(ids.size)
+            ids.forEach { int(it) }
+        }
 
     fun document(): ByteArray = message(0)
 
@@ -94,14 +111,14 @@ private class MessageWriter {
                 .u8(0x4d)
                 .u8(0x43)
                 .u8(0x42)
-                .u8(0x32)
+                .u8(0x33)
                 .u32(9 + bytes.size)
                 .u8(status)
         return (header.bytes + bytes).toByteArray()
     }
 }
 
-private fun decode(writer: MessageWriter): Document = WireDecoder.decode(writer.document())
+private fun decode(writer: MessageWriter): Document = WireDecoder.decode(writer.document(), TextUnit.UTF16)
 
 private inline fun rejects(
     message: String,
@@ -117,7 +134,7 @@ class WireDecoderTest {
         // Allocation failure must not be collapsed into an internal error that
         // a consumer could mistake for a recoverable path.
         fun failure(code: Int) =
-            assertFailsWith<ParseException> { WireDecoder.decode(MessageWriter().error(code, "bad")) }
+            assertFailsWith<ParseException> { WireDecoder.decode(MessageWriter().error(code, "bad"), TextUnit.UTF16) }
         assertEquals(ParseErrorCode.INVALID_ARGUMENT, failure(1).code)
         assertEquals("bad", failure(1).message)
         assertEquals(ParseErrorCode.ALLOCATION_FAILED, failure(2).code)
@@ -223,11 +240,16 @@ class WireDecoderTest {
 
         val valid = text().root(1).document()
         val truncated = valid.copyOf(valid.size - 1).also { it[4] = (valid.size - 1).toByte() }
-        rejects("truncated native result") { WireDecoder.decode(truncated) }
-        rejects("length does not match") { WireDecoder.decode(valid + 0.toByte()) }
-        rejects("invalid native result at byte 0") { WireDecoder.decode(valid.copyOf().also { it[0] = 0 }) }
-        rejects("unsupported native result status 2") { WireDecoder.decode(valid.copyOf().also { it[8] = 2 }) }
-        rejects("truncated native result header") { WireDecoder.decode(valid.copyOf(8)) }
+        rejects("truncated native result") { WireDecoder.decode(truncated, TextUnit.UTF16) }
+        rejects("length does not match") { WireDecoder.decode(valid + 0.toByte(), TextUnit.UTF16) }
+        rejects("invalid native result at byte 0") {
+            WireDecoder.decode(valid.copyOf().also { it[0] = 0 }, TextUnit.UTF16)
+        }
+        rejects("unsupported native result status 2") {
+            WireDecoder.decode(valid.copyOf().also { it[8] = 2 }, TextUnit.UTF16)
+        }
+        rejects("native node id exceeds") { decode(text().record(WireNodeKind.TEXT.rawValue, id = -1).string("u")) }
+        rejects("truncated native result header") { WireDecoder.decode(valid.copyOf(8), TextUnit.UTF16) }
     }
 
     @Test
@@ -258,12 +280,12 @@ class WireDecoderTest {
             },
         )
         assertTrue(definition.compact)
-        rejects("places a FOOTNOTE node in a content field") {
+        rejects("places a LIST_ITEM node in a content field") {
             decode(
                 MessageWriter()
                     .text("T")
-                    .record(WireNodeKind.FOOTNOTE)
-                    .string("x")
+                    .record(WireNodeKind.LIST_ITEM)
+                    .bool(false)
                     .u32(0)
                     .record(WireNodeKind.DEFINITION)
                     .u32(1)
@@ -360,5 +382,96 @@ class WireDecoderTest {
         assertEquals("own", second.anchor)
         assertEquals(listOf("shared"), first.attributes.classes)
         assertEquals(listOf("shared", "mine"), second.attributes.classes)
+    }
+
+    @Test
+    fun recordsCarryTheirIdAndTheirSignedExtentVerbatim() {
+        val document =
+            decode(
+                MessageWriter()
+                    .record(WireNodeKind.TEXT.rawValue, id = 7, lead = -2, span = 0xffff_ffffL)
+                    .string("t")
+                    .root(1),
+            )
+        val text = document.content.single()
+        assertEquals(MarkupID(7), text.id)
+        assertEquals(Extent(-2, UInt.MAX_VALUE), text.extent)
+        assertEquals(MarkupID(8), document.id)
+    }
+
+    @Test
+    fun anInlineNoteIsTheFirstNodeItsCitationTakes() {
+        // A footnote target's `note` branch writes nothing for its footnote:
+        // the record takes the note ahead of its prefix and suffix.
+        val document =
+            decode(
+                MessageWriter()
+                    .text("n")
+                    .record(WireNodeKind.FOOTNOTE)
+                    .bool(false)
+                    .u32(1)
+                    .text("p")
+                    .record(WireNodeKind.CITATION)
+                    .u8(1)
+                    .u8(1)
+                    .u32(1)
+                    .u32(0)
+                    .record(WireNodeKind.CITE)
+                    .u32(1)
+                    .root(1, footnotes = listOf(2)),
+            )
+        val citation = assertIs<Cite>(document.content.single()).citations.single()
+        val note = assertIs<FootnoteTarget.Note>(assertIs<CitationReferent.Footnote>(citation.referent).target)
+        assertEquals(MarkupID(2), note.footnote.id)
+        assertNull(note.footnote.label)
+        assertEquals("n", assertIs<Text>(note.footnote.content.single()).literal)
+        assertEquals("p", assertIs<Text>(citation.prefix.single()).literal)
+        assertSame(note.footnote, document.footnotes.single())
+        assertNull(document.footnote("n"))
+        rejects("places a TEXT node in a FOOTNOTE field") {
+            decode(
+                MessageWriter()
+                    .text("p")
+                    .record(WireNodeKind.CITATION)
+                    .u8(1)
+                    .u8(1)
+                    .u32(0)
+                    .u32(0)
+                    .record(WireNodeKind.CITE)
+                    .u32(1)
+                    .root(1),
+            )
+        }
+    }
+
+    @Test
+    fun definitionTablesNameDefinitionsOfTheirKind() {
+        fun document(
+            footnotes: kotlin.collections.List<Long>,
+            specimens: kotlin.collections.List<Long>,
+        ) = decode(
+            MessageWriter()
+                .record(WireNodeKind.FOOTNOTE)
+                .optional("a") { string(it) }
+                .u32(0)
+                .record(WireNodeKind.SPECIMEN)
+                .optional("s") { string(it) }
+                .optional(3L) { int(it) }
+                .u32(0)
+                .record(WireNodeKind.FOOTNOTE)
+                .optional("a") { string(it) }
+                .u32(0)
+                .root(3, footnotes, specimens),
+        )
+        val valid = document(listOf(1, 3), listOf(2))
+        assertEquals(valid.content.filterIsInstance<Footnote>(), valid.footnotes)
+        assertSame<Markup?>(valid.content[0], valid.footnote("a"))
+        assertSame<Markup?>(valid.content[1], valid.specimen("s"))
+        assertEquals(3L, valid.specimens.single().start)
+        rejects("names no FOOTNOTE node with id 2") { document(listOf(2), listOf(2)) }
+        rejects("names no SPECIMEN node with id 1") { document(listOf(1), listOf(1)) }
+        rejects("names no FOOTNOTE node with id 9") { document(listOf(9), emptyList()) }
+        // The tables end the message: a record after them is not part of the tree.
+        rejects("not one document tree") { decode(MessageWriter().text("t").root(1).text("u")) }
     }
 }

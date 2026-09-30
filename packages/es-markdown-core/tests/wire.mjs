@@ -1,4 +1,4 @@
-// MCB2 test support (docs/architecture/wire-format.md): the message the
+// MCB3 test support (docs/architecture/wire-format.md): the message the
 // native side sends for a source, and a writer for messages the parser never
 // produces, so decoder tests state records instead of patching byte offsets.
 import assert from "node:assert/strict";
@@ -28,6 +28,7 @@ export function nativeMessage(source) {
 /** Writes a message body; `document()` and `error()` wrap it in the header. */
 export class MessageWriter {
     #bytes = [];
+    #next = 1;
 
     u8(value) {
         this.#bytes.push(value & 0xff);
@@ -82,12 +83,21 @@ export class MessageWriter {
         return this;
     }
 
-    /** A record's kind and inherited fields; its own fields follow. */
-    record(kind, { scope = [1, 1, 1, 1], anchor = null, attributes } = {}) {
+    /** A u64 node id. */
+    id(value) {
+        return this.int(value);
+    }
+
+    /**
+     * A record's kind and inherited fields; its own fields follow. Records
+     * take the writer's next id unless one is given; an extent is
+     * `[lead, span]`.
+     */
+    record(kind, { id = this.#next, extent = [0, 0], anchor = null, attributes } = {}) {
         const ordinal = typeof kind === "number" ? kind : kinds.indexOf(kind);
         assert.ok(ordinal >= 0, `unknown kind ${kind}`);
-        this.u8(ordinal);
-        for (const value of scope) this.i32(value);
+        this.#next = typeof id === "bigint" ? this.#next : Math.max(this.#next, id + 1);
+        this.u8(ordinal).id(id).i32(extent[0]).u32(extent[1]);
         this.optional(anchor, this.string);
         return this.attributes(attributes);
     }
@@ -96,9 +106,18 @@ export class MessageWriter {
         return this.record("text", options).string(literal);
     }
 
-    /** A document record over the `content` nodes written before it. */
-    root(content, { metadata = false, footnotes = 0, specimens = 0, scope } = {}) {
-        return this.record("document", { scope }).u32(content).bool(metadata).u32(footnotes).u32(specimens);
+    /** A document record over the `content` nodes written before it, then
+     * its definition tables, which name footnote and specimen ids. */
+    root(content, { metadata = false, footnotes = [], specimens = [], id, extent } = {}) {
+        this.record("document", { id, extent }).u32(content).bool(metadata);
+        return this.table(footnotes).table(specimens);
+    }
+
+    /** A definition table: a count, then that many ids. */
+    table(ids) {
+        this.u32(ids.length);
+        for (const id of ids) this.id(id);
+        return this;
     }
 
     document() {
@@ -110,7 +129,7 @@ export class MessageWriter {
     }
 
     #message(status) {
-        const header = [0x4d, 0x43, 0x42, 0x32, 0, 0, 0, 0, status];
+        const header = [0x4d, 0x43, 0x42, 0x33, 0, 0, 0, 0, status];
         const bytes = Uint8Array.from([...header, ...this.#bytes]);
         new DataView(bytes.buffer).setUint32(4, bytes.length, true);
         return bytes;

@@ -1,8 +1,10 @@
 public final class com/nouprax/markdown/core/Attributes {
 	public static final field Companion Lcom/nouprax/markdown/core/Attributes$Companion;
 	public fun <init> (Ljava/util/List;Ljava/util/List;)V
+	public fun equals (Ljava/lang/Object;)Z
 	public final fun getClasses ()Ljava/util/List;
 	public final fun getRecords ()Ljava/util/List;
+	public fun hashCode ()I
 }
 
 public final class com/nouprax/markdown/core/Attributes$Companion {
@@ -19,23 +21,23 @@ public final class com/nouprax/markdown/core/BibMode : java/lang/Enum {
 }
 
 public final class com/nouprax/markdown/core/Callout : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getCollapsed ()Ljava/lang/Boolean;
 	public final fun getContent ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getTitle ()Ljava/util/List;
 	public final fun getVariant ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/Citation : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getPrefix ()Ljava/util/List;
 	public final fun getReferent ()Lcom/nouprax/markdown/core/CitationReferent;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public final fun getSuffix ()Ljava/util/List;
 }
 
@@ -43,101 +45,123 @@ public abstract interface class com/nouprax/markdown/core/CitationReferent {
 }
 
 public final class com/nouprax/markdown/core/CitationReferent$Bib : com/nouprax/markdown/core/CitationReferent {
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/nouprax/markdown/core/BibMode;
+	public fun equals (Ljava/lang/Object;)Z
 	public final fun getKey ()Ljava/lang/String;
 	public final fun getMode ()Lcom/nouprax/markdown/core/BibMode;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/CitationReferent$Footnote : com/nouprax/markdown/core/CitationReferent {
-	public final fun getId ()Ljava/lang/String;
+	public final fun component1 ()Lcom/nouprax/markdown/core/FootnoteTarget;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getTarget ()Lcom/nouprax/markdown/core/FootnoteTarget;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/CitationReferent$Specimen : com/nouprax/markdown/core/CitationReferent {
-	public final fun getId ()Ljava/lang/String;
+	public final fun component1 ()Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLabel ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/Cite : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getCitations ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 
 public final class com/nouprax/markdown/core/Code : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getLiteral ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/CodeBlock : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getClosed ()Z
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
 	public final fun getFenced ()Z
+	public fun getId-cjMMCNQ ()J
 	public final fun getInfo ()Ljava/lang/String;
 	public final fun getLanguage ()Ljava/lang/String;
 	public final fun getLiteral ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/Comment : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getLiteral ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/CrossEmbedded : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getDest ()Lcom/nouprax/markdown/core/Destination;
 	public final fun getDimensions ()Lcom/nouprax/markdown/core/Dimensions;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getLabel ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/CrossLink : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getDest ()Lcom/nouprax/markdown/core/Destination;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getLabel ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/Definition : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getCompact ()Z
 	public final fun getContent ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getTerm ()Ljava/util/List;
 }
 
 public final class com/nouprax/markdown/core/DefinitionList : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getDefinitions ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 
 public abstract interface class com/nouprax/markdown/core/Destination {
 }
 
 public final class com/nouprax/markdown/core/Destination$Cross : com/nouprax/markdown/core/Destination {
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAnchor ()Ljava/lang/String;
 	public final fun getPath ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/Destination$Url : com/nouprax/markdown/core/Destination {
+	public final fun component1 ()Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
 	public final fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/Dimensions {
@@ -155,65 +179,87 @@ public final class com/nouprax/markdown/core/Dimensions {
 }
 
 public final class com/nouprax/markdown/core/Directive : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getLabel ()Lcom/nouprax/markdown/core/DirectiveLabel;
 	public final fun getName ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/DirectiveBlock : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getLabel ()Lcom/nouprax/markdown/core/DirectiveLabel;
 	public final fun getName ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/DirectiveLabel : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 
 public final class com/nouprax/markdown/core/Document : com/nouprax/markdown/core/Markup {
 	public static final field Companion Lcom/nouprax/markdown/core/Document$Companion;
-	public fun dump ()Ljava/lang/String;
+	public final fun dump (Lcom/nouprax/markdown/core/Markup;Ljava/lang/String;)Ljava/lang/String;
+	public final fun dump (Ljava/lang/String;)Ljava/lang/String;
+	public final fun footnote (Ljava/lang/String;)Lcom/nouprax/markdown/core/Footnote;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
 	public final fun getFootnotes ()Ljava/util/List;
+	public fun getId-cjMMCNQ ()J
 	public final fun getMetadata ()Lcom/nouprax/markdown/core/Metadata;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public final fun getSpecimens ()Ljava/util/List;
+	public final fun getUnit ()Lcom/nouprax/markdown/core/TextUnit;
+	public final fun node (Lcom/nouprax/markdown/core/Position;Ljava/lang/String;)Lcom/nouprax/markdown/core/Markup;
+	public final fun scope (Lcom/nouprax/markdown/core/Markup;Ljava/lang/String;)Lcom/nouprax/markdown/core/Scope;
+	public final fun specimen (Ljava/lang/String;)Lcom/nouprax/markdown/core/Specimen;
 }
 
 public final class com/nouprax/markdown/core/Document$Companion {
 	public final fun parse (Ljava/lang/String;)Lcom/nouprax/markdown/core/Document;
+	public final fun parse (Ljava/lang/String;Lcom/nouprax/markdown/core/TextUnit;)Lcom/nouprax/markdown/core/Document;
+	public static synthetic fun parse$default (Lcom/nouprax/markdown/core/Document$Companion;Ljava/lang/String;Lcom/nouprax/markdown/core/TextUnit;ILjava/lang/Object;)Lcom/nouprax/markdown/core/Document;
 }
 
 public final class com/nouprax/markdown/core/Embedded : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
 	public final fun getDest ()Lcom/nouprax/markdown/core/Destination;
 	public final fun getDimensions ()Lcom/nouprax/markdown/core/Dimensions;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getTitle ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/Emphasis : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
+}
+
+public final class com/nouprax/markdown/core/Extent {
+	public synthetic fun <init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2-pVg5ArA ()I
+	public final fun copy-Qn1smSk (II)Lcom/nouprax/markdown/core/Extent;
+	public static synthetic fun copy-Qn1smSk$default (Lcom/nouprax/markdown/core/Extent;IIILjava/lang/Object;)Lcom/nouprax/markdown/core/Extent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLead ()I
+	public final fun getSpan-pVg5ArA ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/Flow : java/lang/Enum {
@@ -227,89 +273,108 @@ public final class com/nouprax/markdown/core/Flow : java/lang/Enum {
 }
 
 public final class com/nouprax/markdown/core/Footnote : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
-	public final fun getId ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
+	public final fun getLabel ()Ljava/lang/String;
+}
+
+public abstract interface class com/nouprax/markdown/core/FootnoteTarget {
+}
+
+public final class com/nouprax/markdown/core/FootnoteTarget$Label : com/nouprax/markdown/core/FootnoteTarget {
+	public final fun component1 ()Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/FootnoteTarget$Note : com/nouprax/markdown/core/FootnoteTarget {
+	public final fun component1 ()Lcom/nouprax/markdown/core/Footnote;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFootnote ()Lcom/nouprax/markdown/core/Footnote;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/Formula : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getLiteral ()Ljava/lang/String;
 	public final fun getMode ()Lcom/nouprax/markdown/core/Placement;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/FormulaBlock : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getLiteral ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/HTML : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getLiteral ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/HTMLBlock : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getLiteral ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/Heading : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getLevel ()I
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/Insertion : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 
 public final class com/nouprax/markdown/core/LineBreak : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 
 public final class com/nouprax/markdown/core/Link : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
 	public final fun getDest ()Lcom/nouprax/markdown/core/Destination;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getTitle ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/List : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getDelimiter ()Lcom/nouprax/markdown/core/OrderedListDelimiter;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
 	public final fun getFlavor ()Lcom/nouprax/markdown/core/ListFlavor;
+	public fun getId-cjMMCNQ ()J
 	public final fun getItems ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public final fun getStart ()Ljava/lang/Long;
 	public final fun getTight ()Z
 	public final fun getVariant ()Lcom/nouprax/markdown/core/OrderedListVariant;
@@ -324,38 +389,52 @@ public final class com/nouprax/markdown/core/ListFlavor : java/lang/Enum {
 }
 
 public final class com/nouprax/markdown/core/ListItem : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getCompleted ()Z
 	public final fun getContent ()Ljava/util/List;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getMarker ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public final fun getTasked ()Z
 }
 
 public final class com/nouprax/markdown/core/Mark : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 
-public abstract interface class com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
+public abstract class com/nouprax/markdown/core/Markup {
+	public final fun equals (Ljava/lang/Object;)Z
 	public abstract fun getAnchor ()Ljava/lang/String;
 	public abstract fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
-	public abstract fun getScope ()Lcom/nouprax/markdown/core/Scope;
-}
-
-public final class com/nouprax/markdown/core/Markup$DefaultImpls {
-	public static fun dump (Lcom/nouprax/markdown/core/Markup;)Ljava/lang/String;
+	public abstract fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public abstract fun getId-cjMMCNQ ()J
+	public final fun hashCode ()I
+	public final fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/MarkupDumper {
 	public static final field INSTANCE Lcom/nouprax/markdown/core/MarkupDumper;
-	public final fun dump (Lcom/nouprax/markdown/core/Markup;)Ljava/lang/String;
+	public final fun dump (Lcom/nouprax/markdown/core/Document;Lcom/nouprax/markdown/core/Markup;Ljava/lang/String;)Ljava/lang/String;
+	public final fun dump (Lcom/nouprax/markdown/core/Document;Ljava/lang/String;)Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/MarkupID {
+	public static final synthetic fun box-impl (J)Lcom/nouprax/markdown/core/MarkupID;
+	public static fun constructor-impl (J)J
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (JLjava/lang/Object;)Z
+	public static final fun equals-impl0 (JJ)Z
+	public final fun getValue ()J
+	public fun hashCode ()I
+	public static fun hashCode-impl (J)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (J)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()J
 }
 
 public final class com/nouprax/markdown/core/MarkupVisitPhase : java/lang/Enum {
@@ -417,40 +496,20 @@ public final class com/nouprax/markdown/core/MarkupVisitorKt {
 }
 
 public final class com/nouprax/markdown/core/Metadata : com/nouprax/markdown/core/Markup {
-	public fun <init> (Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/Scope;Ljava/lang/String;Lcom/nouprax/markdown/core/Attributes;)V
-	public synthetic fun <init> (Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/Scope;Ljava/lang/String;Lcom/nouprax/markdown/core/Attributes;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun component1 ()Lcom/nouprax/markdown/core/MetadataValue;
-	public final fun component10 ()Lcom/nouprax/markdown/core/MetadataValue;
-	public final fun component11 ()Lcom/nouprax/markdown/core/Scope;
-	public final fun component12 ()Ljava/lang/String;
-	public final fun component13 ()Lcom/nouprax/markdown/core/Attributes;
-	public final fun component2 ()Lcom/nouprax/markdown/core/MetadataValue;
-	public final fun component3 ()Lcom/nouprax/markdown/core/MetadataValue;
-	public final fun component4 ()Lcom/nouprax/markdown/core/MetadataValue;
-	public final fun component5 ()Lcom/nouprax/markdown/core/MetadataValue;
-	public final fun component6 ()Lcom/nouprax/markdown/core/MetadataValue;
-	public final fun component7 ()Lcom/nouprax/markdown/core/MetadataValue;
-	public final fun component8 ()Lcom/nouprax/markdown/core/MetadataValue;
-	public final fun component9 ()Lcom/nouprax/markdown/core/MetadataValue;
-	public final fun copy (Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/Scope;Ljava/lang/String;Lcom/nouprax/markdown/core/Attributes;)Lcom/nouprax/markdown/core/Metadata;
-	public static synthetic fun copy$default (Lcom/nouprax/markdown/core/Metadata;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/MetadataValue;Lcom/nouprax/markdown/core/Scope;Ljava/lang/String;Lcom/nouprax/markdown/core/Attributes;ILjava/lang/Object;)Lcom/nouprax/markdown/core/Metadata;
-	public fun dump ()Ljava/lang/String;
-	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAbstract ()Lcom/nouprax/markdown/core/MetadataValue;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getAuthors ()Lcom/nouprax/markdown/core/MetadataValue;
 	public final fun getComment ()Lcom/nouprax/markdown/core/MetadataValue;
 	public final fun getDate ()Lcom/nouprax/markdown/core/MetadataValue;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getKeywords ()Lcom/nouprax/markdown/core/MetadataValue;
 	public final fun getName ()Lcom/nouprax/markdown/core/MetadataValue;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public final fun getState ()Lcom/nouprax/markdown/core/MetadataValue;
 	public final fun getSubtitle ()Lcom/nouprax/markdown/core/MetadataValue;
 	public final fun getTime ()Lcom/nouprax/markdown/core/MetadataValue;
 	public final fun getTitle ()Lcom/nouprax/markdown/core/MetadataValue;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
 }
 
 public abstract interface class com/nouprax/markdown/core/MetadataListItem {
@@ -526,7 +585,9 @@ public abstract interface class com/nouprax/markdown/core/MetadataValue {
 
 public final class com/nouprax/markdown/core/MetadataValue$List : com/nouprax/markdown/core/MetadataValue {
 	public fun <init> (Ljava/util/List;)V
+	public fun equals (Ljava/lang/Object;)Z
 	public final fun getItems ()Ljava/util/List;
+	public fun hashCode ()I
 }
 
 public final class com/nouprax/markdown/core/MetadataValue$Scalar : com/nouprax/markdown/core/MetadataValue {
@@ -551,7 +612,11 @@ public final class com/nouprax/markdown/core/OrderedListDelimiter$Default : com/
 }
 
 public final class com/nouprax/markdown/core/OrderedListDelimiter$Parenthesis : com/nouprax/markdown/core/OrderedListDelimiter {
+	public final fun component1 ()Z
+	public fun equals (Ljava/lang/Object;)Z
 	public final fun getClosed ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/OrderedListDelimiter$Period : com/nouprax/markdown/core/OrderedListDelimiter {
@@ -565,7 +630,11 @@ public abstract interface class com/nouprax/markdown/core/OrderedListVariant {
 }
 
 public final class com/nouprax/markdown/core/OrderedListVariant$Alpha : com/nouprax/markdown/core/OrderedListVariant {
+	public final fun component1 ()Z
+	public fun equals (Ljava/lang/Object;)Z
 	public final fun getLowercased ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/OrderedListVariant$Decimal : com/nouprax/markdown/core/OrderedListVariant {
@@ -583,15 +652,19 @@ public final class com/nouprax/markdown/core/OrderedListVariant$Default : com/no
 }
 
 public final class com/nouprax/markdown/core/OrderedListVariant$Roman : com/nouprax/markdown/core/OrderedListVariant {
+	public final fun component1 ()Z
+	public fun equals (Ljava/lang/Object;)Z
 	public final fun getLowercased ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/Paragraph : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 
 public final class com/nouprax/markdown/core/ParseErrorCode : java/lang/Enum {
@@ -657,117 +730,130 @@ public final class com/nouprax/markdown/core/Scope {
 }
 
 public final class com/nouprax/markdown/core/SoftBreak : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 
 public final class com/nouprax/markdown/core/Span : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 
 public final class com/nouprax/markdown/core/Specimen : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
-	public final fun getId ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
+	public final fun getLabel ()Ljava/lang/String;
 	public final fun getStart ()Ljava/lang/Long;
 }
 
 public final class com/nouprax/markdown/core/Strikethrough : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 
 public final class com/nouprax/markdown/core/Strong : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 
 public final class com/nouprax/markdown/core/Subscript : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 
 public final class com/nouprax/markdown/core/Superscript : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 
 public final class com/nouprax/markdown/core/Table : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getCaption ()Lcom/nouprax/markdown/core/TableCaption;
 	public final fun getColumns ()Ljava/util/List;
 	public final fun getContent ()Ljava/util/List;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
 	public final fun getFoot ()Ljava/util/List;
 	public final fun getHead ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getId-cjMMCNQ ()J
 }
 
 public final class com/nouprax/markdown/core/TableCaption : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getContent ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 
 public final class com/nouprax/markdown/core/TableCell : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getColspan ()I
 	public final fun getContent ()Ljava/util/List;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getRowspan ()I
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/TableColumn {
+	public final fun component1 ()Lcom/nouprax/markdown/core/Flow;
+	public final fun component2 ()Ljava/lang/Double;
+	public fun equals (Ljava/lang/Object;)Z
 	public final fun getFlow ()Lcom/nouprax/markdown/core/Flow;
 	public final fun getRelative ()Ljava/lang/Double;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/TableRow : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public final fun getCells ()Ljava/util/List;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 
 public final class com/nouprax/markdown/core/Text : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 	public final fun getLiteral ()Ljava/lang/String;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+}
+
+public final class com/nouprax/markdown/core/TextUnit : java/lang/Enum {
+	public static final field UTF16 Lcom/nouprax/markdown/core/TextUnit;
+	public static final field UTF8 Lcom/nouprax/markdown/core/TextUnit;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/TextUnit;
+	public static fun values ()[Lcom/nouprax/markdown/core/TextUnit;
 }
 
 public final class com/nouprax/markdown/core/ThematicBreak : com/nouprax/markdown/core/Markup {
-	public fun dump ()Ljava/lang/String;
 	public fun getAnchor ()Ljava/lang/String;
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
-	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
 }
 

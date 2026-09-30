@@ -13,6 +13,11 @@ public class Attributes(
     public val classes: kotlin.collections.List<String> = classes.immutableMap { it }
     public val records: kotlin.collections.List<Record> = records.immutableMap { it }
 
+    override fun equals(other: Any?): Boolean =
+        this === other || other is Attributes && classes == other.classes && records == other.records
+
+    override fun hashCode(): Int = 31 * classes.hashCode() + records.hashCode()
+
     public companion object {
         public val empty: Attributes = Attributes(emptyList(), emptyList())
     }

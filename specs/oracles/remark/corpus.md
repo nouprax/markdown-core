@@ -14,11 +14,11 @@ primary C-family oracles: footnote placement and reference-link representation.
 Directive and formula inputs are not repeated — the gate reads those from the
 existing extension fixtures.
 
-A footnote definition is a `Footnote` value the document owns, ordered by
-scope start, and an unreferenced one is kept; cmark-gfm moves definitions to
-the document tail in reference order and drops the unreferenced. remark keeps
-every definition where it was written, which the gate lifts into the same
-document-owned order before comparing.
+A footnote definition is a `Footnote` block in the content where it was
+written, and an unreferenced one is kept; cmark-gfm moves definitions to the
+document tail in reference order and drops the unreferenced. remark also keeps
+every definition where it was written, so the gate compares definitions in
+place, position included.
 
 ```````````````````````````````` example
 a[^f]
@@ -27,18 +27,18 @@ a[^f]
 
 tail
 .
-Document scope=1:1..5:4 anchor=null attributes={} children=2
+Document scope=1:1..5:4 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=2
 │   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="a" children=0
 │   └── Cite scope=1:2..1:5 anchor=null attributes={} children=1
-│       └── Citation scope=1:3..1:4 anchor=null attributes={} referent=footnote(id="f") children=0
+│       └── Citation scope=1:3..1:4 anchor=null attributes={} referent=footnote(label="f") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-├── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
-│   └── Text scope=5:1..5:4 anchor=null attributes={} literal="tail" children=0
-└── Footnote scope=3:1..4:0 anchor=null attributes={} id="f" children=1
-    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
-        └── Text scope=3:7..3:10 anchor=null attributes={} literal="body" children=0
+├── Footnote scope=3:1..4:0 anchor=null attributes={} label="f" children=1
+│   └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
+│       └── Text scope=3:7..3:10 anchor=null attributes={} literal="body" children=0
+└── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
+    └── Text scope=5:1..5:4 anchor=null attributes={} literal="tail" children=0
 ````````````````````````````````
 
 Several definitions, out of first-reference order, each staying at its own
@@ -53,24 +53,24 @@ mid
 
 [^b]: B
 .
-Document scope=1:1..7:7 anchor=null attributes={} children=2
+Document scope=1:1..7:7 anchor=null attributes={} children=4
 ├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=4
 │   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="x" children=0
 │   ├── Cite scope=1:2..1:5 anchor=null attributes={} children=1
-│   │   └── Citation scope=1:3..1:4 anchor=null attributes={} referent=footnote(id="b") children=0
+│   │   └── Citation scope=1:3..1:4 anchor=null attributes={} referent=footnote(label="b") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   ├── Text scope=1:6..1:7 anchor=null attributes={} literal=" y" children=0
 │   └── Cite scope=1:8..1:11 anchor=null attributes={} children=1
-│       └── Citation scope=1:9..1:10 anchor=null attributes={} referent=footnote(id="a") children=0
+│       └── Citation scope=1:9..1:10 anchor=null attributes={} referent=footnote(label="a") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-├── Paragraph scope=5:1..5:3 anchor=null attributes={} children=1
-│   └── Text scope=5:1..5:3 anchor=null attributes={} literal="mid" children=0
-├── Footnote scope=3:1..4:0 anchor=null attributes={} id="a" children=1
+├── Footnote scope=3:1..4:0 anchor=null attributes={} label="a" children=1
 │   └── Paragraph scope=3:7..3:7 anchor=null attributes={} children=1
 │       └── Text scope=3:7..3:7 anchor=null attributes={} literal="A" children=0
-└── Footnote scope=7:1..7:7 anchor=null attributes={} id="b" children=1
+├── Paragraph scope=5:1..5:3 anchor=null attributes={} children=1
+│   └── Text scope=5:1..5:3 anchor=null attributes={} literal="mid" children=0
+└── Footnote scope=7:1..7:7 anchor=null attributes={} label="b" children=1
     └── Paragraph scope=7:7..7:7 anchor=null attributes={} children=1
         └── Text scope=7:7..7:7 anchor=null attributes={} literal="B" children=0
 ````````````````````````````````
@@ -82,10 +82,10 @@ no references here
 
 [^orphan]: still a definition
 .
-Document scope=1:1..3:29 anchor=null attributes={} children=1
+Document scope=1:1..3:29 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:18 anchor=null attributes={} children=1
 │   └── Text scope=1:1..1:18 anchor=null attributes={} literal="no references here" children=0
-└── Footnote scope=3:1..3:29 anchor=null attributes={} id="orphan" children=1
+└── Footnote scope=3:1..3:29 anchor=null attributes={} label="orphan" children=1
     └── Paragraph scope=3:12..3:29 anchor=null attributes={} children=1
         └── Text scope=3:12..3:29 anchor=null attributes={} literal="still a definition" children=0
 ````````````````````````````````
@@ -384,7 +384,7 @@ Document scope=1:1..9:38 anchor=null attributes={} children=2
 ├── Table scope=1:1..4:28 anchor=null attributes={} columns=[none:null,none:null] children=1
 │   ├── TableCaption scope=3:1..4:28 anchor=null attributes={} children=3
 │   │   ├── Text scope=3:2..3:13 anchor=null attributes={} literal="badge[short]" children=0
-│   │   ├── SoftBreak scope=3:14..3:14 anchor=null attributes={} children=0
+│   │   ├── SoftBreak scope=3:14..4:0 anchor=null attributes={} children=0
 │   │   └── Text scope=4:1..4:28 anchor=null attributes={} literal="| first | second | ignored |" children=0
 │   ├── TableHead children=1
 │   │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
@@ -440,6 +440,6 @@ Document scope=1:1..5:8 anchor=null attributes={} children=2
             └── ListItem scope=4:4..5:8 anchor=null attributes={} marker=" " children=1
                 └── Paragraph scope=4:10..5:8 anchor=null attributes={} children=3
                     ├── Text scope=4:10..4:13 anchor=null attributes={} literal="open" children=0
-                    ├── SoftBreak scope=4:14..4:14 anchor=null attributes={} children=0
+                    ├── SoftBreak scope=4:14..5:0 anchor=null attributes={} children=0
                     └── Text scope=5:1..5:8 anchor=null attributes={} literal="| expr |" children=0
 ````````````````````````````````

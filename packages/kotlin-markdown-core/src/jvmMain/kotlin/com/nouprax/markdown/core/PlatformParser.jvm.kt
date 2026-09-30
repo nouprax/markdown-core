@@ -3,9 +3,12 @@ package com.nouprax.markdown.core
 import java.nio.file.Files
 import java.nio.file.Path
 
-internal actual fun parsePlatformDocument(source: ByteArray): Document {
+internal actual fun parsePlatformDocument(
+    source: ByteArray,
+    unit: TextUnit,
+): Document {
     DesktopNativeLoader.ensureLoaded()
-    return WireDecoder.decode(JniParser.parsePayload(source))
+    return WireDecoder.decode(JniParser.parsePayload(source), unit)
 }
 
 private object JniParser {

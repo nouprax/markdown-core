@@ -317,123 +317,164 @@ markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length) {
     return document;
 }
 
+/* One pending step of the walk: `count` nodes of one relation from `first`,
+ * where `base` is the offset the first one's lead is relative to. */
 typedef struct {
-    const markdown_core_node **nodes;
+    const markdown_core_node *first;
+    size_t count;
+    int64_t base;
+} ts_walk_entry;
+
+typedef struct {
+    ts_walk_entry *entries;
     size_t count, capacity;
     bool failed;
 } ts_walk_stack;
 
-static void ts_walk_push(ts_walk_stack *stack, const markdown_core_node *node) {
-    if (!node || stack->failed) {
+static void ts_walk_push(ts_walk_stack *stack, const markdown_core_node *first, size_t count, int64_t base) {
+    if (!first || !count || stack->failed) {
         return;
     }
     if (stack->count == stack->capacity) {
         size_t capacity = stack->capacity ? stack->capacity * 2 : 256;
-        const markdown_core_node **nodes = realloc(stack->nodes, capacity * sizeof(*nodes));
-        if (!nodes) {
+        ts_walk_entry *entries = realloc(stack->entries, capacity * sizeof(*entries));
+        if (!entries) {
             stack->failed = true;
             return;
         }
-        stack->nodes = nodes;
+        stack->entries = entries;
         stack->capacity = capacity;
     }
-    stack->nodes[stack->count++] = node;
+    stack->entries[stack->count++] = (ts_walk_entry){first, count, base};
+}
+
+static size_t ts_chain_length(const markdown_core_node *first) {
+    size_t count = 0;
+    for (; first; first = markdown_core_node_get_next_sibling(first)) {
+        count++;
+    }
+    return count;
+}
+
+static const markdown_core_node *ts_chain_skip(const markdown_core_node *first, size_t count) {
+    while (first && count--) {
+        first = markdown_core_node_get_next_sibling(first);
+    }
+    return first;
+}
+
+/* A node's relations in canonical field order, read through the public
+ * facade alone: each relation's first node leads from the owner's start. */
+static void ts_walk_relations(ts_walk_stack *stack, const markdown_core_node *node, int64_t start) {
+    ts_walk_stack relations = {0};
+#define TS_RELATION(first_, count_)                                                                                    \
+    do {                                                                                                               \
+        const markdown_core_node *relation_first = (first_);                                                           \
+        size_t relation_count = relation_first ? (count_) : 0;                                                         \
+        ts_walk_push(&relations, relation_first, relation_count, start);                                               \
+    } while (0)
+#define TS_CHAIN(first_) TS_RELATION((first_), ts_chain_length(first_))
+    const markdown_core_node *children = markdown_core_node_get_first_child(node);
+    switch (markdown_core_node_get_kind(node)) {
+    case MARKDOWN_CORE_KIND_DOCUMENT:
+        TS_RELATION(markdown_core_node_document_metadata(node), 1);
+        TS_CHAIN(children);
+        break;
+    case MARKDOWN_CORE_KIND_TABLE: {
+        size_t columns, head = 0, content = 0, foot = 0;
+        (void)markdown_core_node_table_properties(node, &columns, &head, &content, &foot);
+        TS_RELATION(markdown_core_node_table_caption(node), 1);
+        TS_RELATION(children, head);
+        TS_RELATION(ts_chain_skip(children, head), content);
+        TS_RELATION(ts_chain_skip(children, head + content), foot);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_DIRECTIVE:
+    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
+        TS_RELATION(markdown_core_node_directive_label(node), 1);
+        TS_CHAIN(children);
+        break;
+    case MARKDOWN_CORE_KIND_CALLOUT:
+        TS_CHAIN(markdown_core_node_callout_title(node));
+        TS_CHAIN(children);
+        break;
+    case MARKDOWN_CORE_KIND_CITE:
+        TS_CHAIN(markdown_core_node_cite_citations(node));
+        break;
+    case MARKDOWN_CORE_KIND_CITATION: {
+        markdown_core_referent referent = {0};
+        (void)markdown_core_citation_referent(node, &referent);
+        TS_RELATION(referent.note, 1);
+        TS_CHAIN(markdown_core_citation_prefix(node));
+        TS_CHAIN(markdown_core_citation_suffix(node));
+        break;
+    }
+    case MARKDOWN_CORE_KIND_DEFINITION:
+        TS_CHAIN(markdown_core_node_definition_term(node));
+        for (const markdown_core_definition_body *body = markdown_core_node_definition_bodies(node); body;
+             body = markdown_core_definition_body_next(body)) {
+            TS_CHAIN(markdown_core_definition_body_content(body));
+        }
+        break;
+    default:
+        TS_CHAIN(children);
+        break;
+    }
+#undef TS_CHAIN
+#undef TS_RELATION
+    /* Later relations go on the stack first, so the first comes off first. */
+    stack->failed = stack->failed || relations.failed;
+    while (relations.count) {
+        ts_walk_entry relation = relations.entries[--relations.count];
+        ts_walk_push(stack, relation.first, relation.count, relation.base);
+    }
+    free(relations.entries);
 }
 
 int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *context) {
     ts_walk_stack stack = {0};
     int result = 0;
-    ts_walk_push(&stack, root);
+    ts_walk_push(&stack, root, 1, 0);
     while (stack.count && !stack.failed) {
-        const markdown_core_node *node = stack.nodes[--stack.count];
-        result = visit(node, context);
+        ts_walk_entry entry = stack.entries[--stack.count];
+        markdown_core_extent extent = markdown_core_node_extent(entry.first);
+        ts_ast_range range = {entry.base + extent.lead, entry.base + extent.lead + (int64_t)extent.span};
+        result = visit(entry.first, range, context);
         if (result) {
             break;
         }
-        ts_walk_push(&stack, markdown_core_node_get_next_sibling(node));
-        size_t start = stack.count;
-        /* Collect owned roots in source traversal order, then reverse this
-         * stack segment. Every root uses the same sibling-chain algorithm. */
-        ts_walk_push(&stack, markdown_core_node_document_metadata(node));
-        ts_walk_push(&stack, markdown_core_node_directive_label(node));
-        ts_walk_push(&stack, markdown_core_node_callout_title(node));
-        ts_walk_push(&stack, markdown_core_node_definition_term(node));
-        ts_walk_push(&stack, markdown_core_node_get_first_child(node));
-        for (const markdown_core_definition_body *body = markdown_core_node_definition_bodies(node); body;
-             body = markdown_core_definition_body_next(body)) {
-            ts_walk_push(&stack, markdown_core_definition_body_content(body));
-        }
-        ts_walk_push(&stack, markdown_core_node_cite_citations(node));
-        ts_walk_push(&stack, markdown_core_citation_prefix(node));
-        ts_walk_push(&stack, markdown_core_citation_suffix(node));
-        ts_walk_push(&stack, markdown_core_node_document_footnotes(node));
-        ts_walk_push(&stack, markdown_core_node_document_specimens(node));
-        for (size_t left = start, right = stack.count; left < right && left < --right; left++) {
-            const markdown_core_node *swap = stack.nodes[left];
-            stack.nodes[left] = stack.nodes[right];
-            stack.nodes[right] = swap;
-        }
+        ts_walk_push(&stack, markdown_core_node_get_next_sibling(entry.first), entry.count - 1, range.end);
+        ts_walk_relations(&stack, entry.first, range.start);
     }
     if (stack.failed) {
         result = -1;
     }
-    free(stack.nodes);
+    free(stack.entries);
     return result;
 }
 
-typedef struct ts_line_widths {
-    size_t *widths;
-    size_t count;
+typedef struct {
+    int64_t length;
     const markdown_core_node *outside;
-} ts_line_widths;
+} ts_range_check;
 
-static int ts_position_inside(const ts_line_widths *lines, markdown_core_position position) {
-    if (position.line == 0) {
-        return position.column == 0;
-    }
-    if (position.line < 0 || position.column < 0 || (size_t)position.line > lines->count + 1) {
-        return 0;
-    }
-    size_t width = (size_t)position.line <= lines->count ? lines->widths[position.line - 1] : 0;
-    return (size_t)position.column <= width + 1;
-}
-
-static int ts_scope_visit(const markdown_core_node *node, void *context) {
-    ts_line_widths *lines = context;
-    markdown_core_scope scope = markdown_core_node_scope(node);
-    if (!ts_position_inside(lines, scope.start) || !ts_position_inside(lines, scope.end)) {
-        lines->outside = node;
+static int ts_range_visit(const markdown_core_node *node, ts_ast_range range, void *context) {
+    ts_range_check *check = context;
+    if (range.start < 0 || range.end < range.start || range.end > check->length) {
+        check->outside = node;
         return 1;
     }
     return 0;
 }
 
-const markdown_core_node *ts_ast_scope_outside(const markdown_core_node *root, const uint8_t *bytes, size_t length) {
-    ts_line_widths lines = {malloc((length + 1) * sizeof(size_t)), 0, NULL};
-    if (!lines.widths) {
-        return NULL;
-    }
-    size_t width = 0;
-    for (size_t at = 0; at < length; at++) {
-        if (bytes[at] == '\n' || bytes[at] == '\r') {
-            lines.widths[lines.count++] = width;
-            width = 0;
-            if (bytes[at] == '\r' && at + 1 < length && bytes[at + 1] == '\n') {
-                at++;
-            }
-        } else {
-            width += bytes[at] ? 1 : 3;
-        }
-    }
-    if (width) {
-        lines.widths[lines.count++] = width;
-    }
-    (void)ts_ast_walk(root, ts_scope_visit, &lines);
-    free(lines.widths);
-    return lines.outside;
+const markdown_core_node *ts_ast_range_outside(const markdown_core_node *root, size_t length) {
+    ts_range_check check = {(int64_t)length, NULL};
+    (void)ts_ast_walk(root, ts_range_visit, &check);
+    return check.outside;
 }
 
-static int ts_count_visit(const markdown_core_node *node, void *context) {
+static int ts_count_visit(const markdown_core_node *node, ts_ast_range range, void *context) {
+    (void)range;
     size_t *counts = (size_t *)context;
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     if ((size_t)kind >= TS_KIND_COUNT) {
@@ -449,7 +490,8 @@ int ts_ast_count_kinds(const markdown_core_node *root, size_t *counts) {
     return ts_ast_walk(root, ts_count_visit, counts);
 }
 
-static int ts_concat_visit(const markdown_core_node *node, void *context) {
+static int ts_concat_visit(const markdown_core_node *node, ts_ast_range range, void *context) {
+    (void)range;
     ts_buffer *buffer = (ts_buffer *)context;
     if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_TEXT) {
         markdown_core_string literal;

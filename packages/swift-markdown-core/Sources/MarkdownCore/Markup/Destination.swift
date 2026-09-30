@@ -1,7 +1,7 @@
 import MarkdownCoreC
 
 /// The target of a ``Link`` or ``Embedded``: a tagged value, not a node, so it
-/// has no scope and no children, and a branch's fields exist only in that
+/// has no id, no extent and no children, and a branch's fields exist only in that
 /// branch.
 public enum Destination: Sendable, Hashable {
     /// The complete semantic destination the inherited grammar produced: the
@@ -47,6 +47,18 @@ struct SharedResource {
         )
         resources[key] = resource
         return resource
+    }
+
+    /// An occurrence's inherited fields: its own anchor before the resource's,
+    /// and the resource's classes and records before its own.
+    func fields(of node: OpaquePointer) -> InheritedFields {
+        InheritedFields(
+            id: MarkupID(markdown_core_node_id(node)),
+            extent: Extent(markdown_core_node_extent(node)),
+            anchor: markdown_core_attribute_value_anchor(markdown_core_node_primary_attributes(node)).string
+                ?? anchor,
+            attributes: Attributes(from: node).inheriting(attributes)
+        )
     }
 }
 

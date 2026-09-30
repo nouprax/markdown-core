@@ -10,14 +10,17 @@ import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.usePinned
 
-/** The byte offset of the MCB2 message length (docs/architecture/wire-format.md). */
+/** The byte offset of the MCB3 message length (docs/architecture/wire-format.md). */
 private const val LENGTH_OFFSET = 4
 
 /**
- * Parses through the core's MCB2 encoder and copies its one message into the
+ * Parses through the core's MCB3 encoder and copies its one message into the
  * Kotlin heap; the shared [WireDecoder] builds the tree, as on the JVM.
  */
-internal actual fun parsePlatformDocument(source: ByteArray): Document {
+internal actual fun parsePlatformDocument(
+    source: ByteArray,
+    unit: TextUnit,
+): Document {
     val message =
         if (source.isEmpty()) {
             markdown_core_wire_parse(null, 0u)
@@ -39,5 +42,5 @@ internal actual fun parsePlatformDocument(source: ByteArray): Document {
         } finally {
             markdown_core_wire_free(message)
         }
-    return WireDecoder.decode(bytes)
+    return WireDecoder.decode(bytes, unit)
 }

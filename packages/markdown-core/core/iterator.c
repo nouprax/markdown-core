@@ -143,13 +143,9 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
             // An empty one has no last byte to end at, and the empties in
             // this tree carry a zeroed position rather than an honest one,
             // so taking their end put `1:1..1:0` on a run of four real
-            // characters. And the end is a LINE and a column together: this
-            // used to carry the column forward and leave the line behind,
-            // which is why a merged run crossing a line ending reported the
-            // first operand's line with the last operand's column.
+            // characters.
             if (tmp->as.literal->len > 0) {
-                cur->end_line = tmp->end_line;
-                cur->end_column = tmp->end_column;
+                cur->where.place.end = tmp->where.place.end;
             }
             next = tmp->next;
             markdown_core_parser_release_node(parser, tmp);

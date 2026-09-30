@@ -4,46 +4,62 @@ import MarkdownCoreC
 /// autolink.
 ///
 /// A reference occurrence is the link its definition names: it answers the
-/// definition's destination and title and keeps its own scope.
+/// definition's destination and title and keeps its own extent.
 public struct Link: Markup {
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let content: MarkupReferences<any Markup>
-        let dest: Destination
-        let title: String?
-    }
+    let record: LinkRecord
 
-    let fields: Stored<Fields>
-
-    /// Where it is, brackets and parentheses included. See ``Scope``.
-    public var scope: Scope { fields.scope }
+    /// The node's identifier within its document.
+    public var id: MarkupID { record.id }
+    /// Where it is, brackets and parentheses included. See ``Extent``.
+    public var extent: Extent { record.extent }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { record.attributes }
     /// The link text, as inline content.
-    public var content: MarkupCollection<any Markup> { fields.content }
+    public var content: MarkupCollection<any Markup> { record.collection(record.children.indices) }
     /// Required: `[a]()` and `[a](<>)` wrote a destination and wrote nothing
     /// in it, so they answer `.url("")`; a reference occurrence answers the
     /// destination its definition stated.
-    public var dest: Destination { fields.dest }
+    public var dest: Destination { record.dest }
     /// Optional: `[a](/u)` wrote no title and `[a](/u "")` wrote an empty one.
-    public var title: String? { fields.title }
+    public var title: String? { record.title }
 }
 
-extension Link.Fields {
-    init(from node: OpaquePointer, content: [Int], resources: inout [UnsafeRawPointer: SharedResource]) {
+final class LinkRecord: MarkupRecord, @unchecked Sendable {
+    let dest: Destination
+    let title: String?
+
+    init(_ fields: InheritedFields, dest: Destination, title: String?, content: [MarkupRecord]) {
+        self.dest = dest
+        self.title = title
+        super.init(fields, children: content)
+    }
+
+    override var markup: any Markup { Link(record: self) }
+
+    override func hasEqualFields(_ other: MarkupRecord) -> Bool {
+        let other = unsafeDowncast(other, to: LinkRecord.self)
+        return dest == other.dest && title == other.title
+    }
+}
+
+extension LinkRecord {
+    convenience init(
+        from node: OpaquePointer,
+        content: [MarkupRecord],
+        resources: inout [UnsafeRawPointer: SharedResource]
+    ) {
         let resource = SharedResource.shared(by: node, in: &resources)
         self.init(
-            scope: Scope(from: markdown_core_node_scope(node)),
-            anchor: markdown_core_attribute_value_anchor(markdown_core_node_primary_attributes(node)).string
-                ?? resource.anchor,
-            attributes: Attributes(from: node).inheriting(resource.attributes),
-            content: .init(indices: content),
+            resource.fields(of: node),
             dest: resource.dest,
-            title: resource.title
+            title: resource.title,
+            content: content
         )
     }
+}
+
+extension Link: RecordBacked {
+    var base: MarkupRecord { record }
 }

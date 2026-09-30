@@ -146,7 +146,7 @@ static markdown_core_document *parse_document(const char *input, markdown_core_e
     return markdown_core_document_parse((const uint8_t *)input, strlen(input), error);
 }
 
-// Depth-first traversal touching kind, scope, child count, and per-kind
+// Depth-first traversal touching kind, id, extent, child count, and per-kind
 // accessors; returns the node count so results can be sanity-compared.
 static size_t traverse(const markdown_core_node *node) {
     size_t visited = 0;
@@ -156,11 +156,11 @@ static size_t traverse(const markdown_core_node *node) {
     visited += 1;
 
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
-    markdown_core_scope scope = markdown_core_node_scope(node);
+    markdown_core_extent extent = markdown_core_node_extent(node);
     if (!markdown_core_node_kind_name(kind)) {
         return 0;
     }
-    if (scope.start.line < 0 || scope.end.line < 0) {
+    if (markdown_core_node_id(node) == 0 || extent.span > UINT32_MAX / 2) {
         return 0;
     }
 
@@ -206,8 +206,9 @@ static int parse_and_dump(const char *input, uint8_t **dump_out, size_t *length_
     size_t first_length = 0;
     uint8_t *second = NULL;
     size_t second_length = 0;
-    if (!markdown_core_document_dump(document, &first, &first_length, &error) ||
-        !markdown_core_document_dump(document, &second, &second_length, &error)) {
+    const uint8_t *source = (const uint8_t *)input;
+    if (!markdown_core_document_dump(document, NULL, source, strlen(input), &first, &first_length, &error) ||
+        !markdown_core_document_dump(document, NULL, source, strlen(input), &second, &second_length, &error)) {
         markdown_core_error_free(error);
         markdown_core_document_free(document);
         return 1;

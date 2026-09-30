@@ -134,5 +134,7 @@ export const contentKinds: ReadonlySet<NativeKind> = new Set([
     "span",
     "superscript",
     "subscript",
-    "definitionList"
+    "definitionList",
+    "footnote",
+    "specimen"
 ]);

@@ -59,11 +59,15 @@ static void S_set_last_line_checked(markdown_core_node *node) { node->flags |= M
 
 static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length);
 static markdown_core_node *S_finish_parse(markdown_core_parser *parser);
+static inline bool S_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line);
+static inline int S_append_input_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
+                                       bufsize_t line_start, int column, bufsize_t length, bufsize_t offset);
 
 static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, bufsize_t bytes);
+static inline const unsigned char *S_input_line_content(markdown_core_parser *parser, markdown_core_input_line *line,
+                                                        bufsize_t *length);
 
-static markdown_core_node *make_block(markdown_core_parser *parser, markdown_core_node_type tag, int start_line,
-                                      int start_column) {
+static markdown_core_node *make_block(markdown_core_parser *parser, markdown_core_node_type tag, bufsize_t start) {
     markdown_core_node *e;
 
     e = markdown_core_parser_make_node(parser, tag);
@@ -73,16 +77,14 @@ static markdown_core_node *make_block(markdown_core_parser *parser, markdown_cor
     /* Empty content borrows the strbuf sentinel. Only writing content takes
      * storage; containers and empty leaves need no separate allocation. */
     e->flags = MARKDOWN_CORE_NODE__OPEN;
-    e->start_line = start_line;
-    e->start_column = start_column;
-    e->end_line = start_line;
+    e->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)start};
 
     return e;
 }
 
 // Create a root document node.
 static markdown_core_node *make_document(markdown_core_parser *parser) {
-    markdown_core_node *e = make_block(parser, MARKDOWN_CORE_NODE_DOCUMENT, 1, 1);
+    markdown_core_node *e = make_block(parser, MARKDOWN_CORE_NODE_DOCUMENT, 0);
     return e;
 }
 
@@ -93,6 +95,10 @@ static markdown_core_node *make_document(markdown_core_parser *parser) {
  * those allocations rather than visiting every untransformed input line. */
 typedef struct markdown_core_normalized_line {
     struct markdown_core_normalized_line *next;
+    /* The source offset of each NUL of the line, in order, so a normalized
+     * byte finds its source byte by a search rather than a scan. */
+    uint32_t *nuls;
+    uint32_t nul_count;
     unsigned char bytes[];
 } markdown_core_normalized_line;
 
@@ -114,6 +120,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     }
     dialect->document_structure->element->dispose_document(dialect->document_structure, parser);
     markdown_core_source_order_dispose(&parser->source_order);
+    markdown_core_free(parser->walk_stack);
     markdown_core_free(parser->block_inputs);
     S_clear_normalized_lines(parser);
     markdown_core_free(parser->input_lines);
@@ -241,18 +248,8 @@ static void S_parser_free(markdown_core_parser *parser) {
  * are the ones whose last line IS the line in hand; every other block ended on
  * the line before. An element container closing on its own fence is a fourth,
  * and `markdown_core_block_finalize` cannot know that from the type alone. */
-static inline bufsize_t S_current_line_length(const markdown_core_parser *parser) {
-    /* The input owner builds content + one LF; grammar borrows that line.
-     * Its byte extent is invariant while the cursor and chunks advance. */
-    assert(parser->curline.size > 0);
-    assert(parser->curline.ptr[parser->curline.size - 1] == '\n');
-    assert(parser->curline.size < 2 || parser->curline.ptr[parser->curline.size - 2] != '\r');
-    return parser->curline.size - 1;
-}
-
 void markdown_core_block_set_end_to_current_line(markdown_core_parser *parser, markdown_core_node *b) {
-    b->end_line = parser->line_number;
-    b->end_column = markdown_core_parser_source_column(parser, b->end_line, S_current_line_length(parser));
+    b->where.place.end = (uint32_t)parser->line_end;
 }
 
 /* Whether a node of `kind` takes lines as its content, and whether it may
@@ -349,14 +346,14 @@ static int S_append_content_mark(markdown_core_parser *parser, markdown_core_con
 }
 
 int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
-                                             int line, int column, int source_width, int source_step) {
+                                             int line, bufsize_t source, int source_width, int source_step) {
     return S_append_content_mark(parser, &node->content_map,
-                                 (markdown_core_line_mark){offset, line, column, source_width, source_step, 0});
+                                 (markdown_core_line_mark){offset, line, source, source_width, source_step, 0});
 }
 
 static void S_record_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t column,
                                   bufsize_t length) {
-    markdown_core_parser_append_source_marks(parser, node, parser->line_number, column, length, node->content.size);
+    S_append_input_marks(parser, node, parser->line_number, parser->line_start, column, length, node->content.size);
 }
 
 void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown_core_parser *parser) {
@@ -413,13 +410,14 @@ void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk 
  * than fed through add_line. Transformed content appends its own source runs;
  * slices share their owner's runs through adopt_content_marks. A failed map
  * allocation loses the parse transaction, just like a failed content buffer. */
-int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_core_node *node, int line, int column) {
+int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_core_node *node, int line,
+                                      bufsize_t source) {
     if (!parser || !node) {
         return 0;
     }
     node->content_map.count = 0;
     node->content_map.offset = 0;
-    return markdown_core_parser_append_content_mark(parser, node, 0, line, column, 1, 1);
+    return markdown_core_parser_append_content_mark(parser, node, 0, line, source, 1, 1);
 }
 
 /* Find the immutable run containing an offset, shared by slice and lookup. */
@@ -455,7 +453,7 @@ int markdown_core_parser_append_content_marks(markdown_core_parser *parser, cons
     for (int i = first; i <= last; i++) {
         markdown_core_line_mark mark = parser->line_marks[i];
         bufsize_t start = mark.content_offset < from ? from : mark.content_offset;
-        mark.column += (start - mark.content_offset) * mark.source_step;
+        mark.source += (start - mark.content_offset) * mark.source_step;
         mark.content_offset = offset + start - from;
         if (!S_append_content_mark(parser, map, mark)) {
             return 0;
@@ -464,32 +462,224 @@ int markdown_core_parser_append_content_marks(markdown_core_parser *parser, cons
     return 1;
 }
 
-int markdown_core_parser_mapped_source_column(markdown_core_parser *parser, int line, int column) {
-    assert(column > 0 && parser->block_root != parser->root);
-    size_t index = (size_t)(line - parser->input_first_line);
-    assert(line >= parser->input_first_line && index < parser->input_line_count);
-    int source_line, source_column;
-    if (!markdown_core_parser_content_end_place(parser, &parser->block_root->content_map,
-                                                (bufsize_t)parser->input_lines[index].start + column - 1, &source_line,
-                                                &source_column)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return column;
+/* The normalized view of a document line that carries NUL, or NULL: the
+ * block parser reads each NUL as the three bytes of U+FFFD, so a column past
+ * one is two bytes past its source byte. Only the document's own lines carry
+ * NUL; a cell's content was copied from a normalized line. */
+static const markdown_core_normalized_line *S_nul_view_read(markdown_core_parser *parser,
+                                                            markdown_core_input_line *geometry) {
+    if (!parser->input_facts[geometry->facts - 1].nul_count) {
+        return NULL;
     }
-    assert(source_line == line);
-    return source_column;
+    bufsize_t length;
+    if (!S_input_line_content(parser, geometry, &length)) {
+        return NULL;
+    }
+    return parser->input_facts[geometry->facts - 1].normalized;
+}
+
+/* Only a document line with facts can carry NUL. */
+static inline const markdown_core_normalized_line *S_nul_view(markdown_core_parser *parser,
+                                                              markdown_core_input_line *geometry) {
+    assert(parser->block_root == parser->root);
+    return geometry->facts ? S_nul_view_read(parser, geometry) : NULL;
+}
+
+/* The source byte of normalized byte `index` of a NUL-bearing line, and
+ * whether it is a byte of a replacement character, which stands for its NUL.
+ * The NUL numbered k is at normalized byte `nuls[k] - start + 2k`. */
+static bufsize_t S_denormalized_offset(const markdown_core_normalized_line *view, uint32_t start, bufsize_t index,
+                                       bool *nul) {
+    uint32_t lo = 0, hi = view->nul_count;
+    while (lo < hi) {
+        uint32_t mid = lo + (hi - lo) / 2;
+        if ((bufsize_t)(view->nuls[mid] - start + 2 * mid) <= index) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    /* `lo` NULs are at or before the byte; the last of them may hold it. */
+    if (lo && index < (bufsize_t)(view->nuls[lo - 1] - start + 2 * (lo - 1) + 3)) {
+        *nul = true;
+        return (bufsize_t)view->nuls[lo - 1];
+    }
+    *nul = false;
+    return (bufsize_t)start + index - 2 * (bufsize_t)lo;
+}
+
+bufsize_t markdown_core_parser_mapped_source_offset(markdown_core_parser *parser, int line, int column) {
+    assert(column > 0);
+    markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
+    if (parser->block_root == parser->root) {
+        const markdown_core_normalized_line *view = S_nul_view(parser, geometry);
+        bool nul;
+        return view ? S_denormalized_offset(view, geometry->start, column - 1, &nul)
+                    : (bufsize_t)geometry->start + column - 1;
+    }
+    int ignored;
+    bufsize_t source = 0;
+    if (!markdown_core_parser_content_place(parser, &parser->block_root->content_map,
+                                            (bufsize_t)geometry->start + column - 1, &ignored, &source)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    return source;
+}
+
+/* A cell's content is its parts joined by line endings, one part per source
+ * line, and a part is empty when the cell is blank on that line. The end of
+ * an empty cell line is where the cell's content before it ends: the last
+ * byte the cell holds before the line, or the cell's first byte when it holds
+ * none. */
+static bufsize_t S_mapped_line_end(markdown_core_parser *parser, bufsize_t input_offset) {
+    const markdown_core_content_map *map = &parser->block_root->content_map;
+    const unsigned char *content = parser->input_source;
+    bufsize_t at = input_offset;
+    int ignored;
+    bufsize_t source = 0;
+    while (at > 0 && (content[at - 1] == '\n' || content[at - 1] == '\r')) {
+        at--;
+    }
+    bool placed = at > 0 ? markdown_core_parser_content_end_place(parser, map, at - 1, &ignored, &source)
+                         : markdown_core_parser_content_place(parser, map, 0, &ignored, &source);
+    if (!placed) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    return source;
+}
+
+bufsize_t markdown_core_parser_mapped_source_end(markdown_core_parser *parser, int line, int column) {
+    markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
+    if (parser->block_root == parser->root) {
+        if (!column) {
+            return (bufsize_t)geometry->start;
+        }
+        return markdown_core_parser_mapped_source_offset(parser, line, column) + 1;
+    }
+    if (!column) {
+        return S_mapped_line_end(parser, (bufsize_t)geometry->start);
+    }
+    int ignored;
+    bufsize_t source = 0;
+    if (!markdown_core_parser_content_end_place(parser, &parser->block_root->content_map,
+                                                (bufsize_t)geometry->start + column - 1, &ignored, &source)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    return source;
+}
+
+/* Where byte `at` of the active input was written in the source. */
+static inline bufsize_t S_input_source(markdown_core_parser *parser, bufsize_t at) {
+    if (parser->block_root == parser->root) {
+        return at;
+    }
+    int ignored;
+    bufsize_t source = 0;
+    if (!markdown_core_parser_content_place(parser, &parser->block_root->content_map, at, &ignored, &source)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    return source;
+}
+
+static inline bufsize_t S_line_offset(markdown_core_parser *parser, int line) {
+    return S_input_source(parser, (bufsize_t)markdown_core_parser_visited_line(parser, line)->start);
+}
+
+static inline bool S_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line) {
+    if (line < parser->input_first_line || line > parser->line_number) {
+        return false;
+    }
+    uint32_t start = node->where.place.start;
+    if (line == parser->line_number) {
+        return start >= (uint32_t)S_input_source(parser, parser->line_start);
+    }
+    return start >= (uint32_t)S_line_offset(parser, line) && start < (uint32_t)S_line_offset(parser, line + 1);
+}
+
+bufsize_t markdown_core_parser_line_offset(markdown_core_parser *parser, int line) {
+    return S_line_offset(parser, line);
+}
+
+bool markdown_core_parser_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line) {
+    return S_starts_on_line(parser, node, line);
+}
+
+/* One copied run of a document line. */
+static inline int S_append_copied_mark(markdown_core_parser *parser, markdown_core_node *node, int line,
+                                       bufsize_t source, bufsize_t offset) {
+    return S_append_content_mark(parser, &node->content_map,
+                                 (markdown_core_line_mark){offset, line, source, 1, 1, parser->indent});
+}
+
+/* The runs of a document line of an input that holds NUL. A line without
+ * NUL is one copied run. On a NUL-bearing line, each replacement character is
+ * a run whose three content bytes all stand for its one NUL, and the bytes
+ * between them are copied runs. NUL k is at normalized byte
+ * `nuls[k] - start + 2k`; the walk starts at the first NUL whose replacement
+ * ends after the slice's first byte and meets each later one once. It stays
+ * out of line, apart from the path of an input without NUL. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) int S_append_nul_line_marks(markdown_core_parser *parser,
+                                                                       markdown_core_node *node, int line,
+                                                                       bufsize_t line_start, int column,
+                                                                       bufsize_t length, bufsize_t offset) {
+    const markdown_core_normalized_line *view = S_nul_view(parser, markdown_core_parser_visited_line(parser, line));
+    if (!view) {
+        return S_append_copied_mark(parser, node, line, line_start + column - 1, offset);
+    }
+    uint32_t start = (uint32_t)line_start;
+    bufsize_t first = column - 1, last = first + length, index = first;
+    uint32_t k = 0, hi = view->nul_count;
+    while (k < hi) {
+        uint32_t mid = k + (hi - k) / 2;
+        if ((bufsize_t)(view->nuls[mid] - start + 2 * mid) + 3 <= index) {
+            k = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    while (index < last) {
+        bool inside = false;
+        bufsize_t at = last, source;
+        if (k < view->nul_count) {
+            at = (bufsize_t)(view->nuls[k] - start + 2 * k);
+            inside = at <= index;
+        }
+        source = inside ? (bufsize_t)view->nuls[k] : (bufsize_t)start + index - 2 * (bufsize_t)k;
+        if (!S_append_content_mark(
+                parser, &node->content_map,
+                (markdown_core_line_mark){offset + index - first, line, source, 1, inside ? 0 : 1, parser->indent})) {
+            return 0;
+        }
+        bufsize_t next = inside ? at + 3 : at;
+        k += inside;
+        index = next < last ? next : last;
+    }
+    return 1;
+}
+
+/* The runs of `length` bytes from `column` of input line `line`, which
+ * starts at `line_start` in the active input. */
+static inline int S_append_input_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
+                                       bufsize_t line_start, int column, bufsize_t length, bufsize_t offset) {
+    if (!parser->input_mapped) {
+        return S_append_copied_mark(parser, node, line, line_start + column - 1, offset);
+    }
+    if (parser->block_root == parser->root) {
+        return S_append_nul_line_marks(parser, node, line, line_start, column, length, offset);
+    }
+    return markdown_core_parser_append_content_marks(parser, &parser->block_root->content_map, &node->content_map,
+                                                     line_start + column - 1, length, offset);
+}
+
+int markdown_core_parser_append_line_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
+                                           bufsize_t line_start, int column, bufsize_t length, bufsize_t offset) {
+    return S_append_input_marks(parser, node, line, line_start, column, length, offset);
 }
 
 int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                              int column, bufsize_t length, bufsize_t offset) {
-    if (parser->block_root == parser->root) {
-        return S_append_content_mark(parser, &node->content_map,
-                                     (markdown_core_line_mark){offset, line, column, 1, 1, parser->indent});
-    }
-    size_t index = (size_t)(line - parser->input_first_line);
-    assert(line >= parser->input_first_line && index < parser->input_line_count);
-    return markdown_core_parser_append_content_marks(parser, &parser->block_root->content_map, &node->content_map,
-                                                     (bufsize_t)parser->input_lines[index].start + column - 1, length,
-                                                     offset);
+    return S_append_input_marks(parser, node, line, (bufsize_t)markdown_core_parser_visited_line(parser, line)->start,
+                                column, length, offset);
 }
 
 bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_node *owner) {
@@ -523,7 +713,7 @@ bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdo
  * start. The slice is found from the node's first run here; a caller with a
  * position of its own to start from asks through `content_span`. */
 static int S_content_place(markdown_core_parser *parser, const markdown_core_content_map *map, bufsize_t content_offset,
-                           bool end, int *line, int *column) {
+                           bool end, int *line, bufsize_t *source) {
     const markdown_core_line_mark *mark;
 
     if (!parser || !map || map->count <= 0 || content_offset < 0) {
@@ -533,19 +723,19 @@ static int S_content_place(markdown_core_parser *parser, const markdown_core_con
     content_offset += map->offset;
     mark = &parser->line_marks[markdown_core_block_content_mark_at(parser, map, content_offset)];
     *line = mark->line;
-    *column = mark->column + (int)(content_offset - mark->content_offset) * mark->source_step +
-              (end ? mark->source_width - 1 : 0);
+    *source =
+        mark->source + (content_offset - mark->content_offset) * mark->source_step + (end ? mark->source_width : 0);
     return 1;
 }
 
 int markdown_core_parser_content_place(markdown_core_parser *parser, const markdown_core_content_map *map,
-                                       bufsize_t offset, int *line, int *column) {
-    return S_content_place(parser, map, offset, false, line, column);
+                                       bufsize_t offset, int *line, bufsize_t *source) {
+    return S_content_place(parser, map, offset, false, line, source);
 }
 
 int markdown_core_parser_content_end_place(markdown_core_parser *parser, const markdown_core_content_map *map,
-                                           bufsize_t offset, int *line, int *column) {
-    return S_content_place(parser, map, offset, true, line, column);
+                                           bufsize_t offset, int *line, bufsize_t *end) {
+    return S_content_place(parser, map, offset, true, line, end);
 }
 
 /* Drop `dropped` bytes off the FRONT of `node`'s content, leaving `remaining`
@@ -595,8 +785,7 @@ markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, m
 
     if (parser->curline.size == 0) {
         // end of input - line number has not been incremented
-        b->end_line = parser->line_number;
-        b->end_column = parser->last_line_length;
+        b->where.place.end = (uint32_t)parser->last_line_end;
     } else if (markdown_core_block_type(b) == MARKDOWN_CORE_NODE_DOCUMENT ||
                /* D35: a block finalized on the line it OPENED did not end on
                 * the previous one. `line_number - 1` below assumes the block
@@ -605,10 +794,10 @@ markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, m
                 * of type 2 to 5, whose terminator can be on its own first line.
                 * Measured: `<!-- c -->` alone on line 3 gave
                 * `HTMLBlock scope=3:1..2:0` for a literal whose last byte is at
-                * 3:10, and `last_line_length` there is the length of the BLANK
+                * 3:10, and the last line's end there was the end of the BLANK
                 * line before it. Four of the eleven observed negative rows
                 * were this. */
-               parser->line_number == b->start_line ||
+               S_starts_on_line(parser, b, parser->line_number) ||
                /* M0: the same block closed by its end condition on a LATER
                 * line. The terminator line is the block's last line and is
                 * the line being processed, so the block ends here too:
@@ -620,8 +809,7 @@ markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, m
                (b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0) {
         markdown_core_block_set_end_to_current_line(parser, b);
     } else {
-        b->end_line = parser->line_number - 1;
-        b->end_column = parser->last_line_length;
+        b->where.place.end = (uint32_t)parser->last_line_end;
     }
 
     /* The element's one chance to read its own block as a finished thing.
@@ -676,8 +864,7 @@ markdown_core_node *markdown_core_parser_add_child_validated(markdown_core_parse
                                                              markdown_core_node_type block_type, int start_column) {
     assert(parent);
     markdown_core_node *child =
-        make_block(parser, block_type, parser->line_number,
-                   markdown_core_parser_source_column(parser, parser->line_number, start_column));
+        make_block(parser, block_type, markdown_core_parser_source_offset(parser, parser->line_number, start_column));
     if (!child || child->content.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         if (child) {
@@ -808,7 +995,7 @@ static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
             markdown_core_parser_fail(walk->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return 0;
         }
-        void *frames = markdown_core_realloc(walk->frames, capacity * sizeof(*walk->frames));
+        void *frames = markdown_core_parser_walk_stack(walk->parser, capacity, sizeof(*walk->frames));
         if (!frames) {
             markdown_core_parser_fail(walk->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return 0;
@@ -827,8 +1014,15 @@ static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
     if (walk->slots) {
         memset(walk->states + walk->count * walk->slots, 0, walk->slots * sizeof(*walk->states));
     }
-    walk->frames[walk->count++] = (owned_tree_frame){
-        .root = root, .parsed = NULL, .script_depth = walk->script_depth, .parses = walk->parses, .started = false};
+    /* Word depth counts the inline word bodies around a node, and a block
+     * begins content of its own: a root that is a block, such as an inline
+     * note's Footnote, starts outside every word body its owner is in. */
+    bool block = ((unsigned)root->kind & MARKDOWN_CORE_NODE_TYPE_MASK) == MARKDOWN_CORE_NODE_TYPE_BLOCK;
+    walk->frames[walk->count++] = (owned_tree_frame){.root = root,
+                                                     .parsed = NULL,
+                                                     .script_depth = block ? 0 : walk->script_depth,
+                                                     .parses = walk->parses,
+                                                     .started = false};
     return 1;
 }
 
@@ -923,9 +1117,7 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
  * global pass is declared. A pass runs after the document's finalization, on
  * the finalized roots, and a root the walk found is not found again by
  * walking: the field roots and the document root are recorded here as they
- * complete, and the definition chains -- which finalization rebuilds, moving
- * the block definitions into them -- are enumerated afresh when the passes
- * run. A step never frees a node that owns field roots (the LOCAL contract),
+ * complete. A step never frees a node that owns field roots (the LOCAL contract),
  * so every recorded root is live when the passes reach it. */
 typedef struct {
     markdown_core_node **roots;
@@ -970,10 +1162,10 @@ static int record_finish_root(finish_roots *record, markdown_core_node *root) {
  * Parsing at ENTER gives the walk the container's children as the next
  * events: the lookahead is re-established over them, which re-delivers
  * nothing and is not counted. */
-static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *root, bool parses, tree_phase_func finish,
-                            void *context, finish_roots *record, int record_initial) {
+static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *root, tree_phase_func finish,
+                            void *context, finish_roots *record) {
     owned_tree_walk walk = {
-        .parser = parser, .slots = parser->dialect->finish_step_slots, .script_depth = 0, .parses = parses};
+        .parser = parser, .slots = parser->dialect->finish_step_slots, .script_depth = 0, .parses = true};
     finish_count count = {0, 0, 0};
     const markdown_core_element_instance *const document = parser->dialect->document_structure;
     void (*const observe)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *) =
@@ -1003,9 +1195,7 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
                 if (finish && !finish(parser, completed, context)) {
                     markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                 }
-                /* A field root, or the initial root when asked: the chain roots
-                 * are enumerated again after finalization, their fields are not. */
-                if (record && (walk.count || record_initial) && !record_finish_root(record, completed)) {
+                if (record && !record_finish_root(record, completed)) {
                     markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                 }
                 break;
@@ -1099,7 +1289,6 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
         }
     }
     flush_finish_count(parser, &count);
-    markdown_core_free(walk.frames);
     markdown_core_free(walk.states);
     return !parser->error;
 }
@@ -1123,7 +1312,7 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
         parser->input_fact_count = 0;
         parser->input_first_line = parser->line_marks[owner->content_map.first].line;
         parser->line_number = parser->input_first_line - 1;
-        parser->last_line_length = 0;
+        parser->last_line_end = parser->line_marks[owner->content_map.first].source;
         owner->flags |= MARKDOWN_CORE_NODE__OPEN;
         S_parse_source(parser, owner->content.ptr, (size_t)owner->content.size);
         while (parser->current != owner && !parser->error) {
@@ -1175,17 +1364,21 @@ markdown_core_node *markdown_core_parser_parse(const char *source, size_t length
  * the ordinary borrowed view resolved inline by both consumers. */
 static const unsigned char *S_normalize_input_line(markdown_core_parser *parser, const markdown_core_input_line *line,
                                                    markdown_core_line_facts *facts, bufsize_t length) {
-    markdown_core_normalized_line *view = markdown_core_alloc(1, sizeof(*view) + (size_t)length + 2);
+    size_t bytes = ((size_t)length + 2 + sizeof(uint32_t) - 1) / sizeof(uint32_t) * sizeof(uint32_t);
+    markdown_core_normalized_line *view =
+        markdown_core_alloc(1, sizeof(*view) + bytes + (size_t)facts->nul_count * sizeof(uint32_t));
     if (!view) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
+    view->nuls = (uint32_t *)(void *)(view->bytes + bytes);
     unsigned char *out = view->bytes;
     for (size_t at = line->start; at < line->end; at++) {
         unsigned char byte = parser->input_source[at];
         if (byte) {
             *out++ = byte;
         } else {
+            view->nuls[view->nul_count++] = (uint32_t)at;
             *out++ = 0xef;
             *out++ = 0xbf;
             *out++ = 0xbd;
@@ -1294,6 +1487,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
                 return NULL;
             }
             facts->nul_count = nul_count;
+            parser->input_mapped = true;
         }
         parser->input_scanned = (size_t)(cursor - source);
         parser->input_line_work += parser->input_scanned - entry.start;
@@ -1334,10 +1528,12 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
     parser->input_scanned = 0;
     parser->input_line_count = 0;
     parser->input_fact_count = 0;
+    bool at_root = parser->block_root == parser->root;
+    parser->input_mapped = !at_root;
     parser->input_first_line = parser->line_number + 1;
     parser->lookahead_last_line_ready = false;
     parser->lookahead_end = source + length;
-    if (parser->block_root == parser->root) {
+    if (at_root) {
         const markdown_core_element_instance *document = parser->dialect->document_structure;
         document->element->read_document_prefix(document, parser, source, length);
     }
@@ -1355,11 +1551,20 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
         /* Callbacks may grow the line index; keep only stable bytes/offsets. */
         size_t next = markdown_core_input_line_next(parser, found);
         parser->lookahead_cursor = source + next;
+        parser->line_start = (bufsize_t)found->start;
+        /* A document line's scan recorded where its content ends; a cell's
+         * line ends where the cell's map places its last byte. */
+        if (at_root) {
+            parser->line_end = (bufsize_t)found->end;
+        } else {
+            parser->line_end = markdown_core_parser_mapped_source_end(parser, parser->line_number + 1, content_length);
+        }
         S_process_line(parser, content, content_length);
         if (parser->claimed_cursor) {
             assert(parser->claimed_cursor >= source + next && parser->claimed_cursor <= source + length);
             parser->line_number = parser->claimed_line;
-            parser->last_line_length = parser->claimed_last_column;
+            parser->line_start = (bufsize_t)markdown_core_parser_visited_line(parser, parser->line_number)->start;
+            parser->last_line_end = parser->claimed_last_end;
             parser->claimed_cursor = NULL;
         }
     }
@@ -2309,52 +2514,15 @@ finished:
     /* Block scopes cover the complete physical line, including closing
      * delimiters and attribute containers. Inline content trimming never
      * changes this source boundary. */
-    parser->last_line_length =
-        markdown_core_parser_source_column(parser, parser->line_number, S_current_line_length(parser));
+    parser->last_line_end = parser->line_end;
 
     markdown_core_strbuf_clear(&parser->curline);
 }
 
-typedef struct {
-    markdown_core_parser *parser;
-    tree_phase_func phase;
-    void *context;
-    finish_roots *record;
-} tree_phase_context;
-
-static int walk_owned_definition(markdown_core_node **slot, void *context) {
-    const tree_phase_context *phase = context;
-    return walk_owned_trees(phase->parser, *slot, false, phase->phase, phase->context, phase->record, 0);
-}
-
-/* THE DEFINITIONS THE DOCUMENT OWNS AS ROOTS OF THEIR OWN -- the inline
- * footnote bodies, which have no parent -- walked from where the previous
- * call left off (node.h, markdown_core_visit_block_subtrees_since). A body
- * is registered at the end of the document's chain by the inline parse that
- * declares it, and the finish walk parses inline content as it goes, so
- * bodies appear while the content tree is walked: this runs before the tree,
- * for the bodies a heading's inlines declared during the document's
- * preparation, and again after it, until a call finds nothing new. A body's
- * own content is made by the parse that made the body, so a walk of a body
- * finds no body it did not already know; the loop is what makes that a fact
- * the caller need not rely on. */
-static int S_walk_owned_definitions(markdown_core_parser *parser, tree_phase_context *phase,
-                                    markdown_core_node *last[MARKDOWN_CORE_DOCUMENT_CHAINS]) {
-    bool found;
-    do {
-        if (!markdown_core_visit_block_subtrees_since(parser->root, last, walk_owned_definition, phase, &found)) {
-            return 0;
-        }
-    } while (found && !parser->error);
-    return !parser->error;
-}
-
-/* THE FINISH STAGE'S ONE WALK. The definitions the document already owns as
- * independent roots come first, then the content tree, which still holds the
- * block definitions as children -- the document's finalization moves them
- * into their chains after this walk, and moves nothing else -- and then the
- * definitions the tree's own inline parsing declared. Every root is walked
- * once, with inline parsing and completion at each ENTER, the finish steps
+/* THE FINISH STAGE'S ONE WALK. The content tree holds every definition
+ * where it was written -- a block definition as a child, an inline note as
+ * its Citation's field -- so the one walk reaches them all. Every root is
+ * walked once, with inline parsing and completion at each ENTER, the finish steps
  * at the events they declared, and `phase` run on each root as its walk
  * completes -- the structural check. The global passes come later, after
  * finalization, on the roots `record` collects (finish_roots). A root is
@@ -2367,26 +2535,16 @@ static int S_apply_tree_phase(markdown_core_parser *parser, markdown_core_node *
     assert(root == parser->root && root->kind == MARKDOWN_CORE_NODE_DOCUMENT);
     parser->nodes_created_before_finish = parser->nodes_created;
     parser->nodes_freed_before_finish = parser->nodes_freed;
-    tree_phase_context phase_context = {parser, phase, context, record};
-    markdown_core_node *last[MARKDOWN_CORE_DOCUMENT_CHAINS] = {NULL, NULL};
-    return S_walk_owned_definitions(parser, &phase_context, last) &&
-           walk_owned_trees(parser, root, true, phase, context, record, 1) &&
-           S_walk_owned_definitions(parser, &phase_context, last);
+    return walk_owned_trees(parser, root, phase, context, record);
 }
 
-/* Register at syntax commitment; no completed-tree discovery pass is needed.
- * Inline bodies enter the document's value chain immediately, and the index
- * borrows only until finalization, which follows the finish walk. */
 bool markdown_core_parser_register_definition(markdown_core_parser *parser,
                                               markdown_core_definition_collection *collection,
-                                              markdown_core_node *definition, markdown_core_node *citation,
-                                              markdown_core_node **inline_owner) {
-    assert(definition && collection);
-    assert(citation ? inline_owner != NULL : inline_owner == NULL);
-    assert(inline_owner ? !definition->parent : definition->parent != NULL);
+                                              markdown_core_node *definition) {
+    assert(definition && collection && definition->parent);
     if (collection->count == collection->capacity) {
         size_t capacity = collection->capacity ? collection->capacity * 2 : 8;
-        markdown_core_definition_entry *values;
+        markdown_core_node **values;
         if (capacity > SIZE_MAX / sizeof(*values)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return false;
@@ -2399,33 +2557,24 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
         collection->values = values;
         collection->capacity = capacity;
     }
-    collection->values[collection->count++] = (markdown_core_definition_entry){definition, citation};
+    collection->values[collection->count++] = definition;
     parser->definition_registration_work++;
-    if (inline_owner) {
-        definition->prev = collection->last_inline;
-        if (collection->last_inline) {
-            collection->last_inline->next = definition;
-        } else {
-            *inline_owner = definition;
-        }
-        collection->last_inline = definition;
-    }
     return true;
 }
 
 uint64_t markdown_core_source_key(const void *entry) {
     markdown_core_node *node;
     memcpy(&node, entry, sizeof(node));
-    return ((uint64_t)(uint32_t)node->start_line << 32) | (uint32_t)node->start_column;
+    return node->where.place.start;
 }
 
 /* A STABLE LINEAR ORDERING BY SOURCE COORDINATE, keyed once.
  *
- * The key packs two nonnegative 32-bit coordinates, and a counting pass per
- * key byte orders any set of them in linear work with no comparison-sort worst
- * case. What is not constant is WHICH bytes carry information: the entries a
- * grid table closes, or the headings of one document, differ in their low line
- * and column bytes and agree on every other. A pass over a byte on which every
+ * The key is a node's first source byte, and a counting pass per key byte
+ * orders any set of them in linear work with no comparison-sort worst case.
+ * What is not constant is WHICH bytes carry information: the entries a grid
+ * table closes, or the headings of one document, differ in their low offset
+ * bytes and agree on every other. A pass over a byte on which every
  * key agrees moves every entry to where it already is, so the passes run are
  * exactly those over bytes on which some key differs -- found by one pass
  * that also computes the keys, once, so that they travel with their entries
@@ -2438,6 +2587,24 @@ void markdown_core_source_order_dispose(markdown_core_source_order *workspace) {
     markdown_core_free(workspace->keys);
     markdown_core_free(workspace->entries);
     *workspace = (markdown_core_source_order){0};
+}
+
+void *markdown_core_parser_walk_stack(markdown_core_parser *parser, size_t count, size_t size) {
+    if (size && count > SIZE_MAX / size) {
+        return NULL;
+    }
+    size_t needed = count * size;
+    if (needed > parser->walk_stack_size) {
+        size_t grown = parser->walk_stack_size > SIZE_MAX / 2 ? SIZE_MAX : 2 * parser->walk_stack_size;
+        size_t bytes = grown > needed ? grown : needed;
+        void *stack = markdown_core_realloc(parser->walk_stack, bytes);
+        if (!stack) {
+            return NULL;
+        }
+        parser->walk_stack = stack;
+        parser->walk_stack_size = bytes;
+    }
+    return parser->walk_stack;
 }
 
 int markdown_core_order_source_entries(markdown_core_source_order *workspace, void *entries, size_t count,
@@ -2510,22 +2677,6 @@ int markdown_core_block_order_definitions(markdown_core_parser *parser,
                                           markdown_core_definition_collection *collection) {
     return markdown_core_order_source_entries(&parser->source_order, collection->values, collection->count,
                                               sizeof(*collection->values), markdown_core_source_key);
-}
-
-void markdown_core_block_own_definitions(markdown_core_definition_collection *collection, markdown_core_node **slot) {
-    markdown_core_node *last = NULL;
-    *slot = NULL;
-    for (size_t i = 0; i < collection->count; i++) {
-        markdown_core_node *definition = collection->values[i].definition;
-        markdown_core_node_unlink(definition);
-        definition->prev = last;
-        if (last) {
-            last->next = definition;
-        } else {
-            *slot = definition;
-        }
-        last = definition;
-    }
 }
 
 /* THE FINISH STAGE IS ONE WALK, NOT ONE PER PHASE.
@@ -2621,10 +2772,6 @@ static int S_run_passes(markdown_core_parser *parser, markdown_core_node *root, 
     return 1;
 }
 
-static int S_run_passes_on_slot(markdown_core_node **slot, void *context) {
-    return S_run_passes(((tree_phase_context *)context)->parser, *slot, ((tree_phase_context *)context)->context);
-}
-
 static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     markdown_core_node *res;
 
@@ -2696,19 +2843,16 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
 
     /* The document's finalization reads the finished tree: the headings take
      * their anchors once every explicit anchor has been reserved, which the
-     * walk did at each node's ENTER, and the block definitions move into the
-     * chains the walk already visited the inline ones through. */
+     * walk did at each node's ENTER. */
     if (!parser->error) {
         const markdown_core_element_instance *document = parser->dialect->document_structure;
         document->element->finish_document(document, parser);
     }
 
-    /* Then the global passes, each on every finalized root: the chains first,
-     * as the walk took them, then the field roots and the document in the
-     * order the walk completed them. */
+    /* Then the global passes, each on every finalized root: the field roots
+     * and the document in the order the walk completed them. */
     if (!parser->error && phases.pass_count) {
-        tree_phase_context pass_context = {parser, NULL, &phases, NULL};
-        int ok = markdown_core_visit_block_subtrees(parser->root, S_run_passes_on_slot, &pass_context);
+        int ok = 1;
         for (size_t i = 0; ok && i < record.count; i++) {
             ok = S_run_passes(parser, record.roots[i], &phases);
         }
@@ -2718,6 +2862,15 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     }
     markdown_core_free(record.roots);
     markdown_core_free((void *)phases.passes);
+
+    /* Last, the finished tree is published: nothing changes it after this. */
+    if (!parser->error) {
+        const markdown_core_element_instance *document = parser->dialect->document_structure;
+        document->element->publish_document(document, parser);
+    }
+    markdown_core_free(parser->walk_stack);
+    parser->walk_stack = NULL;
+    parser->walk_stack_size = 0;
     if (parser->error) {
         goto failed;
     }
@@ -2753,7 +2906,7 @@ int markdown_core_parser_has_partially_consumed_tab(markdown_core_parser *parser
     return parser->partially_consumed_tab;
 }
 
-int markdown_core_parser_get_last_line_length(markdown_core_parser *parser) { return parser->last_line_length; }
+bufsize_t markdown_core_parser_get_last_line_end(markdown_core_parser *parser) { return parser->last_line_end; }
 
 void markdown_core_parser_advance_offset(markdown_core_parser *parser, const char *input, int count, int columns) {
     markdown_core_chunk input_chunk = markdown_core_chunk_literal(input);

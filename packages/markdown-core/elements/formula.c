@@ -615,10 +615,11 @@ static markdown_core_node *make_formula_span(const markdown_core_element *elemen
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
-    markdown_core_parser_content_place(parser, &parent->content_map, start, &formula->start_line,
-                                       &formula->start_column);
-    markdown_core_parser_content_end_place(parser, &parent->content_map, end - 1, &formula->end_line,
-                                           &formula->end_column);
+    int line;
+    bufsize_t first, last;
+    markdown_core_parser_content_place(parser, &parent->content_map, start, &line, &first);
+    markdown_core_parser_content_end_place(parser, &parent->content_map, end - 1, &line, &last);
+    formula->where.place = (markdown_core_place){(uint32_t)first, (uint32_t)last};
     return formula;
 }
 
@@ -692,10 +693,7 @@ static markdown_core_finish_result replace_with_formula_block(const markdown_cor
         oldnode->as.code->literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
     }
     get_formula(formula)->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
-    formula->start_line = oldnode->start_line;
-    formula->start_column = oldnode->start_column;
-    formula->end_line = oldnode->end_line;
-    formula->end_column = oldnode->end_column;
+    formula->where = oldnode->where;
     markdown_core_node_attach_validated(oldnode->parent, formula, oldnode);
     markdown_core_parser_release_node(parser, oldnode);
     return MARKDOWN_CORE_FINISH_CONSUMED;

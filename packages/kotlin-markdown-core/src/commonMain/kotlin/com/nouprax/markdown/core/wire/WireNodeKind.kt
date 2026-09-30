@@ -46,8 +46,8 @@ internal enum class WireNodeKind(
     DEFINITION(38, false),
     TABLE_CAPTION(39, false),
     CITATION(40, false),
-    FOOTNOTE(41, false),
-    SPECIMEN(42, false),
+    FOOTNOTE(41, true),
+    SPECIMEN(42, true),
     METADATA(43, false),
     ;
 

@@ -2,25 +2,43 @@ import MarkdownCoreC
 
 /// A run of literal text, with escapes and character references already resolved.
 public struct Text: Markup {
-    /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public let scope: Scope
+    let record: TextRecord
+
+    /// The node's identifier within its document.
+    public var id: MarkupID { record.id }
+    /// Where it is, relative to its neighbours. See ``Extent``.
+    public var extent: Extent { record.extent }
     /// The explicit anchor, absent when none was attached.
-    public let anchor: String?
+    public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
-    public let attributes: Attributes
+    public var attributes: Attributes { record.attributes }
     /// The text as the reader sees it, not as the source spells it.
-    public let literal: String
+    public var literal: String { record.literal }
 }
 
-extension Text {
-    init(from node: OpaquePointer) {
+final class TextRecord: MarkupRecord, @unchecked Sendable {
+    let literal: String
+
+    init(_ fields: InheritedFields, literal: String) {
+        self.literal = literal
+        super.init(fields, children: [])
+    }
+
+    override var markup: any Markup { Text(record: self) }
+
+    override func hasEqualFields(_ other: MarkupRecord) -> Bool {
+        literal == unsafeDowncast(other, to: TextRecord.self).literal
+    }
+}
+
+extension TextRecord {
+    convenience init(from node: OpaquePointer) {
         var literal = markdown_core_string()
         markdown_core_node_literal(node, &literal)
-        self.init(
-            scope: Self.scope(from: node),
-            anchor: markdown_core_node_anchor(node).string,
-            attributes: Attributes(from: node),
-            literal: literal.required
-        )
+        self.init(InheritedFields(from: node), literal: literal.required)
     }
+}
+
+extension Text: RecordBacked {
+    var base: MarkupRecord { record }
 }

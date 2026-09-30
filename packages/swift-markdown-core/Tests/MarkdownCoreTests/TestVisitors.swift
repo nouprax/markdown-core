@@ -1,4 +1,6 @@
-import MarkdownCore
+import Testing
+
+@testable import MarkdownCore
 
 struct KindVisitor: MarkupVisitor {
     var kinds: [String] = []
@@ -66,7 +68,7 @@ struct RecordingWalkingVisitor: MarkupVisitor {
     mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) { record(node, phase) }
     private let recordEvents: Bool
     var events: [String] = []
-    var tableRowKinds: [Int] = []
+    var rows: [MarkupID] = []
     var entered = 0
     var exited = 0
 
@@ -125,10 +127,25 @@ struct RecordingWalkingVisitor: MarkupVisitor {
     mutating func visit(_ node: TableCaption, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: TableRow, phase: MarkupVisitPhase) {
         record(node, phase)
-        if phase == .enter { tableRowKinds.append(Int(node.scope.start.line)) }
+        if phase == .enter { rows.append(node.id) }
     }
     mutating func visit(_ node: TableCell, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Citation, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) { record(node, phase) }
+}
+
+/// The canonical dump of `source`, as the conformance runner reads it.
+func dumped(_ source: String) throws -> String {
+    try #require(Document.parse(source).dump(in: source))
+}
+
+/// The scope of `node` in `document`, parsed from `source`.
+func scope(of node: some Markup, in document: Document, source: String) throws -> Scope {
+    try #require(document.scope(of: node, in: source))
+}
+
+/// A hand-built record's inherited fields: no source range and no attributes.
+func fields(_ id: UInt64) -> InheritedFields {
+    InheritedFields(id: MarkupID(id), extent: Extent(lead: 0, span: 0), anchor: nil, attributes: .empty)
 }

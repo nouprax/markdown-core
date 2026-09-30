@@ -228,17 +228,17 @@ Extent(lead: Int32, span: UInt32)       bytes of UTF-8 source
   in one walk over the extents, and the line and unit conversion scans the
   source. This cost is paid only by the query.
 - Walker callbacks no longer carry a scope.
-- A scope is a function of the byte range alone. The empty-document
-  `1:1..0:0` and a top-level end at `L:0` (a range ending right after line
-  `L-1`'s terminator) follow from the bytes. The one native sentinel that
-  does not is a grid or multiline cell whose part of line `L` is blank: its
-  end is reported as `L:0` but denotes the end of the cell's segment on line
-  `L-1`, a mid-line byte that an ordinary `(L-1):col` end can also name. That
-  cell end is therefore reported as its real last byte, `(L-1):col`, and
-  `canonical-ast.md` drops the cell-local sentinel.
-- The canonical dump prints absolute scopes as today (except for those table
-  cells, whose fixtures change), so it is a scope query and takes the source
-  like one: `document.dump(in: source)` and `document.dump(node, in: source)`
+- A scope is a function of the byte range alone, with one rule for every
+  node: a range ending right after line `L-1`'s terminator ends at `L:0`,
+  so `SoftBreak`, `LineBreak` and a `Citation` that end on a line terminator
+  end there too, and a zero-byte document is `1:1..1:0`, as a document of one
+  newline is. A grid or multiline cell whose part of line `L` is blank used
+  to end at `L:0` while denoting the end of the cell's segment on line
+  `L-1`, a mid-line byte that an ordinary `(L-1):col` end can also name.
+  That cell end is therefore reported as its real last byte, `(L-1):col`,
+  and `canonical-ast.md` drops the cell-local sentinel.
+- The canonical dump prints absolute scopes by this rule, so it is a scope
+  query and takes the source like one: `document.dump(in: source)` and `document.dump(node, in: source)`
   on every binding, and `markdown_core_document_dump(document, source, ...)`
   in C.
 
@@ -943,8 +943,9 @@ activates for it.
    in nodes with on-demand scope queries, MCB3, and the Swift record
    storage, the coordinate unit (4.4), and definitions kept where written
    (4.5). The canonical dump and conformance fixtures change only for
-   documents with footnote or specimen definitions and for grid and
-   multiline table cells that end on a blank line part (4.3), whose
+   documents with footnote or specimen definitions, for grid and multiline
+   table cells that end on a blank line part, and for ends on a line
+   terminator and the empty document under the one byte rule (4.3), whose
    `canonical-ast.md` rule changes in the same step.
 - [ ] **Step 2: Sessions with a whole-document restart.** Session API on every platform,
    the text tree, identity matching,

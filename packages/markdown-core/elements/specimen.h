@@ -6,7 +6,6 @@ void markdown_core_block_prepare_specimens(const markdown_core_element_instance 
 bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core_node *container,
                                      markdown_core_chunk *input);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN;
-void markdown_core_specimen_finish(const markdown_core_element_instance *self, markdown_core_parser *parser);
 void markdown_core_specimen_dispose(const markdown_core_element_instance *self);
 
 /* THE SPECIMENS OF ONE PARSE (the specimen element's parse record):

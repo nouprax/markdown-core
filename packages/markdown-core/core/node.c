@@ -367,11 +367,17 @@ static void free_node_as(markdown_core_node *node) {
          * in beside the children; only the referent's bytes are the arm's. */
         markdown_core_chunk_free(&node->as.citation->value);
         break;
+    case MARKDOWN_CORE_NODE_DOCUMENT:
+        markdown_core_free((void *)node->as.document->footnotes.nodes);
+        markdown_core_free((void *)node->as.document->footnotes.labeled);
+        markdown_core_free((void *)node->as.document->specimens.nodes);
+        markdown_core_free((void *)node->as.document->specimens.labeled);
+        break;
     case MARKDOWN_CORE_NODE_SPECIMEN:
-        markdown_core_optional_chunk_free(&node->as.specimen->id);
+        markdown_core_optional_chunk_free(&node->as.specimen->label);
         break;
     case MARKDOWN_CORE_NODE_FOOTNOTE:
-        markdown_core_chunk_free(&node->as.footnote->id);
+        markdown_core_optional_chunk_free(&node->as.footnote->label);
         break;
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_EMBEDDED:
@@ -433,11 +439,10 @@ static void S_splice_owned_fields(markdown_core_node *owner, markdown_core_node 
     case MARKDOWN_CORE_NODE_CITATION:
         S_splice_after(after, owner->as.citation->suffix);
         S_splice_after(after, owner->as.citation->prefix);
+        S_splice_after(after, owner->as.citation->note);
         break;
     case MARKDOWN_CORE_NODE_DOCUMENT:
         S_splice_after(after, owner->as.document->metadata);
-        S_splice_after(after, owner->as.document->footnotes);
-        S_splice_after(after, owner->as.document->specimens);
         break;
     default:
         break;
@@ -675,8 +680,8 @@ static void S_print_error(FILE *out, markdown_core_node *node, const char *elem)
     if (out == NULL) {
         return;
     }
-    fprintf(out, "Invalid '%s' in node type %s at %d:%d\n", elem, markdown_core_node_get_type_string(node),
-            node->start_line, node->start_column);
+    fprintf(out, "Invalid '%s' in node type %s (id %llu)\n", elem, markdown_core_node_get_type_string(node),
+            (unsigned long long)node->id);
 }
 
 int markdown_core_node_check(markdown_core_node *node, FILE *out) {
@@ -742,35 +747,6 @@ const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_n
         return &node->as.link->resource->attributes.anchor;
     }
     return &node->attributes.anchor;
-}
-
-/* Document-owned definition values are independent roots, not child edges. */
-int markdown_core_visit_block_subtrees_since(markdown_core_node *node,
-                                             markdown_core_node *last[MARKDOWN_CORE_DOCUMENT_CHAINS],
-                                             markdown_core_owned_subtree_visitor visitor, void *context, bool *found) {
-    *found = false;
-    if (node->kind != MARKDOWN_CORE_NODE_DOCUMENT) {
-        return 1;
-    }
-    markdown_core_node **families[MARKDOWN_CORE_DOCUMENT_CHAINS] = {&node->as.document->footnotes,
-                                                                    &node->as.document->specimens};
-    for (size_t i = 0; i < MARKDOWN_CORE_DOCUMENT_CHAINS; i++) {
-        for (markdown_core_node **slot = last[i] ? &last[i]->next : families[i]; *slot; slot = &(*slot)->next) {
-            if (!visitor(slot, context)) {
-                return 0;
-            }
-            last[i] = *slot;
-            *found = true;
-        }
-    }
-    return 1;
-}
-
-int markdown_core_visit_block_subtrees(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
-                                       void *context) {
-    markdown_core_node *last[MARKDOWN_CORE_DOCUMENT_CHAINS] = {NULL, NULL};
-    bool found;
-    return markdown_core_visit_block_subtrees_since(node, last, visitor, context, &found);
 }
 
 bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a,

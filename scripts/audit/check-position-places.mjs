@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /** Checks editor positions against the native cmark coordinate contract.
- * The empty document's 1:1..0:0 sentinel is valid only for zero-byte input.
+ * A zero-byte document's scope is 1:1..1:0: its start is the position of its
+ * first byte and its end the columns before its exclusive end, and it has
+ * neither.
  * Ordinary coordinates retain the existing source-place checks. This audit
  * validates producers; bindings must never repair or convert their output.
  */
@@ -69,7 +71,7 @@ for (const example of corpus) {
             node.kind === "Document" &&
             scope.start[0] === 1 &&
             scope.start[1] === 1 &&
-            scope.end[0] === 0 &&
+            scope.end[0] === 1 &&
             scope.end[1] === 0
         )
             continue;

@@ -19,8 +19,7 @@
 
 static size_t nodes_visited;
 
-static int inspect_node(const markdown_core_node *node, void *context) {
-    markdown_core_scope scope;
+static int inspect_node(const markdown_core_node *node, ts_ast_range range, void *context) {
     markdown_core_string value;
     markdown_core_optional_string marker;
     int32_t level;
@@ -32,8 +31,7 @@ static int inspect_node(const markdown_core_node *node, void *context) {
     nodes_visited++;
     (void)markdown_core_node_get_kind(node);
     (void)markdown_core_node_kind_name(markdown_core_node_get_kind(node));
-    scope = markdown_core_node_scope(node);
-    if (scope.start.line < 0 || scope.end.line < 0) {
+    if (range.start < 0 || range.end < range.start) {
         return -1;
     }
     (void)markdown_core_node_literal(node, &value);
@@ -72,15 +70,15 @@ static int smoke(const uint8_t *bytes, size_t length, const char *label) {
     }
 
     if (ts_ast_walk(markdown_core_document_root(document), inspect_node, NULL) != 0) {
-        fprintf(stderr, "%s: traversal produced an invalid scope\n", label);
+        fprintf(stderr, "%s: traversal produced an invalid range\n", label);
         goto done;
     }
-    if (ts_ast_scope_outside(markdown_core_document_root(document), bytes, length)) {
-        fprintf(stderr, "%s: a scope lies outside the source\n", label);
+    if (ts_ast_range_outside(markdown_core_document_root(document), length)) {
+        fprintf(stderr, "%s: a range lies outside the source\n", label);
         goto done;
     }
-    if (!markdown_core_document_dump(document, &first, &first_length, &error) ||
-        !markdown_core_document_dump(document, &second, &second_length, &error)) {
+    if (!markdown_core_document_dump(document, NULL, bytes, length, &first, &first_length, &error) ||
+        !markdown_core_document_dump(document, NULL, bytes, length, &second, &second_length, &error)) {
         fprintf(stderr, "%s: dump failed\n", label);
         goto done;
     }

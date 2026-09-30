@@ -8,8 +8,9 @@ import kotlin.test.assertEquals
 class KmpConsumerTest {
     @Test
     fun rootMetadataSelectsTheJvmVariant() {
-        val document = Document.parse("# KMP consumer\n")
+        val source = "# KMP consumer\n"
+        val document = Document.parse(source)
         assertEquals(1, document.content.size)
-        assertEquals(document.dump(), MarkupDumper.dump(document))
+        assertEquals(document.dump(source), MarkupDumper.dump(document, source))
     }
 }

@@ -28,7 +28,7 @@ class JniMessageTest {
         for (occurrences in listOf(1, 64, 4096)) {
             val bytes = message(occurrences, long)
             assertEquals(attributeGrowth, bytes.size - message(occurrences, short).size)
-            val document = WireDecoder.decode(bytes)
+            val document = WireDecoder.decode(bytes, TextUnit.UTF16)
             // The tree owns its values: nothing reads the message after decoding.
             bytes.fill(0)
             val links = document.content.map { assertIs<Link>(assertIs<Paragraph>(it).content.single()) }

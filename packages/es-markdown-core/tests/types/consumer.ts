@@ -10,7 +10,13 @@ import {
     type CrossLink,
     type CrossEmbedded,
     type Dimensions,
+    type Extent,
+    type FootnoteTarget,
+    type Position,
+    type Scope,
+    type TextUnit,
     MarkupDumper,
+    markupEquals,
     walk,
     type Citation,
     type CitationReferent,
@@ -26,12 +32,29 @@ import {
 } from "@nouprax/es-markdown-core";
 
 const document: Document = Document.parse("# typed");
-// @ts-expect-error the dialect has no switches: parse takes the source and nothing else
+// @ts-expect-error the dialect has no switches: parse takes the source and a unit, nothing else
 Document.parse("# typed", { tables: true });
-const dump: string = document.dump();
-const explicitDump: string = MarkupDumper.dump(document);
-void dump;
-void explicitDump;
+const unit: TextUnit = Document.parse("# typed", { unit: "utf8" }).unit;
+// @ts-expect-error a unit is UTF-8 or UTF-16
+Document.parse("# typed", { unit: "utf32" });
+const dump: string = document.dump("# typed");
+const explicitDump: string = MarkupDumper.dump(document, "# typed");
+const nodeDump: string = document.dump(document.content[0]!, "# typed");
+const explicitNodeDump: string = MarkupDumper.dump(document, document.content[0]!, "# typed");
+// @ts-expect-error a dump is computed from the source
+document.dump();
+void [unit, dump, explicitDump, nodeDump, explicitNodeDump];
+const id: number = document.id;
+const extent: Extent = document.extent;
+const scope: Scope | null = document.scope(document.content[0]!, "# typed");
+const position: Position = { line: 1, column: 3 };
+const hit: Markup | null = document.nodeAt(position, "# typed");
+const equal: boolean = markupEquals(document, Document.parse("# typed"));
+const footnotes: readonly Footnote[] = document.footnotes;
+const specimens: readonly Specimen[] = document.specimens;
+const footnote: Footnote | null = document.footnote("label");
+const specimen: Specimen | null = document.specimen("label");
+void [id, extent, scope, hit, equal, footnotes, specimens, footnote, specimen];
 const visitor: MarkupVisitor = {
     citation: (node) => {
         void node.kind;
@@ -236,6 +259,15 @@ const walkingVisitor: MarkupVisitor = {
     citation(citation, phase) {
         const inferred: Citation = citation;
         const referent: CitationReferent = inferred.referent;
+        if (referent.kind === "footnote") {
+            const target: FootnoteTarget = referent.target;
+            const note: Footnote | null = target.kind === "note" ? target.footnote : null;
+            // @ts-expect-error a label target owns no footnote
+            if (target.kind === "label") void target.footnote;
+            void note;
+        }
+        // @ts-expect-error a referent names its footnote through its target
+        if (referent.kind === "footnote") void referent.id;
         const inferredPhase: MarkupVisitPhase = phase;
         const node: Markup = citation;
         const kind: "citation" = node.kind;
@@ -250,7 +282,9 @@ const walkingVisitor: MarkupVisitor = {
     footnote(footnote, phase) {
         const inferred: Footnote = footnote;
         const inferredPhase: MarkupVisitPhase = phase;
-        void [inferred.id, inferredPhase];
+        const label: string | null = inferred.label;
+        const nodeId: number = inferred.id;
+        void [label, nodeId, inferredPhase];
     }
 };
 walk(document, walkingVisitor);
@@ -264,8 +298,10 @@ const missingCitation: MarkupVisitor = remainingWalking;
 void [omittedCitation, missingCitation];
 // @ts-expect-error recursively readonly content cannot be replaced
 document.content[0] = document;
-// @ts-expect-error readonly scope values cannot be mutated
-document.scope.start.line = 2;
+// @ts-expect-error readonly extent values cannot be mutated
+document.extent.lead = 2;
+// @ts-expect-error ids are readonly
+document.id = 2;
 // @ts-expect-error dump methods cannot be replaced
 document.dump = () => "replacement";
 
@@ -304,11 +340,10 @@ const listItem: MetadataListItem = { kind: "text", value: "" };
 const metadataValue: MetadataValue = { kind: "scalar", value: scalar };
 const metadata: Metadata = {
     kind: "metadata",
+    id: 2,
+    extent: { lead: 0, span: 0 },
     anchor: null,
     attributes: empty,
-    dump() {
-        return MarkupDumper.dump(this);
-    },
     name: metadataValue,
     title: null,
     subtitle: null,
@@ -318,8 +353,7 @@ const metadata: Metadata = {
     keywords: null,
     abstract: null,
     state: null,
-    comment: null,
-    scope: document.scope
+    comment: null
 };
 const parsedMetadata: Metadata | null = document.metadata;
 void [anchor, attributes, empty, record, listItem, metadata, parsedMetadata];

@@ -460,7 +460,7 @@ internal class RecordingWalkingVisitor(
     ): Unit = record(metadata, phase)
 
     val events: MutableList<String> = mutableListOf()
-    val tableRowKinds: MutableList<Int> = mutableListOf()
+    val tableRowIds: MutableList<Long> = mutableListOf()
     var entered: Int = 0
         private set
     var exited: Int = 0
@@ -549,7 +549,7 @@ internal class RecordingWalkingVisitor(
         phase: MarkupVisitPhase,
     ) {
         record(tableRow, phase)
-        if (phase == MarkupVisitPhase.ENTER) tableRowKinds += tableRow.scope.start.line
+        if (phase == MarkupVisitPhase.ENTER) tableRowIds += tableRow.id.value
     }
 
     override fun visit(
@@ -696,4 +696,231 @@ internal class RecordingWalkingVisitor(
         footnote: Footnote,
         phase: MarkupVisitPhase,
     ): Unit = record("Footnote", phase)
+}
+
+/** Every node a walk enters, in canonical walk order. */
+internal class NodeVisitor : MarkupVisitor {
+    val nodes: MutableList<Markup> = mutableListOf()
+
+    private fun record(
+        node: Markup,
+        phase: MarkupVisitPhase,
+    ) {
+        if (phase == MarkupVisitPhase.ENTER) nodes += node
+    }
+
+    override fun visit(
+        document: Document,
+        phase: MarkupVisitPhase,
+    ): Unit = record(document, phase)
+
+    override fun visit(
+        callout: Callout,
+        phase: MarkupVisitPhase,
+    ): Unit = record(callout, phase)
+
+    override fun visit(
+        paragraph: Paragraph,
+        phase: MarkupVisitPhase,
+    ): Unit = record(paragraph, phase)
+
+    override fun visit(
+        heading: Heading,
+        phase: MarkupVisitPhase,
+    ): Unit = record(heading, phase)
+
+    override fun visit(
+        thematicBreak: ThematicBreak,
+        phase: MarkupVisitPhase,
+    ): Unit = record(thematicBreak, phase)
+
+    override fun visit(
+        list: List,
+        phase: MarkupVisitPhase,
+    ): Unit = record(list, phase)
+
+    override fun visit(
+        listItem: ListItem,
+        phase: MarkupVisitPhase,
+    ): Unit = record(listItem, phase)
+
+    override fun visit(
+        codeBlock: CodeBlock,
+        phase: MarkupVisitPhase,
+    ): Unit = record(codeBlock, phase)
+
+    override fun visit(
+        htmlBlock: HTMLBlock,
+        phase: MarkupVisitPhase,
+    ): Unit = record(htmlBlock, phase)
+
+    override fun visit(
+        formulaBlock: FormulaBlock,
+        phase: MarkupVisitPhase,
+    ): Unit = record(formulaBlock, phase)
+
+    override fun visit(
+        table: Table,
+        phase: MarkupVisitPhase,
+    ): Unit = record(table, phase)
+
+    override fun visit(
+        tableCaption: TableCaption,
+        phase: MarkupVisitPhase,
+    ): Unit = record(tableCaption, phase)
+
+    override fun visit(
+        tableRow: TableRow,
+        phase: MarkupVisitPhase,
+    ): Unit = record(tableRow, phase)
+
+    override fun visit(
+        tableCell: TableCell,
+        phase: MarkupVisitPhase,
+    ): Unit = record(tableCell, phase)
+
+    override fun visit(
+        directiveBlock: DirectiveBlock,
+        phase: MarkupVisitPhase,
+    ): Unit = record(directiveBlock, phase)
+
+    override fun visit(
+        directiveLabel: DirectiveLabel,
+        phase: MarkupVisitPhase,
+    ): Unit = record(directiveLabel, phase)
+
+    override fun visit(
+        text: Text,
+        phase: MarkupVisitPhase,
+    ): Unit = record(text, phase)
+
+    override fun visit(
+        softBreak: SoftBreak,
+        phase: MarkupVisitPhase,
+    ): Unit = record(softBreak, phase)
+
+    override fun visit(
+        lineBreak: LineBreak,
+        phase: MarkupVisitPhase,
+    ): Unit = record(lineBreak, phase)
+
+    override fun visit(
+        code: Code,
+        phase: MarkupVisitPhase,
+    ): Unit = record(code, phase)
+
+    override fun visit(
+        html: HTML,
+        phase: MarkupVisitPhase,
+    ): Unit = record(html, phase)
+
+    override fun visit(
+        comment: Comment,
+        phase: MarkupVisitPhase,
+    ): Unit = record(comment, phase)
+
+    override fun visit(
+        crossLink: CrossLink,
+        phase: MarkupVisitPhase,
+    ): Unit = record(crossLink, phase)
+
+    override fun visit(
+        crossEmbedded: CrossEmbedded,
+        phase: MarkupVisitPhase,
+    ): Unit = record(crossEmbedded, phase)
+
+    override fun visit(
+        formula: Formula,
+        phase: MarkupVisitPhase,
+    ): Unit = record(formula, phase)
+
+    override fun visit(
+        emphasis: Emphasis,
+        phase: MarkupVisitPhase,
+    ): Unit = record(emphasis, phase)
+
+    override fun visit(
+        strong: Strong,
+        phase: MarkupVisitPhase,
+    ): Unit = record(strong, phase)
+
+    override fun visit(
+        strikethrough: Strikethrough,
+        phase: MarkupVisitPhase,
+    ): Unit = record(strikethrough, phase)
+
+    override fun visit(
+        mark: Mark,
+        phase: MarkupVisitPhase,
+    ): Unit = record(mark, phase)
+
+    override fun visit(
+        insertion: Insertion,
+        phase: MarkupVisitPhase,
+    ): Unit = record(insertion, phase)
+
+    override fun visit(
+        span: Span,
+        phase: MarkupVisitPhase,
+    ): Unit = record(span, phase)
+
+    override fun visit(
+        superscript: Superscript,
+        phase: MarkupVisitPhase,
+    ): Unit = record(superscript, phase)
+
+    override fun visit(
+        subscript: Subscript,
+        phase: MarkupVisitPhase,
+    ): Unit = record(subscript, phase)
+
+    override fun visit(
+        definitionList: DefinitionList,
+        phase: MarkupVisitPhase,
+    ): Unit = record(definitionList, phase)
+
+    override fun visit(
+        definition: Definition,
+        phase: MarkupVisitPhase,
+    ): Unit = record(definition, phase)
+
+    override fun visit(
+        link: Link,
+        phase: MarkupVisitPhase,
+    ): Unit = record(link, phase)
+
+    override fun visit(
+        embedded: Embedded,
+        phase: MarkupVisitPhase,
+    ): Unit = record(embedded, phase)
+
+    override fun visit(
+        directive: Directive,
+        phase: MarkupVisitPhase,
+    ): Unit = record(directive, phase)
+
+    override fun visit(
+        cite: Cite,
+        phase: MarkupVisitPhase,
+    ): Unit = record(cite, phase)
+
+    override fun visit(
+        citation: Citation,
+        phase: MarkupVisitPhase,
+    ): Unit = record(citation, phase)
+
+    override fun visit(
+        footnote: Footnote,
+        phase: MarkupVisitPhase,
+    ): Unit = record(footnote, phase)
+
+    override fun visit(
+        specimen: Specimen,
+        phase: MarkupVisitPhase,
+    ): Unit = record(specimen, phase)
+
+    override fun visit(
+        metadata: Metadata,
+        phase: MarkupVisitPhase,
+    ): Unit = record(metadata, phase)
 }

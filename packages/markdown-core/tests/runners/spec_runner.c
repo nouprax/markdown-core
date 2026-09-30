@@ -35,7 +35,8 @@ static uint8_t *dump_example(const ts_spec_case *test_case, size_t *dump_length)
     if (!document) {
         return NULL;
     }
-    if (!markdown_core_document_dump(document, &dump, dump_length, &error)) {
+    const uint8_t *source = (const uint8_t *)test_case->markdown;
+    if (!markdown_core_document_dump(document, NULL, source, test_case->markdown_length, &dump, dump_length, &error)) {
         fprintf(stderr, "example %d: dump failed\n", test_case->example);
         markdown_core_error_free(error);
         markdown_core_document_free(document);
@@ -46,8 +47,9 @@ static uint8_t *dump_example(const ts_spec_case *test_case, size_t *dump_length)
     {
         uint8_t *second = NULL;
         size_t second_length = 0;
-        if (!markdown_core_document_dump(document, &second, &second_length, &error) || second_length != *dump_length ||
-            memcmp(dump, second, second_length) != 0) {
+        if (!markdown_core_document_dump(document, NULL, source, test_case->markdown_length, &second, &second_length,
+                                         &error) ||
+            second_length != *dump_length || memcmp(dump, second, second_length) != 0) {
             fprintf(stderr, "example %d: dump is not deterministic\n", test_case->example);
             markdown_core_dump_free(second);
             markdown_core_dump_free(dump);

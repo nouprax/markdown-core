@@ -1,6 +1,6 @@
 import Testing
 
-@testable import MarkdownCore
+import MarkdownCore
 
 @Suite("ast") struct DefinitionListTests {
     @Test("definition terms and ordered bodies survive native release and walk without body wrapper nodes")
@@ -46,6 +46,5 @@ import Testing
         var visitor = RecordingWalkingVisitor(recordEvents: false)
         document.walk(with: &visitor)
         #expect(visitor.entered == 4 + repetitions * 4)
-        #expect(document.fields.store.records.count == visitor.entered)
     }
 }

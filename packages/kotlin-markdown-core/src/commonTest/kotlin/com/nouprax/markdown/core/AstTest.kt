@@ -51,12 +51,13 @@ class AstTest {
 
     @Test
     fun universalAttributesPreserveOrderAndEscapedClassDumping() {
-        val document = Document.parse(":n{#id .a class=\"a b}c\" k=1 k=2}")
+        val source = ":n{#id .a class=\"a b}c\" k=1 k=2}"
+        val document = Document.parse(source)
         val directive = (document.content.single() as Paragraph).content.single() as Directive
         assertEquals("id", directive.anchor)
         assertEquals(listOf("a", "a", "b}c"), directive.attributes.classes)
         assertEquals(listOf(Record("k", "1"), Record("k", "2")), directive.attributes.records)
-        assertTrue(directive.dump().contains("attributes={.a .a .\"b}c\" k=\"1\" k=\"2\"}"))
+        assertTrue(document.dump(directive, source).contains("attributes={.a .a .\"b}c\" k=\"1\" k=\"2\"}"))
         assertNull(document.anchor)
         assertNull(document.metadata)
         assertTrue(document.attributes.classes.isEmpty() && document.attributes.records.isEmpty())
@@ -64,7 +65,6 @@ class AstTest {
 
     @Test
     fun tableColumnWidthsUseCanonicalDecimals() {
-        val scope = Document.parse("x").scope
         val widths =
             listOf(
                 0.1 to "0.1",
@@ -83,11 +83,12 @@ class AstTest {
                     emptyList(),
                     emptyList(),
                     emptyList(),
-                    scope,
+                    MarkupID(2),
+                    Extent(0, 1u),
                     null,
                     Attributes.empty,
                 )
-            assertTrue(table.dump().contains("columns=[none:$expected]"))
+            assertTrue(holding(table).dump("x").contains("columns=[none:$expected]"))
         }
     }
 
@@ -97,8 +98,9 @@ class AstTest {
         val rows =
             documents.map {
                 TableRow(
-                    listOf(TableCell(1, 2, it.content, it.scope, null, Attributes.empty)),
-                    it.scope,
+                    listOf(TableCell(1, 2, it.content, MarkupID(4), Extent(0, 0u), null, Attributes.empty)),
+                    MarkupID(3),
+                    Extent(0, 0u),
                     null,
                     Attributes.empty,
                 )
@@ -110,7 +112,8 @@ class AstTest {
                 listOf(rows[0]),
                 listOf(rows[1]),
                 listOf(rows[2]),
-                documents[0].scope,
+                MarkupID(2),
+                Extent(0, 6u),
                 null,
                 Attributes.empty,
             )
@@ -123,8 +126,9 @@ class AstTest {
             listOf("enter:Heading", "enter:Paragraph", "enter:ThematicBreak"),
             visitor.events.filter { it in listOf("enter:Heading", "enter:Paragraph", "enter:ThematicBreak") },
         )
-        assertTrue(table.dump().contains("columns=[left:0.1,none:null] children=3"))
-        assertTrue(table.dump().contains("TableFoot children=1"))
+        val dump = holding(table).dump("# head")
+        assertTrue(dump.contains("columns=[left:0.1,none:null] children=3"))
+        assertTrue(dump.contains("TableFoot children=1"))
     }
 
     @Test
@@ -140,7 +144,7 @@ class AstTest {
                 "Term\n: body\n",
             )
         val documents = sources.map { Document.parse(it) }
-        val kinds = documents.flatMap { dumpKinds(it.dump()) }.toSet()
+        val kinds = documents.zip(sources).flatMap { (document, source) -> dumpKinds(document.dump(source)) }.toSet()
         assertEquals(
             setOf(
                 "Document",
@@ -184,16 +188,15 @@ class AstTest {
             ),
             kinds,
         )
-        assertTrue(documents.all { it.scope.start == Position(1, 1) })
+        assertTrue(
+            documents.zip(sources).all { (document, source) -> document.scope(document, source)?.start == Position(1, 1) },
+        )
     }
 
     @Test
     fun fieldsNullabilityAndTypedTableNodesAreMapped() {
-        val document =
-            Document
-                .parse(
-                    "3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image \"title\")\n",
-                )
+        val source = "3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image \"title\")\n"
+        val document = Document.parse(source)
         val ordered = document.content[0] as List
         assertEquals(ListFlavor.ORDERED, ordered.flavor)
         assertEquals(3, ordered.start)
@@ -203,13 +206,7 @@ class AstTest {
         assertEquals(1, table.head.size)
         assertEquals(1, table.content.size)
         assertTrue(table.foot.isEmpty())
-        assertTrue(
-            table.head
-                .single()
-                .cells
-                .single()
-                .scope.start.line > 0,
-        )
+        assertEquals(5, document.scope(table.head.single().cells.single(), source)?.start?.line)
         val paragraph = document.content[3] as Paragraph
         val link = paragraph.content[0] as Link
         val image = paragraph.content[2] as Embedded
@@ -235,11 +232,25 @@ class AstTest {
         assertTrue(canonicalAstCases.isNotEmpty())
         for (testCase in canonicalAstCases) {
             val document = Document.parse(testCase.source)
-            assertEquals(testCase.expected, MarkupDumper.dump(document), testCase.name)
-            assertEquals(testCase.expected, document.dump(), testCase.name)
+            assertEquals(testCase.expected, MarkupDumper.dump(document, testCase.source), testCase.name)
+            assertEquals(testCase.expected, document.dump(testCase.source), testCase.name)
         }
     }
 }
+
+/** A document whose only content is [table], over a source at least as long as the table's span. */
+private fun holding(table: Table): Document =
+    Document(
+        listOf(table),
+        null,
+        TextUnit.UTF16,
+        emptyList(),
+        emptyList(),
+        MarkupID(1),
+        table.extent,
+        null,
+        Attributes.empty,
+    )
 
 /** The node lines of a dump: value lines (`Citation`, `Footnote`) and group lines are not kinds. */
 private fun dumpKinds(dump: String): kotlin.collections.List<String> =

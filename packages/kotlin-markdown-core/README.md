@@ -65,18 +65,59 @@ for size-only labels). Ordinary cross-link labels and invalid suffixes stay raw.
 ```kotlin
 import com.nouprax.markdown.core.Document
 
-val document = Document.parse("# Hello")
+val source = "# Hello"
+val document = Document.parse(source)
 
 println(document.content.first()::class.simpleName)
-println(document.dump())
+println(document.dump(source))
 ```
 
-`Document.parse` takes no options. It parses the one Markdown Core dialect,
-in which every feature is always recognized: footnotes, tables,
+`Document.parse` takes no dialect options. It parses the one Markdown Core
+dialect, in which every feature is always recognized: footnotes, tables,
 strikethrough, autolinks, task lists, formulas, and directives, on the
 CommonMark base. Quotation marks, hyphens, and periods are stored as written.
-The result is an immutable value tree with source scopes. The package exposes
-parsing and typed AST inspection, not rendering or mutation.
+The result is an immutable value tree. The package exposes parsing and typed
+AST inspection, not rendering or mutation.
+
+### Identity, equality and scopes
+
+Every node has an `id: MarkupID`, unique within its document across every
+owned relation and numbered from 1 in walk order by a parse, so two parses of
+one text are equal, ids included. Ids suit Compose `key` in lazy lists.
+`equals` is deep value equality: the same kind, id, scalar fields, extent and
+pairwise equal children in every relation, compared with an explicit work
+stack after a reference check. `hashCode` reads the id alone.
+
+A node stores no line or column. Its `extent: Extent(lead, span)` is the raw
+UTF-8 byte range the engine keeps: `lead` is signed, from the end of the
+previous node in the same relation (or the owner's start) to the node's start,
+and `span` is its length. Scopes are computed on request from the extents and
+the source the document was parsed from:
+
+```kotlin
+val document = Document.parse(source)            // TextUnit.UTF16 by default
+val scope = document.scope(node, source)         // Scope?, columns in document.unit
+val hit = document.node(Position(3, 7), source)  // the last node in walk order holding that byte
+```
+
+`Document.parse(source, unit)` chooses how those queries count columns:
+`TextUnit.UTF16` (the default, as Android `Editable` and Compose
+`TextFieldValue` count) or `TextUnit.UTF8`. A position inside a surrogate pair
+or a UTF-8 sequence names no node. The canonical dump always prints UTF-8
+columns.
+
+### Compose
+
+The Compose compiler treats classes from a module it did not compile as
+unstable. This package adds no Compose dependency; it ships
+[`compose-stability.conf`](compose-stability.conf), which lists the AST types
+as stable. Copy it into your project and add it to the Compose compiler:
+
+```kotlin
+composeCompiler {
+    stabilityConfigurationFiles.add(layout.projectDirectory.file("compose-stability.conf"))
+}
+```
 Ordered lists expose their `variant` and `delimiter`.
 
 Task prefixes accept exactly one authored Unicode scalar, such as `- [?]`,
@@ -111,11 +152,16 @@ nest (`++++text++++`), and an odd leftover plus stays outside the matching
 pairs (`+++text+++`). Insertion participates in exhaustive visitor callbacks;
 its scope includes the delimiters. Escapes and opaque bodies retain literal plus signs.
 
-`^[inline note]` produces a one-item `Cite` and a document-owned `Footnote`
-whose content holds the parsed inline body directly. Referenced definitions and
-inline notes share `Document.footnotes` in source order. Generated `inline-N`
-ids avoid every authored id; nested calls remain id edges and can be visited
-without following semantic cycles.
+Footnote and specimen definitions stay in the tree where they were written. A
+referenced definition `[^x]: body` is a `Footnote` block with its normalized
+`label`. `^[inline note]` produces a one-item `Cite` whose citation owns its
+note: `CitationReferent.Footnote(FootnoteTarget.Note(footnote))`, a `Footnote`
+with a null label whose content holds the parsed inline body directly, visited
+before the citation's prefix and suffix. `Document.footnotes` and
+`Document.specimens` list every definition, inline notes included, in source
+order, and `document.footnote(label)` and `document.specimen(label)` return the
+first one whose label equals the referent's; an inline note is never found by
+label.
 
 `%%comment%%` produces `Comment`, the kind an HTML comment already produces,
 inline or as a block when both `%%` fences stand on lines of their own under
@@ -158,15 +204,18 @@ Traversal schedules each node's typed fields in canonical order. A directive
 label remains the named `label` field, outside directive content. Metadata,
 citations, footnotes and specimens are Markup and use the same callbacks.
 
-Every immutable `Markup` exposes `dump()`, which delegates to the public
-`MarkupDumper` and returns the canonical file-tree dump for that subtree:
+A dump prints scopes, so it takes the source like a scope query:
+`document.dump(source)` and `document.dump(node, source)` delegate to the
+public `MarkupDumper` and return the canonical file-tree dump of the document
+or of one of its subtrees:
 
 ```kotlin
 import com.nouprax.markdown.core.MarkupDumper
 
-val document = Document.parse("# Hello")
-println(document.dump())
-println(MarkupDumper.dump(document.content.first()))
+val source = "# Hello"
+val document = Document.parse(source)
+println(document.dump(source))
+println(MarkupDumper.dump(document, document.content.first(), source))
 ```
 
 On JDK 26 and later, JVM applications should launch with

@@ -382,6 +382,8 @@ static int case_nested_block_quotes(pc_context *context) {
 
 typedef struct pc_dump_job {
     const markdown_core_document *document;
+    const uint8_t *source;
+    size_t source_length;
     uint8_t *output;
     size_t length;
     bool dumped;
@@ -389,7 +391,8 @@ typedef struct pc_dump_job {
 
 static PC_THREAD_RESULT pc_dump_entry(void *argument) {
     pc_dump_job *job = (pc_dump_job *)argument;
-    job->dumped = markdown_core_document_dump(job->document, &job->output, &job->length, NULL);
+    job->dumped = markdown_core_document_dump(job->document, NULL, job->source, job->source_length, &job->output,
+                                              &job->length, NULL);
     PC_THREAD_RETURN;
 }
 
@@ -415,6 +418,8 @@ static int case_dump_deep_nesting(pc_context *context) {
         return -1;
     }
     job.document = context->document;
+    job.source = (const uint8_t *)context->input;
+    job.source_length = context->input_length;
     job.output = NULL;
     job.length = 0;
     job.dumped = false;
@@ -469,7 +474,8 @@ static int case_dump_wide_siblings(pc_context *context) {
     if (pc_parse(context) != 0) {
         return -1;
     }
-    if (!markdown_core_document_dump(context->document, &output, &length, NULL)) {
+    if (!markdown_core_document_dump(context->document, NULL, (const uint8_t *)context->input, context->input_length,
+                                     &output, &length, NULL)) {
         fprintf(stderr, "dumping a %u-wide document did not return a dump\n", (unsigned)PC_DUMP_WIDTH);
         return -1;
     }
@@ -856,7 +862,8 @@ typedef struct pc_uniform_text {
     int mismatch;
 } pc_uniform_text;
 
-static int pc_uniform_text_visit(const markdown_core_node *node, void *context) {
+static int pc_uniform_text_visit(const markdown_core_node *node, ts_ast_range range, void *context) {
+    (void)range;
     pc_uniform_text *check = (pc_uniform_text *)context;
     if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_TEXT) {
         markdown_core_string value;
@@ -984,11 +991,12 @@ static size_t pc_attribute_bytes(const markdown_core_attribute_value *attributes
     return bytes;
 }
 
-static int pc_reference_payload_visit(const markdown_core_node *node, void *context) {
+static int pc_reference_payload_visit(const markdown_core_node *node, ts_ast_range range, void *context) {
     pc_reference_payload *total = (pc_reference_payload *)context;
     markdown_core_optional_string title;
     markdown_core_destination dest;
     const markdown_core_resource *identity = markdown_core_node_resource(node);
+    (void)range;
     if (identity) {
         total->occurrences++;
         total->bytes += pc_attribute_bytes(markdown_core_node_primary_attributes(node));
@@ -1013,7 +1021,7 @@ static int pc_reference_payload_visit(const markdown_core_node *node, void *cont
             if (!markdown_core_citation_referent(item, &referent)) {
                 return -1;
             }
-            total->bytes += referent.id.length + referent.key.length;
+            total->bytes += referent.label.length + referent.key.length;
         }
     }
     return 0;

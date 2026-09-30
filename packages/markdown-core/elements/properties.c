@@ -803,10 +803,7 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
     }
     size_t consumed = next_line(source, close + 3, length);
     p.metadata = node->as.metadata;
-    node->start_line = 1;
-    node->start_column = (int)(bom + 1);
-    node->end_line = (int)(p.count + 2);
-    node->end_column = 3;
+    node->where.place = (markdown_core_place){(uint32_t)bom, (uint32_t)(close + 3)};
     payload(&p);
     if (parser->error) {
         markdown_core_parser_release_node(parser, node);
@@ -814,6 +811,6 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
     }
     parser->root->as.document->metadata = node;
     parser->line_number = (int)(p.count + 2);
-    parser->last_line_length = 3;
+    parser->last_line_end = (bufsize_t)(close + 3);
     return consumed;
 }

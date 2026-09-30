@@ -45,9 +45,9 @@
         {
             "id": "cites",
             "input": "++a[^n] b^[++inline++]++\n\n[^n]: ++note++\n",
-            "reason": "The product owns Cite occurrences and document Footnotes, with inline footnotes parsed in separate containers; the oracle has neither footnote form.",
+            "reason": "The product owns Cite occurrences, keeps a referenced definition as a Footnote block where it was written, and nests an inline note's Footnote under the Citation that owns it, parsed as its own container; the oracle has neither footnote form.",
             "oracleDigest": "73fa70d609d441545872d0887ff8db0e2666f3cea8400156fd60ce5f0e48a766",
-            "markdownCoreDigest": "3b0b7b1cc97a8ec5549b60b9a7547d757a1ec453b481945e2fefd9fd357cc0cb"
+            "markdownCoreDigest": "10b9cb5b77dccf2dc2844feb86e650b51ee497f2a4d9d7ee302a910f0911cded"
         },
         {
             "id": "comments",
@@ -87,9 +87,9 @@
         {
             "id": "inline-fields",
             "input": "> [!note] ++title++\n> ++body++\n\n:badge[++label++]\n\n^[++note++]\n",
-            "reason": "Callout titles, directive labels and inline footnotes have named, separately parsed ownership fields in the product; the oracle has none of these constructs.",
+            "reason": "Callout titles, directive labels and inline footnotes have named, separately parsed ownership fields in the product (an inline note is the Footnote its Citation owns); the oracle has none of these constructs.",
             "oracleDigest": "60d20ae1e97ebda7ffbb119aae388a4906a408fa2a0db30ca0de27cee26a6a47",
-            "markdownCoreDigest": "d398fed79a6f481472d7cf79c5e027b67876398de2aad8e8293634260a717103"
+            "markdownCoreDigest": "b5dc357dfee3e060c2f1cb5b859c56e7bf77e3aa70cf19668332188dd8de3b60"
         },
         {
             "id": "failed-candidates",

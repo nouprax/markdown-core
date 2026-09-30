@@ -6,38 +6,49 @@ import MarkdownCoreC
 /// directive is always embedded and a ``DirectiveBlock`` always standalone, so
 /// the value was implied by the kind.
 public struct Directive: Markup {
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let name: String
-        let label: MarkupReference<DirectiveLabel>?
-    }
+    let record: DirectiveRecord
 
-    let fields: Stored<Fields>
-
-    /// Where it is, its leading colon included. See ``Scope``.
-    public var scope: Scope { fields.scope }
+    /// The node's identifier within its document.
+    public var id: MarkupID { record.id }
+    /// Where it is, its leading colon included. See ``Extent``.
+    public var extent: Extent { record.extent }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { record.attributes }
     /// The directive's name, without its colons.
-    public var name: String { fields.name }
+    public var name: String { record.name }
     /// The bracketed label, or `nil` when the source wrote none.
-    public var label: DirectiveLabel? { fields.label }
+    public var label: DirectiveLabel? {
+        record.children.first.map { DirectiveLabel(record: unsafeDowncast($0, to: DirectiveLabelRecord.self)) }
+    }
 }
 
-extension Directive.Fields {
-    init(from node: OpaquePointer, label: Int?) {
+/// Children: the label, when the source wrote one.
+final class DirectiveRecord: MarkupRecord, @unchecked Sendable {
+    let name: String
+
+    init(_ fields: InheritedFields, name: String, label: DirectiveLabelRecord?) {
+        let labels: [MarkupRecord] = label.map { [$0] } ?? []
+        self.name = name
+        super.init(fields, children: labels)
+    }
+
+    override var markup: any Markup { Directive(record: self) }
+
+    override func hasEqualFields(_ other: MarkupRecord) -> Bool {
+        name == unsafeDowncast(other, to: DirectiveRecord.self).name
+    }
+}
+
+extension DirectiveRecord {
+    convenience init(from node: OpaquePointer, label: DirectiveLabelRecord?) {
         let values = DirectiveValues(from: node)
         guard let name = values.name else { preconditionFailure("Inline directive requires a name") }
-        self.init(
-            scope: Scope(from: markdown_core_node_scope(node)),
-            anchor: markdown_core_node_anchor(node).string,
-            attributes: Attributes(from: node),
-            name: name,
-            label: label.map { .init(index: $0) }
-        )
+        self.init(InheritedFields(from: node), name: name, label: label)
     }
+}
+
+extension Directive: RecordBacked {
+    var base: MarkupRecord { record }
 }

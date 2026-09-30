@@ -2,32 +2,30 @@ import MarkdownCoreC
 
 /// Strongly emphasised text — two `*` or `_` pairs.
 public struct Strong: Markup {
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let content: MarkupReferences<any Markup>
-    }
+    let record: StrongRecord
 
-    let fields: Stored<Fields>
-
-    /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public var scope: Scope { fields.scope }
+    /// The node's identifier within its document.
+    public var id: MarkupID { record.id }
+    /// Where it is, relative to its neighbours. See ``Extent``.
+    public var extent: Extent { record.extent }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { record.attributes }
     /// The emphasised inline content.
-    public var content: MarkupCollection<any Markup> { fields.content }
+    public var content: MarkupCollection<any Markup> { record.collection(record.children.indices) }
 }
 
-extension Strong.Fields {
-    init(from node: OpaquePointer, content: [Int]) {
-        self.init(
-            scope: Scope(from: markdown_core_node_scope(node)),
-            anchor: markdown_core_node_anchor(node).string,
-            attributes: Attributes(from: node),
-            content: .init(indices: content)
-        )
+final class StrongRecord: MarkupRecord, @unchecked Sendable {
+    override var markup: any Markup { Strong(record: self) }
+}
+
+extension StrongRecord {
+    convenience init(from node: OpaquePointer, content: [MarkupRecord]) {
+        self.init(InheritedFields(from: node), children: content)
     }
+}
+
+extension Strong: RecordBacked {
+    var base: MarkupRecord { record }
 }

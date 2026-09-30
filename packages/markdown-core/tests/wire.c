@@ -1,4 +1,4 @@
-/* The MCB2 encoder as its bindings consume it (docs/architecture/wire-format.md).
+/* The MCB3 encoder as its bindings consume it (docs/architecture/wire-format.md).
  * The bindings' decoders own the record-level checks; this suite runs the
  * encoder over the canonical corpus under the C sanitizers and checks what
  * holds for every message: the header, determinism, the error encoding, and
@@ -26,7 +26,7 @@ static uint32_t read_u32(const uint8_t *bytes) {
 
 /* The message length its header states, after checking the magic. */
 static uint32_t message_length(const uint8_t *message) {
-    return memcmp(message, "MCB2", 4) == 0 ? read_u32(message + 4) : 0;
+    return memcmp(message, "MCB3", 4) == 0 ? read_u32(message + 4) : 0;
 }
 
 static uint8_t *read_file(const char *path, size_t *length) {

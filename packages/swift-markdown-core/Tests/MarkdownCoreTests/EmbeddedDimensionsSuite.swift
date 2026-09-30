@@ -4,7 +4,8 @@ import Testing
 @Suite("ast") struct EmbeddedDimensionsSuite {
     @Test("image dimensions preserve formatted alt and per-occurrence values")
     func imageDimensions() throws {
-        let document = try Document.parse("![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared \"title\"\n")
+        let source = "![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared \"title\"\n"
+        let document = try Document.parse(source)
         let paragraph = try #require(document.content.first as? Paragraph)
         let images = paragraph.content.compactMap { $0 as? Embedded }
         #expect(images.map(\.dimensions) == [Dimensions(width: 2147483647, height: 2), Dimensions(width: 3), nil])
@@ -14,7 +15,7 @@ import Testing
         #expect(images[0].title == "title")
         let alt = try #require(images[0].content.first as? Emphasis)
         #expect((alt.content.first as? Text)?.literal == "alt")
-        #expect(alt.scope.end.column == 7)
+        #expect(try scope(of: alt, in: document, source: source).end.column == 7)
         #expect(images[1].content.isEmpty)
         #expect((images[2].content.first as? Text)?.literal == "bad|01")
         var visitor = RecordingWalkingVisitor()

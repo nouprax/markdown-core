@@ -1,18 +1,20 @@
 package com.nouprax.markdown.core
 
 /**
- * A footnote the document owns: a Markup node,
- * reached through [Document.footnotes] and never an element of any content
- * list. Repeated calls share one footnote, the first definition of an id
- * wins, and a valid definition nobody calls is still a footnote. The walk
- * reports it through [MarkupVisitor.visit] after the document's
- * content.
+ * A footnote where it was written. A referenced definition `[^x]: body` is a
+ * block in the content that holds it, with its normalized label and block
+ * content; an inline note `^[body]` is owned by its citation's
+ * [FootnoteTarget.Note], with a null label and direct inline content.
+ * Duplicates and definitions nobody calls remain. [Document.footnotes] lists
+ * every footnote in source order, and [Document.footnote] finds the first one
+ * with a label.
  */
 public class Footnote internal constructor(
-    /** The normalized label without the caret. */
-    public val id: String,
+    /** The normalized label without the caret, or null for an inline note. */
+    public val label: String?,
     public val content: kotlin.collections.List<Markup>,
-    override val scope: Scope,
-    override val anchor: String? = null,
-    override val attributes: Attributes = Attributes.empty,
-) : Markup
+    override val id: MarkupID,
+    override val extent: Extent,
+    override val anchor: String?,
+    override val attributes: Attributes,
+) : Markup()

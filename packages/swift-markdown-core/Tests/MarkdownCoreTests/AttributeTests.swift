@@ -16,55 +16,53 @@ extension APISuite {
                 .scalar(.number("9007199254740993")), .scalar(.text("first\n\nsecond\n")), .scalar(.text("# prose\n")),
             ]
         )
-        #expect(metadata.scope.end.line == 14)
-        #expect(document.content[0].scope.start.line == 15)
+        #expect(try scope(of: metadata, in: document, source: source).end.line == 14)
+        #expect(try scope(of: document.content[0], in: document, source: source).start.line == 15)
         let empty = try #require(Document.parse("---\nunknown: 1\nfree text\n---").metadata)
-        #expect(empty == Metadata(scope: empty.scope))
+        let bare = InheritedFields(id: empty.id, extent: empty.extent, anchor: nil, attributes: .empty)
+        #expect(empty == Metadata(record: MetadataRecord(bare)))
         #expect(try Document.parse("---\nname: 1\n").metadata == nil)
     }
 
     @Test("universal attributes retain ordered values after native document release")
     func universalAttributes() throws {
-        let parsed = try Document.parse(":n{#id .a class=\"a b}c\" k=1 k=2}")
+        let source = ":n{#id .a class=\"a b}c\" k=1 k=2}"
+        let parsed = try Document.parse(source)
         let paragraph = try #require(parsed.content.first as? Paragraph)
         let directive = try #require(paragraph.content.first as? Directive)
         #expect(directive.anchor == "id")
         #expect(directive.attributes.classes == ["a", "a", "b}c"])
         #expect(directive.attributes.records == [Record(name: "k", value: "1"), Record(name: "k", value: "2")])
-        #expect(directive.dump().contains("attributes={.a .a .\"b}c\" k=\"1\" k=\"2\"}"))
+        let dump = try #require(parsed.dump(directive, in: source))
+        #expect(dump.contains("attributes={.a .a .\"b}c\" k=\"1\" k=\"2\"}"))
         #expect(parsed.anchor == nil && parsed.attributes == .empty && parsed.metadata == nil)
     }
 
     @Test("metadata is a leaf Markup and preserves decimal text")
     func metadataValues() throws {
-        let parsed = try Document.parse("body")
         let values: [MetadataValue] = [
             .scalar(.null), .scalar(.bool(true)), .scalar(.number("9007199254740993")),
             .scalar(.text("中文\nquoted")), .list([]), .list([.number("1.25"), .text("")]),
         ]
-        let metadata = Metadata(
+        let metadata = MetadataRecord(
+            fields(2),
             name: values[0],
             title: values[1],
             subtitle: values[2],
             time: values[3],
             date: values[4],
-            authors: values[5],
-            scope: parsed.scope
+            authors: values[5]
         )
-        var records = parsed.fields.store.records
-        records[0] = .document(
-            .init(
-                scope: parsed.scope,
-                anchor: nil,
-                attributes: .empty,
-                content: .init(indices: parsed.content.recordIndices),
-                metadata: .init(index: records.count),
-                footnotes: .init(indices: []),
-                specimens: .init(indices: [])
+        let document = Document(
+            record: DocumentRecord(
+                fields(1),
+                unit: .utf16,
+                metadata: metadata,
+                content: [],
+                footnotes: [],
+                specimens: []
             )
         )
-        records.append(.metadata(metadata))
-        let document = MarkupStore(records: records).value(at: 0, as: Document.self)
         #expect(
             [
                 document.metadata?.name, document.metadata?.title, document.metadata?.subtitle,
@@ -72,8 +70,9 @@ extension APISuite {
             ]
                 == values
         )
-        #expect(document.dump().contains("subtitle=scalar(number(\"9007199254740993\"))"))
-        #expect(document.dump().contains("date=list([])"))
+        let dump = try #require(document.dump(in: ""))
+        #expect(dump.contains("subtitle=scalar(number(\"9007199254740993\"))"))
+        #expect(dump.contains("date=list([])"))
         var visitor = RecordingWalkingVisitor()
         document.walk(with: &visitor)
         #expect(Array(visitor.events.prefix(3)) == ["enter:Document", "enter:Metadata", "exit:Metadata"])
@@ -83,24 +82,26 @@ extension APISuite {
 extension APISuite {
     @Test("P2 inheritance retains native values and occurrence scopes")
     func attributeSites() throws {
-        let document = try Document.parse(
+        let source =
             "# T ## {#heading}\n\n`x`{.code} [x][r]{#own .same k=2} "
-                + "![alt|20x30][r]{width=50% height=2in}\n\n[r]: /u {#definition .same k=1 k=1}\n"
-        )
+            + "![alt|20x30][r]{width=50% height=2in}\n\n[r]: /u {#definition .same k=1 k=1}\n"
+        let document = try Document.parse(source)
         #expect(document.content[0].anchor == "heading")
         let paragraph = try #require(document.content[1] as? Paragraph)
         let code = try #require(paragraph.content[0] as? Code)
         let link = try #require(paragraph.content[2] as? Link)
         let image = try #require(paragraph.content[4] as? Embedded)
         #expect(code.literal == "x" && code.attributes.classes == ["code"])
-        #expect(code.scope.end.column == 10)
+        #expect(try scope(of: code, in: document, source: source).end.column == 10)
         #expect(link.anchor == "own")
         #expect(link.attributes.classes == ["same", "same"])
         #expect(link.attributes.records.map(\.value) == ["1", "1", "2"])
         #expect(image.anchor == "definition")
         #expect(image.dimensions == Dimensions(width: 20, height: 30))
         #expect(image.attributes.records.suffix(2).map(\.value) == ["50%", "2in"])
-        #expect(link.scope.end.line == 3 && image.scope.end.line == 3)
+        // A reference occurrence keeps its own place, not its definition's.
+        #expect(try scope(of: link, in: document, source: source).end.line == 3)
+        #expect(try scope(of: image, in: document, source: source).end.line == 3)
     }
 }
 

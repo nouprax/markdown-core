@@ -151,10 +151,9 @@ if grep -R -n -E \
     packages/swift-markdown-core/Sources/MarkdownCore; then
     fail "Swift exports a retired API, mutation, or native implementation detail"
 fi
-grep -q 'public enum MarkupDumper' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupDumper.swift \
-    && grep -q 'public static func dump' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupDumper.swift \
-    && grep -q 'func dump() -> String' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Markup.swift \
-    || fail "Swift does not expose the reviewed Markup debug dump API"
+grep -q 'public func dump(in source: String)' packages/swift-markdown-core/Sources/MarkdownCore/DocumentScope.swift \
+    && grep -q 'public func dump(_ node: some Markup, in source: String)' packages/swift-markdown-core/Sources/MarkdownCore/DocumentScope.swift \
+    || fail "Swift does not expose the reviewed document debug dump API"
 grep -q 'public struct TableRow: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
     && grep -q 'public struct TableCell: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
     && grep -q 'visit(_ node: TableRow, phase: MarkupVisitPhase)' packages/swift-markdown-core/Sources/MarkdownCore/Visitor/MarkupVisitor.swift \
@@ -197,13 +196,11 @@ if grep -R -n -E \
     packages/kotlin-markdown-core/src/commonMain; then
     fail "Kotlin exports a retired API, mutation, or native implementation detail"
 fi
-grep -q 'public object MarkupDumper' \
-    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/MarkupDumper.kt \
-    && grep -q 'public fun dump(root: Markup): String' \
-        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/visitor/MarkupDumper.kt \
-    && grep -q 'public fun dump(): String' \
-        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/markup/Markup.kt \
-    || fail "Kotlin does not expose the reviewed Markup debug dump API"
+grep -q 'public fun dump(source: String): String' \
+    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/markup/Document.kt \
+    && tr -s ' \n' ' ' <packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/markup/Document.kt \
+        | grep -q 'public fun dump( node: Markup, source: String, ): String' \
+    || fail "Kotlin does not expose the reviewed document debug dump API"
 # Overloads are identified by their concrete Markup parameter types.
 node --input-type=module <<'NODE'
 import assert from "node:assert/strict";
@@ -316,7 +313,7 @@ const runtimeExports = [
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-const expectedRuntime = ["Attributes", "Document", "ParseError", "MarkupDumper", "walk"].sort();
+const expectedRuntime = ["Attributes", "Document", "ParseError", "MarkupDumper", "markupEquals", "walk"].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }

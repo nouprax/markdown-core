@@ -51,7 +51,9 @@ Document scope=1:1..20:19 anchor=null attributes={} children=9
 │       │       │       └── Text scope=5:25..5:29 anchor=null attributes={} literal="label" children=0
 │       │       ├── Text scope=5:31..5:31 anchor=null attributes={} literal=" " children=0
 │       │       └── Cite scope=5:32..5:38 anchor=null attributes={} children=1
-│       │           └── Citation scope=5:34..5:37 anchor=null attributes={} referent=footnote(id="inline-1") children=0
+│       │           └── Citation scope=5:34..5:37 anchor=null attributes={} referent=footnote(note) children=0
+│       │               ├── Footnote scope=5:32..5:38 anchor=null attributes={} label=null children=1
+│       │               │   └── Text scope=5:34..5:37 anchor=null attributes={} literal="note" children=0
 │       │               ├── CitationPrefix children=0
 │       │               └── CitationSuffix children=0
 │       └── Citation scope=5:41..5:66 anchor=null attributes={} referent=bib(key="é",mode=suppressAuthor) children=0
@@ -139,21 +141,19 @@ Document scope=1:1..20:19 anchor=null attributes={} children=9
 │       └── Citation scope=18:16..18:17 anchor=null attributes={} referent=bib(key="c",mode=normal) children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-├── Paragraph scope=20:1..20:19 anchor=null attributes={} children=5
-│   ├── Text scope=20:1..20:1 anchor=null attributes={} literal="[" children=0
-│   ├── Cite scope=20:2..20:11 anchor=null attributes={} children=2
-│   │   ├── Citation scope=20:2..20:3 anchor=null attributes={} referent=bib(key="a",mode=authorInText) children=0
-│   │   │   ├── CitationPrefix children=0
-│   │   │   └── CitationSuffix children=0
-│   │   └── Citation scope=20:6..20:10 anchor=null attributes={} referent=bib(key="b",mode=normal) children=0
-│   │       ├── CitationPrefix children=1
-│   │       │   └── Text scope=20:6..20:7 anchor=null attributes={} literal="p." children=0
-│   │       └── CitationSuffix children=0
-│   ├── Text scope=20:12..20:15 anchor=null attributes={} literal=";] [" children=0
-│   ├── Cite scope=20:16..20:17 anchor=null attributes={} children=1
-│   │   └── Citation scope=20:16..20:17 anchor=null attributes={} referent=bib(key="a",mode=authorInText) children=0
-│   │       ├── CitationPrefix children=0
-│   │       └── CitationSuffix children=0
-│   └── Text scope=20:18..20:19 anchor=null attributes={} literal=";]" children=0
-└── Footnote scope=5:32..5:38 anchor=null attributes={} id="inline-1" children=1
-    └── Text scope=5:34..5:37 anchor=null attributes={} literal="note" children=0
+└── Paragraph scope=20:1..20:19 anchor=null attributes={} children=5
+    ├── Text scope=20:1..20:1 anchor=null attributes={} literal="[" children=0
+    ├── Cite scope=20:2..20:11 anchor=null attributes={} children=2
+    │   ├── Citation scope=20:2..20:3 anchor=null attributes={} referent=bib(key="a",mode=authorInText) children=0
+    │   │   ├── CitationPrefix children=0
+    │   │   └── CitationSuffix children=0
+    │   └── Citation scope=20:6..20:10 anchor=null attributes={} referent=bib(key="b",mode=normal) children=0
+    │       ├── CitationPrefix children=1
+    │       │   └── Text scope=20:6..20:7 anchor=null attributes={} literal="p." children=0
+    │       └── CitationSuffix children=0
+    ├── Text scope=20:12..20:15 anchor=null attributes={} literal=";] [" children=0
+    ├── Cite scope=20:16..20:17 anchor=null attributes={} children=1
+    │   └── Citation scope=20:16..20:17 anchor=null attributes={} referent=bib(key="a",mode=authorInText) children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    └── Text scope=20:18..20:19 anchor=null attributes={} literal=";]" children=0

@@ -37,63 +37,10 @@ bool markdown_core_footnotes_lost(const markdown_core_element_instance *self) {
 
 void markdown_core_footnotes_dispose(const markdown_core_element_instance *self) {
     markdown_core_footnote_state *state = self->state;
-    markdown_core_free(state->definitions.values);
-    state->definitions.values = NULL;
     if (state->labels) {
         markdown_core_map_free(state->labels);
         state->labels = NULL;
     }
-}
-
-void markdown_core_block_finalize_footnotes(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    markdown_core_definition_collection *collection = &((markdown_core_footnote_state *)self->state)->definitions;
-    markdown_core_key_index ids = {0};
-    size_t index, ordinal = 0;
-    if (!collection->count) {
-        goto done;
-    }
-    if (!markdown_core_block_order_definitions(parser, collection) ||
-        !markdown_core_key_index_init(&ids, collection->count)) {
-        goto failed;
-    }
-    for (index = 0; index < collection->count; index++) {
-        markdown_core_node *footnote = collection->values[index].definition;
-        markdown_core_chunk *id = &footnote->as.footnote->id;
-        if (id->data && !markdown_core_key_index_insert(&ids, id->data, id->len, footnote, 0, NULL)) {
-            goto failed;
-        }
-    }
-    for (index = 0; index < collection->count; index++) {
-        markdown_core_node *footnote = collection->values[index].definition;
-        markdown_core_chunk *id = &footnote->as.footnote->id;
-        if (!id->data) {
-            /* Each decimal size_t takes at most 3 * sizeof(size_t) bytes. */
-            char candidate[sizeof("inline--") + 6 * sizeof(size_t)];
-            size_t suffix = 0;
-            markdown_core_node *citation = collection->values[index].citation;
-            assert(citation && citation->kind == MARKDOWN_CORE_NODE_CITATION);
-            ordinal++;
-            snprintf(candidate, sizeof(candidate), "inline-%zu", ordinal);
-            while (
-                markdown_core_key_index_lookup(&ids, (const unsigned char *)candidate, (bufsize_t)strlen(candidate))) {
-                snprintf(candidate, sizeof(candidate), "inline-%zu-%zu", ordinal, ++suffix);
-            }
-            if (!markdown_core_chunk_set_cstr(id, candidate) ||
-                !markdown_core_chunk_set_cstr(&citation->as.citation->value, candidate) ||
-                !markdown_core_key_index_insert(&ids, id->data, id->len, footnote, 0, NULL)) {
-                goto failed;
-            }
-        }
-    }
-    /* No allocation or fallible work remains once ownership starts moving. */
-    markdown_core_block_own_definitions(collection, &parser->root->as.document->footnotes);
-    goto done;
-failed:
-    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-done:
-    markdown_core_key_index_free(&ids);
-    markdown_core_free(collection->values);
-    memset(collection, 0, sizeof(*collection));
 }
 
 /* The definition record a call's label names, or NULL when the document
@@ -165,12 +112,8 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(const markdown_co
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
     markdown_core_inline_take_bracket_content(self->peers[FOOTNOTE_LINK], parser, opener, footnote);
     markdown_core_node_attach_validated(opener->inl_text->parent, cite, opener->inl_text);
-    if (!markdown_core_parser_register_definition(parser, &((markdown_core_footnote_state *)self->state)->definitions,
-                                                  footnote, cite->as.cite->citations,
-                                                  &parser->root->as.document->footnotes)) {
-        markdown_core_parser_release_node(parser, footnote);
-        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-    }
+    /* The note is its Citation's own field, as the affixes are. */
+    cite->as.cite->citations->as.citation->note = footnote;
     markdown_core_parser_release_node(parser, opener->inl_text);
     markdown_core_brackets(self->peers[FOOTNOTE_LINK], inline_state)->no_link_openers = opener->outer_no_link_openers;
     markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
@@ -280,7 +223,7 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
                 markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
                 return true;
             }
-            /* The call's id is its label's normal form: the key the lookup
+            /* The call's label is its normal form: the key the lookup
              * matched, copied rather than computed again. */
             unsigned char *id = markdown_core_alloc(1, (size_t)definition->label_len + 1);
             if (!id) {
@@ -362,8 +305,8 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
         markdown_core_chunk_free(&c);
         return false;
     }
-    /* The id is the label under the map's own normalization and
-     * WITHOUT a caret (M4): the key every call's referent names. The
+    /* The label is under the map's own normalization and WITHOUT a caret
+     * (M4): the key every call's referent names. The
      * caret that kept a footnote apart from a link definition in a
      * consumer's single map went with the association -- a
      * `Footnote` and a resolved `Link` are different values now. */
@@ -373,15 +316,12 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
         markdown_core_chunk_free(&c);
         return false;
     }
-    markdown_core_chunk *normal = &(*container)->as.footnote->id;
-    normal->data = id;
-    normal->len = (bufsize_t)strlen((const char *)id);
-    normal->alloc = 1;
+    markdown_core_optional_chunk *label = &(*container)->as.footnote->label;
+    label->has_value = true;
+    label->value.data = id;
+    label->value.len = (bufsize_t)strlen((const char *)id);
+    label->value.alloc = 1;
     markdown_core_footnote_state *state = self->state;
-    if (!markdown_core_parser_register_definition(parser, &state->definitions, *container, NULL, NULL)) {
-        markdown_core_chunk_free(&c);
-        return false;
-    }
 
     /* The document defines this label from here on.
      *
@@ -396,7 +336,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * one was freed with everything written in it (D11). A set of
      * labels owns no node and picks no winner, so order decides
      * nothing left to get wrong. */
-    markdown_core_footnote_definition_create(state->labels, normal);
+    markdown_core_footnote_definition_create(state->labels, &label->value);
     markdown_core_chunk_free(&c);
 
     (*container)->internal_offset = matched;

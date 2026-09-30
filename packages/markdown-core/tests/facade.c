@@ -13,6 +13,15 @@ static void check(int condition, const char *message) {
     }
 }
 
+/* The scope of `node`, computed from the source its document was parsed from. */
+static markdown_core_scope scope_in(const markdown_core_document *document, const markdown_core_node *node,
+                                    const void *source, size_t length) {
+    markdown_core_scope scope = {{-1, -1}, {-1, -1}};
+    check(markdown_core_document_scope(document, node, (const uint8_t *)source, length, &scope),
+          "the scope query answers for a node of the document");
+    return scope;
+}
+
 static uint8_t *read_file(const char *path, size_t *length) {
     FILE *file = fopen(path, "rb");
     long size;
@@ -64,7 +73,8 @@ static void check_fixture(const char *fixture_dir, const char *name) {
     if (!document) {
         goto done;
     }
-    check(markdown_core_document_dump(document, &actual, &actual_length, &error), "native AST dump succeeds");
+    check(markdown_core_document_dump(document, NULL, markdown, markdown_length, &actual, &actual_length, &error),
+          "native AST dump succeeds");
     check(error == NULL, "successful dump has no error");
     if (actual && (actual_length != expected_length || memcmp(actual, expected, expected_length) != 0)) {
         fprintf(stderr, "FAILED: %s dump differs from reviewed golden\n", name);
@@ -92,15 +102,16 @@ static void check_native_coordinate_contract(void) {
     static const struct {
         const char *source;
         int end_line, end_column;
-    } cases[] = {{"", 0, 0}, {"\n", 1, 0}, {"\r\n", 1, 0}, {"é", 1, 2}, {"🚀", 1, 4}, {"a\r\nb", 2, 1}};
+    } cases[] = {{"", 1, 0}, {"\n", 1, 0}, {"\r\n", 1, 0}, {"é", 1, 2}, {"🚀", 1, 4}, {"a\r\nb", 2, 1}};
     for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
         markdown_core_document *document =
             markdown_core_document_parse((const uint8_t *)cases[i].source, strlen(cases[i].source), NULL);
         check(document != NULL, "native coordinate witness parses");
-        markdown_core_scope scope = markdown_core_node_scope(markdown_core_document_root(document));
+        markdown_core_scope scope =
+            scope_in(document, markdown_core_document_root(document), cases[i].source, strlen(cases[i].source));
         check(scope.start.line == 1 && scope.start.column == 1 && scope.end.line == cases[i].end_line &&
                   scope.end.column == cases[i].end_column,
-              "UTF-8 coordinates and empty-input sentinels are preserved verbatim");
+              "UTF-8 coordinates follow the byte rule, the empty input included");
         markdown_core_document_free(document);
     }
 }
@@ -347,11 +358,11 @@ static void check_callout_source_boundaries(void) {
     check(title && markdown_core_node_literal(title, &literal) && literal.length == 1 && literal.data[0] == 'T',
           "trailing title spaces never create a break or title text");
     check(title && !markdown_core_node_get_next_sibling(title), "title contains exactly one node");
-    markdown_core_scope title_scope = markdown_core_node_scope(title);
+    markdown_core_scope title_scope = scope_in(document, title, source, sizeof(source) - 1);
     check(title_scope.start.line == 1 && title_scope.start.column == 15 && title_scope.end.column == 15,
           "title scope uses original byte columns after BOM and metadata");
     const markdown_core_node *body = markdown_core_node_get_first_child(callout);
-    markdown_core_scope body_scope = markdown_core_node_scope(body);
+    markdown_core_scope body_scope = scope_in(document, body, source, sizeof(source) - 1);
     check(body && body_scope.start.line == 2 && body_scope.start.column == 3 && body_scope.end.column == 6,
           "body scope starts after its quote prefix and reaches EOF");
     markdown_core_document_free(document);
@@ -366,7 +377,7 @@ static void check_callout_inherited_setext_scope(void) {
     }
     const markdown_core_node *callout = markdown_core_node_get_first_child(markdown_core_document_root(document));
     const markdown_core_node *heading = markdown_core_node_get_first_child(callout);
-    markdown_core_scope scope = markdown_core_node_scope(heading);
+    markdown_core_scope scope = scope_in(document, heading, source, sizeof(source) - 1);
     check(markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING && scope.start.line == 2 &&
               scope.start.column == 3 && scope.end.line == 3 && scope.end.column == 5,
           "callout Setext scope ends on the underline before a following blank line");
@@ -374,9 +385,9 @@ static void check_callout_inherited_setext_scope(void) {
 }
 
 static void check_citation_model(void) {
-    /* M4: repeated calls share one footnote, a later definition of the same
-     * id is a footnote after the winner, and the dump nests each value under
-     * its owner: items under the cite, footnotes after the content. */
+    /* M4: repeated calls name one label, a later definition of the same label
+     * stays a footnote where it was written, and the dump nests each value
+     * under its owner: items under the cite, definitions in the content. */
     static const char source[] = "[^a] [^a]\n\n[^a]: once\n\n[^a]: twice\n";
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), &error);
@@ -386,20 +397,25 @@ static void check_citation_model(void) {
     if (!document) {
         return;
     }
-    check(markdown_core_document_dump(document, &dump, &length, &error), "citation corpus dumps");
+    check(markdown_core_document_dump(document, NULL, (const uint8_t *)source, strlen(source), &dump, &length, &error),
+          "citation corpus dumps");
     if (dump) {
         const char *text = (const char *)dump;
         check(count_occurrences(text, "Cite scope=") == 2, "every defined call is a Cite");
-        check(count_occurrences(text, "referent=footnote(id=\"a\") children=0\n") == 2,
-              "every item names the footnote by id");
+        check(count_occurrences(text, "referent=footnote(label=\"a\") children=0\n") == 2,
+              "every item names the footnote by label");
         check(count_occurrences(text, "CitationPrefix children=0\n") == 2 &&
                   count_occurrences(text, "CitationSuffix children=0\n") == 2,
               "an inherited call has empty affix groups");
         check(count_occurrences(text, "Footnote scope=") == 2, "both definitions are footnotes");
-        check(strstr(text, "\n├── Footnote scope=3:1..4:0 anchor=null attributes={} id=\"a\" children=1\n") != NULL,
-              "the winning definition is the first footnote");
-        check(strstr(text, "\n└── Footnote scope=5:1..5:11 anchor=null attributes={} id=\"a\" children=1\n") != NULL,
-              "the later definition is the footnote after it, nested last under the document");
+        check(strstr(text, "\n├── Footnote scope=3:1..4:0 anchor=null attributes={} label=\"a\" children=1\n") != NULL,
+              "the winning definition is a block where it was written");
+        check(strstr(text, "\n└── Footnote scope=5:1..5:11 anchor=null attributes={} label=\"a\" children=1\n") != NULL,
+              "the later definition is the block after it, last in the content");
+        check(markdown_core_document_footnote_count(document) == 2, "the document lists both definitions");
+        markdown_core_string label = {(const uint8_t *)"a", 1};
+        check(markdown_core_document_footnote_for(document, label) == markdown_core_document_footnote_at(document, 0),
+              "a label finds the first definition in source order");
         markdown_core_dump_free(dump);
     }
     markdown_core_document_free(document);
@@ -509,7 +525,9 @@ static void check_dialect_is_whole(void) {
             markdown_core_error_free(error);
             continue;
         }
-        check(markdown_core_document_dump(document, &dump, &length, &error), "dialect witness dumps");
+        check(markdown_core_document_dump(document, NULL, (const uint8_t *)WITNESSES[index].source,
+                                          strlen(WITNESSES[index].source), &dump, &length, &error),
+              "dialect witness dumps");
         if (dump) {
             check(strstr((const char *)dump, WITNESSES[index].witness) != NULL,
                   "every feature of the dialect is recognized by a parse that was handed nothing but bytes");
@@ -539,8 +557,8 @@ static void check_api(void) {
               "first child traversal is read-only and typed");
         check(markdown_core_node_heading_level(heading, &level) && level == 1,
               "heading accessor returns its behavior-bearing field");
-        scope = markdown_core_node_scope(heading);
-        check(scope.start.line == 1 && scope.start.column == 1, "scope copies native coordinates");
+        scope = scope_in(document, heading, source, sizeof(source) - 1);
+        check(scope.start.line == 1 && scope.start.column == 1, "the scope query answers in native coordinates");
         markdown_core_document_free(document);
     }
 

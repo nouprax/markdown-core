@@ -26,51 +26,6 @@ struct markdown_core_error {
     const char *message;
 };
 
-/* One thing still to draw: a nested node, or a group line (`node` NULL) naming
- * a node-valued list. `depth` is the level whose connector the item decides and
- * `has_next` whether another item follows it at that level. */
-/* A line the walk still owes: a node to draw, or a group line naming a
- * node-valued list. `depth` is the depth of the owner that nests it. */
-typedef struct dump_item {
-    const markdown_core_node *node;
-    const char *name;
-    size_t count;
-    size_t depth;
-    bool has_next;
-} dump_item;
-
-/* One run of what a node nests: an optional group line at the owner's depth,
- * then a chain of nodes -- beside the group at that same depth, or one level
- * below it when the group owns them.
- *
- * Runs are what a frame holds instead of the items they expand to. A chain is
- * a pointer and a count however many nodes it has, so a node with a hundred
- * thousand children costs a frame the same as a node with one. */
-typedef struct dump_run {
-    const char *group;
-    size_t group_count;
-    const markdown_core_node *next;
-    size_t remaining;
-    bool nested;
-} dump_run;
-
-/* The most runs any kind needs at once: a table's caption and its three
- * section groups, a document's metadata, children, footnotes and specimens. A
- * definition has as many bodies as its author wrote and refills instead. */
-#define DUMP_RUN_MAX 4
-
-typedef struct dump_frame {
-    size_t depth;
-    dump_run runs[DUMP_RUN_MAX];
-    size_t run_head;
-    size_t run_count;
-    /* Items still owed at `depth`, which is what decides their connectors:
-     * a line is the last at its level when nothing follows it there. */
-    size_t level_items;
-    /* The definition body whose group comes next, once the runs run out. */
-    const markdown_core_node *body;
-} dump_frame;
-
 typedef struct dump_buffer {
     uint8_t *data;
     size_t size;
@@ -86,15 +41,11 @@ typedef struct dump_buffer {
     uint8_t *prefix;
     size_t *prefix_end;
     size_t level_capacity;
-    /* One frame per open nesting level, the innermost on top. A frame yields
-     * the lines its node nests one at a time, so the walk is the pre-order a
-     * recursion would produce without a C frame per level: a document is as
-     * deep as its author made it and the dump never meets the stack. Holding
-     * runs rather than items bounds this by the tree's depth alone -- breadth
-     * is a pointer and a count, whatever it costs the tree. */
-    dump_frame *frames;
-    size_t frame_count;
-    size_t frame_capacity;
+    /* The source the scopes are computed from, and the start of each of its
+     * lines, found once per dump. */
+    const uint8_t *source;
+    size_t *lines;
+    size_t line_count;
 } dump_buffer;
 
 static void clear_error(markdown_core_error **error) {
@@ -109,8 +60,11 @@ static const markdown_core_error ERROR_DOCUMENT_ALLOCATION = {MARKDOWN_CORE_ERRO
                                                               "could not allocate document"};
 static const markdown_core_error ERROR_PARSE_ALLOCATION = {MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
                                                            "the parse could not complete an allocation"};
-static const markdown_core_error ERROR_INVALID_DUMP = {MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-                                                       "document, output, and length must not be null"};
+static const markdown_core_error ERROR_INVALID_UNIT = {MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+                                                       "unit must be UTF-8 or UTF-16"};
+static const markdown_core_error ERROR_INVALID_DUMP = {
+    MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+    "document, output, and length must not be null, the node must be in the document, and the source must hold it"};
 static const markdown_core_error ERROR_DUMP_ALLOCATION = {MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
                                                           "could not produce canonical AST dump"};
 
@@ -121,12 +75,459 @@ static void set_error(markdown_core_error **error, const markdown_core_error *va
     *error = (markdown_core_error *)(uintptr_t)value;
 }
 
+/* Where a Footnote or Specimen was written, for the definition tables. */
+typedef struct {
+    uint64_t start;
+    const markdown_core_node *node;
+} definition_entry;
+
+static uint64_t definition_key(const void *entry) { return ((const definition_entry *)entry)->start; }
+
+typedef struct {
+    definition_entry *values;
+    size_t count, capacity;
+} definition_table;
+
+static bool table_add(definition_table *table, const markdown_core_node *node, uint32_t start) {
+    if (table->count == table->capacity) {
+        size_t capacity = table->capacity ? table->capacity * 2 : 8;
+        if (capacity > SIZE_MAX / sizeof(*table->values)) {
+            return false;
+        }
+        definition_entry *values = markdown_core_realloc(table->values, capacity * sizeof(*values));
+        if (!values) {
+            return false;
+        }
+        table->values = values;
+        table->capacity = capacity;
+    }
+    table->values[table->count++] = (definition_entry){start, node};
+    return true;
+}
+
+static const markdown_core_optional_chunk *definition_label(const markdown_core_node *node) {
+    return node->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? &node->as.footnote->label : &node->as.specimen->label;
+}
+
+/* Two labels in byte order, the shorter first on a common prefix. */
+static int label_compare(const uint8_t *a, size_t a_length, const uint8_t *b, size_t b_length) {
+    size_t common = a_length < b_length ? a_length : b_length;
+    int order = common ? memcmp(a, b, common) : 0;
+    return order ? order : (a_length > b_length) - (a_length < b_length);
+}
+
+/* Labeled definitions by label, and in source order among equal labels, so
+ * the first of a label is the one a lookup answers. */
+static int label_entry_compare(const void *left, const void *right) {
+    const definition_entry *a = left, *b = right;
+    const markdown_core_optional_chunk *x = definition_label(a->node), *y = definition_label(b->node);
+    int order = label_compare(x->value.data, (size_t)x->value.len, y->value.data, (size_t)y->value.len);
+    return order ? order : (a->start > b->start) - (a->start < b->start);
+}
+
+/* The table in source order, and its labeled definitions in label order, as
+ * node handles the document borrows. */
+static inline bool table_seal(definition_table *table, markdown_core_source_order *order,
+                              markdown_core_definitions *out) {
+    *out = (markdown_core_definitions){0};
+    if (!table->count) {
+        return true;
+    }
+    if (!markdown_core_order_source_entries(order, table->values, table->count, sizeof(*table->values),
+                                            definition_key)) {
+        return false;
+    }
+    const markdown_core_node **nodes = markdown_core_alloc(table->count, sizeof(*nodes));
+    const markdown_core_node **labeled = markdown_core_alloc(table->count, sizeof(*labeled));
+    if (!nodes || !labeled) {
+        markdown_core_free((void *)nodes);
+        markdown_core_free((void *)labeled);
+        return false;
+    }
+    size_t labels = 0;
+    for (size_t i = 0; i < table->count; i++) {
+        nodes[i] = table->values[i].node;
+        /* The source index replaces the start as the tie-break, now that the
+         * entries are in source order. */
+        table->values[i].start = i;
+        if (definition_label(nodes[i])->has_value) {
+            table->values[labels++] = table->values[i];
+        }
+    }
+    qsort(table->values, labels, sizeof(*table->values), label_entry_compare);
+    for (size_t i = 0; i < labels; i++) {
+        labeled[i] = table->values[i].node;
+    }
+    *out = (markdown_core_definitions){nodes, table->count, labeled, labels};
+    return true;
+}
+
+static bool relation_chain(markdown_core_relation *relation, const char *group, const markdown_core_node *first) {
+    *relation = (markdown_core_relation){group, first, NULL};
+    return true;
+}
+
+static bool relation_one(markdown_core_relation *relation, const markdown_core_node *node) {
+    *relation = (markdown_core_relation){NULL, node, node->next};
+    return true;
+}
+
+size_t markdown_core_relation_count(const markdown_core_relation *relation) {
+    size_t count = 0;
+    for (const markdown_core_node *node = relation->first; node != relation->end; node = node->next) {
+        count++;
+    }
+    return count;
+}
+
+/* THE SHAPE of a kind's relations: most kinds own only their children; the
+ * rest own fields too, in the order `markdown_core_relations_next` gives. */
+typedef enum {
+    SHAPE_CHILDREN = 0,
+    SHAPE_DOCUMENT,
+    SHAPE_TABLE,
+    SHAPE_DIRECTIVE,
+    SHAPE_CALLOUT,
+    SHAPE_CITE,
+    SHAPE_CITATION,
+    SHAPE_DEFINITION
+} relation_shape;
+
+/* A kind's slot: its value, and one bit for its class. The slot holds the
+ * kind's shape and, in SLOT_LOOKUP, whether the document's lookup tables
+ * find nodes of it by label. */
+#define SHAPE_SLOTS 64
+#define SHAPE_INDEX(kind) ((((kind) >> 9) | (kind)) & 0x3f)
+#define SLOT_SHAPE 0x0f
+#define SLOT_LOOKUP 0x10
+_Static_assert(MARKDOWN_CORE_NODE_KIND_COUNT <= 0x20 &&
+                   (MARKDOWN_CORE_NODE_TYPE_INLINE ^ MARKDOWN_CORE_NODE_TYPE_BLOCK) == 0x20 << 9 &&
+                   (MARKDOWN_CORE_NODE_TYPE_PRESENT >> 9 & 0x3f) == 0,
+               "every kind has its own shape slot");
+_Static_assert(SHAPE_DEFINITION <= SLOT_SHAPE, "every shape fits its slot");
+
+static const uint8_t kind_slots[SHAPE_SLOTS] = {
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_DOCUMENT)] = SHAPE_DOCUMENT,
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_TABLE)] = SHAPE_TABLE,
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_DIRECTIVE)] = SHAPE_DIRECTIVE,
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)] = SHAPE_DIRECTIVE,
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_CALLOUT)] = SHAPE_CALLOUT,
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_CITE)] = SHAPE_CITE,
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_CITATION)] = SHAPE_CITATION,
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_DEFINITION)] = SHAPE_DEFINITION,
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_FOOTNOTE)] = SHAPE_CHILDREN | SLOT_LOOKUP,
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_SPECIMEN)] = SHAPE_CHILDREN | SLOT_LOOKUP,
+};
+
+static inline unsigned slot_of(const markdown_core_node *node) { return kind_slots[SHAPE_INDEX(node->kind)]; }
+
+static inline relation_shape shape_of(const markdown_core_node *node) {
+    return (relation_shape)(slot_of(node) & SLOT_SHAPE);
+}
+
+/* Whether stepping `node`'s relations would find neither a node nor a group
+ * line, read from its fields: a kind whose relations are all optional or
+ * ungrouped, with nothing in them. A group the dump always draws keeps its
+ * owner's relations open. */
+static bool fields_empty(const markdown_core_node *node, relation_shape shape);
+
+static inline bool relations_empty(const markdown_core_node *node) {
+    relation_shape shape = shape_of(node);
+    return shape == SHAPE_CHILDREN ? !node->first_child : fields_empty(node, shape);
+}
+
+/* The same question for a kind that owns fields besides its children. */
+static bool fields_empty(const markdown_core_node *node, relation_shape shape) {
+    switch (shape) {
+    case SHAPE_CHILDREN:
+        return !node->first_child;
+    case SHAPE_DIRECTIVE: {
+        const markdown_core_directive_value *directive = node->opaque;
+        return !node->first_child && !(directive && directive->label);
+    }
+    case SHAPE_CALLOUT:
+        return !node->first_child && !node->as.callout->title;
+    case SHAPE_CITE:
+        return !node->as.cite->citations;
+    case SHAPE_DOCUMENT:
+        return !node->first_child && !node->as.document->metadata;
+    case SHAPE_TABLE:
+        return !node->opaque;
+    case SHAPE_CITATION:
+    case SHAPE_DEFINITION:
+        return false;
+    }
+    return false;
+}
+
+void markdown_core_relations_begin(markdown_core_relation_cursor *cursor, const markdown_core_node *owner) {
+    *cursor = (markdown_core_relation_cursor){owner, (uint8_t)shape_of(owner), 0, NULL};
+}
+
+/* Each kind's relations in canonical field order. An optional field that is
+ * absent yields no relation; a group the dump always draws yields one even
+ * when it is empty. `more` says whether stepping again may find another. */
+static inline bool relations_next(markdown_core_relation_cursor *cursor, markdown_core_relation *relation, bool *more) {
+    static const char *const table_groups[] = {"TableHead", "TableBody", "TableFoot"};
+    const markdown_core_node *node = cursor->owner;
+    int step = cursor->step++;
+    /* An absent optional field steps on to the next relation at once. */
+    switch ((relation_shape)cursor->shape) {
+    case SHAPE_DOCUMENT:
+        if (step == 0) {
+            if (node->as.document->metadata) {
+                *more = true;
+                return relation_one(relation, node->as.document->metadata);
+            }
+            step = cursor->step++;
+        }
+        *more = false;
+        return step == 1 && relation_chain(relation, NULL, node->first_child);
+    case SHAPE_TABLE: {
+        const markdown_core_table *table = node->opaque;
+        if (!table) {
+            return false;
+        }
+        if (step == 0) {
+            cursor->next = node->first_child;
+            if (table->caption) {
+                *more = true;
+                return relation_one(relation, table->caption);
+            }
+            step = cursor->step++;
+        }
+        if (step > 3) {
+            return false;
+        }
+        size_t count = step == 1 ? table->head_count : step == 2 ? table->content_count : table->foot_count;
+        const markdown_core_node *first = cursor->next, *end = first;
+        for (; count && end; count--) {
+            end = end->next;
+        }
+        cursor->next = end;
+        *relation = (markdown_core_relation){table_groups[step - 1], first, end};
+        *more = step < 3;
+        return true;
+    }
+    case SHAPE_DIRECTIVE:
+        if (step == 0) {
+            const markdown_core_directive_value *directive = node->opaque;
+            if (directive && directive->label) {
+                *more = true;
+                return relation_one(relation, directive->label);
+            }
+            step = cursor->step++;
+        }
+        *more = false;
+        return step == 1 && relation_chain(relation, NULL, node->first_child);
+    case SHAPE_CALLOUT:
+        if (step == 0) {
+            if (node->as.callout->title) {
+                *more = true;
+                return relation_chain(relation, "Title", node->as.callout->title->first_child);
+            }
+            step = cursor->step++;
+        }
+        *more = false;
+        return step == 1 && relation_chain(relation, NULL, node->first_child);
+    case SHAPE_CITE:
+        *more = false;
+        return step == 0 && relation_chain(relation, NULL, node->as.cite->citations);
+    case SHAPE_CITATION: {
+        const markdown_core_citation_item *citation = node->as.citation;
+        *more = true;
+        if (step == 0) {
+            if (citation->note) {
+                return relation_one(relation, citation->note);
+            }
+            step = cursor->step++;
+        }
+        if (step == 1) {
+            return relation_chain(relation, "CitationPrefix", citation->prefix ? citation->prefix->first_child : NULL);
+        }
+        *more = false;
+        return step == 2 &&
+               relation_chain(relation, "CitationSuffix", citation->suffix ? citation->suffix->first_child : NULL);
+    }
+    case SHAPE_DEFINITION: {
+        if (step == 0) {
+            cursor->next = node->first_child;
+            *more = cursor->next != NULL;
+            return relation_chain(relation, "DefinitionTerm",
+                                  node->as.definition->term ? node->as.definition->term->first_child : NULL);
+        }
+        const markdown_core_node *body = cursor->next;
+        if (!body) {
+            return false;
+        }
+        cursor->next = body->next;
+        *more = cursor->next != NULL;
+        return relation_chain(relation, "DefinitionBody", body->first_child);
+    }
+    case SHAPE_CHILDREN:
+        *more = false;
+        return step == 0 && relation_chain(relation, NULL, node->first_child);
+    }
+    return false;
+}
+
+bool markdown_core_relations_next(markdown_core_relation_cursor *cursor, markdown_core_relation *relation) {
+    bool more;
+    return relations_next(cursor, relation, &more);
+}
+
+/* A node whose relations are being published: where the node starts, its
+ * cursor and whether that may hold another relation, and, while a nested
+ * node's relations are published, the rest of the relation in hand and the
+ * offset its next node's extent is relative to (the end of the previous node
+ * of its relation, or the owner's start). */
+typedef struct {
+    markdown_core_relation_cursor cursor;
+    const markdown_core_node *item, *end;
+    uint32_t start, anchor;
+    bool more;
+} publish_frame;
+
+/* The frames live on the parser's walk stack, which the finish walk has
+ * just left. */
+typedef struct {
+    markdown_core_parser *parser;
+    publish_frame *frames;
+    size_t count, capacity;
+} publish_stack;
+
+static bool publish_grow(publish_stack *stack) {
+    size_t capacity = stack->capacity ? stack->capacity * 2 : 16;
+    publish_frame *frames = markdown_core_parser_walk_stack(stack->parser, capacity, sizeof(*frames));
+    if (!frames) {
+        return false;
+    }
+    stack->frames = frames;
+    stack->capacity = stack->parser->walk_stack_size / sizeof(*frames);
+    return true;
+}
+
+/* The relation in hand: the walk keeps it apart from its frame, which holds
+ * it only while the frame waits. */
+typedef struct {
+    const markdown_core_node *item, *end;
+    uint32_t anchor;
+} publish_relation;
+
+/* `node`'s first relation, which holds a node or a group, and whether more
+ * may follow it: the one relation of a kind that owns only its children, or
+ * the first its cursor finds. False when they hold no node. */
+static inline bool publish_first(const markdown_core_node *node, relation_shape shape,
+                                 markdown_core_relation_cursor *cursor, publish_relation *first, bool *more) {
+    if (shape == SHAPE_CHILDREN) {
+        first->item = node->first_child;
+        first->end = NULL;
+        *more = false;
+        return node->first_child != NULL;
+    }
+    markdown_core_relation relation;
+    *cursor = (markdown_core_relation_cursor){node, (uint8_t)shape, 0, NULL};
+    if (!relations_next(cursor, &relation, more)) {
+        return false;
+    }
+    first->item = relation.first;
+    first->end = relation.end;
+    return relation.first != relation.end || *more;
+}
+
+/* Gives `node` its id and its extent against `anchor`, and records it in its
+ * lookup table when its slot says the tables find it. Returns where it ended. */
+static inline bool publish_node(markdown_core_node *node, unsigned slot, uint32_t anchor, uint64_t *next_id,
+                                definition_table *footnotes, definition_table *specimens, markdown_core_place *place) {
+    *place = node->where.place;
+    node->id = ++*next_id;
+    node->where.extent =
+        (markdown_core_extent){(int32_t)((int64_t)place->start - (int64_t)anchor), place->end - place->start};
+    if (!(slot & SLOT_LOOKUP)) {
+        return true;
+    }
+    return table_add(node->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? footnotes : specimens, node, place->start);
+}
+
+/* Nodes are published in canonical walk order: a node, then the nodes of its
+ * relations in order, with one frame per node whose relations are open. A
+ * node's place becomes its extent as it is published, so each frame keeps
+ * the offsets its later nodes are relative to. */
+bool markdown_core_publish_tree(markdown_core_parser *parser) {
+    markdown_core_node *root = parser->root;
+    markdown_core_source_order *order = &parser->source_order;
+    markdown_core_document_value *value = root->as.document;
+    publish_stack stack = {parser, parser->walk_stack, 0, parser->walk_stack_size / sizeof(publish_frame)};
+    definition_table footnotes = {0}, specimens = {0};
+    uint64_t next_id = 0;
+    markdown_core_place place;
+    publish_relation hand = {NULL, NULL, 0}, first;
+    publish_frame *frame = NULL;
+    markdown_core_relation_cursor cursor;
+    bool more;
+    bool ok = publish_node(root, slot_of(root), 0, &next_id, &footnotes, &specimens, &place);
+    if (ok && publish_first(root, shape_of(root), &cursor, &first, &more)) {
+        ok = stack.capacity || publish_grow(&stack);
+        if (ok) {
+            frame = &stack.frames[stack.count++];
+            *frame = (publish_frame){.cursor = cursor, .start = place.start, .more = more};
+            hand = (publish_relation){first.item, first.end, place.start};
+        }
+    }
+    while (ok && stack.count) {
+        if (hand.item == hand.end) {
+            markdown_core_relation relation;
+            if (frame->more && relations_next(&frame->cursor, &relation, &frame->more)) {
+                hand = (publish_relation){relation.first, relation.end, frame->start};
+            } else if (--stack.count) {
+                frame--;
+                hand = (publish_relation){frame->item, frame->end, frame->anchor};
+            }
+            continue;
+        }
+        markdown_core_node *node = (markdown_core_node *)hand.item;
+        hand.item = node->next;
+        unsigned slot = slot_of(node);
+        ok = publish_node(node, slot, hand.anchor, &next_id, &footnotes, &specimens, &place);
+        hand.anchor = place.end;
+        if (!ok || !publish_first(node, (relation_shape)(slot & SLOT_SHAPE), &cursor, &first, &more)) {
+            continue;
+        }
+        /* A frame with nothing left gives its slot to the node's own; any
+         * other waits with the relation in hand. */
+        if (hand.item != hand.end || frame->more) {
+            frame->item = hand.item;
+            frame->end = hand.end;
+            frame->anchor = hand.anchor;
+            if (stack.count == stack.capacity) {
+                ok = publish_grow(&stack);
+                if (!ok) {
+                    continue;
+                }
+                frame = &stack.frames[stack.count - 1];
+            }
+            frame++;
+            stack.count++;
+        }
+        frame->start = place.start;
+        frame->more = more;
+        if (more) {
+            frame->cursor = cursor;
+        }
+        hand = (publish_relation){first.item, first.end, place.start};
+    }
+    ok = ok && table_seal(&footnotes, order, &value->footnotes) && table_seal(&specimens, order, &value->specimens);
+    markdown_core_free(footnotes.values);
+    markdown_core_free(specimens.values);
+    return ok;
+}
+
 /* THE ONE PARSE TRANSACTION. Every caller runs it over the whole dialect:
  * the public entry supplies the default allocator, and the allocation-failure
  * tests supply an injected one. Nothing else builds a parser, so there is
  * exactly one language and no way to parse a part of it. */
-markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
-                                                     markdown_core_error **error) {
+markdown_core_document *markdown_core_document_parse_in(const uint8_t *source, size_t length,
+                                                        markdown_core_text_unit unit, markdown_core_error **error) {
     markdown_core_document *document;
 
     clear_error(error);
@@ -134,12 +535,16 @@ markdown_core_document *markdown_core_document_parse(const uint8_t *source, size
         set_error(error, &ERROR_INVALID_SOURCE);
         return NULL;
     }
+    if (unit != MARKDOWN_CORE_TEXT_UNIT_UTF8 && unit != MARKDOWN_CORE_TEXT_UNIT_UTF16) {
+        set_error(error, &ERROR_INVALID_UNIT);
+        return NULL;
+    }
     document = (markdown_core_document *)markdown_core_alloc(1, sizeof(*document));
     if (!document) {
         set_error(error, &ERROR_DOCUMENT_ALLOCATION);
         return NULL;
     }
-
+    document->unit = unit;
     document->root = markdown_core_parse_document_with_setup((const char *)source, length, NULL, NULL);
     if (!document->root) {
         markdown_core_free(document);
@@ -149,12 +554,21 @@ markdown_core_document *markdown_core_document_parse(const uint8_t *source, size
     return document;
 }
 
+markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
+                                                     markdown_core_error **error) {
+    return markdown_core_document_parse_in(source, length, MARKDOWN_CORE_TEXT_UNIT_UTF8, error);
+}
+
 void markdown_core_document_free(markdown_core_document *document) {
     if (!document) {
         return;
     }
     markdown_core_node_free(document->root);
     markdown_core_free(document);
+}
+
+markdown_core_text_unit markdown_core_document_unit(const markdown_core_document *document) {
+    return document ? document->unit : MARKDOWN_CORE_TEXT_UNIT_UTF8;
 }
 
 const markdown_core_node *markdown_core_document_root(const markdown_core_document *document) {
@@ -308,15 +722,289 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
     return S_kind_name[kind];
 }
 
-markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
-    markdown_core_scope scope = {{0, 0}, {0, 0}};
-    if (node) {
-        scope.start.line = node->start_line;
-        scope.start.column = node->start_column;
-        scope.end.line = node->end_line;
-        scope.end.column = node->end_column;
+uint64_t markdown_core_node_id(const markdown_core_node *node) { return node ? node->id : 0; }
+
+markdown_core_extent markdown_core_node_extent(const markdown_core_node *node) {
+    markdown_core_extent extent = {0, 0};
+    return node ? node->where.extent : extent;
+}
+
+static size_t chain_length(const markdown_core_node *first) {
+    size_t count = 0;
+    for (; first; first = first->next) {
+        count++;
     }
+    return count;
+}
+
+void markdown_core_walk_begin(markdown_core_walk *walk, const markdown_core_node *root) {
+    *walk = (markdown_core_walk){root, 0, false, false, false, NULL, 0, 0, 0};
+}
+
+void markdown_core_walk_end(markdown_core_walk *walk) {
+    markdown_core_free(walk->frames);
+    walk->frames = NULL;
+    walk->count = walk->capacity = 0;
+}
+
+/* Where `node` is, given the offset its extent is relative to. */
+static markdown_core_place walk_place(const markdown_core_node *node, uint32_t anchor) {
+    markdown_core_extent extent = node->where.extent;
+    markdown_core_place place;
+    place.start = (uint32_t)((int64_t)anchor + extent.lead);
+    place.end = place.start + extent.span;
+    return place;
+}
+
+/* A node whose relations hold nothing takes no frame. */
+static bool walk_push(markdown_core_walk *walk, const markdown_core_node *node, size_t level, uint32_t start) {
+    if (relations_empty(node)) {
+        return true;
+    }
+    if (walk->count == walk->capacity) {
+        size_t capacity = walk->capacity ? walk->capacity * 2 : 32;
+        markdown_core_walk_frame *frames;
+        if (capacity > SIZE_MAX / sizeof(*frames) ||
+            !(frames = markdown_core_realloc(walk->frames, capacity * sizeof(*frames)))) {
+            walk->failed = true;
+            return false;
+        }
+        walk->frames = frames;
+        walk->capacity = capacity;
+    }
+    markdown_core_walk_frame *frame = &walk->frames[walk->count++];
+    frame->level = level;
+    frame->active = false;
+    frame->owner_start = start;
+    markdown_core_relations_begin(&frame->cursor, node);
+    return true;
+}
+
+/* Whether the owner of `frame` has another line at its own level after the
+ * current relation: a later group, or a later relation with nodes. */
+static bool walk_more_after(const markdown_core_walk_frame *frame) {
+    markdown_core_relation_cursor cursor = frame->cursor;
+    markdown_core_relation relation;
+    while (markdown_core_relations_next(&cursor, &relation)) {
+        if (relation.group || relation.first != relation.end) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *item) {
+    if (walk->failed) {
+        return false;
+    }
+    if (!walk->started) {
+        walk->started = true;
+        if (!walk->root) {
+            return false;
+        }
+        markdown_core_place place = walk_place(walk->root, walk->anchor);
+        *item = (markdown_core_walk_item){walk->root, place, NULL, 0, 0};
+        return walk_push(walk, walk->root, 0, place.start);
+    }
+    while (walk->count) {
+        markdown_core_walk_frame *frame = &walk->frames[walk->count - 1];
+        if (!frame->active) {
+            if (!markdown_core_relations_next(&frame->cursor, &frame->relation)) {
+                walk->count--;
+                continue;
+            }
+            frame->active = true;
+            frame->group_pending = frame->relation.group != NULL;
+            frame->next = frame->relation.first;
+            frame->anchor = frame->owner_start;
+        }
+        if (frame->group_pending) {
+            frame->group_pending = false;
+            *item = (markdown_core_walk_item){
+                NULL, {0, 0}, frame->relation.group, markdown_core_relation_count(&frame->relation), frame->level + 1};
+            walk->at_group = true;
+            walk->owner = walk->count;
+            return true;
+        }
+        if (frame->next != frame->relation.end) {
+            markdown_core_node *node = (markdown_core_node *)frame->next;
+            frame->next = node->next;
+            markdown_core_place place = walk_place(node, frame->anchor);
+            frame->anchor = place.end;
+            size_t level = frame->level + (frame->relation.group ? 2 : 1);
+            *item = (markdown_core_walk_item){node, place, NULL, 0, level};
+            walk->at_group = false;
+            walk->owner = walk->count;
+            return walk_push(walk, node, level, place.start);
+        }
+        frame->active = false;
+    }
+    return false;
+}
+
+bool markdown_core_walk_has_next(const markdown_core_walk *walk) {
+    if (!walk->owner) {
+        return false;
+    }
+    const markdown_core_walk_frame *owner = &walk->frames[walk->owner - 1];
+    /* A group's own nodes follow it one level down, so what follows it at its
+     * own level is the owner's next relation. */
+    if (walk->at_group) {
+        return walk_more_after(owner);
+    }
+    return owner->next != owner->relation.end || (!owner->relation.group && walk_more_after(owner));
+}
+
+/* THE LINES OF A SOURCE: the offset each begins at. A line ends after LF,
+ * after CR, or after CRLF, which is one terminator. */
+typedef struct {
+    size_t *starts;
+    size_t count;
+} source_lines;
+
+static bool source_lines_read(source_lines *lines, const uint8_t *source, size_t length) {
+    size_t count = 1;
+    for (size_t i = 0; i < length; i++) {
+        if (source[i] == '\n' || (source[i] == '\r' && !(i + 1 < length && source[i + 1] == '\n'))) {
+            count++;
+        }
+    }
+    lines->starts = markdown_core_alloc(count, sizeof(*lines->starts));
+    if (!lines->starts) {
+        return false;
+    }
+    lines->count = 0;
+    lines->starts[lines->count++] = 0;
+    for (size_t i = 0; i < length; i++) {
+        if (source[i] == '\n' || (source[i] == '\r' && !(i + 1 < length && source[i + 1] == '\n'))) {
+            lines->starts[lines->count++] = i + 1;
+        }
+    }
+    return true;
+}
+
+/* The index of the line holding `offset`: the last line starting at or
+ * before it. */
+static size_t source_line_of(const source_lines *lines, size_t offset) {
+    size_t lo = 0, hi = lines->count;
+    while (hi - lo > 1) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (lines->starts[mid] <= offset) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo;
+}
+
+/* The columns between two offsets of one line, in `unit`. A UTF-8 byte that
+ * begins a four-byte scalar is two UTF-16 units; a continuation byte is none. */
+static size_t source_columns(const uint8_t *source, size_t from, size_t to, markdown_core_text_unit unit) {
+    if (unit == MARKDOWN_CORE_TEXT_UNIT_UTF8) {
+        return to - from;
+    }
+    size_t units = 0;
+    for (size_t i = from; i < to; i++) {
+        uint8_t byte = source[i];
+        units += (byte & 0xC0) == 0x80 ? 0 : byte >= 0xF0 ? 2 : 1;
+    }
+    return units;
+}
+
+/* A byte range as editor coordinates: the start is the position of its first
+ * byte, and the end the line holding its exclusive end and the columns from
+ * that line's start to it. */
+static markdown_core_scope source_scope(const source_lines *lines, const uint8_t *source, markdown_core_place place,
+                                        markdown_core_text_unit unit) {
+    size_t start_line = source_line_of(lines, place.start), end_line = source_line_of(lines, place.end);
+    markdown_core_scope scope;
+    scope.start.line = (int32_t)(start_line + 1);
+    scope.start.column = (int32_t)(source_columns(source, lines->starts[start_line], place.start, unit) + 1);
+    scope.end.line = (int32_t)(end_line + 1);
+    scope.end.column = (int32_t)source_columns(source, lines->starts[end_line], place.end, unit);
     return scope;
+}
+
+/* The absolute range of `target` in the tree `root`, found by one canonical
+ * walk. False when the node is not in the tree or the walk could not run. */
+static bool tree_place(const markdown_core_node *root, const markdown_core_node *target, markdown_core_place *place) {
+    markdown_core_walk walk;
+    markdown_core_walk_item item;
+    bool found = false;
+    markdown_core_walk_begin(&walk, root);
+    while (!found && markdown_core_walk_next(&walk, &item)) {
+        if (item.node == target) {
+            *place = item.place;
+            found = true;
+        }
+    }
+    markdown_core_walk_end(&walk);
+    return found;
+}
+
+bool markdown_core_tree_scope(const markdown_core_node *root, const markdown_core_node *node, const uint8_t *source,
+                              size_t length, markdown_core_text_unit unit, markdown_core_scope *scope) {
+    markdown_core_place place;
+    source_lines lines;
+    if (!node || !scope || (!source && length) || !tree_place(root, node, &place) || place.end > length ||
+        !source_lines_read(&lines, source, length)) {
+        return false;
+    }
+    *scope = source_scope(&lines, source, place, unit);
+    markdown_core_free(lines.starts);
+    return true;
+}
+
+bool markdown_core_document_scope(const markdown_core_document *document, const markdown_core_node *node,
+                                  const uint8_t *source, size_t length, markdown_core_scope *scope) {
+    return document && markdown_core_tree_scope(document->root, node, source, length, document->unit, scope);
+}
+
+const markdown_core_node *markdown_core_document_node_at(const markdown_core_document *document,
+                                                         markdown_core_position position, const uint8_t *source,
+                                                         size_t length) {
+    source_lines lines;
+    if (!document || (!source && length) || position.line < 1 || position.column < 1 ||
+        !source_lines_read(&lines, source, length)) {
+        return NULL;
+    }
+    size_t line = (size_t)position.line - 1;
+    bool valid = line < lines.count;
+    size_t offset = valid ? lines.starts[line] : 0;
+    size_t end = valid && line + 1 < lines.count ? lines.starts[line + 1] : length;
+    /* Step over the line's scalars up to the column; the position must land
+     * on a byte of the line, at a scalar boundary. */
+    int64_t column = 1;
+    while (valid && column < position.column) {
+        if (offset >= end) {
+            valid = false;
+            break;
+        }
+        size_t next = offset + 1;
+        while (next < end && (source[next] & 0xC0) == 0x80) {
+            next++;
+        }
+        column += (int64_t)source_columns(source, offset, next, document->unit);
+        offset = next;
+    }
+    valid = valid && column == position.column;
+    markdown_core_free(lines.starts);
+    if (!valid || offset >= end) {
+        return NULL;
+    }
+    markdown_core_walk walk;
+    markdown_core_walk_item item;
+    const markdown_core_node *found = NULL;
+    markdown_core_walk_begin(&walk, document->root);
+    while (markdown_core_walk_next(&walk, &item)) {
+        if (item.node && item.place.start <= offset && offset < item.place.end) {
+            found = item.node;
+        }
+    }
+    bool failed = walk.failed;
+    markdown_core_walk_end(&walk);
+    return failed ? NULL : found;
 }
 
 static bool is_directive(const markdown_core_node *node) {
@@ -781,20 +1469,26 @@ bool markdown_core_citation_referent(const markdown_core_node *citation, markdow
         return false;
     }
     memset(referent, 0, sizeof(*referent));
-    if (node->as.citation->referent == MARKDOWN_CORE_NODE_REFERENT_BIB) {
+    const markdown_core_citation_item *item = node->as.citation;
+    switch (item->referent) {
+    case MARKDOWN_CORE_NODE_REFERENT_BIB:
         referent->kind = MARKDOWN_CORE_REFERENT_BIB;
-        string_from_chunk(&referent->key, &node->as.citation->value);
-        referent->mode = (markdown_core_bib_mode)node->as.citation->mode;
-    } else if (node->as.citation->referent == MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE ||
-               node->as.citation->referent == MARKDOWN_CORE_NODE_REFERENT_SPECIMEN) {
-        referent->kind = node->as.citation->referent == MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE
-                             ? MARKDOWN_CORE_REFERENT_FOOTNOTE
-                             : MARKDOWN_CORE_REFERENT_SPECIMEN;
-        string_from_chunk(&referent->id, &node->as.citation->value);
-    } else {
-        return false;
+        string_from_chunk(&referent->key, &item->value);
+        referent->mode = (markdown_core_bib_mode)item->mode;
+        return true;
+    case MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE:
+        referent->kind = MARKDOWN_CORE_REFERENT_FOOTNOTE;
+        referent->note = item->note;
+        if (!item->note) {
+            string_from_chunk(&referent->label, &item->value);
+        }
+        return true;
+    case MARKDOWN_CORE_NODE_REFERENT_SPECIMEN:
+        referent->kind = MARKDOWN_CORE_REFERENT_SPECIMEN;
+        string_from_chunk(&referent->label, &item->value);
+        return true;
     }
-    return true;
+    return false;
 }
 
 const markdown_core_node *markdown_core_citation_prefix(const markdown_core_node *citation) {
@@ -807,17 +1501,69 @@ const markdown_core_node *markdown_core_citation_suffix(const markdown_core_node
     return node && node->as.citation->suffix ? node->as.citation->suffix->first_child : NULL;
 }
 
-const markdown_core_node *markdown_core_node_document_footnotes(const markdown_core_node *node) {
-    return node && node->kind == MARKDOWN_CORE_NODE_DOCUMENT ? (const markdown_core_node *)node->as.document->footnotes
-                                                             : NULL;
+/* The definition tables publishing recorded in the document's root. */
+static const markdown_core_definitions *document_footnotes(const markdown_core_document *document) {
+    return &document->root->as.document->footnotes;
 }
 
-bool markdown_core_footnote_id(const markdown_core_node *footnote, markdown_core_string *id) {
+static const markdown_core_definitions *document_specimens(const markdown_core_document *document) {
+    return &document->root->as.document->specimens;
+}
+
+size_t markdown_core_document_footnote_count(const markdown_core_document *document) {
+    return document ? document_footnotes(document)->count : 0;
+}
+
+const markdown_core_node *markdown_core_document_footnote_at(const markdown_core_document *document, size_t index) {
+    return document && index < document_footnotes(document)->count ? document_footnotes(document)->nodes[index] : NULL;
+}
+
+size_t markdown_core_document_specimen_count(const markdown_core_document *document) {
+    return document ? document_specimens(document)->count : 0;
+}
+
+const markdown_core_node *markdown_core_document_specimen_at(const markdown_core_document *document, size_t index) {
+    return document && index < document_specimens(document)->count ? document_specimens(document)->nodes[index] : NULL;
+}
+
+/* The first definition in source order whose label is `label`, byte for
+ * byte: the lowest of that label in the label order. */
+static const markdown_core_node *definition_for(const markdown_core_definitions *table, markdown_core_string label) {
+    size_t lo = 0, hi = table->labeled_count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        const markdown_core_optional_chunk *candidate = definition_label(table->labeled[mid]);
+        if (label_compare(candidate->value.data, (size_t)candidate->value.len, label.data, label.length) < 0) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    if (lo == table->labeled_count) {
+        return NULL;
+    }
+    const markdown_core_optional_chunk *found = definition_label(table->labeled[lo]);
+    return label_compare(found->value.data, (size_t)found->value.len, label.data, label.length) == 0
+               ? table->labeled[lo]
+               : NULL;
+}
+
+const markdown_core_node *markdown_core_document_footnote_for(const markdown_core_document *document,
+                                                              markdown_core_string label) {
+    return document ? definition_for(document_footnotes(document), label) : NULL;
+}
+
+const markdown_core_node *markdown_core_document_specimen_for(const markdown_core_document *document,
+                                                              markdown_core_string label) {
+    return document ? definition_for(document_specimens(document), label) : NULL;
+}
+
+bool markdown_core_footnote_label(const markdown_core_node *footnote, markdown_core_optional_string *label) {
     const markdown_core_node *node = footnote_node(footnote);
-    if (!node || !id) {
+    if (!node || !label) {
         return false;
     }
-    string_from_chunk(id, &node->as.footnote->id);
+    optional_string_from_chunk(label, &node->as.footnote->label);
     return true;
 }
 
@@ -831,18 +1577,13 @@ static const markdown_core_node *specimen_node(const markdown_core_node *specime
     return node && node->kind == MARKDOWN_CORE_NODE_SPECIMEN ? node : NULL;
 }
 
-const markdown_core_node *markdown_core_node_document_specimens(const markdown_core_node *node) {
-    return node && node->kind == MARKDOWN_CORE_NODE_DOCUMENT ? (const markdown_core_node *)node->as.document->specimens
-                                                             : NULL;
-}
-
-bool markdown_core_specimen_properties(const markdown_core_node *specimen, markdown_core_optional_string *id,
+bool markdown_core_specimen_properties(const markdown_core_node *specimen, markdown_core_optional_string *label,
                                        markdown_core_optional_i64 *start) {
     const markdown_core_node *node = specimen_node(specimen);
-    if (!node || !id || !start) {
+    if (!node || !label || !start) {
         return false;
     }
-    optional_string_from_chunk(id, &node->as.specimen->id);
+    optional_string_from_chunk(label, &node->as.specimen->label);
     start->has_value = node->as.specimen->has_start;
     start->value = node->as.specimen->start;
     return true;
@@ -1147,13 +1888,13 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         break;
     }
     case MARKDOWN_CORE_KIND_FOOTNOTE:
-        markdown_core_footnote_id(node, &a);
-        buffer_cstr(buffer, " id=");
-        buffer_json_string(buffer, a);
+        markdown_core_footnote_label(node, &oa);
+        buffer_cstr(buffer, " label=");
+        buffer_optional_string(buffer, oa);
         break;
     case MARKDOWN_CORE_KIND_SPECIMEN:
         markdown_core_specimen_properties(node, &oa, &start);
-        buffer_cstr(buffer, " id=");
+        buffer_cstr(buffer, " label=");
         buffer_optional_string(buffer, oa);
         buffer_cstr(buffer, " start=");
         if (start.has_value) {
@@ -1367,8 +2108,6 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     }
 }
 
-static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth);
-
 /* The file-tree connectors that lead a line at `depth`. */
 static void dump_prefix(dump_buffer *buffer, size_t depth) {
     if (!depth) {
@@ -1376,110 +2115,6 @@ static void dump_prefix(dump_buffer *buffer, size_t depth) {
     }
     buffer_bytes(buffer, buffer->prefix, buffer->prefix_end[depth - 1]);
     buffer_cstr(buffer, buffer->more[depth - 1] ? "├── " : "└── ");
-}
-
-static dump_frame *frame_push(dump_buffer *buffer, size_t depth) {
-    dump_frame *frame;
-    if (buffer->frame_count == buffer->frame_capacity) {
-        size_t capacity = buffer->frame_capacity ? buffer->frame_capacity * 2 : 32;
-        dump_frame *frames = (dump_frame *)realloc(buffer->frames, capacity * sizeof(*frames));
-        if (!frames) {
-            buffer->failed = true;
-            return NULL;
-        }
-        buffer->frames = frames;
-        buffer->frame_capacity = capacity;
-    }
-    frame = &buffer->frames[buffer->frame_count++];
-    memset(frame, 0, sizeof(*frame));
-    frame->depth = depth;
-    return frame;
-}
-
-/* Writes a run into a slot, without touching what the frame owes: the caller
- * states that, because a definition counts its body groups before the first
- * one is written and the rest are written one at a time. */
-static void frame_set_run(dump_run *run, const char *group, size_t group_count, const markdown_core_node *chain,
-                          size_t count, bool nested) {
-    run->group = group;
-    run->group_count = group_count;
-    run->next = chain;
-    run->remaining = count;
-    run->nested = nested;
-}
-
-/* Appends a run and counts what it owes at the owner's depth: its group line,
- * and its chain when that chain is not a group's.
- *
- * A kind that would exceed DUMP_RUN_MAX fails the dump rather than dropping
- * the run: a silently shortened tree is worse than no tree. */
-static void frame_add_run(dump_buffer *buffer, dump_frame *frame, const char *group, size_t group_count,
-                          const markdown_core_node *chain, size_t count, bool nested) {
-    if (frame->run_count == DUMP_RUN_MAX) {
-        buffer->failed = true;
-        return;
-    }
-    frame_set_run(&frame->runs[frame->run_count++], group, group_count, chain, count, nested);
-    frame->level_items += (group ? 1u : 0u) + (nested ? 0u : count);
-}
-
-static void frame_add_children(dump_buffer *buffer, dump_frame *frame, const markdown_core_node *node, size_t count) {
-    frame_add_run(buffer, frame, NULL, 0, markdown_core_node_get_first_child(node), count, false);
-}
-
-/* The next line the frame owes, or false once it owes none.
- *
- * A chain under a group is last when its own nodes run out; anything at the
- * owner's depth is last when the owner has nothing left there. Both are the
- * counts the collectors this replaces kept, read one item at a time. */
-static bool frame_next(dump_frame *frame, dump_item *item) {
-    while (frame->run_count) {
-        dump_run *run = &frame->runs[frame->run_head];
-        if (run->group) {
-            item->node = NULL;
-            item->name = run->group;
-            item->count = run->group_count;
-            item->depth = frame->depth;
-            item->has_next = --frame->level_items != 0;
-            run->group = NULL;
-            return true;
-        }
-        if (run->remaining) {
-            const markdown_core_node *node = run->next;
-            run->next = node->next;
-            run->remaining--;
-            item->node = node;
-            item->name = NULL;
-            item->count = 0;
-            item->depth = frame->depth + (run->nested ? 1u : 0u);
-            item->has_next = run->nested ? run->remaining != 0 : --frame->level_items != 0;
-            return true;
-        }
-        frame->run_head++;
-        frame->run_count--;
-        if (!frame->run_count && frame->body) {
-            /* A definition has as many bodies as its author wrote, so the next
-             * body's run takes the place of the one just finished. The frame
-             * counted every body group when it was built, so writing this one
-             * owes nothing further. */
-            const markdown_core_node *body = frame->body;
-            size_t count = markdown_core_node_child_count(body);
-            frame->body = body->next;
-            frame->run_head = 0;
-            frame->run_count = 1;
-            frame_set_run(&frame->runs[0], "DefinitionBody", count, markdown_core_node_get_first_child(body), count,
-                          true);
-        }
-    }
-    return false;
-}
-
-static void directive_runs(dump_buffer *buffer, dump_frame *frame, const markdown_core_node *node, size_t child_count) {
-    const markdown_core_node *label = markdown_core_node_directive_label(node);
-    if (label) {
-        frame_add_run(buffer, frame, NULL, 0, label, 1, false);
-    }
-    frame_add_children(buffer, frame, node, child_count);
 }
 
 /* A group line nests a node-valued list under its owner: `Kind children=N`
@@ -1497,49 +2132,11 @@ static void dump_group_line(dump_buffer *buffer, const char *name, size_t count,
     buffer_i64(buffer, (int64_t)count);
     buffer_cstr(buffer, "\n");
 }
-/* A callout's `title` is a node-valued field, never callout content: a
- * non-null title is a `Title` group before the content, and a null one
- * prints nothing (M3). */
-static void callout_runs(dump_buffer *buffer, dump_frame *frame, const markdown_core_node *node, size_t child_count) {
-    const markdown_core_node *title = markdown_core_node_callout_title(node);
-    if (title) {
-        size_t count = 0;
-        const markdown_core_node *cursor;
-        for (cursor = title; cursor; cursor = markdown_core_node_get_next_sibling(cursor)) {
-            count++;
-        }
-        frame_add_run(buffer, frame, "Title", count, title, count, true);
-    }
-    frame_add_children(buffer, frame, node, child_count);
-}
 
-/* These group lines format the partition stored by the table. They are not
- * nodes, and never change the table's structural child count. */
-static void table_runs(dump_buffer *buffer, dump_frame *frame, const markdown_core_node *node) {
-    size_t columns, counts[3], group;
-    static const char *names[] = {"TableHead", "TableBody", "TableFoot"};
-    const markdown_core_node *caption = markdown_core_node_table_caption(node);
-    const markdown_core_node *row = markdown_core_node_get_first_child(node);
-    markdown_core_node_table_properties(node, &columns, &counts[0], &counts[1], &counts[2]);
-    if (caption) {
-        frame_add_run(buffer, frame, NULL, 0, caption, 1, false);
-    }
-    for (group = 0; group < 3; group++) {
-        frame_add_run(buffer, frame, names[group], counts[group], row, counts[group], true);
-        for (size_t i = 0; i < counts[group]; i++) {
-            row = markdown_core_node_get_next_sibling(row);
-        }
-    }
-}
-static size_t chain_length(const markdown_core_node *first) {
-    size_t count = 0;
-    for (; first; first = first->next) {
-        count++;
-    }
-    return count;
-}
-
-static void buffer_scope(dump_buffer *buffer, markdown_core_scope scope) {
+/* The scope of a byte range, in UTF-8 columns (source_scope). */
+static void buffer_scope(dump_buffer *buffer, markdown_core_place place) {
+    source_lines lines = {buffer->lines, buffer->line_count};
+    markdown_core_scope scope = source_scope(&lines, buffer->source, place, MARKDOWN_CORE_TEXT_UNIT_UTF8);
     buffer_i64(buffer, scope.start.line);
     buffer_cstr(buffer, ":");
     buffer_i64(buffer, scope.start.column);
@@ -1561,7 +2158,8 @@ static const char *bib_mode_name(markdown_core_bib_mode mode) {
 }
 
 /* A tagged value prints its branch and named fields with no spaces, as
- * `dest` does. */
+ * `dest` does. An inline note is drawn under its Citation, so its branch
+ * prints no field. */
 static void buffer_referent(dump_buffer *buffer, markdown_core_referent referent) {
     if (referent.kind == MARKDOWN_CORE_REFERENT_BIB) {
         buffer_cstr(buffer, "bib(key=");
@@ -1569,18 +2167,13 @@ static void buffer_referent(dump_buffer *buffer, markdown_core_referent referent
         buffer_cstr(buffer, ",mode=");
         buffer_cstr(buffer, bib_mode_name(referent.mode));
         buffer_cstr(buffer, ")");
+    } else if (referent.kind == MARKDOWN_CORE_REFERENT_FOOTNOTE && referent.note) {
+        buffer_cstr(buffer, "footnote(note)");
     } else {
-        buffer_cstr(buffer, referent.kind == MARKDOWN_CORE_REFERENT_SPECIMEN ? "specimen(id=" : "footnote(id=");
-        buffer_json_string(buffer, referent.id);
+        buffer_cstr(buffer, referent.kind == MARKDOWN_CORE_REFERENT_SPECIMEN ? "specimen(label=" : "footnote(label=");
+        buffer_json_string(buffer, referent.label);
         buffer_cstr(buffer, ")");
     }
-}
-
-/* An affix is a group under its item: the group line names the affix and
- * counts its nodes, which nest one level below it. */
-static void affix_run(dump_buffer *buffer, dump_frame *frame, const char *name, const markdown_core_node *first) {
-    size_t count = chain_length(first);
-    frame_add_run(buffer, frame, name, count, first, count, true);
 }
 
 static void dump_metadata_value(dump_buffer *buffer, const markdown_core_metadata_value *record) {
@@ -1641,44 +2234,15 @@ static void dump_metadata_value(dump_buffer *buffer, const markdown_core_metadat
     }
 }
 
-/* Owned fields use the same node dispatcher as ordinary content. */
-static void document_runs(dump_buffer *buffer, dump_frame *frame, const markdown_core_node *node, size_t child_count) {
-    const markdown_core_node *footnotes = node->as.document->footnotes;
-    const markdown_core_node *specimens = node->as.document->specimens;
-    const markdown_core_node *metadata = markdown_core_node_document_metadata(node);
-    if (metadata) {
-        frame_add_run(buffer, frame, NULL, 0, metadata, 1, false);
-    }
-    frame_add_children(buffer, frame, node, child_count);
-    frame_add_run(buffer, frame, NULL, 0, footnotes, chain_length(footnotes), false);
-    frame_add_run(buffer, frame, NULL, 0, specimens, chain_length(specimens), false);
-}
-
-/* A definition's term is one group; its bodies are a chain of them, counted
- * here so the term's connector knows they follow and written one at a time as
- * the walk reaches them. */
-static void definition_runs(dump_buffer *buffer, dump_frame *frame, const markdown_core_node *node) {
-    const markdown_core_node *term = markdown_core_node_definition_term(node);
-    size_t terms = chain_length(term);
-    frame_add_run(buffer, frame, "DefinitionTerm", terms, term, terms, true);
-    frame->body = node->first_child;
-    frame->level_items += chain_length(node->first_child);
-}
-
-/* Draws the node's own line and records what it nests, in a frame the walk
- * will draw from. The switch is the one the recursion this replaces had; only
- * what it does with a nested node changed, from descending into it to noting
- * it in a run. */
-static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
-    dump_frame *frame;
+/* Draws the node's own line. What it nests is the canonical walk's to
+ * deliver, as the lines after it. */
+static void dump_node(dump_buffer *buffer, const markdown_core_node *node, markdown_core_place place, size_t depth) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
-    markdown_core_scope scope = markdown_core_node_scope(node);
-    /* `children` counts structural children: a cite's are its items. */
-    size_t child_count =
-        kind == MARKDOWN_CORE_KIND_CITE ? chain_length(node->as.cite->citations) : markdown_core_node_child_count(node);
-    if (kind == MARKDOWN_CORE_KIND_DEFINITION) {
-        child_count = chain_length(node->first_child);
-    }
+    /* `children` counts structural children: a cite's are its items and a
+     * definition's its bodies. */
+    size_t child_count = kind == MARKDOWN_CORE_KIND_CITE         ? chain_length(node->as.cite->citations)
+                         : kind == MARKDOWN_CORE_KIND_DEFINITION ? chain_length(node->first_child)
+                                                                 : markdown_core_node_child_count(node);
     if (kind == MARKDOWN_CORE_KIND_NONE) {
         buffer->failed = true;
         return;
@@ -1686,7 +2250,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     dump_prefix(buffer, depth);
     buffer_cstr(buffer, markdown_core_node_kind_name(kind));
     buffer_cstr(buffer, " scope=");
-    buffer_scope(buffer, scope);
+    buffer_scope(buffer, place);
     buffer_cstr(buffer, " anchor=");
     buffer_optional_string(buffer, markdown_core_node_anchor(node));
     buffer_cstr(buffer, " attributes={");
@@ -1727,124 +2291,69 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     buffer_cstr(buffer, " children=");
     buffer_i64(buffer, (int64_t)child_count);
     buffer_cstr(buffer, "\n");
-
-    /* Like cmark's render callback, this switch belongs to the node being
-     * emitted.  Generic child traversal never discovers fields. A directive
-     * explicitly emits its label field before its independent content list. */
-    frame = frame_push(buffer, depth);
-    if (!frame) {
-        return;
-    }
-    switch (kind) {
-    case MARKDOWN_CORE_KIND_DEFINITION:
-        definition_runs(buffer, frame, node);
-        break;
-    case MARKDOWN_CORE_KIND_TABLE:
-        table_runs(buffer, frame, node);
-        break;
-    case MARKDOWN_CORE_KIND_DIRECTIVE:
-    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-        directive_runs(buffer, frame, node, child_count);
-        break;
-    case MARKDOWN_CORE_KIND_CALLOUT:
-        callout_runs(buffer, frame, node, child_count);
-        break;
-    case MARKDOWN_CORE_KIND_DOCUMENT:
-        document_runs(buffer, frame, node, child_count);
-        break;
-    case MARKDOWN_CORE_KIND_CITE:
-        frame_add_run(buffer, frame, NULL, 0, markdown_core_node_cite_citations(node), child_count, false);
-        break;
-    case MARKDOWN_CORE_KIND_CITATION:
-        affix_run(buffer, frame, "CitationPrefix", markdown_core_citation_prefix(node));
-        affix_run(buffer, frame, "CitationSuffix", markdown_core_citation_suffix(node));
-        break;
-    case MARKDOWN_CORE_KIND_METADATA:
-        break;
-    case MARKDOWN_CORE_KIND_FOOTNOTE:
-    case MARKDOWN_CORE_KIND_SPECIMEN:
-    case MARKDOWN_CORE_KIND_PARAGRAPH:
-    case MARKDOWN_CORE_KIND_HEADING:
-    case MARKDOWN_CORE_KIND_DEFINITION_LIST:
-    case MARKDOWN_CORE_KIND_LIST:
-    case MARKDOWN_CORE_KIND_LIST_ITEM:
-    case MARKDOWN_CORE_KIND_TABLE_ROW:
-    case MARKDOWN_CORE_KIND_TABLE_CELL:
-    case MARKDOWN_CORE_KIND_TABLE_CAPTION:
-    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
-    case MARKDOWN_CORE_KIND_EMPHASIS:
-    case MARKDOWN_CORE_KIND_STRONG:
-    case MARKDOWN_CORE_KIND_MARK:
-    case MARKDOWN_CORE_KIND_INSERTION:
-    case MARKDOWN_CORE_KIND_SPAN:
-    case MARKDOWN_CORE_KIND_SUPERSCRIPT:
-    case MARKDOWN_CORE_KIND_SUBSCRIPT:
-    case MARKDOWN_CORE_KIND_STRIKETHROUGH:
-    case MARKDOWN_CORE_KIND_LINK:
-    case MARKDOWN_CORE_KIND_EMBEDDED:
-        frame_add_children(buffer, frame, node, child_count);
-        break;
-    case MARKDOWN_CORE_KIND_THEMATIC_BREAK:
-    case MARKDOWN_CORE_KIND_CODE_BLOCK:
-    case MARKDOWN_CORE_KIND_HTML_BLOCK:
-    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
-    case MARKDOWN_CORE_KIND_TEXT:
-    case MARKDOWN_CORE_KIND_SOFT_BREAK:
-    case MARKDOWN_CORE_KIND_LINE_BREAK:
-    case MARKDOWN_CORE_KIND_CODE:
-    case MARKDOWN_CORE_KIND_HTML:
-    case MARKDOWN_CORE_KIND_COMMENT:
-    case MARKDOWN_CORE_KIND_FORMULA:
-    case MARKDOWN_CORE_KIND_CROSS_LINK:
-    case MARKDOWN_CORE_KIND_CROSS_EMBEDDED:
-    case MARKDOWN_CORE_KIND_NONE:
-        break;
-    }
 }
 
-/* Draws the tree under `root`: the root's line, then each line it nests, and
- * under each nested node everything that node nests before the line behind it.
- *
- * The innermost frame is always the one with a line still owed, so taking from
- * the top and dropping a frame that owes nothing is the pre-order a recursion
- * would produce. Only open levels are on the stack, so the cost is the depth
- * the author wrote and never the number of siblings at any one of them. */
-static void dump_tree(dump_buffer *buffer, const markdown_core_node *root) {
-    dump_node(buffer, root, 0);
-    while (!buffer->failed && buffer->frame_count) {
-        dump_item item;
-        if (!frame_next(&buffer->frames[buffer->frame_count - 1], &item)) {
-            buffer->frame_count--;
-            continue;
-        }
+/* Draws the tree under `root`, one line per item of the canonical walk: a
+ * node's line, or a group line naming a node-valued list. The walk's stack is
+ * the tree's depth, never the C stack's. `anchor` is the absolute offset the
+ * root's extent is relative to. */
+static void dump_tree(dump_buffer *buffer, const markdown_core_node *root, uint32_t anchor) {
+    markdown_core_walk walk;
+    markdown_core_walk_item item;
+    markdown_core_walk_begin(&walk, root);
+    walk.anchor = anchor;
+    while (!buffer->failed && markdown_core_walk_next(&walk, &item)) {
         if (!item.node) {
-            dump_group_line(buffer, item.name, item.count, item.depth, item.has_next);
+            dump_group_line(buffer, item.group, item.count, item.level - 1, markdown_core_walk_has_next(&walk));
             continue;
         }
-        if (!ensure_level(buffer, item.depth)) {
-            return;
+        if (item.level) {
+            if (!ensure_level(buffer, item.level - 1)) {
+                break;
+            }
+            buffer->more[item.level - 1] = markdown_core_walk_has_next(&walk);
+            extend_prefix(buffer, item.level - 1);
         }
-        buffer->more[item.depth] = item.has_next;
-        extend_prefix(buffer, item.depth);
-        dump_node(buffer, item.node, item.depth + 1);
+        dump_node(buffer, item.node, item.place, item.level);
     }
+    buffer->failed = buffer->failed || walk.failed;
+    markdown_core_walk_end(&walk);
 }
 
-bool markdown_core_document_dump(const markdown_core_document *document, uint8_t **output, size_t *length,
+bool markdown_core_document_dump(const markdown_core_document *document, const markdown_core_node *node,
+                                 const uint8_t *source, size_t source_length, uint8_t **output, size_t *length,
                                  markdown_core_error **error) {
     dump_buffer buffer = {0};
+    markdown_core_place root, place;
+    source_lines lines;
     clear_error(error);
-    if (!document || !document->root || !output || !length) {
+    if (output) {
+        *output = NULL;
+    }
+    if (length) {
+        *length = 0;
+    }
+    node = node ? node : document ? document->root : NULL;
+    if (!document || !document->root || !output || !length || (!source && source_length) ||
+        !tree_place(document->root, document->root, &root) || root.end > source_length ||
+        !tree_place(document->root, node, &place)) {
         set_error(error, &ERROR_INVALID_DUMP);
         return false;
     }
-    *output = NULL;
-    *length = 0;
-    dump_tree(&buffer, document->root);
+    if (!source_lines_read(&lines, source, source_length)) {
+        set_error(error, &ERROR_DUMP_ALLOCATION);
+        return false;
+    }
+    buffer.source = source;
+    buffer.lines = lines.starts;
+    buffer.line_count = lines.count;
+    /* A node's walk starts at its own extent, which is relative to the anchor
+     * its relation had where it was written. */
+    dump_tree(&buffer, node, (uint32_t)((int64_t)place.start - node->where.extent.lead));
     free(buffer.more);
     free(buffer.prefix);
     free(buffer.prefix_end);
-    free(buffer.frames);
+    markdown_core_free(lines.starts);
     if (buffer.failed) {
         free(buffer.data);
         set_error(error, &ERROR_DUMP_ALLOCATION);

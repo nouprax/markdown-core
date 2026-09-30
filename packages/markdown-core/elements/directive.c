@@ -15,12 +15,7 @@
 #include <node.h>
 #include <parser.h>
 
-typedef struct {
-    markdown_core_chunk name;
-    markdown_core_node *label;
-    int fence_length;
-    int consume_line;
-} node_directive;
+typedef markdown_core_directive_value node_directive;
 
 typedef struct {
     bufsize_t name_start;
@@ -142,11 +137,6 @@ int markdown_core_directive_has_label(markdown_core_node *node) {
     return directive && directive->label;
 }
 
-markdown_core_node *markdown_core_directive_label(markdown_core_node *node) {
-    node_directive *directive = get_directive(node);
-    return directive ? directive->label : NULL;
-}
-
 static int directive_name_is_valid(const char *name) {
     if (!name) {
         return 0;
@@ -235,8 +225,8 @@ static int parse_directive_suffix(markdown_core_parser *parser, unsigned char *d
 }
 
 static markdown_core_node *make_label_node(const markdown_core_element *element, markdown_core_parser *parser,
-                                           const unsigned char *label, bufsize_t label_len, int start_line,
-                                           int start_column, int end_column) {
+                                           const unsigned char *label, bufsize_t label_len, bufsize_t start,
+                                           bufsize_t end) {
     markdown_core_node *label_node =
         markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL, element);
     if (!label_node) {
@@ -248,18 +238,16 @@ static markdown_core_node *make_label_node(const markdown_core_element *element,
         markdown_core_parser_release_node(parser, label_node);
         return NULL;
     }
-    label_node->start_line = label_node->end_line = start_line;
-    label_node->start_column = start_column;
-    label_node->end_column = end_column;
+    label_node->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)end};
     return label_node;
 }
 
 static int attach_label_node(const markdown_core_element *element, markdown_core_parser *parser,
                              markdown_core_node *directive_node, const unsigned char *label, bufsize_t label_len,
-                             int start_line, int start_column, int end_column) {
+                             bufsize_t start, bufsize_t end) {
     markdown_core_node *label_node;
 
-    label_node = make_label_node(element, parser, label, label_len, start_line, start_column, end_column);
+    label_node = make_label_node(element, parser, label, label_len, start, end);
     if (!label_node) {
         return 0;
     }
@@ -323,9 +311,9 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
          * several bytes of the input but one byte of the source. */
         const int open_column = (int)parsed->label_start;
         const int close_column = open_column + (int)parsed->label_len + 1;
-        if (!attach_label_node(element, parser, node, data + parsed->label_start, parsed->label_len, start_line,
-                               markdown_core_parser_source_column(parser, start_line, open_column),
-                               markdown_core_parser_source_column(parser, start_line, close_column))) {
+        if (!attach_label_node(element, parser, node, data + parsed->label_start, parsed->label_len,
+                               markdown_core_parser_source_offset(parser, start_line, open_column),
+                               markdown_core_parser_source_end(parser, start_line, close_column))) {
             return 0;
         }
         if (!markdown_core_parser_append_source_marks(parser, directive->label, start_line, open_column + 1,
@@ -457,7 +445,7 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
     markdown_core_inline_state_place(inline_state, node, (int)offset, (int)pos - 1);
 
     if (has_label) {
-        label_node = make_label_node(element, parser, chunk->data + label_start, label_len, 0, 0, 0);
+        label_node = make_label_node(element, parser, chunk->data + label_start, label_len, 0, 0);
         if (!label_node) {
             markdown_core_parser_release_node(parser, node);
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);

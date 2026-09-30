@@ -80,9 +80,9 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_wor
             return true;
         }
         node->as.callout->title = title;
-        title->start_line = title->end_line = parser->line_number;
-        title->start_column = markdown_core_parser_source_column(parser, parser->line_number, pos + 1);
-        title->end_column = markdown_core_parser_source_column(parser, parser->line_number, end);
+        title->where.place =
+            (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, parser->line_number, pos + 1),
+                                  (uint32_t)markdown_core_parser_source_end(parser, parser->line_number, end)};
         markdown_core_strbuf_put(&title->content, input->data + pos, end - pos);
         if (title->content.oom || !markdown_core_parser_append_source_marks(parser, title, parser->line_number, pos + 1,
                                                                             title->content.size, 0)) {
@@ -132,8 +132,8 @@ static bool markdown_core_callout_scan(const markdown_core_element_instance *sel
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_node *node) {
     (void)self;
-    return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value &&
-           node->start_line == parser->line_number - 1 && !node->first_child;
+    return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value && !node->first_child &&
+           markdown_core_parser_starts_on_line(parser, node, parser->line_number - 1);
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,

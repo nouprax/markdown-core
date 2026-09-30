@@ -62,23 +62,27 @@ void ts_spec_free(ts_spec_file *file);
  * stderr and returns NULL on failure. */
 markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length);
 
-typedef int (*ts_ast_visit_fn)(const markdown_core_node *node, void *context);
+/* A node's absolute source range in bytes, resolved from the extents by the
+ * walk itself rather than by the facade's scope query. */
+typedef struct {
+    int64_t start, end;
+} ts_ast_range;
 
-/* Iterative pre-order walk over all owned Markup fields rooted at `root` (call it on the
- * document root; following siblings of `root` are walked too).  Never
- * recurses, so pathologically deep trees are safe.  Returns the first
- * non-zero visitor result, 0 on completion, or -1 on allocation failure. */
+typedef int (*ts_ast_visit_fn)(const markdown_core_node *node, ts_ast_range range, void *context);
+
+/* Iterative pre-order walk over every owned Markup field in canonical order,
+ * rooted at the document root `root`.  Never recurses, so pathologically deep
+ * trees are safe.  Returns the first non-zero visitor result, 0 on
+ * completion, or -1 on allocation failure. */
 int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *context);
 
-/* THE FIRST SCOPE OUTSIDE ITS SOURCE under `root`, or NULL when every scope
- * lies on a line of `bytes[0, length)` and at most one column past that
- * line's last byte. Lines end at LF, CR or CR LF, and a NUL counts as the
- * three bytes of the U+FFFD it becomes; the sentinels 0:0 and L:0 fit.
+/* THE FIRST NODE WHOSE RANGE LEAVES ITS SOURCE under `root`, or NULL when
+ * every range lies in `[0, length]`.
  *
  * A scan that reads past its line but stays inside the parser's own buffer is
- * invisible to a sanitizer; the scope it leaves behind is what shows it. The
+ * invisible to a sanitizer; the range it leaves behind is what shows it. The
  * walk itself can fail on allocation, which also answers NULL. */
-const markdown_core_node *ts_ast_scope_outside(const markdown_core_node *root, const uint8_t *bytes, size_t length);
+const markdown_core_node *ts_ast_range_outside(const markdown_core_node *root, size_t length);
 
 /* Counts every node kind in the subtree.  `counts` must hold
  * TS_KIND_COUNT entries. Returns 0 on success, -1 if traversal fails or a

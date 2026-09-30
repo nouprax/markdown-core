@@ -15,7 +15,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     }
     uint8_t *dump = NULL;
     size_t dump_length = 0;
-    if (markdown_core_document_dump(document, &dump, &dump_length, NULL)) {
+    if (markdown_core_document_dump(document, NULL, data, size, &dump, &dump_length, NULL)) {
         markdown_core_dump_free(dump);
     }
     markdown_core_document_free(document);

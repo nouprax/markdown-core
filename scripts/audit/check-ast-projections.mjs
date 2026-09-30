@@ -212,6 +212,12 @@ const kindNames = new Set(contract.kinds.map((kind) => kind.name));
 const structural = (field) =>
     [...field.type.matchAll(/[A-Za-z]+/g)].some((word) => word[0] === "Markup" || kindNames.has(word[0]));
 
+/** The inherited fields as the dump prints them: `dumpAs` names a field's
+ * printed form, and null leaves it out of the dump. */
+const dumpedInherited = contract.inheritedFields
+    .map((field) => (field.dumpAs === undefined ? field.name : field.dumpAs))
+    .filter((name) => name !== null);
+
 let failed = false;
 
 {
@@ -219,7 +225,7 @@ let failed = false;
     const start = source.lastIndexOf("static void dump_node(");
     const prefix = source.slice(start, source.indexOf("dump_fields(buffer, node, kind)", start));
     const fields = [...prefix.matchAll(/buffer_cstr\(buffer, " ([A-Za-z]+)=/g)].map((match) => match[1]);
-    if (fields.join(",") !== contract.inheritedFields.map((field) => field.name).join(",")) {
+    if (fields.join(",") !== dumpedInherited.join(",")) {
         console.error("C dump inherited field order differs from the contract");
         failed = true;
     }
@@ -257,7 +263,7 @@ const kindSurfaces = [
             .filter((name) => kinds.has(name))
     },
     {
-        label: "MCB2 wire encoder",
+        label: "MCB3 wire encoder",
         expect: [...kinds.keys()].map(snake),
         actual: [
             ...new Set(
@@ -349,7 +355,7 @@ for (const { label, expect, actual } of kindSurfaces) {
     const grammar = dumpGrammarDefinition();
     for (const [kind] of kinds) {
         const expected = [
-            ...contract.inheritedFields.filter((field) => field.name !== "scope").map((field) => field.name),
+            ...dumpedInherited.filter((name) => name !== "scope"),
             ...contract.kinds
                 .find((entry) => entry.name === kind)
                 .fields.filter((field) => !structural(field))

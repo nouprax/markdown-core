@@ -2,32 +2,30 @@ import MarkdownCoreC
 
 /// Inline content with an authored attribute container.
 public struct Span: Markup {
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let content: MarkupReferences<any Markup>
-    }
+    let record: SpanRecord
 
-    let fields: Stored<Fields>
-
-    /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public var scope: Scope { fields.scope }
+    /// The node's identifier within its document.
+    public var id: MarkupID { record.id }
+    /// Where it is, relative to its neighbours. See ``Extent``.
+    public var extent: Extent { record.extent }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { record.attributes }
     /// The inline content.
-    public var content: MarkupCollection<any Markup> { fields.content }
+    public var content: MarkupCollection<any Markup> { record.collection(record.children.indices) }
 }
 
-extension Span.Fields {
-    init(from node: OpaquePointer, content: [Int]) {
-        self.init(
-            scope: Scope(from: markdown_core_node_scope(node)),
-            anchor: markdown_core_node_anchor(node).string,
-            attributes: Attributes(from: node),
-            content: .init(indices: content)
-        )
+final class SpanRecord: MarkupRecord, @unchecked Sendable {
+    override var markup: any Markup { Span(record: self) }
+}
+
+extension SpanRecord {
+    convenience init(from node: OpaquePointer, content: [MarkupRecord]) {
+        self.init(InheritedFields(from: node), children: content)
     }
+}
+
+extension Span: RecordBacked {
+    var base: MarkupRecord { record }
 }

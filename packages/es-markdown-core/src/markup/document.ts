@@ -3,19 +3,49 @@ import type { MarkupBase } from "./base.js";
 import type { Specimen } from "./specimen.js";
 import type { Footnote } from "./footnote.js";
 import type { Markup } from "./markup.js";
+import type { Position, Scope, TextUnit } from "./values.js";
 
 /**
  * The immutable semantic root returned by a parse.
+ *
+ * Its contract fields are enumerable like every node's. The text unit, the
+ * definition tables and the queries are not: they are the document's, not
+ * the tree's, and `markupEquals` does not compare them.
  */
 export interface Document extends MarkupBase<"document"> {
     readonly metadata: Metadata | null;
     readonly content: readonly Markup[];
-    /**
-     * Every winning or unreferenced footnote definition as a document-owned
-     * `Footnote` node, ordered by scope start; visited after `content` and
-     * never counted among its children.
-     */
+    /** The unit every column a scope query takes or returns counts in. */
+    readonly unit: TextUnit;
+    /** Every `Footnote` of the document, inline notes included, in source order. */
     readonly footnotes: readonly Footnote[];
-    /** Definitions in scope order, visited after footnotes and never counted as children. */
+    /** Every `Specimen` of the document, in source order. */
     readonly specimens: readonly Specimen[];
+    /** The first footnote whose label equals `label`, or null. An inline note
+     * has no label and never matches. */
+    readonly footnote: (label: string) => Footnote | null;
+    /** The first specimen whose label equals `label`, or null. */
+    readonly specimen: (label: string) => Specimen | null;
+    /**
+     * The scope of `node`, computed from the extents and `source`, the text
+     * the document was parsed from, with columns in the document's unit.
+     * Null when `node` is not in this document or `source` is shorter than
+     * the document's.
+     */
+    readonly scope: (node: Markup, source: string) => Scope | null;
+    /**
+     * The last node in canonical walk order whose source range holds the byte
+     * at `position`, or null when no node holds it, or the position names no
+     * byte of `source` or does not fall on a scalar boundary.
+     */
+    readonly nodeAt: (position: Position, source: string) => Markup | null;
+    /**
+     * The canonical debug dump of the document, or of `node`, a node of this
+     * document, with scopes computed from `source` in UTF-8 columns whatever
+     * the document's unit.
+     */
+    readonly dump: {
+        (source: string): string;
+        (node: Markup, source: string): string;
+    };
 }

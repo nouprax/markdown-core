@@ -39,10 +39,10 @@ test("the facade reports each public kind from exactly the native types that nam
 test("content kinds are exactly the kinds no field names, the Document aside", () => {
     const model = buildModel(contract(), native());
     const content = model.kinds.filter((kind) => kind.content).map((kind) => kind.name);
-    for (const owned of ["Document", "Metadata", "Footnote", "Specimen", "Citation", "ListItem", "TableRow"]) {
+    for (const owned of ["Document", "Metadata", "Citation", "ListItem", "TableRow"]) {
         assert.ok(!content.includes(owned), owned);
     }
-    for (const kind of ["Paragraph", "Text", "Cite", "Table", "DefinitionList", "Comment"]) {
+    for (const kind of ["Paragraph", "Text", "Cite", "Table", "DefinitionList", "Comment", "Footnote", "Specimen"]) {
         assert.ok(content.includes(kind), kind);
     }
     const retyped = contract();

@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-/* The one encoder of MCB2, the byte message every binding that cannot hold C
+/* The one encoder of MCB3, the byte message every binding that cannot hold C
  * node handles builds its value tree from. The format is specified in
  * docs/architecture/wire-format.md; this encoder reads the tree only through
  * the installed facade, include/markdown_core.h.

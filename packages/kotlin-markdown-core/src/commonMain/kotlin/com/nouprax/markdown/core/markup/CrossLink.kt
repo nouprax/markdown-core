@@ -5,7 +5,8 @@ public class CrossLink internal constructor(
     public val dest: Destination,
     /** The complete raw authored label. */
     public val label: String?,
-    override val scope: Scope,
+    override val id: MarkupID,
+    override val extent: Extent,
     override val anchor: String?,
     override val attributes: Attributes,
-) : Markup
+) : Markup()

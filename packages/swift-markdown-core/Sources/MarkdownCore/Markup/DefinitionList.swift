@@ -2,33 +2,31 @@ import MarkdownCoreC
 
 /// An ordered, nonempty list of term/body associations.
 public struct DefinitionList: Markup {
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let definitions: MarkupReferences<Definition>
-    }
+    let record: DefinitionListRecord
 
-    let fields: Stored<Fields>
-
+    /// The node's identifier within its document.
+    public var id: MarkupID { record.id }
     /// The authored source range, including the term and all bodies.
-    public var scope: Scope { fields.scope }
+    public var extent: Extent { record.extent }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { record.attributes }
     /// The nonempty ordered collection of term/body associations.
-    public var definitions: MarkupCollection<Definition> { fields.definitions }
+    public var definitions: MarkupCollection<Definition> { record.collection(record.children.indices) }
 }
 
-extension DefinitionList.Fields {
-    init(from node: OpaquePointer, children: [Int]) {
-        precondition(!children.isEmpty, "Empty definition list")
-        self.init(
-            scope: Scope(from: markdown_core_node_scope(node)),
-            anchor: markdown_core_node_anchor(node).string,
-            attributes: Attributes(from: node),
-            definitions: .init(indices: children)
-        )
+final class DefinitionListRecord: MarkupRecord, @unchecked Sendable {
+    override var markup: any Markup { DefinitionList(record: self) }
+}
+
+extension DefinitionListRecord {
+    convenience init(from node: OpaquePointer, definitions: [MarkupRecord]) {
+        precondition(!definitions.isEmpty, "Empty definition list")
+        self.init(InheritedFields(from: node), children: definitions)
     }
+}
+
+extension DefinitionList: RecordBacked {
+    var base: MarkupRecord { record }
 }

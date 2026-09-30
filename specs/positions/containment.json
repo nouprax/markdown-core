@@ -2,21 +2,318 @@
     "schemaVersion": 1,
     "script": "scripts/audit/check-scope-containment.mjs",
     "subject": "Two geometric invariants over every fixture example: a child's extent lies inside its parent's, and no two siblings claim the same byte.",
-    "purpose": "Thirty reviewed findings across seventeen fixture inputs, with three causes: five nested footnote overlaps, eleven empty/autocompleted table-cell overlaps, and fourteen multiline/grid-cell rectangle findings. Nested definitions retain their authored source scopes after becoming separate Document.footnotes entries, so the inner and outer scopes overlap. Empty/autocompleted cells point at the row byte where they were completed, which can also be the preceding cell's final byte (Q44). Multiline cell rectangles overlap when projected to linear source intervals, and rowspan scopes extend below the row that owns their anchor (P11). These are documented source-mapping semantics, not evidence that the parser consumed the same syntax twice.\n\nThe audit still checks containment and sibling ordering across every fixture, treating unscoped dump groups as transparent and independent owned fields as separate sequences. A new finding, a removed finding, or changed coordinates requires review. The ledger does not suppress geometry checks or establish that unrelated parser defects are absent.\n\nThe audit must remain independent of upstream output: cmark-gfm shared earlier emphasis and link scope defects with this engine, so upstream agreement alone could not detect them. No child relations are skipped for missing parent positions in the current corpus.",
+    "purpose": "101 reviewed findings across fifty-five fixture inputs, with two causes: seventy-five inline notes that begin before their owning Citation, and twenty-six table-cell findings from empty/autocompleted cells and multiline/grid-cell rectangles. An inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets, so the note's range starts two bytes before its owner's. Empty/autocompleted cells point at the row byte where they were completed, which can also be the preceding cell's final byte (Q44). Multiline cell rectangles overlap when projected to linear source intervals, and rowspan scopes extend below the row that owns their anchor (P11). These are documented source-mapping semantics, not evidence that the parser consumed the same syntax twice.\n\nThe audit still checks containment and sibling ordering across every fixture, treating unscoped dump groups as transparent and independent owned fields as separate sequences. A new finding, a removed finding, or changed coordinates requires review. The ledger does not suppress geometry checks or establish that unrelated parser defects are absent.\n\nThe audit must remain independent of upstream output: cmark-gfm shared earlier emphasis and link scope defects with this engine, so upstream agreement alone could not detect them. No child relations are skipped for missing parent positions in the current corpus.",
     "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
     "expected": [
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-anchors.txt:926",
+            "input": ":n[[Target]]\n\n> [!note] [Target]\n> body\n\n^[inline [Target]]\n\n[^f]: [Target]\n\n# Target\n",
+            "findings": [
+                {
+                    "nodePath": "0.2.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "6:1..6:18",
+                    "parentKind": "Citation",
+                    "parentScope": "6:3..6:17",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-anchors.txt:1058",
+            "input": "# Shared\n\n^[a [declaration]{#shared}]\n\n:d[[decl]{#shared-1}]\n",
+            "findings": [
+                {
+                    "nodePath": "0.1.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "3:1..3:27",
+                    "parentKind": "Citation",
+                    "parentScope": "3:3..3:26",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-bracketed-spans.txt:225",
+            "input": "[^n]{.x} [^[note]]{.x} ^[note]{.x}\n\n[^n]: note\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:11..1:17",
+                    "parentKind": "Citation",
+                    "parentScope": "1:13..1:16",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.4.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:24..1:30",
+                    "parentKind": "Citation",
+                    "parentScope": "1:26..1:29",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-callouts.txt:756",
+            "input": "> [!Mixed]- **bold** *em* ~~strike~~ ==mark== `code` $x$ [[Note|label]] ![[Pic]] [ref] ![alt](/img) :tag[==marked==] ^[inline] [^n]\n> body [ref]\n\n[ref]: /u \"title\"\n[^n]: definition\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.22.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:118..1:126",
+                    "parentKind": "Citation",
+                    "parentScope": "1:120..1:125",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:569",
+            "input": "^[@a a\\ b]^ ^[@a a b]^ [@a `; @x` <i title=\"; @x\"> ; @b]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:10",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:9",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.2.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:13..1:21",
+                    "parentKind": "Citation",
+                    "parentScope": "1:15..1:20",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:729",
+            "input": "[@a x\\ ] [\\ @a] ^[@a\\ ]^\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.4.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:17..1:23",
+                    "parentKind": "Citation",
+                    "parentScope": "1:19..1:22",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:1195",
+            "input": "![alt [@a;]](/u) :d[[@a;]] ^[[@a;]]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.4.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:28..1:35",
+                    "parentKind": "Citation",
+                    "parentScope": "1:30..1:34",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:244",
+            "input": "text^[an inline note]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:5..1:21",
+                    "parentKind": "Citation",
+                    "parentScope": "1:7..1:20",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:258",
+            "input": "^[a *b*]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:8",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:7",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:278",
+            "input": "^[a](b) ^[^1]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:4",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:3",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.2.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:9..1:13",
+                    "parentKind": "Citation",
+                    "parentScope": "1:11..1:12",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
         {
             "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:309",
             "input": "^[a ^[b] c]\n",
             "findings": [
                 {
-                    "nodePath": "0.2",
-                    "violation": "sibling-overlap",
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:11",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:10",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.0.0.0.1.0.0",
+                    "violation": "containment",
                     "kind": "Footnote",
                     "scope": "1:5..1:8",
-                    "previousKind": "Footnote",
-                    "previousScope": "1:1..1:11",
-                    "closedBy": "O4: document-owned nested footnotes retain their authored scopes, so inner and outer value ranges intentionally overlap."
+                    "parentKind": "Citation",
+                    "parentScope": "1:7..1:7",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:329",
+            "input": "[^inline-1] ^[b]\n\n[^inline-1]: authored\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:13..1:16",
+                    "parentKind": "Citation",
+                    "parentScope": "1:15..1:15",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:366",
+            "input": "^[a \\] b \\[ c] \\^[x] \\\\^[y] &#94;[z]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:14",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:13",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.2.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:24..1:27",
+                    "parentKind": "Citation",
+                    "parentScope": "1:26..1:26",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:389",
+            "input": "^[] ^[ \t ] ^[open *em*\n\n^[a [b] c] ^[a ^[] b]\n",
+            "findings": [
+                {
+                    "nodePath": "0.1.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "3:1..3:10",
+                    "parentKind": "Citation",
+                    "parentScope": "3:3..3:9",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.1.2.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "3:12..3:21",
+                    "parentKind": "Citation",
+                    "parentScope": "3:14..3:20",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:417",
+            "input": "[^missing] [^inline-1] ^[first [^missing]] ^[second]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:24..1:42",
+                    "parentKind": "Citation",
+                    "parentScope": "1:26..1:41",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.3.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:44..1:52",
+                    "parentKind": "Citation",
+                    "parentScope": "1:46..1:51",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:440",
+            "input": "^[a] ^[b]\n\n[^INLINE-1]: one\n[^inline-1-1]: suffix one\n[^inline-1-3]: suffix three\n[^inline-2]: two\n[^inline-1]: duplicate\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:4",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:3",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.2.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:6..1:9",
+                    "parentKind": "Citation",
+                    "parentScope": "1:8..1:8",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
                 }
             ]
         },
@@ -25,13 +322,397 @@
             "input": "[^a] ^[top [^a]]\n\n[^a]: ^[nested [^a]] [^b]\n[^b]: [^a]\n",
             "findings": [
                 {
-                    "nodePath": "0.3",
-                    "violation": "sibling-overlap",
+                    "nodePath": "0.0.2.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:6..1:16",
+                    "parentKind": "Citation",
+                    "parentScope": "1:8..1:15",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.1.0.0.0.0",
+                    "violation": "containment",
                     "kind": "Footnote",
                     "scope": "3:7..3:20",
-                    "previousKind": "Footnote",
-                    "previousScope": "3:1..3:25",
-                    "closedBy": "O4: document-owned nested footnotes retain their authored scopes, so inner and outer value ranges intentionally overlap."
+                    "parentKind": "Citation",
+                    "parentScope": "3:9..3:19",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:533",
+            "input": "[outer ^[[inner](u)]](v) *before ^[*inside*] after* ^[x *open] outside*\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.1.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:8..1:20",
+                    "parentKind": "Citation",
+                    "parentScope": "1:10..1:19",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.2.1.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:34..1:44",
+                    "parentKind": "Citation",
+                    "parentScope": "1:36..1:43",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.4.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:53..1:62",
+                    "parentKind": "Citation",
+                    "parentScope": "1:55..1:61",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:570",
+            "input": "^[a](b) ^[a][ref] ^[a]{.x} ^[^a] ^[[x](u)]\n\n[ref]: /r\n[^a]: note\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:4",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:3",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.2.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:9..1:12",
+                    "parentKind": "Citation",
+                    "parentScope": "1:11..1:11",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.5.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:19..1:22",
+                    "parentKind": "Citation",
+                    "parentScope": "1:21..1:21",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.7.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:28..1:32",
+                    "parentKind": "Citation",
+                    "parentScope": "1:30..1:31",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.9.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:34..1:42",
+                    "parentKind": "Citation",
+                    "parentScope": "1:36..1:41",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:622",
+            "input": "`^[code]` $^[formula]$ <!-- ^[html] --> <i data-x=\"^[token]\">^[live]</i> %%^[comment]%% [[^[wiki]]] ![[^[embed]]]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.7.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:62..1:68",
+                    "parentKind": "Citation",
+                    "parentScope": "1:64..1:67",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.12.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:91..1:97",
+                    "parentKind": "Citation",
+                    "parentScope": "1:93..1:96",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.14.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:104..1:111",
+                    "parentKind": "Citation",
+                    "parentScope": "1:106..1:110",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:662",
+            "input": "^[==mark== %%comment%% `code` $math$ [[Note]] www.example.com user@example.com]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:79",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:78",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:692",
+            "input": "^[a %%]%% b `]` c $]$ d <i data-x=\"]\"> e]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:41",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:40",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:715",
+            "input": "| x | y |\n| - | - |\n| ^[a\\|b] | ^[中 *文*] |\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "3:3..3:9",
+                    "parentKind": "Citation",
+                    "parentScope": "3:5..3:8",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.1.0.1.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "3:13..3:24",
+                    "parentKind": "Citation",
+                    "parentScope": "3:15..3:23",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:751",
+            "input": "> before^[first\n> second] after\n\n- ^[list\n  continued]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.1.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:9..2:9",
+                    "parentKind": "Citation",
+                    "parentScope": "1:11..2:8",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.1.0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "4:3..5:12",
+                    "parentKind": "Citation",
+                    "parentScope": "4:5..5:11",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:786",
+            "input": ":a[^[first]] ^[second]\n\n:::note[^[third]]\n^[fourth]\n:::\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:4..1:11",
+                    "parentKind": "Citation",
+                    "parentScope": "1:6..1:10",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.2.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:14..1:22",
+                    "parentKind": "Citation",
+                    "parentScope": "1:16..1:21",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.1.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "3:9..3:16",
+                    "parentKind": "Citation",
+                    "parentScope": "3:11..3:15",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.1.1.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "4:1..4:9",
+                    "parentKind": "Citation",
+                    "parentScope": "4:3..4:8",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:829",
+            "input": "^[unclosed ^[closed]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:12..1:20",
+                    "parentKind": "Citation",
+                    "parentScope": "1:14..1:19",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:845",
+            "input": "^[\n] ^[&#32;] ^[\\ ]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..2:1",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..2:0",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.2.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "2:3..2:10",
+                    "parentKind": "Citation",
+                    "parentScope": "2:5..2:9",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.4.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "2:12..2:16",
+                    "parentKind": "Citation",
+                    "parentScope": "2:14..2:15",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:875",
+            "input": "^[[[note]]] ^[[x]]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:11",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:10",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.2.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:13..1:18",
+                    "parentKind": "Citation",
+                    "parentScope": "1:15..1:17",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:897",
+            "input": "^[see http://example.com] ^[https://example.com/a?q=1] ^[ftp://example.com/a] ^[www.example.com/a]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:25",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:24",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.2.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:27..1:54",
+                    "parentKind": "Citation",
+                    "parentScope": "1:29..1:53",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.4.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:56..1:77",
+                    "parentKind": "Citation",
+                    "parentScope": "1:58..1:76",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.6.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:79..1:98",
+                    "parentKind": "Citation",
+                    "parentScope": "1:81..1:97",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:938",
+            "input": "^[http://example.com/a\\]b] http://example.com/a] ^[http://example.com/a\\\\] tail\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:26",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:25",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.4.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:50..1:74",
+                    "parentKind": "Citation",
+                    "parentScope": "1:52..1:73",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
                 }
             ]
         },
@@ -40,13 +721,214 @@
             "input": "^[before ^[http://example.com] after] :d[^[www.example.com]]\n",
             "findings": [
                 {
-                    "nodePath": "0.2",
-                    "violation": "sibling-overlap",
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:37",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:36",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.0.0.0.1.0.0",
+                    "violation": "containment",
                     "kind": "Footnote",
                     "scope": "1:10..1:30",
-                    "previousKind": "Footnote",
-                    "previousScope": "1:1..1:37",
-                    "closedBy": "O4: nested inline footnotes retain enclosing source scopes in the document-owned sequence; the bare-URL boundary fixture observes the same intentional overlap."
+                    "parentKind": "Citation",
+                    "parentScope": "1:12..1:29",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.2.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:42..1:59",
+                    "parentKind": "Citation",
+                    "parentScope": "1:44..1:58",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:999",
+            "input": "^^^^text^^word^^^[note]^^end^\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.6.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:17..1:23",
+                    "parentKind": "Citation",
+                    "parentScope": "1:19..1:22",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-insertion.txt:563",
+            "input": "++a[^n] b^[++inline++]++\n\n[^n]: ++note++\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.3.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:10..1:22",
+                    "parentKind": "Citation",
+                    "parentScope": "1:12..1:21",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-insertion.txt:817",
+            "input": "> [!note] ++title++\n> ++body++\n\n:badge[++label++]\n\n^[++note++]\n",
+            "findings": [
+                {
+                    "nodePath": "0.2.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "6:1..6:11",
+                    "parentKind": "Citation",
+                    "parentScope": "6:3..6:10",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:95",
+            "input": "text^[note]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:5..1:11",
+                    "parentKind": "Citation",
+                    "parentScope": "1:7..1:10",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:201",
+            "input": "^*a\\ b*^ ~[a\\ b](u)~ ^[note] ^\\[note]^ ^[^1]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.4.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:22..1:28",
+                    "parentKind": "Citation",
+                    "parentScope": "1:24..1:27",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.8.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:40..1:44",
+                    "parentKind": "Citation",
+                    "parentScope": "1:42..1:43",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:343",
+            "input": "^[^x^ ~y~] ^a\\ \nb^ ^a\\\nb^ ^a b^c^ ~a b~c~\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:1..1:10",
+                    "parentKind": "Citation",
+                    "parentScope": "1:3..1:9",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:394",
+            "input": "[^a\\ b^]{} ^[a\\ b] :d[^x^ ~y~]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:12..1:18",
+                    "parentKind": "Citation",
+                    "parentScope": "1:14..1:17",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:675",
+            "input": "^:d[^[a\\ b]]^ ~:d[^a\\ b^]~ ^[~:d[a\\ b]~]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:5..1:11",
+                    "parentKind": "Citation",
+                    "parentScope": "1:7..1:10",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                },
+                {
+                    "nodePath": "0.0.4.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:28..1:40",
+                    "parentKind": "Citation",
+                    "parentScope": "1:30..1:39",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:792",
+            "input": "^a[^[b c]]{}z^\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:4..1:9",
+                    "parentKind": "Citation",
+                    "parentScope": "1:6..1:8",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:808",
+            "input": "^a[^[b\\ c]]{}z^\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.1.0.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:4..1:10",
+                    "parentKind": "Citation",
+                    "parentScope": "1:6..1:9",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-superscript-and-subscript.txt:878",
+            "input": "[^^]{} [^^](u) ![^^](i) :d[^^] ^[^^]\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.8.0.0",
+                    "violation": "containment",
+                    "kind": "Footnote",
+                    "scope": "1:32..1:36",
+                    "parentKind": "Citation",
+                    "parentScope": "1:34..1:35",
+                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
                 }
             ]
         },
@@ -344,36 +1226,6 @@
                     "previousKind": "TableCell",
                     "previousScope": "6:2..6:23",
                     "closedBy": "Q44's cost, accepted by the owner 2026-08-23: an autocompleted cell points AT the place it was completed -- the row's last byte -- and the cell before it ends on that byte too. An empty range past it would need column len+1, which is off the line."
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/regression.txt:534",
-            "input": "Hello world\n\n\n[^a]:[^b]:\n",
-            "findings": [
-                {
-                    "nodePath": "0.2",
-                    "violation": "sibling-overlap",
-                    "kind": "Footnote",
-                    "scope": "4:6..4:10",
-                    "previousKind": "Footnote",
-                    "previousScope": "4:1..4:10",
-                    "closedBy": "Document-owned nested footnote definitions retain their authored scopes. The inner definition lies inside the outer definition, including empty bodies and duplicate labels; moving both to Document.footnotes does not change either range."
-                }
-            ]
-        },
-        {
-            "source": "packages/markdown-core/tests/fixtures/regression.txt:660",
-            "input": "Ref [^dup].\n\n[^dup]: OUTER opens first\n\n    [^dup]: INNER closes first\n",
-            "findings": [
-                {
-                    "nodePath": "0.2",
-                    "violation": "sibling-overlap",
-                    "kind": "Footnote",
-                    "scope": "5:5..5:30",
-                    "previousKind": "Footnote",
-                    "previousScope": "3:1..5:30",
-                    "closedBy": "Document-owned nested footnote definitions retain their authored scopes. The inner definition lies inside the outer definition, including empty bodies and duplicate labels; moving both to Document.footnotes does not change either range."
                 }
             ]
         },
