@@ -43,8 +43,8 @@ internal class SourceLines(
 
     /**
      * The offset of the scalar that starts at [position], whose line and
-     * column are at least 1, or null when the source has no such line or the
-     * line no scalar there.
+     * column are at least 1, or null when the source has no such line or no
+     * scalar starts at that column, as inside a surrogate pair.
      */
     fun offset(
         position: Position,
@@ -63,7 +63,7 @@ internal class SourceLines(
             column += columns(offset, next, unit)
             offset = next
         }
-        return if (offset < end) offset else null
+        return if (column == position.column.toLong() && offset < end) offset else null
     }
 
     /** The index of the line holding [offset]: the last line starting at or before it. */

@@ -166,6 +166,10 @@ class ScopeTest {
         // The rocket starts at byte 2: UTF-8 column 3, UTF-16 column 2.
         assertSame(text(utf8), utf8.node(Position(1, 3), source))
         assertSame(text(utf16), utf16.node(Position(1, 2), source))
+        // Inside the rocket's bytes, or between its surrogates, no scalar starts.
+        assertNull(utf8.node(Position(1, 4), source))
+        assertNull(utf16.node(Position(1, 3), source))
+        assertSame(text(utf16), utf16.node(Position(1, 4), source))
         // The deepest node wins: the emphasis's text, then the emphasis at its delimiter.
         val emphasis = assertIs<Emphasis>(assertIs<Paragraph>(utf16.content.single()).content[1])
         assertSame(emphasis.content.single(), utf16.node(Position(1, 6), source))
