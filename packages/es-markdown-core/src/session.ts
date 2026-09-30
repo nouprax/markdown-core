@@ -27,7 +27,7 @@ const sessions = new FinalizationRegistry<number>((session) => native.markdown_c
  * keeps its `id`. Every document a session returns is an immutable value that
  * borrows nothing.
  *
- * The session's state lives in WebAssembly memory: `dispose()` releases it,
+ * The session's state lives in WebAssembly: `dispose()` releases it,
  * and a session collected without it is released then.
  */
 export class MarkdownSession {
@@ -128,8 +128,8 @@ export class MarkdownSession {
     }
 
     /** Releases the session's WebAssembly state; a second call does nothing.
-     * Its documents stay valid, and an edit, an append or a read of `text`
-     * after it throws an `Error`. */
+     * Its documents stay valid, and every later call or read of `text` throws
+     * an `Error`. */
     dispose(): void {
         sessions.unregister(this);
         native.markdown_core_session_free(this.#session);
