@@ -159,13 +159,13 @@
             "comment.placement.inline",
             "destination.url.empty",
             "destination.url.value",
-            "citation.referent.footnote",
+            "citation.referent.footnote.label",
+            "citation.referent.footnote.note",
             "citation.affix.empty",
-            "document.specimens.empty",
             "footnote.content.inline",
             "footnote.content.block",
-            "document.footnotes.empty",
-            "document.footnotes.populated",
+            "footnote.label.null",
+            "footnote.label.value",
             "list.variant.alpha.lower",
             "list.variant.alpha.upper",
             "list.variant.roman.lower",
@@ -179,9 +179,8 @@
             "citation.referent.specimen",
             "citation.prefix.populated",
             "citation.suffix.populated",
-            "document.specimens.populated",
-            "specimen.id.null",
-            "specimen.id.value",
+            "specimen.label.null",
+            "specimen.label.value",
             "specimen.start.null",
             "specimen.start.value",
             "span.content.empty",
@@ -196,8 +195,7 @@
             "directive.label-before-content",
             "markup.attributes.source-order",
             "inline.source-order",
-            "document.content-before-footnotes",
-            "document.specimens-source-order",
+            "citation.note-before-affixes",
             "cite.items-in-order"
         ]
     },
@@ -274,10 +272,9 @@
                     "children.empty",
                     "children.populated",
                     "escaping.newline",
-                    "document.footnotes.populated",
-                    "document.specimens.empty"
+                    "footnote.label.value"
                 ],
-                "orders": ["document.source-order", "document.content-before-footnotes"]
+                "orders": ["document.source-order"]
             }
         },
         {
@@ -388,16 +385,11 @@
                     "scope.positive",
                     "children.empty",
                     "children.populated",
-                    "citation.referent.footnote",
                     "citation.affix.empty",
-                    "document.footnotes.populated"
+                    "citation.referent.footnote.label",
+                    "footnote.label.value"
                 ],
-                "orders": [
-                    "document.source-order",
-                    "inline.source-order",
-                    "cite.items-in-order",
-                    "document.content-before-footnotes"
-                ]
+                "orders": ["document.source-order", "inline.source-order", "cite.items-in-order"]
             }
         },
         {
@@ -438,8 +430,7 @@
                     "scope.positive",
                     "children.empty",
                     "children.populated",
-                    "escaping.attribute-value",
-                    "document.footnotes.empty"
+                    "escaping.attribute-value"
                 ],
                 "orders": [
                     "document.source-order",
@@ -547,7 +538,13 @@
                     "Citation",
                     "Footnote"
                 ],
-                "states": ["scope.positive", "children.empty", "children.populated"],
+                "states": [
+                    "scope.positive",
+                    "children.empty",
+                    "children.populated",
+                    "citation.referent.footnote.label",
+                    "footnote.label.value"
+                ],
                 "orders": ["inline.source-order", "document.source-order"]
             }
         },
@@ -570,11 +567,13 @@
                 "states": [
                     "footnote.content.inline",
                     "footnote.content.block",
-                    "citation.referent.footnote",
                     "citation.affix.empty",
-                    "document.footnotes.populated"
+                    "citation.referent.footnote.label",
+                    "citation.referent.footnote.note",
+                    "footnote.label.null",
+                    "footnote.label.value"
                 ],
-                "orders": ["document.content-before-footnotes"]
+                "orders": ["citation.note-before-affixes"]
             }
         },
         {
@@ -682,7 +681,9 @@
                     "callout.variant.value",
                     "callout.collapsed.false",
                     "callout.collapsed.true",
-                    "callout.title.populated"
+                    "callout.title.populated",
+                    "citation.referent.footnote.note",
+                    "footnote.label.null"
                 ],
                 "orders": ["callout.title-before-content"]
             }
@@ -751,7 +752,6 @@
                 ],
                 "states": [
                     "document.metadata.present",
-                    "document.footnotes.populated",
                     "callout.variant.value",
                     "callout.collapsed.false",
                     "callout.title.populated",
@@ -762,13 +762,15 @@
                     "crossEmbedded.dimensions.width-height",
                     "codeBlock.language.value",
                     "codeBlock.fenced.true",
-                    "codeBlock.closed.true"
+                    "codeBlock.closed.true",
+                    "citation.referent.footnote.note",
+                    "footnote.label.null"
                 ],
                 "orders": [
-                    "document.content-before-footnotes",
                     "callout.title-before-content",
                     "inline.source-order",
-                    "table.head-content-foot"
+                    "table.head-content-foot",
+                    "citation.note-before-affixes"
                 ]
             }
         },
@@ -801,7 +803,15 @@
                     "Citation",
                     "Footnote"
                 ],
-                "states": ["scope.positive", "children.empty", "children.populated"],
+                "states": [
+                    "scope.positive",
+                    "children.empty",
+                    "children.populated",
+                    "citation.referent.footnote.label",
+                    "citation.referent.footnote.note",
+                    "footnote.label.null",
+                    "footnote.label.value"
+                ],
                 "orders": ["inline.source-order", "document.source-order"]
             }
         },
@@ -850,7 +860,12 @@
                     "Citation",
                     "Footnote"
                 ],
-                "states": ["scope.positive", "children.populated"],
+                "states": [
+                    "scope.positive",
+                    "children.populated",
+                    "citation.referent.footnote.note",
+                    "footnote.label.null"
+                ],
                 "orders": ["inline.source-order"]
             }
         },
@@ -877,7 +892,8 @@
                     "markup.anchor.value",
                     "markup.attributes.classes",
                     "markup.attributes.records",
-                    "scope.positive"
+                    "scope.positive",
+                    "footnote.label.value"
                 ],
                 "orders": ["document.source-order", "inline.source-order"]
             }
@@ -929,7 +945,9 @@
                     "citation.bib.mode.suppressAuthor",
                     "citation.prefix.populated",
                     "citation.suffix.populated",
-                    "scope.positive"
+                    "scope.positive",
+                    "citation.referent.footnote.note",
+                    "footnote.label.null"
                 ],
                 "orders": ["document.source-order", "cite.items-in-order"]
             }
@@ -953,14 +971,15 @@
                 ],
                 "states": [
                     "citation.referent.specimen",
-                    "document.specimens.populated",
-                    "specimen.id.null",
-                    "specimen.id.value",
                     "specimen.start.null",
                     "specimen.start.value",
-                    "scope.positive"
+                    "scope.positive",
+                    "citation.referent.footnote.label",
+                    "footnote.label.value",
+                    "specimen.label.null",
+                    "specimen.label.value"
                 ],
-                "orders": ["document.source-order", "document.specimens-source-order"]
+                "orders": ["document.source-order"]
             }
         },
         {
@@ -1103,7 +1122,7 @@
                     "Citation",
                     "Footnote"
                 ],
-                "states": [],
+                "states": ["citation.referent.footnote.label"],
                 "orders": []
             }
         }

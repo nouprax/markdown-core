@@ -1,181 +1,90 @@
-// Keep the complete canonical dump together so its value-formatting helpers stay file-private.
-// swiftlint:disable file_length
-
-/// Produces the canonical debug tree for immutable Markdown markup.
-public enum MarkupDumper {
-    /// Returns the canonical debug dump for `root` and its owned markup.
-    public static func dump(_ root: some Markup) -> String {
-        let state = DumpState()
-        var visitor = DumpVisitor(state: state)
-        root.walk(with: &visitor)
-        return state.result
-    }
-}
-
-extension Markup {
-    /// Returns the canonical debug dump for this markup subtree.
-    public func dump() -> String { MarkupDumper.dump(self) }
-}
-
-private final class DumpState {
-    // These frames describe output grouping only; they never retain or visit markup.
-    private struct Frame {
-        let groups: [(name: String?, count: Int)]
-        var index = -1
-        var remaining = 0
-    }
-
-    private var frames: [Frame] = []
-    private var remainingNodes: [Int] = []
-    private var lines: [String] = []
-
-    var result: String { lines.joined(separator: "\n") + "\n" }
-
-    func start() {
-        guard !frames.isEmpty else { return }
-        advance()
-        precondition(frames[frames.count - 1].remaining > 0)
-        frames[frames.count - 1].remaining -= 1
-    }
-
-    func end() {
-        advance()
-        precondition(frames.removeLast().remaining == 0)
-        precondition(remainingNodes.removeLast() == 0)
-    }
-
-    private func advance() {
-        let depth = frames.count - 1
-        while frames[depth].remaining == 0 && frames[depth].index < frames[depth].groups.count {
-            let previous = frames[depth].index
-            if previous >= 0 && frames[depth].groups[previous].name != nil {
-                precondition(remainingNodes.removeLast() == 0)
+/// Draws the canonical debug tree over the canonical walk, one line per node
+/// or named relation, as the C dump does. The walk's frames are the tree's
+/// depth; the call stack stays constant.
+enum MarkupDumper {
+    /// The canonical dump of `root`, whose extent is relative to the absolute
+    /// offset `anchor`, with scopes in UTF-8 columns of `bytes`.
+    static func render(
+        _ root: MarkupRecord,
+        anchor: Int,
+        bytes: UnsafeBufferPointer<UInt8>,
+        lines: SourceLines
+    ) -> String {
+        var output = ""
+        // `more[n]` says whether the latest line at level `n + 1` has a later
+        // sibling; `segments[n]` is the prefix segment lines below it draw.
+        var more: [Bool] = []
+        var segments: [String] = []
+        var walk = CanonicalWalk(root: root, anchor: anchor)
+        while let item = walk.next() {
+            if item.level > 0 {
+                let depth = item.level - 1
+                if more.count <= depth { more.append(contentsOf: repeatElement(false, count: depth + 1 - more.count)) }
+                more[depth] = item.hasNext
+                if depth > 0 {
+                    // The lines nested below the item's parent lead with the
+                    // segments above it plus the one its own connector decides.
+                    segments.removeLast(segments.count - (depth - 1))
+                    segments.append(more[depth - 1] ? "│   " : "    ")
+                }
+                output += segments[..<depth].joined()
+                output += item.hasNext ? "├── " : "└── "
             }
-            frames[depth].index += 1
-            guard frames[depth].index < frames[depth].groups.count else { return }
-            let group = frames[depth].groups[frames[depth].index]
-            if let name = group.name {
-                emit("\(name) children=\(group.count)")
-                remainingNodes.append(group.count)
+            if let record = item.record {
+                let scope = lines.scope(from: item.start, to: item.end, in: bytes, unit: .utf8)
+                var visitor = LineVisitor(place: dump(scope: scope))
+                dispatch(record.markup, to: &visitor, phase: .enter)
+                output += visitor.text
+            } else if let name = item.name {
+                output += "\(name) children=\(item.count)"
             }
-            frames[depth].remaining = group.count
+            output += "\n"
         }
-    }
-
-    func line(
-        _ kind: String,
-        _ node: any Markup,
-        fields: [String] = [],
-        children: Int = 0,
-        groups: [(name: String?, count: Int)]? = nil
-    ) {
-        line(
-            kind,
-            scope: node.scope,
-            fields: ["anchor=\(dump(optional: node.anchor))", "attributes=\(dump(attributes: node.attributes))"]
-                + fields,
-            children: children
-        )
-        let groups = groups ?? [(nil, children)]
-        frames.append(Frame(groups: groups))
-        remainingNodes.append(groups.reduce(0) { $0 + ($1.name == nil ? $1.count : 1) })
-    }
-
-    /// Writes the common source extent and fields of a node line.
-    func line(
-        _ kind: String,
-        scope: Scope,
-        fields: [String],
-        children: Int
-    ) {
-        let fieldText = fields.isEmpty ? "" : " " + fields.joined(separator: " ")
-        emit("\(kind) \(dump(scope: scope))\(fieldText) children=\(children)")
-    }
-
-    private func emit(_ text: String) {
-        guard !remainingNodes.isEmpty else {
-            lines.append(text)
-            return
-        }
-        let parent = remainingNodes.count - 1
-        let prefix = remainingNodes.dropLast().map { $0 > 0 ? "│   " : "    " }.joined()
-        let connector = remainingNodes[parent] == 1 ? "└── " : "├── "
-        lines.append(prefix + connector + text)
-        remainingNodes[parent] -= 1
+        return output
     }
 }
 
-/// Formats walker callbacks without choosing or visiting descendant nodes.
-private struct DumpVisitor: MarkupVisitor {
-    let state: DumpState
+/// Formats one node's line: its kind, its place, its fields and its count of
+/// structural children. It never visits descendants; the walk draws them.
+private struct LineVisitor: MarkupVisitor {
+    let place: String
+    var text = ""
+
+    private mutating func line(_ kind: String, _ node: some Markup, fields: [String] = [], children: Int = 0) {
+        let common = [
+            kind, place, "anchor=\(dump(optional: node.anchor))", "attributes=\(dump(attributes: node.attributes))",
+        ]
+        text = (common + fields + ["children=\(children)"]).joined(separator: " ")
+    }
 
     mutating func visit(_ node: Document, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
-            "Document",
-            node,
-            children: node.content.count,
-            groups: [
-                (nil, node.content.count + node.footnotes.count + node.specimens.count + (node.metadata == nil ? 0 : 1))
-            ]
-        )
+        line("Document", node, children: node.content.count)
     }
 
     mutating func visit(_ node: Callout, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
+        line(
             "Callout",
             node,
             fields: [
-                "variant=\(dump(optional: node.variant))", "collapsed=\(node.collapsed.map(dump(boolean:)) ?? "null")",
+                "variant=\(dump(optional: node.variant))",
+                "collapsed=\(node.collapsed.map(dump(boolean:)) ?? "null")",
             ],
-            children: node.content.count,
-            groups: (node.title.map { [(name: "Title", count: $0.count)] } ?? []) + [(nil, node.content.count)]
+            children: node.content.count
         )
     }
 
     mutating func visit(_ node: Paragraph, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("Paragraph", node, children: node.content.count)
+        line("Paragraph", node, children: node.content.count)
     }
 
     mutating func visit(_ node: Heading, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("Heading", node, fields: ["level=\(node.level)"], children: node.content.count)
+        line("Heading", node, fields: ["level=\(node.level)"], children: node.content.count)
     }
 
-    mutating func visit(_ node: ThematicBreak, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("ThematicBreak", node)
-    }
+    mutating func visit(_ node: ThematicBreak, phase: MarkupVisitPhase) { line("ThematicBreak", node) }
 
     mutating func visit(_ node: MarkdownCore.List, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
+        line(
             "List",
             node,
             fields: [
@@ -190,26 +99,11 @@ private struct DumpVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: ListItem, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
-            "ListItem",
-            node,
-            fields: ["marker=\(dump(optional: node.marker))"],
-            children: node.content.count
-        )
+        line("ListItem", node, fields: ["marker=\(dump(optional: node.marker))"], children: node.content.count)
     }
 
     mutating func visit(_ node: CodeBlock, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
+        line(
             "CodeBlock",
             node,
             fields: [
@@ -223,146 +117,52 @@ private struct DumpVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: HTMLBlock, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("HTMLBlock", node, fields: ["literal=\(dump(escaped: node.literal))"])
+        line("HTMLBlock", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
     mutating func visit(_ node: FormulaBlock, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("FormulaBlock", node, fields: ["literal=\(dump(escaped: node.literal))"])
+        line("FormulaBlock", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
     mutating func visit(_ node: Table, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        let columns = node.columns.map { "\($0.flow.rawValue):\($0.relative.map(dump(decimal:)) ?? "null")" }.joined(
-            separator: ","
-        )
-        let count = node.head.count + node.content.count + node.foot.count
-        state.line(
+        line(
             "Table",
             node,
-            fields: ["columns=[\(columns)]"],
-            children: count,
-            groups: (node.caption == nil ? [] : [(nil, 1)]) + [
-                ("TableHead", node.head.count), ("TableBody", node.content.count), ("TableFoot", node.foot.count),
-            ]
-        )
-    }
-
-    mutating func visit(_ node: DefinitionList, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("DefinitionList", node, fields: [], children: node.definitions.count)
-    }
-
-    mutating func visit(_ node: Definition, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
-            "Definition",
-            node,
-            fields: ["compact=\(node.compact)"],
-            children: node.content.count,
-            groups: [("DefinitionTerm", node.term.count)] + node.content.map { ("DefinitionBody", $0.count) }
+            fields: ["columns=[\(dump(columns: node.columns))]"],
+            children: node.head.count + node.content.count + node.foot.count
         )
     }
 
     mutating func visit(_ node: DirectiveBlock, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
-            "DirectiveBlock",
-            node,
-            fields: ["name=\(dump(optional: node.name))"],
-            children: node.content.count,
-            groups: [(nil, node.content.count + (node.label == nil ? 0 : 1))]
-        )
+        line("DirectiveBlock", node, fields: ["name=\(dump(optional: node.name))"], children: node.content.count)
     }
 
     mutating func visit(_ node: DirectiveLabel, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("DirectiveLabel", node, children: node.content.count)
+        line("DirectiveLabel", node, children: node.content.count)
     }
-}
 
-extension DumpVisitor {
     mutating func visit(_ node: Text, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("Text", node, fields: ["literal=\(dump(escaped: node.literal))"])
+        line("Text", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
-    mutating func visit(_ node: SoftBreak, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("SoftBreak", node)
-    }
+    mutating func visit(_ node: SoftBreak, phase: MarkupVisitPhase) { line("SoftBreak", node) }
 
-    mutating func visit(_ node: LineBreak, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("LineBreak", node)
-    }
+    mutating func visit(_ node: LineBreak, phase: MarkupVisitPhase) { line("LineBreak", node) }
 
     mutating func visit(_ node: Code, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("Code", node, fields: ["literal=\(dump(escaped: node.literal))"])
+        line("Code", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
     mutating func visit(_ node: HTML, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("HTML", node, fields: ["literal=\(dump(escaped: node.literal))"])
+        line("HTML", node, fields: ["literal=\(dump(escaped: node.literal))"])
+    }
+
+    mutating func visit(_ node: Comment, phase: MarkupVisitPhase) {
+        line("Comment", node, fields: ["literal=\(dump(escaped: node.literal))"])
     }
 
     mutating func visit(_ node: CrossLink, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
+        line(
             "CrossLink",
             node,
             fields: ["dest=\(dump(destination: node.dest))", "label=\(dump(optional: node.label))"]
@@ -370,140 +170,74 @@ extension DumpVisitor {
     }
 
     mutating func visit(_ node: CrossEmbedded, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
+        line(
             "CrossEmbedded",
             node,
             fields: [
-                "dest=\(dump(destination: node.dest))", "label=\(dump(optional: node.label))",
+                "dest=\(dump(destination: node.dest))",
+                "label=\(dump(optional: node.label))",
                 "dimensions=\(dump(dimensions: node.dimensions))",
             ]
         )
     }
 
-    mutating func visit(_ node: Comment, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("Comment", node, fields: ["literal=\(dump(escaped: node.literal))"])
-    }
-
     mutating func visit(_ node: Formula, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
-            "Formula",
-            node,
-            fields: ["mode=\(node.mode.rawValue)", "literal=\(dump(escaped: node.literal))"]
-        )
+        line("Formula", node, fields: ["mode=\(node.mode.rawValue)", "literal=\(dump(escaped: node.literal))"])
     }
 
     mutating func visit(_ node: Emphasis, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("Emphasis", node, children: node.content.count)
+        line("Emphasis", node, children: node.content.count)
     }
 
-    mutating func visit(_ node: Strong, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("Strong", node, children: node.content.count)
-    }
+    mutating func visit(_ node: Strong, phase: MarkupVisitPhase) { line("Strong", node, children: node.content.count) }
 
     mutating func visit(_ node: Strikethrough, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("Strikethrough", node, children: node.content.count)
+        line("Strikethrough", node, children: node.content.count)
     }
 
-    mutating func visit(_ node: Mark, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("Mark", node, children: node.content.count)
-    }
+    mutating func visit(_ node: Mark, phase: MarkupVisitPhase) { line("Mark", node, children: node.content.count) }
 
     mutating func visit(_ node: Insertion, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("Insertion", node, children: node.content.count)
+        line("Insertion", node, children: node.content.count)
     }
 
-    mutating func visit(_ node: Span, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("Span", node, children: node.content.count)
-    }
+    mutating func visit(_ node: Span, phase: MarkupVisitPhase) { line("Span", node, children: node.content.count) }
 
     mutating func visit(_ node: Superscript, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("Superscript", node, children: node.content.count)
+        line("Superscript", node, children: node.content.count)
     }
 
     mutating func visit(_ node: Subscript, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("Subscript", node, children: node.content.count)
+        line("Subscript", node, children: node.content.count)
+    }
+
+    mutating func visit(_ node: DefinitionList, phase: MarkupVisitPhase) {
+        line("DefinitionList", node, children: node.definitions.count)
+    }
+
+    mutating func visit(_ node: Definition, phase: MarkupVisitPhase) {
+        line("Definition", node, fields: ["compact=\(dump(boolean: node.compact))"], children: node.content.count)
     }
 
     mutating func visit(_ node: Link, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
+        line(
             "Link",
             node,
-            fields: ["dest=\(dump(destination: node.dest))", "title=\(dump(optional: node.title))"],
+            fields: [
+                "dest=\(dump(destination: node.dest))",
+                "title=\(dump(optional: node.title))",
+            ],
             children: node.content.count
         )
     }
 
     mutating func visit(_ node: Embedded, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
+        line(
             "Embedded",
             node,
             fields: [
-                "dest=\(dump(destination: node.dest))", "title=\(dump(optional: node.title))",
+                "dest=\(dump(destination: node.dest))",
+                "title=\(dump(optional: node.title))",
                 "dimensions=\(dump(dimensions: node.dimensions))",
             ],
             children: node.content.count
@@ -511,71 +245,53 @@ extension DumpVisitor {
     }
 
     mutating func visit(_ node: Directive, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
-            "Directive",
-            node,
-            fields: ["name=\(dump(escaped: node.name))"],
-            groups: [(nil, node.label == nil ? 0 : 1)]
-        )
+        line("Directive", node, fields: ["name=\(dump(escaped: node.name))"])
     }
 
-    mutating func visit(_ node: Cite, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("Cite", node, children: node.citations.count)
-    }
+    mutating func visit(_ node: Cite, phase: MarkupVisitPhase) { line("Cite", node, children: node.citations.count) }
 
     mutating func visit(_ node: TableCaption, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line("TableCaption", node, children: node.content.count)
+        line("TableCaption", node, children: node.content.count)
     }
 
     mutating func visit(_ node: TableRow, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
-            "TableRow",
-            node,
-            children: node.cells.count
-        )
+        line("TableRow", node, children: node.cells.count)
     }
 
     mutating func visit(_ node: TableCell, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
+        line(
             "TableCell",
             node,
-            fields: ["rowspan=\(node.rowspan)", "colspan=\(node.colspan)"],
+            fields: [
+                "rowspan=\(node.rowspan)",
+                "colspan=\(node.colspan)",
+            ],
+            children: node.content.count
+        )
+    }
+
+    mutating func visit(_ node: Citation, phase: MarkupVisitPhase) {
+        line("Citation", node, fields: ["referent=\(dump(referent: node.referent))"])
+    }
+
+    mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) {
+        line("Footnote", node, fields: ["label=\(dump(optional: node.label))"], children: node.content.count)
+    }
+
+    mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) {
+        line(
+            "Specimen",
+            node,
+            fields: [
+                "label=\(dump(optional: node.label))",
+                "start=\(node.start.map(String.init) ?? "null")",
+            ],
             children: node.content.count
         )
     }
 
     mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
+        line(
             "Metadata",
             node,
             fields: [
@@ -589,53 +305,13 @@ extension DumpVisitor {
                 "abstract=\(node.abstract.map(dump(metadata:)) ?? "null")",
                 "state=\(node.state.map(dump(metadata:)) ?? "null")",
                 "comment=\(node.comment.map(dump(metadata:)) ?? "null")",
-            ],
-            children: 0
+            ]
         )
     }
+}
 
-    mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
-            "Footnote",
-            node,
-            fields: ["id=\(dump(escaped: node.id))"],
-            children: node.content.count
-        )
-    }
-
-    mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
-            "Specimen",
-            node,
-            fields: ["id=\(dump(optional: node.id))", "start=\(node.start.map(String.init) ?? "null")"],
-            children: node.content.count
-        )
-    }
-
-    mutating func visit(_ node: Citation, phase: MarkupVisitPhase) {
-        guard phase == .enter else {
-            state.end()
-            return
-        }
-        state.start()
-        state.line(
-            "Citation",
-            node,
-            fields: ["referent=\(dump(referent: node.referent))"],
-            children: 0,
-            groups: [("CitationPrefix", node.prefix.count), ("CitationSuffix", node.suffix.count)]
-        )
-    }
+private func dump(columns value: [TableColumn]) -> String {
+    value.map { "\($0.flow.rawValue):\($0.relative.map(dump(decimal:)) ?? "null")" }.joined(separator: ",")
 }
 
 // Canonical spellings for values in the debug dump.
@@ -646,11 +322,13 @@ private func dump(scope value: Scope) -> String {
 private func dump(boolean value: Bool) -> String { value ? "true" : "false" }
 
 /// A tagged value prints its branch and its named fields with no spaces.
+/// An inline note is drawn under its Citation, so its branch prints no field.
 private func dump(referent value: CitationReferent) -> String {
     switch value {
     case .bib(let key, let mode): "bib(key=\(dump(escaped: key)),mode=\(mode.rawValue))"
-    case .footnote(let id): "footnote(id=\(dump(escaped: id)))"
-    case .specimen(let id): "specimen(id=\(dump(escaped: id)))"
+    case .footnote(.label(let label)): "footnote(label=\(dump(escaped: label)))"
+    case .footnote(.note): "footnote(note)"
+    case .specimen(let label): "specimen(label=\(dump(escaped: label)))"
     }
 }
 
@@ -712,8 +390,8 @@ private func dump(decimal value: Double) -> String {
     let parts = String(value).lowercased().split(separator: "e")
     let mantissa = parts[0].split(separator: ".")
     var digits = String(mantissa.joined())
-    let exponent = parts.count == 2 ? Int(parts[1]) : 0
-    guard let exponent else { preconditionFailure("invalid runtime double exponent") }
+    // swift-format-ignore: NeverForceUnwrap
+    let exponent = parts.count == 2 ? Int(parts[1])! : 0
     var point = mantissa[0].count + exponent
     while digits.first == "0" {
         digits.removeFirst()

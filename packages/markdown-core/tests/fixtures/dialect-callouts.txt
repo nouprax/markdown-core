@@ -21,9 +21,9 @@ Document scope=1:1..5:10 anchor=null attributes={} children=2
 ├── Callout scope=1:1..3:9 anchor=null attributes={} variant=null collapsed=null children=1
 │   └── Paragraph scope=1:3..3:9 anchor=null attributes={} children=5
 │       ├── Text scope=1:3..1:8 anchor=null attributes={} literal="quoted" children=0
-│       ├── SoftBreak scope=1:9..1:9 anchor=null attributes={} children=0
+│       ├── SoftBreak scope=1:9..2:0 anchor=null attributes={} children=0
 │       ├── Text scope=2:3..2:6 anchor=null attributes={} literal="lazy" children=0
-│       ├── SoftBreak scope=2:7..2:7 anchor=null attributes={} children=0
+│       ├── SoftBreak scope=2:7..3:0 anchor=null attributes={} children=0
 │       └── Text scope=3:1..3:9 anchor=null attributes={} literal="continued" children=0
 └── Callout scope=5:1..5:10 anchor=null attributes={} variant=null collapsed=null children=1
     └── Callout scope=5:3..5:10 anchor=null attributes={} variant=null collapsed=null children=1
@@ -142,7 +142,7 @@ Document scope=1:1..3:6 anchor=null attributes={} children=1
     │   └── Text scope=1:11..1:15 anchor=null attributes={} literal="Title" children=0
     └── Paragraph scope=2:3..3:6 anchor=null attributes={} children=3
         ├── Text scope=2:3..2:6 anchor=null attributes={} literal="body" children=0
-        ├── SoftBreak scope=2:7..2:7 anchor=null attributes={} children=0
+        ├── SoftBreak scope=2:7..3:0 anchor=null attributes={} children=0
         └── Text scope=3:3..3:6 anchor=null attributes={} literal="more" children=0
 ````````````````````````````````
 
@@ -157,7 +157,7 @@ Document scope=1:1..3:4 anchor=null attributes={} children=1
     │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="T" children=0
     └── Paragraph scope=2:3..3:4 anchor=null attributes={} children=3
         ├── Text scope=2:3..2:6 anchor=null attributes={} literal="body" children=0
-        ├── SoftBreak scope=2:7..2:7 anchor=null attributes={} children=0
+        ├── SoftBreak scope=2:7..3:0 anchor=null attributes={} children=0
         └── Text scope=3:1..3:4 anchor=null attributes={} literal="lazy" children=0
 ````````````````````````````````
 
@@ -499,7 +499,7 @@ Document scope=1:1..11:18 anchor=null attributes={} children=4
 ├── Callout scope=1:1..2:17 anchor=null attributes={} variant=null collapsed=null children=1
 │   └── Paragraph scope=1:3..2:17 anchor=null attributes={} children=3
 │       ├── Text scope=1:3..1:7 anchor=null attributes={} literal="first" children=0
-│       ├── SoftBreak scope=1:8..1:8 anchor=null attributes={} children=0
+│       ├── SoftBreak scope=1:8..2:0 anchor=null attributes={} children=0
 │       └── Text scope=2:3..2:17 anchor=null attributes={} literal="[!note] literal" children=0
 ├── Callout scope=4:1..5:17 anchor=null attributes={} variant=null collapsed=null children=1
 │   └── Paragraph scope=5:3..5:17 anchor=null attributes={} children=1
@@ -534,12 +534,12 @@ Document scope=1:1..7:6 anchor=null attributes={} children=2
 │   │   └── Text scope=1:11..1:15 anchor=null attributes={} literal="Title" children=0
 │   └── Paragraph scope=2:1..3:9 anchor=null attributes={} children=3
 │       ├── Text scope=2:1..2:4 anchor=null attributes={} literal="lazy" children=0
-│       ├── SoftBreak scope=2:5..2:5 anchor=null attributes={} children=0
+│       ├── SoftBreak scope=2:5..3:0 anchor=null attributes={} children=0
 │       └── Text scope=3:1..3:9 anchor=null attributes={} literal="continued" children=0
 └── Callout scope=5:1..7:6 anchor=null attributes={} variant="note" collapsed=null children=1
     └── Paragraph scope=6:6..7:6 anchor=null attributes={} children=3
         ├── Text scope=6:6..6:18 anchor=null attributes={} literal="indented body" children=0
-        ├── SoftBreak scope=6:19..6:19 anchor=null attributes={} children=0
+        ├── SoftBreak scope=6:19..7:0 anchor=null attributes={} children=0
         └── Text scope=7:3..7:6 anchor=null attributes={} literal="more" children=0
 ````````````````````````````````
 
@@ -560,7 +560,7 @@ Document scope=1:1..6:9 anchor=null attributes={} children=2
 ├── Callout scope=1:1..3:9 anchor=null attributes={} variant="note" collapsed=null children=1
 │   └── Paragraph scope=2:4..3:9 anchor=null attributes={} children=3
 │       ├── Text scope=2:4..2:16 anchor=null attributes={} literal="indented lazy" children=0
-│       ├── SoftBreak scope=2:17..2:17 anchor=null attributes={} children=0
+│       ├── SoftBreak scope=2:17..3:0 anchor=null attributes={} children=0
 │       └── Text scope=3:1..3:9 anchor=null attributes={} literal="continued" children=0
 └── List scope=5:1..6:9 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
     └── ListItem scope=5:1..6:9 anchor=null attributes={} marker=null children=1
@@ -760,7 +760,7 @@ Document scope=1:1..14:5 anchor=null attributes={} children=1
 [ref]: /u "title"
 [^n]: definition
 .
-Document scope=1:1..5:16 anchor=null attributes={} children=1
+Document scope=1:1..5:16 anchor=null attributes={} children=2
 ├── Callout scope=1:1..2:12 anchor=null attributes={} variant="Mixed" collapsed=true children=1
 │   ├── Title children=25
 │   │   ├── Strong scope=1:13..1:20 anchor=null attributes={} children=1
@@ -795,21 +795,21 @@ Document scope=1:1..5:16 anchor=null attributes={} children=1
 │   │   │           └── Text scope=1:108..1:113 anchor=null attributes={} literal="marked" children=0
 │   │   ├── Text scope=1:117..1:117 anchor=null attributes={} literal=" " children=0
 │   │   ├── Cite scope=1:118..1:126 anchor=null attributes={} children=1
-│   │   │   └── Citation scope=1:120..1:125 anchor=null attributes={} referent=footnote(id="inline-1") children=0
+│   │   │   └── Citation scope=1:120..1:125 anchor=null attributes={} referent=footnote(note) children=0
+│   │   │       ├── Footnote scope=1:118..1:126 anchor=null attributes={} label=null children=1
+│   │   │       │   └── Text scope=1:120..1:125 anchor=null attributes={} literal="inline" children=0
 │   │   │       ├── CitationPrefix children=0
 │   │   │       └── CitationSuffix children=0
 │   │   ├── Text scope=1:127..1:127 anchor=null attributes={} literal=" " children=0
 │   │   └── Cite scope=1:128..1:131 anchor=null attributes={} children=1
-│   │       └── Citation scope=1:129..1:130 anchor=null attributes={} referent=footnote(id="n") children=0
+│   │       └── Citation scope=1:129..1:130 anchor=null attributes={} referent=footnote(label="n") children=0
 │   │           ├── CitationPrefix children=0
 │   │           └── CitationSuffix children=0
 │   └── Paragraph scope=2:3..2:12 anchor=null attributes={} children=2
 │       ├── Text scope=2:3..2:7 anchor=null attributes={} literal="body " children=0
 │       └── Link scope=2:8..2:12 anchor=null attributes={} dest=url("/u") title="title" children=1
 │           └── Text scope=2:9..2:11 anchor=null attributes={} literal="ref" children=0
-├── Footnote scope=1:118..1:126 anchor=null attributes={} id="inline-1" children=1
-│   └── Text scope=1:120..1:125 anchor=null attributes={} literal="inline" children=0
-└── Footnote scope=5:1..5:16 anchor=null attributes={} id="n" children=1
+└── Footnote scope=5:1..5:16 anchor=null attributes={} label="n" children=1
     └── Paragraph scope=5:7..5:16 anchor=null attributes={} children=1
         └── Text scope=5:7..5:16 anchor=null attributes={} literal="definition" children=0
 ````````````````````````````````

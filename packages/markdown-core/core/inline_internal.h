@@ -32,7 +32,6 @@ struct markdown_core_inline_state {
     bufsize_t opaque_end;
     /* One plus the start of a suffix proven to contain no closer of a rule. */
     bufsize_t opaque_failed_from[MARKDOWN_CORE_DELIM_RULE_COUNT];
-    int line;
     bufsize_t pos;
     /* The block whose content buffer `input` is, and the parser that holds
      * requirement 10's content-to-source map for it. Both are NULL for a
@@ -56,13 +55,14 @@ struct markdown_core_inline_state {
      * (markdown_core_inline_seat_cursor) and read by every placement: the
      * run's first content offset, the offset the next run starts at (past
      * every offset when the cursor is the owner's last run), and the run's
-     * line, column, step and width. A node whose two ends lie in the frame
+     * line, source byte, step and width. A node whose two ends lie in the frame
      * is placed by arithmetic on these six values and reads nothing from the
      * map; `mapped` is whether there is a map at all -- a state built
      * straight out of a chunk, the reference-definition parser's, has none,
      * and neither has a block that came with no content. */
     bufsize_t mark_run_start, mark_run_end;
-    int mark_line, mark_column, mark_step, mark_width;
+    int mark_line, mark_step, mark_width;
+    bufsize_t mark_source;
     bool mapped;
     markdown_core_map *refmap;
     delimiter *last_delim;
@@ -120,7 +120,7 @@ static inline void markdown_core_inline_seat_cursor(markdown_core_inline_state *
     inline_state->mark_run_start = mark->content_offset;
     inline_state->mark_run_end = cursor < last ? parser->line_marks[cursor + 1].content_offset : INT32_MAX;
     inline_state->mark_line = mark->line;
-    inline_state->mark_column = mark->column;
+    inline_state->mark_source = mark->source;
     inline_state->mark_step = mark->source_step;
     inline_state->mark_width = mark->source_width;
 }
@@ -146,8 +146,9 @@ static inline void markdown_core_inline_map_text(markdown_core_inline_state *inl
     } else {
         node->content_map.count = 0;
         node->content_map.offset = 0;
-        markdown_core_parser_append_content_mark(inline_state->owner_parser, node, 0, node->start_line,
-                                                 node->start_column, node->end_column - node->start_column + 1, 0);
+        markdown_core_parser_append_content_mark(inline_state->owner_parser, node, 0, inline_state->mark_line,
+                                                 node->where.place.start,
+                                                 (int)(node->where.place.end - node->where.place.start), 0);
     }
 }
 
@@ -162,7 +163,7 @@ void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline
  * not a counter each handler keeps in step. The parser reads `input` left to
  * right and a Text never crosses a line ending, so the node being placed
  * almost always lies whole on the run the previous placement ended in: both
- * of its ends are then the frame's line and column plus a distance. Each end
+ * of its ends are then the frame's source byte plus a distance. Each end
  * is tested on its own: a span's ends are resolved independently (an empty
  * field is placed as [x, x - 1], and when x is a run's first byte its two
  * ends are on two runs), so a test that bounded `from` from below and `to`
@@ -181,13 +182,11 @@ static inline void markdown_core_inline_place(markdown_core_inline_state *inline
         markdown_core_inline_place_outside_frame(inline_state, node, from, to);
         return;
     }
-    node->start_line = inline_state->mark_line;
-    node->end_line = inline_state->mark_line;
-    node->start_column =
-        inline_state->mark_column + (int)(from_offset - inline_state->mark_run_start) * inline_state->mark_step;
-    node->end_column = inline_state->mark_column +
-                       (int)(to_offset - inline_state->mark_run_start) * inline_state->mark_step +
-                       inline_state->mark_width - 1;
+    node->where.place.start =
+        (uint32_t)(inline_state->mark_source + (from_offset - inline_state->mark_run_start) * inline_state->mark_step);
+    node->where.place.end =
+        (uint32_t)(inline_state->mark_source + (to_offset - inline_state->mark_run_start) * inline_state->mark_step +
+                   inline_state->mark_width);
     if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0) {
         markdown_core_inline_map_text(inline_state, node, from, to, inline_state->mark_cursor,
                                       inline_state->mark_cursor);
@@ -201,9 +200,8 @@ markdown_core_node *markdown_core_inline_make_simple(markdown_core_inline_state 
                                                      markdown_core_node_type t);
 markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_inline_state *inline_state,
                                                                 markdown_core_node_type t);
-void markdown_core_inline_state_from_buf(markdown_core_parser *parser, int line_number,
-                                         markdown_core_inline_state *inline_state, markdown_core_chunk *chunk,
-                                         markdown_core_map *refmap);
+void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                         markdown_core_chunk *chunk, markdown_core_map *refmap);
 unsigned char markdown_core_inline_peek_char_n(markdown_core_inline_state *inline_state, bufsize_t n);
 unsigned char markdown_core_inline_peek_char(markdown_core_inline_state *inline_state);
 unsigned char markdown_core_inline_peek_at(markdown_core_inline_state *inline_state, bufsize_t pos);

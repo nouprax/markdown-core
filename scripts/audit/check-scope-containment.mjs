@@ -90,14 +90,13 @@ for (const example of fixtureCorpus(root)) {
             }
         else skipped += children.length;
 
-        // Document content and its owned node collections are separate
-        // ownership edges, printed in field order rather than source order.
+        // Document metadata and content are separate ownership edges, printed
+        // in field order rather than source order.
         const sequences =
             node.kind === "Document"
                 ? [
-                      children.filter(({ child }) => !["Metadata", "Footnote", "Specimen"].includes(child.kind)),
-                      children.filter(({ child }) => child.kind === "Footnote"),
-                      children.filter(({ child }) => child.kind === "Specimen")
+                      children.filter(({ child }) => child.kind === "Metadata"),
+                      children.filter(({ child }) => child.kind !== "Metadata")
                   ]
                 : node.kind === "Table"
                   ? [

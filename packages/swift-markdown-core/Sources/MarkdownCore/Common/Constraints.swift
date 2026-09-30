@@ -9,8 +9,6 @@ public struct Dimensions: Sendable, Hashable {
 
     /// Creates a size with required width and optional height.
     public init(width: Int, height: Int? = nil) {
-        precondition((1...Int(Int32.max)).contains(width))
-        precondition(height.map { (1...Int(Int32.max)).contains($0) } ?? true)
         self.width = width
         self.height = height
     }

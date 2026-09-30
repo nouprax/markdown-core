@@ -1,88 +1,70 @@
 # Swift value storage
 
-The public AST is immutable and `Sendable`. A parse copies each native AST value
-exactly once into a flat `StoredMarkup` array, then frees the C document before
-returning. Records contain owned scalar values and integer relation indices.
-They never contain a container view or a reference back to `MarkupStore`.
-Every Markup kind has a stored record, including Metadata. Its large leaf
-payload is boxed separately so it does not determine the stride of every
-ordinary node. Document stores a typed index to that record. The metadata box
-contains values only, so it adds no recursive tree edge.
+The public AST is immutable and `Sendable`. A parse copies each native node
+exactly once into one record, then frees the C document before returning. No
+record holds a native pointer, a container view, or a reference to its parent.
 
-A node with Markup relations declares `let fields: Stored<Fields>`. `Stored`
-is a typed field view containing the store and a private record index;
-it queries the payload without storing or caching a copy. `MarkupStore` owns
-the exhaustive field lookup and node projection. Individual markup getters
-read `fields.metadata`, `fields.content`, or `fields.attributes`; they do not
-inspect records, resolve indices, or handle optional relations themselves.
-The field view adds no heap allocation or synchronization.
-The index identifies an occurrence within a particular store; it is not a
-source coordinate, and querying by kind alone cannot distinguish two paragraphs.
+Every Markup kind is a struct holding `let record`, a final class of the kind
+that inherits the internal base `MarkupRecord`. The base holds what every kind
+has (`id`, `extent`, `anchor`, `attributes`) and every owned child record, in
+one array in canonical walk order across the node's relations. A kind adds
+only `let` scalars and says how its relations partition that array
+(`relation(at:)`): a table's caption, head, body and foot; a citation's inline
+note, prefix and suffix; a definition's term and each body. Public getters
+return views of that array; they never copy descendants. Liveness is ARC: a
+retained node keeps its own subtree alive and nothing else.
 
-Each node with relations declares its nested `Fields` first, followed by
-`let fields: Stored<Fields>`, then its public properties and methods. Native
-conversion initializers remain in `extension Type.Fields` blocks.
+`MarkupCollection<Element>` is a slice of the owner's child records. Count,
+indexing and obtaining the view are O(1); iteration projects each element as
+it is read, and `Array(relation)` materializes one on request.
+`MarkupGroups<Element>` is the owner and the group boundaries, and returns a
+`MarkupCollection<Element>` per group in O(1), keeping empty groups. Groups
+have no record of their own.
 
-Scalar and relation properties share the same `fields.member` access syntax.
-Key-path member lookup passes ordinary values through and resolves types that
-conform to the internal `StoredRelation` protocol. `MarkupReference<Node>` holds
-one integer index; `MarkupReferences<Node>` and `MarkupGroupReferences<Node>`
-hold index arrays and grouped index arrays. The target type belongs to the
-stored field, so a getter cannot reinterpret a metadata relation as another
-node kind. Optional relations use the same resolver and preserve absence.
-Ordinary integers, optional integers, and arrays remain ordinary values;
-their shape is never used to infer a relation.
+NO OPERATION RECURSES OVER TREE EDGES. Release, equality, the walker,
+conversion, scope queries, hit testing and the dump each keep an explicit
+work stack, so the call stack is constant in tree depth. Release is the
+base's `deinit`: it moves its children into a local array and drains it,
+first moving the children of every child that `isKnownUniquelyReferenced`
+reports unshared, so no `deinit` has anything left to release. A child a view
+still holds is only released, which ends at a count decrement. That move is
+the only write to a record, and it happens only to a record nothing else
+references, which is why records are `@unchecked Sendable`; the invariant is
+stated on `MarkupRecord`, and each subclass restates the conformance as
+Swift requires.
 
-The resolver first extracts the selected field from its owner's payload, then
-resolves that field against the store. The owner's other fields are no longer
-borrowed during a second lookup, avoiding unrelated reference-count operations.
-The small forwarding methods inline constant key paths at their call sites.
+Equality is deep value equality: kind, id, extent, anchor, attributes, the
+kind's scalars and pairwise-equal children in every relation, checked from a
+stack of record pairs with an identity shortcut. Hashing reads only the id.
+Every kind is `Hashable` and `Identifiable`; `isEqual(_:)` compares two
+`any Markup`. `description` is the kind and id; `dump(in:)` draws a tree.
 
-The resolved collection is a `MarkupCollection<Element>` value carrying the
-store and a copy-on-write array of indices. Count,
-indexing, and obtaining the relation view are O(1), with no materialization of
-descendants. Iteration visits the requested elements. `Array(relation)` explicitly
-materializes an array for consumers that require one. Leaves carry their scalar
-values directly. The exhaustive stored enum prevents a recursively owned
-container from entering storage through an erased `any Markup` field.
+The conversion queues native nodes breadth first, so each node's children
+follow it, and builds records from the last queued node back to the root; no
+partially built node is ever visible. Only Markup nodes enter the queue.
+Reference resources are copied once per native identity and shared across
+occurrences.
 
-Collections are stored directly in their owning node's fields through typed
-relation values. Callout and directive content wrap `[Int]`; definition content
-wraps `[[Int]]` to preserve body boundaries, including empty bodies. These
-wrappers retain only the arrays, never the store. A `MarkupGroups<Element>` view shares
-the outer array and returns a `MarkupCollection<Element>` for each inner array
-in O(1), without mapping or allocating the groups on access. Groups have no
-record, queued handle, or stored-kind dispatch of their own. Nested definitions
-still refer to nodes by index, so array nesting is bounded by the field's shape,
-not the depth of the document.
+A document stores its text unit and its definition tables: every footnote
+(definitions and inline notes) and every specimen in source order, as records
+of the tree, and a map from each label's UTF-8 bytes to its first definition,
+built with the document. A label is never compared under Unicode
+equivalence. There is no lazy cache and no lock.
 
-The projection queue holds native handles only during construction. Indices
-refer to queue positions, so no partially initialized semantic nodes or repair
-pass are needed. Only Markup nodes enter the queue. Their owned
-relations enqueue the referenced nodes: generic children, labels, captions,
-callout titles, definition terms and the blocks in each body, footnotes,
-specimens, and citation affixes. Reference resources are copied once
-per native identity and remain shared scalar resources across occurrences.
+Scopes are not stored. `scope(of:in:)` walks the document once to the node's
+absolute byte range, and converts it with the source's line starts to lines
+and columns in the document's unit; `node(at:in:)` converts the position to a
+byte offset and returns the last node in walk order that holds it. Both
+mirror the C engine's rule exactly. The dump computes its scopes the same
+way, always in UTF-8 columns. Each checks its argument once, at the public
+function, and throws `MarkdownCoreError` with `.outOfBounds` as C does: a
+scope or dump whose source ends before the node does, and a position whose
+line or column is below 1. The `SourceLines` helpers beneath them assume that
+check.
 
-This ownership graph has bounded ARC destruction depth. Releasing the last
-store owner destroys a flat array of scalars and index arrays; it cannot recurse
-through tree edges. A retained container or relation keeps the whole immutable
-Swift store alive until its last owner is released. This is an explicit lifetime
-tradeoff: extracting a subtree does not copy it or sever it from the store.
-There is no native handle, mutation, lazy cache, cleanup queue, or lock.
-
-The former `[Node]` child properties are now `MarkupCollection<Node>` (including
-`MarkupCollection<any Markup>`); `Definition.content` is `MarkupGroups<any Markup>`.
-Callers using array-specific APIs should explicitly construct `Array(...)`.
-Property names, ordering, scalar semantics, visitors, and native coordinates are
-unchanged. Tests cover canonical projections, shared-resource identity, public
-collection consumption, concurrent reads, and normal root/subtree release at
-30,000 and 65,536 levels. The release tests assert that the store is reclaimed;
-they do not keep the next child alive to manually dismantle ancestors.
-Grouped-relation tests cover empty and multiblock bodies, wide definitions,
-concurrent reads, and the last release of retained outer and inner collections.
-Typed-reference tests distinguish same-kind occurrences and different stores
-after the roots are released. Field-view tests cover inferred relation types,
-optional scalar values, absent node and collection relations, and empty body
-groups. Layout checks keep container views within the existential inline buffer
-and typed relations within the size of their underlying indices.
+Tests cover canonical dumps, fresh-parse ids numbered 1 through n in walk
+order, deep equality, both units' scopes and hit testing, the definition
+tables, shared-resource identity, concurrent reads, and the last release of
+retained groups. The 30,000 and 65,536-level trees run on a thread with a
+512 KiB stack: release while a view holds a subtree, equality at the deepest
+leaf, walking, scope lookup, hit testing and `description`.

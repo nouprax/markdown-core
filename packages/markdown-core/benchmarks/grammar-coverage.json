@@ -1447,13 +1447,13 @@
         {
             "feature": "footnotes",
             "specification": "docs/specs/dialect/footnotes.md",
-            "sha256": "b6bb2b2a1dce9791e7c029c7fdd6beaf938d3c5d6ac07a7b5ec80894f6438bfc",
+            "sha256": "3333ce59b367db9381b1d877559c8bb913972c5860f63aaa0ef501f1646916ef",
             "sections": [
                 {
                     "title": "Footnotes",
                     "line": 1,
                     "level": 1,
-                    "sha256": "375c45af55e130bb02e0ab6813c3eae9412f790397fde8c1536d57619cfcbe79",
+                    "sha256": "140997d91f804ff751092df6ad2b3bfcdfd95c78e0e26d54409f1e6ed9a006cd",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["gfm-footnote"]
@@ -1461,9 +1461,9 @@
                 },
                 {
                     "title": "Definition bodies",
-                    "line": 18,
+                    "line": 19,
                     "level": 2,
-                    "sha256": "cfacc4107c8fba92837417990472e333abd06602afaf613cc9c817cecfacefa6",
+                    "sha256": "c63a5c318fb79e1b1efb1a0abdf572b18e349fcc4be0fbd9cb932aadbe3e0d0a",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["gfm-footnote", "gfm-footnote-blocks"]
@@ -1471,7 +1471,7 @@
                 },
                 {
                     "title": "Undefined calls",
-                    "line": 41,
+                    "line": 42,
                     "level": 2,
                     "sha256": "b44af8bda55bc510390b5bb65e305c10baa4532840fde88fcaa6d3c98bb61b8e",
                     "disposition": {
@@ -1481,9 +1481,9 @@
                 },
                 {
                     "title": "Inline footnotes",
-                    "line": 53,
+                    "line": 54,
                     "level": 2,
-                    "sha256": "dabe5a573e53e974bde0330c3cf18b1c616c3a45151fcd0f4fdb6671ff584b8a",
+                    "sha256": "61a01a2d7d7f6f186b9fba65c529f645a44a54c5770852c218aed01bd9d44e87",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["inline-footnote", "footnote-nested-inline"]
@@ -1491,9 +1491,9 @@
                 },
                 {
                     "title": "Walking and resolution",
-                    "line": 77,
+                    "line": 74,
                     "level": 2,
-                    "sha256": "2dbce36fa7c1439138925cce0377c2143969844361aa0905fa12b7a18c4c66e0",
+                    "sha256": "97a180cd4bda0cd1bc966faa1e4bd162652ce5203894b01cf21afd131c7d0869",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["footnote-retention", "gfm-footnote-cycle"]
@@ -2329,7 +2329,7 @@
         {
             "feature": "properties",
             "specification": "docs/specs/dialect/properties.md",
-            "sha256": "5df31e64bd38d6530e85bb7eae6957714c8cbd161917f9f1b486b5eaf2f962a2",
+            "sha256": "45a5609c8d3b947c518f81fc85a297ab793be1bedfc3acd654d5e3ab8e8ec88b",
             "sections": [
                 {
                     "title": "Properties",
@@ -2375,7 +2375,7 @@
                     "title": "Envelope and recovery",
                     "line": 117,
                     "level": 2,
-                    "sha256": "b6744a138b23b7b69b6d525626447d9b87740ed48ceac06b7e7872ee19cc99a2",
+                    "sha256": "4534b0987d644358b78983bce05dc8f245277cf0e30721412a01b6dc7fc40f86",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["metadataempty", "metadata-types", "fallback-noninitial-metadata"]
@@ -2419,13 +2419,13 @@
         {
             "feature": "specimens",
             "specification": "docs/specs/dialect/specimens.md",
-            "sha256": "8e3d3f1151e4b8e6fc0a34b39dc3b16afdd0e0f2df4ffa328d5c29b825f1131a",
+            "sha256": "46399c137b458110d3730dee041ad3fa2aae4a6243227550decc7c9377308fef",
             "sections": [
                 {
                     "title": "Specimens (numbered examples)",
                     "line": 1,
                     "level": 1,
-                    "sha256": "2ec5dc8a31bb77d0d7500cdf380560a5ef82ca6323a298b875a3bc03911ab93c",
+                    "sha256": "29ff09f38cbd5767934c9a4c5faf60e6c035c1a40ae6244c141050a6ec65c987",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["specimen-graph"]
@@ -2433,9 +2433,9 @@
                 },
                 {
                     "title": "Anonymous definitions and resets",
-                    "line": 19,
+                    "line": 21,
                     "level": 2,
-                    "sha256": "9fdeddb8a659f08f52f75416d51162ce8a17f7c443cf826addf4ccb68d2cd024",
+                    "sha256": "54181096e68c84ffab27c8ab54ed9319b9467dde28ffe8b3d0998d557985afab",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["specimen-reset", "specimen-groups"]
@@ -2443,7 +2443,7 @@
                 },
                 {
                     "title": "Bodies and labels",
-                    "line": 41,
+                    "line": 43,
                     "level": 2,
                     "sha256": "ea13280615ea0f974588dee7e21e03a9530ac9db89e0a97c74eebcad66640ddc",
                     "disposition": {
@@ -2453,9 +2453,9 @@
                 },
                 {
                     "title": "Reference forms",
-                    "line": 59,
+                    "line": 61,
                     "level": 2,
-                    "sha256": "8ddf91e07b7a032105ec0c4af94cd02f94e20e0dd3c285e6c6b37cc373b61e5c",
+                    "sha256": "8af0d7a94b08419ce1934379774beb92edda362916a22a90aeff328b48738a55",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["specimen-graph"]

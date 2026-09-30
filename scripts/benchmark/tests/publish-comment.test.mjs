@@ -142,11 +142,11 @@ test("PR tables report the two stages, their sum and source regressions, and not
 
 test("an AST-stage regression fails its document even when the source stage holds", () => {
     const current = stageReport(100);
-    for (const row of current.cases) row.engines["markdown-core"].stages.buffer_to_ast.cost.Ir = 53;
+    for (const row of current.cases) row.engines["markdown-core"].stages.buffer_to_ast.cost.Ir = 56;
     const body = stageSection(current, stageReport(100));
     assert.match(body, /2 document workloads/);
     assert.match(body, /\*\*2\/4 passed\*\*, 2 exceeded/);
-    assert.match(body, /\| inline-links-paired-dialect \| Buffer → AST \| 50 \| 53 \| 1.0600× \|/);
+    assert.match(body, /\| inline-links-paired-dialect \| Buffer → AST \| 50 \| 56 \| 1.1200× \|/);
 });
 
 test("Core-only rejections are reported against their control, apart from reference comparisons", () => {

@@ -141,7 +141,7 @@ Document scope=1:1..4:4 anchor=null attributes={} children=1
         ├── DefinitionBody children=1
         │   └── Paragraph scope=2:3..3:5 anchor=null attributes={} children=3
         │       ├── Text scope=2:3..2:4 anchor=null attributes={} literal="d1" children=0
-        │       ├── SoftBreak scope=2:5..2:5 anchor=null attributes={} children=0
+        │       ├── SoftBreak scope=2:5..3:0 anchor=null attributes={} children=0
         │       └── Text scope=3:1..3:5 anchor=null attributes={} literal="Term2" children=0
         └── DefinitionBody children=1
             └── Paragraph scope=4:3..4:4 anchor=null attributes={} children=1
@@ -161,9 +161,9 @@ Term
 Document scope=1:1..8:3 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..3:3 anchor=null attributes={} children=5
 │   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="para" children=0
-│   ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=1:5..2:0 anchor=null attributes={} children=0
 │   ├── Text scope=2:1..2:4 anchor=null attributes={} literal="more" children=0
-│   ├── SoftBreak scope=2:5..2:5 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=2:5..3:0 anchor=null attributes={} children=0
 │   └── Text scope=3:1..3:3 anchor=null attributes={} literal=": x" children=0
 ├── Paragraph scope=5:1..5:4 anchor=null attributes={} children=1
 │   └── Text scope=5:1..5:4 anchor=null attributes={} literal="para" children=0
@@ -183,7 +183,7 @@ Term
 Document scope=1:1..2:2 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:2 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:4 anchor=null attributes={} literal="Term" children=0
-    ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:5..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:2 anchor=null attributes={} literal=":x" children=0
 ````````````````````````````````
 
@@ -476,7 +476,7 @@ Document scope=1:1..16:0 anchor=null attributes={} children=1
     │   └── DefinitionBody children=1
     │       └── Paragraph scope=2:3..3:6 anchor=null attributes={} children=3
     │           ├── Text scope=2:3..2:3 anchor=null attributes={} literal="d" children=0
-    │           ├── SoftBreak scope=2:4..2:4 anchor=null attributes={} children=0
+    │           ├── SoftBreak scope=2:4..3:0 anchor=null attributes={} children=0
     │           └── Text scope=3:3..3:6 anchor=null attributes={} literal="next" children=0
     ├── Definition scope=5:1..7:7 anchor=null attributes={} compact=true children=1
     │   ├── DefinitionTerm children=1
@@ -484,7 +484,7 @@ Document scope=1:1..16:0 anchor=null attributes={} children=1
     │   └── DefinitionBody children=1
     │       └── Paragraph scope=6:4..7:7 anchor=null attributes={} children=3
     │           ├── Text scope=6:4..6:4 anchor=null attributes={} literal="d" children=0
-    │           ├── SoftBreak scope=6:5..6:5 anchor=null attributes={} children=0
+    │           ├── SoftBreak scope=6:5..7:0 anchor=null attributes={} children=0
     │           └── Text scope=7:4..7:7 anchor=null attributes={} literal="next" children=0
     ├── Definition scope=9:1..11:8 anchor=null attributes={} compact=true children=1
     │   ├── DefinitionTerm children=1
@@ -492,7 +492,7 @@ Document scope=1:1..16:0 anchor=null attributes={} children=1
     │   └── DefinitionBody children=1
     │       └── Paragraph scope=10:5..11:8 anchor=null attributes={} children=3
     │           ├── Text scope=10:5..10:5 anchor=null attributes={} literal="d" children=0
-    │           ├── SoftBreak scope=10:6..10:6 anchor=null attributes={} children=0
+    │           ├── SoftBreak scope=10:6..11:0 anchor=null attributes={} children=0
     │           └── Text scope=11:5..11:8 anchor=null attributes={} literal="next" children=0
     └── Definition scope=13:1..15:9 anchor=null attributes={} compact=true children=1
         ├── DefinitionTerm children=1
@@ -500,7 +500,7 @@ Document scope=1:1..16:0 anchor=null attributes={} children=1
         └── DefinitionBody children=1
             └── Paragraph scope=14:6..15:9 anchor=null attributes={} children=3
                 ├── Text scope=14:6..14:6 anchor=null attributes={} literal="d" children=0
-                ├── SoftBreak scope=14:7..14:7 anchor=null attributes={} children=0
+                ├── SoftBreak scope=14:7..15:0 anchor=null attributes={} children=0
                 └── Text scope=15:6..15:9 anchor=null attributes={} literal="next" children=0
 ````````````````````````````````
 
@@ -519,7 +519,7 @@ Document scope=1:1..16:0 anchor=null attributes={} children=1
 (@s) Term
     : body
 .
-Document scope=1:1..11:10 anchor=null attributes={} children=2
+Document scope=1:1..11:10 anchor=null attributes={} children=4
 ├── Callout scope=1:1..2:8 anchor=null attributes={} variant=null collapsed=null children=1
 │   └── DefinitionList scope=1:3..2:8 anchor=null attributes={} children=1
 │       └── Definition scope=1:3..2:8 anchor=null attributes={} compact=true children=1
@@ -537,7 +537,7 @@ Document scope=1:1..11:10 anchor=null attributes={} children=2
 │               └── DefinitionBody children=1
 │                   └── Paragraph scope=5:5..5:8 anchor=null attributes={} children=1
 │                       └── Text scope=5:5..5:8 anchor=null attributes={} literal="body" children=0
-├── Footnote scope=7:1..9:0 anchor=null attributes={} id="n" children=1
+├── Footnote scope=7:1..9:0 anchor=null attributes={} label="n" children=1
 │   └── DefinitionList scope=7:7..8:10 anchor=null attributes={} children=1
 │       └── Definition scope=7:7..8:10 anchor=null attributes={} compact=true children=1
 │           ├── DefinitionTerm children=1
@@ -545,7 +545,7 @@ Document scope=1:1..11:10 anchor=null attributes={} children=2
 │           └── DefinitionBody children=1
 │               └── Paragraph scope=8:7..8:10 anchor=null attributes={} children=1
 │                   └── Text scope=8:7..8:10 anchor=null attributes={} literal="body" children=0
-└── Specimen scope=10:1..11:10 anchor=null attributes={} id="s" start=null children=1
+└── Specimen scope=10:1..11:10 anchor=null attributes={} label="s" start=null children=1
     └── DefinitionList scope=10:6..11:10 anchor=null attributes={} children=1
         └── Definition scope=10:6..11:10 anchor=null attributes={} compact=true children=1
             ├── DefinitionTerm children=1
@@ -615,7 +615,7 @@ Document scope=1:1..15:3 anchor=null attributes={} children=7
 │   └── Text scope=4:1..4:6 anchor=null attributes={} literal=": body" children=0
 ├── Paragraph scope=6:3..7:10 anchor=null attributes={} children=3
 │   ├── Text scope=6:3..6:6 anchor=null attributes={} literal="Term" children=0
-│   ├── SoftBreak scope=6:7..6:7 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=6:7..7:0 anchor=null attributes={} children=0
 │   └── Text scope=7:5..7:10 anchor=null attributes={} literal=": body" children=0
 ├── CodeBlock scope=9:2..9:5 anchor=null attributes={} info=null language=null literal="Term\n" fenced=false closed=true children=0
 ├── Paragraph scope=10:1..10:6 anchor=null attributes={} children=1

@@ -1,8 +1,8 @@
-/* The MCB2 encoder as its bindings consume it (docs/architecture/wire-format.md).
+/* The MCB3 encoder as its bindings consume it (docs/architecture/wire-format.md).
  * The bindings' decoders own the record-level checks; this suite runs the
  * encoder over the canonical corpus under the C sanitizers and checks what
- * holds for every message: the header, determinism, the error encoding, and
- * that a shared resource crosses once however often it is used. */
+ * holds for every message: the header, determinism, and that a shared
+ * resource crosses once however often it is used. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,10 +24,8 @@ static uint32_t read_u32(const uint8_t *bytes) {
     return (uint32_t)bytes[0] | (uint32_t)bytes[1] << 8 | (uint32_t)bytes[2] << 16 | (uint32_t)bytes[3] << 24;
 }
 
-/* The message length its header states, after checking the magic. */
-static uint32_t message_length(const uint8_t *message) {
-    return memcmp(message, "MCB2", 4) == 0 ? read_u32(message + 4) : 0;
-}
+/* The message length its header states. */
+static uint32_t message_length(const uint8_t *message) { return read_u32(message + 4); }
 
 static uint8_t *read_file(const char *path, size_t *length) {
     FILE *file = fopen(path, "rb");
@@ -92,26 +90,6 @@ static void check_fixture(const char *fixture_dir, const char *name) {
     free(source);
 }
 
-/* A parse failure is an error message: status 1, the facade's code, then the
- * facade's message, and nothing after it. */
-static void check_error(void) {
-    uint8_t *message = markdown_core_wire_parse(NULL, 1);
-    uint32_t size, text;
-    check(message != NULL, "a parse failure is a message");
-    if (message == NULL) {
-        return;
-    }
-    size = message_length(message);
-    check(size >= 17 && message[8] == 1, "a parse failure has the error status");
-    if (size >= 17) {
-        text = read_u32(message + 13);
-        check(read_u32(message + 9) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "the error keeps the facade's code");
-        check(17 + text == size, "the error message ends the message");
-    }
-    markdown_core_wire_free(message);
-    markdown_core_wire_free(NULL);
-}
-
 /* One definition referenced many times: growing the definition grows the
  * message by the definition, not by the definition times its references. */
 static uint32_t references_message_length(size_t definition_size, size_t references) {
@@ -158,9 +136,9 @@ int main(int argc, char **argv) {
         fputs("usage: wire_test --fixtures DIR NAME [NAME ...]\n", stderr);
         return 2;
     }
-    check_error();
     check_shared_resource();
     check_document((const uint8_t *)"", 0, "the empty document");
+    check_document(NULL, 0, "the empty document from a NULL source");
     for (i = 3; i < argc; i++) {
         check_fixture(argv[2], argv[i]);
     }

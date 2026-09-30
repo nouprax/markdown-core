@@ -161,6 +161,37 @@ test("citation projection compares keys, modes and ordered affixes without fallb
     }
 });
 
+test("footnote and specimen referents keep their label or the note their citation owns", () => {
+    const cite = (referent, note = "") =>
+        fromCanonical(
+            parseCanonicalDump(
+                "Document scope=1:1..1:9 anchor=null attributes={} children=1\n" +
+                    "└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=1\n" +
+                    "    └── Cite scope=1:1..1:9 anchor=null attributes={} children=1\n" +
+                    `        └── Citation scope=1:3..1:8 anchor=null attributes={} referent=${referent} children=0\n` +
+                    note +
+                    "            ├── CitationPrefix children=0\n" +
+                    "            └── CitationSuffix children=0\n"
+            )
+        ).children[0].children[0].citations[0];
+    const note = (literal) =>
+        "            ├── Footnote scope=1:1..1:9 anchor=null attributes={} label=null children=1\n" +
+        `            │   └── Text scope=1:3..1:8 anchor=null attributes={} literal="${literal}" children=0\n`;
+    assert.deepEqual(cite('footnote(label="x")'), { referent: "footnote", label: "x", prefix: [], suffix: [] });
+    assert.deepEqual(cite('specimen(label="x")'), { referent: "specimen", label: "x", prefix: [], suffix: [] });
+    assert.notDeepEqual(cite('footnote(label="x")'), cite('footnote(label="y")'));
+    assert.notDeepEqual(cite('footnote(label="x")'), cite('specimen(label="x")'));
+    const inline = cite("footnote(note)", note("body"));
+    assert.equal(inline.referent, "footnote");
+    assert.equal(inline.note.kind, "Footnote");
+    assert.deepEqual(inline.note.children, [
+        { kind: "Text", anchor: null, attributes: { classes: [], records: [] }, children: [], literal: "body" }
+    ]);
+    assert.notDeepEqual(inline, cite("footnote(note)", note("other")));
+    assert.throws(() => cite("footnote(note)"));
+    assert.throws(() => cite('footnote(label="x")', note("body")));
+});
+
 test("definition projection preserves compactness, terms, body boundaries and nameless names", () => {
     const make = (first = "Plain", term = "T", bodies = [[{ t: first, c: [{ t: "Str", c: "body" }] }], []]) => ({
         blocks: [

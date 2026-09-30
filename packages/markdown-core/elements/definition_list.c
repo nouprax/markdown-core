@@ -181,9 +181,9 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_def
         end--;
     }
     counts->work += end - begin;
-    term->start_line = term->end_line = parser->line_number;
-    term->start_column = markdown_core_parser_source_column(parser, parser->line_number, begin + 1);
-    term->end_column = markdown_core_parser_source_column(parser, parser->line_number, end);
+    term->where.place =
+        (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, parser->line_number, begin + 1),
+                              (uint32_t)markdown_core_parser_source_end(parser, parser->line_number, end)};
     markdown_core_strbuf_put(&term->content, input->data + begin, end - begin);
     if (term->content.oom || !markdown_core_parser_append_source_marks(parser, term, parser->line_number, begin + 1,
                                                                        term->content.size, 0)) {
@@ -205,7 +205,8 @@ static bool markdown_core_definition_list_open(const markdown_core_element_insta
         return false;
     }
     (*container)->as.definition_body->continuation = continuation;
-    (*container)->internal_offset = markdown_core_parser_source_column(parser, parser->line_number, input->len - 1);
+    (*container)->internal_offset =
+        (int)markdown_core_parser_source_end(parser, parser->line_number, (int)input->len - 1);
     return true;
 }
 
@@ -291,8 +292,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
 
 void markdown_core_definition_list_close_body(markdown_core_node *node) {
     if (!node->last_child) {
-        node->end_line = node->start_line;
-        node->end_column = node->internal_offset;
+        node->where.place.end = (uint32_t)node->internal_offset;
     }
 }
 
@@ -300,7 +300,6 @@ void markdown_core_definition_list_complete(markdown_core_node *node) {
     if ((node->kind == MARKDOWN_CORE_NODE_DEFINITION_LIST || node->kind == MARKDOWN_CORE_NODE_DEFINITION ||
          node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) &&
         node->last_child) {
-        node->end_line = node->last_child->end_line;
-        node->end_column = node->last_child->end_column;
+        node->where.place.end = node->last_child->where.place.end;
     }
 }

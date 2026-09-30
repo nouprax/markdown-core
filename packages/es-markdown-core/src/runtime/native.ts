@@ -2,9 +2,9 @@ export interface NativeExports extends WebAssembly.Exports {
     readonly memory: WebAssembly.Memory;
     malloc(size: number): number;
     free(pointer: number): void;
-    /** Parses the one dialect and returns one owned MCB2 message, or zero only
-     * when not even an error message can be allocated. Parse failures are
-     * error messages. */
+    /** Parses the one dialect and returns one owned MCB3 message, or zero only
+     * when not even a failure message can be allocated. A failed parse is a
+     * failure message carrying its status. */
     markdown_core_wire_parse(source: number, length: number): number;
     markdown_core_wire_free(message: number): void;
 }

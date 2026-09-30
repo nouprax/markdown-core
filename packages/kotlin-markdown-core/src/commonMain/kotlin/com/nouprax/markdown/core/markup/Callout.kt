@@ -13,7 +13,8 @@ public class Callout internal constructor(
     /** The title's inline content, owned by the callout and never an element of [content]; null when no title was authored, and never empty. */
     public val title: kotlin.collections.List<Markup>?,
     public val content: kotlin.collections.List<Markup>,
-    override val scope: Scope,
+    override val id: MarkupID,
+    override val extent: Extent,
     override val anchor: String?,
     override val attributes: Attributes,
-) : Markup
+) : Markup()

@@ -64,7 +64,7 @@ these assertions. Contextual escaped spaces,
 Unicode whitespace, decoded TAB preservation, maximal tilde runs and code-token
 opacity retain exact drift witnesses, subject to the provenance qualifications
 above. Inline-footnote composition
-is tested in the product fixtures, where the document-owned footnote model and
+is tested in the product fixtures, where the note owned by its citation and
 source scopes are observable. P3/P4 compositions agree for heading text,
 script-bearing heading references and Span precedence over implicit shortcuts;
 the later Span ID reservation retains its exact global-reservation difference.
@@ -133,7 +133,8 @@ second Cite tuple member is fallback rendering for consumers without citation
 processing, not another semantic child list; it has no canonical counterpart.
 The key and affix trees are compared directly, with unit tests ensuring a
 changed key, mode, prefix or suffix cannot pass. Specimen definitions retain
-id/start/content and reference IDs on the product side. Pandoc's example lists
+label/start/content where they were written, and references their exact
+labels, on the product side. Pandoc's example lists
 and rendered numbers remain exact model differences. Affix trimming, nested
 author tails, malformed candidates, underscore boundaries and unresolved
 reference tails retain isolated witnesses. Direct/resolving tails and Spans,

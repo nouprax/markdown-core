@@ -150,7 +150,7 @@ te]]
 Document scope=1:1..2:4 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:4 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:4 anchor=null attributes={} literal="[[No" children=0
-    ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:5..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:4 anchor=null attributes={} literal="te]]" children=0
 ````````````````````````````````
 
@@ -280,9 +280,9 @@ te]]
 Document scope=1:1..3:4 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..3:4 anchor=null attributes={} children=5
     ├── Text scope=1:1..1:4 anchor=null attributes={} literal="[[No" children=0
-    ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:5..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:9 anchor=null attributes={} literal="te]] [[No" children=0
-    ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:10..3:0 anchor=null attributes={} children=0
     └── Text scope=3:1..3:4 anchor=null attributes={} literal="te]]" children=0
 ````````````````````````````````
 
@@ -435,23 +435,23 @@ Document scope=1:1..3:32 anchor=null attributes={} children=1
 
 call[^n]
 .
-Document scope=1:1..6:8 anchor=null attributes={} children=2
+Document scope=1:1..6:8 anchor=null attributes={} children=3
 ├── Callout scope=1:1..2:21 anchor=null attributes={} variant=null collapsed=null children=1
 │   └── List scope=1:3..2:21 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
 │       └── ListItem scope=1:3..2:21 anchor=null attributes={} marker=null children=1
 │           └── Paragraph scope=1:5..2:21 anchor=null attributes={} children=3
 │               ├── CrossLink scope=1:5..1:29 anchor=null attributes={} dest=cross(path="中文",anchor="标题") label="别名" children=0
-│               ├── SoftBreak scope=1:30..1:30 anchor=null attributes={} children=0
+│               ├── SoftBreak scope=1:30..2:0 anchor=null attributes={} children=0
 │               └── CrossEmbedded scope=2:5..2:21 anchor=null attributes={} dest=cross(path="image.png",anchor=null) label="" dimensions=(width=32,height=null) children=0
-├── Paragraph scope=6:1..6:8 anchor=null attributes={} children=2
-│   ├── Text scope=6:1..6:4 anchor=null attributes={} literal="call" children=0
-│   └── Cite scope=6:5..6:8 anchor=null attributes={} children=1
-│       └── Citation scope=6:6..6:7 anchor=null attributes={} referent=footnote(id="n") children=0
-│           ├── CitationPrefix children=0
-│           └── CitationSuffix children=0
-└── Footnote scope=4:1..5:0 anchor=null attributes={} id="n" children=1
-    └── Paragraph scope=4:7..4:14 anchor=null attributes={} children=1
-        └── CrossLink scope=4:7..4:14 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
+├── Footnote scope=4:1..5:0 anchor=null attributes={} label="n" children=1
+│   └── Paragraph scope=4:7..4:14 anchor=null attributes={} children=1
+│       └── CrossLink scope=4:7..4:14 anchor=null attributes={} dest=cross(path="Note",anchor=null) label=null children=0
+└── Paragraph scope=6:1..6:8 anchor=null attributes={} children=2
+    ├── Text scope=6:1..6:4 anchor=null attributes={} literal="call" children=0
+    └── Cite scope=6:5..6:8 anchor=null attributes={} children=1
+        └── Citation scope=6:6..6:7 anchor=null attributes={} referent=footnote(label="n") children=0
+            ├── CitationPrefix children=0
+            └── CitationSuffix children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -705,8 +705,8 @@ Document scope=1:1..7:2 anchor=null attributes={} children=3
 │           └── CrossEmbedded scope=3:3..3:11 anchor=null attributes={} dest=cross(path="a",anchor=null) label="" dimensions=(width=10,height=null) children=0
 └── Paragraph scope=5:1..7:2 anchor=null attributes={} children=5
     ├── Text scope=5:1..5:11 anchor=null attributes={} literal="![[bad|100]" children=0
-    ├── SoftBreak scope=5:12..5:12 anchor=null attributes={} children=0
+    ├── SoftBreak scope=5:12..6:0 anchor=null attributes={} children=0
     ├── Text scope=6:1..6:9 anchor=null attributes={} literal="![[bad|10" children=0
-    ├── SoftBreak scope=6:10..6:10 anchor=null attributes={} children=0
+    ├── SoftBreak scope=6:10..7:0 anchor=null attributes={} children=0
     └── Text scope=7:1..7:2 anchor=null attributes={} literal="]]" children=0
 ````````````````````````````````

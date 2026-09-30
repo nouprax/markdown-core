@@ -594,9 +594,9 @@ __
 Document scope=1:1..3:2 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..3:2 anchor=null attributes={} children=5
     ├── Text scope=1:1..1:2 anchor=null attributes={} literal="--" children=0
-    ├── SoftBreak scope=1:3..1:3 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:3..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:2 anchor=null attributes={} literal="**" children=0
-    ├── SoftBreak scope=2:3..2:3 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:3..3:0 anchor=null attributes={} children=0
     └── Text scope=3:1..3:2 anchor=null attributes={} literal="__" children=0
 ````````````````````````````````
 
@@ -632,7 +632,7 @@ Foo
 Document scope=1:1..2:7 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:7 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
-    ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
     └── Text scope=2:5..2:7 anchor=null attributes={} literal="***" children=0
 ````````````````````````````````
 
@@ -949,7 +949,7 @@ foo
 Document scope=1:1..2:9 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:9 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:3 anchor=null attributes={} literal="foo" children=0
-    ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
     └── Text scope=2:5..2:9 anchor=null attributes={} literal="# bar" children=0
 ````````````````````````````````
 
@@ -1140,7 +1140,7 @@ Document scope=1:1..3:4 anchor=null attributes={} children=1
     ├── Text scope=1:1..1:4 anchor=null attributes={} literal="Foo " children=0
     └── Emphasis scope=1:5..2:4 anchor=null attributes={} children=3
         ├── Text scope=1:6..1:8 anchor=null attributes={} literal="bar" children=0
-        ├── SoftBreak scope=1:9..1:9 anchor=null attributes={} children=0
+        ├── SoftBreak scope=1:9..2:0 anchor=null attributes={} children=0
         └── Text scope=2:1..2:3 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -1159,7 +1159,7 @@ Document scope=1:1..3:4 anchor=null attributes={} children=1
     ├── Text scope=1:3..1:6 anchor=null attributes={} literal="Foo " children=0
     └── Emphasis scope=1:7..2:4 anchor=null attributes={} children=3
         ├── Text scope=1:8..1:10 anchor=null attributes={} literal="bar" children=0
-        ├── SoftBreak scope=1:11..1:11 anchor=null attributes={} children=0
+        ├── SoftBreak scope=1:11..2:0 anchor=null attributes={} children=0
         └── Text scope=2:1..2:3 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -1241,7 +1241,7 @@ Foo
 Document scope=1:1..2:7 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:7 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
-    ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
     └── Text scope=2:5..2:7 anchor=null attributes={} literal="---" children=0
 ````````````````````````````````
 
@@ -1258,7 +1258,7 @@ Foo
 Document scope=1:1..5:5 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..2:3 anchor=null attributes={} children=3
 │   ├── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
-│   ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
 │   └── Text scope=2:1..2:3 anchor=null attributes={} literal="= =" children=0
 ├── Paragraph scope=4:1..4:3 anchor=null attributes={} children=1
 │   └── Text scope=4:1..4:3 anchor=null attributes={} literal="Foo" children=0
@@ -1338,9 +1338,9 @@ Document scope=1:1..3:3 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:3 anchor=null attributes={} variant=null collapsed=null children=1
     └── Paragraph scope=1:3..3:3 anchor=null attributes={} children=5
         ├── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-        ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+        ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
         ├── Text scope=2:1..2:3 anchor=null attributes={} literal="bar" children=0
-        ├── SoftBreak scope=2:4..2:4 anchor=null attributes={} children=0
+        ├── SoftBreak scope=2:4..3:0 anchor=null attributes={} children=0
         └── Text scope=3:1..3:3 anchor=null attributes={} literal="===" children=0
 ````````````````````````````````
 
@@ -1370,7 +1370,7 @@ Bar
 Document scope=1:1..3:3 anchor=null attributes={} children=1
 └── Heading scope=1:1..3:3 anchor="foo-bar" attributes={} level=2 children=3
     ├── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
-    ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:3 anchor=null attributes={} literal="Bar" children=0
 ````````````````````````````````
 
@@ -1522,7 +1522,7 @@ baz
 Document scope=1:1..6:3 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..2:3 anchor=null attributes={} children=3
 │   ├── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
-│   ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
 │   └── Text scope=2:1..2:3 anchor=null attributes={} literal="bar" children=0
 ├── ThematicBreak scope=4:1..5:0 anchor=null attributes={} children=0
 └── Paragraph scope=6:1..6:3 anchor=null attributes={} children=1
@@ -1542,7 +1542,7 @@ baz
 Document scope=1:1..4:3 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..2:3 anchor=null attributes={} children=3
 │   ├── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
-│   ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
 │   └── Text scope=2:1..2:3 anchor=null attributes={} literal="bar" children=0
 ├── ThematicBreak scope=3:1..3:5 anchor=null attributes={} children=0
 └── Paragraph scope=4:1..4:3 anchor=null attributes={} children=1
@@ -1561,11 +1561,11 @@ baz
 Document scope=1:1..4:3 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..4:3 anchor=null attributes={} children=7
     ├── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
-    ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:3 anchor=null attributes={} literal="bar" children=0
-    ├── SoftBreak scope=2:4..2:4 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:4..3:0 anchor=null attributes={} children=0
     ├── Text scope=3:1..3:4 anchor=null attributes={} literal="---" children=0
-    ├── SoftBreak scope=3:5..3:5 anchor=null attributes={} children=0
+    ├── SoftBreak scope=3:5..4:0 anchor=null attributes={} children=0
     └── Text scope=4:1..4:3 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -1685,7 +1685,7 @@ Foo
 Document scope=1:1..3:0 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:7 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
-    ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
     └── Text scope=2:5..2:7 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
@@ -2050,7 +2050,7 @@ aaa
 Document scope=1:1..2:3 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:3 anchor=null attributes={} children=3
     ├── Code scope=1:1..1:7 anchor=null attributes={} literal=" " children=0
-    ├── SoftBreak scope=1:8..1:8 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:8..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:3 anchor=null attributes={} literal="aaa" children=0
 ````````````````````````````````
 
@@ -2153,7 +2153,7 @@ foo
 Document scope=1:1..2:3 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:3 anchor=null attributes={} children=3
     ├── Code scope=1:1..1:10 anchor=null attributes={} literal="aa" children=0
-    ├── SoftBreak scope=1:11..1:11 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:11..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:3 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -2266,7 +2266,7 @@ Document scope=1:1..7:18 anchor=null attributes={} children=3
 │   ├── Emphasis scope=5:1..5:7 anchor=null attributes={} children=1
 │   │   └── Text scope=5:2..5:6 anchor=null attributes={} literal="world" children=0
 │   ├── Text scope=5:8..5:8 anchor=null attributes={} literal="." children=0
-│   ├── SoftBreak scope=5:9..5:9 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=5:9..6:0 anchor=null attributes={} children=0
 │   └── HTML scope=6:1..6:6 anchor=null attributes={} literal="</pre>" children=0
 └── HTMLBlock scope=7:1..7:18 anchor=null attributes={} literal="</td></tr></table>\n" children=0
 ````````````````````````````````
@@ -2823,9 +2823,9 @@ baz
 Document scope=1:1..3:3 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..3:3 anchor=null attributes={} children=5
     ├── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
-    ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
     ├── HTML scope=2:1..2:14 anchor=null attributes={} literal="<a href=\"bar\">" children=0
-    ├── SoftBreak scope=2:15..2:15 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:15..3:0 anchor=null attributes={} children=0
     └── Text scope=3:1..3:3 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -3283,7 +3283,7 @@ Foo
 Document scope=1:1..4:5 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..2:11 anchor=null attributes={} children=3
 │   ├── Text scope=1:1..1:3 anchor=null attributes={} literal="Foo" children=0
-│   ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
 │   └── Text scope=2:1..2:11 anchor=null attributes={} literal="[bar]: /baz" children=0
 └── Paragraph scope=4:1..4:5 anchor=null attributes={} children=1
     └── Text scope=4:1..4:5 anchor=null attributes={} literal="[bar]" children=0
@@ -3329,7 +3329,7 @@ Document scope=1:1..4:5 anchor=null attributes={} children=2
 Document scope=1:1..3:5 anchor=null attributes={} children=1
 └── Paragraph scope=2:1..3:5 anchor=null attributes={} children=3
     ├── Text scope=2:1..2:3 anchor=null attributes={} literal="===" children=0
-    ├── SoftBreak scope=2:4..2:4 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:4..3:0 anchor=null attributes={} children=0
     └── Link scope=3:1..3:5 anchor=null attributes={} dest=url("/url") title=null children=1
         └── Text scope=3:2..3:4 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
@@ -3353,11 +3353,11 @@ Document scope=1:1..8:5 anchor=null attributes={} children=1
     ├── Link scope=6:1..6:5 anchor=null attributes={} dest=url("/foo-url") title="foo" children=1
     │   └── Text scope=6:2..6:4 anchor=null attributes={} literal="foo" children=0
     ├── Text scope=6:6..6:6 anchor=null attributes={} literal="," children=0
-    ├── SoftBreak scope=6:7..6:7 anchor=null attributes={} children=0
+    ├── SoftBreak scope=6:7..7:0 anchor=null attributes={} children=0
     ├── Link scope=7:1..7:5 anchor=null attributes={} dest=url("/bar-url") title="bar" children=1
     │   └── Text scope=7:2..7:4 anchor=null attributes={} literal="bar" children=0
     ├── Text scope=7:6..7:6 anchor=null attributes={} literal="," children=0
-    ├── SoftBreak scope=7:7..7:7 anchor=null attributes={} children=0
+    ├── SoftBreak scope=7:7..8:0 anchor=null attributes={} children=0
     └── Link scope=8:1..8:5 anchor=null attributes={} dest=url("/baz-url") title=null children=1
         └── Text scope=8:2..8:4 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
@@ -3430,11 +3430,11 @@ ddd
 Document scope=1:1..5:3 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..2:3 anchor=null attributes={} children=3
 │   ├── Text scope=1:1..1:3 anchor=null attributes={} literal="aaa" children=0
-│   ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
 │   └── Text scope=2:1..2:3 anchor=null attributes={} literal="bbb" children=0
 └── Paragraph scope=4:1..5:3 anchor=null attributes={} children=3
     ├── Text scope=4:1..4:3 anchor=null attributes={} literal="ccc" children=0
-    ├── SoftBreak scope=4:4..4:4 anchor=null attributes={} children=0
+    ├── SoftBreak scope=4:4..5:0 anchor=null attributes={} children=0
     └── Text scope=5:1..5:3 anchor=null attributes={} literal="ddd" children=0
 ````````````````````````````````
 
@@ -3464,7 +3464,7 @@ Leading spaces are skipped:
 Document scope=1:1..2:4 anchor=null attributes={} children=1
 └── Paragraph scope=1:3..2:4 anchor=null attributes={} children=3
     ├── Text scope=1:3..1:5 anchor=null attributes={} literal="aaa" children=0
-    ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
     └── Text scope=2:2..2:4 anchor=null attributes={} literal="bbb" children=0
 ````````````````````````````````
 
@@ -3480,9 +3480,9 @@ aaa
 Document scope=1:1..3:42 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..3:42 anchor=null attributes={} children=5
     ├── Text scope=1:1..1:3 anchor=null attributes={} literal="aaa" children=0
-    ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:14..2:16 anchor=null attributes={} literal="bbb" children=0
-    ├── SoftBreak scope=2:17..2:17 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:17..3:0 anchor=null attributes={} children=0
     └── Text scope=3:40..3:42 anchor=null attributes={} literal="ccc" children=0
 ````````````````````````````````
 
@@ -3497,7 +3497,7 @@ bbb
 Document scope=1:1..2:3 anchor=null attributes={} children=1
 └── Paragraph scope=1:4..2:3 anchor=null attributes={} children=3
     ├── Text scope=1:4..1:6 anchor=null attributes={} literal="aaa" children=0
-    ├── SoftBreak scope=1:7..1:7 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:7..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:3 anchor=null attributes={} literal="bbb" children=0
 ````````````````````````````````
 
@@ -3524,7 +3524,7 @@ bbb
 Document scope=1:1..2:8 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:8 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:8 anchor=null attributes={} literal="aaa" children=0
-    ├── LineBreak scope=1:9..1:9 anchor=null attributes={} children=0
+    ├── LineBreak scope=1:9..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:3 anchor=null attributes={} literal="bbb" children=0
 ````````````````````````````````
 
@@ -3723,9 +3723,9 @@ a table will not be recognized:
 Document scope=1:1..3:7 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..3:7 anchor=null attributes={} children=5
     ├── Text scope=1:1..1:13 anchor=null attributes={} literal="| abc | def |" children=0
-    ├── SoftBreak scope=1:14..1:14 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:14..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:7 anchor=null attributes={} literal="| --- |" children=0
-    ├── SoftBreak scope=2:8..2:8 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:8..3:0 anchor=null attributes={} children=0
     └── Text scope=3:1..3:7 anchor=null attributes={} literal="| bar |" children=0
 ````````````````````````````````
 
@@ -3841,7 +3841,7 @@ Document scope=1:1..3:5 anchor=null attributes={} children=1
     │   └── Text scope=1:5..1:7 anchor=null attributes={} literal="Foo" children=0
     └── Paragraph scope=2:3..3:5 anchor=null attributes={} children=3
         ├── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
-        ├── SoftBreak scope=2:6..2:6 anchor=null attributes={} children=0
+        ├── SoftBreak scope=2:6..3:0 anchor=null attributes={} children=0
         └── Text scope=3:3..3:5 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -3859,7 +3859,7 @@ Document scope=1:1..3:5 anchor=null attributes={} children=1
     │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="Foo" children=0
     └── Paragraph scope=2:2..3:5 anchor=null attributes={} children=3
         ├── Text scope=2:2..2:4 anchor=null attributes={} literal="bar" children=0
-        ├── SoftBreak scope=2:5..2:5 anchor=null attributes={} children=0
+        ├── SoftBreak scope=2:5..3:0 anchor=null attributes={} children=0
         └── Text scope=3:3..3:5 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -3877,7 +3877,7 @@ Document scope=1:1..3:6 anchor=null attributes={} children=1
     │   └── Text scope=1:8..1:10 anchor=null attributes={} literal="Foo" children=0
     └── Paragraph scope=2:6..3:6 anchor=null attributes={} children=3
         ├── Text scope=2:6..2:8 anchor=null attributes={} literal="bar" children=0
-        ├── SoftBreak scope=2:9..2:9 anchor=null attributes={} children=0
+        ├── SoftBreak scope=2:9..3:0 anchor=null attributes={} children=0
         └── Text scope=3:4..3:6 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -3908,7 +3908,7 @@ Document scope=1:1..3:3 anchor=null attributes={} children=1
     │   └── Text scope=1:5..1:7 anchor=null attributes={} literal="Foo" children=0
     └── Paragraph scope=2:3..3:3 anchor=null attributes={} children=3
         ├── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
-        ├── SoftBreak scope=2:6..2:6 anchor=null attributes={} children=0
+        ├── SoftBreak scope=2:6..3:0 anchor=null attributes={} children=0
         └── Text scope=3:1..3:3 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -3925,9 +3925,9 @@ Document scope=1:1..3:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:5 anchor=null attributes={} variant=null collapsed=null children=1
     └── Paragraph scope=1:3..3:5 anchor=null attributes={} children=5
         ├── Text scope=1:3..1:5 anchor=null attributes={} literal="bar" children=0
-        ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+        ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
         ├── Text scope=2:1..2:3 anchor=null attributes={} literal="baz" children=0
-        ├── SoftBreak scope=2:4..2:4 anchor=null attributes={} children=0
+        ├── SoftBreak scope=2:4..3:0 anchor=null attributes={} children=0
         └── Text scope=3:3..3:5 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -4020,7 +4020,7 @@ Document scope=1:1..2:9 anchor=null attributes={} children=1
 └── Callout scope=1:1..2:9 anchor=null attributes={} variant=null collapsed=null children=1
     └── Paragraph scope=1:3..2:9 anchor=null attributes={} children=3
         ├── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-        ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+        ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
         └── Text scope=2:5..2:9 anchor=null attributes={} literal="- bar" children=0
 ````````````````````````````````
 
@@ -4103,7 +4103,7 @@ Document scope=1:1..2:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..2:5 anchor=null attributes={} variant=null collapsed=null children=1
     └── Paragraph scope=1:3..2:5 anchor=null attributes={} children=3
         ├── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-        ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+        ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
         └── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
@@ -4169,7 +4169,7 @@ Document scope=1:1..2:3 anchor=null attributes={} children=1
 └── Callout scope=1:1..2:3 anchor=null attributes={} variant=null collapsed=null children=1
     └── Paragraph scope=1:3..2:3 anchor=null attributes={} children=3
         ├── Text scope=1:3..1:5 anchor=null attributes={} literal="bar" children=0
-        ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+        ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
         └── Text scope=2:1..2:3 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -4216,7 +4216,7 @@ Document scope=1:1..2:3 anchor=null attributes={} children=1
         └── Callout scope=1:5..2:3 anchor=null attributes={} variant=null collapsed=null children=1
             └── Paragraph scope=1:7..2:3 anchor=null attributes={} children=3
                 ├── Text scope=1:7..1:9 anchor=null attributes={} literal="foo" children=0
-                ├── SoftBreak scope=1:10..1:10 anchor=null attributes={} children=0
+                ├── SoftBreak scope=1:10..2:0 anchor=null attributes={} children=0
                 └── Text scope=2:1..2:3 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
@@ -4232,9 +4232,9 @@ Document scope=1:1..3:5 anchor=null attributes={} children=1
         └── Callout scope=1:3..3:5 anchor=null attributes={} variant=null collapsed=null children=1
             └── Paragraph scope=1:5..3:5 anchor=null attributes={} children=5
                 ├── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
-                ├── SoftBreak scope=1:8..1:8 anchor=null attributes={} children=0
+                ├── SoftBreak scope=1:8..2:0 anchor=null attributes={} children=0
                 ├── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
-                ├── SoftBreak scope=2:6..2:6 anchor=null attributes={} children=0
+                ├── SoftBreak scope=2:6..3:0 anchor=null attributes={} children=0
                 └── Text scope=3:3..3:5 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -4308,7 +4308,7 @@ with two lines.
 Document scope=1:1..6:16 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..2:15 anchor=null attributes={} children=3
 │   ├── Text scope=1:1..1:11 anchor=null attributes={} literal="A paragraph" children=0
-│   ├── SoftBreak scope=1:12..1:12 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=1:12..2:0 anchor=null attributes={} children=0
 │   └── Text scope=2:1..2:15 anchor=null attributes={} literal="with two lines." children=0
 ├── CodeBlock scope=4:5..5:0 anchor=null attributes={} info=null language=null literal="indented code\n" fenced=false closed=true children=0
 └── Callout scope=6:1..6:16 anchor=null attributes={} variant=null collapsed=null children=1
@@ -4334,7 +4334,7 @@ Document scope=1:1..6:20 anchor=null attributes={} children=1
     └── ListItem scope=1:1..6:20 anchor=null attributes={} marker=null children=3
         ├── Paragraph scope=1:5..2:19 anchor=null attributes={} children=3
         │   ├── Text scope=1:5..1:15 anchor=null attributes={} literal="A paragraph" children=0
-        │   ├── SoftBreak scope=1:16..1:16 anchor=null attributes={} children=0
+        │   ├── SoftBreak scope=1:16..2:0 anchor=null attributes={} children=0
         │   └── Text scope=2:5..2:19 anchor=null attributes={} literal="with two lines." children=0
         ├── CodeBlock scope=4:9..5:0 anchor=null attributes={} info=null language=null literal="indented code\n" fenced=false closed=true children=0
         └── Callout scope=6:5..6:20 anchor=null attributes={} variant=null collapsed=null children=1
@@ -4906,11 +4906,11 @@ foo
 Document scope=1:1..5:2 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..2:1 anchor=null attributes={} children=3
 │   ├── Text scope=1:1..1:3 anchor=null attributes={} literal="foo" children=0
-│   ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
 │   └── Text scope=2:1..2:1 anchor=null attributes={} literal="*" children=0
 └── Paragraph scope=4:1..5:2 anchor=null attributes={} children=3
     ├── Text scope=4:1..4:3 anchor=null attributes={} literal="foo" children=0
-    ├── SoftBreak scope=4:4..4:4 anchor=null attributes={} children=0
+    ├── SoftBreak scope=4:4..5:0 anchor=null attributes={} children=0
     └── Text scope=5:1..5:2 anchor=null attributes={} literal="1." children=0
 ````````````````````````````````
 
@@ -4936,7 +4936,7 @@ Document scope=1:1..6:21 anchor=null attributes={} children=1
     └── ListItem scope=1:2..6:21 anchor=null attributes={} marker=null children=3
         ├── Paragraph scope=1:6..2:20 anchor=null attributes={} children=3
         │   ├── Text scope=1:6..1:16 anchor=null attributes={} literal="A paragraph" children=0
-        │   ├── SoftBreak scope=1:17..1:17 anchor=null attributes={} children=0
+        │   ├── SoftBreak scope=1:17..2:0 anchor=null attributes={} children=0
         │   └── Text scope=2:6..2:20 anchor=null attributes={} literal="with two lines." children=0
         ├── CodeBlock scope=4:10..5:0 anchor=null attributes={} info=null language=null literal="indented code\n" fenced=false closed=true children=0
         └── Callout scope=6:6..6:21 anchor=null attributes={} variant=null collapsed=null children=1
@@ -4960,7 +4960,7 @@ Document scope=1:1..6:22 anchor=null attributes={} children=1
     └── ListItem scope=1:3..6:22 anchor=null attributes={} marker=null children=3
         ├── Paragraph scope=1:7..2:21 anchor=null attributes={} children=3
         │   ├── Text scope=1:7..1:17 anchor=null attributes={} literal="A paragraph" children=0
-        │   ├── SoftBreak scope=1:18..1:18 anchor=null attributes={} children=0
+        │   ├── SoftBreak scope=1:18..2:0 anchor=null attributes={} children=0
         │   └── Text scope=2:7..2:21 anchor=null attributes={} literal="with two lines." children=0
         ├── CodeBlock scope=4:11..5:0 anchor=null attributes={} info=null language=null literal="indented code\n" fenced=false closed=true children=0
         └── Callout scope=6:7..6:22 anchor=null attributes={} variant=null collapsed=null children=1
@@ -4984,7 +4984,7 @@ Document scope=1:1..6:23 anchor=null attributes={} children=1
     └── ListItem scope=1:4..6:23 anchor=null attributes={} marker=null children=3
         ├── Paragraph scope=1:8..2:22 anchor=null attributes={} children=3
         │   ├── Text scope=1:8..1:18 anchor=null attributes={} literal="A paragraph" children=0
-        │   ├── SoftBreak scope=1:19..1:19 anchor=null attributes={} children=0
+        │   ├── SoftBreak scope=1:19..2:0 anchor=null attributes={} children=0
         │   └── Text scope=2:8..2:22 anchor=null attributes={} literal="with two lines." children=0
         ├── CodeBlock scope=4:12..5:0 anchor=null attributes={} info=null language=null literal="indented code\n" fenced=false closed=true children=0
         └── Callout scope=6:8..6:23 anchor=null attributes={} variant=null collapsed=null children=1
@@ -5033,7 +5033,7 @@ Document scope=1:1..6:22 anchor=null attributes={} children=1
     └── ListItem scope=1:3..6:22 anchor=null attributes={} marker=null children=3
         ├── Paragraph scope=1:7..2:15 anchor=null attributes={} children=3
         │   ├── Text scope=1:7..1:17 anchor=null attributes={} literal="A paragraph" children=0
-        │   ├── SoftBreak scope=1:18..1:18 anchor=null attributes={} children=0
+        │   ├── SoftBreak scope=1:18..2:0 anchor=null attributes={} children=0
         │   └── Text scope=2:1..2:15 anchor=null attributes={} literal="with two lines." children=0
         ├── CodeBlock scope=4:11..5:0 anchor=null attributes={} info=null language=null literal="indented code\n" fenced=false closed=true children=0
         └── Callout scope=6:7..6:22 anchor=null attributes={} variant=null collapsed=null children=1
@@ -5053,7 +5053,7 @@ Document scope=1:1..2:19 anchor=null attributes={} children=1
     └── ListItem scope=1:3..2:19 anchor=null attributes={} marker=null children=1
         └── Paragraph scope=1:7..2:19 anchor=null attributes={} children=3
             ├── Text scope=1:7..1:17 anchor=null attributes={} literal="A paragraph" children=0
-            ├── SoftBreak scope=1:18..1:18 anchor=null attributes={} children=0
+            ├── SoftBreak scope=1:18..2:0 anchor=null attributes={} children=0
             └── Text scope=2:5..2:19 anchor=null attributes={} literal="with two lines." children=0
 ````````````````````````````````
 
@@ -5071,7 +5071,7 @@ Document scope=1:1..2:15 anchor=null attributes={} children=1
             └── Callout scope=1:6..2:15 anchor=null attributes={} variant=null collapsed=null children=1
                 └── Paragraph scope=1:8..2:15 anchor=null attributes={} children=3
                     ├── Text scope=1:8..1:17 anchor=null attributes={} literal="Blockquote" children=0
-                    ├── SoftBreak scope=1:18..1:18 anchor=null attributes={} children=0
+                    ├── SoftBreak scope=1:18..2:0 anchor=null attributes={} children=0
                     └── Text scope=2:1..2:15 anchor=null attributes={} literal="continued here." children=0
 ````````````````````````````````
 
@@ -5087,7 +5087,7 @@ Document scope=1:1..2:17 anchor=null attributes={} children=1
             └── Callout scope=1:6..2:17 anchor=null attributes={} variant=null collapsed=null children=1
                 └── Paragraph scope=1:8..2:17 anchor=null attributes={} children=3
                     ├── Text scope=1:8..1:17 anchor=null attributes={} literal="Blockquote" children=0
-                    ├── SoftBreak scope=1:18..1:18 anchor=null attributes={} children=0
+                    ├── SoftBreak scope=1:18..2:0 anchor=null attributes={} children=0
                     └── Text scope=2:3..2:17 anchor=null attributes={} literal="continued here." children=0
 ````````````````````````````````
 
@@ -5648,7 +5648,7 @@ The number of windows in my house is
 Document scope=1:1..2:30 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:30 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:36 anchor=null attributes={} literal="The number of windows in my house is" children=0
-    ├── SoftBreak scope=1:37..1:37 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:37..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:30 anchor=null attributes={} literal="14.  The number of doors is 6." children=0
 ````````````````````````````````
 
@@ -5862,7 +5862,7 @@ Document scope=1:1..5:7 anchor=null attributes={} children=1
     └── ListItem scope=4:4..5:7 anchor=null attributes={} marker=null children=1
         └── Paragraph scope=4:6..5:7 anchor=null attributes={} children=3
             ├── Text scope=4:6..4:6 anchor=null attributes={} literal="d" children=0
-            ├── SoftBreak scope=4:7..4:7 anchor=null attributes={} children=0
+            ├── SoftBreak scope=4:7..5:0 anchor=null attributes={} children=0
             └── Text scope=5:5..5:7 anchor=null attributes={} literal="- e" children=0
 ````````````````````````````````
 
@@ -6246,21 +6246,21 @@ not have their usual Markdown meanings:
 Document scope=1:1..9:30 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..9:30 anchor=null attributes={} children=17
     ├── Text scope=1:1..1:17 anchor=null attributes={} literal="*not emphasized*" children=0
-    ├── SoftBreak scope=1:18..1:18 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:18..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:16 anchor=null attributes={} literal="<br/> not a tag" children=0
-    ├── SoftBreak scope=2:17..2:17 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:17..3:0 anchor=null attributes={} children=0
     ├── Text scope=3:1..3:19 anchor=null attributes={} literal="[not a link](/foo)" children=0
-    ├── SoftBreak scope=3:20..3:20 anchor=null attributes={} children=0
+    ├── SoftBreak scope=3:20..4:0 anchor=null attributes={} children=0
     ├── Text scope=4:1..4:11 anchor=null attributes={} literal="`not code`" children=0
-    ├── SoftBreak scope=4:12..4:12 anchor=null attributes={} children=0
+    ├── SoftBreak scope=4:12..5:0 anchor=null attributes={} children=0
     ├── Text scope=5:1..5:14 anchor=null attributes={} literal="1. not a list" children=0
-    ├── SoftBreak scope=5:15..5:15 anchor=null attributes={} children=0
+    ├── SoftBreak scope=5:15..6:0 anchor=null attributes={} children=0
     ├── Text scope=6:1..6:13 anchor=null attributes={} literal="* not a list" children=0
-    ├── SoftBreak scope=6:14..6:14 anchor=null attributes={} children=0
+    ├── SoftBreak scope=6:14..7:0 anchor=null attributes={} children=0
     ├── Text scope=7:1..7:16 anchor=null attributes={} literal="# not a heading" children=0
-    ├── SoftBreak scope=7:17..7:17 anchor=null attributes={} children=0
+    ├── SoftBreak scope=7:17..8:0 anchor=null attributes={} children=0
     ├── Text scope=8:1..8:30 anchor=null attributes={} literal="[foo]: /url \"not a reference\"" children=0
-    ├── SoftBreak scope=8:31..8:31 anchor=null attributes={} children=0
+    ├── SoftBreak scope=8:31..9:0 anchor=null attributes={} children=0
     └── Text scope=9:1..9:30 anchor=null attributes={} literal="&ouml; not a character entity" children=0
 ````````````````````````````````
 
@@ -6287,7 +6287,7 @@ bar
 Document scope=1:1..2:3 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:3 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:3 anchor=null attributes={} literal="foo" children=0
-    ├── LineBreak scope=1:4..1:5 anchor=null attributes={} children=0
+    ├── LineBreak scope=1:4..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:3 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
@@ -6410,9 +6410,9 @@ references and their corresponding code points.
 Document scope=1:1..3:32 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..3:32 anchor=null attributes={} children=5
     ├── Text scope=1:1..1:36 anchor=null attributes={} literal="  & © Æ Ď" children=0
-    ├── SoftBreak scope=1:37..1:37 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:37..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:39 anchor=null attributes={} literal="¾ ℋ ⅆ" children=0
-    ├── SoftBreak scope=2:40..2:40 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:40..3:0 anchor=null attributes={} children=0
     └── Text scope=3:1..3:32 anchor=null attributes={} literal="∲ ≧̸" children=0
 ````````````````````````````````
 
@@ -6460,11 +6460,11 @@ Here are some nonentities:
 Document scope=1:1..4:24 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..4:24 anchor=null attributes={} children=7
     ├── Text scope=1:1..1:18 anchor=null attributes={} literal="&nbsp &x; &#; &#x;" children=0
-    ├── SoftBreak scope=1:19..1:19 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:19..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:12 anchor=null attributes={} literal="&#987654321;" children=0
-    ├── SoftBreak scope=2:13..2:13 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:13..3:0 anchor=null attributes={} children=0
     ├── Text scope=3:1..3:10 anchor=null attributes={} literal="&#abcdef0;" children=0
-    ├── SoftBreak scope=3:11..3:11 anchor=null attributes={} children=0
+    ├── SoftBreak scope=3:11..4:0 anchor=null attributes={} children=0
     └── Text scope=4:1..4:24 anchor=null attributes={} literal="&ThisIsNotDefined; &hi?;" children=0
 ````````````````````````````````
 
@@ -6569,7 +6569,7 @@ documents.
 Document scope=1:1..2:5 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:5 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:13 anchor=null attributes={} literal="*foo*" children=0
-    ├── SoftBreak scope=1:14..1:14 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:14..2:0 anchor=null attributes={} children=0
     └── Emphasis scope=2:1..2:5 anchor=null attributes={} children=1
         └── Text scope=2:2..2:4 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
@@ -6709,7 +6709,7 @@ No stripping occurs if the code span contains only spaces:
 Document scope=1:1..2:4 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:4 anchor=null attributes={} children=3
     ├── Code scope=1:1..1:4 anchor=null attributes={} literal=" " children=0
-    ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:5..2:0 anchor=null attributes={} children=0
     └── Code scope=2:1..2:4 anchor=null attributes={} literal="  " children=0
 ````````````````````````````````
 
@@ -7310,7 +7310,7 @@ A newline also counts as whitespace:
 Document scope=1:1..2:1 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:1 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:8 anchor=null attributes={} literal="*foo bar" children=0
-    ├── SoftBreak scope=1:9..1:9 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:9..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:1 anchor=null attributes={} literal="*" children=0
 ````````````````````````````````
 
@@ -7526,7 +7526,7 @@ foo bar__
 Document scope=1:1..2:9 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:9 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:2 anchor=null attributes={} literal="__" children=0
-    ├── SoftBreak scope=1:3..1:3 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:3..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:9 anchor=null attributes={} literal="foo bar__" children=0
 ````````````````````````````````
 
@@ -7657,7 +7657,7 @@ Document scope=1:1..2:25 anchor=null attributes={} children=1
         ├── Emphasis scope=1:17..1:42 anchor=null attributes={} children=1
         │   └── Text scope=1:18..1:41 anchor=null attributes={} literal="Gomphocarpus physocarpus" children=0
         ├── Text scope=1:43..1:48 anchor=null attributes={} literal=", syn." children=0
-        ├── SoftBreak scope=1:49..1:49 anchor=null attributes={} children=0
+        ├── SoftBreak scope=1:49..2:0 anchor=null attributes={} children=0
         ├── Emphasis scope=2:1..2:22 anchor=null attributes={} children=1
         │   └── Text scope=2:2..2:21 anchor=null attributes={} literal="Asclepias physocarpa" children=0
         └── Text scope=2:23..2:23 anchor=null attributes={} literal=")" children=0
@@ -7802,7 +7802,7 @@ Document scope=1:1..2:4 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:4 anchor=null attributes={} children=1
     └── Emphasis scope=1:1..2:4 anchor=null attributes={} children=3
         ├── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
-        ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+        ├── SoftBreak scope=1:5..2:0 anchor=null attributes={} children=0
         └── Text scope=2:1..2:3 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
@@ -8061,7 +8061,7 @@ Document scope=1:1..2:5 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:5 anchor=null attributes={} children=1
     └── Strong scope=1:1..2:5 anchor=null attributes={} children=3
         ├── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-        ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+        ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
         └── Text scope=2:1..2:3 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
@@ -8183,7 +8183,7 @@ Document scope=1:1..2:10 anchor=null attributes={} children=1
         │   ├── Text scope=1:8..1:11 anchor=null attributes={} literal="bar " children=0
         │   ├── Strong scope=1:12..1:18 anchor=null attributes={} children=1
         │   │   └── Text scope=1:14..1:16 anchor=null attributes={} literal="baz" children=0
-        │   ├── SoftBreak scope=1:19..1:19 anchor=null attributes={} children=0
+        │   ├── SoftBreak scope=1:19..2:0 anchor=null attributes={} children=0
         │   └── Text scope=2:1..2:3 anchor=null attributes={} literal="bim" children=0
         └── Text scope=2:5..2:8 anchor=null attributes={} literal=" bop" children=0
 ````````````````````````````````
@@ -8935,7 +8935,7 @@ bar)
 Document scope=1:1..2:4 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:4 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:10 anchor=null attributes={} literal="[link](foo" children=0
-    ├── SoftBreak scope=1:11..1:11 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:11..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:4 anchor=null attributes={} literal="bar)" children=0
 ````````````````````````````````
 
@@ -8983,9 +8983,9 @@ is not matched properly:
 Document scope=1:1..3:9 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..3:9 anchor=null attributes={} children=7
     ├── Text scope=1:1..1:8 anchor=null attributes={} literal="[a](<b)c" children=0
-    ├── SoftBreak scope=1:9..1:9 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:9..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:9 anchor=null attributes={} literal="[a](<b)c>" children=0
-    ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:10..3:0 anchor=null attributes={} children=0
     ├── Text scope=3:1..3:4 anchor=null attributes={} literal="[a](" children=0
     ├── HTML scope=3:5..3:7 anchor=null attributes={} literal="<b>" children=0
     └── Text scope=3:8..3:9 anchor=null attributes={} literal="c)" children=0
@@ -9129,10 +9129,10 @@ Document scope=1:1..3:20 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..3:20 anchor=null attributes={} children=5
     ├── Link scope=1:1..1:20 anchor=null attributes={} dest=url("/url") title="title" children=1
     │   └── Text scope=1:2..1:5 anchor=null attributes={} literal="link" children=0
-    ├── SoftBreak scope=1:21..1:21 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:21..2:0 anchor=null attributes={} children=0
     ├── Link scope=2:1..2:20 anchor=null attributes={} dest=url("/url") title="title" children=1
     │   └── Text scope=2:2..2:5 anchor=null attributes={} literal="link" children=0
-    ├── SoftBreak scope=2:21..2:21 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:21..3:0 anchor=null attributes={} children=0
     └── Link scope=3:1..3:20 anchor=null attributes={} dest=url("/url") title="title" children=1
         └── Text scope=3:2..3:5 anchor=null attributes={} literal="link" children=0
 ````````````````````````````````
@@ -9696,7 +9696,7 @@ Document scope=1:1..3:19 anchor=null attributes={} children=1
 Document scope=1:1..4:19 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:5 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:5 anchor=null attributes={} literal="[foo]" children=0
-    ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
     └── Link scope=2:1..2:5 anchor=null attributes={} dest=url("/url") title="title" children=1
         └── Text scope=2:2..2:4 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -9858,11 +9858,11 @@ Document scope=1:1..3:8 anchor=null attributes={} children=2
 Document scope=1:1..5:8 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..2:2 anchor=null attributes={} children=3
 │   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="[" children=0
-│   ├── SoftBreak scope=1:2..1:2 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=1:2..2:0 anchor=null attributes={} children=0
 │   └── Text scope=2:2..2:2 anchor=null attributes={} literal="]" children=0
 └── Paragraph scope=4:1..5:8 anchor=null attributes={} children=3
     ├── Text scope=4:1..4:1 anchor=null attributes={} literal="[" children=0
-    ├── SoftBreak scope=4:2..4:2 anchor=null attributes={} children=0
+    ├── SoftBreak scope=4:2..5:0 anchor=null attributes={} children=0
     └── Text scope=5:2..5:8 anchor=null attributes={} literal="]: /uri" children=0
 ````````````````````````````````
 
@@ -9930,7 +9930,7 @@ Document scope=1:1..4:19 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:2 anchor=null attributes={} children=3
     ├── Link scope=1:1..1:5 anchor=null attributes={} dest=url("/url") title="title" children=1
     │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
-    ├── SoftBreak scope=1:7..1:7 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:7..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:2 anchor=null attributes={} literal="[]" children=0
 ````````````````````````````````
 
@@ -10372,7 +10372,7 @@ Document scope=1:1..4:19 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:2 anchor=null attributes={} children=3
     ├── Embedded scope=1:1..1:6 anchor=null attributes={} dest=url("/url") title="title" dimensions=null children=1
     │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-    ├── SoftBreak scope=1:8..1:8 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:8..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:2 anchor=null attributes={} literal="[]" children=0
 ````````````````````````````````
 
@@ -11131,11 +11131,11 @@ bim!bop />
 Document scope=1:1..4:10 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..4:10 anchor=null attributes={} children=7
     ├── Text scope=1:1..1:5 anchor=null attributes={} literal="< a><" children=0
-    ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:11 anchor=null attributes={} literal="foo><bar/ >" children=0
-    ├── SoftBreak scope=2:12..2:12 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:12..3:0 anchor=null attributes={} children=0
     ├── Text scope=3:1..3:12 anchor=null attributes={} literal="<foo bar=baz" children=0
-    ├── SoftBreak scope=3:13..3:13 anchor=null attributes={} children=0
+    ├── SoftBreak scope=3:13..4:0 anchor=null attributes={} children=0
     └── Text scope=4:1..4:10 anchor=null attributes={} literal="bim!bop />" children=0
 ````````````````````````````````
 
@@ -11313,7 +11313,7 @@ baz
 Document scope=1:1..2:3 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:3 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:5 anchor=null attributes={} literal="foo" children=0
-    ├── LineBreak scope=1:6..1:6 anchor=null attributes={} children=0
+    ├── LineBreak scope=1:6..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:3 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -11328,7 +11328,7 @@ baz
 Document scope=1:1..2:3 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:3 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:3 anchor=null attributes={} literal="foo" children=0
-    ├── LineBreak scope=1:4..1:5 anchor=null attributes={} children=0
+    ├── LineBreak scope=1:4..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:3 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -11342,7 +11342,7 @@ baz
 Document scope=1:1..2:3 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:3 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:10 anchor=null attributes={} literal="foo" children=0
-    ├── LineBreak scope=1:11..1:11 anchor=null attributes={} children=0
+    ├── LineBreak scope=1:11..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:3 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -11356,7 +11356,7 @@ foo
 Document scope=1:1..2:8 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:8 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:5 anchor=null attributes={} literal="foo" children=0
-    ├── LineBreak scope=1:6..1:6 anchor=null attributes={} children=0
+    ├── LineBreak scope=1:6..2:0 anchor=null attributes={} children=0
     └── Text scope=2:6..2:8 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
@@ -11368,7 +11368,7 @@ foo\
 Document scope=1:1..2:8 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:8 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:3 anchor=null attributes={} literal="foo" children=0
-    ├── LineBreak scope=1:4..1:5 anchor=null attributes={} children=0
+    ├── LineBreak scope=1:4..2:0 anchor=null attributes={} children=0
     └── Text scope=2:6..2:8 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
@@ -11384,7 +11384,7 @@ Document scope=1:1..2:4 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:4 anchor=null attributes={} children=1
     └── Emphasis scope=1:1..2:4 anchor=null attributes={} children=3
         ├── Text scope=1:2..1:6 anchor=null attributes={} literal="foo" children=0
-        ├── LineBreak scope=1:7..1:7 anchor=null attributes={} children=0
+        ├── LineBreak scope=1:7..2:0 anchor=null attributes={} children=0
         └── Text scope=2:1..2:3 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
@@ -11397,7 +11397,7 @@ Document scope=1:1..2:4 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:4 anchor=null attributes={} children=1
     └── Emphasis scope=1:1..2:4 anchor=null attributes={} children=3
         ├── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
-        ├── LineBreak scope=1:5..1:6 anchor=null attributes={} children=0
+        ├── LineBreak scope=1:5..2:0 anchor=null attributes={} children=0
         └── Text scope=2:1..2:3 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
@@ -11501,7 +11501,7 @@ baz
 Document scope=1:1..2:3 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:3 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:3 anchor=null attributes={} literal="foo" children=0
-    ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
     └── Text scope=2:1..2:3 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -11516,7 +11516,7 @@ foo
 Document scope=1:1..2:4 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:4 anchor=null attributes={} children=3
     ├── Text scope=1:1..1:4 anchor=null attributes={} literal="foo" children=0
-    ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:5..2:0 anchor=null attributes={} children=0
     └── Text scope=2:2..2:4 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 

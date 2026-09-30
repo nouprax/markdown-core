@@ -45,10 +45,10 @@ typedef struct source_buffer {
     size_t capacity;
 } source_buffer;
 
-/* The parser refuses a source longer than this (`blocks.c`), so the adapter
- * never buffers more. The bound also keeps the doubling below inside `size_t`
- * on a 32-bit host, where a capacity that reached 2 GiB would wrap to zero on
- * the next doubling and the loop would never end. */
+/* The parse refuses a source longer than this (markdown_core_document_parse),
+ * so the adapter never buffers more. The bound also keeps the doubling below
+ * inside `size_t` on a 32-bit host, where a capacity that reached 2 GiB would
+ * wrap to zero on the next doubling and the loop would never end. */
 #define SOURCE_LIMIT ((size_t)(INT32_MAX / 2))
 
 /* Reads `input` to its end. Returns NULL, or the reason it stopped. */
@@ -81,17 +81,29 @@ static const char *read_all(source_buffer *source, FILE *input) {
     return ferror(input) ? strerror(errno) : NULL;
 }
 
-static bool print_document(const markdown_core_document *document) {
-    markdown_core_error *error = NULL;
-    uint8_t *dump = NULL;
-    size_t length = 0;
-    markdown_core_string message;
+/* What a failed call reports, for the message the tool prints. */
+static const char *status_text(markdown_core_status status) {
+    switch (status) {
+    case MARKDOWN_CORE_OK:
+        break;
+    case MARKDOWN_CORE_ALLOCATION_FAILED:
+        return "allocation failed";
+    case MARKDOWN_CORE_OUT_OF_BOUNDS:
+        return "out of bounds";
+    case MARKDOWN_CORE_KIND_MISMATCH:
+        return "kind mismatch";
+    }
+    return "no error";
+}
 
-    if (!markdown_core_document_dump(document, &dump, &length, &error)) {
-        message = markdown_core_error_get_message(error);
-        fprintf(stderr, "AST dump failed: %.*s\n", (int)message.length,
-                message.data ? (const char *)message.data : "unknown error");
-        markdown_core_error_free(error);
+static bool print_document(const markdown_core_document *document, const uint8_t *source, size_t size) {
+    uint8_t *dump;
+    size_t length;
+    markdown_core_status status =
+        markdown_core_document_dump(document, markdown_core_document_root(document), source, size, &dump, &length);
+
+    if (status != MARKDOWN_CORE_OK) {
+        fprintf(stderr, "AST dump failed: %s\n", status_text(status));
         return false;
     }
     fwrite(dump, 1, length, stdout);
@@ -102,8 +114,7 @@ static bool print_document(const markdown_core_document *document) {
 int main(int argc, char *argv[]) {
     source_buffer source = {NULL, 0, 0};
     markdown_core_document *document = NULL;
-    markdown_core_error *error = NULL;
-    markdown_core_string message;
+    markdown_core_status status;
     const char *failure;
     int i;
     int file_count = 0;
@@ -179,20 +190,17 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
-    document = markdown_core_document_parse(source.data, source.size, &error);
-    if (!document) {
-        message = markdown_core_error_get_message(error);
-        fprintf(stderr, "Parse failed: %.*s\n", (int)message.length,
-                message.data ? (const char *)message.data : "unknown error");
-        markdown_core_error_free(error);
+    status = markdown_core_document_parse(source.data, source.size, &document);
+    if (status != MARKDOWN_CORE_OK) {
+        fprintf(stderr, "Parse failed: %s\n", status_text(status));
         goto done;
     }
-    if (print_document(document)) {
+    if (print_document(document, source.data, source.size)) {
         result = 0;
     }
+    markdown_core_document_free(document);
 
 done:
-    markdown_core_document_free(document);
     free(source.data);
     return result;
 }

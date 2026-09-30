@@ -4,10 +4,18 @@ import Testing
 @Suite("consumer") struct ConsumerTests {
     @Test("a clean package consumes the public MarkdownCore product")
     func publicProduct() throws {
-        let document = try Document.parse("## Consumer\n")
+        let source = "## Consumer\n"
+        let document = try Document.parse(source)
 
-        #expect((document.content.first as? Heading)?.level == 2)
-        #expect(document.dump() == MarkupDumper.dump(document))
+        let heading = try #require(document.content.first as? Heading)
+        #expect(heading.level == 2)
+        #expect(try document.dump(in: source).hasPrefix("Document scope=1:1..1:11 "))
+        #expect(try document.dump(heading, in: source).hasPrefix("Heading scope=1:1..1:11 "))
+        #expect(
+            try document.scope(of: heading, in: source)
+                == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 11))
+        )
+        #expect(try document.node(at: Position(line: 1, column: 4), in: source)?.isEqual(heading.content[0]) == true)
         #expect(document.content.count == 1)
         #expect(Array(document.content.indices) == [0])
         let blocks: [any Markup] = Array(document.content)

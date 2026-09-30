@@ -19,15 +19,10 @@ WireDecoder$Reader$WhenMappings
 
 # File facades for top-level declarations. The class is public because the file
 # has top-level members; the members themselves are internal and name-mangled.
-ImmutableListKt
 PlatformParser_jvmKt
 MarkupDumperKt
 
-# The companion of a package-private class. Reachable in name only: every
-# member is internal, and the owning class is not public.
-ReadOnlyList$Companion
-
-# The private MCB2 reader (docs/architecture/wire-format.md). commonMain
+# The private MCB3 reader (docs/architecture/wire-format.md). commonMain
 # declares these internal types, so Kotlin emits public bytecode even though
 # they are absent from the Kotlin API. None of these names or bytes are stable
 # API.
@@ -40,3 +35,13 @@ WireNodeKind$Companion
 # was already present before P5/P6; this audit records its JVM lowering.
 AttributesKt
 DefinitionResource
+
+# The canonical walk and the scope rule are shared by the walker, the dumper,
+# equality and Document's scope queries across files, so these internal classes
+# lower to public bytecode. None of them is reachable from the Kotlin API.
+MarkupWalker
+MarkupTraversal
+MarkupTraversal$Step
+Relation
+SourceLines
+Place

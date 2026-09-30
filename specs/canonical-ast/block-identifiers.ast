@@ -8,7 +8,7 @@ Document scope=1:1..24:16 anchor=null attributes={} children=8
 │   └── ListItem scope=4:1..6:0 anchor=null attributes={} marker=null children=1
 │       └── Paragraph scope=4:3..5:23 anchor="item-paragraph" attributes={} children=3
 │           ├── Text scope=4:3..4:8 anchor=null attributes={} literal="second" children=0
-│           ├── SoftBreak scope=4:9..4:9 anchor=null attributes={} children=0
+│           ├── SoftBreak scope=4:9..5:0 anchor=null attributes={} children=0
 │           └── Text scope=5:3..5:6 anchor=null attributes={} literal="line" children=0
 ├── Callout scope=9:1..11:9 anchor="callout" attributes={} variant=null collapsed=null children=1
 │   └── Paragraph scope=9:3..9:7 anchor=null attributes={} children=1

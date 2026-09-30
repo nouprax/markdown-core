@@ -27,10 +27,11 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     markdown_core_attribute_parser attributes = {
         .data = chunk.data, .length = chunk.len, .scratch = &parser->attribute_scratch};
     while (chunk.len && chunk.data[0] == '[') {
-        int line = b->start_line, column = b->start_column;
+        int line;
+        bufsize_t source = b->where.place.start;
         markdown_core_parser_content_place(parser, &b->content_map, (bufsize_t)(chunk.data - node_content->ptr), &line,
-                                           &column);
-        uint64_t source_key = ((uint64_t)(uint32_t)line << 32) | (uint32_t)column;
+                                           &source);
+        uint64_t source_key = (uint64_t)source;
         pos = markdown_core_parse_reference_inline(parser, &chunk, parser->refmap, &attributes, source_key);
         if (!pos) {
             break;
@@ -46,8 +47,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     // is left starts further down the source than the block was told it did.
     // Without this a paragraph whose leading definitions were consumed keeps the
     // DEFINITION's position, and so does every inline in it, because
-    // markdown_core_parse_inlines seeds the inline state from b->start_line and
-    // b->start_column.
+    // markdown_core_parse_inlines seeds the inline state from the block's start.
     //
     // D18 corrected the LINE here by counting the line endings in the prefix
     // that goes away, and left the column alone with the note that it was
@@ -63,7 +63,8 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     if (!(b->flags & MARKDOWN_CORE_NODE__REFERENCE_PREFIX)) {
         return !markdown_core_block_is_blank(node_content, 0);
     }
-    int line, column;
+    int line;
+    bufsize_t source;
     markdown_core_block_rebase_content_marks(parser, b, dropped, chunk.len);
     markdown_core_strbuf_drop(node_content, dropped);
     /* The block now begins where its FIRST SURVIVING line was written, and
@@ -74,9 +75,8 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
      * the answer from the surviving run rather than from the size of the cut
      * is what makes both arrivals give the same result. On a block with no
      * definitions in front of it this is what the block already said. */
-    if (markdown_core_parser_content_place(parser, &b->content_map, 0, &line, &column)) {
-        b->start_line = line;
-        b->start_column = column;
+    if (markdown_core_parser_content_place(parser, &b->content_map, 0, &line, &source)) {
+        b->where.place.start = (uint32_t)source;
     }
     return !markdown_core_block_is_blank(&b->content, 0);
 }
@@ -299,7 +299,7 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_parser *parser, mar
     bufsize_t matchlen = 0;
     bufsize_t beforetitle;
 
-    markdown_core_inline_state_from_buf(NULL, -1, &inline_state, input, NULL);
+    markdown_core_inline_state_from_buf(NULL, &inline_state, input, NULL);
 
     // parse label:
     if (!markdown_core_inline_link_label(&inline_state, &lab) || lab.len == 0) {
@@ -531,15 +531,13 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     // two need not be on the same line. Taking BOTH from inline_state->line made a link
     // start where it ENDED: `[a\nb](/u)` reported Link 2:1..2:6 around a child
     // Text at 1:2 -- a node that begins after its own first child.
-    inl->start_line = opener->inl_text->start_line;
-    inl->start_column = opener->inl_text->start_column;
+    inl->where.place.start = opener->inl_text->where.place.start;
     if (explicit_tail) {
         markdown_core_inline_attach_inline_attributes(inline_state, inl, opener->position - 1);
-        inl->start_column = opener->inl_text->start_column;
+        inl->where.place.start = opener->inl_text->where.place.start;
     }
     markdown_core_inline_state_place(inline_state, inl, opener->position - 1, inline_state->pos - 1);
-    inl->start_line = opener->inl_text->start_line;
-    inl->start_column = opener->inl_text->start_column;
+    inl->where.place.start = opener->inl_text->where.place.start;
     // And the destination and title are scanned by markdown_core_inline_manual_scan_link_url and
     // scan_link_title, which move inline_state->pos without ever passing through
     // handle_newline -- so a line ending inside `(...)` is invisible to the

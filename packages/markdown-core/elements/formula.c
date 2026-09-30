@@ -33,84 +33,29 @@ typedef struct {
     int closed;
 } node_formula;
 
-static int is_formula_node(markdown_core_node *node) {
-    if (!node) {
-        return 0;
-    }
-
-    return node->kind == MARKDOWN_CORE_NODE_FORMULA || node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK;
-}
-
-static node_formula *get_formula(markdown_core_node *node) {
-    if (!is_formula_node(node)) {
-        return NULL;
-    }
-
-    return (node_formula *)node->opaque;
-}
-
-static int is_standalone_formula_node(markdown_core_node *node) {
-    node_formula *formula = get_formula(node);
-
-    if (!formula) {
-        return 0;
-    }
-
-    return formula->mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
-}
+/* A formula node's payload, its `opaque`. */
+static node_formula *get_formula(markdown_core_node *node) { return (node_formula *)node->opaque; }
 
 const char *markdown_core_elements_get_formula_literal(markdown_core_node *node) {
-    node_formula *formula = get_formula(node);
-    if (!formula) {
-        return NULL;
-    }
-
-    return markdown_core_chunk_to_cstr(&formula->literal);
+    return markdown_core_chunk_to_cstr(&get_formula(node)->literal);
 }
 
 int markdown_core_elements_set_formula_literal(markdown_core_node *node, const char *literal) {
-    node_formula *formula = get_formula(node);
-    if (!formula) {
-        return 0;
-    }
-
-    markdown_core_chunk_set_cstr(&formula->literal, literal);
-    return 1;
+    return markdown_core_chunk_set_cstr(&get_formula(node)->literal, literal);
 }
 
 markdown_core_formula_mode markdown_core_elements_get_formula_mode(markdown_core_node *node) {
-    node_formula *formula = get_formula(node);
-    if (!formula) {
-        return MARKDOWN_CORE_FORMULA_MODE_NONE;
-    }
-
-    return formula->mode;
+    return get_formula(node)->mode;
 }
 
-int markdown_core_elements_set_formula_mode(markdown_core_node *node, markdown_core_formula_mode mode) {
-    node_formula *formula = get_formula(node);
-    if (!formula) {
-        return 0;
-    }
-
-    if (mode != MARKDOWN_CORE_FORMULA_MODE_EMBEDDED && mode != MARKDOWN_CORE_FORMULA_MODE_STANDALONE) {
-        return 0;
-    }
-
-    if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK && mode != MARKDOWN_CORE_FORMULA_MODE_STANDALONE) {
-        return 0;
-    }
-
-    formula->mode = mode;
-    return 1;
+void markdown_core_elements_set_formula_mode(markdown_core_node *node, markdown_core_formula_mode mode) {
+    get_formula(node)->mode = mode;
 }
 
+/* Every node of this element is a formula. A payload that could not be
+ * allocated is the constructor's allocation failure. */
 static void formula_opaque_alloc(const markdown_core_element *element, markdown_core_node *node) {
-    /* A NULL payload is tolerated: every accessor goes through get_formula
-     * and treats the node as formula-less. */
-    if (is_formula_node(node)) {
-        node->opaque = markdown_core_alloc(1, sizeof(node_formula));
-    }
+    node->opaque = markdown_core_alloc(1, sizeof(node_formula));
 }
 
 static void formula_opaque_free(const markdown_core_element *element, markdown_core_node *node) {
@@ -125,10 +70,6 @@ static void formula_opaque_free(const markdown_core_element *element, markdown_c
 
 static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
     node_formula *formula = get_formula(node);
-    if (!formula) {
-        return 0;
-    }
-
     markdown_core_chunk_free(&formula->literal);
     formula->literal.data = (unsigned char *)data;
     formula->literal.len = len;
@@ -256,7 +197,7 @@ static int formula_block_matches(const markdown_core_element_instance *self, mar
     node_formula *formula = get_formula(container);
     int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
 
-    if (!formula || formula->closed) {
+    if (formula->closed) {
         return 0;
     }
 
@@ -615,10 +556,11 @@ static markdown_core_node *make_formula_span(const markdown_core_element *elemen
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
-    markdown_core_parser_content_place(parser, &parent->content_map, start, &formula->start_line,
-                                       &formula->start_column);
-    markdown_core_parser_content_end_place(parser, &parent->content_map, end - 1, &formula->end_line,
-                                           &formula->end_column);
+    int line;
+    bufsize_t first, last;
+    markdown_core_parser_content_place(parser, &parent->content_map, start, &line, &first);
+    markdown_core_parser_content_end_place(parser, &parent->content_map, end - 1, &line, &last);
+    formula->where.place = (markdown_core_place){(uint32_t)first, (uint32_t)last};
     return formula;
 }
 
@@ -692,10 +634,7 @@ static markdown_core_finish_result replace_with_formula_block(const markdown_cor
         oldnode->as.code->literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
     }
     get_formula(formula)->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
-    formula->start_line = oldnode->start_line;
-    formula->start_column = oldnode->start_column;
-    formula->end_line = oldnode->end_line;
-    formula->end_column = oldnode->end_column;
+    formula->where = oldnode->where;
     markdown_core_node_attach_validated(oldnode->parent, formula, oldnode);
     markdown_core_parser_release_node(parser, oldnode);
     return MARKDOWN_CORE_FINISH_CONSUMED;
@@ -747,11 +686,7 @@ static markdown_core_finish_result finish_step(const markdown_core_element_insta
     if (may_replace && node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && !node->attributes.anchor.len &&
         !node->attributes.class_count && !node->attributes.record_count && node->first_child &&
         node->first_child == node->last_child && node->first_child->kind == MARKDOWN_CORE_NODE_FORMULA &&
-        is_standalone_formula_node(node->first_child)) {
-        node_formula *formula = get_formula(node->first_child);
-        if (!formula) {
-            return MARKDOWN_CORE_FINISH_CONTINUE;
-        }
+        get_formula(node->first_child)->mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE) {
         return replace_with_formula_block(self->element, parser, node, node->first_child);
     }
 

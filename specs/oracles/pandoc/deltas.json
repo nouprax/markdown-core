@@ -59,10 +59,10 @@
             "id": "example-lists-and-reference",
             "item": "P9b",
             "status": "projection",
-            "reason": "Markdown Core retains every specimen as a document-owned definition in source order, including anonymous and duplicate labels, and stores references by exact id. Pandoc emits example List items and replaces references with derived numbering; those values are not projected away.",
+            "reason": "Markdown Core retains every specimen definition as a Specimen block where it was written, including anonymous and duplicate labels, and stores references by exact label. Pandoc emits example List items and replaces references with derived numbering; those values are not projected away.",
             "inputDigest": "c362a23129b82d354226ddb641bd135c9e77c2f1a291f16bb4942c95e5ed37cf",
             "oracleDigest": "6cf71986484b5ea0b161dc2abfab3ed04f36d97c8971feabae12901c885d3de6",
-            "coreDigest": "80d74029749f4d3f0de01267a017061d397ea8c382665d828d78bd209096f11b"
+            "coreDigest": "67ad5f3b4a9f47173c488b15a3bf2f9c8e23e8b2d7f328602948f98b3568e35b"
         },
         {
             "id": "p6-escaped-space",
@@ -212,19 +212,19 @@
             "id": "p9b-resolution",
             "item": "P9b",
             "status": "projection",
-            "reason": "Markdown Core retains every specimen as a document-owned definition in source order, including anonymous and duplicate labels, and stores references by exact id. Pandoc emits example List items and replaces references with derived numbering; those values are not projected away.",
+            "reason": "Markdown Core retains every specimen definition as a Specimen block where it was written, including anonymous and duplicate labels, and stores references by exact label. Pandoc emits example List items and replaces references with derived numbering; those values are not projected away.",
             "inputDigest": "e41cef4799656300451d9c0610c47307ba3a0172624e7ad9498a4dbf844f5517",
             "oracleDigest": "b809b23baf38eee4e3dd2e7d32da04d3787d5fac7f0bcaa5c7f6a1044b794d7f",
-            "coreDigest": "07fb8b14f25b553badc8a54e4cfb56c183e18b9e72bd38bc9ea13ce60351fc96"
+            "coreDigest": "f1440593d09a8e10f55f41e8f6d2bc3cde54f726b966d71ddb7ad78967063b01"
         },
         {
             "id": "p9b-heading",
             "item": "P9b",
             "status": "projection",
-            "reason": "Markdown Core retains every specimen as a document-owned definition in source order, including anonymous and duplicate labels, and stores references by exact id. Pandoc emits example List items and replaces references with derived numbering; those values are not projected away. Heading projection uses @id before anchor filtering.",
+            "reason": "Markdown Core retains every specimen definition as a Specimen block where it was written, including anonymous and duplicate labels, and stores references by exact label. Pandoc emits example List items and replaces references with derived numbering; those values are not projected away. Heading projection uses @id before anchor filtering.",
             "inputDigest": "07ef4c87398b919fd819f914c30618c4b6dc2ace3c23730a55fa217c316ba011",
             "oracleDigest": "a78132383bd3b236f5e7e9771d82be635d178ad4b0d01cf165256c9730c917d4",
-            "coreDigest": "53f7520cc2d35aa8a8e2179ac7c490073838c8901de87ed9c6e6fb35af2648db"
+            "coreDigest": "1dd17a891b4a8688b70f26a88d75f3f64e96d182e554bf41ae1d14e2b6b2a49b"
         },
         {
             "id": "p7-unresolved-reference-tail",

@@ -10,13 +10,14 @@
 /* The shipped path: parse through the facade, then read every node and
  * node-valued field through the canonical dump, and release both. */
 static void exercise(const uint8_t *markdown, size_t length) {
-    markdown_core_document *document = markdown_core_document_parse(markdown, length, NULL);
-    if (!document) {
+    markdown_core_document *document;
+    if (markdown_core_document_parse(markdown, length, &document) != MARKDOWN_CORE_OK) {
         return;
     }
     uint8_t *dump = NULL;
     size_t dump_length = 0;
-    if (markdown_core_document_dump(document, &dump, &dump_length, NULL)) {
+    if (markdown_core_document_dump(document, markdown_core_document_root(document), markdown, length, &dump,
+                                    &dump_length) == MARKDOWN_CORE_OK) {
         markdown_core_dump_free(dump);
     }
     markdown_core_document_free(document);

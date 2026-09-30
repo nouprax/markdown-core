@@ -273,14 +273,28 @@ export function fromCanonical(value) {
             citations: value.children.map((item) => {
                 const referent = item.fields.referent;
                 const bib = /^bib\(key=("(?:\\.|[^"\\])*"),mode=(normal|authorInText|suppressAuthor)\)$/.exec(referent);
-                const other = /^(footnote|specimen)\(id=("(?:\\.|[^"\\])*")\)$/.exec(referent);
-                assert.ok(bib || other, `unknown citation referent: ${referent}`);
+                const labeled = /^(footnote|specimen)\(label=("(?:\\.|[^"\\])*")\)$/.exec(referent);
+                const note = referent === "footnote(note)";
+                assert.ok(bib || labeled || note, `unknown citation referent: ${referent}`);
+                // The dump prints an inline note as the citation's first child
+                // line, before its affix groups; the note is part of the
+                // referent value, so it is projected there.
+                const [notes, prefix, suffix] = ["Footnote", "CitationPrefix", "CitationSuffix"].map((kind) =>
+                    item.children.filter((child) => child.kind === kind)
+                );
+                assert.ok(notes.length === (note ? 1 : 0) && prefix.length === 1 && suffix.length === 1);
+                assert.equal(item.children.length, notes.length + 2, "unknown citation child");
                 const fields = bib
                     ? { key: JSON.parse(bib[1]), mode: bib[2] }
-                    : { referent: other[1], id: JSON.parse(other[2]) };
-                for (const [index, name] of ["prefix", "suffix"].entries()) {
+                    : labeled
+                      ? { referent: labeled[1], label: JSON.parse(labeled[2]) }
+                      : { referent: "footnote", note: fromCanonical(notes[0]) };
+                for (const [name, group] of [
+                    ["prefix", prefix[0]],
+                    ["suffix", suffix[0]]
+                ]) {
                     fields[name] = [];
-                    for (const child of item.children[index].children) append(fields[name], fromCanonical(child));
+                    for (const child of group.children) append(fields[name], fromCanonical(child));
                 }
                 return fields;
             })
@@ -300,7 +314,7 @@ export function fromCanonical(value) {
         if (optional("language") !== null) attrs.classes = [optional("language"), ...attrs.classes];
     }
     if (value.kind === "Specimen") {
-        result.id = optional("id");
+        result.label = optional("label");
         result.start = optional("start");
     }
     if (value.kind === "Heading") result.level = Number(f.level);

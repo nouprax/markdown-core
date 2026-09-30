@@ -79,13 +79,14 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
     }
     markdown_core_node *owner = paragraph;
     markdown_core_node *parent = paragraph->parent;
-    int line, column;
+    int line;
+    bufsize_t source;
     if (parent && markdown_core_block_type(parent) == MARKDOWN_CORE_NODE_LIST_ITEM &&
         parent->first_child == paragraph &&
         markdown_core_parser_content_place(parser, &paragraph->content_map,
                                            (bufsize_t)(candidate.identifier.data - paragraph->content.ptr), &line,
-                                           &column) &&
-        line == parent->start_line) {
+                                           &source) &&
+        markdown_core_parser_starts_on_line(parser, parent, line)) {
         owner = parent;
     }
     bufsize_t at = (bufsize_t)(candidate.identifier.data - paragraph->content.ptr) + paragraph->content_map.offset;

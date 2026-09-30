@@ -2,30 +2,59 @@ import MarkdownCoreC
 
 /// A fenced or indented code block.
 public struct CodeBlock: Markup {
-    /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public let scope: Scope
+    let record: CodeBlockRecord
+
+    /// The node's identifier within its document.
+    public var id: MarkupID { record.id }
+    /// Where it is, relative to its neighbours. See ``Extent``.
+    public var extent: Extent { record.extent }
     /// The explicit anchor, absent when none was attached.
-    public let anchor: String?
+    public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
-    public let attributes: Attributes
+    public var attributes: Attributes { record.attributes }
     /// The complete raw info string, or `nil` when the source wrote none. A
     /// fence with nothing but whitespace after it wrote none; an indented
     /// block has no fence to write one on.
-    public let info: String?
+    public var info: String? { record.info }
     /// The info string's first whitespace-delimited token. Present exactly
     /// when ``info`` is.
-    public let language: String?
+    public var language: String? { record.language }
     /// The block's content. Its fence and its indentation are in no literal.
-    public let literal: String
+    public var literal: String { record.literal }
     /// Whether the author fenced it. An indented block is `false`.
-    public let fenced: Bool
+    public var fenced: Bool { record.fenced }
     /// Whether a fenced block was closed before the document or its container
     /// ended. An indented block is always `true`, having nothing to close.
-    public let closed: Bool
+    public var closed: Bool { record.closed }
 }
 
-extension CodeBlock {
-    init(from node: OpaquePointer) {
+final class CodeBlockRecord: MarkupRecord, @unchecked Sendable {
+    let info: String?
+    let language: String?
+    let literal: String
+    let fenced: Bool
+    let closed: Bool
+
+    init(_ fields: InheritedFields, info: String?, language: String?, literal: String, fenced: Bool, closed: Bool) {
+        self.info = info
+        self.language = language
+        self.literal = literal
+        self.fenced = fenced
+        self.closed = closed
+        super.init(fields, children: [])
+    }
+
+    override var markup: any Markup { CodeBlock(record: self) }
+
+    override func hasEqualFields(_ other: MarkupRecord) -> Bool {
+        let other = unsafeDowncast(other, to: CodeBlockRecord.self)
+        return info == other.info && language == other.language && literal == other.literal
+            && fenced == other.fenced && closed == other.closed
+    }
+}
+
+extension CodeBlockRecord {
+    convenience init(from node: OpaquePointer) {
         var info = markdown_core_optional_string()
         var language = markdown_core_optional_string()
         var literal = markdown_core_string()
@@ -40,9 +69,7 @@ extension CodeBlock {
             &closed
         )
         self.init(
-            scope: Self.scope(from: node),
-            anchor: markdown_core_node_anchor(node).string,
-            attributes: Attributes(from: node),
+            InheritedFields(from: node),
             info: info.string,
             language: language.string,
             literal: literal.required,
@@ -50,4 +77,8 @@ extension CodeBlock {
             closed: closed
         )
     }
+}
+
+extension CodeBlock: RecordBacked {
+    var base: MarkupRecord { record }
 }

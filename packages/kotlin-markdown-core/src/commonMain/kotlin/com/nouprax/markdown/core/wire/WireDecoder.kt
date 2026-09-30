@@ -1,19 +1,32 @@
 package com.nouprax.markdown.core
 
 /**
- * The MCB2 reader (docs/architecture/wire-format.md), shared by every Kotlin
+ * The MCB3 reader (docs/architecture/wire-format.md), shared by every Kotlin
  * target. Records arrive in post-order, so each node is built bottom-up from
  * the nodes already on the stack, without recursion and without another call
  * into native code. The reader retains nothing of the message after [decode]
  * returns.
  */
 internal object WireDecoder {
-    fun decode(message: ByteArray): Document = Reader(message).decode()
+    /** Builds the document of [message], whose scope queries count columns in [unit]. */
+    fun decode(
+        message: ByteArray,
+        unit: TextUnit,
+    ): Document = Reader(message, unit).decode()
 
-    private val magic = byteArrayOf(0x4d, 0x43, 0x42, 0x32)
+    /** Where the u8 status follows the magic and the u32 message length. */
+    private const val STATUS_OFFSET = 8
 
-    /** The magic, the u32 message length and the u8 status. */
-    private const val HEADER_SIZE = 9
+    /** The status of a parse failure; the other status is a document. */
+    private const val FAILURE = 1
+
+    /** Each failure's code by the value of the facade's `markdown_core_status`. */
+    private val errorCodes =
+        mapOf(
+            1 to ErrorCode.ALLOCATION_FAILED,
+            2 to ErrorCode.OUT_OF_BOUNDS,
+            3 to ErrorCode.KIND_MISMATCH,
+        )
 
     // The contract's enums, in the order of their wire indices.
     private val flavors = listOf(ListFlavor.BULLET, ListFlavor.ORDERED)
@@ -23,66 +36,49 @@ internal object WireDecoder {
 
     private class Reader(
         private val bytes: ByteArray,
+        private val unit: TextUnit,
     ) {
         private var offset = 0
         private val nodes = ArrayList<Markup>()
-        private val kinds = ArrayList<WireNodeKind>()
         private val resources = ArrayList<DefinitionResource>()
 
+        /** Every footnote and specimen built so far, by id, for the definition tables. */
+        private val footnotes = HashMap<Long, Footnote>()
+        private val specimens = HashMap<Long, Specimen>()
+
         fun decode(): Document {
-            header()
+            offset = STATUS_OFFSET
+            if (u8() == FAILURE) throw failure()
             while (offset < bytes.size) record()
-            val document = nodes.singleOrNull()
-            require(document is Document) { "native result is not one document tree" }
-            return document
+            // The document's record is the last, and it takes every node before it.
+            return nodes[0] as Document
         }
 
-        private fun header() {
-            require(bytes.size >= HEADER_SIZE) { "truncated native result header" }
-            magic.forEachIndexed { index, expected ->
-                val actual = u8()
-                require(actual == expected.toInt()) {
-                    "invalid native result at byte $index: expected $expected, got $actual"
-                }
-            }
-            require(u32() == bytes.size.toLong()) { "native result length does not match its header" }
-            val status = u8()
-            if (status == 1) throw failure()
-            require(status == 0) { "unsupported native result status $status" }
-        }
-
-        private fun failure(): ParseException {
-            val code =
-                when (u32()) {
-                    1L -> ParseErrorCode.INVALID_ARGUMENT
-                    2L -> ParseErrorCode.ALLOCATION_FAILED
-                    else -> ParseErrorCode.INTERNAL
-                }
-            val message = string()
-            require(offset == bytes.size) { "invalid native result error payload" }
-            return ParseException(code, message)
-        }
+        /** A failure's body is its `u32` status code alone. */
+        private fun failure(): MarkdownCoreException = MarkdownCoreException(errorCodes.getValue(count()))
 
         // ---- Records -----------------------------------------------------------
 
         /** Reads one record, replaces the nodes it names with the node it builds. */
         private fun record() {
             val kind = WireNodeKind.from(u8())
-            val scope = scope()
+            val id = MarkupID(int())
+            val extent = Extent(i32(), u32().toUInt())
             val anchor = optional { string() }
             val attributes = attributes()
             val children = Children(nodes.size)
-            val node = children.fields(kind, scope, anchor, attributes)
+            val node = children.fields(kind, id, extent, anchor, attributes)
+            if (node is Footnote) footnotes[id.value] = node
+            if (node is Specimen) specimens[id.value] = node
             nodes.subList(children.start, nodes.size).clear()
-            kinds.subList(children.start, kinds.size).clear()
             nodes += node
-            kinds += kind
         }
 
         /** A kind's fields in the contract's order; node-valued fields read their counts. */
         private fun Children.fields(
             kind: WireNodeKind,
-            scope: Scope,
+            id: MarkupID,
+            extent: Extent,
             anchor: String?,
             attributes: Attributes,
         ): Markup =
@@ -90,15 +86,16 @@ internal object WireDecoder {
                 WireNodeKind.DOCUMENT -> {
                     val content = count()
                     val metadata = presence()
-                    val footnotes = count()
-                    val specimens = count()
-                    take(content, metadata, footnotes, specimens)
+                    take(content, metadata)
+                    // The document's record is the last; its definition tables follow it.
                     Document(
                         content(content),
-                        optional<Metadata>(WireNodeKind.METADATA, metadata),
-                        typed(WireNodeKind.FOOTNOTE, footnotes),
-                        typed(WireNodeKind.SPECIMEN, specimens),
-                        scope,
+                        optional(metadata),
+                        unit,
+                        table(footnotes),
+                        table(specimens),
+                        id,
+                        extent,
                         anchor,
                         attributes,
                     )
@@ -110,20 +107,29 @@ internal object WireDecoder {
                     val title = optional { count() }
                     val content = count()
                     take(title ?: 0, content)
-                    Callout(variant, collapsed, title?.let { content(it) }, content(content), scope, anchor, attributes)
+                    Callout(
+                        variant,
+                        collapsed,
+                        title?.let { content(it) },
+                        content(content),
+                        id,
+                        extent,
+                        anchor,
+                        attributes,
+                    )
                 }
 
                 WireNodeKind.PARAGRAPH -> {
-                    Paragraph(content(), scope, anchor, attributes)
+                    Paragraph(content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.HEADING -> {
-                    val level = int().toInt32("heading level")
-                    Heading(level, content(), scope, anchor, attributes)
+                    val level = int().toInt()
+                    Heading(level, content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.THEMATIC_BREAK -> {
-                    ThematicBreak(scope, anchor, attributes)
+                    ThematicBreak(id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.LIST -> {
@@ -140,8 +146,9 @@ internal object WireDecoder {
                         variant,
                         delimiter,
                         tight,
-                        typed(WireNodeKind.LIST_ITEM, items),
-                        scope,
+                        typed(items),
+                        id,
+                        extent,
                         anchor,
                         attributes,
                     )
@@ -149,7 +156,7 @@ internal object WireDecoder {
 
                 WireNodeKind.LIST_ITEM -> {
                     val marker = optional { string() }
-                    ListItem(marker, content(), scope, anchor, attributes)
+                    ListItem(marker, content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.CODE_BLOCK -> {
@@ -159,18 +166,19 @@ internal object WireDecoder {
                         string(),
                         bool(),
                         bool(),
-                        scope,
+                        id,
+                        extent,
                         anchor,
                         attributes,
                     )
                 }
 
                 WireNodeKind.HTML_BLOCK -> {
-                    HTMLBlock(string(), scope, anchor, attributes)
+                    HTMLBlock(string(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.FORMULA_BLOCK -> {
-                    FormulaBlock(string(), scope, anchor, attributes)
+                    FormulaBlock(string(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.TABLE -> {
@@ -181,12 +189,13 @@ internal object WireDecoder {
                     val foot = count()
                     take(caption, head, content, foot)
                     Table(
-                        optional(WireNodeKind.TABLE_CAPTION, caption),
+                        optional(caption),
                         columns,
-                        typed(WireNodeKind.TABLE_ROW, head),
-                        typed(WireNodeKind.TABLE_ROW, content),
-                        typed(WireNodeKind.TABLE_ROW, foot),
-                        scope,
+                        typed(head),
+                        typed(content),
+                        typed(foot),
+                        id,
+                        extent,
                         anchor,
                         attributes,
                     )
@@ -199,48 +208,49 @@ internal object WireDecoder {
                     take(label, content)
                     DirectiveBlock(
                         name,
-                        optional(WireNodeKind.DIRECTIVE_LABEL, label),
+                        optional(label),
                         content(content),
-                        scope,
+                        id,
+                        extent,
                         anchor,
                         attributes,
                     )
                 }
 
                 WireNodeKind.TEXT -> {
-                    Text(string(), scope, anchor, attributes)
+                    Text(string(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.SOFT_BREAK -> {
-                    SoftBreak(scope, anchor, attributes)
+                    SoftBreak(id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.LINE_BREAK -> {
-                    LineBreak(scope, anchor, attributes)
+                    LineBreak(id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.CODE -> {
-                    Code(string(), scope, anchor, attributes)
+                    Code(string(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.HTML -> {
-                    HTML(string(), scope, anchor, attributes)
+                    HTML(string(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.FORMULA -> {
-                    Formula(index(placements), string(), scope, anchor, attributes)
+                    Formula(index(placements), string(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.EMPHASIS -> {
-                    Emphasis(content(), scope, anchor, attributes)
+                    Emphasis(content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.STRONG -> {
-                    Strong(content(), scope, anchor, attributes)
+                    Strong(content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.STRIKETHROUGH -> {
-                    Strikethrough(content(), scope, anchor, attributes)
+                    Strikethrough(content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.LINK -> {
@@ -249,7 +259,8 @@ internal object WireDecoder {
                         resource.dest,
                         resource.title,
                         content(),
-                        scope,
+                        id,
+                        extent,
                         anchor ?: resource.anchor,
                         attributes.inheriting(resource.attributes),
                     )
@@ -263,7 +274,8 @@ internal object WireDecoder {
                         resource.title,
                         dimensions,
                         content(),
-                        scope,
+                        id,
+                        extent,
                         anchor ?: resource.anchor,
                         attributes.inheriting(resource.attributes),
                     )
@@ -273,67 +285,75 @@ internal object WireDecoder {
                     val name = string()
                     val label = presence()
                     take(label)
-                    Directive(name, optional(WireNodeKind.DIRECTIVE_LABEL, label), scope, anchor, attributes)
+                    Directive(name, optional(label), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.CITE -> {
                     val citations = count()
                     take(citations)
-                    Cite(typed(WireNodeKind.CITATION, citations), scope, anchor, attributes)
+                    Cite(typed(citations), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.TABLE_ROW -> {
                     val cells = count()
                     take(cells)
-                    TableRow(typed(WireNodeKind.TABLE_CELL, cells), scope, anchor, attributes)
+                    TableRow(typed(cells), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.TABLE_CELL -> {
-                    val rowspan = int().toInt32("table cell rowspan")
-                    val colspan = int().toInt32("table cell colspan")
-                    TableCell(rowspan, colspan, content(), scope, anchor, attributes)
+                    val rowspan = int().toInt()
+                    val colspan = int().toInt()
+                    TableCell(rowspan, colspan, content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.DIRECTIVE_LABEL -> {
-                    DirectiveLabel(content(), scope, anchor, attributes)
+                    DirectiveLabel(content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.COMMENT -> {
-                    Comment(string(), scope, anchor, attributes)
+                    Comment(string(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.CROSS_LINK -> {
-                    CrossLink(cross(), optional { string() }, scope, anchor, attributes)
+                    CrossLink(cross(), optional { string() }, id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.MARK -> {
-                    Mark(content(), scope, anchor, attributes)
+                    Mark(content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.CROSS_EMBEDDED -> {
-                    CrossEmbedded(cross(), optional { string() }, optional { dimensions() }, scope, anchor, attributes)
+                    CrossEmbedded(
+                        cross(),
+                        optional { string() },
+                        optional { dimensions() },
+                        id,
+                        extent,
+                        anchor,
+                        attributes,
+                    )
                 }
 
                 WireNodeKind.INSERTION -> {
-                    Insertion(content(), scope, anchor, attributes)
+                    Insertion(content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.SPAN -> {
-                    Span(content(), scope, anchor, attributes)
+                    Span(content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.SUPERSCRIPT -> {
-                    Superscript(content(), scope, anchor, attributes)
+                    Superscript(content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.SUBSCRIPT -> {
-                    Subscript(content(), scope, anchor, attributes)
+                    Subscript(content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.DEFINITION_LIST -> {
                     val definitions = count()
                     take(definitions)
-                    DefinitionList(typed(WireNodeKind.DEFINITION, definitions), scope, anchor, attributes)
+                    DefinitionList(typed(definitions), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.DEFINITION -> {
@@ -341,30 +361,41 @@ internal object WireDecoder {
                     val bodies = list { count() }
                     val compact = bool()
                     take(term, *bodies.toIntArray())
-                    Definition(content(term), bodies.immutableMap { content(it) }, compact, scope, anchor, attributes)
+                    Definition(
+                        content(term),
+                        bodies.map { content(it) },
+                        compact,
+                        id,
+                        extent,
+                        anchor,
+                        attributes,
+                    )
                 }
 
                 WireNodeKind.TABLE_CAPTION -> {
-                    TableCaption(content(), scope, anchor, attributes)
+                    TableCaption(content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.CITATION -> {
-                    val referent = referent()
+                    // An inline note writes nothing for its footnote, which is
+                    // the first node the record takes, ahead of the affixes.
+                    val written = referent()
                     val prefix = count()
                     val suffix = count()
-                    take(prefix, suffix)
-                    Citation(referent, content(prefix), content(suffix), scope, anchor, attributes)
+                    take(if (written == null) 1 else 0, prefix, suffix)
+                    val referent = written ?: CitationReferent.Footnote(FootnoteTarget.Note(typed<Footnote>(1)[0]))
+                    Citation(referent, content(prefix), content(suffix), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.FOOTNOTE -> {
-                    val id = string()
-                    Footnote(id, content(), scope, anchor, attributes)
+                    val label = optional { string() }
+                    Footnote(label, content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.SPECIMEN -> {
-                    val id = optional { string() }
+                    val label = optional { string() }
                     val start = optional { int() }
-                    Specimen(id, start, content(), scope, anchor, attributes)
+                    Specimen(label, start, content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.METADATA -> {
@@ -379,17 +410,15 @@ internal object WireDecoder {
                         `abstract` = optional { metadataValue() },
                         state = optional { metadataValue() },
                         comment = optional { metadataValue() },
-                        scope = scope,
+                        id = id,
+                        extent = extent,
                         anchor = anchor,
                         attributes = attributes,
                     )
                 }
             }
 
-        /**
-         * One record's nodes: the top of the stack, handed to its fields in order.
-         * Each field checks the kinds it accepts.
-         */
+        /** One record's nodes: the top of the stack, handed to its fields in order. */
         private inner class Children(
             var start: Int,
         ) {
@@ -397,9 +426,7 @@ internal object WireDecoder {
 
             /** Claims the nodes of every node-valued field, whose counts sum to [counts]. */
             fun take(vararg counts: Int) {
-                val total = counts.fold(0L) { sum, count -> sum + count }
-                require(total <= nodes.size) { "native result record names more nodes than precede it" }
-                start = nodes.size - total.toInt()
+                start = nodes.size - counts.sum()
                 next = start
             }
 
@@ -410,53 +437,37 @@ internal object WireDecoder {
                 return content(count)
             }
 
-            fun content(count: Int): kotlin.collections.List<Markup> = claim(count, "content") { it.content }
+            fun content(count: Int): kotlin.collections.List<Markup> = typed(count)
 
-            /** A field typed with [kind]; the kind check is what makes the cast to its class safe. */
+            /** The next [count] nodes, of the class the engine writes in a field of their type. */
             @Suppress("UNCHECKED_CAST")
-            fun <T : Markup> typed(
-                kind: WireNodeKind,
-                count: Int,
-            ): kotlin.collections.List<T> = claim(count, kind.name) { it == kind } as kotlin.collections.List<T>
-
-            fun <T : Markup> optional(
-                kind: WireNodeKind,
-                count: Int,
-            ): T? = if (count == 0) null else typed<T>(kind, 1)[0]
-
-            private inline fun claim(
-                count: Int,
-                field: String,
-                accepts: (WireNodeKind) -> Boolean,
-            ): kotlin.collections.List<Markup> {
+            fun <T : Markup> typed(count: Int): kotlin.collections.List<T> {
                 val first = next
                 next += count
-                for (index in first until next) {
-                    require(accepts(kinds[index])) { "native result places a ${kinds[index]} node in a $field field" }
-                }
-                return slice(first, count)
+                return nodes.subList(first, next).toList() as kotlin.collections.List<T>
             }
 
-            private fun slice(
-                first: Int,
-                count: Int,
-            ): kotlin.collections.List<Markup> = immutableList(count) { nodes[first + it] }
+            fun <T : Markup> optional(count: Int): T? = if (count == 0) null else typed<T>(1)[0]
         }
+
+        // ---- Definition tables -------------------------------------------------
+
+        /** A `u32` count and that many `u64` ids, each naming one of [definitions]. */
+        private fun <T : Markup> table(definitions: Map<Long, T>): kotlin.collections.List<T> =
+            list { definitions.getValue(int()) }
 
         // ---- Shared resources --------------------------------------------------
 
         private fun resource(): DefinitionResource {
-            val ordinal = u32()
-            if (ordinal < resources.size) return resources[ordinal.toInt()]
-            require(ordinal == resources.size.toLong()) { "native result names unknown resource $ordinal" }
+            // A resource's first occurrence defines it, with the next ordinal.
+            val ordinal = count()
+            if (ordinal < resources.size) return resources[ordinal]
             val resource = DefinitionResource(destination(), optional { string() }, optional { string() }, attributes())
             resources += resource
             return resource
         }
 
         // ---- Values ------------------------------------------------------------
-
-        private fun scope(): Scope = Scope(Position(i32(), i32()), Position(i32(), i32()))
 
         private fun attributes(): Attributes {
             val classes = list { string() }
@@ -465,26 +476,23 @@ internal object WireDecoder {
         }
 
         private fun destination(): Destination =
-            when (branch(2)) {
+            when (u8()) {
                 0 -> Destination.Url(string())
                 else -> Destination.Cross(string(), optional { string() })
             }
 
-        private fun cross(): Destination.Cross {
-            val destination = destination()
-            require(destination is Destination.Cross) { "native result gives a cross reference a URL destination" }
-            return destination
-        }
+        private fun cross(): Destination.Cross = destination() as Destination.Cross
 
-        private fun referent(): CitationReferent =
-            when (branch(3)) {
+        /** The referent, or null for an inline note, whose footnote is a node of the record. */
+        private fun referent(): CitationReferent? =
+            when (u8()) {
                 0 -> CitationReferent.Bib(string(), index(bibModes))
-                1 -> CitationReferent.Footnote(string())
+                1 -> if (u8() == 0) CitationReferent.Footnote(FootnoteTarget.Label(string())) else null
                 else -> CitationReferent.Specimen(string())
             }
 
         private fun variant(): OrderedListVariant =
-            when (branch(4)) {
+            when (u8()) {
                 0 -> OrderedListVariant.Decimal
                 1 -> OrderedListVariant.Alpha(bool())
                 2 -> OrderedListVariant.Roman(bool())
@@ -492,23 +500,22 @@ internal object WireDecoder {
             }
 
         private fun delimiter(): OrderedListDelimiter =
-            when (branch(3)) {
+            when (u8()) {
                 0 -> OrderedListDelimiter.Period
                 1 -> OrderedListDelimiter.Parenthesis(bool())
                 else -> OrderedListDelimiter.Default
             }
 
-        private fun dimensions(): Dimensions =
-            Dimensions(int().toInt32("dimension width"), optional { int().toInt32("dimension height") })
+        private fun dimensions(): Dimensions = Dimensions(int().toInt(), optional { int().toInt() })
 
         private fun metadataValue(): MetadataValue =
-            when (branch(2)) {
+            when (u8()) {
                 0 -> MetadataValue.Scalar(metadataScalar())
                 else -> MetadataValue.List(list { metadataListItem() })
             }
 
         private fun metadataScalar(): MetadataScalar =
-            when (branch(4)) {
+            when (u8()) {
                 0 -> MetadataScalar.Null
                 1 -> MetadataScalar.Bool(bool())
                 2 -> MetadataScalar.Number(string())
@@ -516,7 +523,7 @@ internal object WireDecoder {
             }
 
         private fun metadataListItem(): MetadataListItem =
-            when (branch(2)) {
+            when (u8()) {
                 0 -> MetadataListItem.Number(string())
                 else -> MetadataListItem.Text(string())
             }
@@ -528,40 +535,15 @@ internal object WireDecoder {
         /** The node count of a `K?` field. */
         private fun presence(): Int = if (bool()) 1 else 0
 
-        private inline fun <T> list(read: () -> T): kotlin.collections.List<T> {
-            val count = count()
-            // Every item occupies at least one byte, so a count the message cannot
-            // hold is rejected before anything is allocated for it.
-            require(count <= bytes.size - offset) { "native result count exceeds the message" }
-            val items = ArrayList<T>(count)
-            repeat(count) { items += read() }
-            return items
-        }
+        private inline fun <T> list(read: () -> T): kotlin.collections.List<T> =
+            kotlin.collections.List(count()) { read() }
 
-        /** A u32 count; no message can hold more nodes or items than an Int counts. */
-        private fun count(): Int {
-            val count = u32()
-            require(count <= Int.MAX_VALUE) { "native result count exceeds the message" }
-            return count.toInt()
-        }
+        /** A u32 count; no message holds more nodes or items than an Int counts. */
+        private fun count(): Int = u32().toInt()
 
-        private fun branch(count: Int): Int {
-            val branch = u8()
-            require(branch < count) { "native result contains invalid branch $branch" }
-            return branch
-        }
+        private fun <T> index(values: kotlin.collections.List<T>): T = values[u8()]
 
-        private fun <T> index(values: kotlin.collections.List<T>): T {
-            val index = u8()
-            require(index < values.size) { "native result contains invalid enum index $index" }
-            return values[index]
-        }
-
-        private fun bool(): Boolean {
-            val value = u8()
-            require(value <= 1) { "native result contains invalid boolean $value" }
-            return value == 1
-        }
+        private fun bool(): Boolean = u8() == 1
 
         private fun string(): String {
             val length = count()
@@ -591,15 +573,8 @@ internal object WireDecoder {
         /** Advances past [length] bytes and returns where they start. */
         private fun take(length: Int): Int {
             val start = offset
-            require(length <= bytes.size - start) { "truncated native result" }
             offset = start + length
             return start
-        }
-
-        /** An `Int` field whose Kotlin model is a 32-bit integer. */
-        private fun Long.toInt32(field: String): Int {
-            require(this in Int.MIN_VALUE..Int.MAX_VALUE) { "native $field exceeds a 32-bit integer" }
-            return toInt()
         }
     }
 }

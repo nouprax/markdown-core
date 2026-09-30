@@ -393,6 +393,14 @@ val buildDesktopJni =
         )
     }
 
+// The JVM tests read the shipped Compose stability configuration from their
+// classpath, so the test artifact CI runs elsewhere carries it.
+val stageComposeStabilityResource =
+    tasks.register<Sync>("stageComposeStabilityResource") {
+        from(layout.projectDirectory.file("compose-stability.conf"))
+        into(layout.buildDirectory.dir("generated/composeStabilityResource"))
+    }
+
 kotlin {
     explicitApi()
 
@@ -495,7 +503,10 @@ kotlin {
             kotlin.srcDir(layout.buildDirectory.dir("generated/canonicalAstCommonTest/kotlin"))
             dependencies { implementation(kotlin("test")) }
         }
-        jvmTest.dependencies { implementation(kotlin("test-junit5")) }
+        jvmTest {
+            resources.srcDir(stageComposeStabilityResource)
+            dependencies { implementation(kotlin("test-junit5")) }
+        }
         getByName("androidDeviceTest").dependencies {
             implementation("androidx.test.ext:junit:1.3.0")
             implementation("androidx.test:runner:1.7.0")

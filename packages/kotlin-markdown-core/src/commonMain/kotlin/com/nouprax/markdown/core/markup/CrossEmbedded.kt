@@ -7,11 +7,8 @@ public class CrossEmbedded internal constructor(
     public val label: String?,
     /** Authored dimensions, absent for an invalid or missing suffix. */
     public val dimensions: Dimensions?,
-    override val scope: Scope,
+    override val id: MarkupID,
+    override val extent: Extent,
     override val anchor: String?,
     override val attributes: Attributes,
-) : Markup {
-    init {
-        require(dimensions == null || label != null) { "dimensions require an authored label" }
-    }
-}
+) : Markup()

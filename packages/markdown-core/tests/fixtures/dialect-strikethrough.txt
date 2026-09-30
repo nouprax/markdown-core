@@ -95,7 +95,7 @@ Document scope=1:1..2:3 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:3 anchor=null attributes={} children=1
     └── Strikethrough scope=1:1..2:3 anchor=null attributes={} children=3
         ├── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-        ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+        ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
         └── Text scope=2:1..2:1 anchor=null attributes={} literal="b" children=0
 ````````````````````````````````
 
@@ -108,6 +108,6 @@ Document scope=1:1..2:5 anchor=null attributes={} children=1
     └── Paragraph scope=1:3..2:5 anchor=null attributes={} children=1
         └── Strikethrough scope=1:3..2:5 anchor=null attributes={} children=3
             ├── Text scope=1:5..1:5 anchor=null attributes={} literal="a" children=0
-            ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+            ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
             └── Text scope=2:3..2:3 anchor=null attributes={} literal="b" children=0
 ````````````````````````````````

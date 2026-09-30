@@ -1,5 +1,8 @@
 import type { Attributes } from "../markup/attributes.js";
 import type { Dimensions } from "../common/constraints.js";
+import { MarkdownCoreError } from "../common/markdown-core-error.js";
+import { SourceLines } from "../common/source-lines.js";
+import type { Document } from "../markup/document.js";
 import type { MetadataValue } from "../markup/metadata.js";
 import type { Markup } from "../markup/markup.js";
 import type {
@@ -9,17 +12,32 @@ import type {
     OrderedListVariant,
     Scope
 } from "../markup/values.js";
-import { walk } from "./markup-walker.js";
+import { placeOf } from "./document-queries.js";
+import { walkWithPlaces } from "./markup-walker.js";
 import type { MarkupVisitor } from "./markup-visitor.js";
 
 /** Produces the canonical debug tree for immutable Markdown markup. */
 export class MarkupDumper {
     private constructor() {}
 
-    /** Returns the canonical debug dump for `root` and its owned markup. */
-    static dump(root: Markup): string {
-        const state = new State();
-        state.dump(root);
+    /** Returns the canonical debug dump of `document`, with scopes computed
+     * from `source`, the text it was parsed from, in UTF-8 columns. Throws
+     * `MarkdownCoreError` `outOfBounds` when `source` ends before the
+     * document does. */
+    static dump(document: Document, source: string): string;
+    /** Returns the canonical debug dump of `node`, a node of `document`, and
+     * its owned markup. Throws `MarkdownCoreError` `outOfBounds` when `source`
+     * ends before the node does. */
+    static dump(document: Document, node: Markup, source: string): string;
+    static dump(document: Document, nodeOrSource: Markup | string, source?: string): string {
+        const root = typeof nodeOrSource === "string" ? document : nodeOrSource;
+        const place = placeOf(document, root);
+        const lines = new SourceLines(typeof nodeOrSource === "string" ? nodeOrSource : source!);
+        if (place.end > lines.bytes.length) throw new MarkdownCoreError("outOfBounds");
+        const state = new State(lines);
+        // A node's walk starts at its own extent, which is relative to the
+        // anchor its relation had where it was written.
+        state.dump(root, place.start - root.extent.lead);
         return state.result();
     }
 }
@@ -32,6 +50,10 @@ class State {
     private readonly frames: OutputFrame[] = [];
     private readonly remainingNodes: number[] = [];
     private readonly lines: string[] = [];
+    /** The scope of the node being entered, set before its callback runs. */
+    private at!: Scope;
+
+    constructor(private readonly source: SourceLines) {}
 
     /** Each callback formats its node; the walker controls traversal. */
     private readonly visitor: MarkupVisitor = {
@@ -42,14 +64,7 @@ class State {
             }
             this.start();
             this.line("Document", node, [], node.content.length, [
-                {
-                    name: null,
-                    count:
-                        node.content.length +
-                        node.footnotes.length +
-                        node.specimens.length +
-                        (node.metadata === null ? 0 : 1)
-                }
+                { name: null, count: node.content.length + (node.metadata === null ? 0 : 1) }
             ]);
         },
         callout: (node, phase) => {
@@ -425,7 +440,9 @@ class State {
                 return;
             }
             this.start();
+            const note = node.referent.kind === "footnote" && node.referent.target.kind === "note";
             this.line("Citation", node, [`referent=${referent(node.referent)}`], 0, [
+                ...(note ? [{ name: null, count: 1 }] : []),
                 { name: "CitationPrefix", count: node.prefix.length },
                 { name: "CitationSuffix", count: node.suffix.length }
             ]);
@@ -460,7 +477,7 @@ class State {
                 return;
             }
             this.start();
-            this.line("Footnote", node, [`id=${escaped(node.id)}`], node.content.length);
+            this.line("Footnote", node, [`label=${optional(node.label)}`], node.content.length);
         },
         specimen: (node, phase) => {
             if (phase === "exit") {
@@ -471,14 +488,16 @@ class State {
             this.line(
                 "Specimen",
                 node,
-                [`id=${node.id === null ? "null" : escaped(node.id)}`, `start=${node.start ?? "null"}`],
+                [`label=${optional(node.label)}`, `start=${node.start ?? "null"}`],
                 node.content.length
             );
         }
     };
 
-    dump(node: Markup): void {
-        walk(node, this.visitor);
+    dump(root: Markup, anchor: number): void {
+        walkWithPlaces(root, anchor, this.visitor, (start, end) => {
+            this.at = this.source.scope(start, end, "utf8");
+        });
     }
 
     result(): string {
@@ -498,7 +517,7 @@ class State {
     ): void {
         this.value(
             kind,
-            node.scope,
+            this.at,
             [`anchor=${optional(node.anchor)}`, `attributes=${attributes(node.attributes)}`, ...fields],
             children
         );
@@ -536,23 +555,20 @@ class State {
     private start(): void {
         if (this.frames.length === 0) return;
         this.advance();
-        const frame = this.frames[this.frames.length - 1]!;
-        if (frame.remaining <= 0) throw new Error("unexpected dump child");
-        frame.remaining -= 1;
+        this.frames[this.frames.length - 1]!.remaining -= 1;
     }
 
     private end(): void {
         this.advance();
-        if (this.frames.pop()!.remaining !== 0 || this.remainingNodes.pop() !== 0) {
-            throw new Error("incomplete dump output");
-        }
+        this.frames.pop();
+        this.remainingNodes.pop();
     }
 
     private advance(): void {
         const frame = this.frames[this.frames.length - 1]!;
         while (frame.remaining === 0 && frame.index < frame.groups.length) {
             if (frame.index >= 0 && frame.groups[frame.index]!.name !== null) {
-                if (this.remainingNodes.pop() !== 0) throw new Error("incomplete dump group");
+                this.remainingNodes.pop();
             }
             frame.index += 1;
             if (frame.index === frame.groups.length) return;
@@ -586,9 +602,14 @@ function variant(value: OrderedListVariant | null): string {
 
 /** A tagged value prints its branch and its named fields with no spaces. */
 function referent(value: CitationReferent): string {
-    return value.kind === "bib"
-        ? `bib(key=${escaped(value.key)},mode=${value.mode})`
-        : `${value.kind}(id=${escaped(value.id)})`;
+    switch (value.kind) {
+        case "bib":
+            return `bib(key=${escaped(value.key)},mode=${value.mode})`;
+        case "footnote":
+            return value.target.kind === "label" ? `footnote(label=${escaped(value.target.value)})` : "footnote(note)";
+        case "specimen":
+            return `specimen(label=${escaped(value.label)})`;
+    }
 }
 
 /** A tagged value prints its branch and its named fields with no spaces. */

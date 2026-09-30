@@ -7,17 +7,13 @@
 #include <markdown_core.h>
 
 static int parse_and_release(const uint8_t *source, size_t length) {
-    markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_parse(source, length, &error);
-    if (!document) {
-        markdown_core_string message = markdown_core_error_get_message(error);
-        fprintf(stderr, "stress parse failed: %.*s\n", (int)message.length,
-                message.data ? (const char *)message.data : "unknown");
-        markdown_core_error_free(error);
+    markdown_core_document *document;
+    markdown_core_status status = markdown_core_document_parse(source, length, &document);
+    if (status != MARKDOWN_CORE_OK) {
+        fprintf(stderr, "stress parse failed with status %d\n", (int)status);
         return 1;
     }
     markdown_core_document_free(document);
-    markdown_core_error_free(error);
     return 0;
 }
 

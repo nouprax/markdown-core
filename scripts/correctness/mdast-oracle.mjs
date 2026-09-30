@@ -181,15 +181,15 @@ function convert(node, definitions, parentType = "root") {
         fields.title = node.title ?? "null";
     }
     // The citation model (M4): a call is a one-item `Cite` whose `Citation`
-    // names the footnote by id and carries empty affix groups; a definition
-    // is a `Footnote` node. mdast's `identifier` is its normalized label,
-    // upper-cased by micromark's normalizer where this side's is case-folded,
-    // so the two meet in lower case.
+    // names the footnote by label and carries empty affix groups; a definition
+    // is a `Footnote` block where it was written. mdast's `identifier` is its
+    // normalized label, upper-cased by micromark's normalizer where this
+    // side's is case-folded, so the two meet in lower case.
     if (node.type === "footnoteReference") {
-        const id = JSON.stringify((node.identifier ?? node.label ?? "").toLowerCase());
-        return [{ kind: "Cite", fields: {}, children: [citationItem({ referent: `footnote(id=${id})` })] }];
+        const label = JSON.stringify((node.identifier ?? node.label ?? "").toLowerCase());
+        return [{ kind: "Cite", fields: {}, children: [citationItem({ referent: `footnote(label=${label})` })] }];
     }
-    if (node.type === "footnoteDefinition") fields.id = (node.identifier ?? node.label ?? "").toLowerCase();
+    if (node.type === "footnoteDefinition") fields.label = (node.identifier ?? node.label ?? "").toLowerCase();
     if (node.type === "tableCell") {
         fields.rowspan = "1";
         fields.colspan = "1";
@@ -298,7 +298,7 @@ export const MDAST_COMPARED = {
     // mdast does not (§5.2), which is a difference of one byte that would have
     // to be registered rather than checked.
     Citation: ["referent"],
-    Footnote: ["id"],
+    Footnote: ["label"],
     Directive: ["name"],
     DirectiveBlock: ["name"],
     Formula: ["literal"],

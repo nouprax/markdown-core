@@ -10,9 +10,10 @@ A statement with a note.[^source]
 [^source]: The supporting detail.
 ```
 
-The paragraph contains a `Cite` with a footnote reference to ID `source`.
-The definition becomes a document-owned `Footnote`; it is stored in
-`Document.footnotes`, not in the paragraph or the document's ordinary content.
+The paragraph contains a `Cite` with a footnote reference to the label
+`source`. The definition is a `Footnote` block with the label `source`, in the
+content where it was written. `Document.footnotes` lists every footnote in
+source order, and `Document.footnote(for:)` answers the one a label names.
 The parser assigns no displayed footnote number.
 
 ## Definition bodies
@@ -34,8 +35,8 @@ Accepted labels use the inherited reference-label case normalization. Definition
 remain below depth 100.
 
 Unreferenced definitions are retained. Repeated calls share one definition by
-ID. For duplicate normalized IDs, the first definition is the resolution target;
-later definitions remain in the collection in source order. No authored
+label. For duplicate normalized labels, the first definition is the resolution
+target; later definitions remain where they were written. No authored
 footnote is discarded simply because it is unused or duplicated.
 
 ## Undefined calls
@@ -58,10 +59,11 @@ Write `^[body]` to define a note at its call site:
 A sentence.^[An inline note with *emphasis*.]
 ```
 
-This produces a one-item `Cite` and a `Footnote` with parsed inline content.
-Unlike a referenced definition, the inline body is not wrapped in a paragraph.
-The call and footnote cover the same authored occurrence. The collection holds
-referenced and inline definitions together in source order.
+This produces a one-item `Cite` whose `Citation` owns the note: a `Footnote`
+with a null label and parsed inline content. Unlike a referenced definition,
+the inline body is not wrapped in a paragraph. The call and footnote cover the
+same authored occurrence. `Document.footnotes` lists referenced and inline
+definitions together in source order.
 
 The body must contain something other than spaces/tabs. Nested brackets and
 nested inline notes are allowed. Its closing bracket finishes the note without
@@ -69,15 +71,11 @@ claiming a following link or attribute tail: `^[note](url)` leaves `(url)` text.
 At `^[`, inline-footnote recognition takes precedence over superscript.
 An escaped caret does not open a note.
 
-Inline notes receive generated IDs `inline-N` in opening-position order, with
-an outer note before its nested notes. If that ID is already authored, the
-smallest free `inline-N-K` suffix is used. Applications should treat these as
-opaque identities, not display numbers.
-
 ## Walking and resolution
 
-Document traversal visits metadata when present, content, footnotes, then specimens. Calls store
-ID edges, never copied bodies. A footnote can refer to itself or another note
+Document traversal visits metadata when present, then content; a definition
+is visited where it was written, and an inline note under its `Citation`.
+Referenced calls store labels, never copied bodies. A footnote can refer to itself or another note
 without creating an AST ownership cycle; a consumer that follows references
 must handle semantic cycles itself. Code, formulas, comments, HTML tokens, and
 cross links protect their bodies from footnote recognition.

@@ -1,48 +1,51 @@
 import MarkdownCoreC
 
-/// A footnote the document owns: a Markup node,
-/// reached through ``Document/footnotes`` and never an element of any content
-/// list.
+/// A footnote: a definition `[^label]: body` in the content where it was
+/// written, or an inline note `^[body]` owned by its citation's referent.
 ///
-/// Repeated calls share one footnote, the first definition of an id wins, and
-/// a valid definition nobody calls is still a footnote. The walk reports it
-/// through the ``MarkupVisitor`` case that takes a `Footnote`, after
-/// the document's content.
+/// A definition's label is the normalized label without the caret; an inline
+/// note has none. ``Document/footnotes`` lists every footnote in source order,
+/// and ``Document/footnote(for:)`` finds the first definition of a label.
 public struct Footnote: Markup {
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let id: String
-        let content: MarkupReferences<any Markup>
-    }
+    let record: FootnoteRecord
 
-    let fields: Stored<Fields>
-
-    /// The source range, from the opening bracket of the definition.
-    public var scope: Scope { fields.scope }
+    /// The node's identifier within its document.
+    public var id: MarkupID { record.id }
+    /// The source range, from the opening bracket of the definition or the
+    /// caret of an inline note.
+    public var extent: Extent { record.extent }
     /// The optional anchor attached to this node.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { record.anchor }
     /// The ordered attributes attached to this node.
-    public var attributes: Attributes { fields.attributes }
-    /// The normalized label without the caret.
-    public var id: String { fields.id }
-    /// The definition's block content.
-    public var content: MarkupCollection<any Markup> { fields.content }
-
-    /// Dispatches this node to its typed visitor method.
+    public var attributes: Attributes { record.attributes }
+    /// The normalized label without the caret, or `nil` for an inline note.
+    public var label: String? { record.label }
+    /// The definition's block content, or an inline note's inline content.
+    public var content: MarkupCollection<any Markup> { record.collection(record.children.indices) }
 }
 
-extension Footnote.Fields {
-    init(from footnote: OpaquePointer, content: [Int]) {
-        var id = markdown_core_string()
-        markdown_core_footnote_id(footnote, &id)
-        self.init(
-            scope: Scope(from: markdown_core_node_scope(footnote)),
-            anchor: markdown_core_node_anchor(footnote).string,
-            attributes: Attributes(from: footnote),
-            id: id.required,
-            content: .init(indices: content)
-        )
+final class FootnoteRecord: MarkupRecord, @unchecked Sendable {
+    let label: String?
+
+    init(_ fields: InheritedFields, label: String?, content: [MarkupRecord]) {
+        self.label = label
+        super.init(fields, children: content)
     }
+
+    override var markup: any Markup { Footnote(record: self) }
+
+    override func hasEqualFields(_ other: MarkupRecord) -> Bool {
+        label == unsafeDowncast(other, to: FootnoteRecord.self).label
+    }
+}
+
+extension FootnoteRecord {
+    convenience init(from footnote: OpaquePointer, content: [MarkupRecord]) {
+        let label = answer(markdown_core_optional_string()) { markdown_core_footnote_label(footnote, $0) }.string
+        self.init(InheritedFields(from: footnote), label: label, content: content)
+    }
+}
+
+extension Footnote: RecordBacked {
+    var base: MarkupRecord { record }
 }

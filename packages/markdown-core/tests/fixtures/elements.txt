@@ -106,7 +106,7 @@ Document scope=1:1..15:7 anchor=null attributes={} children=6
 │   └── Text scope=1:1..1:45 anchor=null attributes={} literal="| Not enough table | to be considered table |" children=0
 ├── Paragraph scope=3:1..4:45 anchor=null attributes={} children=3
 │   ├── Text scope=3:1..3:45 anchor=null attributes={} literal="| Not enough table | to be considered table |" children=0
-│   ├── SoftBreak scope=3:46..3:46 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=3:46..4:0 anchor=null attributes={} children=0
 │   └── Text scope=4:1..4:45 anchor=null attributes={} literal="| Not enough table | to be considered table |" children=0
 ├── Table scope=6:1..7:46 anchor=null attributes={} columns=[none:null,none:null] children=1
 │   ├── TableHead children=1
@@ -250,9 +250,9 @@ The header and delimiter row must match.
 Document scope=1:1..3:23 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..3:23 anchor=null attributes={} children=5
     ├── Text scope=1:1..1:13 anchor=null attributes={} literal="| a | b | c |" children=0
-    ├── SoftBreak scope=1:14..1:14 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:14..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:13 anchor=null attributes={} literal="| --- | --- |" children=0
-    ├── SoftBreak scope=2:14..2:14 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:14..3:0 anchor=null attributes={} children=0
     └── Text scope=3:1..3:23 anchor=null attributes={} literal="| this | isn't | okay |" children=0
 ````````````````````````````````
 
@@ -564,7 +564,7 @@ d | e
 Document scope=1:1..5:5 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..2:3 anchor=null attributes={} children=3
 │   ├── Text scope=1:1..1:3 anchor=null attributes={} literal="123" children=0
-│   ├── SoftBreak scope=1:4..1:4 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=1:4..2:0 anchor=null attributes={} children=0
 │   └── Text scope=2:1..2:3 anchor=null attributes={} literal="456" children=0
 └── Table scope=3:1..5:5 anchor=null attributes={} columns=[none:null,none:null] children=2
     ├── TableHead children=1
@@ -992,7 +992,7 @@ Document scope=1:1..21:14 anchor=null attributes={} children=12
 ├── Comment scope=13:1..13:40 anchor=null attributes={} literal=" HTML comments are okay, though. " children=0
 ├── Paragraph scope=14:1..15:17 anchor=null attributes={} children=3
 │   ├── Text scope=14:1..14:24 anchor=null attributes={} literal="<!- But we're strict. ->" children=0
-│   ├── SoftBreak scope=14:25..14:25 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=14:25..15:0 anchor=null attributes={} children=0
 │   └── Text scope=15:1..15:17 anchor=null attributes={} literal="<! No nonsense. >" children=0
 ├── Comment scope=16:1..18:3 anchor=null attributes={} literal=" Leave multiline comments the heck alone, though, okay?\nEven with {\"x\":\"y\"} or 1 > 2 or whatever. Even **markdown**.\n" children=0
 ├── Comment scope=19:1..19:54 anchor=null attributes={} literal="- Support everything CommonMark's parser does. " children=0
@@ -1030,56 +1030,56 @@ Hi!
 
 [^unused]: This is unused.
 .
-Document scope=1:1..26:26 anchor=null attributes={} children=5
+Document scope=1:1..26:26 anchor=null attributes={} children=10
 ├── Paragraph scope=1:1..1:47 anchor=null attributes={} children=5
 │   ├── Text scope=1:1..1:18 anchor=null attributes={} literal="This is some text!" children=0
 │   ├── Cite scope=1:19..1:22 anchor=null attributes={} children=1
-│   │   └── Citation scope=1:20..1:21 anchor=null attributes={} referent=footnote(id="1") children=0
+│   │   └── Citation scope=1:20..1:21 anchor=null attributes={} referent=footnote(label="1") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   ├── Text scope=1:23..1:35 anchor=null attributes={} literal=". Other text." children=0
 │   ├── Cite scope=1:36..1:46 anchor=null attributes={} children=1
-│   │   └── Citation scope=1:37..1:45 anchor=null attributes={} referent=footnote(id="footnote") children=0
+│   │   └── Citation scope=1:37..1:45 anchor=null attributes={} referent=footnote(label="footnote") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   └── Text scope=1:47..1:47 anchor=null attributes={} literal="." children=0
 ├── Paragraph scope=3:1..3:28 anchor=null attributes={} children=3
 │   ├── Text scope=3:1..3:14 anchor=null attributes={} literal="Here's a thing" children=0
 │   ├── Cite scope=3:15..3:27 anchor=null attributes={} children=1
-│   │   └── Citation scope=3:16..3:26 anchor=null attributes={} referent=footnote(id="other-note") children=0
+│   │   └── Citation scope=3:16..3:26 anchor=null attributes={} referent=footnote(label="other-note") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   └── Text scope=3:28..3:28 anchor=null attributes={} literal="." children=0
 ├── Paragraph scope=5:1..5:35 anchor=null attributes={} children=3
 │   ├── Text scope=5:1..5:17 anchor=null attributes={} literal="And another thing" children=0
 │   ├── Cite scope=5:18..5:34 anchor=null attributes={} children=1
-│   │   └── Citation scope=5:19..5:33 anchor=null attributes={} referent=footnote(id="codeblock-note") children=0
+│   │   └── Citation scope=5:19..5:33 anchor=null attributes={} referent=footnote(label="codeblock-note") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   └── Text scope=5:35..5:35 anchor=null attributes={} literal="." children=0
 ├── Paragraph scope=7:1..7:36 anchor=null attributes={} children=1
 │   └── Text scope=7:1..7:36 anchor=null attributes={} literal="This doesn't have a referent[^nope]." children=0
-├── Paragraph scope=17:1..17:3 anchor=null attributes={} children=1
-│   └── Text scope=17:1..17:3 anchor=null attributes={} literal="Hi!" children=0
-├── Footnote scope=10:1..11:0 anchor=null attributes={} id="other-note" children=1
+├── Footnote scope=10:1..11:0 anchor=null attributes={} label="other-note" children=1
 │   └── Paragraph scope=10:22..10:66 anchor=null attributes={} children=1
 │       └── Text scope=10:22..10:66 anchor=null attributes={} literal="no code block here (spaces are stripped away)" children=0
-├── Footnote scope=12:1..14:0 anchor=null attributes={} id="codeblock-note" children=1
+├── Footnote scope=12:1..14:0 anchor=null attributes={} label="codeblock-note" children=1
 │   └── CodeBlock scope=13:9..14:0 anchor=null attributes={} info=null language=null literal="this is now a code block (8 spaces indentation)\n" fenced=false closed=true children=0
-├── Footnote scope=15:1..16:0 anchor=null attributes={} id="1" children=1
+├── Footnote scope=15:1..16:0 anchor=null attributes={} label="1" children=1
 │   └── Paragraph scope=15:7..15:40 anchor=null attributes={} children=3
 │       ├── Text scope=15:7..15:11 anchor=null attributes={} literal="Some " children=0
 │       ├── Emphasis scope=15:12..15:19 anchor=null attributes={} children=1
 │       │   └── Text scope=15:13..15:18 anchor=null attributes={} literal="bolded" children=0
 │       └── Text scope=15:20..15:40 anchor=null attributes={} literal=" footnote definition." children=0
-├── Footnote scope=19:1..25:0 anchor=null attributes={} id="footnote" children=3
+├── Paragraph scope=17:1..17:3 anchor=null attributes={} children=1
+│   └── Text scope=17:1..17:3 anchor=null attributes={} literal="Hi!" children=0
+├── Footnote scope=19:1..25:0 anchor=null attributes={} label="footnote" children=3
 │   ├── Callout scope=20:5..20:39 anchor=null attributes={} variant=null collapsed=null children=1
 │   │   └── Paragraph scope=20:7..20:39 anchor=null attributes={} children=1
 │   │       └── Text scope=20:7..20:39 anchor=null attributes={} literal="Blockquotes can be in a footnote." children=0
 │   ├── CodeBlock scope=22:9..23:0 anchor=null attributes={} info=null language=null literal="as well as code blocks\n" fenced=false closed=true children=0
 │   └── Paragraph scope=24:5..24:37 anchor=null attributes={} children=1
 │       └── Text scope=24:5..24:37 anchor=null attributes={} literal="or, naturally, simple paragraphs." children=0
-└── Footnote scope=26:1..26:26 anchor=null attributes={} id="unused" children=1
+└── Footnote scope=26:1..26:26 anchor=null attributes={} label="unused" children=1
     └── Paragraph scope=26:12..26:26 anchor=null attributes={} children=1
         └── Text scope=26:12..26:26 anchor=null attributes={} literal="This is unused." children=0
 ````````````````````````````````
@@ -1093,26 +1093,26 @@ This footnote is referenced[^a-footnote] multiple times, in lots of different pl
 
 [^a-footnote]: This footnote definition should have three backrefs.
 .
-Document scope=1:1..5:67 anchor=null attributes={} children=2
+Document scope=1:1..5:67 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..1:50 anchor=null attributes={} children=3
 │   ├── Text scope=1:1..1:36 anchor=null attributes={} literal="This is some text. It has a footnote" children=0
 │   ├── Cite scope=1:37..1:49 anchor=null attributes={} children=1
-│   │   └── Citation scope=1:38..1:48 anchor=null attributes={} referent=footnote(id="a-footnote") children=0
+│   │   └── Citation scope=1:38..1:48 anchor=null attributes={} referent=footnote(label="a-footnote") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   └── Text scope=1:50..1:50 anchor=null attributes={} literal="." children=0
 ├── Paragraph scope=3:1..3:98 anchor=null attributes={} children=4
 │   ├── Text scope=3:1..3:27 anchor=null attributes={} literal="This footnote is referenced" children=0
 │   ├── Cite scope=3:28..3:40 anchor=null attributes={} children=1
-│   │   └── Citation scope=3:29..3:39 anchor=null attributes={} referent=footnote(id="a-footnote") children=0
+│   │   └── Citation scope=3:29..3:39 anchor=null attributes={} referent=footnote(label="a-footnote") children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
 │   ├── Text scope=3:41..3:85 anchor=null attributes={} literal=" multiple times, in lots of different places." children=0
 │   └── Cite scope=3:86..3:98 anchor=null attributes={} children=1
-│       └── Citation scope=3:87..3:97 anchor=null attributes={} referent=footnote(id="a-footnote") children=0
+│       └── Citation scope=3:87..3:97 anchor=null attributes={} referent=footnote(label="a-footnote") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-└── Footnote scope=5:1..5:67 anchor=null attributes={} id="a-footnote" children=1
+└── Footnote scope=5:1..5:67 anchor=null attributes={} label="a-footnote" children=1
     └── Paragraph scope=5:16..5:67 anchor=null attributes={} children=1
         └── Text scope=5:16..5:67 anchor=null attributes={} literal="This footnote definition should have three backrefs." children=0
 ````````````````````````````````
@@ -1124,14 +1124,14 @@ Hello[^"><script>alert(1)</script>]
 
 [^"><script>alert(1)</script>]: pwned
 .
-Document scope=1:1..3:37 anchor=null attributes={} children=1
+Document scope=1:1..3:37 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:35 anchor=null attributes={} children=2
 │   ├── Text scope=1:1..1:5 anchor=null attributes={} literal="Hello" children=0
 │   └── Cite scope=1:6..1:35 anchor=null attributes={} children=1
-│       └── Citation scope=1:7..1:34 anchor=null attributes={} referent=footnote(id="\"><script>alert(1)</script>") children=0
+│       └── Citation scope=1:7..1:34 anchor=null attributes={} referent=footnote(label="\"><script>alert(1)</script>") children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
-└── Footnote scope=3:1..3:37 anchor=null attributes={} id="\"><script>alert(1)</script>" children=1
+└── Footnote scope=3:1..3:37 anchor=null attributes={} label="\"><script>alert(1)</script>" children=1
     └── Paragraph scope=3:33..3:37 anchor=null attributes={} children=1
         └── Text scope=3:33..3:37 anchor=null attributes={} literal="pwned" children=0
 ````````````````````````````````

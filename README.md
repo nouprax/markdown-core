@@ -26,8 +26,9 @@ product to your target:
 ```swift
 import MarkdownCore
 
-let document = try Document.parse("Hello, Markdown.")
-print(document.dump())
+let source = "Hello, Markdown."
+let document = try Document.parse(source)
+print(try document.dump(in: source))
 ```
 
 The AST is an immutable, `Sendable` value tree with typed visitors and
@@ -55,8 +56,9 @@ kotlin {
 ```kotlin
 import com.nouprax.markdown.core.Document
 
-val document = Document.parse("Hello, Markdown.")
-println(document.dump())
+val source = "Hello, Markdown."
+val document = Document.parse(source)
+println(document.dump(source))
 ```
 
 Supported targets are Android API 21 or later, JVM 17, macOS arm64, and Linux
@@ -73,8 +75,9 @@ pnpm add @nouprax/es-markdown-core
 ```js
 import { Document, MarkupDumper } from "@nouprax/es-markdown-core";
 
-const document = Document.parse("Hello, Markdown.");
-console.log(MarkupDumper.dump(document));
+const source = "Hello, Markdown.";
+const document = Document.parse(source);
+console.log(MarkupDumper.dump(document, source));
 ```
 
 The ESM package supports Node.js 20 or later and browsers that can load its
@@ -90,10 +93,11 @@ find_package(markdown-core CONFIG REQUIRED)
 target_link_libraries(my-app PRIVATE markdown-core::markdown-core)
 ```
 
-Include `<markdown_core.h>` and call `markdown_core_document_parse`. Release
-successful parses with `markdown_core_document_free`; node and string views
-borrow from that document. Release errors and allocated dumps with
-`markdown_core_error_free` and `markdown_core_dump_free`.
+Include `<markdown_core.h>` and call `markdown_core_document_parse`. Every
+call that can fail returns a `markdown_core_status` and writes its result
+through an out-parameter only on `MARKDOWN_CORE_OK`. Release a parsed document
+with `markdown_core_document_free`; node and string views borrow from that
+document. Release an allocated dump with `markdown_core_dump_free`.
 
 Independent parses may run concurrently. Read-only access to a document is
 safe while it remains alive. See the [public C header](packages/markdown-core/include/markdown_core.h)

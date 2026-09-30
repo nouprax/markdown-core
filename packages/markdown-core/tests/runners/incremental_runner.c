@@ -10,6 +10,8 @@
  *   4.1  the subject's text equals the harness's text model, and the canonical
  *        dump of its document equals the dump of a fresh parse of that text
  *        (after every chunk of a stream too, 4.6)
+ *   4.2  the document's ids number its nodes from 1 in canonical walk order,
+ *        and its ids and extents equal a fresh parse's
  *   4.5  every scripted identity expectation names a node of its kind where
  *        it says, so the script means what it states once ids exist
  *   4.7  a batch's dump equals the dump after its edits one at a time, in
@@ -75,12 +77,12 @@ static void fail(run *state, const char *oracle, const char *format, ...) {
 
 static bool stopped(const run *state) { return state->stop_at_failure && state->failures; }
 
-/* The canonical dump of a document; the caller frees it. */
-static uint8_t *dump_of(const markdown_core_document *document, size_t *length) {
+/* The canonical dump of a document parsed from `source`; the caller frees it. */
+static uint8_t *dump_of(const markdown_core_document *document, const uint8_t *source, size_t source_length,
+                        size_t *length) {
     uint8_t *output = NULL;
-    markdown_core_error *error = NULL;
-    if (!markdown_core_document_dump(document, &output, length, &error)) {
-        markdown_core_error_free(error);
+    if (markdown_core_document_dump(document, markdown_core_document_root(document), source, source_length, &output,
+                                    length) != MARKDOWN_CORE_OK) {
         return NULL;
     }
     return output;
@@ -92,7 +94,7 @@ static uint8_t *dump_text(const uint8_t *bytes, size_t length, size_t *dump_leng
     if (!document) {
         return NULL;
     }
-    dump = dump_of(document, dump_length);
+    dump = dump_of(document, bytes, length, dump_length);
     markdown_core_document_free(document);
     return dump;
 }
@@ -101,7 +103,78 @@ static bool same(const uint8_t *left, size_t left_length, const uint8_t *right, 
     return left && right && left_length == right_length && memcmp(left, right, left_length) == 0;
 }
 
-/* 4.1: the subject's text is the model's, and its document is a fresh parse's. */
+/* ------------------------------------------------------ identifiers (4.2) */
+
+/* A document's nodes in canonical walk order: kind, id and extent. */
+typedef struct {
+    markdown_core_node_kind kind;
+    uint64_t id;
+    markdown_core_extent extent;
+} walked_node;
+
+typedef struct {
+    walked_node *nodes;
+    size_t count, capacity;
+} walked;
+
+static int visit_record(const markdown_core_node *node, ts_ast_range range, void *context) {
+    walked *list = (walked *)context;
+    (void)range;
+    if (list->count == list->capacity) {
+        size_t capacity = list->capacity ? list->capacity * 2 : 64;
+        walked_node *nodes = (walked_node *)realloc(list->nodes, capacity * sizeof(*nodes));
+        if (!nodes) {
+            return 1;
+        }
+        list->nodes = nodes;
+        list->capacity = capacity;
+    }
+    list->nodes[list->count++] =
+        (walked_node){markdown_core_node_get_kind(node), markdown_core_node_id(node), markdown_core_node_extent(node)};
+    return 0;
+}
+
+static bool same_node(walked_node left, walked_node right) {
+    return left.kind == right.kind && left.id == right.id && left.extent.lead == right.extent.lead &&
+           left.extent.span == right.extent.span;
+}
+
+static bool walk_document(const markdown_core_document *document, walked *list) {
+    return document && ts_ast_walk(markdown_core_document_root(document), visit_record, list) == 0;
+}
+
+/* 4.2 for a fresh parse: ids number the nodes from 1 in canonical walk order,
+ * so they are unique across every owned relation, and the document equals a
+ * second fresh parse of the text, ids included. */
+static void check_identifiers(run *state, const char *where, size_t step, const markdown_core_document *document,
+                              const markdown_core_document *fresh) {
+    walked actual = {0}, expected = {0};
+    if (!walk_document(document, &actual) || !walk_document(fresh, &expected)) {
+        fail(state, "harness", "%s step %zu: a document could not be walked", where, step);
+    } else {
+        size_t index;
+        for (index = 0; index < actual.count && actual.nodes[index].id == index + 1; index++) {
+        }
+        if (index < actual.count) {
+            fail(state, "4.2", "%s step %zu: node %zu of the canonical walk has id %llu", where, step, index + 1,
+                 (unsigned long long)actual.nodes[index].id);
+        } else {
+            for (index = 0; index < actual.count && index < expected.count &&
+                            same_node(actual.nodes[index], expected.nodes[index]);
+                 index++) {
+            }
+            if (actual.count != expected.count || index < actual.count) {
+                fail(state, "4.2", "%s step %zu: the document's ids or extents differ from a fresh parse's", where,
+                     step);
+            }
+        }
+    }
+    free(actual.nodes);
+    free(expected.nodes);
+}
+
+/* 4.1: the subject's text is the model's, and its document is a fresh parse's;
+ * then 4.2 against that same fresh parse. */
 static void check_equivalence(run *state, const char *where, size_t step, void *subject,
                               const markdown_core_document *document, const eh_text *model) {
     size_t length = 0;
@@ -109,17 +182,22 @@ static void check_equivalence(run *state, const char *where, size_t step, void *
     size_t actual_length = 0, expected_length = 0;
     uint8_t *actual;
     uint8_t *expected;
+    markdown_core_document *fresh;
     if (!same(text, length, model->bytes, model->length) && !(length == 0 && model->length == 0)) {
         fail(state, "4.1", "%s step %zu: the subject's text differs from the text model", where, step);
         return;
     }
-    actual = dump_of(document, &actual_length);
-    expected = dump_text(model->bytes, model->length, &expected_length);
+    fresh = ts_ast_parse(model->bytes, model->length);
+    actual = dump_of(document, text, length, &actual_length);
+    expected = fresh ? dump_of(fresh, model->bytes, model->length, &expected_length) : NULL;
     if (!same(actual, actual_length, expected, expected_length)) {
         fail(state, "4.1", "%s step %zu: the document differs from a fresh parse of the text", where, step);
+    } else {
+        check_identifiers(state, where, step, document, fresh);
     }
     markdown_core_dump_free(actual);
     markdown_core_dump_free(expected);
+    markdown_core_document_free(fresh);
 }
 
 /* The model applies a batch as the gates define it: every edit against the
@@ -181,7 +259,7 @@ static void check_batch(run *state, const char *where, size_t step, const markdo
         eh_text_free(&text);
         return;
     }
-    actual = dump_of(document, &actual_length);
+    actual = dump_of(document, text.bytes, text.length, &actual_length);
     expected = dump_text(text.bytes, text.length, &expected_length);
     if (!same(actual, actual_length, expected, expected_length)) {
         fail(state, "4.7", "%s step %zu: the batch differs from its edits one at a time", where, step);
@@ -194,45 +272,16 @@ static void check_batch(run *state, const char *where, size_t step, const markdo
 /* ------------------------------------------------ scripted identity (4.5) */
 
 typedef struct locate {
-    const uint8_t *text;
-    size_t length;
-    size_t *lines;
-    size_t line_count;
     const char *kind;
     size_t at;
     bool found;
 } locate;
 
-/* Line starts under the parser's line endings: LF, CR and CR LF. */
-static size_t *line_starts(const uint8_t *text, size_t length, size_t *count) {
-    size_t *lines = (size_t *)malloc((length + 2) * sizeof(size_t));
-    size_t at;
-    if (!lines) {
-        return NULL;
-    }
-    *count = 0;
-    lines[(*count)++] = 0;
-    for (at = 0; at < length; at++) {
-        if (text[at] == '\r' && at + 1 < length && text[at + 1] == '\n') {
-            at++;
-        }
-        if (text[at] == '\n' || text[at] == '\r') {
-            lines[(*count)++] = at + 1;
-        }
-    }
-    return lines;
-}
-
-static int visit_locate(const markdown_core_node *node, void *context) {
+static int visit_locate(const markdown_core_node *node, ts_ast_range range, void *context) {
     locate *search = (locate *)context;
-    markdown_core_scope scope = markdown_core_node_scope(node);
-    size_t offset;
-    if (strcmp(markdown_core_node_kind_name(markdown_core_node_get_kind(node)), search->kind) != 0 ||
-        scope.start.line < 1 || (size_t)scope.start.line > search->line_count || scope.start.column < 1) {
-        return 0;
-    }
-    offset = search->lines[scope.start.line - 1] + (size_t)scope.start.column - 1;
-    if (offset == search->at) {
+    const char *name;
+    TS_OK(markdown_core_node_kind_name(markdown_core_node_get_kind(node), &name));
+    if (strcmp(name, search->kind) == 0 && range.start == (int64_t)search->at) {
         search->found = true;
         return 1;
     }
@@ -241,17 +290,10 @@ static int visit_locate(const markdown_core_node *node, void *context) {
 
 static bool node_at(const uint8_t *text, size_t length, const char *kind, size_t at) {
     markdown_core_document *document = ts_ast_parse(text, length);
-    locate search;
-    memset(&search, 0, sizeof(search));
-    search.text = text;
-    search.length = length;
-    search.kind = kind;
-    search.at = at;
-    search.lines = line_starts(text, length, &search.line_count);
-    if (document && search.lines) {
+    locate search = {kind, at, false};
+    if (document) {
         ts_ast_walk(markdown_core_document_root(document), visit_locate, &search);
     }
-    free(search.lines);
     markdown_core_document_free(document);
     return search.found;
 }
@@ -313,7 +355,9 @@ static void run_edits(run *state, const char *where, eh_unit unit, const uint8_t
             if (status != EH_INVALID) {
                 fail(state, "4.8", "%s step %zu: an invalid argument was accepted", where, index + 1);
             }
-            markdown_core_document_free(next);
+            if (next) {
+                markdown_core_document_free(next);
+            }
             /* A subject that accepted it no longer holds the model's text. */
             if (status == EH_OK) {
                 break;

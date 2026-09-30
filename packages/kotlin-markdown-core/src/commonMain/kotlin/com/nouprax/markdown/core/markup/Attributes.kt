@@ -5,13 +5,15 @@ public data class Record(
     public val value: String,
 )
 
-/** Ordered immutable values, including every duplicate. */
+/** Ordered values, including every duplicate. */
 public class Attributes(
-    classes: kotlin.collections.List<String>,
-    records: kotlin.collections.List<Record>,
+    public val classes: kotlin.collections.List<String>,
+    public val records: kotlin.collections.List<Record>,
 ) {
-    public val classes: kotlin.collections.List<String> = classes.immutableMap { it }
-    public val records: kotlin.collections.List<Record> = records.immutableMap { it }
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is Attributes && classes == other.classes && records == other.records)
+
+    override fun hashCode(): Int = 31 * classes.hashCode() + records.hashCode()
 
     public companion object {
         public val empty: Attributes = Attributes(emptyList(), emptyList())

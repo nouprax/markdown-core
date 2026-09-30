@@ -1,4 +1,4 @@
-# The MCB2 encoder (docs/architecture/wire-format.md), for the bindings that
+# The MCB3 encoder (docs/architecture/wire-format.md), for the bindings that
 # cannot hold C node handles. It consumes the installed facade and nothing
 # else, is not installed, and each binding builds it into its own adapter.
 add_library(libmarkdown-core-wire STATIC markdown_core_wire.c markdown_core_wire.h)

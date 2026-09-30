@@ -1,3 +1,5 @@
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +13,39 @@ static void check(int condition, const char *message) {
         fprintf(stderr, "FAILED: %s\n", message);
         failures++;
     }
+}
+
+/* A call the case expects to succeed. */
+static bool ok(markdown_core_status status, const char *message) {
+    check(status == MARKDOWN_CORE_OK, message);
+    return status == MARKDOWN_CORE_OK;
+}
+
+/* The document parsed from `length` bytes of `source`, or NULL, having
+ * reported the failure. */
+static markdown_core_document *parse(const void *source, size_t length) {
+    markdown_core_document *document = NULL;
+    return ok(markdown_core_document_parse((const uint8_t *)source, length, &document), "facade parse succeeds")
+               ? document
+               : NULL;
+}
+
+/* A node-valued field, which the case expects its accessor to answer. */
+typedef markdown_core_status (*node_field)(const markdown_core_node *node, const markdown_core_node **field);
+
+static const markdown_core_node *field(const markdown_core_node *node, node_field accessor) {
+    const markdown_core_node *value = NULL;
+    ok(accessor(node, &value), "a node-valued field of the node's kind answers");
+    return value;
+}
+
+/* The scope of `node`, computed from the source its document was parsed from. */
+static markdown_core_scope scope_in(const markdown_core_document *document, const markdown_core_node *node,
+                                    const void *source, size_t length) {
+    markdown_core_scope scope = {{-1, -1}, {-1, -1}};
+    ok(markdown_core_document_scope(document, node, (const uint8_t *)source, length, &scope),
+       "the scope query answers for a node of the document");
+    return scope;
 }
 
 static uint8_t *read_file(const char *path, size_t *length) {
@@ -47,7 +82,6 @@ static void check_fixture(const char *fixture_dir, const char *name) {
     uint8_t *actual = NULL;
     size_t markdown_length = 0, expected_length = 0, actual_length = 0;
     markdown_core_document *document;
-    markdown_core_error *error = NULL;
 
     snprintf(markdown_path, sizeof(markdown_path), "%s/%s.md", fixture_dir, name);
     snprintf(ast_path, sizeof(ast_path), "%s/%s.ast", fixture_dir, name);
@@ -59,13 +93,13 @@ static void check_fixture(const char *fixture_dir, const char *name) {
     }
 
     /* The manifest names no option: every case is the one dialect. */
-    document = markdown_core_document_parse(markdown, markdown_length, &error);
-    check(document != NULL && error == NULL, "facade parse succeeds");
+    document = parse(markdown, markdown_length);
     if (!document) {
         goto done;
     }
-    check(markdown_core_document_dump(document, &actual, &actual_length, &error), "native AST dump succeeds");
-    check(error == NULL, "successful dump has no error");
+    ok(markdown_core_document_dump(document, markdown_core_document_root(document), markdown, markdown_length, &actual,
+                                   &actual_length),
+       "native AST dump succeeds");
     if (actual && (actual_length != expected_length || memcmp(actual, expected, expected_length) != 0)) {
         fprintf(stderr, "FAILED: %s dump differs from reviewed golden\n", name);
         fwrite(actual, 1, actual_length, stderr);
@@ -75,7 +109,6 @@ static void check_fixture(const char *fixture_dir, const char *name) {
     markdown_core_document_free(document);
 
 done:
-    markdown_core_error_free(error);
     free(markdown);
     free(expected);
 }
@@ -92,15 +125,17 @@ static void check_native_coordinate_contract(void) {
     static const struct {
         const char *source;
         int end_line, end_column;
-    } cases[] = {{"", 0, 0}, {"\n", 1, 0}, {"\r\n", 1, 0}, {"é", 1, 2}, {"🚀", 1, 4}, {"a\r\nb", 2, 1}};
+    } cases[] = {{"", 1, 0}, {"\n", 1, 0}, {"\r\n", 1, 0}, {"é", 1, 2}, {"🚀", 1, 4}, {"a\r\nb", 2, 1}};
     for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
-        markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)cases[i].source, strlen(cases[i].source), NULL);
-        check(document != NULL, "native coordinate witness parses");
-        markdown_core_scope scope = markdown_core_node_scope(markdown_core_document_root(document));
+        markdown_core_document *document = parse(cases[i].source, strlen(cases[i].source));
+        if (!document) {
+            continue;
+        }
+        markdown_core_scope scope =
+            scope_in(document, markdown_core_document_root(document), cases[i].source, strlen(cases[i].source));
         check(scope.start.line == 1 && scope.start.column == 1 && scope.end.line == cases[i].end_line &&
                   scope.end.column == cases[i].end_column,
-              "UTF-8 coordinates and empty-input sentinels are preserved verbatim");
+              "UTF-8 coordinates follow the byte rule, the empty input included");
         markdown_core_document_free(document);
     }
 }
@@ -140,13 +175,11 @@ static void check_null_and_empty(void) {
     size_t index;
 
     for (index = 0; index < sizeof(CASES) / sizeof(CASES[0]); ++index) {
-        markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)CASES[index].source, strlen(CASES[index].source), NULL);
+        markdown_core_document *document = parse(CASES[index].source, strlen(CASES[index].source));
         const markdown_core_node *node = NULL;
         markdown_core_string destination = {NULL, 0};
         markdown_core_optional_string title = {false, {NULL, 0}};
         markdown_core_destination tagged;
-        bool read;
         if (!document) {
             check(false, "requirement 14 case parses");
             continue;
@@ -157,12 +190,12 @@ static void check_null_and_empty(void) {
         /* M1: a link or image answers the tagged `Destination`, and every one
          * the inherited grammar produces is the `url` branch, with the other
          * branch's fields zeroed rather than left over. */
-        read = markdown_core_node_destination(node, &tagged) && markdown_core_node_title(node, &title);
-        check(read && tagged.kind == MARKDOWN_CORE_DESTINATION_URL, "a link or image destination is the url branch");
+        ok(markdown_core_node_destination(node, &tagged), "a link or image answers its destination");
+        ok(markdown_core_node_title(node, &title), "a link or image answers its title");
+        check(tagged.kind == MARKDOWN_CORE_DESTINATION_URL, "a link or image destination is the url branch");
         check(tagged.path.data == NULL && tagged.path.length == 0 && !tagged.anchor.has_value,
               "the cross branch's fields are zeroed on a url destination");
         destination = tagged.url;
-        check(read, "the resource accessor answers");
         /* A DESTINATION IS NEVER ABSENT. There is no `has_value` to test,
          * because the type does not offer one -- that IS the assertion. */
         check(destination.length == strlen(CASES[index].destination) &&
@@ -180,8 +213,7 @@ static void check_null_and_empty(void) {
     }
 
     for (index = 0; index < sizeof(INFO_CASES) / sizeof(INFO_CASES[0]); ++index) {
-        markdown_core_document *document = markdown_core_document_parse((const uint8_t *)INFO_CASES[index].source,
-                                                                        strlen(INFO_CASES[index].source), NULL);
+        markdown_core_document *document = parse(INFO_CASES[index].source, strlen(INFO_CASES[index].source));
         const markdown_core_node *node;
         markdown_core_optional_string info = {false, {NULL, 0}};
         markdown_core_optional_string language = {false, {NULL, 0}};
@@ -193,8 +225,8 @@ static void check_null_and_empty(void) {
             continue;
         }
         node = markdown_core_node_get_first_child(markdown_core_document_root(document));
-        check(markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed),
-              "the code-block accessor answers");
+        ok(markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed),
+           "a code block answers its properties");
         check(info.has_value == INFO_CASES[index].info_written,
               "a fence with only whitespace after it wrote no info string");
         check(language.has_value == info.has_value, "language is present exactly when the info string is");
@@ -209,8 +241,7 @@ static void check_null_and_empty(void) {
 
 static void check_image_dimensions(void) {
     const char *source = "![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared\n";
-    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
-    check(document != NULL, "dimensioned image references parse");
+    markdown_core_document *document = parse(source, strlen(source));
     if (!document) {
         return;
     }
@@ -222,7 +253,10 @@ static void check_image_dimensions(void) {
         if (markdown_core_node_get_kind(node) != MARKDOWN_CORE_KIND_EMBEDDED) {
             continue;
         }
-        const markdown_core_dimensions *dimensions = markdown_core_node_dimensions(node);
+        const markdown_core_dimensions *dimensions = NULL;
+        const markdown_core_resource *resource = NULL;
+        ok(markdown_core_node_dimensions(node, &dimensions), "an image answers its dimensions");
+        ok(markdown_core_node_resource(node, &resource), "an image answers its resource");
         check((dimensions != NULL) == (index < 2), "dimension presence is per image");
         if (dimensions) {
             check(dimensions->width == (index == 0 ? INT32_MAX : 3), "parsed width is exact");
@@ -230,9 +264,9 @@ static void check_image_dimensions(void) {
         }
         if (index == 0) {
             check(dimensions && dimensions->height.value == 2, "parsed height is exact");
-            shared = markdown_core_node_resource(node);
+            shared = resource;
         }
-        check(shared == markdown_core_node_resource(node), "dimensions never split a shared destination");
+        check(shared == resource, "dimensions never split a shared destination");
         if (index == 1) {
             check(markdown_core_node_get_first_child(node) == NULL, "numeric-only alt has no children");
         }
@@ -244,10 +278,10 @@ static void check_image_dimensions(void) {
 
 /* M2: every occurrence that resolved through one definition shares one
  * resource, and the identity says so; a direct link, a direct image and an
- * autolink each own one, and every other kind has none. */
+ * autolink each own one. */
 static void check_resource_identity(void) {
     static const char source[] = "[a][r] [r][] [r] ![i][r] [d](/r) <https://x.y> [none]\n\n[r]: /r\n";
-    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    markdown_core_document *document = parse(source, strlen(source));
     const markdown_core_node *paragraph;
     const markdown_core_node *child;
     const markdown_core_resource *shared = NULL;
@@ -260,18 +294,15 @@ static void check_resource_identity(void) {
         return;
     }
     paragraph = markdown_core_node_get_first_child(markdown_core_document_root(document));
-    check(markdown_core_node_resource(markdown_core_document_root(document)) == NULL &&
-              markdown_core_node_resource(paragraph) == NULL && markdown_core_node_resource(NULL) == NULL,
-          "a kind with no destination has no resource");
     for (child = markdown_core_node_get_first_child(paragraph); child;
          child = markdown_core_node_get_next_sibling(child)) {
-        const markdown_core_resource *resource = markdown_core_node_resource(child);
         markdown_core_node_kind kind = markdown_core_node_get_kind(child);
         if (kind != MARKDOWN_CORE_KIND_LINK && kind != MARKDOWN_CORE_KIND_EMBEDDED) {
-            check(resource == NULL, "a text node has no resource");
             others++;
             continue;
         }
+        const markdown_core_resource *resource = NULL;
+        ok(markdown_core_node_resource(child, &resource), "a link or image answers its resource");
         check(resource != NULL, "every link and image answers a resource");
         if (occurrences < 4) {
             /* The three link forms and the image reference name one
@@ -296,11 +327,11 @@ static void check_resource_identity(void) {
 static void check_callout_fields(void) {
     /* M3: every `>` container is a `Callout` that reads as metadata-free --
      * an absent variant, an absent fold marker, and no title -- through the
-     * facade, and the accessors answer nothing for another kind. */
+     * facade. */
     static const char source[] = "> quote\n\ntext\n";
-    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), NULL);
+    markdown_core_document *document = parse(source, strlen(source));
+    const char *name = NULL;
     const markdown_core_node *callout;
-    const markdown_core_node *paragraph;
     markdown_core_optional_string variant = {true, {(const uint8_t *)"x", 1}};
     markdown_core_optional_bool collapsed = {true, true};
     if (!document) {
@@ -308,20 +339,14 @@ static void check_callout_fields(void) {
         return;
     }
     callout = markdown_core_node_get_first_child(markdown_core_document_root(document));
-    paragraph = markdown_core_node_get_next_sibling(callout);
     check(markdown_core_node_get_kind(callout) == MARKDOWN_CORE_KIND_CALLOUT, "a `>` container is a Callout");
-    check(strcmp(markdown_core_node_kind_name(MARKDOWN_CORE_KIND_CALLOUT), "Callout") == 0,
+    check(markdown_core_node_kind_name(MARKDOWN_CORE_KIND_CALLOUT, &name) == MARKDOWN_CORE_OK &&
+              strcmp(name, "Callout") == 0,
           "the kind is named Callout");
-    check(markdown_core_node_callout_properties(callout, &variant, &collapsed), "a callout answers its properties");
+    ok(markdown_core_node_callout_properties(callout, &variant, &collapsed), "a callout answers its properties");
     check(!variant.has_value && variant.value.length == 0, "a `>` container has no variant");
     check(!collapsed.has_value && !collapsed.value, "a `>` container has no fold marker");
-    check(markdown_core_node_callout_title(callout) == NULL, "a `>` container has no title");
-    check(!markdown_core_node_callout_properties(paragraph, &variant, &collapsed),
-          "a paragraph has no callout properties");
-    check(!markdown_core_node_callout_properties(callout, NULL, &collapsed), "properties need a variant out-parameter");
-    check(!markdown_core_node_callout_properties(callout, &variant, NULL), "properties need a collapsed out-parameter");
-    check(markdown_core_node_callout_title(paragraph) == NULL && markdown_core_node_callout_title(NULL) == NULL,
-          "only a callout may have a title");
+    check(field(callout, markdown_core_node_callout_title) == NULL, "a `>` container has no title");
     markdown_core_document_free(document);
 }
 
@@ -335,23 +360,22 @@ static size_t count_occurrences(const char *text, const char *needle) {
 }
 
 static void check_callout_source_boundaries(void) {
-    static const char source[] = "\xEF\xBB\xBF> [!note]- T  \r\n> body";
-    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, NULL);
-    check(document != NULL, "callout parses BOM, CRLF, trailing spaces and EOF without newline");
+    static const char source[] = "> [!note]- T  \r\n> body";
+    markdown_core_document *document = parse(source, sizeof(source) - 1);
     if (!document) {
         return;
     }
     const markdown_core_node *callout = markdown_core_node_get_first_child(markdown_core_document_root(document));
-    const markdown_core_node *title = markdown_core_node_callout_title(callout);
-    markdown_core_string literal;
-    check(title && markdown_core_node_literal(title, &literal) && literal.length == 1 && literal.data[0] == 'T',
-          "trailing title spaces never create a break or title text");
+    const markdown_core_node *title = field(callout, markdown_core_node_callout_title);
+    markdown_core_string literal = {NULL, 0};
+    ok(markdown_core_node_literal(title, &literal), "the title text answers its literal");
+    check(literal.length == 1 && literal.data[0] == 'T', "trailing title spaces never create a break or title text");
     check(title && !markdown_core_node_get_next_sibling(title), "title contains exactly one node");
-    markdown_core_scope title_scope = markdown_core_node_scope(title);
-    check(title_scope.start.line == 1 && title_scope.start.column == 15 && title_scope.end.column == 15,
-          "title scope uses original byte columns after BOM and metadata");
+    markdown_core_scope title_scope = scope_in(document, title, source, sizeof(source) - 1);
+    check(title_scope.start.line == 1 && title_scope.start.column == 12 && title_scope.end.column == 12,
+          "title scope uses original byte columns after the metadata");
     const markdown_core_node *body = markdown_core_node_get_first_child(callout);
-    markdown_core_scope body_scope = markdown_core_node_scope(body);
+    markdown_core_scope body_scope = scope_in(document, body, source, sizeof(source) - 1);
     check(body && body_scope.start.line == 2 && body_scope.start.column == 3 && body_scope.end.column == 6,
           "body scope starts after its quote prefix and reaches EOF");
     markdown_core_document_free(document);
@@ -359,14 +383,13 @@ static void check_callout_source_boundaries(void) {
 
 static void check_callout_inherited_setext_scope(void) {
     static const char source[] = "> [!note] T\n> head\n> ===\n\nnext\n";
-    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, NULL);
-    check(document != NULL, "callout body Setext heading parses");
+    markdown_core_document *document = parse(source, sizeof(source) - 1);
     if (!document) {
         return;
     }
     const markdown_core_node *callout = markdown_core_node_get_first_child(markdown_core_document_root(document));
     const markdown_core_node *heading = markdown_core_node_get_first_child(callout);
-    markdown_core_scope scope = markdown_core_node_scope(heading);
+    markdown_core_scope scope = scope_in(document, heading, source, sizeof(source) - 1);
     check(markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING && scope.start.line == 2 &&
               scope.start.column == 3 && scope.end.line == 3 && scope.end.column == 5,
           "callout Setext scope ends on the underline before a following blank line");
@@ -374,32 +397,38 @@ static void check_callout_inherited_setext_scope(void) {
 }
 
 static void check_citation_model(void) {
-    /* M4: repeated calls share one footnote, a later definition of the same
-     * id is a footnote after the winner, and the dump nests each value under
-     * its owner: items under the cite, footnotes after the content. */
+    /* M4: repeated calls name one label, a later definition of the same label
+     * stays a footnote where it was written, and the dump nests each value
+     * under its owner: items under the cite, definitions in the content. */
     static const char source[] = "[^a] [^a]\n\n[^a]: once\n\n[^a]: twice\n";
-    markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), &error);
+    markdown_core_document *document = parse(source, strlen(source));
     uint8_t *dump = NULL;
     size_t length = 0;
-    check(document != NULL, "citation corpus parses");
     if (!document) {
         return;
     }
-    check(markdown_core_document_dump(document, &dump, &length, &error), "citation corpus dumps");
+    ok(markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)source,
+                                   strlen(source), &dump, &length),
+       "citation corpus dumps");
     if (dump) {
         const char *text = (const char *)dump;
         check(count_occurrences(text, "Cite scope=") == 2, "every defined call is a Cite");
-        check(count_occurrences(text, "referent=footnote(id=\"a\") children=0\n") == 2,
-              "every item names the footnote by id");
+        check(count_occurrences(text, "referent=footnote(label=\"a\") children=0\n") == 2,
+              "every item names the footnote by label");
         check(count_occurrences(text, "CitationPrefix children=0\n") == 2 &&
                   count_occurrences(text, "CitationSuffix children=0\n") == 2,
               "an inherited call has empty affix groups");
         check(count_occurrences(text, "Footnote scope=") == 2, "both definitions are footnotes");
-        check(strstr(text, "\n├── Footnote scope=3:1..4:0 anchor=null attributes={} id=\"a\" children=1\n") != NULL,
-              "the winning definition is the first footnote");
-        check(strstr(text, "\n└── Footnote scope=5:1..5:11 anchor=null attributes={} id=\"a\" children=1\n") != NULL,
-              "the later definition is the footnote after it, nested last under the document");
+        check(strstr(text, "\n├── Footnote scope=3:1..4:0 anchor=null attributes={} label=\"a\" children=1\n") != NULL,
+              "the winning definition is a block where it was written");
+        check(strstr(text, "\n└── Footnote scope=5:1..5:11 anchor=null attributes={} label=\"a\" children=1\n") != NULL,
+              "the later definition is the block after it, last in the content");
+        check(markdown_core_document_footnote_count(document) == 2, "the document lists both definitions");
+        markdown_core_string label = {(const uint8_t *)"a", 1};
+        const markdown_core_node *first = NULL;
+        ok(markdown_core_document_footnote_at(document, 0, &first), "the first footnote is listed");
+        check(markdown_core_document_footnote_for(document, label) == first,
+              "a label finds the first definition in source order");
         markdown_core_dump_free(dump);
     }
     markdown_core_document_free(document);
@@ -407,7 +436,7 @@ static void check_citation_model(void) {
 
 static void check_directive_label_projection(void) {
     static const uint8_t inline_source[] = ":badge[label]\n";
-    static const uint8_t bare_source[] = ":badge\n";
+    static const uint8_t bare_source[] = ":badge{}\n";
     static const uint8_t empty_source[] = ":badge[]\n";
     static const uint8_t block_source[] = ":::note[Title]\nBody\n:::\n";
     markdown_core_document *document;
@@ -417,12 +446,11 @@ static void check_directive_label_projection(void) {
     const markdown_core_node *label_child;
     const markdown_core_node *content_child;
 
-    document = markdown_core_document_parse(inline_source, sizeof(inline_source) - 1, NULL);
-    check(document != NULL, "labelled inline directive parses");
+    document = parse(inline_source, sizeof(inline_source) - 1);
     if (document) {
         root = markdown_core_document_root(document);
         directive = markdown_core_node_get_first_child(markdown_core_node_get_first_child(root));
-        label = markdown_core_node_directive_label(directive);
+        label = field(directive, markdown_core_node_directive_label);
         label_child = markdown_core_node_get_first_child(label);
         check(markdown_core_node_get_kind(label) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL &&
                   markdown_core_node_get_kind(label_child) == MARKDOWN_CORE_KIND_TEXT &&
@@ -434,22 +462,22 @@ static void check_directive_label_projection(void) {
         markdown_core_document_free(document);
     }
 
-    document = markdown_core_document_parse(bare_source, sizeof(bare_source) - 1, NULL);
-    check(document != NULL, "bare inline directive parses");
+    document = parse(bare_source, sizeof(bare_source) - 1);
     if (document) {
         root = markdown_core_document_root(document);
         directive = markdown_core_node_get_first_child(markdown_core_node_get_first_child(root));
-        check(markdown_core_node_directive_label(directive) == NULL && markdown_core_node_child_count(directive) == 0,
+        check(markdown_core_node_get_kind(directive) == MARKDOWN_CORE_KIND_DIRECTIVE &&
+                  field(directive, markdown_core_node_directive_label) == NULL &&
+                  markdown_core_node_child_count(directive) == 0,
               "an absent directive label remains absent and is not content");
         markdown_core_document_free(document);
     }
 
-    document = markdown_core_document_parse(empty_source, sizeof(empty_source) - 1, NULL);
-    check(document != NULL, "empty-label directive parses");
+    document = parse(empty_source, sizeof(empty_source) - 1);
     if (document) {
         root = markdown_core_document_root(document);
         directive = markdown_core_node_get_first_child(markdown_core_node_get_first_child(root));
-        label = markdown_core_node_directive_label(directive);
+        label = field(directive, markdown_core_node_directive_label);
         check(markdown_core_node_get_kind(label) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL &&
                   markdown_core_node_child_count(label) == 0,
               "an empty label remains distinct from an absent label");
@@ -457,12 +485,11 @@ static void check_directive_label_projection(void) {
         markdown_core_document_free(document);
     }
 
-    document = markdown_core_document_parse(block_source, sizeof(block_source) - 1, NULL);
-    check(document != NULL, "labelled block directive parses");
+    document = parse(block_source, sizeof(block_source) - 1);
     if (document) {
         root = markdown_core_document_root(document);
         directive = markdown_core_node_get_first_child(root);
-        label = markdown_core_node_directive_label(directive);
+        label = field(directive, markdown_core_node_directive_label);
         check(markdown_core_node_get_kind(label) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL &&
                   markdown_core_node_child_count(label) == 1,
               "block directive exposes its label through the field accessor");
@@ -499,105 +526,83 @@ static void check_dialect_is_whole(void) {
     };
     size_t index;
     for (index = 0; index < sizeof(WITNESSES) / sizeof(WITNESSES[0]); ++index) {
-        markdown_core_error *error = NULL;
-        markdown_core_document *document = markdown_core_document_parse((const uint8_t *)WITNESSES[index].source,
-                                                                        strlen(WITNESSES[index].source), &error);
+        markdown_core_document *document = parse(WITNESSES[index].source, strlen(WITNESSES[index].source));
         uint8_t *dump = NULL;
         size_t length = 0;
-        check(document != NULL && error == NULL, "dialect witness parses");
         if (!document) {
-            markdown_core_error_free(error);
             continue;
         }
-        check(markdown_core_document_dump(document, &dump, &length, &error), "dialect witness dumps");
+        ok(markdown_core_document_dump(document, markdown_core_document_root(document),
+                                       (const uint8_t *)WITNESSES[index].source, strlen(WITNESSES[index].source), &dump,
+                                       &length),
+           "dialect witness dumps");
         if (dump) {
             check(strstr((const char *)dump, WITNESSES[index].witness) != NULL,
                   "every feature of the dialect is recognized by a parse that was handed nothing but bytes");
         }
         markdown_core_dump_free(dump);
         markdown_core_document_free(document);
-        markdown_core_error_free(error);
     }
 }
 
 static void check_api(void) {
     static const uint8_t source[] = "# Heading\n\n- [ ] task\n";
     markdown_core_document *document;
-    markdown_core_error *error = NULL;
     const markdown_core_node *root;
     const markdown_core_node *heading;
     markdown_core_scope scope;
     int32_t level = 0;
 
-    document = markdown_core_document_parse(source, sizeof(source) - 1, &error);
-    check(document != NULL && error == NULL, "parse succeeds");
+    document = parse(source, sizeof(source) - 1);
     if (document) {
         root = markdown_core_document_root(document);
         heading = markdown_core_node_get_first_child(root);
         check(markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT, "document root kind is typed");
         check(markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING,
               "first child traversal is read-only and typed");
-        check(markdown_core_node_heading_level(heading, &level) && level == 1,
+        check(markdown_core_node_heading_level(heading, &level) == MARKDOWN_CORE_OK && level == 1,
               "heading accessor returns its behavior-bearing field");
-        scope = markdown_core_node_scope(heading);
-        check(scope.start.line == 1 && scope.start.column == 1, "scope copies native coordinates");
+        scope = scope_in(document, heading, source, sizeof(source) - 1);
+        check(scope.start.line == 1 && scope.start.column == 1, "the scope query answers in native coordinates");
         markdown_core_document_free(document);
     }
-
-    document = markdown_core_document_parse(NULL, 1, &error);
-    check(document == NULL && error != NULL, "invalid input produces an explicit error");
-    check(markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "error exposes a stable code");
-    check(markdown_core_error_get_message(error).length != 0, "error exposes a UTF-8 message");
-    markdown_core_error_free(error);
-    markdown_core_error_free(NULL);
-    markdown_core_document_free(NULL);
-    markdown_core_dump_free(NULL);
 }
 
 static void check_table_model(void) {
     static const uint8_t input[] = "| h | center | right | plain |\n| :-- | :-: | --: | -- |\n| x\\|y | `\\|` | z |\n";
-    markdown_core_document *document = markdown_core_document_parse(input, sizeof(input) - 1, NULL);
-    check(document != NULL, "table parses");
+    markdown_core_document *document = parse(input, sizeof(input) - 1);
     if (!document) {
         return;
     }
     const markdown_core_node *root = markdown_core_document_root(document);
     const markdown_core_node *table = markdown_core_node_get_first_child(root);
     size_t columns = 0, head = 0, content = 0, foot = 0;
-    check(markdown_core_node_table_properties(table, &columns, &head, &content, &foot), "table properties");
+    ok(markdown_core_node_table_properties(table, &columns, &head, &content, &foot), "a table answers its properties");
     check(columns == 4 && head == 1 && content == 1 && foot == 0, "pipe table group partition");
     check(markdown_core_node_child_count(table) == head + content + foot, "table rows have one structural owner");
     const markdown_core_flow expected[] = {MARKDOWN_CORE_FLOW_LEFT, MARKDOWN_CORE_FLOW_CENTER, MARKDOWN_CORE_FLOW_RIGHT,
                                            MARKDOWN_CORE_FLOW_NONE};
     for (size_t i = 0; i < columns; i++) {
-        markdown_core_table_column column;
-        check(markdown_core_node_table_column_at(table, i, &column), "column value");
+        markdown_core_table_column column = {MARKDOWN_CORE_FLOW_NONE, {true, 0}};
+        ok(markdown_core_node_table_column_at(table, i, &column), "a column below the count answers");
         check(column.flow == expected[i] && !column.relative.has_value, "column authored facts");
     }
-    markdown_core_table_column column = {0};
-    check(!markdown_core_node_table_column_at(table, columns, &column), "column upper bound");
-    check(!markdown_core_node_table_column_at(table, 0, NULL), "column null output");
-    check(!markdown_core_node_table_properties(root, &columns, &head, &content, &foot), "table kind boundary");
-    check(!markdown_core_node_table_properties(table, NULL, &head, &content, &foot), "table null output");
     const markdown_core_node *row = markdown_core_node_get_first_child(table);
     for (; row; row = markdown_core_node_get_next_sibling(row)) {
         check(markdown_core_node_child_count(row) == 4, "pipe rows have every logical column");
         const markdown_core_node *cell = markdown_core_node_get_first_child(row);
         for (; cell; cell = markdown_core_node_get_next_sibling(cell)) {
             int64_t rowspan = 0, colspan = 0;
-            check(markdown_core_node_table_cell_spans(cell, &rowspan, &colspan), "cell spans");
+            ok(markdown_core_node_table_cell_spans(cell, &rowspan, &colspan), "a cell answers its spans");
             check(rowspan == 1 && colspan == 1, "inherited unit spans");
         }
     }
-    int64_t rowspan, colspan;
-    check(!markdown_core_node_table_cell_spans(table, &rowspan, &colspan), "span kind boundary");
     markdown_core_document_free(document);
 }
 
 static void check_definition_model(void) {
     static const uint8_t input[] = "::: box\n*T*\n: one\n~\n\nU\n\n: two\n:::\n\n:::named\n:::\n";
-    markdown_core_document *document = markdown_core_document_parse(input, sizeof(input) - 1, NULL);
-    check(document != NULL, "definition model parses");
+    markdown_core_document *document = parse(input, sizeof(input) - 1);
     if (!document) {
         return;
     }
@@ -605,14 +610,12 @@ static void check_definition_model(void) {
     const markdown_core_node *block = markdown_core_node_get_first_child(root);
     const markdown_core_node *list = markdown_core_node_get_first_child(block);
     const markdown_core_node *definition = markdown_core_node_get_first_child(list);
-    markdown_core_optional_string name;
-    check(markdown_core_node_directive_properties(block, &name) && !name.has_value, "nameless block name is absent");
-    check(markdown_core_node_directive_properties(markdown_core_node_get_next_sibling(block), &name) &&
-              name.has_value && name.value.length == 5,
-          "named block retains its name");
-    check(!markdown_core_node_directive_properties(root, &name) &&
-              !markdown_core_node_directive_properties(block, NULL),
-          "directive property kind and output boundaries");
+    markdown_core_optional_string name = {true, {NULL, 0}};
+    ok(markdown_core_node_directive_properties(block, &name), "a directive block answers its name");
+    check(!name.has_value, "nameless block name is absent");
+    ok(markdown_core_node_directive_properties(markdown_core_node_get_next_sibling(block), &name),
+       "a directive block answers its name");
+    check(name.has_value && name.value.length == 5, "named block retains its name");
     check(markdown_core_node_get_kind(list) == MARKDOWN_CORE_KIND_DEFINITION_LIST &&
               markdown_core_node_child_count(list) == 2,
           "definition list has typed members");
@@ -620,26 +623,279 @@ static void check_definition_model(void) {
     check(markdown_core_node_child_count(definition) == 0 && !markdown_core_node_get_first_child(definition),
           "body collection roots never enter generic Markup traversal");
     bool compact = false;
-    check(markdown_core_node_definition_compact(definition, &compact) && compact, "compact term gap");
-    check(markdown_core_node_definition_compact(markdown_core_node_get_next_sibling(definition), &compact) && !compact,
+    check(markdown_core_node_definition_compact(definition, &compact) == MARKDOWN_CORE_OK && compact,
+          "compact term gap");
+    check(markdown_core_node_definition_compact(markdown_core_node_get_next_sibling(definition), &compact) ==
+                  MARKDOWN_CORE_OK &&
+              !compact,
           "loose term gap");
-    check(markdown_core_node_get_kind(markdown_core_node_definition_term(definition)) == MARKDOWN_CORE_KIND_EMPHASIS,
+    check(markdown_core_node_get_kind(field(definition, markdown_core_node_definition_term)) ==
+              MARKDOWN_CORE_KIND_EMPHASIS,
           "term is a separate inline field");
-    const markdown_core_definition_body *body = markdown_core_node_definition_bodies(definition);
+    const markdown_core_definition_body *body = NULL;
+    ok(markdown_core_node_definition_bodies(definition, &body), "a definition answers its bodies");
     check(body &&
               markdown_core_node_get_kind(markdown_core_definition_body_content(body)) == MARKDOWN_CORE_KIND_PARAGRAPH,
           "first body exposes ordinary blocks");
     body = markdown_core_definition_body_next(body);
     check(body && !markdown_core_definition_body_content(body) && !markdown_core_definition_body_next(body),
           "empty second body retains its position");
-    check(!markdown_core_node_definition_compact(root, &compact) &&
-              !markdown_core_node_definition_compact(definition, NULL),
-          "definition property kind and output boundaries");
-    check(!markdown_core_node_definition_term(root) && !markdown_core_node_definition_bodies(root),
-          "definition collections reject other kinds");
-    check(!markdown_core_definition_body_next(NULL) && !markdown_core_definition_body_content(NULL),
-          "null body cursor is empty");
     markdown_core_document_free(document);
+}
+
+/* THE PUBLIC BOUNDARY. Every check a public call makes where the caller's
+ * value enters answers an explicit status instead of reading memory the call
+ * does not own, and a failed call writes none of its out-parameters. */
+static void check_kind_boundary(void) {
+    static const char source[] = "text\n";
+    markdown_core_document *document = parse(source, sizeof(source) - 1);
+    if (!document) {
+        return;
+    }
+    const markdown_core_node *paragraph = markdown_core_node_get_first_child(markdown_core_document_root(document));
+    const markdown_core_node *node = paragraph;
+    const markdown_core_definition_body *body = NULL;
+    const markdown_core_attribute_value *attributes = NULL;
+    const markdown_core_dimensions *dimensions = NULL;
+    const markdown_core_resource *resource = NULL;
+    const markdown_core_metadata_value *value = NULL;
+    markdown_core_list_flavor flavor;
+    markdown_core_optional_i64 start = {true, 7};
+    markdown_core_ordered_list_variant variant;
+    markdown_core_ordered_list_delimiter delimiter;
+    markdown_core_optional_string optional = {true, {NULL, 7}};
+    markdown_core_optional_bool optional_bool;
+    markdown_core_string string = {NULL, 7};
+    markdown_core_placement placement;
+    markdown_core_table_column column;
+    markdown_core_destination destination;
+    markdown_core_referent referent;
+    int32_t level = 7;
+    int64_t span;
+    size_t size;
+    bool flag;
+    /* A paragraph has no field any kind accessor reads. */
+    const markdown_core_status statuses[] = {
+        markdown_core_node_heading_level(paragraph, &level),
+        markdown_core_node_list_properties(paragraph, &flavor, &start, &variant, &delimiter, &flag),
+        markdown_core_node_list_item_marker(paragraph, &optional),
+        markdown_core_node_code_block_properties(paragraph, &optional, &optional, &string, &flag, &flag),
+        markdown_core_node_literal(paragraph, &string),
+        markdown_core_node_formula_properties(paragraph, &placement, &string),
+        markdown_core_node_table_properties(paragraph, &size, &size, &size, &size),
+        markdown_core_node_table_column_at(paragraph, 0, &column),
+        markdown_core_node_table_caption(paragraph, &node),
+        markdown_core_node_table_cell_spans(paragraph, &span, &span),
+        markdown_core_node_directive_properties(paragraph, &optional),
+        markdown_core_node_definition_compact(paragraph, &flag),
+        markdown_core_node_definition_term(paragraph, &node),
+        markdown_core_node_definition_bodies(paragraph, &body),
+        markdown_core_node_inherited_attributes(paragraph, &attributes),
+        markdown_core_node_dimensions(paragraph, &dimensions),
+        markdown_core_node_directive_label(paragraph, &node),
+        markdown_core_node_callout_properties(paragraph, &optional, &optional_bool),
+        markdown_core_node_callout_title(paragraph, &node),
+        markdown_core_node_destination(paragraph, &destination),
+        markdown_core_node_cross_label(paragraph, &optional),
+        markdown_core_node_title(paragraph, &optional),
+        markdown_core_node_resource(paragraph, &resource),
+        markdown_core_node_cite_citations(paragraph, &node),
+        markdown_core_citation_referent(paragraph, &referent),
+        markdown_core_citation_prefix(paragraph, &node),
+        markdown_core_citation_suffix(paragraph, &node),
+        markdown_core_footnote_label(paragraph, &optional),
+        markdown_core_footnote_content(paragraph, &node),
+        markdown_core_specimen_properties(paragraph, &optional, &start),
+        markdown_core_specimen_content(paragraph, &node),
+        markdown_core_node_document_metadata(paragraph, &node),
+        markdown_core_metadata_name(paragraph, &value),
+        markdown_core_metadata_title(paragraph, &value),
+        markdown_core_metadata_subtitle(paragraph, &value),
+        markdown_core_metadata_time(paragraph, &value),
+        markdown_core_metadata_date(paragraph, &value),
+        markdown_core_metadata_authors(paragraph, &value),
+        markdown_core_metadata_keywords(paragraph, &value),
+        markdown_core_metadata_abstract(paragraph, &value),
+        markdown_core_metadata_state(paragraph, &value),
+        markdown_core_metadata_comment(paragraph, &value),
+    };
+    for (size_t index = 0; index < sizeof(statuses) / sizeof(*statuses); index++) {
+        check(statuses[index] == MARKDOWN_CORE_KIND_MISMATCH, "a kind accessor refuses a node of another kind");
+    }
+    check(node == paragraph && !body && !attributes && !dimensions && !resource && !value && level == 7 &&
+              start.value == 7 && optional.value.length == 7 && string.length == 7,
+          "a refused accessor writes none of its out-parameters");
+    /* The kind is the node's own, not its neighbour's: a Text answers the
+     * literal its Paragraph does not. */
+    check(markdown_core_node_literal(markdown_core_node_get_first_child(paragraph), &string) == MARKDOWN_CORE_OK &&
+              string.length == 4,
+          "a literal kind answers its literal");
+    markdown_core_document_free(document);
+}
+
+static void check_index_boundary(void) {
+    static const char source[] = "x :n{.c k=v}\n\n***\n\n| a | b |\n| - | - |\n";
+    static const char metadata_source[] = "---\nname: N\nauthors: [Ada, Lin]\n---\n";
+    markdown_core_document *document = parse(source, sizeof(source) - 1);
+    markdown_core_document *metadata_document = parse(metadata_source, sizeof(metadata_source) - 1);
+    if (!document || !metadata_document) {
+        markdown_core_document_free(document);
+        markdown_core_document_free(metadata_document);
+        return;
+    }
+    const markdown_core_node *root = markdown_core_document_root(document);
+    const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
+    const markdown_core_node *directive =
+        markdown_core_node_get_next_sibling(markdown_core_node_get_first_child(paragraph));
+    const markdown_core_node *table =
+        markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(paragraph));
+    const markdown_core_node *node = root;
+    markdown_core_table_column column = {MARKDOWN_CORE_FLOW_RIGHT, {true, 7}};
+    markdown_core_string name = {NULL, 7}, text = {NULL, 7};
+    size_t columns = 0, head, content, foot;
+
+    ok(markdown_core_node_table_properties(table, &columns, &head, &content, &foot), "a table answers its columns");
+    check(columns == 2 && markdown_core_node_table_column_at(table, 1, &column) == MARKDOWN_CORE_OK,
+          "the last column answers");
+    column = (markdown_core_table_column){MARKDOWN_CORE_FLOW_RIGHT, {true, 7}};
+    check(markdown_core_node_table_column_at(table, columns, &column) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              column.relative.value == 7,
+          "a column at the count is out of bounds");
+
+    check(markdown_core_document_footnote_count(document) == 0 &&
+              markdown_core_document_footnote_at(document, 0, &node) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              markdown_core_document_specimen_count(document) == 0 &&
+              markdown_core_document_specimen_at(document, 0, &node) == MARKDOWN_CORE_OUT_OF_BOUNDS && node == root,
+          "a definition at the count is out of bounds");
+
+    check(markdown_core_node_get_kind(directive) == MARKDOWN_CORE_KIND_DIRECTIVE &&
+              markdown_core_node_attribute_class_count(directive) == 1 &&
+              markdown_core_node_attribute_record_count(directive) == 1,
+          "the directive holds one class and one record");
+    check(markdown_core_node_attribute_class_at(directive, 0, &text) == MARKDOWN_CORE_OK && text.length == 1,
+          "the last class answers");
+    check(markdown_core_node_attribute_record_at(directive, 0, &name, &text) == MARKDOWN_CORE_OK && name.length == 1,
+          "the last record answers");
+    name = text = (markdown_core_string){NULL, 7};
+    check(markdown_core_node_attribute_class_at(directive, 1, &text) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              markdown_core_node_attribute_record_at(directive, 1, &name, &text) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              markdown_core_node_attribute_class_at(table, 0, &text) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              name.length == 7 && text.length == 7,
+          "a class or record at the count is out of bounds, a node with none included");
+    const markdown_core_attribute_value *primary = markdown_core_node_primary_attributes(directive);
+    check(markdown_core_attribute_value_class_at(primary, 1, &text) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              markdown_core_attribute_value_record_at(primary, 1, &name, &text) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              text.length == 7,
+          "a contribution's class or record at the count is out of bounds");
+
+    const markdown_core_node *metadata =
+        field(markdown_core_document_root(metadata_document), markdown_core_node_document_metadata);
+    const markdown_core_metadata_value *scalar = NULL, *list = NULL;
+    markdown_core_metadata_scalar scalar_value = {MARKDOWN_CORE_METADATA_BOOL, {.boolean = true}};
+    markdown_core_metadata_list_item item = {MARKDOWN_CORE_METADATA_ITEM_NUMBER, {NULL, 7}};
+    size_t count = 7;
+    check(metadata && markdown_core_metadata_name(metadata, &scalar) == MARKDOWN_CORE_OK &&
+              markdown_core_metadata_authors(metadata, &list) == MARKDOWN_CORE_OK && scalar && list,
+          "the metadata holds a scalar and a list");
+    if (scalar && list) {
+        check(markdown_core_metadata_value_item_count(scalar, &count) == MARKDOWN_CORE_KIND_MISMATCH &&
+                  markdown_core_metadata_value_item_at(scalar, 0, &item) == MARKDOWN_CORE_KIND_MISMATCH &&
+                  markdown_core_metadata_value_scalar(list, &scalar_value) == MARKDOWN_CORE_KIND_MISMATCH &&
+                  count == 7 && item.value.length == 7 && scalar_value.kind == MARKDOWN_CORE_METADATA_BOOL,
+              "a metadata value accessor refuses a value of the other kind");
+        check(markdown_core_metadata_value_item_count(list, &count) == MARKDOWN_CORE_OK && count == 2 &&
+                  markdown_core_metadata_value_item_at(list, 1, &item) == MARKDOWN_CORE_OK,
+              "the last list item answers");
+        item.value.length = 7;
+        check(markdown_core_metadata_value_item_at(list, count, &item) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+                  item.value.length == 7,
+              "a list item at the count is out of bounds");
+    }
+
+    const char *kind_name = NULL;
+    for (int kind = MARKDOWN_CORE_KIND_NONE; kind <= MARKDOWN_CORE_KIND_METADATA; kind++) {
+        check(markdown_core_node_kind_name((markdown_core_node_kind)kind, &kind_name) == MARKDOWN_CORE_OK && kind_name,
+              "every kind has a name");
+    }
+    kind_name = NULL;
+    check(markdown_core_node_kind_name((markdown_core_node_kind)(MARKDOWN_CORE_KIND_METADATA + 1), &kind_name) ==
+                  MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              markdown_core_node_kind_name((markdown_core_node_kind)-1, &kind_name) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              kind_name == NULL,
+          "a value outside the kinds has no name");
+    markdown_core_document_free(metadata_document);
+    markdown_core_document_free(document);
+}
+
+/* A scope query reads its source up to the node's end; a source that ends
+ * sooner is refused, whatever unit counts the columns. */
+static void check_source_boundary(void) {
+    static const char source[] = "a\n\nb\xc3\xa9\n";
+    const size_t length = sizeof(source) - 1;
+    markdown_core_document *document = NULL;
+    if (!ok(markdown_core_document_parse_in((const uint8_t *)source, length, MARKDOWN_CORE_TEXT_UNIT_UTF16, &document),
+            "a UTF-16 document parses")) {
+        return;
+    }
+    const markdown_core_node *root = markdown_core_document_root(document);
+    const markdown_core_node *last = markdown_core_node_get_next_sibling(markdown_core_node_get_first_child(root));
+    const markdown_core_node *text = markdown_core_node_get_first_child(last);
+    const markdown_core_node *found = root;
+    markdown_core_scope scope = {{-1, -1}, {-1, -1}};
+    uint8_t *dump = NULL;
+    size_t dump_length = 7;
+
+    check(markdown_core_document_scope(document, last, (const uint8_t *)source, 3, &scope) ==
+                  MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              scope.start.line == -1,
+          "a source that ends before the node is out of bounds");
+    /* The document ends before its last line terminator, and its last
+     * scalar ends one byte before that. */
+    check(markdown_core_document_scope(document, root, (const uint8_t *)source, length - 2, &scope) ==
+              MARKDOWN_CORE_OUT_OF_BOUNDS,
+          "one byte short is out of bounds");
+    check(markdown_core_document_scope(document, text, (const uint8_t *)source, length - 1, &scope) ==
+                  MARKDOWN_CORE_OK &&
+              scope.start.line == 3 && scope.start.column == 1 && scope.end.column == 2,
+          "a source that reaches the node's end answers");
+    check(markdown_core_document_dump(document, root, (const uint8_t *)source, length - 2, &dump, &dump_length) ==
+                  MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              dump == NULL && dump_length == 7,
+          "a dump over a source that ends before the node is out of bounds");
+    check(markdown_core_document_dump(document, last, (const uint8_t *)source, length - 1, &dump, &dump_length) ==
+              MARKDOWN_CORE_OK,
+          "a dump over a source that reaches the node's end answers");
+    markdown_core_dump_free(dump);
+
+    const markdown_core_position outside[] = {{0, 1}, {1, 0}, {-1, 1}, {1, -1}, {INT32_MIN, INT32_MIN}};
+    for (size_t index = 0; index < sizeof(outside) / sizeof(*outside); index++) {
+        check(markdown_core_document_node_at(document, outside[index], (const uint8_t *)source, length, &found) ==
+                      MARKDOWN_CORE_OUT_OF_BOUNDS &&
+                  found == root,
+              "a line or column below 1 is out of bounds");
+    }
+    check(markdown_core_document_node_at(document, (markdown_core_position){3, 2}, (const uint8_t *)source, length,
+                                         &found) == MARKDOWN_CORE_OK &&
+              found == text,
+          "a position a node holds answers that node");
+    check(markdown_core_document_node_at(document, (markdown_core_position){9, 1}, (const uint8_t *)source, length,
+                                         &found) == MARKDOWN_CORE_OK &&
+              found == NULL,
+          "a position past the source is held by no node");
+    check(markdown_core_document_node_at(document, (markdown_core_position){3, 9}, (const uint8_t *)source, length,
+                                         &found) == MARKDOWN_CORE_OK &&
+              found == NULL,
+          "a column past its line is held by no node");
+    markdown_core_document_free(document);
+
+    /* The empty source may be NULL, and freeing no document does nothing. */
+    document = NULL;
+    check(markdown_core_document_parse(NULL, 0, &document) == MARKDOWN_CORE_OK && document &&
+              markdown_core_node_get_kind(markdown_core_document_root(document)) == MARKDOWN_CORE_KIND_DOCUMENT,
+          "a NULL source of length 0 is the empty document");
+    markdown_core_document_free(document);
+    markdown_core_document_free(NULL);
+    markdown_core_dump_free(NULL);
 }
 
 int main(int argc, char **argv) {
@@ -663,6 +919,9 @@ int main(int argc, char **argv) {
     check_callout_inherited_setext_scope();
     check_citation_model();
     check_directive_label_projection();
+    check_kind_boundary();
+    check_index_boundary();
+    check_source_boundary();
     for (i = 3; i < argc; i++) {
         check_fixture(fixture_dir, argv[i]);
     }

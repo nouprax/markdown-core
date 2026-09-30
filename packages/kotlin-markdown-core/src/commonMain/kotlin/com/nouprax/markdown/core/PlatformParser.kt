@@ -1,3 +1,6 @@
 package com.nouprax.markdown.core
 
-internal expect fun parsePlatformDocument(source: ByteArray): Document
+internal expect fun parsePlatformDocument(
+    source: ByteArray,
+    unit: TextUnit,
+): Document

@@ -133,7 +133,7 @@ const report = (message) => {
 
 // Agreeing on the parser sources is not enough: an accidental CLI, test, fuzz,
 // fixture, or benchmark source would also become part of the Android runtime.
-// The only Android-specific additions are the core's MCB2 encoder and the JNI
+// The only Android-specific additions are the core's MCB3 encoder and the JNI
 // entry point owned by the Kotlin package. IDE sync deliberately does not import this
 // cross-package target through Android Studio's lossy `cpp` projection.
 const androidSources = names(ANDROID_CMAKE, "complete Android target", /"(?<file>[^"\n]+\.c)"/g);

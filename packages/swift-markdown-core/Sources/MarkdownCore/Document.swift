@@ -1,60 +1,71 @@
 import MarkdownCoreC
 
-/// Why a parse produced no document.
-///
-/// These are failures of the parse operation itself, not syntax observations.
-public enum ParseErrorCode: Int32, Sendable {
-    /// The call itself was wrong — a null source, or a length that does not
-    /// describe it.
-    case invalidArgument = 1
-    /// An allocation failed. The parse is abandoned rather than returning a
-    /// document with something missing from it.
-    case allocationFailed = 2
-    /// The parser reached a state it does not otherwise account for.
-    case `internal` = 3
+/// Why a call of the library failed.
+public enum ErrorCode: Sendable, Hashable {
+    /// An allocation failed, or the source exceeds the engine's 1 GiB
+    /// capacity. The parse is abandoned rather than returning a document with
+    /// something missing from it.
+    case allocationFailed
+    /// The source is too short for the node a scope or dump reads, or a
+    /// position's line or column is below 1.
+    case outOfBounds
+    /// A value was read as another kind. It is the engine's code, shared by
+    /// every binding; typed Swift nodes never reach it.
+    case kindMismatch
 }
 
-/// A parse failure, and nothing else.
-///
-/// It carries no scope: an input the parser could not turn into a document has
-/// no document extent to point at.
-public struct ParseError: Error, Sendable {
+/// The library's one error: a call that cannot answer without crashing or
+/// reading memory it does not own throws this with its ``code``, and nothing
+/// else.
+public struct MarkdownCoreError: Error, Sendable, Hashable {
     /// Which failure it was.
-    public let code: ParseErrorCode
-    /// A fixed English sentence naming the failure. It is for a log, not for
-    /// an end user, and it is not localised.
-    public let message: String
+    public let code: ErrorCode
 }
 
 /// The immutable semantic root returned by a parse.
+///
+/// Every footnote and specimen definition stays in the tree where it was
+/// written. The document lists them in source order and looks a label up in
+/// those lists; it owns no definition of its own.
 public struct Document: Markup {
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let content: MarkupReferences<any Markup>
-        let metadata: MarkupReference<Metadata>?
-        let footnotes: MarkupReferences<Footnote>
-        let specimens: MarkupReferences<Specimen>
+    let record: DocumentRecord
+
+    /// The node's identifier within its document.
+    public var id: MarkupID { record.id }
+    /// The whole document's extent. See ``Extent``.
+    public var extent: Extent { record.extent }
+    /// The explicit anchor, absent when none was attached.
+    public var anchor: String? { record.anchor }
+    /// Ordered classes and records, including duplicates.
+    public var attributes: Attributes { record.attributes }
+    /// The document's blocks. Block content, not inline.
+    public var content: MarkupCollection<any Markup> {
+        record.collection(record.metadataCount..<record.children.count)
+    }
+    /// The parsed Properties node, absent when no Properties block was authored.
+    public var metadata: Metadata? {
+        record.metadataCount == 0
+            ? nil : Metadata(record: unsafeDowncast(record.children[0], to: MetadataRecord.self))
+    }
+    /// How the document's scope queries count columns.
+    public var unit: TextUnit { record.unit }
+    /// Every footnote in source order: each definition where it was written,
+    /// and each inline note at its call site.
+    public var footnotes: MarkupCollection<Footnote> { MarkupCollection(records: record.footnotes[...]) }
+    /// Every specimen definition in source order.
+    public var specimens: MarkupCollection<Specimen> { MarkupCollection(records: record.specimens[...]) }
+
+    /// The first footnote in source order whose label equals `label` byte for
+    /// byte, or `nil`. An inline note has no label and is never found.
+    public func footnote(for label: String) -> Footnote? {
+        record.footnoteLabels[Array(label.utf8)].map { Footnote(record: $0) }
     }
 
-    let fields: Stored<Fields>
-
-    /// The whole document's boundaries. See ``Scope``.
-    public var scope: Scope { fields.scope }
-    /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
-    /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
-    /// The document's blocks. Block content, not inline.
-    public var content: MarkupCollection<any Markup> { fields.content }
-    /// The parsed Properties node, absent when no Properties block was authored.
-    public var metadata: Metadata? { fields.metadata }
-    /// The footnotes the document owns, ordered by scope start; never part of
-    /// `content`.
-    public var footnotes: MarkupCollection<Footnote> { fields.footnotes }
-    /// The specimen definitions, ordered by scope start and visited after footnotes.
-    public var specimens: MarkupCollection<Specimen> { fields.specimens }
+    /// The first specimen in source order whose label equals `label` byte for
+    /// byte, or `nil`. An anonymous definition is never found.
+    public func specimen(for label: String) -> Specimen? {
+        record.specimenLabels[Array(label.utf8)].map { Specimen(record: $0) }
+    }
 
     /// Parses `source` and returns the whole tree as values.
     ///
@@ -63,234 +74,86 @@ public struct Document: Markup {
     /// released before this returns, so the result borrows nothing and is safe
     /// to hold, copy and send across isolation boundaries.
     ///
-    /// - Parameter source: the Markdown to parse. It is read as UTF-8.
+    /// - Parameters:
+    ///   - source: the Markdown to parse. It is read as UTF-8.
+    ///   - unit: how the document's scope queries count columns.
     /// - Returns: the parsed document.
-    /// - Throws: ``ParseError`` when there is no document to return at all.
-    public static func parse(_ source: String) throws -> Document {
-        var error: OpaquePointer?
-        let bytes = Array(source.utf8)
-        let document = bytes.withUnsafeBufferPointer { buffer in
-            markdown_core_document_parse(buffer.baseAddress, buffer.count, &error)
+    /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/allocationFailed``
+    ///   when an allocation fails or `source` exceeds 1 GiB of UTF-8.
+    public static func parse(_ source: String, unit: TextUnit = .utf16) throws -> Document {
+        var document: OpaquePointer?
+        var text = source
+        let status = text.withUTF8 { bytes in
+            markdown_core_document_parse_in(bytes.baseAddress, bytes.count, unit.native, &document)
         }
-        guard let document else {
-            defer { markdown_core_error_free(error) }
-            throw ParseError(from: error)
-        }
+        guard status == MARKDOWN_CORE_OK, let document else { throw MarkdownCoreError(status) }
         defer { markdown_core_document_free(document) }
 
-        guard let root = markdown_core_document_root(document),
-            markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT
-        else {
-            throw ParseError(code: .internal, message: "parser returned an invalid document tree")
-        }
-        return DocumentBuilder(root: root).document()
+        var builder = DocumentBuilder(document: document, root: markdown_core_document_root(document), unit: unit)
+        return Document(record: builder.build())
     }
 }
 
-/// Copies scalars and indexed relations once. No stored Swift record owns
-/// another record, and no native pointer survives the copy.
-private struct DocumentBuilder {
-    /// Source-order indices recorded while copying one native value.
-    private struct Relations {
-        var metadata: Int?
-        var children: [Int] = []
-        var caption: Int?
-        var label: Int?
-        var title: [Int]?
-        var term: [Int] = []
-        var bodies: [[Int]] = []
-        var footnotes: [Int] = []
-        var specimens: [Int] = []
-        var citations: [Int] = []
-        var prefix: [Int] = []
-        var suffix: [Int] = []
+/// Children: the metadata, when authored, then the content. The definition
+/// tables name records of the tree; they own nothing the tree does not.
+final class DocumentRecord: MarkupRecord, @unchecked Sendable {
+    let unit: TextUnit
+    let metadataCount: Int
+    let footnotes: [MarkupRecord]
+    let specimens: [MarkupRecord]
+    let footnoteLabels: [[UInt8]: FootnoteRecord]
+    let specimenLabels: [[UInt8]: SpecimenRecord]
+
+    init(
+        _ fields: InheritedFields,
+        unit: TextUnit,
+        metadata: MetadataRecord?,
+        content: [MarkupRecord],
+        footnotes: [FootnoteRecord],
+        specimens: [SpecimenRecord]
+    ) {
+        let metadatas: [MarkupRecord] = metadata.map { [$0] } ?? []
+        self.unit = unit
+        metadataCount = metadatas.count
+        self.footnotes = footnotes
+        self.specimens = specimens
+        footnoteLabels = DocumentRecord.labels(of: footnotes, \.label)
+        specimenLabels = DocumentRecord.labels(of: specimens, \.label)
+        super.init(fields, children: metadatas + content)
     }
 
-    private var pending: [OpaquePointer] = []
-    private var stored: [StoredMarkup] = []
-    private var resources: [UnsafeRawPointer: SharedResource] = [:]
-
-    init(root: OpaquePointer) {
-        pending = [root]
-        var index = 0
-        while index < pending.count {
-            let record = copy(pending[index])
-            stored.append(record)
-            index += 1
+    /// Each label's first definition in source order, keyed by its UTF-8 bytes
+    /// so that no Unicode equivalence decides a match.
+    private static func labels<Entry>(
+        of definitions: [Entry],
+        _ label: KeyPath<Entry, String?>
+    ) -> [[UInt8]: Entry] {
+        var labels: [[UInt8]: Entry] = [:]
+        for definition in definitions {
+            guard let text = definition[keyPath: label] else { continue }
+            let key = Array(text.utf8)
+            if labels[key] == nil { labels[key] = definition }
         }
+        return labels
     }
 
-    private mutating func copy(_ node: OpaquePointer) -> StoredMarkup {
-        let relations = record(relations: node)
-        return Self.stored(from: node, relations: relations, resources: &resources)
+    override var markup: any Markup { Document(record: self) }
+
+    /// The unit is how a query counts, not a fact of the tree, so it is not
+    /// compared.
+    override func hasEqualFields(_ other: MarkupRecord) -> Bool {
+        metadataCount == unsafeDowncast(other, to: DocumentRecord.self).metadataCount
     }
 
-    // Enumerate each facade-owned relation alongside its native kind.
-    // swiftlint:disable:next cyclomatic_complexity
-    private mutating func record(relations node: OpaquePointer) -> Relations {
-        var relations = Relations()
-        relations.children = record(chain: markdown_core_node_get_first_child(node))
-        precondition(relations.children.count == markdown_core_node_child_count(node))
-        switch markdown_core_node_get_kind(node) {
-        case MARKDOWN_CORE_KIND_TABLE:
-            relations.caption = record(field: markdown_core_node_table_caption(node))
-        case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_DIRECTIVE:
-            relations.label = record(field: markdown_core_node_directive_label(node))
-        case MARKDOWN_CORE_KIND_CALLOUT:
-            if let title = markdown_core_node_callout_title(node) {
-                relations.title = record(chain: title)
-            }
-        case MARKDOWN_CORE_KIND_DEFINITION:
-            relations.term = record(chain: markdown_core_node_definition_term(node))
-            var body = markdown_core_node_definition_bodies(node)
-            while let current = body {
-                relations.bodies.append(record(chain: markdown_core_definition_body_content(current)))
-                body = markdown_core_definition_body_next(current)
-            }
-        case MARKDOWN_CORE_KIND_DOCUMENT:
-            relations.metadata = record(field: markdown_core_node_document_metadata(node))
-            var note = markdown_core_node_document_footnotes(node)
-            while let current = note {
-                relations.footnotes.append(enqueue(current))
-                note = markdown_core_node_get_next_sibling(current)
-            }
-            var specimen = markdown_core_node_document_specimens(node)
-            while let current = specimen {
-                relations.specimens.append(enqueue(current))
-                specimen = markdown_core_node_get_next_sibling(current)
-            }
-        case MARKDOWN_CORE_KIND_CITE:
-            var citation = markdown_core_node_cite_citations(node)
-            while let current = citation {
-                relations.citations.append(enqueue(current))
-                citation = markdown_core_node_get_next_sibling(current)
-            }
-            precondition(!relations.citations.isEmpty)
-        case MARKDOWN_CORE_KIND_CITATION:
-            relations.prefix = record(chain: markdown_core_citation_prefix(node))
-            relations.suffix = record(chain: markdown_core_citation_suffix(node))
-        default:
-            break
-        }
-        return relations
-    }
-
-    private mutating func enqueue(_ value: OpaquePointer) -> Int {
-        let index = pending.count
-        pending.append(value)
-        return index
-    }
-
-    private mutating func record(field node: OpaquePointer?) -> Int? {
-        node.map { enqueue($0) }
-    }
-
-    private mutating func record(chain first: OpaquePointer?) -> [Int] {
-        var indices: [Int] = []
-        var node = first
-        while let current = node {
-            indices.append(enqueue(current))
-            node = markdown_core_node_get_next_sibling(current)
-        }
-        return indices
-    }
-
-    func document() -> Document {
-        MarkupStore(records: stored).value(at: 0, as: Document.self)
-    }
-}
-
-extension DocumentBuilder {
-    // Keep the exhaustive native-kind switch in one place so a newly added native
-    // kind cannot silently bypass value-tree copying.
-    // swiftlint:disable:next cyclomatic_complexity function_body_length
-    private static func stored(
-        from node: OpaquePointer,
-        relations: Relations,
-        resources: inout [UnsafeRawPointer: SharedResource]
-    ) -> StoredMarkup {
-        switch markdown_core_node_get_kind(node) {
-        case MARKDOWN_CORE_KIND_DOCUMENT:
-            .document(
-                Document.Fields(
-                    from: node,
-                    content: relations.children,
-                    metadata: relations.metadata,
-                    footnotes: relations.footnotes,
-                    specimens: relations.specimens
-                )
-            )
-        case MARKDOWN_CORE_KIND_CITATION:
-            .citation(Citation.Fields(from: node, prefix: relations.prefix, suffix: relations.suffix))
-        case MARKDOWN_CORE_KIND_FOOTNOTE:
-            .footnote(Footnote.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_SPECIMEN:
-            .specimen(Specimen.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_METADATA:
-            .metadata(Metadata(from: node))
-        case MARKDOWN_CORE_KIND_CALLOUT:
-            .callout(Callout.Fields(from: node, title: relations.title, content: relations.children))
-        case MARKDOWN_CORE_KIND_DEFINITION_LIST:
-            .definitionList(DefinitionList.Fields(from: node, children: relations.children))
-        case MARKDOWN_CORE_KIND_DEFINITION:
-            .definition(Definition.Fields(from: node, term: relations.term, content: relations.bodies))
-        case MARKDOWN_CORE_KIND_PARAGRAPH: .paragraph(Paragraph.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_HEADING: .heading(Heading.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_THEMATIC_BREAK: .thematicBreak(ThematicBreak(from: node))
-        case MARKDOWN_CORE_KIND_LIST: .list(List.Fields(from: node, children: relations.children))
-        case MARKDOWN_CORE_KIND_LIST_ITEM: .listItem(ListItem.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_CODE_BLOCK: .codeBlock(CodeBlock(from: node))
-        case MARKDOWN_CORE_KIND_HTML_BLOCK: .htmlBlock(HTMLBlock(from: node))
-        case MARKDOWN_CORE_KIND_FORMULA_BLOCK: .formulaBlock(FormulaBlock(from: node))
-        case MARKDOWN_CORE_KIND_TABLE:
-            .table(Table.Fields(from: node, caption: relations.caption, children: relations.children))
-        case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-            .directiveBlock(DirectiveBlock.Fields(from: node, label: relations.label, content: relations.children))
-        case MARKDOWN_CORE_KIND_TEXT: .text(Text(from: node))
-        case MARKDOWN_CORE_KIND_SOFT_BREAK: .softBreak(SoftBreak(from: node))
-        case MARKDOWN_CORE_KIND_LINE_BREAK: .lineBreak(LineBreak(from: node))
-        case MARKDOWN_CORE_KIND_CODE: .code(Code(from: node))
-        case MARKDOWN_CORE_KIND_HTML: .html(HTML(from: node))
-        case MARKDOWN_CORE_KIND_COMMENT: .comment(Comment(from: node))
-        case MARKDOWN_CORE_KIND_CROSS_LINK: .crossLink(CrossLink(from: node))
-        case MARKDOWN_CORE_KIND_CROSS_EMBEDDED: .crossEmbedded(CrossEmbedded(from: node))
-        case MARKDOWN_CORE_KIND_FORMULA: .formula(Formula(from: node))
-        case MARKDOWN_CORE_KIND_EMPHASIS: .emphasis(Emphasis.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_STRONG: .strong(Strong.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_STRIKETHROUGH:
-            .strikethrough(Strikethrough.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_MARK: .mark(Mark.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_INSERTION: .insertion(Insertion.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_SPAN: .span(Span.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_SUPERSCRIPT: .superscript(Superscript.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_SUBSCRIPT: .subscript(Subscript.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_LINK:
-            .link(Link.Fields(from: node, content: relations.children, resources: &resources))
-        case MARKDOWN_CORE_KIND_EMBEDDED:
-            .embedded(Embedded.Fields(from: node, content: relations.children, resources: &resources))
-        case MARKDOWN_CORE_KIND_DIRECTIVE: .directive(Directive.Fields(from: node, label: relations.label))
-        case MARKDOWN_CORE_KIND_CITE: .cite(Cite.Fields(from: node, citations: relations.citations))
-        case MARKDOWN_CORE_KIND_TABLE_CAPTION:
-            .tableCaption(TableCaption.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_TABLE_ROW: .tableRow(TableRow.Fields(from: node, children: relations.children))
-        case MARKDOWN_CORE_KIND_TABLE_CELL: .tableCell(TableCell.Fields(from: node, content: relations.children))
-        case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
-            .directiveLabel(DirectiveLabel.Fields(from: node, content: relations.children))
-        default: preconditionFailure("native parser returned an unknown node kind")
+    override func relation(at step: Int) -> Relation? {
+        switch step {
+        case 0: Relation(name: nil, indices: 0..<metadataCount)
+        case 1: Relation(name: nil, indices: metadataCount..<children.count)
+        default: nil
         }
     }
 }
 
-extension Document.Fields {
-    init(from node: OpaquePointer, content: [Int], metadata: Int?, footnotes: [Int], specimens: [Int]) {
-        self.init(
-            scope: Scope(from: markdown_core_node_scope(node)),
-            anchor: markdown_core_node_anchor(node).string,
-            attributes: Attributes(from: node),
-            content: .init(indices: content),
-            metadata: metadata.map { .init(index: $0) },
-            footnotes: .init(indices: footnotes),
-            specimens: .init(indices: specimens)
-        )
-    }
+extension Document: RecordBacked {
+    var base: MarkupRecord { record }
 }

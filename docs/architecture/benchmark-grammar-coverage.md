@@ -76,7 +76,7 @@ all imaginable reference grammars. The ledger exposes that distinction.
 | Quotes/callouts | Same-input plain/nested/lazy quotes; variable type and all three collapse states have invertible counterparts. |
 | Tables | Same-input pipe/alignment/ragged/escaped-pipe forms, both captions; simple, headless, multiline, grid, spans, sparse rows and footer use geometry boundaries. |
 | Directives | Inline label/attribute/both, Unicode names, leaf forms, named/nameless/unbraced/nested containers and fallback. |
-| Properties | All ten fields, text/number/bool/null/list distinctions, BOM, invalid-before-valid/duplicates, unknown fields and literal indentation in complete boundary hosts. |
+| Properties | All ten fields, text/number/bool/null/list distinctions, invalid-before-valid/duplicates, unknown fields and literal indentation in complete boundary hosts. |
 | Attributes | Quoted/unquoted/empty/bare values, ordered duplicates, escapes/entities/newline, IDs/classes and every documented owner category. |
 | Precedence | Nested block owners, literal islands, bracket/suffix and rejected-prefix cases; the declared source productions cover precedence interactions. |
 

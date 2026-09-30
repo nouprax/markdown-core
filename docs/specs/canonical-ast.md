@@ -28,8 +28,8 @@ maintaining the contract and comparison policies.
 ## Core rules
 
 - `Markup` is the only abstract AST node type.
-- Every `Markup` has the ordered inherited fields `scope: Scope`,
-  `anchor: String?`, and non-null `attributes: Attributes`.
+- Every `Markup` has the ordered inherited fields `id: MarkupID`,
+  `extent: Extent`, `anchor: String?`, and non-null `attributes: Attributes`.
 - AST values are immutable after construction and own their strings and
   collections. No value retains a C node, document, allocator, or WASM handle.
 - Collections are ordered and read-only. Their order is source order unless a
@@ -47,36 +47,70 @@ maintaining the contract and comparison policies.
 - Every independently scoped semantic element is `Markup`, including `Citation`,
   `Footnote`, `Specimen`, and `Metadata`. Other values use their owner’s scope.
 
+## Identity and equality
+
+`MarkupID` is an opaque integer below 2^53. Swift models it as
+`MarkupID: Hashable, Sendable` and every kind conforms to `Identifiable`;
+Kotlin as `@JvmInline value class MarkupID(val value: Long)`; ECMAScript as
+`readonly id: number`; C answers `markdown_core_node_id(node)` as `uint64_t`.
+
+- Ids are unique within a document, across every owned relation.
+- `Document.parse` numbers nodes from 1 in canonical walk order, so two
+  fresh parses of the same text are equal, ids included.
+- An id denotes one kind for its whole life.
+- Ids from different parses are not comparable.
+
+Equality is deep value equality including `id`: two nodes are equal when they
+have the same kind, id, scalar fields, extent and pairwise equal children in
+every relation. Hashing uses `id` only. Swift: every kind is `Hashable`, and
+`any Markup` has `isEqual(_:)`. Kotlin: `equals` and `hashCode` on every kind.
+ECMAScript exports `markupEquals(a, b)`.
+
 ## Coordinates
 
 ```text
+Extent(lead: Int32, span: UInt32)
 Position(line: integer, column: integer)
 Scope(start: Position, end: Position)
 ```
 
-The C facade passes the supplied bytes to the native parser as UTF-8. Valid
-UTF-8 is a caller precondition; Markdown Core has no validation or repair mode
-for malformed input. What the C entry point produces for input that is not
-valid UTF-8 is unspecified; the parse still reads only the supplied bytes,
-terminates, and returns a document or reports an error. Swift, Kotlin, and
+The C facade passes the supplied bytes to the native parser as UTF-8. The
+bytes are read as they are: Markdown Core has no validation or repair mode, and
+a malformed sequence is parsed like any other input. Swift, Kotlin, and
 ECMAScript strings are encoded as UTF-8 before entering that same parse path.
 
-A scope is the pair of editor source coordinates reported by the parser,
-using cmark's UTF-8 coordinate convention. It is not a string range: neither
-platform string indices nor the decoded `literal` determine these values.
-For example, the source `é &amp; 🚀` has Text scope `1:1..1:13`, while its
-literal is `é & 🚀`. Bindings do not convert columns to UTF-16 or graphemes,
-add one to an end coordinate, or impose half-open interval semantics.
+Every node stores its `extent` in bytes of the UTF-8 source. `lead` runs
+from the end of the previous node in the same relation, or from the owner's
+start for a relation's first node, to this node's start; `span` is the length
+of this node's source range. Each typed field of an owner, each table row
+group and each definition body is a relation of its own. `lead` is signed,
+because ranges may overlap or nest as the rules below define. No node stores
+a line, a column or an absolute offset, and bindings copy extents verbatim.
 
-Lines normally begin at 1 and increment once for LF, CR, or CRLF. Columns
-follow the native byte-oriented convention; a tab occupies one source byte.
-The native sentinel values are preserved too: a zero-byte document has scope
-`1:1..0:0`, whereas a document containing only one newline has `1:1..1:0`.
-An end at `L:0` can also be produced when a block closes on a following empty
-line, in a grid or multiline table's cell as at the top level; a cell's line is
-empty when its part of the physical line is blank, and there the sentinel is
-the end of the cell's part of line `L-1`. The coordinates are reported without
-validation or repair.
+A scope is computed on request from the extents and the source the document
+was parsed from: `document.scope(of: node, in: source)` in the bindings and
+`markdown_core_document_scope` in C. `document.node(at: position, in: source)`
+(`markdown_core_document_node_at`) answers the last node in canonical walk
+order whose source range holds the byte at `position`, or none when no node
+holds it or the position names no byte of the source. A source that ends
+before the node's range does is `OUT_OF_BOUNDS` for a scope and for the dump,
+and so is a position whose line or column is below 1.
+
+A scope is a function of the byte range alone. Its start is the line holding
+the range's first byte and the columns before that byte on its line, plus
+one. Its end is the line holding the range's exclusive end and the columns
+from that line's start to it, so a range that ends right after a line
+terminator ends at `L:0`. Lines begin at 1 and increment once for LF, CR, or
+CRLF; a tab is one column. A zero-byte document has scope `1:1..1:0`, and so
+does a document containing only one newline, because the document's range
+ends at its last content.
+
+Columns count in the document's text unit, `utf8` or `utf16`, which
+`Document.parse` takes as a parameter: C defaults to UTF-8 and the bindings
+to UTF-16. A scope is not a string range: neither platform string indices nor
+the decoded `literal` determine these values. For example, the source
+`é &amp; 🚀` has Text scope `1:1..1:13` in UTF-8 and `1:1..1:10` in UTF-16,
+while its literal is `é & 🚀`. The canonical dump prints UTF-8 columns.
 
 SoftBreak and LineBreak locate the authored break using this same convention;
 their scopes do not promise retrievable string slices. A multiline table cell
@@ -84,13 +118,11 @@ can occupy segments on lines shared with other cells. A spanning grid cell can
 reach beyond its starting row. These positions describe editor locations,
 not a partition of the source into independently sliceable substrings.
 
-Scopes inherit the native C parser's source-position values and semantics
-exactly. The C facade and platform bindings copy `line` and `column` without
-rescanning, normalizing, expanding, rejecting, or otherwise reinterpreting
-particular coordinate combinations. Consumers that need to interpret a source
-position use the native parser contract from the same Markdown Core release.
+Every binding computes scopes with this one rule from the extents the C
+parser produced; none rescans, normalizes, expands, rejects, or otherwise
+reinterprets particular ranges.
 
-A `Markup.scope` is the source-faithful, contiguous editor cursor range of that
+A node's scope is the source-faithful, contiguous editor cursor range of that
 node's own lexical occurrence. It never becomes an expanded or composite range
 of every source location that contributed semantic values to the node.
 Reference resolution, metadata inheritance, normalization, synthesis, and
@@ -99,8 +131,8 @@ must not copy, union, substitute, or otherwise change its scope. In particular,
 a resolved reference occurrence does not acquire the separate definition's
 range, and a generated value has no fictional source position.
 
-`TableRow` and `TableCell` have non-optional scopes like every other `Markup`,
-so typed table boundaries do not discard source information.
+`TableRow` and `TableCell` have extents like every other `Markup`, so typed
+table boundaries do not discard source information.
 
 ### Syntax-specific ranges
 
@@ -184,8 +216,8 @@ its placement determined by the owning relation rather than a stored mode.
 
 ### Universal attributes and metadata
 
-Every Markup carries the ordered inherited fields `scope: Scope`,
-`anchor: String?`, and `attributes: Attributes`. The
+Every Markup carries the ordered inherited fields `id: MarkupID`,
+`extent: Extent`, `anchor: String?`, and `attributes: Attributes`. The
 [attributes module](dialect/attributes.md) owns the single grammar,
 normalization, and attachment operation. `Attributes(classes: [String],
 records: [Record])` is never null. `Record(name: String, value: String)`
@@ -215,7 +247,7 @@ from explicit null values.
 
 `Dimensions(width: Int, height: Int?)` is a node-independent value. Width is
 required and height is optional; every present component is in 1..2147483647.
-It has no kind, scope, anchor, attributes, children or visitor callbacks.
+It has no kind, id, extent, anchor, attributes, children or visitor callbacks.
 `Embedded.dimensions` and `CrossEmbedded.dimensions` have type `Dimensions?`, absent when no complete valid suffix was
 recognized, including malformed labels. The dimension suffix produces this value from image
 labels and embedded cross-link labels. `CrossLink` has no dimensions field.
@@ -227,7 +259,7 @@ The value is independent of a destination's shared identity and attribute record
 Destination = url(String) | cross(path: String, anchor: String?)
 ```
 
-`Destination` is a tagged value, not a node: it has no scope, children,
+`Destination` is a tagged value, not a node: it has no id, extent, children,
 anchor, or attributes, and a branch's fields exist only in that branch. It is
 the `dest` of every `Link` and `Embedded`, which own the `url` branch: the
 complete semantic destination the inherited grammar produced, the bytes
@@ -259,60 +291,62 @@ value; its producing syntax determines which value is stored.
 ### CitationReferent, Citation, Footnote, and Specimen
 
 ```text
-CitationReferent = bib(key: String, mode: BibMode) | footnote(id: String) | specimen(id: String)
-
-Citation(referent: CitationReferent, prefix: [Markup], suffix: [Markup], scope)
-
-Footnote(id: String, content: [Markup], scope)
-Specimen(id: String?, start: Int?, content: [Markup], scope)
+CitationReferent = bib(key: String, mode: BibMode) | footnote(target: FootnoteTarget) | specimen(label: String)
+FootnoteTarget = label(value: String) | note(footnote: Footnote)
+Citation(referent: CitationReferent, prefix: [Markup], suffix: [Markup])
+Footnote(label: String?, content: [Markup])
+Specimen(label: String?, start: Int?, content: [Markup])
 ```
 
-`CitationReferent` is a tagged value like `Destination`: no scope, and a
-branch's fields exist only in that branch. The `bib` branch is produced
-by [bibliography citations](dialect/citations.md); every referenced
-`[^label]` call and inline `^[content]` note produce the `footnote` branch,
-whose `id` names the `Footnote` in `Document.footnotes` with the equal id.
+`CitationReferent` and `FootnoteTarget` are tagged values like
+`Destination`: no extent, and a branch's fields exist only in that branch.
+The `bib` branch is produced by [bibliography citations](dialect/citations.md).
+A referenced `[^label]` call produces `footnote(label(value))`, whose value
+is the normalized label without the caret. An inline `^[content]` note
+produces `footnote(note(footnote))`: the note is a `Footnote` with a null
+label, owned at its call site by its referent. A note inside a note is
+ordinary nesting.
 
-`Citation` and `Footnote` are `Markup` kinds with the common scope, anchor,
-and attributes fields. Ownership remains explicit: a `Citation` is reached
-through `Cite.citations`, which holds at
-least one item in source order; its `prefix` and `suffix` are non-null inline
-content, empty when absent. A `Footnote` is reached only through
-`Document.footnotes`, which holds every referenced definition and inline note
-ordered by scope start, wherever it was written. A referenced definition keeps
-its normalized label without the caret as `id` and its parsed block content.
-An inline note keeps its parsed inline body directly, without a `Paragraph`.
-Its id is `inline-N` for the N-th inline opener in source order (outer before
-nested), with the smallest free `-K` suffix when necessary. All authored ids
-are reserved before ids are assigned during document finalization. Nested
-citations are id edges, including semantic cycles, never object references.
-A later definition of an id already defined is a `Footnote` after the first, which every call resolves to, so a consumer
-keying footnotes by id takes the first. The C facade exposes these nodes through `markdown_core_node` and typed
-field accessors. Swift, Kotlin, and ECMAScript include them in `Markup`.
-`CitationReferent` remains a value, modeled as
+`Citation` and `Footnote` are `Markup` kinds with the common inherited
+fields. Ownership remains explicit: a `Citation` is reached through
+`Cite.citations`, which holds at least one item in source order; its `prefix`
+and `suffix` are non-null inline content, empty when absent. A referenced
+definition `[^x]: body` is a `Footnote` block in the content where it was
+written, with its normalized label without the caret as `label` and its
+parsed block content. An inline note keeps its parsed inline body directly,
+without a `Paragraph`.
+
+`Specimen` follows the same definition ownership: a specimen definition is a
+`Specimen` block in the content where it was written. Every definition
+remains present, including anonymous and duplicate ones. Its nullable `label`
+retains the authored label; its nullable `start` retains an effective
+explicit counter reset. A consumer derives displayed numbers in definition
+order; neither definitions nor references store that derived state. See
+[specimens](dialect/specimens.md) for definition and reference syntax.
+Ordinary lists have no specimen variant or label field.
+
+`Document` carries the parser's footnote and specimen tables.
+`document.footnotes` and `document.specimens` list every definition in source
+order, inline notes included, and `document.footnote(for: label)` and
+`document.specimen(for: label)` return the first one whose stored label equals
+the referent's. The C facade answers them through
+`markdown_core_document_footnote_count`, `_footnote_at`, `_footnote_for` and
+the specimen equivalents, and exposes the nodes through `markdown_core_node`
+and typed field accessors. Swift, Kotlin, and ECMAScript include them in
+`Markup`. `CitationReferent` and `FootnoteTarget` are modeled as
 `Destination` is modeled: a Swift enum with associated values, a Kotlin sealed
 interface, and an ECMAScript discriminated union on `kind`.
-
-`Specimen` follows the same definition ownership as `Footnote`: it is reached
-only through `Document.specimens`, after content and footnotes in walks and
-dumps. Every definition remains present, including anonymous and duplicate
-ones. Its nullable `id` retains the authored label; a `specimen(id)` referent
-names the first equal non-null id. Its nullable `start` retains an effective
-explicit counter reset. A consumer derives displayed numbers in definition
-order; neither definitions nor references store that derived state. The C
-facade exposes a `markdown_core_node` with kind `Specimen` and typed field accessors. See [specimens](dialect/specimens.md) for definition and reference syntax. Ordinary lists have no specimen variant or label field.
 
 ## Node inventory
 
 `content` and other collection fields below own their values. `inline content`
 means only inline `Markup` kinds are valid; `block content` means only block
-kinds are valid. A category violation reported by the C facade fails
-`Document.parse` on that binding with the platform contract-violation error
-and returns no document.
+kinds are valid. The parser produces only valid categories, and bindings copy
+them without checking.
 
 | Kind | Fields in canonical order | Nullability and invariants |
 | --- | --- | --- |
-| `Document` | `content: [Markup]`, `metadata: Metadata?`, `footnotes: [Footnote]`, `specimens: [Specimen]` | block content; document-owned footnotes and specimens retain their values in scope-start order; visit metadata, then content, then footnotes, then specimens; neither definition sequence counts as children |
+| `Document` | `content: [Markup]`, `metadata: Metadata?` | block content; visit metadata, then content |
 | `Callout` | `variant: String?`, `collapsed: Bool?`, `title: [Markup]?`, `content: [Markup]` | every `>` container; `variant` is the authored type as written or null when the container has no metadata line, and then `collapsed` and `title` are null; `collapsed` is null when no `+` or `-` fold marker was authored, false for `+` and true for `-`; `title` is a node-valued field of inline content visited before `content` and never counted among its children; a present title holds at least one node; block content |
 | `Paragraph` | `content: [Markup]` | inline content |
 | `Heading` | `level: Int`, `content: [Markup]` | `level` is 1 through 6; inline content |
@@ -348,16 +382,16 @@ and returns no document.
 | `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content |
 | `Embedded` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Embedded` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
-| `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote` referent whose id is the normalized label without the caret and with empty affixes; its items are owned Citation nodes in the citations field; ordinary content remains empty |
+| `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote(label)` referent whose value is the normalized label without the caret and with empty affixes; its items are owned Citation nodes in the citations field; ordinary content remains empty |
 | `DefinitionList` | `definitions: [Definition]` | non-empty ordered associations |
 | `Definition` | `term: [Markup]`, `content: [[Markup]]`, `compact: Bool` | inline term; non-empty outer content; each inner collection is one block body; compact records the absence of a blank term gap; visit term then bodies |
 | `Citation` | `referent: CitationReferent`, `prefix: [Markup]`, `suffix: [Markup]` | One Markup node owned by Cite.citations. Its non-null prefix and suffix contain inline markup, empty when absent. It is not ordinary content. |
-| `Footnote` | `id: String`, `content: [Markup]` | A document-owned Markup definition. Referenced definitions keep normalized IDs and block content; inline notes keep direct inline content and collision-free generated IDs. All definitions remain in scope-start order, including duplicates and unused definitions. Calls store IDs, never owned bodies. |
-| `Specimen` | `id: String?`, `start: Int?`, `content: [Markup]` | A document-owned Markup definition in scope-start order, including duplicates and anonymous definitions. id is the authored label or null; start is an explicit effective counter reset or null. Display numbers are derived. |
+| `Footnote` | `label: String?`, `content: [Markup]` | A definition where it was written, or an inline note owned by its `Citation`'s referent. A referenced definition keeps its normalized label and block content; an inline note has a null label and direct inline content. Duplicate and unused definitions remain. |
+| `Specimen` | `label: String?`, `start: Int?`, `content: [Markup]` | A definition where it was written, including duplicates and anonymous definitions. label is the authored label or null; start is an explicit effective counter reset or null. Display numbers are derived. |
 | `Metadata` | `name: MetadataValue?`, `title: MetadataValue?`, `subtitle: MetadataValue?`, `time: MetadataValue?`, `date: MetadataValue?`, `authors: MetadataValue?`, `keywords: MetadataValue?`, `abstract: MetadataValue?`, `state: MetadataValue?`, `comment: MetadataValue?` | A leaf Markup node owned by Document.metadata. Field absence differs from explicit null. Its scope covers the authored properties block; unsupported attribute syntax yields null anchor and empty attributes. |
 
-Every row also has the ordered inherited fields `scope: Scope`,
-`anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Embedded` destination, and
+Every row also has the ordered inherited fields `id: MarkupID`,
+`extent: Extent`, `anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Embedded` destination, and
 every `title`, are the CommonMark-unescaped values with angle-bracket
 wrappers removed and no percent-encoding or normalization. A link reference
 definition produces no node: the parser consumes it, and every successful
@@ -368,11 +402,11 @@ unresolved reference is the inherited literal text with its brackets.
 ### Typed table ownership
 
 ```text
-Table(caption: TableCaption?, columns: [TableColumn], head: [TableRow], content: [TableRow], foot: [TableRow], scope)
-TableCaption(content: [Markup], scope)
+Table(caption: TableCaption?, columns: [TableColumn], head: [TableRow], content: [TableRow], foot: [TableRow])
+TableCaption(content: [Markup])
 TableColumn(flow: Flow, relative: Double?)
-TableRow(cells: [TableCell], scope)
-TableCell(rowspan: Int, colspan: Int, content: [Markup], scope)
+TableRow(cells: [TableCell])
+TableCell(rowspan: Int, colspan: Int, content: [Markup])
 ```
 
 Tables, rows, and cells are immutable `Markup`; a column is an unscoped value.
@@ -401,16 +435,14 @@ the ordered rows and spans.
 
 ## Parsing
 
-`Document.parse(source)` is the binding entry point; C exposes
-`markdown_core_document_parse`. Both take the source without parse options and
-return the same fixed dialect. The document does not retain source text,
+`Document.parse(source, unit)` is the binding entry point; C exposes
+`markdown_core_document_parse_in`, which takes the same unit, and
+`markdown_core_document_parse`, which counts in UTF-8. All return the same
+fixed dialect. The document does not retain source text,
 a normalized source copy, a line index, tokens, trivia, or recovery records.
-Scope tracking is mandatory.
 
-Allocation failure aborts parsing and publishes no partial document. A binding
-that detects a category violation in the C facade fails with its platform
-contract-violation error. Valid UTF-8 is a precondition of the C API; the
-bindings provide valid UTF-8 input.
+Allocation failure aborts parsing and publishes no partial document; it is
+the only failure a parse reports.
 
 ## MarkupVisitor and walking
 
@@ -445,10 +477,11 @@ complete AST walk as the named `label` field without becoming directive
 content or contributing to a `children` collection.
 
 Walking covers all Markup kinds. A `Cite` visits each
-`Citation`, whose `prefix` precedes its `suffix`. `Document` visits present
-`metadata`, `content`, `footnotes`, then `specimens`; definitions descend into
-their own content. Metadata is a leaf and receives both phases. Unscoped
-values, including reference IDs, do not create traversal edges. A semantic
+`Citation`, which visits the `Footnote` of a `footnote(note)` referent, then
+its `prefix`, then its `suffix`. `Document` visits present `metadata`, then
+`content`; a definition is visited where it was written and descends into its
+own content. Metadata is a leaf and receives both phases. Referent labels do
+not create traversal edges. A semantic
 reference cycle therefore cannot create an ownership or traversal cycle.
 
 There is no separate walking visitor protocol or forwarding adapter. The walk
@@ -462,8 +495,9 @@ walk starts with its own event stack.
 
 ## Debug dump
 
-Swift, Kotlin, and TypeScript publish `MarkupDumper.dump(markup)` and a
-convenience `Markup.dump()` method. Every dumper is a callback consumer of the
+The dump prints scopes, so it is a scope query and takes the source like one:
+every binding publishes `document.dump(in: source)` and
+`document.dump(node, in: source)`. Every dumper is a callback consumer of the
 same walker used by other clients. Its enter callback formats the current
 node, and its exit callback completes that node's output layout.
 

@@ -1,21 +1,22 @@
 package com.nouprax.markdown.core
 
 /** A leaf Markup node holding ten optional fields and their complete source envelope. */
-public data class Metadata(
-    public val name: MetadataValue? = null,
-    public val title: MetadataValue? = null,
-    public val subtitle: MetadataValue? = null,
-    public val time: MetadataValue? = null,
-    public val date: MetadataValue? = null,
-    public val authors: MetadataValue? = null,
-    public val keywords: MetadataValue? = null,
-    public val `abstract`: MetadataValue? = null,
-    public val state: MetadataValue? = null,
-    public val comment: MetadataValue? = null,
-    override val scope: Scope,
-    override val anchor: String? = null,
-    override val attributes: Attributes = Attributes.empty,
-) : Markup
+public class Metadata internal constructor(
+    public val name: MetadataValue?,
+    public val title: MetadataValue?,
+    public val subtitle: MetadataValue?,
+    public val time: MetadataValue?,
+    public val date: MetadataValue?,
+    public val authors: MetadataValue?,
+    public val keywords: MetadataValue?,
+    public val `abstract`: MetadataValue?,
+    public val state: MetadataValue?,
+    public val comment: MetadataValue?,
+    override val id: MarkupID,
+    override val extent: Extent,
+    override val anchor: String?,
+    override val attributes: Attributes,
+) : Markup()
 
 public sealed interface MetadataValue {
     public data class Scalar(
@@ -23,9 +24,11 @@ public sealed interface MetadataValue {
     ) : MetadataValue
 
     public class List(
-        items: kotlin.collections.List<MetadataListItem>,
+        public val items: kotlin.collections.List<MetadataListItem>,
     ) : MetadataValue {
-        public val items: kotlin.collections.List<MetadataListItem> = items.immutableMap { it }
+        override fun equals(other: Any?): Boolean = this === other || (other is List && items == other.items)
+
+        override fun hashCode(): Int = items.hashCode()
     }
 }
 

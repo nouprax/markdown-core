@@ -25,7 +25,8 @@ private typealias Comment = Testing.Comment
             ":plain :empty[]{} :attrs{#kept .a class=\"b a\" k=1 k=2}\n\n| none |\n| ---- |\n| cell |\n",
         ]
         let documents = try sources.map { try Document.parse($0) }
-        let kinds = Set(documents.flatMap { dumpKinds($0.dump()) })
+        let dumps = try zip(documents, sources).map { try $0.dump(in: $1) }
+        let kinds = Set(dumps.flatMap { dumpKinds($0) })
         let expected: Set<String> = [
             "Document", "Callout", "Paragraph", "Heading", "ThematicBreak", "List",
             "ListItem", "CodeBlock", "HTMLBlock", "FormulaBlock", "Table",
@@ -38,7 +39,9 @@ private typealias Comment = Testing.Comment
             "TableRow", "TableCell", "TableCaption",
         ]
         #expect(kinds == expected)
-        #expect(documents.allSatisfy { $0.scope.start == Position(line: 1, column: 1) })
+        for (document, source) in zip(documents, sources) {
+            #expect(try document.scope(of: document, in: source).start == Position(line: 1, column: 1))
+        }
     }
 
     @Test("field and nullability mapping uses Swift-native types")
@@ -97,8 +100,28 @@ private typealias Comment = Testing.Comment
         for testCase in manifest.cases {
             let document = try Document.parse(testCase.source)
             // `Testing.Comment`, qualified: the package exports a `Comment` markup kind.
-            #expect(MarkupDumper.dump(document) == testCase.expected, Testing.Comment(rawValue: testCase.name))
-            #expect(document.dump() == testCase.expected, Testing.Comment(rawValue: testCase.name))
+            #expect(
+                try document.dump(in: testCase.source) == testCase.expected,
+                Testing.Comment(rawValue: testCase.name)
+            )
+        }
+    }
+
+    @Test("a fresh parse numbers its nodes from 1 in canonical walk order, and two parses are equal")
+    func freshIdentifiers() throws {
+        let resource = try #require(
+            Bundle.module.url(forResource: "canonical-ast-fixtures", withExtension: "json")
+        )
+        let manifest = try JSONDecoder().decode(CanonicalManifest.self, from: Data(contentsOf: resource))
+        for testCase in manifest.cases {
+            let document = try Document.parse(testCase.source)
+            var visitor = IdentifierVisitor()
+            document.walk(with: &visitor)
+            // Every owned relation is walked, so 1...n in order is also uniqueness.
+            #expect(visitor.ids == Array(1...UInt64(visitor.ids.count)), Testing.Comment(rawValue: testCase.name))
+            let again = try Document.parse(testCase.source)
+            #expect(document == again, Testing.Comment(rawValue: testCase.name))
+            #expect(document.hashValue == again.hashValue, Testing.Comment(rawValue: testCase.name))
         }
     }
 }
@@ -123,4 +146,57 @@ private func dumpKinds(_ dump: String) -> [String] {
             .first
             .map(String.init)
     }
+}
+
+/// The ids of a walk's nodes, in the order it enters them.
+private struct IdentifierVisitor: MarkupVisitor {
+    var ids: [UInt64] = []
+
+    private mutating func record(_ node: some Markup, _ phase: MarkupVisitPhase) {
+        if phase == .enter { ids.append(node.id.value) }
+    }
+
+    mutating func visit(_ node: Document, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Callout, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Paragraph, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Heading, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: ThematicBreak, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: MarkdownCore.List, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: ListItem, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: CodeBlock, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: HTMLBlock, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: FormulaBlock, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Table, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: DirectiveBlock, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: DirectiveLabel, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Text, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: SoftBreak, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: LineBreak, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Code, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: HTML, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: MarkdownCore.Comment, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: CrossLink, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: CrossEmbedded, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Formula, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Emphasis, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Strong, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Strikethrough, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Mark, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Insertion, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Span, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Superscript, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Subscript, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: DefinitionList, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Definition, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Link, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Embedded, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Directive, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Cite, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: TableCaption, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: TableRow, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: TableCell, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Citation, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) { record(node, phase) }
 }

@@ -176,39 +176,20 @@ paragraph is not a definition and survives this cleanup. No definition node
 reaches the public AST.
 
 Inline footnotes use the existing Footnote data record and one-item Cite.
-A successful close transfers the parsed inline body directly to
-Document.footnotes. A Cite never has a Footnote child: its Citation names the
-value by id. Authored definitions remain in the block tree until their bodies
-have been parsed. In both cases the document already owns the node, including
-on parse failure.
+A successful close moves the parsed inline body into a Footnote that the
+Cite's Citation owns as its `note` field, as it owns its affixes. Authored
+definitions are Footnote and Specimen blocks in the tree where they were
+read. In both cases the tree owns the node, including on parse failure.
 
-Both forms register in one parser collection when their syntax commits. Its
-entries borrow the Footnote and, for an inline form, its Citation. Failed
-candidates never register. Inline parsing cannot retract a committed note:
-referenced-call conversion may discard parsed label content, but its defined
-label cannot contain `]`, so it cannot enclose a completed inline footnote.
-The document's inline-value chain is also the work queue for deferred directive
-labels in those bodies; newly produced notes append to it and are processed
-once by the same field parser.
+Calls resolve through the parser's label maps while parsing; a footnote label
+map and a specimen key index hold the first definition of each label. The
+finish stage visits definitions where they are, like any other node.
 
-Finalization processes only the F registered values, with no tree walk to
-discover footnotes. Registration order differs from source order: definitions
-precede inline parsing, nested bodies close inside out, and directive labels
-parse after the main tree. A stable counting pass per byte of the packed
-32-bit source coordinates bounds ordering work by O(F): the keys are computed
-once, only the bytes on which some key differs are passed over, and an input
-already in order is left where it is. All authored ids are reserved before
-inline ids are assigned. Collision probes consume disjoint authored-id
-namespaces, so their total is bounded by F plus the authored-id count.
-After every allocation succeeds, finalization moves the values into one
-source-ordered document chain and discards the parser collection.
-
-Consolidation and element postprocessing begin only after finalization.
-Their common tree-phase walker visits Document.footnotes and element-owned
-fields from their live owner slots. Callbacks receive resolved ids and the
-completed ownership model; removing a document value cannot leave a pointer
-in a parser index. OOM cleanup uses the document's existing ownership graph,
-and semantic reference cycles never become object cycles.
+Publishing is one canonical walk. It numbers every node from 1, rewrites the
+parse-time source place as the node's extent, and collects every Footnote and
+Specimen into the document's two definition tables, which it orders by first
+source byte with the stable linear source ordering below and indexes by
+label. Nothing reads a place after publishing.
 
 The bracket scanner tracks the most recent non-SP/TAB byte over disjoint
 consumed token ranges, so rejecting empty bodies never rescans nested bodies.

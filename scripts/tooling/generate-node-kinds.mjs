@@ -7,7 +7,7 @@
  *
  * - `docs/specs/canonical-ast.json` is the public contract. Each kind's
  *   `ordinal` is its wire number: the value of `markdown_core_node_kind`, the
- *   MCB2 kind ordinal every binding decoder reads (Kotlin and ES).
+ *   MCB3 kind ordinal every binding decoder reads (Kotlin and ES).
  * - `packages/markdown-core/node-types.json` is the native representation: the
  *   internal `markdown_core_node_type` of each class, the public kind it
  *   reports, the payload record it allocates and the element that defines its
@@ -47,14 +47,8 @@ const hex = (value) => `0x${value.toString(16).padStart(4, "0")}`;
 /** Validates the two schemas and joins them into one model; throws listing every error. */
 export function buildModel(contract, native) {
     const errors = [];
-    // A content kind is one no field names as its type, so `[Markup]` accepts
-    // it; every other kind lives only in the typed fields that name it, and the
-    // Document only at the root.
-    const fieldKinds = new Set(
-        contract.kinds.flatMap(({ fields }) => fields.map(({ type }) => type.replace(/[[\]?]/g, "")))
-    );
     const kinds = [...contract.kinds]
-        .map(({ name, ordinal }) => ({ name, ordinal, content: name !== "Document" && !fieldKinds.has(name) }))
+        .map(({ name, ordinal }) => ({ name, ordinal }))
         .sort((a, b) => a.ordinal - b.ordinal);
     kinds.forEach((kind, index) => {
         if (kind.ordinal !== index + 1) {
@@ -227,17 +221,12 @@ function kotlin({ kinds }) {
         "package com.nouprax.markdown.core\n\n" +
         "internal enum class WireNodeKind(\n" +
         "    val rawValue: Int,\n" +
-        "    /** Whether a `[Markup]` field accepts this kind: no field of the contract names it as its type. */\n" +
-        "    val content: Boolean,\n" +
         ") {\n" +
-        kinds
-            .map((kind) => `    ${screaming(kind.name)}(${String(kind.ordinal)}, ${String(kind.content)}),\n`)
-            .join("") +
+        kinds.map((kind) => `    ${screaming(kind.name)}(${String(kind.ordinal)}),\n`).join("") +
         "    ;\n\n" +
         "    companion object {\n" +
-        "        private val byRawValue = entries.associateBy(WireNodeKind::rawValue)\n\n" +
-        "        fun from(rawValue: Int): WireNodeKind =\n" +
-        '            requireNotNull(byRawValue[rawValue]) { "native result contains unknown node kind $rawValue" }\n' +
+        "        /** The kinds are numbered in declaration order from 1. */\n" +
+        "        fun from(rawValue: Int): WireNodeKind = entries[rawValue - 1]\n" +
         "    }\n" +
         "}\n"
     );
@@ -252,21 +241,14 @@ function es({ kinds }) {
         names.map((name, index) => `    | "${name}"${index === names.length - 1 ? ";" : ""}`).join("\n") +
         "\n\n" +
         "/** Indexed by wire ordinal. */\n" +
-        'export const kinds: readonly (NativeKind | "none")[] = Object.freeze([\n' +
+        'export const kinds: readonly (NativeKind | "none")[] = [\n' +
         ['    "none"', ...names.map((name) => `    "${name}"`)].join(",\n") +
-        "\n]);\n\n" +
+        "\n];\n\n" +
         "type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;\n" +
         "type Holds<Claim extends true> = Claim;\n\n" +
         "/** Fails to compile unless the wire kinds are exactly the Markup union's kinds, so every\n" +
         " * switch or mapped type exhaustive over one is exhaustive over the other. */\n" +
-        'export type NativeKindsAreMarkupKinds = Holds<Exactly<NativeKind, Markup["kind"]>>;\n\n' +
-        "/** The kinds a `[Markup]` field accepts: every kind no field of the contract names as its type. */\n" +
-        "export const contentKinds: ReadonlySet<NativeKind> = new Set([\n" +
-        kinds
-            .filter((kind) => kind.content)
-            .map((kind) => `    "${camel(kind.name)}"`)
-            .join(",\n") +
-        "\n]);\n"
+        'export type NativeKindsAreMarkupKinds = Holds<Exactly<NativeKind, Markup["kind"]>>;\n'
     );
 }
 

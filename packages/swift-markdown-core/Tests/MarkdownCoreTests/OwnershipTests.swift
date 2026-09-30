@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import MarkdownCore
@@ -14,57 +15,39 @@ import Testing
         #expect(counts == Array(repeating: 1, count: 20))
     }
 
-    @Test("deep trees and independently retained subtrees release with bounded stack", arguments: [30_000, 65_536])
-    func deepRelease(depth: Int) throws {
-        weak var storage: MarkupStore?
-        do {
-            let document = try Document.parse(String(repeating: "- ", count: depth) + "leaf\n")
-            storage = document.fields.store
-            withExtendedLifetime(document) { #expect(document.content.count == 1) }
-        }
-        #expect(storage == nil)
-
-        var subtree: MarkdownCore.List?
-        do {
-            let document = try Document.parse(String(repeating: "- ", count: depth) + "leaf\n")
-            storage = document.fields.store
-            subtree = try #require(document.content.first as? MarkdownCore.List)
-        }
-        #expect(storage != nil)
-        do {
-            var visitor = RecordingWalkingVisitor(recordEvents: false)
-            try #require(subtree).walk(with: &visitor)
-            #expect(visitor.entered == visitor.exited)
-            #expect(visitor.entered == depth * 2 + 2)
-        }
-        subtree = nil
-        #expect(storage == nil)
+    @Test("deep trees release, compare, walk, locate and describe on a small stack", arguments: [30_000, 65_536])
+    func deepTrees(depth: Int) throws {
+        let failures = try onSmallStack { deepTreeFailures(depth: depth) }
+        #expect(failures.isEmpty, "\(failures)")
     }
 
     @Test("deep dumps consume walker callbacks without recursive node visits")
     func deepDump() throws {
         let depth = 512
-        let document = try Document.parse(String(repeating: "- ", count: depth) + "leaf\n")
-        let lines = document.dump().split(separator: "\n")
+        let lines = try dumped(String(repeating: "- ", count: depth) + "leaf\n").split(separator: "\n")
         #expect(lines.count == depth * 2 + 3)
         #expect(lines.first?.hasPrefix("Document ") == true)
         #expect(lines.last?.contains("literal=\"leaf\"") == true)
         #expect(lines.last?.hasPrefix(String(repeating: "    ", count: depth * 2 + 1) + "└── ") == true)
     }
 
-    @Test("retained body groups and individual bodies own the store through their last release")
+    @Test("retained body groups and individual bodies own their records through their last release")
     func retainedGroups() async throws {
         requireSendable(MarkupGroups<any Markup>.self)
-        weak var storage: MarkupStore?
+        weak var root: MarkupRecord?
+        weak var owner: MarkupRecord?
+        weak var leaf: MarkupRecord?
         var groups: MarkupGroups<any Markup>?
         var body: MarkupCollection<any Markup>?
         do {
             let document = try Document.parse("T\n: one\n:\n")
-            storage = document.fields.store
+            root = document.record
             let list = try #require(document.content.first as? DefinitionList)
             groups = list.definitions[0].content
+            owner = list.definitions[0].record
         }
-        #expect(storage != nil)
+        #expect(root == nil)
+        #expect(owner != nil)
         do {
             let retained = try #require(groups)
             let counts = await withTaskGroup(of: Int.self, returning: [Int].self) { tasks in
@@ -73,16 +56,19 @@ import Testing
             }
             #expect(counts == Array(repeating: 1, count: 20))
             body = retained[0]
+            leaf = body?.records.first
         }
+        // A body shares its own records, not its owner's.
         groups = nil
-        #expect(storage != nil)
+        #expect(owner == nil)
+        #expect(leaf != nil)
         #expect(((body?.first as? Paragraph)?.content.first as? Text)?.literal == "one")
         body = nil
-        #expect(storage == nil)
+        #expect(leaf == nil)
     }
 
-    @Test("typed store references distinguish occurrences and documents after root release")
-    func storedReferences() throws {
+    @Test("nodes of released documents keep their own values and ids")
+    func releasedDocuments() throws {
         let (first, second) = try {
             let document = try Document.parse("first\n\nsecond\n")
             return (
@@ -94,50 +80,147 @@ import Testing
         #expect((first.content.first as? Text)?.literal == "first")
         #expect((second.content.first as? Text)?.literal == "second")
         #expect((other.content.first as? Text)?.literal == "other")
-        #expect(first.scope.start.line == 1 && second.scope.start.line == 3 && other.scope.start.line == 1)
+        #expect(first.id == MarkupID(2) && second.id == MarkupID(4) && other.id == MarkupID(2))
+        #expect(second.extent == Extent(lead: 2, span: 6))
+        // Ids from different documents are not comparable; equality still is.
+        #expect(first != other)
     }
 
-    @Test("field views infer relation values while preserving optional scalar values")
-    func inferredFields() throws {
-        let document = try Document.parse("---\ntitle: Example\n---\n3. item\n")
-        let metadata = document.fields.metadata
-        let content = document.fields.content
-        let attributes = document.fields.attributes
-        #expect(metadata?.title == .scalar(.text("Example")))
-        #expect(attributes == .empty)
-        let list = try #require(content.first as? MarkdownCore.List)
-        let start = list.fields.start
-        #expect(start == 3)
-
-        let plain = try Document.parse("> body\n")
-        let absent = plain.fields.metadata
-        #expect(absent == nil)
-        let quote = try #require(plain.content.first as? Callout)
-        let missingTitle = quote.fields.title
-        #expect(missingTitle == nil)
-
-        let titled = try Document.parse("> [!note] Title\n> body\n")
-        let callout = try #require(titled.content.first as? Callout)
-        let title = callout.fields.title
-        #expect((title?.first as? Text)?.literal == "Title")
-
-        let definitions = try Document.parse("Term\n: body\n:\n")
-        let definitionList = try #require(definitions.content.first as? DefinitionList)
-        let groups = definitionList.definitions[0].fields.content
-        #expect(groups.count == 2 && groups[1].isEmpty)
-        #expect(((groups[0].first as? Paragraph)?.content.first as? Text)?.literal == "body")
+    @Test("equal documents are equal, and a difference at the deepest leaf is not")
+    func deepEquality() throws {
+        let source = "> - *a **b [c](/d)***\n>\n> | x |\n> | - |\n> | y |\n"
+        let document = try Document.parse(source)
+        let again = try Document.parse(source)
+        #expect(document == again)
+        #expect(document.hashValue == again.hashValue)
+        #expect(document.isEqual(again))
+        #expect(Set([document, again]).count == 1)
+        let changed = try Document.parse(source.replacingOccurrences(of: "y", with: "z"))
+        #expect(document != changed)
+        #expect(!document.isEqual(changed))
+        // Hashing reads the id alone, so the unequal documents still collide.
+        #expect(document.hashValue == changed.hashValue)
+        // Kinds differ, so existentials are unequal even at one id.
+        let paragraph = try #require(Document.parse("x").content.first)
+        let heading = try #require(Document.parse("# x").content.first)
+        #expect(paragraph.id == heading.id)
+        #expect(!paragraph.isEqual(heading))
+        #expect(paragraph.isEqual(paragraph))
     }
 
-    @Test("container views fit the existential inline buffer without copying their fields")
-    func inlineViews() {
-        let inlineCapacity = 3 * MemoryLayout<Int>.size
-        #expect(MemoryLayout<Document>.size <= inlineCapacity)
-        #expect(MemoryLayout<Paragraph>.size <= inlineCapacity)
-        #expect(MemoryLayout<TableCaption>.size <= inlineCapacity)
-        #expect(MemoryLayout<MarkupReference<Metadata>>.size == MemoryLayout<Int>.size)
-        #expect(MemoryLayout<MarkupReferences<any Markup>>.size == MemoryLayout<[Int]>.size)
-        #expect(MemoryLayout<MarkupGroupReferences<any Markup>>.size == MemoryLayout<[[Int]]>.size)
+    @Test("a node describes its kind and id without reading its descendants")
+    func describes() throws {
+        let document = try Document.parse("# x\n")
+        #expect(document.description == "Document(id=1)")
+        #expect(String(describing: document.content[0]) == "Heading(id=2)")
     }
+}
+
+/// Every deep-tree operation of the plan's gate, as failure messages: the
+/// thread it runs on has no test context to record issues in.
+private func deepTreeFailures(depth: Int) -> [String] {
+    var failures: [String] = []
+    func check(_ condition: Bool, _ message: String) {
+        if !condition { failures.append(message) }
+    }
+    let source = String(repeating: "- ", count: depth) + "leaf\n"
+    guard let document = try? Document.parse(source), let changed = try? Document.parse(source + "x\n"),
+        let lead = try? Document.parse(String(repeating: "- ", count: depth) + "lead\n")
+    else { return ["parse failed"] }
+
+    // Walking: a list and an item per level, then the document, paragraph and text.
+    var visitor = RecordingWalkingVisitor(recordEvents: false)
+    document.walk(with: &visitor)
+    check(visitor.entered == depth * 2 + 3 && visitor.exited == visitor.entered, "walk count")
+
+    // The deepest paragraph, reached with a loop.
+    var deepest: Paragraph?
+    var list = document.content.first as? MarkdownCore.List
+    while let item = list?.items.first {
+        list = item.content.first as? MarkdownCore.List
+        if list == nil { deepest = item.content.first as? Paragraph }
+    }
+    guard let leaf = deepest?.content.first as? Text else { return failures + ["no leaf"] }
+
+    // Equality at the deepest leaf: same ids and extents, one literal apart.
+    check(document == (try? Document.parse(source)), "equal deep documents")
+    check(document != lead, "deepest leaf difference")
+    check(document != changed, "trailing difference")
+
+    // Scope lookup and hit testing, whose walks are as deep as the tree.
+    let column = Int32(depth * 2 + 1)
+    let scope = try? document.scope(of: leaf, in: source)
+    check(
+        scope == Scope(start: Position(line: 1, column: column), end: Position(line: 1, column: column + 3)),
+        "leaf scope"
+    )
+    check(
+        (try? document.node(at: Position(line: 1, column: column + 1), in: source)?.isEqual(leaf)) == true,
+        "hit test"
+    )
+    check(document.description == "Document(id=1)", "description")
+    check(leaf.description == "Text(id=\(depth * 2 + 3))", "leaf description")
+    return failures + deepReleaseFailures(source: source)
+}
+
+/// Release of deep documents and of the deep subtrees views hold past them.
+private func deepReleaseFailures(source: String) -> [String] {
+    var failures: [String] = []
+    func check(_ condition: Bool, _ message: String) {
+        if !condition { failures.append(message) }
+    }
+
+    // Release while a view holds a subtree: the root goes, the paragraph stays.
+    weak var root: MarkupRecord?
+    weak var held: MarkupRecord?
+    var retained: Paragraph?
+    do {
+        guard let copy = try? Document.parse(source) else { return failures + ["parse failed"] }
+        root = copy.record
+        var list = copy.content.first as? MarkdownCore.List
+        while let item = list?.items.first {
+            list = item.content.first as? MarkdownCore.List
+            if list == nil { retained = item.content.first as? Paragraph }
+        }
+        held = retained?.record
+    }
+    check(root == nil, "deep document released")
+    check((retained?.content.first as? Text)?.literal == "leaf", "held subtree readable")
+    retained = nil
+    check(held == nil, "held subtree released")
+
+    // Release of a deep subtree a view held past its document.
+    var top: MarkdownCore.List?
+    do {
+        guard let copy = try? Document.parse(source) else { return failures + ["parse failed"] }
+        top = copy.content.first as? MarkdownCore.List
+        held = top?.record
+    }
+    check(held != nil, "held list alive")
+    top = nil
+    check(held == nil, "held list released")
+    return failures
+}
+
+/// Runs `body` on a thread with a small fixed stack, so recursion over tree
+/// depth fails the same way on every platform.
+private func onSmallStack<Value: Sendable>(_ body: @escaping @Sendable () -> Value) throws -> Value {
+    let outcome = Outcome<Value>()
+    let thread = Thread {
+        outcome.value = body()
+        outcome.done.signal()
+    }
+    thread.stackSize = 1 << 19
+    thread.start()
+    outcome.done.wait()
+    return try #require(outcome.value)
+}
+
+/// The value a thread hands back; the semaphore orders its one write before
+/// the read.
+private final class Outcome<Value>: @unchecked Sendable {
+    let done = DispatchSemaphore(value: 0)
+    var value: Value?
 }
 
 private func requireSendable<T: Sendable>(_: T.Type) {}

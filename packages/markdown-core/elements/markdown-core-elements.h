@@ -40,32 +40,24 @@ markdown_core_node *markdown_core_parse_document_with_setup(const char *source, 
  *  `markdown_core_node_free`. */
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len);
 
-/** Returns the literal formula payload for formula element nodes, or NULL on error.
- */
+/** Returns the literal formula payload of a formula element node. */
 const char *markdown_core_elements_get_formula_literal(markdown_core_node *node);
 
-/** Sets the literal formula payload for formula element nodes, returning 1 on success and 0 on
- * error.
- */
+/** Sets the literal formula payload of a formula element node, returning 0
+ * when the copy could not be allocated. */
 int markdown_core_elements_set_formula_literal(markdown_core_node *node, const char *literal);
 
-/** Returns the paragraph-internal layout mode for formula element nodes.
- */
+/** Returns the paragraph-internal layout mode of a formula element node. */
 markdown_core_formula_mode markdown_core_elements_get_formula_mode(markdown_core_node *node);
 
-/** Sets the paragraph-internal layout mode for formula element nodes.
- */
-int markdown_core_elements_set_formula_mode(markdown_core_node *node, markdown_core_formula_mode mode);
+/** Sets the paragraph-internal layout mode of a formula element node. */
+void markdown_core_elements_set_formula_mode(markdown_core_node *node, markdown_core_formula_mode mode);
 
-/** Returns the directive name, NULL for a nameless block, or NULL on
- * error.
- */
+/** Returns the directive name, or NULL for a nameless block. */
 const char *markdown_core_elements_get_directive_name(markdown_core_node *node);
 
-/** Sets the directive name for directive element nodes, returning 1
- * on success and 0 on error. NULL selects a nameless DirectiveBlock; an inline
- * directive requires a valid nonempty name.
- */
+/** Sets the directive name of a directive element node, returning 0 when
+ * the copy could not be allocated. NULL makes the directive nameless. */
 int markdown_core_elements_set_directive_name(markdown_core_node *node, const char *name);
 
 #ifdef __cplusplus

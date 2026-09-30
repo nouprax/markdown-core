@@ -366,29 +366,23 @@ static void trim_citation_source(const markdown_core_element_instance *self, mar
     }
 }
 
-static int source_compare(int line, int column, int other_line, int other_column) {
-    if (line != other_line) {
-        return line < other_line ? -1 : 1;
-    }
-    return (column > other_column) - (column < other_column);
-}
-
 static bool trim_affix_node(markdown_core_inline_state *inline_state, markdown_core_node *node, bufsize_t start,
                             bufsize_t end) {
-    int start_line, start_column, end_line, end_column;
+    int line;
+    bufsize_t first_byte, end_byte;
     if (start == end) {
         return false;
     }
-    markdown_core_parser_content_place(inline_state->owner_parser, &inline_state->owner->content_map, start,
-                                       &start_line, &start_column);
+    markdown_core_parser_content_place(inline_state->owner_parser, &inline_state->owner->content_map, start, &line,
+                                       &first_byte);
     markdown_core_parser_content_end_place(inline_state->owner_parser, &inline_state->owner->content_map, end - 1,
-                                           &end_line, &end_column);
-    if (source_compare(node->end_line, node->end_column, start_line, start_column) < 0 ||
-        source_compare(node->start_line, node->start_column, end_line, end_column) > 0) {
+                                           &line, &end_byte);
+    const markdown_core_place place = node->where.place;
+    if (place.end <= (uint32_t)first_byte || place.start >= (uint32_t)end_byte) {
         return false;
     }
-    bool trim_start = source_compare(node->start_line, node->start_column, start_line, start_column) < 0;
-    bool trim_end = source_compare(node->end_line, node->end_column, end_line, end_column) > 0;
+    bool trim_start = place.start < (uint32_t)first_byte;
+    bool trim_end = place.end > (uint32_t)end_byte;
     if ((trim_start || trim_end) && node->kind == MARKDOWN_CORE_NODE_TEXT) {
         markdown_core_chunk *text = node->as.literal;
         bufsize_t from = node->content_map.offset - inline_state->owner->content_map.offset;
@@ -443,8 +437,10 @@ static void remove_specimen_parenthesis(markdown_core_inline_state *inline_state
         return;
     }
     if (first) {
-        markdown_core_parser_content_place(inline_state->owner_parser, &text->content_map, 1, &text->start_line,
-                                           &text->start_column);
+        int line;
+        bufsize_t start;
+        markdown_core_parser_content_place(inline_state->owner_parser, &text->content_map, 1, &line, &start);
+        text->where.place.start = (uint32_t)start;
         markdown_core_parser_adopt_content_marks(inline_state->owner_parser, &text->content_map, &text->content_map, 1,
                                                  literal->len - 1);
         if (literal->alloc) {
@@ -453,8 +449,11 @@ static void remove_specimen_parenthesis(markdown_core_inline_state *inline_state
             literal->data++;
         }
     } else {
-        markdown_core_parser_content_end_place(inline_state->owner_parser, &text->content_map, literal->len - 2,
-                                               &text->end_line, &text->end_column);
+        int line;
+        bufsize_t end;
+        markdown_core_parser_content_end_place(inline_state->owner_parser, &text->content_map, literal->len - 2, &line,
+                                               &end);
+        text->where.place.end = (uint32_t)end;
     }
     literal->len--;
 }

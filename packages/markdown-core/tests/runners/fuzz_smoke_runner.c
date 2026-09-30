@@ -19,68 +19,83 @@
 
 static size_t nodes_visited;
 
-static int inspect_node(const markdown_core_node *node, void *context) {
-    markdown_core_scope scope;
-    markdown_core_string value;
-    markdown_core_optional_string marker;
+/* Reads each node's kind-specific fields; an accessor that refuses a node of
+ * the kind it reads fails the walk. */
+static int inspect_node(const markdown_core_node *node, ts_ast_range range, void *context) {
+    int64_t rowspan, colspan;
     int32_t level;
     bool flag;
+    markdown_core_string literal;
+    markdown_core_optional_string optional;
+    const char *name;
+    markdown_core_node_kind kind = markdown_core_node_get_kind(node);
+    markdown_core_status status = markdown_core_node_kind_name(kind, &name);
 
-    if (!node) {
-        return 0;
-    }
     nodes_visited++;
-    (void)markdown_core_node_get_kind(node);
-    (void)markdown_core_node_kind_name(markdown_core_node_get_kind(node));
-    scope = markdown_core_node_scope(node);
-    if (scope.start.line < 0 || scope.end.line < 0) {
+    if (status != MARKDOWN_CORE_OK || range.start < 0 || range.end < range.start) {
         return -1;
     }
-    (void)markdown_core_node_literal(node, &value);
-    (void)markdown_core_node_heading_level(node, &level);
-    (void)markdown_core_node_list_item_marker(node, &marker);
-    int64_t rowspan, colspan;
-    (void)markdown_core_node_table_cell_spans(node, &rowspan, &colspan);
-    (void)markdown_core_node_directive_properties(node, &marker);
-    (void)markdown_core_node_definition_compact(node, &flag);
-    return 0;
+    switch (kind) {
+    case MARKDOWN_CORE_KIND_TEXT:
+    case MARKDOWN_CORE_KIND_CODE:
+    case MARKDOWN_CORE_KIND_HTML:
+    case MARKDOWN_CORE_KIND_HTML_BLOCK:
+    case MARKDOWN_CORE_KIND_COMMENT:
+        status = markdown_core_node_literal(node, &literal);
+        break;
+    case MARKDOWN_CORE_KIND_HEADING:
+        status = markdown_core_node_heading_level(node, &level);
+        break;
+    case MARKDOWN_CORE_KIND_LIST_ITEM:
+        status = markdown_core_node_list_item_marker(node, &optional);
+        break;
+    case MARKDOWN_CORE_KIND_TABLE_CELL:
+        status = markdown_core_node_table_cell_spans(node, &rowspan, &colspan);
+        break;
+    case MARKDOWN_CORE_KIND_DIRECTIVE:
+    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
+        status = markdown_core_node_directive_properties(node, &optional);
+        break;
+    case MARKDOWN_CORE_KIND_DEFINITION:
+        status = markdown_core_node_definition_compact(node, &flag);
+        break;
+    default:
+        break;
+    }
+    return status == MARKDOWN_CORE_OK ? 0 : -1;
 }
 
 static int smoke(const uint8_t *bytes, size_t length, const char *label) {
     markdown_core_document *document;
-    markdown_core_error *error = NULL;
+    markdown_core_status status;
     uint8_t *first = NULL;
     uint8_t *second = NULL;
     size_t first_length = 0;
     size_t second_length = 0;
     int result = -1;
 
-    document = markdown_core_document_parse(bytes, length, &error);
-    if (!document) {
-        /* Parse failures must still produce a well-formed error object. */
-        if (!error) {
-            fprintf(stderr, "%s: parse failed without an error\n", label);
+    status = markdown_core_document_parse(bytes, length, &document);
+    if (status != MARKDOWN_CORE_OK) {
+        /* The one way a parse fails is an allocation. */
+        if (status != MARKDOWN_CORE_ALLOCATION_FAILED) {
+            fprintf(stderr, "%s: parse failed with status %d\n", label, (int)status);
             return -1;
         }
-        if (markdown_core_error_get_message(error).length == 0) {
-            fprintf(stderr, "%s: parse error carries no message\n", label);
-            markdown_core_error_free(error);
-            return -1;
-        }
-        markdown_core_error_free(error);
         return 0;
     }
 
     if (ts_ast_walk(markdown_core_document_root(document), inspect_node, NULL) != 0) {
-        fprintf(stderr, "%s: traversal produced an invalid scope\n", label);
+        fprintf(stderr, "%s: traversal produced an invalid range\n", label);
         goto done;
     }
-    if (ts_ast_scope_outside(markdown_core_document_root(document), bytes, length)) {
-        fprintf(stderr, "%s: a scope lies outside the source\n", label);
+    if (ts_ast_range_outside(markdown_core_document_root(document), length)) {
+        fprintf(stderr, "%s: a range lies outside the source\n", label);
         goto done;
     }
-    if (!markdown_core_document_dump(document, &first, &first_length, &error) ||
-        !markdown_core_document_dump(document, &second, &second_length, &error)) {
+    if (markdown_core_document_dump(document, markdown_core_document_root(document), bytes, length, &first,
+                                    &first_length) != MARKDOWN_CORE_OK ||
+        markdown_core_document_dump(document, markdown_core_document_root(document), bytes, length, &second,
+                                    &second_length) != MARKDOWN_CORE_OK) {
         fprintf(stderr, "%s: dump failed\n", label);
         goto done;
     }
@@ -94,7 +109,6 @@ done:
     markdown_core_dump_free(first);
     markdown_core_dump_free(second);
     markdown_core_document_free(document);
-    markdown_core_error_free(error);
     return result;
 }
 

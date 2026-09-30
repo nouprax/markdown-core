@@ -1,7 +1,7 @@
 import MarkdownCoreC
 
 /// The target of a ``Link`` or ``Embedded``: a tagged value, not a node, so it
-/// has no scope and no children, and a branch's fields exist only in that
+/// has no id, no extent and no children, and a branch's fields exist only in that
 /// branch.
 public enum Destination: Sendable, Hashable {
     /// The complete semantic destination the inherited grammar produced: the
@@ -29,36 +29,41 @@ struct SharedResource {
 
     static func shared(
         by node: OpaquePointer,
-        in resources: inout [UnsafeRawPointer: SharedResource]
+        in resources: inout [Int: SharedResource]
     ) -> SharedResource {
-        guard let identity = markdown_core_node_resource(node) else {
-            preconditionFailure("native link or image has no resource")
-        }
-        let key = UnsafeRawPointer(identity)
+        let key = Int(bitPattern: answer { markdown_core_node_resource(node, $0) })
         if let known = resources[key] { return known }
-        var title = markdown_core_optional_string()
-        markdown_core_node_title(node, &title)
-        let inherited = markdown_core_node_inherited_attributes(node)
+        let inherited = answer { markdown_core_node_inherited_attributes(node, $0) }
         let resource = SharedResource(
             dest: Destination(from: node),
-            title: title.string,
+            title: answer(markdown_core_optional_string()) { markdown_core_node_title(node, $0) }.string,
             anchor: markdown_core_attribute_value_anchor(inherited).string,
             attributes: Attributes(from: inherited)
         )
         resources[key] = resource
         return resource
     }
+
+    /// An occurrence's inherited fields: its own anchor before the resource's,
+    /// and the resource's classes and records before its own.
+    func fields(of node: OpaquePointer) -> InheritedFields {
+        InheritedFields(
+            id: MarkupID(markdown_core_node_id(node)),
+            extent: Extent(markdown_core_node_extent(node)),
+            anchor: markdown_core_attribute_value_anchor(markdown_core_node_primary_attributes(node)).string
+                ?? anchor,
+            attributes: Attributes(from: node).inheriting(attributes)
+        )
+    }
 }
 
 extension Destination {
     init(from node: OpaquePointer) {
-        var destination = markdown_core_destination()
-        markdown_core_node_destination(node, &destination)
-        switch destination.kind {
-        case MARKDOWN_CORE_DESTINATION_CROSS:
-            self = .cross(path: destination.path.required, anchor: destination.anchor.string)
-        default:
+        let destination = answer(markdown_core_destination()) { markdown_core_node_destination(node, $0) }
+        if destination.kind == MARKDOWN_CORE_DESTINATION_URL {
             self = .url(destination.url.required)
+        } else {
+            self = .cross(path: destination.path.required, anchor: destination.anchor.string)
         }
     }
 }

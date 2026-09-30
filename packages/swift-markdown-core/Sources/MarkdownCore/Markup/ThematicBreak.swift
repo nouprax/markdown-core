@@ -2,22 +2,30 @@ import MarkdownCoreC
 
 /// A thematic break — a `***`, `---` or `___` line.
 ///
-/// A leaf: it has no content, and its scope is all there is to read.
+/// A leaf: it has no content, and its extent is all there is to read.
 public struct ThematicBreak: Markup {
-    /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public let scope: Scope
+    let record: ThematicBreakRecord
+
+    /// The node's identifier within its document.
+    public var id: MarkupID { record.id }
+    /// Where it is, relative to its neighbours. See ``Extent``.
+    public var extent: Extent { record.extent }
     /// The explicit anchor, absent when none was attached.
-    public let anchor: String?
+    public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
-    public let attributes: Attributes
+    public var attributes: Attributes { record.attributes }
 }
 
-extension ThematicBreak {
-    init(from node: OpaquePointer) {
-        self.init(
-            scope: Self.scope(from: node),
-            anchor: markdown_core_node_anchor(node).string,
-            attributes: Attributes(from: node)
-        )
+final class ThematicBreakRecord: MarkupRecord, @unchecked Sendable {
+    override var markup: any Markup { ThematicBreak(record: self) }
+}
+
+extension ThematicBreakRecord {
+    convenience init(from node: OpaquePointer) {
+        self.init(InheritedFields(from: node), children: [])
     }
+}
+
+extension ThematicBreak: RecordBacked {
+    var base: MarkupRecord { record }
 }

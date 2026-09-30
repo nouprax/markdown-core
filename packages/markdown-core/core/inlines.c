@@ -51,12 +51,10 @@ void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline
                                       &inline_state->mark_cursor);
     markdown_core_inline_seat_cursor(inline_state);
     if (span.has_start) {
-        node->start_line = span.start_line;
-        node->start_column = span.start_column;
+        node->where.place.start = (uint32_t)span.start;
     }
     if (span.has_end) {
-        node->end_line = span.end_line;
-        node->end_column = span.end_column;
+        node->where.place.end = (uint32_t)span.end;
     }
     if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0) {
         /* A Text placed with an end unresolved keeps no map at all: the
@@ -71,9 +69,9 @@ void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline
                    memcmp(literal->data, inline_state->input.data + from, (size_t)literal->len) == 0))) {
                 node->content_map.count = 0;
                 node->content_map.offset = 0;
-                markdown_core_parser_append_content_mark(inline_state->owner_parser, node, 0, node->start_line,
-                                                         node->start_column, node->end_column - node->start_column + 1,
-                                                         0);
+                markdown_core_parser_append_content_mark(inline_state->owner_parser, node, 0, inline_state->mark_line,
+                                                         node->where.place.start,
+                                                         (int)(node->where.place.end - node->where.place.start), 0);
             }
         }
     }
@@ -151,12 +149,10 @@ static bool S_inline_run_began(const markdown_core_inline_state *inline_state) {
     return inline_state->run_state || !inline_state->dialect->run_state_size;
 }
 
-void markdown_core_inline_state_from_buf(markdown_core_parser *parser, int line_number,
-                                         markdown_core_inline_state *inline_state, markdown_core_chunk *chunk,
-                                         markdown_core_map *refmap) {
+void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                         markdown_core_chunk *chunk, markdown_core_map *refmap) {
     memset(inline_state, 0, sizeof(*inline_state));
     inline_state->input = *chunk;
-    inline_state->line = line_number;
     inline_state->owner_parser = parser;
     inline_state->refmap = refmap;
     inline_state->text_end = -1;
@@ -721,20 +717,18 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     // is the opener's LEADING bytes and the closer's TRAILING ones. Taking the
     // whole run's start and end gave two nodes one byte: `***a**` reported a
     // leftover Text spanning columns 1..3 and a Strong also starting at 1.
-    inline_node->start_line = opener_inl->start_line;
-    inline_node->end_line = closer_inl->end_line;
-    inline_node->start_column = opener_inl->start_column + (int)opener_num_chars;
-    inline_node->end_column = closer_inl->end_column - (int)closer_num_chars;
+    inline_node->where.place.start = opener_inl->where.place.start + (uint32_t)opener_num_chars;
+    inline_node->where.place.end = closer_inl->where.place.end - (uint32_t)closer_num_chars;
     // and a leftover that SURVIVES owns only the bytes it still carries. A
     // leftover with none is freed below, and writing its end first would put a
     // reversed range in the tree for the length of two statements -- true only
     // by reading ahead, which is not a property worth relying on.
     if (opener_num_chars > 0) {
-        opener_inl->end_column = opener_inl->start_column + (int)opener_num_chars - 1;
+        opener_inl->where.place.end = opener_inl->where.place.start + (uint32_t)opener_num_chars;
     }
     if (closer_num_chars > 0) {
         closer_inl->content_map.offset += (int)use_delims;
-        closer_inl->start_column = closer_inl->end_column - (int)closer_num_chars + 1;
+        closer_inl->where.place.start = closer_inl->where.place.end - (uint32_t)closer_num_chars;
     }
 
     // if opener has 0 characters, remove it and its associated inline
@@ -905,14 +899,13 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
      * One the parser fed line by line already does; one whose content was SET
      * -- a table cell, a directive's label -- gets one mark here, derived from
      * where the block says it starts. That derivation IS the arithmetic this
-     * replaces: `start_column - 1 + internal_offset` was the block offset every
-     * inline position used to be measured from, and stating it once as a mark
-     * is what lets the term itself go. */
+     * replaces: `start + internal_offset` was the block offset every inline
+     * position used to be measured from, and stating it once as a mark is
+     * what lets the term itself go. */
     if (parent->content_map.count == 0) {
-        markdown_core_parser_mark_content(parser, parent, parent->start_line,
-                                          parent->start_column + parent->internal_offset);
+        markdown_core_parser_mark_content(parser, parent, 0, parent->where.place.start + parent->internal_offset);
     }
-    markdown_core_inline_state_from_buf(parser, parent->start_line, inline_state, &content, refmap);
+    markdown_core_inline_state_from_buf(parser, inline_state, &content, refmap);
     inline_state->owner = parent;
     inline_state->owner_structure = markdown_core_parser_structure(parser, parent);
     inline_state->mark_cursor = parent->content_map.first;
@@ -1087,40 +1080,19 @@ markdown_core_node *markdown_core_inline_state_make_delimiter_text(markdown_core
     return node;
 }
 
-/* The cursor's position, asked of the map from the cursor's run. */
-static int S_cursor_place(markdown_core_inline_state *inline_state, int *line, int *column) {
-    markdown_core_content_span span;
-    int placed = markdown_core_parser_content_span(inline_state->owner_parser,
-                                                   inline_state->owner ? &inline_state->owner->content_map : NULL,
-                                                   inline_state->pos, -1, &span, &inline_state->mark_cursor);
-    markdown_core_inline_seat_cursor(inline_state);
-    if (!placed || !span.has_start) {
-        return 0;
-    }
-    *line = span.start_line;
-    *column = span.start_column;
-    return 1;
-}
-
-int markdown_core_inline_state_get_column(markdown_core_inline_state *inline_state) {
-    int line, column;
-    if (S_cursor_place(inline_state, &line, &column)) {
-        return column;
-    }
-    return inline_state->pos + 1;
-}
-
 markdown_core_chunk *markdown_core_inline_state_get_chunk(markdown_core_inline_state *inline_state) {
     return &inline_state->input;
 }
 
 static void S_update_text_sourcepos(markdown_core_parser *parser, markdown_core_node *node) {
     if (node->as.literal->len == 0) {
-        node->start_line = node->start_column = node->end_line = node->end_column = 0;
+        node->where.place.end = node->where.place.start;
         return;
     }
-    markdown_core_parser_content_end_place(parser, &node->content_map, node->as.literal->len - 1, &node->end_line,
-                                           &node->end_column);
+    int line;
+    bufsize_t end;
+    markdown_core_parser_content_end_place(parser, &node->content_map, node->as.literal->len - 1, &line, &end);
+    node->where.place.end = (uint32_t)end;
 }
 
 void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n) {
@@ -1144,14 +1116,6 @@ int markdown_core_inline_state_has_unmatched_opener(markdown_core_inline_state *
      * yes, every closer on the stack has an opener below it, and an opener is
      * unmatched exactly when the openers outnumber the closers. */
     return inline_state->delim_openers[rule] > inline_state->delim_closers[rule];
-}
-
-int markdown_core_inline_state_get_line(markdown_core_inline_state *inline_state) {
-    int line, column;
-    if (S_cursor_place(inline_state, &line, &column)) {
-        return line;
-    }
-    return inline_state->line;
 }
 
 markdown_core_node *markdown_core_delimiter_node(const delimiter *delim) { return delim->node; }

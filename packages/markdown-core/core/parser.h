@@ -34,11 +34,11 @@ typedef struct {
     bufsize_t content_offset;
     /* The source line the slice was copied from, counted from 1. */
     int line;
-    /* The BYTE column on that line the slice begins at, counted from 1. */
-    int column;
+    /* The byte offset in the document source the run begins at. */
+    bufsize_t source;
     /* Authored byte width represented by each logical byte in this run. */
     int source_width;
-    /* Source columns advanced per logical byte: one for copied bytes,
+    /* Source bytes advanced per logical byte: one for copied bytes,
      * two for a contracted pipe escape, zero within a decoded token. */
     int source_step;
     /* Virtual indentation after container prefixes, before block content was
@@ -63,24 +63,18 @@ typedef struct {
  * that contains `to`. */
 typedef struct {
     int first, last;
-    int start_line, start_column;
-    int end_line, end_column;
+    /* Source byte of `from`, and the exclusive source end of `to`. */
+    bufsize_t start, end;
     bool has_start, has_end;
 } markdown_core_content_span;
 
-/* Parse-time edges for document-owned footnote and specimen definitions.
- * Every definition is already owned in the block tree or a value field.
- * The index is discarded before any mutating postprocessor runs. */
+/* The specimen definitions of one parse, in the order they were committed,
+ * for the index citations resolve against. Every definition is owned by the
+ * block tree; the collection only borrows it until the document finishes. */
 typedef struct {
-    struct markdown_core_node *definition;
-    struct markdown_core_node *citation;
-} markdown_core_definition_entry;
-
-typedef struct {
-    markdown_core_definition_entry *values;
+    struct markdown_core_node **values;
     size_t count;
     size_t capacity;
-    struct markdown_core_node *last_inline;
 } markdown_core_definition_collection;
 
 /* Sequential source-order operations share scratch, such as an element's
@@ -98,6 +92,12 @@ struct markdown_core_parser {
     /* A hashtable of urls in the current document for cross-references */
     struct markdown_core_map *refmap;
     markdown_core_source_order source_order;
+    /* The stack the finish stage's tree walks borrow in turn, the finish
+     * walk's frames and then publishing's: each grows it to what it needs
+     * (markdown_core_parser_walk_stack) and leaves it to the next, and the
+     * stage releases it when it ends. */
+    void *walk_stack;
+    size_t walk_stack_size;
     /* Run records released by finished runs, kept for the next run
      * (markdown_core_inline_state_from_buf); linked through their first word
      * and released with the parser. Each is the dialect's `run_state_size`. */
@@ -127,13 +127,18 @@ struct markdown_core_parser {
     struct markdown_core_line_facts *input_facts;
     size_t input_fact_count, input_fact_capacity;
     size_t input_line_count, input_line_capacity;
+    /* Whether a column of the active input may stand elsewhere than the
+     * same offset from its line's start in the source: true for a cell's
+     * content, and for the document once its scan finds NUL, which the block
+     * parser reads as the three bytes of U+FFFD. */
+    bool input_mapped;
     int input_first_line;
     size_t input_line_work;
     /* A complete candidate may consume through a later source boundary. The
      * source driver advances to it after the current line has finished. */
     const unsigned char *claimed_cursor;
     int claimed_line;
-    bufsize_t claimed_last_column;
+    bufsize_t claimed_last_end;
     /* The last open block after a line is fully processed */
     struct markdown_core_node *current;
     /* See the documentation for markdown_core_parser_get_line_number() in markdown_core.h */
@@ -157,9 +162,16 @@ struct markdown_core_parser {
     bool partially_consumed_tab;
     /* Contains the currently processed line */
     markdown_core_strbuf curline;
-    /* See the documentation for markdown_core_parser_get_last_line_length() in
+    /* See the documentation for markdown_core_parser_get_last_line_end() in
      * markdown-core-element-api.h */
-    bufsize_t last_line_length;
+    bufsize_t last_line_end;
+    /* Where the line being processed ends in the source, before its line
+     * ending: the driver records it as it hands the line to the block
+     * parser, and it holds while `curline` does. */
+    bufsize_t line_end;
+    /* Where input line `line_number` starts in the active input: the driver
+     * records it with `line_end`, and a claim of later lines moves it. */
+    bufsize_t line_start;
     /* Options set by the user, see the Options section in markdown_core.h */
     /* Sticky allocation-failure flag: once any parse structure is lost, the
      * one-shot transaction reports the whole parse as failed (NULL) instead of
@@ -402,8 +414,7 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
         bufsize_t offset = from + map->offset;
         span->first = markdown_core_block_content_mark_near(parser, map, offset, hint, &probes);
         const markdown_core_line_mark *mark = &parser->line_marks[span->first];
-        span->start_line = mark->line;
-        span->start_column = mark->column + (int)(offset - mark->content_offset) * mark->source_step;
+        span->start = mark->source + (offset - mark->content_offset) * mark->source_step;
         span->has_start = true;
         hint = span->first;
     }
@@ -412,9 +423,7 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
         span->last = markdown_core_block_content_mark_near(parser, map, offset, hint, &probes);
         hint = span->last;
         const markdown_core_line_mark *mark = &parser->line_marks[span->last];
-        span->end_line = mark->line;
-        span->end_column =
-            mark->column + (int)(offset - mark->content_offset) * mark->source_step + mark->source_width - 1;
+        span->end = mark->source + (offset - mark->content_offset) * mark->source_step + mark->source_width;
         span->has_end = true;
     }
     if (cursor) {
@@ -630,6 +639,9 @@ typedef struct {
 
 /* Stable source-coordinate ordering, shared by deferred nodes and cell geometry. */
 void markdown_core_source_order_dispose(markdown_core_source_order *workspace);
+/* The walk stack with room for `count` entries of `size` bytes, keeping what
+ * it holds, or NULL when that much cannot be allocated. */
+void *markdown_core_parser_walk_stack(markdown_core_parser *parser, size_t count, size_t size);
 int markdown_core_order_source_entries(markdown_core_source_order *workspace, void *entries, size_t count,
                                        size_t stride, uint64_t (*key)(const void *));
 
@@ -645,21 +657,62 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
  * parser. No nested parse transaction, document, dialect or C recursion. */
 void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser);
 bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_node *owner);
-/* Project a byte column in the active input to its original source column.
- * Line numbers already name physical source lines. Column zero names no byte:
- * an END there is the sentinel for the end of the line above -- in a table
- * cell, the end of the cell's part of that line -- so there is nothing in the
- * input to project and it is returned as it is. Producers call this when
- * assigning node scopes. */
-int markdown_core_parser_mapped_source_column(markdown_core_parser *parser, int line, int column);
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int markdown_core_parser_source_column(
-    markdown_core_parser *parser, int line, int column) {
-    return column <= 0 || parser->block_root == parser->root
-               ? column
-               : markdown_core_parser_mapped_source_column(parser, line, column);
+/* WHERE A BYTE OF THE ACTIVE INPUT WAS WRITTEN, as a byte offset of the
+ * document source. `line` is a line of the active input and `column` a byte
+ * column of that line as the block parser reads it, counted from 1: the
+ * document's own line, or a line of a table cell's content, which the parser
+ * reads as an input of its own and whose bytes the cell's map places back in
+ * the document. `source_offset` answers the byte at `column`, and
+ * `source_end` the offset just after it, so a range whose last byte is at
+ * `column` ends there; column zero is the start of the line.
+ * Producers call these when placing a node. */
+/* The answers for a line that is not a copy of its source: a document line
+ * that carries NUL, or a line of a cell's content. */
+bufsize_t markdown_core_parser_mapped_source_offset(markdown_core_parser *parser, int line, int column);
+bufsize_t markdown_core_parser_mapped_source_end(markdown_core_parser *parser, int line, int column);
+
+/* The geometry of input line `line`, which the driver has already visited. */
+static inline markdown_core_input_line *markdown_core_parser_visited_line(const markdown_core_parser *parser,
+                                                                          int line) {
+    size_t index = (size_t)(line - parser->input_first_line);
+    assert(line >= parser->input_first_line && index < parser->input_line_count);
+    return &parser->input_lines[index];
 }
+
+/* An input that is not mapped is a copy of its source, so a line's column c
+ * is the byte c - 1 after the line's start. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
+    markdown_core_parser_source_offset(markdown_core_parser *parser, int line, int column) {
+    const markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
+    return !parser->input_mapped ? (bufsize_t)geometry->start + column - 1
+                                 : markdown_core_parser_mapped_source_offset(parser, line, column);
+}
+
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
+    markdown_core_parser_source_end(markdown_core_parser *parser, int line, int column) {
+    const markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
+    return !parser->input_mapped ? (bufsize_t)geometry->start + column
+                                 : markdown_core_parser_mapped_source_end(parser, line, column);
+}
+/* Where the first byte of input line `line` was written: the document line's
+ * own start, or, in a table cell, the source of the cell's first byte on that
+ * line (its line ending, when the cell is blank there). Lines of one input
+ * begin in increasing source order, so a node began on `line` or later when
+ * its start is at least this offset. */
+bufsize_t markdown_core_parser_line_offset(markdown_core_parser *parser, int line);
+/* Whether `node` begins on input line `line`, a line of the active input the
+ * driver has reached. */
+bool markdown_core_parser_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line);
 int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                              int column, bufsize_t length, bufsize_t offset);
+/* Where input line `line` starts in the active input. */
+static inline bufsize_t markdown_core_parser_line_start(const markdown_core_parser *parser, int line) {
+    return (bufsize_t)markdown_core_parser_visited_line(parser, line)->start;
+}
+/* The same runs for a caller that holds where input line `line` starts in the
+ * active input. */
+int markdown_core_parser_append_line_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
+                                           bufsize_t line_start, int column, bufsize_t length, bufsize_t offset);
 
 bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct markdown_core_node *parent_container,
                                           markdown_core_node_type child, markdown_core_block_lookahead *lookahead);
@@ -672,13 +725,16 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
 
 /* Register an element's committed definition in its borrowed parse index.
- * inline_owner, when present, adopts the detached body into its AST value
- * chain. Otherwise the block tree retains ownership until resolution ends.
- * Allocation failure leaves ownership unchanged and aborts the transaction. */
+ * The block tree keeps ownership. Allocation failure aborts the transaction. */
 bool markdown_core_parser_register_definition(markdown_core_parser *parser,
                                               markdown_core_definition_collection *collection,
-                                              markdown_core_node *definition, markdown_core_node *citation,
-                                              markdown_core_node **inline_owner);
+                                              markdown_core_node *definition);
+
+/* THE LONGEST SOURCE A PARSE TAKES: offsets are int32, and every buffer
+ * derived from the source stays under half of that. The public parse entry
+ * (markdown_core_document_parse_in) refuses a longer one; below it, `length`
+ * is within this bound. */
+#define MARKDOWN_CORE_SOURCE_CAPACITY ((size_t)(INT32_MAX / 2))
 
 /* The engine has one parse operation. It parses with the dialect `elements`
  * names, in that order; the composition root that chooses the product's

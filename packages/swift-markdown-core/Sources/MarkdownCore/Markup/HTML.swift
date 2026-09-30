@@ -2,25 +2,41 @@ import MarkdownCoreC
 
 /// A run of raw inline HTML.
 public struct HTML: Markup {
-    /// Where it is. See ``Scope`` — boundaries, not a byte range.
-    public let scope: Scope
+    let record: HTMLRecord
+
+    /// The node's identifier within its document.
+    public var id: MarkupID { record.id }
+    /// Where it is, relative to its neighbours. See ``Extent``.
+    public var extent: Extent { record.extent }
     /// The explicit anchor, absent when none was attached.
-    public let anchor: String?
+    public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
-    public let attributes: Attributes
+    public var attributes: Attributes { record.attributes }
     /// The HTML exactly as written. Nothing in it is parsed or escaped.
-    public let literal: String
+    public var literal: String { record.literal }
 }
 
-extension HTML {
-    init(from node: OpaquePointer) {
-        var literal = markdown_core_string()
-        markdown_core_node_literal(node, &literal)
-        self.init(
-            scope: Self.scope(from: node),
-            anchor: markdown_core_node_anchor(node).string,
-            attributes: Attributes(from: node),
-            literal: literal.required
-        )
+final class HTMLRecord: MarkupRecord, @unchecked Sendable {
+    let literal: String
+
+    init(_ fields: InheritedFields, literal: String) {
+        self.literal = literal
+        super.init(fields, children: [])
     }
+
+    override var markup: any Markup { HTML(record: self) }
+
+    override func hasEqualFields(_ other: MarkupRecord) -> Bool {
+        literal == unsafeDowncast(other, to: HTMLRecord.self).literal
+    }
+}
+
+extension HTMLRecord {
+    convenience init(from node: OpaquePointer) {
+        self.init(InheritedFields(from: node), literal: nativeLiteral(of: node))
+    }
+}
+
+extension HTML: RecordBacked {
+    var base: MarkupRecord { record }
 }

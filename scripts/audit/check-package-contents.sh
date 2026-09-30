@@ -423,7 +423,6 @@ if unzip -Z1 "$kotlin_jvm_sources" | grep -E '(^|/)(NativeBridge[^/]*|Walker|Vis
     exit 1
 fi
 for required_source in \
-    commonMain/com/nouprax/markdown/core/common/Collections.kt \
     commonMain/com/nouprax/markdown/core/common/Constraints.kt \
     commonMain/com/nouprax/markdown/core/markup/Markup.kt \
     commonMain/com/nouprax/markdown/core/visitor/MarkupVisitor.kt \

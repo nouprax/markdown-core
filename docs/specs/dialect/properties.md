@@ -117,7 +117,7 @@ explicit indent indicators, or literal blocks on other fields.
 ## Envelope and recovery
 
 The opening and closing lines must be exactly `---` at column one, without
-trailing spaces. An optional UTF-8 BOM may precede the opener. The opener needs
+trailing spaces, starting at the document's first byte. The opener needs
 a line ending; the closer can end the file. The first later exact closer wins.
 Only one envelope is recognized, at the document's start. Without a closer,
 the input follows normal Markdown parsing.

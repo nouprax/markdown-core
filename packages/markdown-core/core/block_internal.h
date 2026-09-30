@@ -31,7 +31,6 @@ void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_c
                                         bool columns);
 int markdown_core_block_order_definitions(markdown_core_parser *parser,
                                           markdown_core_definition_collection *collection);
-void markdown_core_block_own_definitions(markdown_core_definition_collection *collection, markdown_core_node **slot);
 typedef struct markdown_core_block_start_context {
     markdown_core_node *container;
     markdown_core_chunk *input;

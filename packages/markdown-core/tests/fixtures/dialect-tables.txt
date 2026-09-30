@@ -63,7 +63,7 @@ c | d
 Document scope=1:1..5:5 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..2:4 anchor=null attributes={} children=3
 │   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="para" children=0
-│   ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=1:5..2:0 anchor=null attributes={} children=0
 │   └── Text scope=2:1..2:4 anchor=null attributes={} literal="line" children=0
 └── Table scope=3:1..5:5 anchor=null attributes={} columns=[none:null,none:null] children=2
     ├── TableHead children=1
@@ -199,7 +199,7 @@ another line
 Document scope=1:1..5:13 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..2:12 anchor=null attributes={} children=3
 │   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="lead" children=0
-│   ├── SoftBreak scope=1:5..1:5 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=1:5..2:0 anchor=null attributes={} children=0
 │   └── Text scope=2:1..2:12 anchor=null attributes={} literal="another line" children=0
 └── Table scope=3:1..5:13 anchor=null attributes={} columns=[none:null,none:null] children=2
     ├── TableHead children=1
@@ -592,7 +592,7 @@ Document scope=1:1..8:1 anchor=null attributes={} children=2
 ├── Table scope=1:1..6:5 anchor=null attributes={} columns=[none:null] children=2
 │   ├── TableCaption scope=1:1..2:6 anchor=null attributes={} children=3
 │   │   ├── Text scope=1:8..1:12 anchor=null attributes={} literal="first" children=0
-│   │   ├── SoftBreak scope=1:13..1:13 anchor=null attributes={} children=0
+│   │   ├── SoftBreak scope=1:13..2:0 anchor=null attributes={} children=0
 │   │   └── Text scope=2:1..2:6 anchor=null attributes={} literal="second" children=0
 │   ├── TableHead children=1
 │   │   └── TableRow scope=4:1..4:5 anchor=null attributes={} children=1
@@ -687,7 +687,7 @@ More    Lines
 Document scope=1:1..4:10 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..2:13 anchor=null attributes={} children=3
 │   ├── Text scope=1:1..1:12 anchor=null attributes={} literal="Right   Left" children=0
-│   ├── SoftBreak scope=1:13..1:13 anchor=null attributes={} children=0
+│   ├── SoftBreak scope=1:13..2:0 anchor=null attributes={} children=0
 │   └── Text scope=2:1..2:13 anchor=null attributes={} literal="More    Lines" children=0
 ├── ThematicBreak scope=3:1..3:13 anchor=null attributes={} children=0
 └── Paragraph scope=4:1..4:10 anchor=null attributes={} children=1
@@ -719,7 +719,7 @@ Document scope=1:1..8:16 anchor=null attributes={} children=1
     │   │   ├── TableCell scope=4:1..5:1 anchor=null attributes={} rowspan=1 colspan=1 children=1
     │   │   │   └── Paragraph scope=4:1..5:1 anchor=null attributes={} children=3
     │   │   │       ├── Text scope=4:1..4:1 anchor=null attributes={} literal="a" children=0
-    │   │   │       ├── SoftBreak scope=4:10..4:10 anchor=null attributes={} children=0
+    │   │   │       ├── SoftBreak scope=4:10..5:0 anchor=null attributes={} children=0
     │   │   │       └── Text scope=5:1..5:1 anchor=null attributes={} literal="c" children=0
     │   │   └── TableCell scope=4:9..4:9 anchor=null attributes={} rowspan=1 colspan=1 children=1
     │   │       └── Paragraph scope=4:9..4:9 anchor=null attributes={} children=1
@@ -774,7 +774,7 @@ Document scope=1:1..5:17 anchor=null attributes={} children=1
     │   │   ├── TableCell scope=2:2..4:8 anchor=null attributes={} rowspan=2 colspan=1 children=1
     │   │   │   └── Paragraph scope=2:3..3:7 anchor=null attributes={} children=3
     │   │   │       ├── Text scope=2:3..2:7 anchor=null attributes={} literal="first" children=0
-    │   │   │       ├── SoftBreak scope=2:18..2:18 anchor=null attributes={} children=0
+    │   │   │       ├── SoftBreak scope=2:18..3:0 anchor=null attributes={} children=0
     │   │   │       └── Text scope=3:3..3:7 anchor=null attributes={} literal="again" children=0
     │   │   └── TableCell scope=2:10..2:16 anchor=null attributes={} rowspan=1 colspan=1 children=1
     │   │       └── List scope=2:11..2:13 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
@@ -865,7 +865,7 @@ Document scope=1:1..4:9 anchor=null attributes={} children=1
     │       └── TableCell scope=2:2..3:8 anchor=null attributes={} rowspan=1 colspan=2 children=1
     │           └── Paragraph scope=2:3..3:3 anchor=null attributes={} children=3
     │               ├── Text scope=2:3..2:7 anchor=null attributes={} literal="a | b" children=0
-    │               ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    │               ├── SoftBreak scope=2:10..3:0 anchor=null attributes={} children=0
     │               └── Text scope=3:3..3:3 anchor=null attributes={} literal="c" children=0
     └── TableFoot children=0
 ````````````````````````````````
@@ -884,7 +884,7 @@ Document scope=1:1..4:9 anchor=null attributes={} children=1
     │       └── TableCell scope=2:2..3:8 anchor=null attributes={} rowspan=1 colspan=2 children=1
     │           └── Paragraph scope=2:3..3:7 anchor=null attributes={} children=3
     │               ├── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
-    │               ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    │               ├── SoftBreak scope=2:10..3:0 anchor=null attributes={} children=0
     │               └── Text scope=3:3..3:7 anchor=null attributes={} literal="c | d" children=0
     └── TableFoot children=0
 ````````````````````````````````
@@ -899,13 +899,13 @@ Document scope=1:1..4:9 anchor=null attributes={} children=1
 Document scope=1:1..5:9 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..5:9 anchor=null attributes={} children=9
     ├── Text scope=1:1..1:9 anchor=null attributes={} literal="+---+---+" children=0
-    ├── SoftBreak scope=1:10..1:10 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:10..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:9 anchor=null attributes={} literal="| a     |" children=0
-    ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:10..3:0 anchor=null attributes={} children=0
     ├── Text scope=3:1..3:9 anchor=null attributes={} literal="+---+   +" children=0
-    ├── SoftBreak scope=3:10..3:10 anchor=null attributes={} children=0
+    ├── SoftBreak scope=3:10..4:0 anchor=null attributes={} children=0
     ├── Text scope=4:1..4:9 anchor=null attributes={} literal="| c | d |" children=0
-    ├── SoftBreak scope=4:10..4:10 anchor=null attributes={} children=0
+    ├── SoftBreak scope=4:10..5:0 anchor=null attributes={} children=0
     └── Text scope=5:1..5:9 anchor=null attributes={} literal="+---+---+" children=0
 ````````````````````````````````
 
@@ -919,13 +919,13 @@ Document scope=1:1..5:9 anchor=null attributes={} children=1
 Document scope=1:1..5:9 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..5:9 anchor=null attributes={} children=9
     ├── Text scope=1:1..1:9 anchor=null attributes={} literal="+---+---+" children=0
-    ├── SoftBreak scope=1:10..1:10 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:10..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:9 anchor=null attributes={} literal="| a | b |" children=0
-    ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:10..3:0 anchor=null attributes={} children=0
     ├── Text scope=3:1..3:9 anchor=null attributes={} literal="+---+===+" children=0
-    ├── SoftBreak scope=3:10..3:10 anchor=null attributes={} children=0
+    ├── SoftBreak scope=3:10..4:0 anchor=null attributes={} children=0
     ├── Text scope=4:1..4:9 anchor=null attributes={} literal="| c | d |" children=0
-    ├── SoftBreak scope=4:10..4:10 anchor=null attributes={} children=0
+    ├── SoftBreak scope=4:10..5:0 anchor=null attributes={} children=0
     └── Text scope=5:1..5:9 anchor=null attributes={} literal="+---+---+" children=0
 ````````````````````````````````
 
@@ -971,7 +971,7 @@ Document scope=1:1..6:5 anchor=null attributes={} children=1
 └── Table scope=1:1..6:5 anchor=null attributes={} columns=[left:null,left:null] children=2
     ├── TableCaption scope=1:1..2:14 anchor=null attributes={} children=3
     │   ├── Text scope=1:8..1:11 anchor=null attributes={} literal="term" children=0
-    │   ├── SoftBreak scope=1:12..1:12 anchor=null attributes={} children=0
+    │   ├── SoftBreak scope=1:12..2:0 anchor=null attributes={} children=0
     │   └── Text scope=2:1..2:14 anchor=null attributes={} literal=": continuation" children=0
     ├── TableHead children=1
     │   └── TableRow scope=4:1..4:5 anchor=null attributes={} children=2
@@ -1106,22 +1106,22 @@ Document scope=1:1..11:26 anchor=null attributes={} children=1
     │       ├── TableCell scope=2:1..3:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
     │       │   └── Paragraph scope=2:2..3:8 anchor=null attributes={} children=3
     │       │       ├── Text scope=2:2..2:9 anchor=null attributes={} literal="Centered" children=0
-    │       │       ├── SoftBreak scope=2:41..2:41 anchor=null attributes={} children=0
+    │       │       ├── SoftBreak scope=2:41..3:0 anchor=null attributes={} children=0
     │       │       └── Text scope=3:3..3:8 anchor=null attributes={} literal="Header" children=0
     │       ├── TableCell scope=2:13..3:20 anchor=null attributes={} rowspan=1 colspan=1 children=1
     │       │   └── Paragraph scope=2:13..3:19 anchor=null attributes={} children=3
     │       │       ├── Text scope=2:13..2:19 anchor=null attributes={} literal="Default" children=0
-    │       │       ├── SoftBreak scope=2:41..2:41 anchor=null attributes={} children=0
+    │       │       ├── SoftBreak scope=2:41..3:0 anchor=null attributes={} children=0
     │       │       └── Text scope=3:13..3:19 anchor=null attributes={} literal="Aligned" children=0
     │       ├── TableCell scope=2:21..3:36 anchor=null attributes={} rowspan=1 colspan=1 children=1
     │       │   └── Paragraph scope=2:31..3:35 anchor=null attributes={} children=3
     │       │       ├── Text scope=2:31..2:35 anchor=null attributes={} literal="Right" children=0
-    │       │       ├── SoftBreak scope=2:41..2:41 anchor=null attributes={} children=0
+    │       │       ├── SoftBreak scope=2:41..3:0 anchor=null attributes={} children=0
     │       │       └── Text scope=3:29..3:35 anchor=null attributes={} literal="Aligned" children=0
     │       └── TableCell scope=2:37..3:43 anchor=null attributes={} rowspan=1 colspan=1 children=1
     │           └── Paragraph scope=2:37..3:43 anchor=null attributes={} children=3
     │               ├── Text scope=2:37..2:40 anchor=null attributes={} literal="Left" children=0
-    │               ├── SoftBreak scope=2:41..2:41 anchor=null attributes={} children=0
+    │               ├── SoftBreak scope=2:41..3:0 anchor=null attributes={} children=0
     │               └── Text scope=3:37..3:43 anchor=null attributes={} literal="Aligned" children=0
     ├── TableBody children=2
     │   ├── TableRow scope=5:1..6:57 anchor=null attributes={} children=4
@@ -1137,7 +1137,7 @@ Document scope=1:1..11:26 anchor=null attributes={} children=1
     │   │   └── TableCell scope=5:37..6:57 anchor=null attributes={} rowspan=1 colspan=1 children=1
     │   │       └── Paragraph scope=5:37..6:57 anchor=null attributes={} children=3
     │   │           ├── Text scope=5:37..5:57 anchor=null attributes={} literal="Example of a row that" children=0
-    │   │           ├── SoftBreak scope=5:58..5:58 anchor=null attributes={} children=0
+    │   │           ├── SoftBreak scope=5:58..6:0 anchor=null attributes={} children=0
     │   │           └── Text scope=6:37..6:57 anchor=null attributes={} literal="spans multiple lines." children=0
     │   └── TableRow scope=8:1..8:55 anchor=null attributes={} children=4
     │       ├── TableCell scope=8:1..8:12 anchor=null attributes={} rowspan=1 colspan=1 children=1
@@ -1308,7 +1308,7 @@ Document scope=1:1..7:29 anchor=null attributes={} children=1
     │       └── TableCell scope=4:17..5:17 anchor=null attributes={} rowspan=1 colspan=1 children=1
     │           └── Paragraph scope=4:17..5:17 anchor=null attributes={} children=3
     │               ├── Text scope=4:17..4:17 anchor=null attributes={} literal="b" children=0
-    │               ├── SoftBreak scope=4:18..4:18 anchor=null attributes={} children=0
+    │               ├── SoftBreak scope=4:18..5:0 anchor=null attributes={} children=0
     │               └── Text scope=5:17..5:17 anchor=null attributes={} literal="c" children=0
     └── TableFoot children=0
 ````````````````````````````````
@@ -1341,9 +1341,9 @@ Document scope=1:1..4:14 anchor=null attributes={} children=1
 Document scope=1:1..3:17 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..3:17 anchor=null attributes={} children=5
     ├── Text scope=1:1..1:17 anchor=null attributes={} literal="+-------+-------+" children=0
-    ├── SoftBreak scope=1:18..1:18 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:18..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:21 anchor=null attributes={} literal="| 你好  | 🧭    |" children=0
-    ├── SoftBreak scope=2:22..2:22 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:22..3:0 anchor=null attributes={} children=0
     └── Text scope=3:1..3:17 anchor=null attributes={} literal="+-------+-------+" children=0
 ````````````````````````````````
 
@@ -1510,7 +1510,7 @@ Document scope=1:1..9:38 anchor=null attributes={} children=2
 ├── Table scope=1:1..4:28 anchor=null attributes={} columns=[none:null,none:null] children=1
 │   ├── TableCaption scope=3:1..4:28 anchor=null attributes={} children=3
 │   │   ├── Text scope=3:2..3:13 anchor=null attributes={} literal="badge[short]" children=0
-│   │   ├── SoftBreak scope=3:14..3:14 anchor=null attributes={} children=0
+│   │   ├── SoftBreak scope=3:14..4:0 anchor=null attributes={} children=0
 │   │   └── Text scope=4:1..4:28 anchor=null attributes={} literal="| first | second | ignored |" children=0
 │   ├── TableHead children=1
 │   │   └── TableRow scope=1:1..1:9 anchor=null attributes={} children=2
@@ -1563,13 +1563,13 @@ Document scope=1:1..7:9 anchor=null attributes={} children=1
     │   │   └── TableCell scope=2:2..6:8 anchor=null attributes={} rowspan=3 colspan=2 children=1
     │   │       └── Paragraph scope=2:3..6:3 anchor=null attributes={} children=9
     │   │           ├── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
-    │   │           ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    │   │           ├── SoftBreak scope=2:10..3:0 anchor=null attributes={} children=0
     │   │           ├── Text scope=3:5..3:8 anchor=null attributes={} literal="+---" children=0
-    │   │           ├── SoftBreak scope=3:10..3:10 anchor=null attributes={} children=0
+    │   │           ├── SoftBreak scope=3:10..4:0 anchor=null attributes={} children=0
     │   │           ├── Text scope=4:3..4:7 anchor=null attributes={} literal="b | c" children=0
-    │   │           ├── SoftBreak scope=4:10..4:10 anchor=null attributes={} children=0
+    │   │           ├── SoftBreak scope=4:10..5:0 anchor=null attributes={} children=0
     │   │           ├── Text scope=5:5..5:5 anchor=null attributes={} literal="+" children=0
-    │   │           ├── SoftBreak scope=5:10..5:10 anchor=null attributes={} children=0
+    │   │           ├── SoftBreak scope=5:10..6:0 anchor=null attributes={} children=0
     │   │           └── Text scope=6:3..6:3 anchor=null attributes={} literal="d" children=0
     │   ├── TableRow scope=4:1..5:9 anchor=null attributes={} children=0
     │   └── TableRow scope=6:1..6:9 anchor=null attributes={} children=0
@@ -1586,9 +1586,9 @@ Document scope=1:1..3:10 anchor=null attributes={} children=1
     ├── Text scope=1:1..1:4 anchor=null attributes={} literal="+---" children=0
     ├── Insertion scope=1:5..3:6 anchor=null attributes={} children=5
     │   ├── Text scope=1:7..1:10 anchor=null attributes={} literal="---+" children=0
-    │   ├── SoftBreak scope=1:11..1:11 anchor=null attributes={} children=0
+    │   ├── SoftBreak scope=1:11..2:0 anchor=null attributes={} children=0
     │   ├── Text scope=2:1..2:10 anchor=null attributes={} literal="| a || b |" children=0
-    │   ├── SoftBreak scope=2:11..2:11 anchor=null attributes={} children=0
+    │   ├── SoftBreak scope=2:11..3:0 anchor=null attributes={} children=0
     │   └── Text scope=3:1..3:4 anchor=null attributes={} literal="+---" children=0
     └── Text scope=3:7..3:10 anchor=null attributes={} literal="---+" children=0
 ````````````````````````````````
@@ -1700,11 +1700,11 @@ Document scope=1:1..7:8 anchor=null attributes={} children=1
 └── Table scope=1:1..7:8 anchor=null attributes={} columns=[none:null] children=2
     ├── TableCaption scope=4:1..7:8 anchor=null attributes={} children=7
     │   ├── Text scope=4:3..4:5 anchor=null attributes={} literal="cap" children=0
-    │   ├── SoftBreak scope=4:6..4:6 anchor=null attributes={} children=0
+    │   ├── SoftBreak scope=4:6..5:0 anchor=null attributes={} children=0
     │   ├── Text scope=5:1..5:8 anchor=null attributes={} literal="2. stays" children=0
-    │   ├── SoftBreak scope=5:9..5:9 anchor=null attributes={} children=0
+    │   ├── SoftBreak scope=5:9..6:0 anchor=null attributes={} children=0
     │   ├── HTML scope=6:1..6:3 anchor=null attributes={} literal="<x>" children=0
-    │   ├── SoftBreak scope=6:4..6:4 anchor=null attributes={} children=0
+    │   ├── SoftBreak scope=6:4..7:0 anchor=null attributes={} children=0
     │   └── Text scope=7:5..7:8 anchor=null attributes={} literal="text" children=0
     ├── TableHead children=1
     │   └── TableRow scope=1:1..1:5 anchor=null attributes={} children=1
@@ -1756,7 +1756,7 @@ Document scope=1:1..7:5 anchor=null attributes={} children=1
 
 [^n]
 .
-Document scope=1:1..7:4 anchor=null attributes={} children=2
+Document scope=1:1..7:4 anchor=null attributes={} children=3
 ├── Table scope=1:1..4:5 anchor=null attributes={} columns=[none:null] children=2
 │   ├── TableCaption scope=4:1..4:5 anchor=null attributes={} children=1
 │   │   └── Text scope=4:3..4:5 anchor=null attributes={} literal="cap" children=0
@@ -1769,14 +1769,14 @@ Document scope=1:1..7:4 anchor=null attributes={} children=2
 │   │       └── TableCell scope=3:2..3:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
 │   │           └── Text scope=3:3..3:3 anchor=null attributes={} literal="b" children=0
 │   └── TableFoot children=0
-├── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
-│   └── Cite scope=7:1..7:4 anchor=null attributes={} children=1
-│       └── Citation scope=7:2..7:3 anchor=null attributes={} referent=footnote(id="n") children=0
-│           ├── CitationPrefix children=0
-│           └── CitationSuffix children=0
-└── Footnote scope=5:1..6:0 anchor=null attributes={} id="n" children=1
-    └── Paragraph scope=5:7..5:10 anchor=null attributes={} children=1
-        └── Text scope=5:7..5:10 anchor=null attributes={} literal="note" children=0
+├── Footnote scope=5:1..6:0 anchor=null attributes={} label="n" children=1
+│   └── Paragraph scope=5:7..5:10 anchor=null attributes={} children=1
+│       └── Text scope=5:7..5:10 anchor=null attributes={} literal="note" children=0
+└── Paragraph scope=7:1..7:4 anchor=null attributes={} children=1
+    └── Cite scope=7:1..7:4 anchor=null attributes={} children=1
+        └── Citation scope=7:2..7:3 anchor=null attributes={} referent=footnote(label="n") children=0
+            ├── CitationPrefix children=0
+            └── CitationSuffix children=0
 ````````````````````````````````
 
 # Grid row markers belong to complete cell perimeters
@@ -1863,7 +1863,7 @@ Document scope=1:1..4:9 anchor=null attributes={} children=1
     │       └── TableCell scope=2:2..3:8 anchor=null attributes={} rowspan=1 colspan=2 children=1
     │           └── Paragraph scope=2:3..3:4 anchor=null attributes={} children=3
     │               ├── Text scope=2:3..2:7 anchor=null attributes={} literal="a + b" children=0
-    │               ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    │               ├── SoftBreak scope=2:10..3:0 anchor=null attributes={} children=0
     │               └── Text scope=3:3..3:4 anchor=null attributes={} literal="cd" children=0
     └── TableFoot children=0
 ````````````````````````````````
@@ -1882,7 +1882,7 @@ Document scope=1:1..4:9 anchor=null attributes={} children=1
     │       └── TableCell scope=2:2..3:8 anchor=null attributes={} rowspan=1 colspan=2 children=1
     │           └── Paragraph scope=2:3..3:7 anchor=null attributes={} children=3
     │               ├── Text scope=2:3..2:4 anchor=null attributes={} literal="cd" children=0
-    │               ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    │               ├── SoftBreak scope=2:10..3:0 anchor=null attributes={} children=0
     │               └── Text scope=3:3..3:7 anchor=null attributes={} literal="a + b" children=0
     └── TableFoot children=0
 ````````````````````````````````
@@ -1901,12 +1901,12 @@ Document scope=1:1..4:9 anchor=null attributes={} children=1
     │   │   ├── TableCell scope=2:2..3:4 anchor=null attributes={} rowspan=2 colspan=1 children=1
     │   │   │   └── Paragraph scope=2:3..3:3 anchor=null attributes={} children=3
     │   │   │       ├── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
-    │   │   │       ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    │   │   │       ├── SoftBreak scope=2:10..3:0 anchor=null attributes={} children=0
     │   │   │       └── Text scope=3:3..3:3 anchor=null attributes={} literal="c" children=0
     │   │   └── TableCell scope=2:6..3:8 anchor=null attributes={} rowspan=2 colspan=1 children=1
     │   │       └── Paragraph scope=2:7..3:7 anchor=null attributes={} children=3
     │   │           ├── Text scope=2:7..2:7 anchor=null attributes={} literal="b" children=0
-    │   │           ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    │   │           ├── SoftBreak scope=2:10..3:0 anchor=null attributes={} children=0
     │   │           └── Text scope=3:7..3:7 anchor=null attributes={} literal="d" children=0
     │   └── TableRow scope=3:1..3:9 anchor=null attributes={} children=0
     └── TableFoot children=0
@@ -1928,7 +1928,7 @@ Document scope=1:1..6:9 anchor=null attributes={} children=1
     │   │   └── TableCell scope=2:2..3:8 anchor=null attributes={} rowspan=1 colspan=2 children=1
     │   │       └── Paragraph scope=2:3..3:4 anchor=null attributes={} children=3
     │   │           ├── Text scope=2:3..2:7 anchor=null attributes={} literal="a + b" children=0
-    │   │           ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    │   │           ├── SoftBreak scope=2:10..3:0 anchor=null attributes={} children=0
     │   │           └── Text scope=3:3..3:4 anchor=null attributes={} literal="cd" children=0
     │   └── TableRow scope=5:1..5:9 anchor=null attributes={} children=2
     │       ├── TableCell scope=5:2..5:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
@@ -1955,7 +1955,7 @@ Document scope=1:1..6:9 anchor=null attributes={} children=1
     │       └── TableCell scope=2:2..3:8 anchor=null attributes={} rowspan=1 colspan=2 children=1
     │           └── Paragraph scope=2:3..3:4 anchor=null attributes={} children=3
     │               ├── Text scope=2:3..2:7 anchor=null attributes={} literal="a + b" children=0
-    │               ├── SoftBreak scope=2:10..2:10 anchor=null attributes={} children=0
+    │               ├── SoftBreak scope=2:10..3:0 anchor=null attributes={} children=0
     │               └── Text scope=3:3..3:4 anchor=null attributes={} literal="cd" children=0
     ├── TableBody children=1
     │   └── TableRow scope=5:1..5:9 anchor=null attributes={} children=2
@@ -1992,7 +1992,7 @@ Document scope=1:1..6:9 anchor=null attributes={} children=1
             └── TableCell scope=4:2..5:8 anchor=null attributes={} rowspan=1 colspan=2 children=1
                 └── Paragraph scope=4:3..5:4 anchor=null attributes={} children=3
                     ├── Text scope=4:3..4:7 anchor=null attributes={} literal="a + b" children=0
-                    ├── SoftBreak scope=4:10..4:10 anchor=null attributes={} children=0
+                    ├── SoftBreak scope=4:10..5:0 anchor=null attributes={} children=0
                     └── Text scope=5:3..5:4 anchor=null attributes={} literal="cd" children=0
 ````````````````````````````````
 
@@ -2021,7 +2021,7 @@ Document scope=1:1..8:9 anchor=null attributes={} children=1
     │       └── TableCell scope=4:2..5:8 anchor=null attributes={} rowspan=1 colspan=2 children=1
     │           └── Paragraph scope=4:3..5:4 anchor=null attributes={} children=3
     │               ├── Text scope=4:3..4:7 anchor=null attributes={} literal="a + b" children=0
-    │               ├── SoftBreak scope=4:10..4:10 anchor=null attributes={} children=0
+    │               ├── SoftBreak scope=4:10..5:0 anchor=null attributes={} children=0
     │               └── Text scope=5:3..5:4 anchor=null attributes={} literal="cd" children=0
     └── TableFoot children=1
         └── TableRow scope=7:1..7:9 anchor=null attributes={} children=2
@@ -2044,11 +2044,11 @@ Document scope=1:1..8:9 anchor=null attributes={} children=1
 Document scope=1:1..4:7 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..4:7 anchor=null attributes={} children=7
     ├── Text scope=1:1..1:5 anchor=null attributes={} literal="+---+" children=0
-    ├── SoftBreak scope=1:6..1:6 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:5 anchor=null attributes={} literal="| a |" children=0
-    ├── SoftBreak scope=2:6..2:6 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:6..3:0 anchor=null attributes={} children=0
     ├── Text scope=3:1..3:5 anchor=null attributes={} literal="+---+" children=0
-    ├── SoftBreak scope=3:6..3:6 anchor=null attributes={} children=0
+    ├── SoftBreak scope=3:6..4:0 anchor=null attributes={} children=0
     └── Text scope=4:1..4:7 anchor=null attributes={} literal="| prose" children=0
 ````````````````````````````````
 
@@ -2493,9 +2493,9 @@ x | a |
 Document scope=1:1..3:7 anchor=null attributes={} children=1
 └── Paragraph scope=1:3..3:7 anchor=null attributes={} children=5
     ├── Text scope=1:3..1:7 anchor=null attributes={} literal="+---+" children=0
-    ├── SoftBreak scope=1:8..1:8 anchor=null attributes={} children=0
+    ├── SoftBreak scope=1:8..2:0 anchor=null attributes={} children=0
     ├── Text scope=2:1..2:7 anchor=null attributes={} literal="x | a |" children=0
-    ├── SoftBreak scope=2:8..2:8 anchor=null attributes={} children=0
+    ├── SoftBreak scope=2:8..3:0 anchor=null attributes={} children=0
     └── Text scope=3:3..3:7 anchor=null attributes={} literal="+---+" children=0
 ````````````````````````````````
 

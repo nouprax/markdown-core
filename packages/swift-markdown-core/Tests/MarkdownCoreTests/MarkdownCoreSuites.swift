@@ -1,56 +1,45 @@
 import MarkdownCoreC
 import Testing
 
-// `@testable` covers native failure and reserved-value decoding paths that
-// cannot yet be reached by parsing source. Other tests use the public API.
+// `@testable` covers reserved-value decoding paths that cannot yet be reached
+// by parsing source. Other tests use the public API.
 @testable import MarkdownCore
 
 @Suite("api") struct APISuite {
-    @Test("specimen definitions share citation ownership and preserve absent facts")
+    @Test("specimen definitions are content the document lists, and absent facts stay absent")
     func specimenValues() throws {
-        let parsed = try Document.parse("body")
-        let scope = parsed.scope
         // These reserved scalar combinations are deliberately constructed as
-        // flat records; they need not depend on currently authored syntax.
-        let store = MarkupStore(records: [
-            .document(
-                .init(
-                    scope: scope,
-                    anchor: nil,
-                    attributes: .empty,
-                    content: .init(indices: [1]),
-                    metadata: nil,
-                    footnotes: .init(indices: [4]),
-                    specimens: .init(indices: [5, 6])
-                )
-            ),
-            .paragraph(.init(scope: scope, anchor: nil, attributes: .empty, content: .init(indices: [2]))),
-            .cite(.init(scope: scope, anchor: nil, attributes: .empty, citations: .init(indices: [3]))),
-            .citation(
-                .init(
-                    scope: scope,
-                    anchor: nil,
-                    attributes: .empty,
-                    referent: .specimen(id: "étude"),
-                    prefix: .init(indices: []),
-                    suffix: .init(indices: [])
-                )
-            ),
-            .footnote(.init(scope: scope, anchor: nil, attributes: .empty, id: "n", content: .init(indices: []))),
-            .specimen(
-                .init(scope: scope, anchor: nil, attributes: .empty, id: "étude", start: 5, content: .init(indices: []))
-            ),
-            .specimen(
-                .init(scope: scope, anchor: nil, attributes: .empty, id: nil, start: nil, content: .init(indices: []))
-            ),
-        ])
-        let document = store.value(at: 0, as: Document.self)
-        #expect(document.specimens[0].start == 5)
-        #expect(document.specimens[1].id == nil)
-        #expect(document.dump().contains("referent=specimen(id=\"étude\")"))
-        #expect(
-            document.dump().contains("Specimen scope=1:1..1:4 anchor=null attributes={} id=null start=null children=0")
+        // records; they need not depend on currently authored syntax.
+        let citation = CitationRecord(
+            fields(4),
+            referent: .specimen(label: "étude"),
+            note: nil,
+            prefix: [],
+            suffix: []
         )
+        let paragraph = ParagraphRecord(fields(2), children: [CiteRecord(fields(3), children: [citation])])
+        let footnote = FootnoteRecord(fields(5), label: "n", content: [])
+        let named = SpecimenRecord(fields(6), label: "étude", start: 5, content: [])
+        let anonymous = SpecimenRecord(fields(7), label: nil, start: nil, content: [])
+        let document = Document(
+            record: DocumentRecord(
+                fields(1),
+                unit: .utf16,
+                metadata: nil,
+                content: [paragraph, footnote, named, anonymous],
+                footnotes: [footnote],
+                specimens: [named, anonymous]
+            )
+        )
+        #expect(document.specimens[0].start == 5)
+        #expect(document.specimens[1].label == nil)
+        #expect(document.specimen(for: "étude")?.id == MarkupID(6))
+        // A label matches byte for byte: the decomposed spelling is another label.
+        #expect(document.specimen(for: "e\u{301}tude") == nil)
+        #expect(document.footnote(for: "n")?.id == MarkupID(5))
+        let dump = try document.dump(in: "")
+        #expect(dump.contains("referent=specimen(label=\"étude\")"))
+        #expect(dump.contains("Specimen scope=1:1..1:0 anchor=null attributes={} label=null start=null children=0"))
         var visitor = RecordingWalkingVisitor()
         document.walk(with: &visitor)
         #expect(visitor.events.filter { $0 == "enter:Specimen" }.count == 2)
@@ -68,7 +57,7 @@ import Testing
             (.init(kind: MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT, closed: false), .default),
         ]
         for (value, expected) in cases {
-            #expect(MarkdownCore.List.Fields.delimiter(value) == expected)
+            #expect(ListRecord.delimiter(value) == expected)
         }
     }
 
@@ -94,18 +83,19 @@ import Testing
         // One witness per feature that used to sit behind a `ParseOptions`
         // field, and one for the substitution smart punctuation used to make.
         #expect(try Document.parse("| a |\n| --- |\n| b |\n").content.first is Table)
-        #expect(try Document.parse("~~x~~\n").dump().contains("Strikethrough scope="))
-        #expect(try Document.parse("www.example.com\n").dump().contains("Link scope="))
-        #expect(try Document.parse("- [x] task\n").dump().contains("marker=\"x\""))
-        #expect(try Document.parse("ref[^a]\n\n[^a]: note\n").dump().contains("Cite scope="))
-        #expect(try Document.parse("$x$\n").dump().contains("Formula scope="))
-        #expect(try Document.parse(":badge[label]\n").dump().contains("Directive scope="))
-        #expect(try Document.parse("\"quotes\" -- ...\n").dump().contains("literal=\"\\\"quotes\\\" -- ...\""))
+        #expect(try dumped("~~x~~\n").contains("Strikethrough scope="))
+        #expect(try dumped("www.example.com\n").contains("Link scope="))
+        #expect(try dumped("- [x] task\n").contains("marker=\"x\""))
+        #expect(try dumped("ref[^a]\n\n[^a]: note\n").contains("Cite scope="))
+        #expect(try dumped("$x$\n").contains("Formula scope="))
+        #expect(try dumped(":badge[label]\n").contains("Directive scope="))
+        #expect(try dumped("\"quotes\" -- ...\n").contains("literal=\"\\\"quotes\\\" -- ...\""))
     }
 
     @Test("marks retain typed content and walk both phases after native release")
     func marks() throws {
-        let paragraph = try #require(Document.parse("==a *b*==").content.first as? Paragraph)
+        let document = try Document.parse("==a *b*==")
+        let paragraph = try #require(document.content.first as? Paragraph)
         let mark = try #require(paragraph.content.first as? Mark)
         var visitor = RecordingWalkingVisitor()
         mark.walk(with: &visitor)
@@ -117,7 +107,10 @@ import Testing
         )
         #expect(mark.content.count == 2)
         #expect(((mark.content[1] as? Emphasis)?.content.first as? Text)?.literal == "b")
-        #expect(mark.scope == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 9)))
+        #expect(
+            try scope(of: mark, in: document, source: "==a *b*==")
+                == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 9))
+        )
     }
 
     @Test("walking dispatch is typed and preserves owned-field semantics")
@@ -150,7 +143,7 @@ import Testing
         )
         var tableVisitor = RecordingWalkingVisitor()
         table.walk(with: &tableVisitor)
-        #expect(tableVisitor.tableRowKinds == [1, 3])
+        #expect(tableVisitor.rows == [table.head[0].id, table.content[0].id])
     }
 }
 
@@ -163,28 +156,6 @@ import Testing
 }
 
 @Suite("errors") struct ErrorsSuite {
-    @Test("a native error crosses into Swift with its code and message, and nil still answers")
-    func parseErrorFromNative() throws {
-        // THE ONE `@testable` USE. No `String` a caller can hand `Document` is
-        // invalid, so this initializer is unreachable through the published
-        // surface -- but the C entry point rejects a null source with a real
-        // error object, which is the only way to watch a native code and
-        // message actually cross.
-        var native: OpaquePointer?
-        #expect(markdown_core_document_parse(nil, 1, &native) == nil)
-        let error = try #require(native)
-        defer { markdown_core_error_free(error) }
-        let crossed = ParseError(from: error)
-        #expect(crossed.code == .invalidArgument)
-        #expect(crossed.message.contains("must not be null"))
-
-        // And the other arm: a loss the engine could not allocate an error for
-        // still has to answer with something.
-        let fallback = ParseError(from: nil)
-        #expect(fallback.code == .internal)
-        #expect(!fallback.message.isEmpty)
-    }
-
     @Test("a written-but-empty destination is empty, not absent")
     func emptyDestinationIsEmpty() throws {
         // `[a]()` WROTE a destination and wrote nothing in it. The native side
@@ -208,7 +179,7 @@ import Testing
         #expect(callout.title == nil)
         #expect(callout.content.count == 1)
         #expect(
-            document.dump()
+            try document.dump(in: "> quote\n")
                 == "Document scope=1:1..1:7 anchor=null attributes={} children=1\n"
                 + "└── Callout scope=1:1..1:7 anchor=null attributes={} variant=null collapsed=null children=1\n"
                 + "    └── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1\n"
@@ -216,35 +187,43 @@ import Testing
         )
     }
 
-    @Test("citations are values and the document owns its footnotes")
+    @Test("footnote definitions are content, and the document lists and looks them up")
     func citations() throws {
-        // M4: an inherited call is a one-item cite naming its footnote by id
-        // with empty affixes; the footnote is a value the document owns, never
-        // content, and the walk reaches it after the content. Repeated calls
-        // share one footnote: the first definition of an id is the one they
-        // resolve to, and a later definition of the same id is a footnote
-        // after it, as the inherited grammar parses it.
-        let document = try Document.parse("[^a] [^a]\n\n[^a]: once\n\n[^a]: twice\n")
+        // An inherited call is a one-item cite naming its footnote by label
+        // with empty affixes. Every definition stays in the content where it
+        // was written; the document lists them in source order, and a label
+        // resolves to its first definition.
+        let source = "[^a] [^a]\n\n[^a]: once\n\n[^a]: twice\n"
+        let document = try Document.parse(source)
         let cites = document.content.compactMap { $0 as? Paragraph }.flatMap(\.content).compactMap { $0 as? Cite }
-        #expect(document.content.count == 1)
+        #expect(document.content.count == 3)
         #expect(cites.count == 2)
         for cite in cites {
             let citation = try #require(cite.citations.first)
             #expect(cite.citations.count == 1)
-            #expect(citation.referent == .footnote(id: "a"))
+            #expect(citation.referent == .footnote(target: .label(value: "a")))
             #expect(citation.prefix.isEmpty && citation.suffix.isEmpty)
         }
         let footnote = try #require(document.footnotes.first)
         let later = try #require(document.footnotes.last)
-        #expect(document.footnotes.map(\.id) == ["a", "a"])
-        #expect(footnote.scope == Scope(start: Position(line: 3, column: 1), end: Position(line: 4, column: 0)))
+        #expect(document.footnotes.map(\.label) == ["a", "a"])
+        #expect(document.footnotes.map(\.id) == [document.content[1].id, document.content[2].id])
+        #expect(document.footnote(for: "a") == footnote)
+        #expect(document.footnote(for: "A") == nil)
+        #expect(
+            try scope(of: footnote, in: document, source: source)
+                == Scope(start: Position(line: 3, column: 1), end: Position(line: 4, column: 0))
+        )
         #expect(((footnote.content.first as? Paragraph)?.content.first as? Text)?.literal == "once")
-        #expect(later.scope == Scope(start: Position(line: 5, column: 1), end: Position(line: 5, column: 11)))
+        #expect(
+            try scope(of: later, in: document, source: source)
+                == Scope(start: Position(line: 5, column: 1), end: Position(line: 5, column: 11))
+        )
         #expect(((later.content.first as? Paragraph)?.content.first as? Text)?.literal == "twice")
-        let dump = document.dump()
-        #expect(dump.hasPrefix("Document scope=1:1..5:11 anchor=null attributes={} children=1\n"))
+        let dump = try document.dump(in: source)
+        #expect(dump.hasPrefix("Document scope=1:1..5:11 anchor=null attributes={} children=3\n"))
         let tail = """
-            └── Footnote scope=5:1..5:11 anchor=null attributes={} id="a" children=1
+            └── Footnote scope=5:1..5:11 anchor=null attributes={} label="a" children=1
                 └── Paragraph scope=5:7..5:11 anchor=null attributes={} children=1
                     └── Text scope=5:7..5:11 anchor=null attributes={} literal="twice" children=0
 
@@ -269,15 +248,13 @@ import Testing
 
     @Test("empty input maps to an empty document")
     func empty() throws {
-        #expect(try Document.parse("").content.isEmpty)
+        let document = try Document.parse("")
+        #expect(document.content.isEmpty)
         #expect(
-            try Document.parse("").scope
-                == Scope(start: Position(line: 1, column: 1), end: Position(line: 0, column: 0))
+            try scope(of: document, in: document, source: "")
+                == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 0))
         )
-        #expect(
-            try Document.parse("é").scope
-                == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 2))
-        )
+        #expect(try document.dump(in: "") == "Document scope=1:1..1:0 anchor=null attributes={} children=0\n")
     }
 }
 
@@ -285,7 +262,8 @@ import Testing
     @Test("a directive label is dumped as a field but is not content")
     func labelledDirectiveBlock() throws {
         let source = ":::note[Title]{kind=demo}\nBody\n:::\n"
-        let block = try #require(Document.parse(source).content.first as? DirectiveBlock)
+        let document = try Document.parse(source)
+        let block = try #require(document.content.first as? DirectiveBlock)
         let label = try #require(block.label)
         #expect((label.content.first as? Text)?.literal == "Title")
         #expect(block.content.count == 1)
@@ -295,14 +273,14 @@ import Testing
         #expect(block.content.allSatisfy { !($0 is DirectiveLabel) })
         #expect(label.content.count == 1)
         #expect(label.content.first is Text)
-        #expect(block.dump().contains("DirectiveLabel"))
+        #expect(try document.dump(block, in: source).contains("DirectiveLabel"))
 
         // The other field arm: no label is emitted when none was written.
-        let bare = try #require(
-            Document.parse(":::note\nBody\n:::\n").content.first as? DirectiveBlock
-        )
+        let written = ":::note\nBody\n:::\n"
+        let other = try Document.parse(written)
+        let bare = try #require(other.content.first as? DirectiveBlock)
         #expect(bare.label == nil)
-        #expect(bare.dump().contains("children=1"))
+        #expect(try other.dump(bare, in: written).hasPrefix("DirectiveBlock scope=1:1..3:3 "))
     }
 
     @Test("the dump escapes every character JSON cannot carry literally")
@@ -311,8 +289,7 @@ import Testing
         // corpus writes most of them. A fenced code block carries its literal
         // through untouched, so it is the one place a test can put them all.
         let literal = "a\"b\\c\td\u{08}e\u{0c}f\u{01}g"
-        let document = try Document.parse("```\n\(literal)\n```\n")
-        let dump = document.dump()
+        let dump = try dumped("```\n\(literal)\n```\n")
         for expected in ["\\\"", "\\\\", "\\t", "\\b", "\\f", "\\n", "\\u0001"] {
             #expect(dump.contains(expected), "dump is missing the escape \(expected)")
         }
@@ -330,5 +307,19 @@ import Testing
         #expect(walkingVisitor.entered == walkingVisitor.exited)
         #expect(walkingVisitor.entered > 20_000)
         for _ in 0..<2_000 { #expect(try Document.parse("# Copy\n\n- [x] item\n").content.count == 2) }
+    }
+}
+
+@Suite("errors") struct ErrorSuite {
+    @Test("each C status maps to the error code of the same name")
+    func statusCodes() {
+        let cases: [(markdown_core_status, ErrorCode)] = [
+            (MARKDOWN_CORE_ALLOCATION_FAILED, .allocationFailed),
+            (MARKDOWN_CORE_OUT_OF_BOUNDS, .outOfBounds),
+            (MARKDOWN_CORE_KIND_MISMATCH, .kindMismatch),
+        ]
+        for (status, code) in cases {
+            #expect(MarkdownCoreError(status).code == code)
+        }
     }
 }

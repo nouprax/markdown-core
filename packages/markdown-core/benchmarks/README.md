@@ -132,6 +132,9 @@ dimension or separate pairing registry.
 
 With `--baseline-ref`, only engine source comes from the base revision. The
 current harness, corpus, preset and reference binaries are used on both sides.
+The base revision builds only the stage runners. Markdown Core's stage
+harness calls the engine's internal parse entry, `markdown_core_parse_document`,
+which both revisions share while the public API changes.
 Each document's `source_to_buffer` Ir and its `buffer_to_ast` Ir must each be
 at most 1.02 times its baseline. An improvement in one stage, another document
 or an aggregate median cannot hide a regression in the other stage. The gate

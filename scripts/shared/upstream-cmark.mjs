@@ -469,16 +469,20 @@ export function blockCommentBody(literal) {
 /**
  * Registered delta `footnote-definition-placement`: upstream moves every
  * footnote definition to the document tail in first-reference order, while
- * this repository's AST owns every footnote as a `Footnote` node owned by the
- * document in source order (canonical-ast.md, M4). Both sides therefore have
- * their footnotes lifted out and re-attached in one deterministic order, which
- * compares their *content* while deliberately not comparing their position.
+ * this repository keeps a definition as a `Footnote` block in the content
+ * where it was written (canonical-ast.md, M4). Both sides therefore have
+ * their definitions lifted out and re-attached in one deterministic order,
+ * which compares their *content* while deliberately not comparing their
+ * position.
+ *
+ * An inline note is not a definition: it is the `Footnote` its `Citation`
+ * owns, so it stays under that citation and is compared where it was written.
  */
 export function liftFootnotes(root, fired) {
     const definitions = [];
     const strip = (node) => {
         node.children = node.children.filter((child) => {
-            if (child.kind === "Footnote") {
+            if (child.kind === "Footnote" && node.kind !== "Citation") {
                 definitions.push(child);
                 return false;
             }
@@ -506,14 +510,16 @@ export function liftFootnotes(root, fired) {
  * so both authorities and this repository now agree and there is nothing left
  * to project. What remains is the retention half, applied to a tree from this
  * side so the gate compares the resolved language rather than two
- * representations of retention.
+ * representations of retention. An inline note is owned by the citation that
+ * refers to it, so only definitions are candidates.
  */
 export function applyUpstreamFootnoteModel(root, fired) {
-    // Both a `Footnote.id` and a `footnote` referent's id are the label under
-    // the reference map's own normalization (M4), so they compare directly.
+    // Both a definition's `Footnote.label` and a `footnote(label=...)`
+    // referent's label are the label under the reference map's own
+    // normalization (M4), so they compare directly.
     const referenced = new Set();
     const survey = (node) => {
-        const referent = /^footnote\(id=("(?:\\.|[^"\\])*")\)$/.exec(node.fields.referent ?? "");
+        const referent = /^footnote\(label=("(?:\\.|[^"\\])*")\)$/.exec(node.fields.referent ?? "");
         if (node.kind === "Citation" && referent) referenced.add(JSON.parse(referent[1]));
         for (const child of node.children) survey(child);
     };
@@ -521,9 +527,11 @@ export function applyUpstreamFootnoteModel(root, fired) {
 
     const rewrite = (node) => {
         const before = node.children.length;
-        node.children = node.children.filter(
-            (child) => !(child.kind === "Footnote" && !referenced.has(child.fields.id ?? ""))
-        );
+        if (node.kind !== "Citation") {
+            node.children = node.children.filter(
+                (child) => !(child.kind === "Footnote" && !referenced.has(child.fields.label))
+            );
+        }
         if (node.children.length !== before) fired?.add("footnote-resolution-model");
         for (const child of node.children) rewrite(child);
         return node;

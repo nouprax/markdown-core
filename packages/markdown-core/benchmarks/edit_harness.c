@@ -843,10 +843,10 @@ eh_status eh_reparse_apply_append(void *handle, const uint8_t *text, size_t leng
 
 eh_status eh_reparse_parse(void *handle, markdown_core_document **document) {
     reparse_subject *subject = (reparse_subject *)handle;
-    markdown_core_error *error = NULL;
-    *document = markdown_core_document_parse(subject->text.bytes, subject->text.length, &error);
-    markdown_core_error_free(error);
-    return *document ? EH_OK : EH_FAILED;
+    *document = NULL;
+    return markdown_core_document_parse(subject->text.bytes, subject->text.length, document) == MARKDOWN_CORE_OK
+               ? EH_OK
+               : EH_FAILED;
 }
 
 static void *reparse_open(eh_unit unit, const uint8_t *text, size_t length, markdown_core_document **document) {

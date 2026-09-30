@@ -36,14 +36,12 @@ extension Attributes {
     init(from value: OpaquePointer?) {
         self.init(
             classes: (0..<markdown_core_attribute_value_class_count(value)).map { index in
-                var string = markdown_core_string()
-                precondition(markdown_core_attribute_value_class_at(value, index, &string))
-                return string.required
+                answer(markdown_core_string()) { markdown_core_attribute_value_class_at(value, index, $0) }.required
             },
             records: (0..<markdown_core_attribute_value_record_count(value)).map { index in
                 var name = markdown_core_string()
                 var string = markdown_core_string()
-                precondition(markdown_core_attribute_value_record_at(value, index, &name, &string))
+                answered(markdown_core_attribute_value_record_at(value, index, &name, &string))
                 return Record(name: name.required, value: string.required)
             }
         )

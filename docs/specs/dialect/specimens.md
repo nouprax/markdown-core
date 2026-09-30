@@ -11,8 +11,10 @@ As (@sample) shows, the label can be used before its definition.
 (@sample) A numbered example.
 ```
 
-The definition becomes a `Specimen` in `Document.specimens`, with ID `sample`
-and block content. It leaves no implicit call in ordinary document content.
+The definition is a `Specimen` block with the label `sample` and block
+content, in the content where it was written. `Document.specimens` lists every
+specimen in source order, and `Document.specimen(for:)` answers the one a
+label names.
 The reference becomes a `Cite` with a specimen referent. The parser stores
 identity and authored resets; the application derives and displays numbers.
 
@@ -27,8 +29,8 @@ An intervening paragraph.
 (@later) Continue the document's sequence.
 ```
 
-The first definition has `start=5` and no ID. The next has no explicit start
-or ID; the last has ID `later`. Numbering these in order yields 5, 6, and 7.
+The first definition has `start=5` and no label. The next has no explicit
+start or label; the last has the label `later`. Numbering these in order yields 5, 6, and 7.
 A document counter begins at one and advances for every definition, including
 anonymous, duplicate, and unreferenced definitions.
 
@@ -70,6 +72,6 @@ Resolution sees the entire document, including definitions in other containers.
 An unknown `(@label)` retains its parentheses while the inner key can become an
 author-in-text bibliography citation.
 
-Definitions are retained in source order across all containers. Walks visit
-them after footnotes. References store IDs, never copied bodies or derived
-numbers, and one citation group never mixes referent families.
+Definitions are retained where they were written, across all containers, and
+walks visit them there. References store labels, never copied bodies or
+derived numbers, and one citation group never mixes referent families.

@@ -76,23 +76,23 @@ Document scope=1:1..11:29 anchor=null attributes={} children=6
 │               │       └── Superscript scope=9:36..9:41 anchor=null attributes={} children=1
 │               │           └── Text scope=9:37..9:40 anchor=null attributes={} literal="a b" children=0
 │               └── Text scope=9:43..9:46 anchor=null attributes={} literal="x y" children=0
-├── Paragraph scope=11:1..11:29 anchor=null attributes={} children=10
-│   ├── Superscript scope=11:1..11:2 anchor=null attributes={} children=0
-│   ├── Superscript scope=11:3..11:4 anchor=null attributes={} children=0
-│   ├── Text scope=11:5..11:5 anchor=null attributes={} literal=" " children=0
-│   ├── Emphasis scope=11:6..11:9 anchor=null attributes={} children=1
-│   │   └── Superscript scope=11:7..11:8 anchor=null attributes={} children=0
-│   ├── Text scope=11:10..11:10 anchor=null attributes={} literal=" " children=0
-│   ├── Span scope=11:11..11:16 anchor=null attributes={} children=1
-│   │   └── Superscript scope=11:12..11:13 anchor=null attributes={} children=0
-│   ├── Text scope=11:17..11:17 anchor=null attributes={} literal=" " children=0
-│   ├── Directive scope=11:18..11:23 anchor=null attributes={} name="d" children=0
-│   │   └── DirectiveLabel scope=11:20..11:23 anchor=null attributes={} children=1
-│   │       └── Superscript scope=11:21..11:22 anchor=null attributes={} children=0
-│   ├── Text scope=11:24..11:24 anchor=null attributes={} literal=" " children=0
-│   └── Cite scope=11:25..11:29 anchor=null attributes={} children=1
-│       └── Citation scope=11:27..11:28 anchor=null attributes={} referent=footnote(id="inline-1") children=0
-│           ├── CitationPrefix children=0
-│           └── CitationSuffix children=0
-└── Footnote scope=11:25..11:29 anchor=null attributes={} id="inline-1" children=1
-    └── Superscript scope=11:27..11:28 anchor=null attributes={} children=0
+└── Paragraph scope=11:1..11:29 anchor=null attributes={} children=10
+    ├── Superscript scope=11:1..11:2 anchor=null attributes={} children=0
+    ├── Superscript scope=11:3..11:4 anchor=null attributes={} children=0
+    ├── Text scope=11:5..11:5 anchor=null attributes={} literal=" " children=0
+    ├── Emphasis scope=11:6..11:9 anchor=null attributes={} children=1
+    │   └── Superscript scope=11:7..11:8 anchor=null attributes={} children=0
+    ├── Text scope=11:10..11:10 anchor=null attributes={} literal=" " children=0
+    ├── Span scope=11:11..11:16 anchor=null attributes={} children=1
+    │   └── Superscript scope=11:12..11:13 anchor=null attributes={} children=0
+    ├── Text scope=11:17..11:17 anchor=null attributes={} literal=" " children=0
+    ├── Directive scope=11:18..11:23 anchor=null attributes={} name="d" children=0
+    │   └── DirectiveLabel scope=11:20..11:23 anchor=null attributes={} children=1
+    │       └── Superscript scope=11:21..11:22 anchor=null attributes={} children=0
+    ├── Text scope=11:24..11:24 anchor=null attributes={} literal=" " children=0
+    └── Cite scope=11:25..11:29 anchor=null attributes={} children=1
+        └── Citation scope=11:27..11:28 anchor=null attributes={} referent=footnote(note) children=0
+            ├── Footnote scope=11:25..11:29 anchor=null attributes={} label=null children=1
+            │   └── Superscript scope=11:27..11:28 anchor=null attributes={} children=0
+            ├── CitationPrefix children=0
+            └── CitationSuffix children=0

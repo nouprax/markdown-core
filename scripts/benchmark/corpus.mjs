@@ -618,7 +618,7 @@ function metadataHost(id, p, side) {
               ? ["abstract: |\n  ", literal, "\n\n  literal\ncomment: |\n  ", v, "\n    indented\nstate: ready\n"]
               : [metadataPreamble(id), ...(id === "metadataempty" ? ["unknown-", k, ": "] : ["date: "]), v, "\n"];
     const envelope = {
-        opening: side === "dialect" ? (id === "metadata-types" ? "\uFEFF---\n" : "---\n") : "```\n",
+        opening: side === "dialect" ? "---\n" : "```\n",
         members,
         closing: side === "dialect" ? "---\n\n" : "```\n\n",
         content: [b, "\n\n"]

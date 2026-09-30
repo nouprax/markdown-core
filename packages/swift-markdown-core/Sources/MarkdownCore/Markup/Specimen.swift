@@ -1,48 +1,61 @@
 import MarkdownCoreC
 
-/// A document-owned specimen definition in the citation model.
-/// Definitions are ordered by source scope and visited after footnotes. The
-/// syntax first lands with P9b; display numbering is derived by consumers.
+/// A specimen definition in the content where it was written.
+///
+/// ``Document/specimens`` lists every definition in source order, and
+/// ``Document/specimen(for:)`` finds the first definition of a label. Display
+/// numbering is derived by consumers.
 public struct Specimen: Markup {
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let id: String?
-        let start: Int64?
-        let content: MarkupReferences<any Markup>
-    }
+    let record: SpecimenRecord
 
-    let fields: Stored<Fields>
-
+    /// The node's identifier within its document.
+    public var id: MarkupID { record.id }
     /// The source range of the definition.
-    public var scope: Scope { fields.scope }
+    public var extent: Extent { record.extent }
     /// The optional anchor attached to this node.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { record.anchor }
     /// The ordered attributes attached to this node.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { record.attributes }
     /// The authored label, or `nil` for an anonymous definition.
-    public var id: String? { fields.id }
+    public var label: String? { record.label }
     /// An explicit counter reset, or `nil` when numbering continues.
-    public var start: Int64? { fields.start }
+    public var start: Int64? { record.start }
     /// The parsed content of the definition.
-    public var content: MarkupCollection<any Markup> { fields.content }
-
-    /// Dispatches this node to its typed visitor method.
+    public var content: MarkupCollection<any Markup> { record.collection(record.children.indices) }
 }
 
-extension Specimen.Fields {
-    init(from specimen: OpaquePointer, content: [Int]) {
-        var id = markdown_core_optional_string()
+final class SpecimenRecord: MarkupRecord, @unchecked Sendable {
+    let label: String?
+    let start: Int64?
+
+    init(_ fields: InheritedFields, label: String?, start: Int64?, content: [MarkupRecord]) {
+        self.label = label
+        self.start = start
+        super.init(fields, children: content)
+    }
+
+    override var markup: any Markup { Specimen(record: self) }
+
+    override func hasEqualFields(_ other: MarkupRecord) -> Bool {
+        let other = unsafeDowncast(other, to: SpecimenRecord.self)
+        return label == other.label && start == other.start
+    }
+}
+
+extension SpecimenRecord {
+    convenience init(from specimen: OpaquePointer, content: [MarkupRecord]) {
+        var label = markdown_core_optional_string()
         var start = markdown_core_optional_i64()
-        precondition(markdown_core_specimen_properties(specimen, &id, &start), "Invalid native specimen")
+        answered(markdown_core_specimen_properties(specimen, &label, &start))
         self.init(
-            scope: Scope(from: markdown_core_node_scope(specimen)),
-            anchor: markdown_core_node_anchor(specimen).string,
-            attributes: Attributes(from: specimen),
-            id: id.string,
+            InheritedFields(from: specimen),
+            label: label.string,
             start: start.has_value ? start.value : nil,
-            content: .init(indices: content)
+            content: content
         )
     }
+}
+
+extension Specimen: RecordBacked {
+    var base: MarkupRecord { record }
 }

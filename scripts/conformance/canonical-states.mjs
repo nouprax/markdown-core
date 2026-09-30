@@ -206,23 +206,25 @@ const stateValidators = {
     // its own and not an absence.
     "destination.url.empty": (tree) => / dest=url\(""\) /.test(tree),
     "destination.url.value": (tree) => / dest=url\("(?:\\.|[^"\\])+"\) /.test(tree),
-    // A `Citation` is a node line under its `Cite`
-    // with a tagged referent, its affixes are groups printed even when
-    // empty, and a `Footnote` is a node line under `Document` after the
-    // content, or absent.
-    "citation.referent.footnote": (tree) =>
-        /^.*Citation scope=\S+ anchor=null attributes=\{\} referent=footnote\(id="[^"]*"\) children=0$/m.test(tree),
+    // A `Citation` is a node line under its `Cite` with a tagged referent,
+    // and its affixes are groups printed even when empty. A labeled call names
+    // its definition; an inline note's `Footnote` is a node line under its
+    // `Citation`, with a null label. Definitions are block content where they
+    // were written.
+    "citation.referent.footnote.label": (tree) =>
+        /^.*Citation scope=\S+ anchor=null attributes=\{\} referent=footnote\(label="[^"]*"\) children=0$/m.test(tree),
+    "citation.referent.footnote.note": (tree) =>
+        parentEdges(tree).some((edge) => edge.parent === "Citation" && edge.kind === "Footnote") &&
+        /^.*Citation scope=\S+ anchor=null attributes=\{\} referent=footnote\(note\) children=0$/m.test(tree),
     "citation.affix.empty": (tree) => /CitationPrefix children=0\n.*CitationSuffix children=0(?:\n|$)/.test(tree),
-    "document.specimens.empty": (tree) =>
-        tree.startsWith("Document scope=") && !/^(?:├──|└──) Specimen scope=/m.test(tree),
     "footnote.content.inline": (tree) =>
         parentEdges(tree).some((edge) => edge.parent === "Footnote" && edge.kind === "Text"),
     "footnote.content.block": (tree) =>
         parentEdges(tree).some((edge) => edge.parent === "Footnote" && edge.kind === "Paragraph"),
-    "document.footnotes.empty": (tree) =>
-        tree.startsWith("Document scope=") && !/^(?:├──|└──) Footnote scope=/m.test(tree),
-    "document.footnotes.populated": (tree) =>
-        /^(?:├──|└──) Footnote scope=\S+ anchor=null attributes=\{\} id="[^"]*" children=\d+$/m.test(tree),
+    "footnote.label.null": (tree) => /Footnote scope=\S+ anchor=null attributes=\{\} label=null children=/.test(tree),
+    "footnote.label.value": (tree) =>
+        parentEdges(tree).some((edge) => edge.kind === "Footnote" && BLOCK_CONTENT.has(edge.parent)) &&
+        /Footnote scope=\S+ anchor=null attributes=\{\} label="[^"\n]*" children=/.test(tree),
     "list.variant.alpha.lower": (tree) => /^.*List scope=.* variant=alpha\(lowercased=true\) /m.test(tree),
     "list.variant.alpha.upper": (tree) => /^.*List scope=.* variant=alpha\(lowercased=false\) /m.test(tree),
     "list.variant.roman.lower": (tree) => /^.*List scope=.* variant=roman\(lowercased=true\) /m.test(tree),
@@ -241,15 +243,14 @@ const stateValidators = {
             tree
         ),
     "citation.referent.specimen": (tree) =>
-        /Citation scope=\S+ anchor=null attributes=\{\} referent=specimen\(id="[^"\n]+"\)/.test(tree),
+        /Citation scope=\S+ anchor=null attributes=\{\} referent=specimen\(label="[^"\n]+"\)/.test(tree),
     "citation.prefix.populated": (tree) => /CitationPrefix children=[1-9]\d*/.test(tree),
     "citation.suffix.populated": (tree) => /CitationSuffix children=[1-9]\d*/.test(tree),
-    "document.specimens.populated": (tree) => /^(?:├──|└──) Specimen scope=/m.test(tree),
-    "specimen.id.null": (tree) => /Specimen scope=\S+ anchor=null attributes=\{\} id=null /.test(tree),
-    "specimen.id.value": (tree) => /Specimen scope=\S+ anchor=null attributes=\{\} id="[^"\n]+" /.test(tree),
-    "specimen.start.null": (tree) => /Specimen scope=\S+ anchor=null attributes=\{\} id=\S+ start=null /.test(tree),
+    "specimen.label.null": (tree) => /Specimen scope=\S+ anchor=null attributes=\{\} label=null /.test(tree),
+    "specimen.label.value": (tree) => /Specimen scope=\S+ anchor=null attributes=\{\} label="[^"\n]+" /.test(tree),
+    "specimen.start.null": (tree) => /Specimen scope=\S+ anchor=null attributes=\{\} label=\S+ start=null /.test(tree),
     "specimen.start.value": (tree) =>
-        /Specimen scope=\S+ anchor=null attributes=\{\} id=\S+ start=[1-9]\d* /.test(tree),
+        /Specimen scope=\S+ anchor=null attributes=\{\} label=\S+ start=[1-9]\d* /.test(tree),
     "span.content.empty": (tree) => /Span scope=.* children=0(?:\n|$)/.test(tree),
     "span.content.populated": (tree) => /Span scope=.* children=[1-9]\d*(?:\n|$)/.test(tree)
 };

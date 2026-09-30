@@ -1,35 +1,33 @@
 import MarkdownCoreC
 
-/// A directive's bracketed label. Its scope spans the brackets, so a label
+/// A directive's bracketed label. Its extent spans the brackets, so a label
 /// written empty is still a place in the source.
 public struct DirectiveLabel: Markup {
-    struct Fields: Sendable {
-        let scope: Scope
-        let anchor: String?
-        let attributes: Attributes
-        let content: MarkupReferences<any Markup>
-    }
+    let record: DirectiveLabelRecord
 
-    let fields: Stored<Fields>
-
+    /// The node's identifier within its document.
+    public var id: MarkupID { record.id }
     /// Where it is, INCLUDING its brackets — which is what makes a label the
-    /// source wrote empty still a place. See ``Scope``.
-    public var scope: Scope { fields.scope }
+    /// source wrote empty still a place. See ``Extent``.
+    public var extent: Extent { record.extent }
     /// The explicit anchor, absent when none was attached.
-    public var anchor: String? { fields.anchor }
+    public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
-    public var attributes: Attributes { fields.attributes }
+    public var attributes: Attributes { record.attributes }
     /// The label's inline content.
-    public var content: MarkupCollection<any Markup> { fields.content }
+    public var content: MarkupCollection<any Markup> { record.collection(record.children.indices) }
 }
 
-extension DirectiveLabel.Fields {
-    init(from node: OpaquePointer, content: [Int]) {
-        self.init(
-            scope: Scope(from: markdown_core_node_scope(node)),
-            anchor: markdown_core_node_anchor(node).string,
-            attributes: Attributes(from: node),
-            content: .init(indices: content)
-        )
+final class DirectiveLabelRecord: MarkupRecord, @unchecked Sendable {
+    override var markup: any Markup { DirectiveLabel(record: self) }
+}
+
+extension DirectiveLabelRecord {
+    convenience init(from node: OpaquePointer, content: [MarkupRecord]) {
+        self.init(InheritedFields(from: node), children: content)
     }
+}
+
+extension DirectiveLabel: RecordBacked {
+    var base: MarkupRecord { record }
 }
