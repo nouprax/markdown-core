@@ -23,6 +23,7 @@ echo "correctness-asan  : $(ctest --preset correctness-asan -j 8 2>&1 | grep -oE
 echo "correctness-ubsan : $(ctest --preset correctness-ubsan -j 8 2>&1 | grep -oE '[0-9]+% tests passed out of [0-9]+')"
 echo "correctness-tsan  : $(ctest --preset correctness-tsan -j 8 2>&1 | grep -oE '[0-9]+% tests passed out of [0-9]+')"
 echo "conformance       : $(ctest --preset conformance -j 8 2>&1 | grep -oE '[0-9]+% tests passed out of [0-9]+')"
+echo "incremental       : $(ctest --preset incremental -j 8 2>&1 | grep -oE '[0-9]+% tests passed out of [0-9]+')"
 echo "canonical-ast     : $(node scripts/conformance/check-canonical-ast.mjs 2>&1 | tail -1)"
 # Both of these are section 4.8 gates and NEITHER was in this script until Step
 # 9b.1, which is how a script that claims to run every gate came to run two

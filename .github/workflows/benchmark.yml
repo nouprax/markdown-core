@@ -130,3 +130,89 @@ jobs:
                       build/benchmark-attributes/input
                   if-no-files-found: error
                   retention-days: 30
+
+    # The grammar corpus's workloads: every feature under every edit and
+    # stream family it runs. They take hours of callgrind on one runner, so
+    # each shard measures the workloads at positions shard, shard + N, ...
+    # of the set on its own runner, and the job below joins the parts. The
+    # shapes are measured at their four sizes together, outside this workflow.
+    edit-shards:
+        name: Measure - edits and streams, part ${{ matrix.shard }}
+        runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version: 26.8.1
+            - name: Install callgrind
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install --no-install-recommends --yes valgrind
+            # The edit benchmark is built by the stage benchmark's own build,
+            # references included, so its binaries are the ones that report
+            # describes.
+            - name: Build the pinned reference checkouts
+              run: scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
+            - name: Measure this part of the edits and streams
+              run: >-
+                  node scripts/benchmark/edits.mjs --set corpus --quiet
+                  --shard "${{ strategy.job-index }}/${{ strategy.job-total }}"
+            - name: Upload this part for the join
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: benchmark-edits-part-${{ matrix.shard }}-${{ github.sha }}-${{ github.run_attempt }}
+                  path: build/benchmark-edits/edits.json
+                  if-no-files-found: error
+                  retention-days: 30
+            - name: Upload the raw profiles and workloads
+              if: ${{ always() }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: benchmark-edits-profiles-${{ matrix.shard }}-${{ github.sha }}-${{ github.run_attempt }}
+                  path: |
+                      build/benchmark-edits/callgrind
+                      build/benchmark-edits/workloads
+                  if-no-files-found: error
+                  retention-days: 30
+
+    edits:
+        name: Measure - edits and streams
+        needs: edit-shards
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version: 26.8.1
+            - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+              with:
+                  pattern: benchmark-edits-part-*-${{ github.sha }}-${{ github.run_attempt }}
+                  path: build/benchmark-edit-parts
+            - name: Join the parts into one report
+              run: node scripts/benchmark/edits.mjs --merge build/benchmark-edit-parts --quiet
+            - name: Upload structured results for the PR comment
+              if: ${{ always() }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: benchmark-report-edits-${{ github.run_attempt }}
+                  path: build/benchmark-edits/edits.json
+                  if-no-files-found: warn
+                  retention-days: 30
+            - name: Upload the report
+              if: ${{ always() }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: benchmark-edits-${{ github.sha }}-${{ github.run_attempt }}
+                  path: |
+                      build/benchmark-edits/edits.md
+                      build/benchmark-edits/edits.json
+                  if-no-files-found: error
+                  retention-days: 30

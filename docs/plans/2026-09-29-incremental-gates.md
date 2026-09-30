@@ -459,7 +459,8 @@ It holds every edit and stream family, `splits` on every document up to 2 KB,
 arguments of 4.8. Scripts are offsets and short texts, so the set stays small
 enough to track.
 
-- C runs it as `incremental_runner` under the `api` label, with 4.1–4.9.
+- C runs it as `incremental_runner` under the `incremental` label, with
+  4.1–4.9: one test per family the set's manifest declares, run in parallel.
 - Swift, Kotlin and ECMAScript consume it through the same lifecycle that
   delivers the canonical manifest to their conformance runners, in both units,
   with 4.1–4.10 except the allocator sweep of 4.8.

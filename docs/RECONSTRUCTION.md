@@ -235,6 +235,7 @@ cmake --preset default
 cmake --build --preset default --parallel
 ctest --preset correctness
 ctest --preset conformance
+ctest --preset incremental
 
 cmake --preset asan
 cmake --build --preset asan --parallel

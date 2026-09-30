@@ -385,7 +385,7 @@ export function recognizeValue(grammar, source) {
     throw new Error(`unknown grammar ${grammar}`);
 }
 
-function word(index, width = 1, letters = alphabets.ascii) {
+export function word(index, width = 1, letters = alphabets.ascii) {
     let result = "";
     do {
         result += letters[index % 26];

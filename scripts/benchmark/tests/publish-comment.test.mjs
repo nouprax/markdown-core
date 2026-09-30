@@ -7,7 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "yaml";
-import { attributeSection, publish, readArchive, stageSection } from "../publish-comment.mjs";
+import { attributeSection, editSection, publish, readArchive, stageSection } from "../publish-comment.mjs";
 import { markdownReport } from "../run.mjs";
 
 const head = "a".repeat(40);
@@ -95,9 +95,40 @@ const attributes = () => ({
     }
 });
 
+const edits = () => ({
+    schemaVersion: 1,
+    subject: "reparse",
+    workloads: { version: "incremental-workloads-v1", set: "corpus", digest: "e".repeat(64), count: 3 },
+    results: [
+        { name: "a.typing-word", family: "typing", size: null, windows: [10, 20, 30], oneshot: { ir: 25 } },
+        { name: "b.typing-word", family: "typing", size: null, windows: [40], oneshot: { ir: 35 } },
+        { name: "prose-ascii-16k.far", family: "far", size: 16384, windows: [7, 9], oneshot: { ir: 8 } }
+    ]
+});
+
+test("the edit table reports the R column by family and size, pooled over windows", () => {
+    const body = editSection(edits());
+    assert.match(body, /\| Grammar corpus \| typing \| {2}\| 2 \| 4 \| 20 \| 40 \| 40 \| 100 \| 60 \|/);
+    assert.match(body, /\| Shapes \| far \| 16,384 \| 1 \| 2 \| 7 \| 9 \| 9 \| 16 \| 8 \|/);
+    assert.doesNotMatch(body, /a\.typing-word|prose-ascii/);
+    for (const mutate of [
+        (r) => (r.schemaVersion = 2),
+        (r) => (r.workloads.count = 4),
+        (r) => (r.results[0].family = "<b>"),
+        (r) => (r.results[0].windows = [10, "20"]),
+        (r) => (r.results[0].windows = []),
+        (r) => (r.results[2].size = -1),
+        (r) => (r.results[1].oneshot.ir = 1.5)
+    ]) {
+        const report = edits();
+        mutate(report);
+        assert.throws(() => editSection(report));
+    }
+});
+
 test("PR tables report the two stages, their sum and source regressions, and nothing outside them", () => {
     const body = stageSection(stageReport(103), stageReport(100));
-    assert.match(body, /0\/2 passed/);
+    assert.match(body, /2\/4 passed/);
     assert.match(body, /\| Source → buffer \| 200 \| 206 \| 1.0300× \|/);
     assert.match(body, /\| Buffer → AST \| 100 \| 100 \| 1.0000× \|/);
     assert.match(body, /\| Both stages \| 300 \| 306 \| 1.0200× \|/);
@@ -107,6 +138,15 @@ test("PR tables report the two stages, their sum and source regressions, and not
     assert.match(body, /inline-links-grammar-v2 \| ASCII \| whole \| 1 \| 32\/32 \| 1.0000× \| 2.0400× \| 2.0400×/);
     assert.match(body, /Grammar:/);
     assert.match(attributeSection(attributes()), /2.0000×/);
+});
+
+test("an AST-stage regression fails its document even when the source stage holds", () => {
+    const current = stageReport(100);
+    for (const row of current.cases) row.engines["markdown-core"].stages.buffer_to_ast.cost.Ir = 53;
+    const body = stageSection(current, stageReport(100));
+    assert.match(body, /2 document workloads/);
+    assert.match(body, /\*\*2\/4 passed\*\*, 2 exceeded/);
+    assert.match(body, /\| inline-links-paired-dialect \| Buffer → AST \| 50 \| 53 \| 1.0600× \|/);
 });
 
 test("Core-only rejections are reported against their control, apart from reference comparisons", () => {
@@ -295,7 +335,12 @@ function fixture() {
             fingerprint: "f".repeat(64),
             validation: { required: true, sources: {} }
         },
-        artifacts: ["benchmark-report-stages-1", "benchmark-report-attributes-1", "ci-inputs"].map((name, id) => ({
+        artifacts: [
+            "benchmark-report-stages-1",
+            "benchmark-report-attributes-1",
+            "ci-inputs",
+            "benchmark-report-edits-1"
+        ].map((name, id) => ({
             id,
             name,
             expired: false,
@@ -303,7 +348,8 @@ function fixture() {
         })),
         jobs: [
             "Benchmark / Measure - parse stages against cmark",
-            "Benchmark / Measure - the attribute grammar against lexbor"
+            "Benchmark / Measure - the attribute grammar against lexbor",
+            "Benchmark / Measure - edits and streams"
         ].map((name) => ({ name, status: "completed", conclusion: "success", run_attempt: 1 }))
     };
     const snapshot = (run_id) => {
@@ -340,6 +386,7 @@ function fixture() {
             read: (bytes) => {
                 if (bytes.toString() === "102") return [state.inputs];
                 if (bytes.toString() === "2") return [state.original?.inputs ?? state.inputs];
+                if (bytes.toString() === "3") return [edits()];
                 return bytes.toString() === "0" ? [stageReport(103), stageReport(100)] : [attributes()];
             }
         });
@@ -353,7 +400,7 @@ test("fork runs with empty PR metadata find the current PR through commit associ
     await state.publish();
     assert.equal(state.writes.length, 1);
     assert.equal(state.writes[0].issue_number, 9);
-    assert.match(state.writes[0].body, /0\/2 passed/);
+    assert.match(state.writes[0].body, /2\/4 passed/);
     assert.match(state.writes[0].body, /2.0000×/);
     assert.match(state.writes[0].body, /CI status: \*\*failure\*\*/);
     assert.match(state.writes[0].body, /runs\/42\/attempts\/1/);
@@ -418,7 +465,7 @@ test("mutable workflow PR metadata cannot replace the recorded tested base", asy
 test("unavailable or inconsistent input evidence fails closed without publishing", async () => {
     for (const mutate of [
         (s) => {
-            s.artifacts.pop();
+            s.artifacts.splice(2, 1);
         },
         (s) => {
             s.artifacts[2].expired = true;
@@ -464,7 +511,7 @@ test("a report for another baseline is unavailable even if the PR inputs match",
     state.inputs.base = state.pr.base.sha = state.current.base.sha = head;
     await state.publish();
     assert.match(state.writes[0].body, /Result unavailable/);
-    assert.doesNotMatch(state.writes[0].body, /0\/2 passed/);
+    assert.doesNotMatch(state.writes[0].body, /2\/4 passed/);
     assert.match(state.writes[0].body, /2.0000×/);
 });
 
@@ -611,7 +658,7 @@ test("a documentation push recovers a measurement whose old publisher lost the P
         assert.ok(body.includes(`Measured commit: \`${head}\``));
         assert.match(body, /Reused validation of identical execution inputs and integration base/);
         assert.match(body, /runs\/42\/attempts\/1/);
-        assert.match(body, /0\/2 passed/);
+        assert.match(body, /2\/4 passed/);
         assert.match(body, /2.0000×/);
         assert.equal(state.warnings.length, 0);
     }
@@ -634,7 +681,7 @@ test("successive skips publish the direct original measurement and update the sa
     assert.equal(state.writes[0].method, "update");
     assert.equal(state.writes[0].comment_id, 10);
     assert.match(state.writes[0].body, /<!-- run:80:1 -->/);
-    assert.match(state.writes[0].body, /0\/2 passed/);
+    assert.match(state.writes[0].body, /2\/4 passed/);
     assert.ok(state.reads.every((id) => [42, 60, 80].includes(id)));
 });
 
@@ -714,7 +761,7 @@ test("unavailable, superseded or mismatched original validation is explicit and 
             s.original.inputs.validation.required = false;
         },
         (s) => {
-            s.original.artifacts.pop();
+            s.original.artifacts.splice(2, 1);
         },
         (s) => {
             s.original.artifacts[2].expired = true;
@@ -726,7 +773,7 @@ test("unavailable, superseded or mismatched original validation is explicit and 
         assert.equal(state.writes.length, 1);
         assert.match(state.writes[0].body, /original measurement.*is unavailable/);
         assert.match(state.writes[0].body, /Result unavailable/);
-        assert.doesNotMatch(state.writes[0].body, /0\/2 passed|2.0000×/);
+        assert.doesNotMatch(state.writes[0].body, /2\/4 passed|2.0000×/);
     }
 });
 
@@ -768,14 +815,14 @@ test("reuse reads each retained job's attempt and exposes missing original repor
     state.original.jobs[0].run_attempt = 2;
     state.original.artifacts[0].name = "benchmark-report-stages-2";
     await state.publish();
-    assert.match(state.writes[0].body, /0\/2 passed/);
+    assert.match(state.writes[0].body, /2\/4 passed/);
     assert.match(state.writes[0].body, /2.0000×/);
     assert.match(state.writes[0].body, /runs\/42\/attempts\/2/);
     state.writes.length = 0;
     state.original.artifacts[0].expired = true;
     await state.publish();
     assert.match(state.writes[0].body, /Result unavailable/);
-    assert.doesNotMatch(state.writes[0].body, /0\/2 passed/);
+    assert.doesNotMatch(state.writes[0].body, /2\/4 passed/);
     assert.match(state.writes[0].body, /2.0000×/);
 });
 
@@ -786,7 +833,7 @@ test("failed-job retries retain successful measurements but cannot reuse a faile
     state.artifacts[0].name = "benchmark-report-stages-2";
     // Attribute job and artifact still belong to attempt 1.
     await state.publish();
-    assert.match(state.writes[0].body, /0\/2 passed/);
+    assert.match(state.writes[0].body, /2\/4 passed/);
     assert.match(state.writes[0].body, /2.0000×/);
     assert.match(state.writes[0].body, /runs\/42\/attempts\/2/);
     assert.equal(state.warnings.length, 0);
@@ -794,7 +841,7 @@ test("failed-job retries retain successful measurements but cannot reuse a faile
     state.artifacts[0].name = "benchmark-report-stages-1";
     await state.publish();
     assert.match(state.writes[0].body, /Result unavailable/);
-    assert.doesNotMatch(state.writes[0].body, /0\/2 passed/);
+    assert.doesNotMatch(state.writes[0].body, /2\/4 passed/);
     assert.match(state.writes[0].body, /2.0000×/);
 });
 
@@ -804,7 +851,7 @@ test("skipped job names cannot substitute for the preflight's reuse evidence", a
     await state.publish();
     assert.equal(state.writes.length, 1);
     assert.match(state.writes[0].body, /Result unavailable/);
-    assert.doesNotMatch(state.writes[0].body, /0\/2 passed|2.0000×/);
+    assert.doesNotMatch(state.writes[0].body, /2\/4 passed|2.0000×/);
 });
 
 test("producer and publisher keep PR execution separate from write permissions", (t) => {
@@ -849,7 +896,8 @@ test("producer and publisher keep PR execution separate from write permissions",
 
     for (const [kind, members] of [
         ["stages", ["stages.json", "baseline/stages.json"]],
-        ["attributes", ["attributes.json"]]
+        ["attributes", ["attributes.json"]],
+        ["edits", ["edits.json"]]
     ]) {
         const upload = producer.jobs[kind].steps.find(
             (step) => step.with?.name === `benchmark-report-${kind}-` + "${{ github.run_attempt }}"

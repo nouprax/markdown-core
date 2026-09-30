@@ -186,7 +186,7 @@ if [ -n "$BUILD_DIR" ]; then
         }
 
         tests_all=$(ctest_inventory -N | normalize_lines | sed -n 's/^  Test *#[0-9]*: //p')
-        for label in api facade conformance consumer spec elements regression pathological fuzz packaging; do
+        for label in api facade conformance consumer spec elements regression pathological fuzz packaging incremental; do
             count=$(ctest_inventory -N -L "^${label}$" | normalize_lines | sed -n 's/^Total Tests: //p')
             if [ "${count:-0}" -lt 1 ]; then
                 fail "no CTest tests carry label '$label'"

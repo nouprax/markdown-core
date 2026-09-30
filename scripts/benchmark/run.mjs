@@ -76,7 +76,7 @@ import {
     markTree,
     sameCompileOptions
 } from "./compile-identity.mjs";
-import { sourceBudget, SOURCE_IR_LIMIT } from "./source-budget.mjs";
+import { STAGES, stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
 import {
     buildGrammarCorpus,
     writeGrammarCorpus,
@@ -133,12 +133,15 @@ const ENGINES = {
     }
 };
 
-const STAGES = ["source_to_buffer", "buffer_to_ast"];
+/* The edit and stream benchmark's runner (edits.mjs): Markdown Core's
+ * engine, measured per step rather than per stage. */
+export const EDIT_RUNNER = "packages/markdown-core/benchmarks/markdown_core_edit_runner";
 
-/* Every binary that contributes measured parse-stage instructions. */
-const MEASURED_BINARIES = Object.fromEntries(
-    Object.entries(ENGINES).map(([engine, definition]) => [engine, definition.runner])
-);
+/* Every binary that contributes measured instructions. */
+const MEASURED_BINARIES = {
+    ...Object.fromEntries(Object.entries(ENGINES).map(([engine, definition]) => [engine, definition.runner])),
+    "markdown-core edits": EDIT_RUNNER
+};
 
 function fail(message) {
     console.error(`benchmark: ${message}`);
@@ -1146,12 +1149,17 @@ function dispatchIdentity(profile, root) {
     return crypto.createHash("sha256").update(features.join("\n")).digest("hex");
 }
 
-function measure(profile, engine, document, out) {
-    const definition = ENGINES[engine];
-    const dump = path.join(out, "callgrind", `${engine}.${document.case}.out`);
+/**
+ * One measured run of a built runner under callgrind, isolated as
+ * measurement.mjs describes, writing its profile to `dump` (and a runner that
+ * dumps per window writes `dump.1`, `dump.2`, ... as well). Returns the
+ * runner's standard output. `args` must name absolute paths: the child runs
+ * from the directory that exists to hold no configuration.
+ */
+export function profileRun(profile, runner, args, dump, out) {
     fs.mkdirSync(path.dirname(dump), { recursive: true });
     const root = measurementRoot(out, fail);
-    const stdout = run(
+    return run(
         "valgrind",
         [
             "--tool=callgrind",
@@ -1167,14 +1175,24 @@ function measure(profile, engine, document, out) {
             ...CACHE,
             `--callgrind-out-file=${dump}`,
             "--quiet",
-            path.join(profile.binaryDir, definition.runner),
-            "--document",
-            document.file
+            path.join(profile.binaryDir, runner),
+            ...args
         ],
-        /* Every path above is absolute, so the child can be run from the
-         * directory that exists to hold no configuration. */
         { env: measurementEnvironment(root), cwd: root }
     );
+}
+
+/* Every corpus document has content, so a corpus parse that produced no
+ * block would make every stage number a measurement of the empty case, which
+ * is exactly the failure a silent comparison hides. */
+function refuseEmptyTree(engine, document, measured) {
+    if (!measured.rootChildren) fail(`${engine}: ${document.case} parsed to an empty tree`);
+}
+
+export function measure(profile, engine, document, out) {
+    const definition = ENGINES[engine];
+    const dump = path.join(out, "callgrind", `${engine}.${document.case}.out`);
+    const stdout = profileRun(profile, definition.runner, ["--document", document.file], dump, out);
 
     const receipt = /bytes=(\d+) root_children=(\d+)/u.exec(stdout);
     if (!receipt) fail(`${engine}: ${document.case} produced no receipt`);
@@ -1372,34 +1390,15 @@ export function markdownReport(report) {
     return lines.join("\n") + "\n" + grammarMarkdown(report);
 }
 
-function main() {
-    const options = parseArguments(process.argv.slice(2));
-    /* What the arguments alone decide is settled before anything is installed,
-     * configured or built: a mistyped case name is the caller's to fix either
-     * way, and it costs them nothing to hear it now. */
-    const manifest = corpusManifest();
-    refuseUnknownCases(options, manifest);
-    // Generating source documents does not require a compiler or native parser.
-    if (options.corpusOnly) {
-        fs.mkdirSync(options.out, { recursive: true });
-        const only = buildCorpus(options);
-        // Counts are source-generation metadata for the selected workloads.
-        fs.writeFileSync(
-            path.join(options.out, "units.json"),
-            `${JSON.stringify(
-                Object.fromEntries(only.documents.map((document) => [document.case, document.units])),
-                null,
-                4
-            )}\n`
-        );
-        if (!options.quiet) {
-            process.stdout.write(
-                `wrote ${only.documents.length} documents to ${path.relative(root, path.join(options.out, "corpus"))} ` +
-                    `(digest ${only.digest.slice(0, 16)})\n`
-            );
-        }
-        return;
-    }
+/**
+ * The measurement build, shared by every driver that measures this
+ * repository's runners (this one and edits.mjs): the profile preset built from
+ * scratch with the pinned references, every measured binary checked for one
+ * compiler and the pinned flags, and the identity a report states -- toolchain,
+ * compile lines, dispatch, runtime libraries and binary digests. With
+ * `options.baselineRef`, the base revision is rebuilt the same way.
+ */
+export function prepareBuild(options) {
     refuseResponseFiles();
     const profile = profileBuild();
     refuseOverlappingTrees(options, profile);
@@ -1504,6 +1503,38 @@ function main() {
     const binaries = runnerIdentity(profile);
 
     const baseline = buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions);
+    return { profile, cmark, gfm, versions, binaries, baseline };
+}
+
+function main() {
+    const options = parseArguments(process.argv.slice(2));
+    /* What the arguments alone decide is settled before anything is installed,
+     * configured or built: a mistyped case name is the caller's to fix either
+     * way, and it costs them nothing to hear it now. */
+    const manifest = corpusManifest();
+    refuseUnknownCases(options, manifest);
+    // Generating source documents does not require a compiler or native parser.
+    if (options.corpusOnly) {
+        fs.mkdirSync(options.out, { recursive: true });
+        const only = buildCorpus(options);
+        // Counts are source-generation metadata for the selected workloads.
+        fs.writeFileSync(
+            path.join(options.out, "units.json"),
+            `${JSON.stringify(
+                Object.fromEntries(only.documents.map((document) => [document.case, document.units])),
+                null,
+                4
+            )}\n`
+        );
+        if (!options.quiet) {
+            process.stdout.write(
+                `wrote ${only.documents.length} documents to ${path.relative(root, path.join(options.out, "corpus"))} ` +
+                    `(digest ${only.digest.slice(0, 16)})\n`
+            );
+        }
+        return;
+    }
+    const { profile, cmark, gfm, versions, binaries, baseline } = prepareBuild(options);
     const corpus = buildCorpus(options);
     // Raw profiles describe only this run, including after renamed or removed inputs.
     fs.rmSync(path.join(options.out, "callgrind"), { recursive: true, force: true });
@@ -1516,6 +1547,7 @@ function main() {
             if (measured.receiptBytes !== document.bytes) {
                 fail(`${engine}: ${document.case} saw ${measured.receiptBytes} bytes, expected ${document.bytes}`);
             }
+            refuseEmptyTree(engine, document, measured);
             engines[engine] = {
                 rootChildren: measured.rootChildren,
                 stages: Object.fromEntries(
@@ -1532,6 +1564,7 @@ function main() {
         if (baseline) {
             const measured = measure(baseline.profile, "markdown-core", document, baseline.directory);
             if (measured.receiptBytes !== document.bytes) fail(`baseline received different bytes: ${document.case}`);
+            refuseEmptyTree("baseline markdown-core", document, measured);
             baseline.cases.push({
                 ...entry,
                 file: path.relative(baseline.directory, document.file),
@@ -1592,10 +1625,10 @@ function main() {
         };
         fs.writeFileSync(path.join(baseline.directory, "stages.json"), `${JSON.stringify(previous)}\n`);
         fs.writeFileSync(path.join(baseline.directory, "stages.md"), `${markdownReport(previous)}\n`);
-        report.sourceBudget = {
+        report.stageBudget = {
             baseline: baseline.revision,
-            limit: SOURCE_IR_LIMIT,
-            rows: sourceBudget(cases, baseline.cases)
+            limit: STAGE_IR_LIMIT,
+            rows: stageBudget(cases, baseline.cases)
         };
     }
     /* Keep machine-readable artifacts compact; stages.md is the human report. */
@@ -1603,21 +1636,23 @@ function main() {
     const markdown = path.join(options.out, "stages.md");
     fs.writeFileSync(json, `${JSON.stringify(report)}\n`);
     let rendered = markdownReport(report);
-    if (report.sourceBudget) {
-        const failed = report.sourceBudget.rows.filter((row) => !row.passed);
-        rendered += `\n\n## Source-stage regression gate\n\nBase: ${report.sourceBudget.baseline}. Both revisions use this run's corpus, harness, toolchain and runtime libraries. Each document must stay within ${((SOURCE_IR_LIMIT - 1) * 100).toFixed(0)}% of its baseline source_to_buffer Ir. ${report.sourceBudget.rows.length - failed.length}/${report.sourceBudget.rows.length} passed. AST improvements do not offset source regressions.\n`;
+    if (report.stageBudget) {
+        const failed = report.stageBudget.rows.filter((row) => !row.passed);
+        rendered += `\n\n## Stage regression gate\n\nBase: ${report.stageBudget.baseline}. Both revisions use this run's corpus, harness, toolchain and runtime libraries. Each document must stay within ${((STAGE_IR_LIMIT - 1) * 100).toFixed(0)}% of its baseline Ir in source_to_buffer and in buffer_to_ast. ${report.stageBudget.rows.length - failed.length}/${report.stageBudget.rows.length} document stages passed. One stage's improvement does not offset the other's regression.\n`;
         if (failed.length)
             rendered +=
-                "\n| Case | Base Ir | Current Ir | Ratio |\n| --- | ---: | ---: | ---: |\n" +
+                "\n| Case | Stage | Base Ir | Current Ir | Ratio |\n| --- | --- | ---: | ---: | ---: |\n" +
                 failed
-                    .map((row) => `| ${row.case} | ${row.before} | ${row.after} | ${row.ratio.toFixed(3)}x |`)
+                    .map(
+                        (row) =>
+                            `| ${row.case} | ${row.stage} | ${row.before} | ${row.after} | ${row.ratio.toFixed(3)}x |`
+                    )
                     .join("\n");
     }
     fs.writeFileSync(markdown, `${rendered}\n`);
     process.stdout.write(`${rendered}\n`);
     console.error(`wrote ${path.relative(root, json)} and ${path.relative(root, markdown)}`);
-    if (report.sourceBudget?.rows.some((row) => !row.passed))
-        fail("source_to_buffer instruction budget exceeded; see stages.md");
+    if (report.stageBudget?.rows.some((row) => !row.passed)) fail("stage instruction budget exceeded; see stages.md");
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

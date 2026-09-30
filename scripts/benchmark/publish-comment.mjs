@@ -4,10 +4,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { inputVersion, sameInputs, validationSource } from "../shared/ci-inputs.mjs";
+import { groupWindows } from "./edit-gates.mjs";
 import { grammarComparisons } from "./report.mjs";
-import { sourceBudget, SOURCE_IR_LIMIT } from "./source-budget.mjs";
+import { stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
 
 const marker = "<!-- markdown-core-benchmark -->";
+const STAGE_NAMES = { source_to_buffer: "Source → buffer", buffer_to_ast: "Buffer → AST" };
 const archiveLimit = 8 * 1024 * 1024;
 const reportLimit = 16 * 1024 * 1024;
 const measurements = [
@@ -24,6 +26,13 @@ const measurements = [
         job: "Benchmark / Measure - the attribute grammar against lexbor",
         members: ["attributes.json"],
         render: attributeSection
+    },
+    {
+        kind: "edits",
+        title: "Edits and streams",
+        job: "Benchmark / Measure - edits and streams",
+        members: ["edits.json"],
+        render: editSection
     }
 ];
 const count = (value) => {
@@ -78,12 +87,12 @@ export function stageSection(current, baseline) {
     ) {
         throw new Error("Benchmark identities differ");
     }
-    const rows = sourceBudget(current.cases, baseline.cases);
+    const rows = stageBudget(current.cases, baseline.cases);
     const failures = rows.filter((row) => !row.passed);
     const lines = [
         "### Parse stages",
         "",
-        `Baseline: \`${digest(baseline.revision, 40)}\`. ${number(rows.length)} document workloads, measured in the same job.`,
+        `Baseline: \`${digest(baseline.revision, 40)}\`. ${number(current.cases.length)} document workloads, measured in the same job.`,
         "",
         "| Core instructions (Ir) | Base | PR | PR / base |",
         "| --- | ---: | ---: | ---: |"
@@ -105,18 +114,18 @@ export function stageSection(current, baseline) {
         "Totals sum this finite workload; they are not elapsed time or a general speedup claim. " +
             "Parser creation and release are not parsing and are in no figure here.",
         "",
-        `Source budget (+${((SOURCE_IR_LIMIT - 1) * 100).toFixed(0)}% per document): **${number(rows.length - failures.length)}/${number(rows.length)} passed**, ${number(failures.length)} exceeded. Required when CI inputs require execution.`,
+        `Stage budget (+${((STAGE_IR_LIMIT - 1) * 100).toFixed(0)}% per document and stage): **${number(rows.length - failures.length)}/${number(rows.length)} passed**, ${number(failures.length)} exceeded. Required when CI inputs require execution.`,
         "",
-        "<details><summary>Largest source-stage ratios (up to 10 workloads)</summary>",
+        "<details><summary>Largest stage ratios (up to 10 document stages)</summary>",
         "",
-        "| Case | Base Ir | PR Ir | PR / base |",
-        "| --- | ---: | ---: | ---: |",
+        "| Case | Stage | Base Ir | PR Ir | PR / base |",
+        "| --- | --- | ---: | ---: | ---: |",
         ...[...rows]
             .sort((a, b) => b.ratio - a.ratio)
             .slice(0, 10)
             .map(
                 (row) =>
-                    `| ${row.case} | ${number(row.before)} | ${number(row.after)} | ${ratio(row.after, row.before)} |`
+                    `| ${row.case} | ${STAGE_NAMES[row.stage]} | ${number(row.before)} | ${number(row.after)} | ${ratio(row.after, row.before)} |`
             ),
         "",
         "</details>",
@@ -187,6 +196,59 @@ export function attributeSection(report) {
         ratios.push(`${name} **${ratio(ours.ir, theirs.ir)}**`);
     }
     lines.push("", `Core / lexbor instructions on the same recovered attributes: ${ratios.join(", ")}.`);
+    return lines.join("\n");
+}
+
+const EDIT_FAMILIES = [
+    "typing",
+    "lines",
+    "markers",
+    "ranges",
+    "far",
+    "batch",
+    "declarations",
+    "undo",
+    "random",
+    "tokens",
+    "scalars",
+    "rows"
+];
+
+// The R column by family and size, the grammar corpus apart from the shapes.
+// Every workload's windows are validated counts; names never reach the comment.
+export function editSection(report) {
+    if (report?.schemaVersion !== 1 || report.subject !== "reparse" || !Array.isArray(report.results)) {
+        throw new Error("Invalid edit report");
+    }
+    digest(report.workloads?.digest);
+    if (!report.results.length || report.results.length !== report.workloads.count) {
+        throw new Error("Incomplete edit report");
+    }
+    for (const row of report.results) {
+        if (!EDIT_FAMILIES.includes(row.family)) throw new Error("Invalid edit family");
+        if (row.size !== null) count(row.size);
+        if (!Array.isArray(row.windows) || !row.windows.length || row.windows.some((value) => !count(value))) {
+            throw new Error("Invalid edit windows");
+        }
+        count(row.oneshot?.ir);
+    }
+    const sources = { grammar: "Grammar corpus", shapes: "Shapes" };
+    const groups = groupWindows(report.results, (row) =>
+        JSON.stringify([row.size === null ? "grammar" : "shapes", row.family, row.size])
+    );
+    const lines = [
+        "### Edits and streams",
+        "",
+        `Subject: \`reparse\`, the R column: Ir per window of steps. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`,
+        "",
+        "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | One-shot total |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ...groups.map((group) => {
+            const [source, family, size] = JSON.parse(group.key);
+            const { p50, p95, max, total } = group.reparse;
+            return `| ${sources[source]} | ${family} | ${size === null ? "" : number(size)} | ${[group.workloads, group.windows, p50, p95, max, total, group.oneshot].map(number).join(" | ")} |`;
+        })
+    ];
     return lines.join("\n");
 }
 

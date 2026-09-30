@@ -83,6 +83,15 @@ if(MARKDOWN_CORE_CMARK_GFM_SOURCE_DIR AND MARKDOWN_CORE_CMARK_GFM_BUILD_DIR)
                                                          "${MARKDOWN_CORE_CMARK_GFM_LIBRARY}")
 endif()
 
+# The edit and stream benchmark's runner (docs/plans/2026-09-29-incremental-gates.md,
+# section 5). It shares the incremental harness with the correctness runner, so
+# both read the same workload files, and it links the same static engine as
+# the stage runner. Like the stage runners it is never registered with CTest.
+add_executable(markdown_core_edit_runner edit_runner.c edit_harness.c)
+target_include_directories(markdown_core_edit_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
+                                                             "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+target_link_libraries(markdown_core_edit_runner PRIVATE libmarkdown-core-public-static)
+
 # The attribute comparison's two runners.
 #
 # Separate binaries from the stage runners above, and separate on purpose: the

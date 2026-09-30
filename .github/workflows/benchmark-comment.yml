@@ -30,7 +30,9 @@ jobs:
                   sparse-checkout: |
                       scripts/benchmark/publish-comment.mjs
                       scripts/shared/ci-inputs.mjs
-                      scripts/benchmark/source-budget.mjs
+                      scripts/benchmark/stage-budget.mjs
+                      scripts/benchmark/edit-gates.mjs
+                      scripts/benchmark/callgrind.mjs
                       scripts/benchmark/report.mjs
                   sparse-checkout-cone-mode: false
             - name: Update the PR benchmark comment
