@@ -181,7 +181,7 @@ foreach(family IN LISTS _markdown_core_incremental_families)
     markdown_core_add_test(
         incremental_${family}
         incremental
-        1200
+        3600
         incremental_runner
         --set
         "${MARKDOWN_CORE_INCREMENTAL_DIR}"

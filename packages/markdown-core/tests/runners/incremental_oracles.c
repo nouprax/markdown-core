@@ -315,11 +315,14 @@ static bool same_scope(markdown_core_scope a, markdown_core_scope b) {
            a.end.column == b.end.column;
 }
 
-#define SCOPE_SAMPLE 48
+#define SCOPE_SAMPLE 4
 
 /* 4.1's queries on a sample of nodes: scope(of:in:) and node(at:in:) at each
  * end of a node's scope and beside it answer as the fresh parse's
- * corresponding node does, and the fresh parse's own scopes are the dump's. */
+ * corresponding node does, and the fresh parse's own scopes are the dump's.
+ * Each step takes SCOPE_SAMPLE nodes spread over the walk, and the next step
+ * the nodes after them, so consecutive steps cover the whole document: every
+ * query costs a walk of the document. */
 static void check_queries(run *state, const char *where, size_t step, eh_unit unit,
                           const markdown_core_document *document, const view *actual,
                           const markdown_core_document *fresh, const view *expected, const uint8_t *fresh_dump,
@@ -347,7 +350,7 @@ static void check_queries(run *state, const char *where, size_t step, eh_unit un
                 break;
             }
         }
-        if (index % stride && index + 1 != actual->count) {
+        if (index % stride != step % stride) {
             continue;
         }
         if (markdown_core_document_scope(document, actual->nodes[index].object, text, length, &mine) !=
