@@ -122,7 +122,7 @@ add_executable(corpus_guard runners/corpus_guard.c)
 # a script differently. It lives with the benchmark, which rebuilds it against
 # a base revision. The oracles serve the runner and the session fuzz target.
 add_library(markdown-core-incremental-oracles STATIC runners/incremental_oracles.c runners/incremental_fuzz.c
-                                                    ../benchmarks/edit_harness.c)
+                                                     ../benchmarks/edit_harness.c)
 target_include_directories(markdown-core-incremental-oracles PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/runners"
                                                                     "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks")
 target_link_libraries(markdown-core-incremental-oracles PUBLIC markdown-core-test-support)
