@@ -38,9 +38,7 @@ final class HeadingRecord: MarkupRecord, @unchecked Sendable {
 
 extension HeadingRecord {
     convenience init(from node: OpaquePointer, content: [MarkupRecord]) {
-        var level: Int32 = 0
-        markdown_core_node_heading_level(node, &level)
-        self.init(InheritedFields(from: node), level: level, content: content)
+        self.init(InheritedFields(from: node), level: markdown_core_node_heading_level(node), content: content)
     }
 }
 

@@ -92,7 +92,6 @@ test("api: typed callbacks collect state and propagate failures", () => {
             }),
         (error) => error === failure
     );
-    assert.throws(() => walk(document, { ...emptyVisitor, document: undefined }), TypeError);
 });
 
 test("api: walking dispatch is typed and preserves owned-field semantics", () => {
@@ -358,9 +357,6 @@ test("ast: the document dumps itself and any of its nodes from the source", () =
         "level",
         "content"
     ]);
-    assert.throws(() => document.dump("# Head"), RangeError);
-    assert.throws(() => document.dump(Document.parse(source).content[0], source), RangeError);
-    assert.throws(() => document.dump(document.content[0]), TypeError);
 });
 
 test("unicode: UTF-8 survives native document release", () => {
@@ -370,14 +366,12 @@ test("unicode: UTF-8 survives native document release", () => {
     assert.equal(document.content[0].content[0].literal, "héllo 🚀 中文");
 });
 
-test("errors: empty input is valid and arguments are checked", () => {
+test("errors: empty input is valid", () => {
     assert.deepEqual(Document.parse("").content, []);
     const empty = Document.parse("");
     assert.deepEqual(empty.scope(empty, ""), { start: { line: 1, column: 1 }, end: { line: 1, column: 0 } });
     const accent = Document.parse("é", { unit: "utf8" });
     assert.deepEqual(accent.scope(accent, "é"), { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } });
-    assert.throws(() => Document.parse(null), TypeError);
-    assert.throws(() => Document.parse("", { unit: "utf32" }), TypeError);
 });
 
 test("errors: allocation failure is terminal across the WASM boundary", () => {
@@ -443,15 +437,6 @@ test("ownership: every occurrence of one definition crosses the boundary once an
     assert.equal(links.length, count);
     assert.equal(links[0].anchor, "a".repeat(size));
     assert.deepEqual(links[0].attributes.classes, classes);
-    assert.throws(() => {
-        links[0].attributes.classes[0] = "edited";
-    }, TypeError);
-    assert.throws(() => {
-        links[0].attributes.records[0].value = "edited";
-    }, TypeError);
-    assert.throws(() => {
-        links[0].attributes.records = [];
-    }, TypeError);
     assert.equal(links[1].attributes.classes[0], "c");
     assert.equal(links[1].attributes.records[0].value, destination);
     assert.ok(links.every((link) => link.attributes.classes === links[0].attributes.classes));
@@ -572,12 +557,6 @@ test("ast: a title is decoded before the content and dumped as a group", () => {
         walkingVisitor((visited, phase) => events.push(`${phase}:${nodeKindName(visited)}`))
     );
     assert.deepEqual(events, ["enter:Callout", "enter:Text", "exit:Text", "exit:Callout"]);
-});
-
-test("ownership: declarations are readonly without runtime freeze", () => {
-    const document = Document.parse("text\n");
-    assert.equal(Object.isFrozen(document), false);
-    assert.equal(Object.isFrozen(document.content), false);
 });
 
 test("robustness: a large document crosses the WASM boundary in one AST result", () => {
@@ -841,101 +820,23 @@ test("ast: the decoder's reference, formula, list and empty-string arms are exer
     assert.equal(list.items.length, 2);
 });
 
-test("errors: malformed native messages are rejected before they enter the AST", () => {
-    // The two sides of the wire are built separately, and a decoder that
-    // silently mapped an unknown value would turn a protocol mismatch into a
-    // wrong document. Each guard is exercised, so none can be removed and
-    // stay green.
+test("errors: a native parse failure keeps its code and message across the WASM boundary", () => {
+    // Allocation failure, the one reason, reaches the consumer as the engine
+    // wrote it.
+    assert.throws(
+        () => decoder(new MessageWriter().error(2, "bad")).decode(),
+        (error) => error.name === "ParseError" && error.code === "allocationFailed" && error.message === "bad"
+    );
+});
+
+test("ast: ids up to 2^53 - 1 and definition tables decode exactly", () => {
     const decode = (writer) => decoder(writer.document()).decode();
-    const text = () => new MessageWriter().text("t");
-    assert.equal(decode(text().root(1)).content[0].literal, "t");
-
-    // Native parse failures keep their terminal category across the WASM
-    // boundary. In particular, allocation failure must not be collapsed into
-    // an internal error that a consumer could mistake for a recoverable path.
-    const failure = (code) => decoder(new MessageWriter().error(code, "bad")).decode();
-    assert.throws(
-        () => failure(1),
-        (error) => error.code === "invalidArgument" && error.message === "bad"
-    );
-    assert.throws(
-        () => failure(2),
-        (error) => error.code === "allocationFailed"
-    );
-    assert.throws(
-        () => failure(99),
-        (error) => error.code === "internal"
-    );
-
-    // Values outside the contract's enums, booleans and branches.
-    assert.throws(
-        () => decode(new MessageWriter().record("formula").u8(2).string("x").root(1)),
-        /invalid enum index 2/u
-    );
-    assert.throws(
-        () => decode(new MessageWriter().record("codeBlock").bool(false).bool(false).string("x").u8(2).root(1)),
-        /invalid boolean 2/u
-    );
-    assert.throws(
-        () => decode(new MessageWriter().record("crossLink").u8(2).string("p").bool(false).root(1)),
-        /invalid branch 2/u
-    );
-
-    // A typed field accepts its own kind only, and content accepts no typed
-    // kind: a directive's label is a field, never a generic child.
-    assert.throws(
-        () => decode(new MessageWriter().record("paragraph").u32(0).record("directive").string("n").bool(true).root(1)),
-        /places a paragraph node in a directiveLabel field/u
-    );
-    assert.throws(
-        () => decode(new MessageWriter().record("directiveLabel").u32(0).root(1)),
-        /places a directiveLabel node in a content field/u
-    );
-
-    // The shape of the message as a whole.
-    assert.throws(() => decode(new MessageWriter().record(99)), /unknown node kind 99/u);
-    assert.throws(() => decode(new MessageWriter().root(1)), /names more nodes than precede it/u);
-    assert.throws(() => decode(text().text("u").root(1)), /not one document tree/u);
-    assert.throws(() => decode(text()), /not one document tree/u);
-    assert.throws(() => decode(new MessageWriter().record("link").u32(1).u32(0).root(1)), /unknown resource 1/u);
-    assert.throws(
-        () => decode(new MessageWriter().record("table").bool(false).u32(0xffff_ffff)),
-        /count exceeds the message/u
-    );
-
-    // An id is exact below 2^53 and invalid at or above it.
     assert.equal(
         decode(new MessageWriter().text("t", { id: 2 ** 53 - 1 }).root(1, { id: 1 })).content[0].id,
         2 ** 53 - 1
     );
-    assert.throws(() => decode(new MessageWriter().text("t", { id: 2n ** 53n }).root(1)), /id is not below 2\^53/u);
-    assert.throws(
-        () => decode(new MessageWriter().text("t", { id: 2n ** 64n - 1n }).root(1)),
-        /id is not below 2\^53/u
-    );
-
-    // A definition table names nodes of its own kind that the message built.
-    const note = () => new MessageWriter().record("footnote", { id: 7 }).bool(false).u32(0);
-    assert.equal(decode(note().root(1, { footnotes: [7] })).footnotes[0].id, 7);
-    assert.throws(() => decode(note().root(1, { footnotes: [8] })), /footnote table names no footnote node 8/u);
-    assert.throws(() => decode(note().root(1, { specimens: [7] })), /specimen table names no specimen node 7/u);
-    assert.throws(() => decode(text().root(1, { footnotes: [1] })), /footnote table names no footnote node 1/u);
-    const trailing = text().root(1).u8(0).document();
-    assert.throws(() => decoder(trailing).decode(), /bytes after its definition tables/u);
-    const tableless = text().record("document").u32(1).bool(false).document();
-    assert.throws(() => decoder(tableless).decode(), /truncated native result/u);
-
-    const valid = text().root(1).document();
-    const truncated = valid.slice(0, -1);
-    new DataView(truncated.buffer).setUint32(4, truncated.length, true);
-    assert.throws(() => decoder(truncated).decode(), /truncated native result/u);
-    assert.throws(() => decoder(Uint8Array.from([...valid, 0])).decode(), /length does not match/u);
-    const badMagic = valid.slice();
-    badMagic[0] = 0;
-    assert.throws(() => decoder(badMagic).decode(), /invalid native result/u);
-    const badStatus = valid.slice();
-    badStatus[8] = 2;
-    assert.throws(() => decoder(badStatus).decode(), /unsupported native result status 2/u);
+    const note = new MessageWriter().record("footnote", { id: 7 }).bool(false).u32(0);
+    assert.equal(decode(note.root(1, { footnotes: [7] })).footnotes[0].id, 7);
 });
 
 test("ast: every ordered delimiter and associated numbering value survives decoding", () => {
@@ -1045,7 +946,6 @@ test("ast: specimen definitions and references retain ownership, nulls and reset
             .root(4, { footnotes: [20], specimens: [30, 31] })
             .document();
     };
-    assert.throws(() => decoder(message(9007199254740993n)).decode(), /precision/);
     const bytes = message(5);
     const document = decoder(bytes).decode();
     bytes.fill(0);
@@ -1165,7 +1065,6 @@ test("ast: metadata preserves tags, decimal text, duplicate keys and owned lists
             .bool(false)
             .root(0, { metadata: true })
             .document();
-    assert.throws(() => decoder(message(9)).decode(), /invalid branch 9/);
     const bytes = message(0);
     const document = decoder(bytes).decode();
     bytes.fill(0);
@@ -1375,7 +1274,7 @@ test("ast: definition terms and ordered bodies are owned and walk without body w
     ]);
 });
 
-test("errors: definition bodies hold content and definition lists hold definitions only", () => {
+test("ast: a definition's term and bodies decode in field order", () => {
     const decode = (writer) => decoder(writer.root(1).document()).decode();
     // Term `T`; two bodies, the first empty and the second holding `b`.
     const definition = decode(
@@ -1394,28 +1293,6 @@ test("errors: definition bodies hold content and definition lists hold definitio
     assert.deepEqual(
         definition.content.map((body) => body.map((node) => node.literal)),
         [[], ["b"]]
-    );
-    assert.throws(
-        () => decode(new MessageWriter().record("paragraph").u32(0).record("definitionList").u32(1)),
-        /places a paragraph node in a definition field/u
-    );
-    assert.throws(
-        () =>
-            decode(
-                new MessageWriter()
-                    .text("T")
-                    .record("listItem")
-                    .bool(false)
-                    .u32(0)
-                    .record("definition")
-                    .u32(1)
-                    .u32(1)
-                    .u32(1)
-                    .bool(false)
-                    .record("definitionList")
-                    .u32(1)
-            ),
-        /places a listItem node in a content field/u
     );
 });
 
@@ -1445,40 +1322,26 @@ test("api: owned elements are Markup with finite walks and preserved labels", ()
     assert.equal(document.footnotes[0].label, "label");
     assert.equal(document.footnote("label"), document.footnotes[0]);
     assert.equal(document.specimen("sample"), document.specimens[0]);
-    // Owned kinds live only in the fields that name them, never in content.
-    for (const kind of ["metadata", "citation"]) {
-        const writer = new MessageWriter().record(kind);
-        if (kind === "metadata") for (let field = 0; field < 10; field += 1) writer.bool(false);
-        if (kind === "citation") writer.u8(1).u8(0).string("label").u32(0).u32(0);
-        assert.throws(
-            () => decoder(writer.record("paragraph").u32(1).root(1).document()).decode(),
-            new RegExp(`places a ${kind} node in a content field`, "u")
-        );
-    }
-    // An inline note's Footnote is the first node its citation takes, and
-    // it must be a Footnote.
-    const noted = (kind) => {
-        const writer = new MessageWriter().text("x").record(kind).bool(false);
-        if (kind === "specimen") writer.bool(false);
-        return decoder(
-            writer
-                .u32(1)
-                .record("citation")
-                .u8(1)
-                .u8(1)
-                .u32(0)
-                .u32(0)
-                .record("cite")
-                .u32(1)
-                .record("paragraph")
-                .u32(1)
-                .root(1)
-                .document()
-        ).decode();
-    };
-    const inline = noted("footnote").content[0].content[0].citations[0];
+    // An inline note's Footnote is the first node its citation takes.
+    const inline = decoder(
+        new MessageWriter()
+            .text("x")
+            .record("footnote")
+            .bool(false)
+            .u32(1)
+            .record("citation")
+            .u8(1)
+            .u8(1)
+            .u32(0)
+            .u32(0)
+            .record("cite")
+            .u32(1)
+            .record("paragraph")
+            .u32(1)
+            .root(1)
+            .document()
+    ).decode().content[0].content[0].citations[0];
     assert.equal(inline.referent.target.footnote.content[0].literal, "x");
-    assert.throws(() => noted("specimen"), /places a specimen node in a footnote field/u);
 });
 
 test("api: scope queries count columns in the document's unit from the extents and the source", () => {
@@ -1540,18 +1403,8 @@ test("api: scope queries count columns in the document's unit from the extents a
         ["paragraph", scope(4, 3, 4, 3)],
         ["text", scope(4, 3, 4, 3)]
     ]);
-    // A node of another document, or a source shorter than the document's,
-    // has no scope.
-    const document = Document.parse("é🚀x\n");
-    assert.equal(document.scope(Document.parse("é🚀x\n").content[0], "é🚀x\n"), null);
-    assert.equal(document.scope(document.content[0], "é🚀"), null);
-    // Even where the short source still holds the node asked about.
-    const blocks = Document.parse("first\n\nsecond\n");
-    assert.equal(blocks.scope(blocks.content[0], "first\n"), null);
-    assert.equal(blocks.nodeAt({ line: 1, column: 1 }, "first\n"), null);
-    assert.throws(() => blocks.dump(blocks.content[0], "first\n"), RangeError);
     // The default unit is UTF-16.
-    assert.equal(document.unit, "utf16");
+    assert.equal(Document.parse("é🚀x\n").unit, "utf16");
 });
 
 test("api: nodeAt finds the last node in walk order holding the byte at a position", () => {
@@ -1569,9 +1422,6 @@ test("api: nodeAt finds the last node in walk order holding the byte at a positi
     assert.equal(at(wide, source, 1, 5), null);
     assert.equal(at(wide, source, 1, 6), null);
     assert.equal(at(wide, source, 2, 1), null);
-    assert.equal(at(wide, source, 0, 1), null);
-    assert.equal(at(wide, source, 1, 0), null);
-    assert.equal(at(wide, source, 1.5, 1), null);
     const narrow = Document.parse(source, { unit: "utf8" });
     const bytes = narrow.content[0].content[0];
     assert.equal(at(narrow, source, 1, 1), bytes);

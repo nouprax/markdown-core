@@ -26,15 +26,10 @@ typedef struct {
     int consume_line;
 } markdown_core_directive_value;
 
-int markdown_core_directive_has_label(markdown_core_node *node);
-
-/* A directive's label, or NULL: the tree walks read it for every directive. */
+/* A directive's label, or NULL when it has none: the tree walks read it for
+ * every directive. */
 static inline markdown_core_node *markdown_core_directive_label(const markdown_core_node *node) {
-    const markdown_core_directive_value *directive =
-        node && (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE || node->kind == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)
-            ? (const markdown_core_directive_value *)node->opaque
-            : NULL;
-    return directive ? directive->label : NULL;
+    return ((const markdown_core_directive_value *)node->opaque)->label;
 }
 
 #ifdef __cplusplus

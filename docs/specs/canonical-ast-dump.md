@@ -21,8 +21,8 @@ document for focused subtree inspection:
   `MarkupDumper.dump(document, node, source)`.
 - ES: `MarkupDumper.dump(document, source)` and
   `MarkupDumper.dump(document, node, source)`.
-- C: `markdown_core_document_dump(document, node, source, length, ...)`, where
-  a null node dumps the whole document.
+- C: `markdown_core_document_dump(document, node, source, length, ...)`; pass
+  `markdown_core_document_root(document)` to dump the whole document.
 
 Dump text is never used to construct production AST values.
 

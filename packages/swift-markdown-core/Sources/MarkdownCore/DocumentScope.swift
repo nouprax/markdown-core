@@ -8,14 +8,11 @@ extension Document {
     /// - Parameters:
     ///   - node: a node of this document.
     ///   - source: the source the document was parsed from.
-    /// - Returns: the scope, or `nil` when the node is not in this document or
-    ///   the source is shorter than the document's.
-    public func scope(of node: some Markup, in source: String) -> Scope? {
-        let target = MarkupRecord.of(node)
+    public func scope(of node: some Markup, in source: String) -> Scope {
+        let range = place(of: MarkupRecord.of(node))
         var text = source
         return text.withUTF8 { bytes in
-            guard fits(bytes), let range = place(of: target) else { return nil }
-            return SourceLines(bytes).scope(from: range.start, to: range.end, in: bytes, unit: unit)
+            SourceLines(bytes).scope(from: range.start, to: range.end, in: bytes, unit: unit)
         }
     }
 
@@ -25,15 +22,12 @@ extension Document {
     /// - Parameters:
     ///   - position: a line and column of `source`.
     ///   - source: the source the document was parsed from.
-    /// - Returns: the node, or `nil` when no node holds the byte, the
-    ///   position names no byte of the source at a scalar boundary, or the
-    ///   source is shorter than the document's.
+    /// - Returns: the node, or `nil` when no node holds the byte or the
+    ///   position names no byte of the source at a scalar boundary.
     public func node(at position: Position, in source: String) -> (any Markup)? {
         var text = source
         return text.withUTF8 { bytes in
-            guard fits(bytes), let offset = SourceLines(bytes).offset(of: position, in: bytes, unit: unit) else {
-                return nil
-            }
+            guard let offset = SourceLines(bytes).offset(of: position, in: bytes, unit: unit) else { return nil }
             var walk = CanonicalWalk(root: record, anchor: 0)
             var found: MarkupRecord?
             while let item = walk.next() {
@@ -43,21 +37,20 @@ extension Document {
         }
     }
 
-    /// The canonical dump of the document, with scopes computed from `source`
-    /// in UTF-8 columns, or `nil` when the source is shorter than the
-    /// document's.
-    public func dump(in source: String) -> String? {
+    /// The canonical dump of the document, with scopes computed from `source`,
+    /// the source the document was parsed from, in UTF-8 columns.
+    public func dump(in source: String) -> String {
         dump(self, in: source)
     }
 
     /// The canonical dump of `node` and everything under it, with scopes
-    /// computed from `source` in UTF-8 columns, or `nil` when the node is not
-    /// in this document or the source is shorter than the document's.
-    public func dump(_ node: some Markup, in source: String) -> String? {
+    /// computed from `source`, the source the document was parsed from, in
+    /// UTF-8 columns.
+    public func dump(_ node: some Markup, in source: String) -> String {
         let target = MarkupRecord.of(node)
+        let range = place(of: target)
         var text = source
         return text.withUTF8 { bytes in
-            guard fits(bytes), let range = place(of: target) else { return nil }
             // A node's walk starts at its own extent, which is relative to the
             // anchor its relation had where it was written.
             return MarkupDumper.render(
@@ -69,19 +62,17 @@ extension Document {
         }
     }
 
-    /// Whether `bytes` hold the whole document, as the source it was parsed
-    /// from does.
-    private func fits(_ bytes: UnsafeBufferPointer<UInt8>) -> Bool {
-        Int(record.extent.lead) + Int(record.extent.span) <= bytes.count
-    }
-
     /// The absolute byte range of `target`, found by one canonical walk.
-    private func place(of target: MarkupRecord) -> (start: Int, end: Int)? {
+    private func place(of target: MarkupRecord) -> (start: Int, end: Int) {
         var walk = CanonicalWalk(root: record, anchor: 0)
+        var range = (start: 0, end: 0)
         while let item = walk.next() {
-            if item.record === target { return (item.start, item.end) }
+            if item.record === target {
+                range = (item.start, item.end)
+                break
+            }
         }
-        return nil
+        return range
     }
 }
 

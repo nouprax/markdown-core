@@ -43,8 +43,7 @@ final class DirectiveRecord: MarkupRecord, @unchecked Sendable {
 
 extension DirectiveRecord {
     convenience init(from node: OpaquePointer, label: DirectiveLabelRecord?) {
-        let values = DirectiveValues(from: node)
-        guard let name = values.name else { preconditionFailure("Inline directive requires a name") }
+        let name = markdown_core_node_directive_properties(node).value.required
         self.init(InheritedFields(from: node), name: name, label: label)
     }
 }

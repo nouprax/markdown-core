@@ -12,9 +12,6 @@ public object MarkupDumper {
      * The canonical debug dump of [node], a node of [document], and its owned
      * markup, with scopes computed from [source], the text the document was
      * parsed from, always in UTF-8 columns whatever the document's unit.
-     *
-     * @throws IllegalArgumentException when the node is not in the document or
-     * the source is shorter than the document.
      */
     public fun dump(
         document: Document,
@@ -22,8 +19,7 @@ public object MarkupDumper {
         source: String,
     ): String {
         val lines = SourceLines(source)
-        require(document.fits(lines)) { "the source is shorter than the document" }
-        val place = requireNotNull(document.place(node)) { "the node is not in the document" }
+        val place = document.place(node)
         // A node's walk starts at its own extent, which is relative to the
         // anchor its relation had where it was written.
         return Tree(lines).dump(node, place.start - node.extent.lead)

@@ -15,19 +15,19 @@ import Testing
         for (document, columns) in cases {
             let paragraph = try #require(document.content.first as? Paragraph)
             #expect(
-                try scope(of: paragraph.content[0], in: document, source: source)
+                scope(of: paragraph.content[0], in: document, source: source)
                     == Scope(start: Position(line: 1, column: columns[0]), end: Position(line: 1, column: columns[1]))
             )
             #expect(
-                try scope(of: paragraph.content[1], in: document, source: source)
+                scope(of: paragraph.content[1], in: document, source: source)
                     == Scope(start: Position(line: 1, column: columns[2]), end: Position(line: 1, column: columns[3]))
             )
             #expect(
-                try scope(of: paragraph.content[2], in: document, source: source)
+                scope(of: paragraph.content[2], in: document, source: source)
                     == Scope(start: Position(line: 2, column: 1), end: Position(line: 2, column: 1))
             )
             #expect(
-                try scope(of: document, in: document, source: source)
+                scope(of: document, in: document, source: source)
                     == Scope(start: Position(line: 1, column: 1), end: Position(line: 2, column: 1))
             )
         }
@@ -61,25 +61,10 @@ import Testing
         for unit in [TextUnit.utf8, .utf16] {
             let document = try Document.parse(source, unit: unit)
             #expect(
-                try scope(of: document, in: document, source: source)
+                scope(of: document, in: document, source: source)
                     == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 0))
             )
             #expect(document.node(at: Position(line: 1, column: 1), in: source) == nil)
         }
-    }
-
-    @Test("a node of another document or a source shorter than the document has no scope")
-    func foreign() throws {
-        let document = try Document.parse("one\n")
-        let other = try #require(Document.parse("two\n").content.first)
-        #expect(document.scope(of: other, in: "one\n") == nil)
-        #expect(document.scope(of: document, in: "on") == nil)
-        #expect(document.dump(in: "on") == nil)
-        #expect(document.dump(other, in: "one\n") == nil)
-        let blocks = try Document.parse("first\n\nsecond\n")
-        let first = try #require(blocks.content.first as? Paragraph)
-        #expect(blocks.scope(of: first, in: "first\n") == nil)
-        #expect(blocks.node(at: Position(line: 1, column: 1), in: "first\n") == nil)
-        #expect(blocks.dump(first, in: "first\n") == nil)
     }
 }

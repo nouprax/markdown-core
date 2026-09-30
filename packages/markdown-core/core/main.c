@@ -82,15 +82,15 @@ static const char *read_all(source_buffer *source, FILE *input) {
 }
 
 static bool print_document(const markdown_core_document *document, const uint8_t *source, size_t size) {
-    markdown_core_error *error = NULL;
-    uint8_t *dump = NULL;
-    size_t length = 0;
+    markdown_core_error *error;
+    uint8_t *dump;
+    size_t length;
     markdown_core_string message;
 
-    if (!markdown_core_document_dump(document, NULL, source, size, &dump, &length, &error)) {
+    if (!markdown_core_document_dump(document, markdown_core_document_root(document), source, size, &dump, &length,
+                                     &error)) {
         message = markdown_core_error_get_message(error);
-        fprintf(stderr, "AST dump failed: %.*s\n", (int)message.length,
-                message.data ? (const char *)message.data : "unknown error");
+        fprintf(stderr, "AST dump failed: %.*s\n", (int)message.length, (const char *)message.data);
         markdown_core_error_free(error);
         return false;
     }
@@ -182,17 +182,16 @@ int main(int argc, char *argv[]) {
     document = markdown_core_document_parse(source.data, source.size, &error);
     if (!document) {
         message = markdown_core_error_get_message(error);
-        fprintf(stderr, "Parse failed: %.*s\n", (int)message.length,
-                message.data ? (const char *)message.data : "unknown error");
+        fprintf(stderr, "Parse failed: %.*s\n", (int)message.length, (const char *)message.data);
         markdown_core_error_free(error);
         goto done;
     }
     if (print_document(document, source.data, source.size)) {
         result = 0;
     }
+    markdown_core_document_free(document);
 
 done:
-    markdown_core_document_free(document);
     free(source.data);
     return result;
 }

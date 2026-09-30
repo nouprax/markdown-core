@@ -48,7 +48,7 @@ extension LinkRecord {
     convenience init(
         from node: OpaquePointer,
         content: [MarkupRecord],
-        resources: inout [UnsafeRawPointer: SharedResource]
+        resources: inout [Int: SharedResource]
     ) {
         let resource = SharedResource.shared(by: node, in: &resources)
         self.init(

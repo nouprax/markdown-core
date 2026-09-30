@@ -4,14 +4,9 @@ import MarkdownCoreC
 ///
 /// These are failures of the parse operation itself, not syntax observations.
 public enum ParseErrorCode: Int32, Sendable {
-    /// The call itself was wrong — a null source, or a length that does not
-    /// describe it.
-    case invalidArgument = 1
     /// An allocation failed. The parse is abandoned rather than returning a
     /// document with something missing from it.
     case allocationFailed = 2
-    /// The parser reached a state it does not otherwise account for.
-    case `internal` = 3
 }
 
 /// A parse failure, and nothing else.
@@ -95,12 +90,7 @@ public struct Document: Markup {
         }
         defer { markdown_core_document_free(document) }
 
-        guard let root = markdown_core_document_root(document),
-            markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT
-        else {
-            throw ParseError(code: .internal, message: "parser returned an invalid document tree")
-        }
-        var builder = DocumentBuilder(document: document, root: root, unit: unit)
+        var builder = DocumentBuilder(document: document, root: markdown_core_document_root(document), unit: unit)
         return Document(record: builder.build())
     }
 }

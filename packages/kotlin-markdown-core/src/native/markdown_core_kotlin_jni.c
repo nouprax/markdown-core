@@ -25,10 +25,6 @@ static jbyteArray JNICALL native_parse(JNIEnv *environment, jobject receiver, jb
     jbyteArray result;
     (void)receiver;
 
-    if (source == NULL) {
-        throw_new(environment, "java/lang/NullPointerException", "source");
-        return NULL;
-    }
     source_length = (*environment)->GetArrayLength(environment, source);
     source_bytes = NULL;
     if (source_length != 0) {
@@ -46,19 +42,12 @@ static jbyteArray JNICALL native_parse(JNIEnv *environment, jobject receiver, jb
         return NULL;
     }
     length = message_length(message);
-    if (length > (uint32_t)INT32_MAX) {
-        markdown_core_wire_free(message);
-        throw_new(environment, "java/lang/OutOfMemoryError", "native AST exceeds the JVM array limit");
-        return NULL;
-    }
+    /* NULL leaves the JVM's OutOfMemoryError pending. */
     result = (*environment)->NewByteArray(environment, (jsize)length);
     if (result != NULL) {
         (*environment)->SetByteArrayRegion(environment, result, 0, (jsize)length, (const jbyte *)message);
     }
     markdown_core_wire_free(message);
-    if ((*environment)->ExceptionCheck(environment)) {
-        return NULL;
-    }
     return result;
 }
 
@@ -66,23 +55,12 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *virtual_machine, void *reserved) {
     static const JNINativeMethod methods[] = {
         {"parsePayload", "([B)[B", (void *)native_parse},
     };
-    JNIEnv *environment = NULL;
+    JNIEnv *environment;
     jclass parser_class;
     (void)reserved;
 
-    if ((*virtual_machine)->GetEnv(virtual_machine, (void **)&environment, JNI_VERSION_1_6) != JNI_OK) {
-        return JNI_ERR;
-    }
+    (*virtual_machine)->GetEnv(virtual_machine, (void **)&environment, JNI_VERSION_1_6);
     parser_class = (*environment)->FindClass(environment, "com/nouprax/markdown/core/JniParser");
-    if (parser_class == NULL) {
-        return JNI_ERR;
-    }
-    if ((*environment)
-            ->RegisterNatives(environment, parser_class, methods, (jint)(sizeof(methods) / sizeof(methods[0]))) !=
-        JNI_OK) {
-        (*environment)->DeleteLocalRef(environment, parser_class);
-        return JNI_ERR;
-    }
-    (*environment)->DeleteLocalRef(environment, parser_class);
+    (*environment)->RegisterNatives(environment, parser_class, methods, (jint)(sizeof(methods) / sizeof(methods[0])));
     return JNI_VERSION_1_6;
 }

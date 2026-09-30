@@ -22,7 +22,6 @@ final class DefinitionListRecord: MarkupRecord, @unchecked Sendable {
 
 extension DefinitionListRecord {
     convenience init(from node: OpaquePointer, definitions: [MarkupRecord]) {
-        precondition(!definitions.isEmpty, "Empty definition list")
         self.init(InheritedFields(from: node), children: definitions)
     }
 }

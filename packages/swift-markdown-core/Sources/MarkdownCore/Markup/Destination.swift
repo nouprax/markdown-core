@@ -29,19 +29,14 @@ struct SharedResource {
 
     static func shared(
         by node: OpaquePointer,
-        in resources: inout [UnsafeRawPointer: SharedResource]
+        in resources: inout [Int: SharedResource]
     ) -> SharedResource {
-        guard let identity = markdown_core_node_resource(node) else {
-            preconditionFailure("native link or image has no resource")
-        }
-        let key = UnsafeRawPointer(identity)
+        let key = Int(bitPattern: markdown_core_node_resource(node))
         if let known = resources[key] { return known }
-        var title = markdown_core_optional_string()
-        markdown_core_node_title(node, &title)
         let inherited = markdown_core_node_inherited_attributes(node)
         let resource = SharedResource(
             dest: Destination(from: node),
-            title: title.string,
+            title: markdown_core_node_title(node).string,
             anchor: markdown_core_attribute_value_anchor(inherited).string,
             attributes: Attributes(from: inherited)
         )
@@ -64,13 +59,11 @@ struct SharedResource {
 
 extension Destination {
     init(from node: OpaquePointer) {
-        var destination = markdown_core_destination()
-        markdown_core_node_destination(node, &destination)
-        switch destination.kind {
-        case MARKDOWN_CORE_DESTINATION_CROSS:
-            self = .cross(path: destination.path.required, anchor: destination.anchor.string)
-        default:
+        let destination = markdown_core_node_destination(node)
+        if destination.kind == MARKDOWN_CORE_DESTINATION_URL {
             self = .url(destination.url.required)
+        } else {
+            self = .cross(path: destination.path.required, anchor: destination.anchor.string)
         }
     }
 }

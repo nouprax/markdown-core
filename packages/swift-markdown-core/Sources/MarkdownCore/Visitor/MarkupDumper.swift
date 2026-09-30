@@ -390,8 +390,8 @@ private func dump(decimal value: Double) -> String {
     let parts = String(value).lowercased().split(separator: "e")
     let mantissa = parts[0].split(separator: ".")
     var digits = String(mantissa.joined())
-    let exponent = parts.count == 2 ? Int(parts[1]) : 0
-    guard let exponent else { preconditionFailure("invalid runtime double exponent") }
+    // swift-format-ignore: NeverForceUnwrap
+    let exponent = parts.count == 2 ? Int(parts[1])! : 0
     var point = mantissa[0].count + exponent
     while digits.first == "0" {
         digits.removeFirst()

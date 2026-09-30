@@ -1,6 +1,6 @@
 package com.nouprax.markdown.core
 
-public enum class ParseErrorCode { INVALID_ARGUMENT, ALLOCATION_FAILED, INTERNAL }
+public enum class ParseErrorCode { ALLOCATION_FAILED }
 
 /**
  * A parse failure, and NOTHING ELSE.

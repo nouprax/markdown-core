@@ -137,13 +137,12 @@ struct RecordingWalkingVisitor: MarkupVisitor {
 
 /// The canonical dump of `source`, as the conformance runner reads it.
 func dumped(_ source: String) throws -> String {
-    try #require(Document.parse(source).dump(in: source))
+    try Document.parse(source).dump(in: source)
 }
 
 /// The scope of `node` in `document`, parsed from `source`.
-func scope(of node: any Markup, in document: Document, source: String) throws -> Scope {
-    let scope = document.scope(of: node, in: source)
-    return try #require(scope)
+func scope(of node: any Markup, in document: Document, source: String) -> Scope {
+    document.scope(of: node, in: source)
 }
 
 /// A hand-built record's inherited fields: no source range and no attributes.

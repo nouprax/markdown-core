@@ -190,7 +190,7 @@ class AstTest {
         )
         assertTrue(
             documents.zip(sources).all { (document, source) ->
-                document.scope(document, source)?.start == Position(1, 1)
+                document.scope(document, source).start == Position(1, 1)
             },
         )
     }
@@ -217,8 +217,8 @@ class AstTest {
                         .cells
                         .single(),
                     source,
-                )?.start
-                ?.line,
+                ).start
+                .line,
         )
         val paragraph = document.content[3] as Paragraph
         val link = paragraph.content[0] as Link

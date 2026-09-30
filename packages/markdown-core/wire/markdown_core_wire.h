@@ -20,7 +20,7 @@ extern "C" {
  * markdown_core_wire_free. */
 uint8_t *markdown_core_wire_parse(const uint8_t *source, size_t length);
 
-/* Releases a message returned by markdown_core_wire_parse. NULL is allowed. */
+/* Releases a message returned by markdown_core_wire_parse. */
 void markdown_core_wire_free(uint8_t *message);
 
 #ifdef __cplusplus

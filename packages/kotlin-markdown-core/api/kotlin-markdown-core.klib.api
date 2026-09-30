@@ -55,8 +55,6 @@ final enum class com.nouprax.markdown.core/MarkupVisitPhase : kotlin/Enum<com.no
 
 final enum class com.nouprax.markdown.core/ParseErrorCode : kotlin/Enum<com.nouprax.markdown.core/ParseErrorCode> { // com.nouprax.markdown.core/ParseErrorCode|null[0]
     enum entry ALLOCATION_FAILED // com.nouprax.markdown.core/ParseErrorCode.ALLOCATION_FAILED|null[0]
-    enum entry INTERNAL // com.nouprax.markdown.core/ParseErrorCode.INTERNAL|null[0]
-    enum entry INVALID_ARGUMENT // com.nouprax.markdown.core/ParseErrorCode.INVALID_ARGUMENT|null[0]
 
     final val entries // com.nouprax.markdown.core/ParseErrorCode.entries|#static{}entries[0]
         final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/ParseErrorCode> // com.nouprax.markdown.core/ParseErrorCode.entries.<get-entries>|<get-entries>#static(){}[0]
@@ -633,7 +631,7 @@ final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Marku
     final fun dump(kotlin/String): kotlin/String // com.nouprax.markdown.core/Document.dump|dump(kotlin.String){}[0]
     final fun footnote(kotlin/String): com.nouprax.markdown.core/Footnote? // com.nouprax.markdown.core/Document.footnote|footnote(kotlin.String){}[0]
     final fun node(com.nouprax.markdown.core/Position, kotlin/String): com.nouprax.markdown.core/Markup? // com.nouprax.markdown.core/Document.node|node(com.nouprax.markdown.core.Position;kotlin.String){}[0]
-    final fun scope(com.nouprax.markdown.core/Markup, kotlin/String): com.nouprax.markdown.core/Scope? // com.nouprax.markdown.core/Document.scope|scope(com.nouprax.markdown.core.Markup;kotlin.String){}[0]
+    final fun scope(com.nouprax.markdown.core/Markup, kotlin/String): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Document.scope|scope(com.nouprax.markdown.core.Markup;kotlin.String){}[0]
     final fun specimen(kotlin/String): com.nouprax.markdown.core/Specimen? // com.nouprax.markdown.core/Document.specimen|specimen(kotlin.String){}[0]
 
     final object Companion { // com.nouprax.markdown.core/Document.Companion|null[0]

@@ -75,8 +75,7 @@ printf '%s\n' \
     'let source = "## archived consumer"' \
     'let document = try Document.parse(source)' \
     'guard (document.content.first as? Heading)?.level == 2 else { fatalError("parse failed") }' \
-    'guard let dump = document.dump(in: source) else { fatalError("dump failed") }' \
-    'print(dump)' >"$consumer/Sources/Consumer/main.swift"
+    'print(document.dump(in: source))' >"$consumer/Sources/Consumer/main.swift"
 
 CLANG_MODULE_CACHE_PATH="$temporary/consumer-module-cache" \
     swift run --disable-sandbox --package-path "$consumer" Consumer >/dev/null

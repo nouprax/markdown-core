@@ -25,7 +25,7 @@ private typealias Comment = Testing.Comment
             ":plain :empty[]{} :attrs{#kept .a class=\"b a\" k=1 k=2}\n\n| none |\n| ---- |\n| cell |\n",
         ]
         let documents = try sources.map { try Document.parse($0) }
-        let dumps = try zip(documents, sources).map { try #require($0.dump(in: $1)) }
+        let dumps = zip(documents, sources).map { $0.dump(in: $1) }
         let kinds = Set(dumps.flatMap { dumpKinds($0) })
         let expected: Set<String> = [
             "Document", "Callout", "Paragraph", "Heading", "ThematicBreak", "List",
@@ -40,7 +40,7 @@ private typealias Comment = Testing.Comment
         ]
         #expect(kinds == expected)
         for (document, source) in zip(documents, sources) {
-            #expect(document.scope(of: document, in: source)?.start == Position(line: 1, column: 1))
+            #expect(document.scope(of: document, in: source).start == Position(line: 1, column: 1))
         }
     }
 

@@ -36,20 +36,6 @@ test("the facade reports each public kind from exactly the native types that nam
     }
 });
 
-test("content kinds are exactly the kinds no field names, the Document aside", () => {
-    const model = buildModel(contract(), native());
-    const content = model.kinds.filter((kind) => kind.content).map((kind) => kind.name);
-    for (const owned of ["Document", "Metadata", "Citation", "ListItem", "TableRow"]) {
-        assert.ok(!content.includes(owned), owned);
-    }
-    for (const kind of ["Paragraph", "Text", "Cite", "Table", "DefinitionList", "Comment", "Footnote", "Specimen"]) {
-        assert.ok(content.includes(kind), kind);
-    }
-    const retyped = contract();
-    retyped.kinds.find((kind) => kind.name === "Paragraph").fields.push({ name: "x", type: "[Text]" });
-    assert.ok(!buildModel(retyped, native()).kinds.find((kind) => kind.name === "Text").content);
-});
-
 test("ordinals must run from 1 without a gap or a repeat", () => {
     for (const ordinal of [0, 2, 44]) {
         const broken = contract();

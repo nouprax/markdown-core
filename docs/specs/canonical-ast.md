@@ -74,11 +74,9 @@ Position(line: integer, column: integer)
 Scope(start: Position, end: Position)
 ```
 
-The C facade passes the supplied bytes to the native parser as UTF-8. Valid
-UTF-8 is a caller precondition; Markdown Core has no validation or repair mode
-for malformed input. What the C entry point produces for input that is not
-valid UTF-8 is unspecified; the parse still reads only the supplied bytes,
-terminates, and returns a document or reports an error. Swift, Kotlin, and
+The C facade passes the supplied bytes to the native parser as UTF-8. The
+bytes are read as they are: Markdown Core has no validation or repair mode, and
+a malformed sequence is parsed like any other input. Swift, Kotlin, and
 ECMAScript strings are encoded as UTF-8 before entering that same parse path.
 
 Every node stores its `extent` in bytes of the UTF-8 source. `lead` runs
@@ -341,9 +339,8 @@ interface, and an ECMAScript discriminated union on `kind`.
 
 `content` and other collection fields below own their values. `inline content`
 means only inline `Markup` kinds are valid; `block content` means only block
-kinds are valid. A category violation reported by the C facade fails
-`Document.parse` on that binding with the platform contract-violation error
-and returns no document.
+kinds are valid. The parser produces only valid categories, and bindings copy
+them without checking.
 
 | Kind | Fields in canonical order | Nullability and invariants |
 | --- | --- | --- |
@@ -442,10 +439,8 @@ the ordered rows and spans.
 fixed dialect. The document does not retain source text,
 a normalized source copy, a line index, tokens, trivia, or recovery records.
 
-Allocation failure aborts parsing and publishes no partial document. A binding
-that detects a category violation in the C facade fails with its platform
-contract-violation error. Valid UTF-8 is a precondition of the C API; the
-bindings provide valid UTF-8 input.
+Allocation failure aborts parsing and publishes no partial document; it is
+the only failure a parse reports.
 
 ## MarkupVisitor and walking
 

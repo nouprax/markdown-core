@@ -132,20 +132,14 @@ extension MetadataRecord {
 
 extension MetadataValue {
     init(from record: OpaquePointer) {
-        switch markdown_core_metadata_value_get_kind(record) {
-        case MARKDOWN_CORE_METADATA_SCALAR:
-            var scalar = markdown_core_metadata_scalar()
-            precondition(markdown_core_metadata_value_scalar(record, &scalar))
-            self = .scalar(MetadataScalar(from: scalar))
-        case MARKDOWN_CORE_METADATA_LIST:
+        if markdown_core_metadata_value_get_kind(record) == MARKDOWN_CORE_METADATA_SCALAR {
+            self = .scalar(MetadataScalar(from: markdown_core_metadata_value_scalar(record)))
+        } else {
             self = .list(
                 (0..<markdown_core_metadata_value_item_count(record)).map { index in
-                    var item = markdown_core_metadata_list_item()
-                    precondition(markdown_core_metadata_value_item_at(record, index, &item))
-                    return MetadataListItem(from: item)
+                    MetadataListItem(from: markdown_core_metadata_value_item_at(record, index))
                 }
             )
-        default: preconditionFailure("Unsupported metadata value")
         }
     }
 }
@@ -156,18 +150,19 @@ extension MetadataScalar {
         case MARKDOWN_CORE_METADATA_NULL: self = .null
         case MARKDOWN_CORE_METADATA_BOOL: self = .bool(scalar.value.boolean)
         case MARKDOWN_CORE_METADATA_NUMBER: self = .number(scalar.value.string.required)
-        case MARKDOWN_CORE_METADATA_TEXT: self = .text(scalar.value.string.required)
-        default: preconditionFailure("Unsupported metadata scalar")
+        // A C enum switch is never exhaustive in Swift; the one kind left is
+        // MARKDOWN_CORE_METADATA_TEXT.
+        default: self = .text(scalar.value.string.required)
         }
     }
 }
 
 extension MetadataListItem {
     init(from item: markdown_core_metadata_list_item) {
-        switch item.kind {
-        case MARKDOWN_CORE_METADATA_ITEM_NUMBER: self = .number(item.value.required)
-        case MARKDOWN_CORE_METADATA_ITEM_TEXT: self = .text(item.value.required)
-        default: preconditionFailure("Unsupported metadata list item")
+        if item.kind == MARKDOWN_CORE_METADATA_ITEM_NUMBER {
+            self = .number(item.value.required)
+        } else {
+            self = .text(item.value.required)
         }
     }
 }

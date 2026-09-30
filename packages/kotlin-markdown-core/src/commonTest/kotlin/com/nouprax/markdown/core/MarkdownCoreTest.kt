@@ -125,14 +125,12 @@ class ApiTest {
         val images = assertIs<Paragraph>(document.content.single()).content.filterIsInstance<Embedded>()
         assertEquals(listOf(Dimensions(2147483647, 2), Dimensions(3), null), images.map { it.dimensions })
         assertEquals(1, setOf(Dimensions(640, 480), Dimensions(640, 480)).size)
-        assertFailsWith<IllegalArgumentException> { Dimensions(0) }
-        assertFailsWith<IllegalArgumentException> { Dimensions(1, 0) }
         assertSame(images[0].dest, images[1].dest)
         assertSame(images[1].dest, images[2].dest)
         assertEquals("title", images[0].title)
         val alt = assertIs<Emphasis>(images[0].content.single())
         assertEquals("alt", assertIs<Text>(alt.content.single()).literal)
-        assertEquals(7, document.scope(alt, source)?.end?.column)
+        assertEquals(7, document.scope(alt, source).end.column)
         assertTrue(images[1].content.isEmpty())
         assertEquals("bad|01", assertIs<Text>(images[2].content.single()).literal)
         val visitor = RecordingWalkingVisitor()
@@ -166,8 +164,8 @@ class ApiTest {
             ),
             listOf(metadata.name, metadata.`abstract`, metadata.comment),
         )
-        assertEquals(14, document.scope(metadata, source)?.end?.line)
-        assertEquals(15, document.scope(document.content[0], source)?.start?.line)
+        assertEquals(14, document.scope(metadata, source).end.line)
+        assertEquals(15, document.scope(document.content[0], source).start.line)
         val empty = assertNotNull(Document.parse("---\nunknown: 1\nfree text\n---").metadata)
         assertTrue(
             listOf(
@@ -752,15 +750,6 @@ class OwnershipTest {
         assertTrue(documents.all { it.content.size == 2 })
         assertEquals(1, assertIs<Heading>(documents.last().content.first()).level)
     }
-
-    @Test
-    fun readOnlyCollectionsDoNotLeakMutableImplementations() {
-        val content = Document.parse("one *two* three\n").content
-        assertFailsWith<ClassCastException> {
-            @Suppress("UNCHECKED_CAST")
-            (content as MutableList<Markup>).clear()
-        }
-    }
 }
 
 class RobustnessTest {
@@ -858,7 +847,7 @@ class RobustnessTest {
         val link = assertIs<Link>(paragraph.content[2])
         val image = assertIs<Embedded>(paragraph.content[4])
         assertEquals(listOf("code"), code.attributes.classes)
-        assertEquals(10, document.scope(code, source)?.end?.column)
+        assertEquals(10, document.scope(code, source).end.column)
         assertEquals("own", link.anchor)
         assertEquals(listOf("same", "same"), link.attributes.classes)
         assertEquals(listOf("1", "1", "2"), link.attributes.records.map { it.value })
@@ -870,8 +859,8 @@ class RobustnessTest {
                 .takeLast(2)
                 .map { it.value },
         )
-        assertEquals(3, document.scope(link, source)?.end?.line)
-        assertEquals(3, document.scope(image, source)?.end?.line)
+        assertEquals(3, document.scope(link, source).end.line)
+        assertEquals(3, document.scope(image, source).end.line)
     }
 }
 

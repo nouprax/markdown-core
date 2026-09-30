@@ -27,7 +27,7 @@ import type {
     Position,
     TextUnit
 } from "../markup/values.js";
-import { contentKinds, kinds, type NativeKind } from "./kinds.js";
+import { kinds, type NativeKind } from "./kinds.js";
 
 /*
  * The MCB3 reader (docs/architecture/wire-format.md). Records arrive in
@@ -37,26 +37,25 @@ import { contentKinds, kinds, type NativeKind } from "./kinds.js";
  * of the message after decode returns.
  */
 
-const magic = [0x4d, 0x43, 0x42, 0x33] as const;
-/** The magic, the u32 message length and the u8 status. */
-export const headerSize = 9;
-/** The byte offset of the u32 message length. */
+/** The byte offset of the u32 message length, after the magic. */
 export const lengthOffset = 4;
+/** The byte offset of the u8 status, after the message length. */
+const statusOffset = 8;
 
 const flows: readonly Flow[] = ["none", "left", "center", "right"];
 const placements: readonly Placement[] = ["embedded", "standalone"];
 const bibModes: readonly BibMode[] = ["normal", "authorInText", "suppressAuthor"];
 const flavors: readonly ListFlavor[] = ["bullet", "ordered"];
-const errorCodes: readonly ParseErrorCode[] = ["internal", "invalidArgument", "allocationFailed", "internal"];
+/** `markdown_core_error_code` by value. */
+const errorCodes: { readonly [code: number]: ParseErrorCode } = {
+    2: "allocationFailed"
+};
 
 /** The document's members that are not contract fields: the decoder adds them
  * once the definition tables are read. */
 type DocumentMembers = "unit" | "footnotes" | "specimens" | "footnote" | "specimen" | "scope" | "nodeAt" | "dump";
 type MarkupValue = Markup extends infer Node ? (Node extends Document ? Omit<Document, DocumentMembers> : Node) : never;
 type Base<Kind extends Markup["kind"]> = MarkupBase<Kind>;
-
-/** Ids are exact JavaScript numbers: every one is below 2^53. */
-const idLimit = 2 ** 53;
 
 /** A reference definition's shared values, decoded once however often it is used. */
 interface Resource {
@@ -68,7 +67,7 @@ interface Resource {
 
 export class Decoder {
     private readonly view: DataView;
-    private readonly utf8 = new TextDecoder("utf-8", { fatal: false });
+    private readonly utf8 = new TextDecoder("utf-8", { ignoreBOM: true });
     private offset = 0;
     private readonly stack: Markup[] = [];
     private readonly resources: Resource[] = [];
@@ -86,50 +85,31 @@ export class Decoder {
     decode(): Document {
         this.header();
         // A Document is no field's node, so its record is the last one.
-        let root: Markup | undefined;
-        while (root?.kind !== "document" && this.offset < this.bytes.byteLength) {
-            root = this.record();
+        let root = this.record();
+        while (root.kind !== "document") {
             this.stack.push(root);
+            root = this.record();
         }
-        this.stack.pop();
-        if (root?.kind !== "document" || this.stack.length !== 0) {
-            throw new Error("native result is not one document tree");
-        }
-        const footnotes = this.table("footnote") as Footnote[];
-        const specimens = this.table("specimen") as Specimen[];
-        if (this.offset !== this.bytes.byteLength)
-            throw new Error("native result has bytes after its definition tables");
+        const footnotes = this.table() as Footnote[];
+        const specimens = this.table() as Specimen[];
         return this.document(root, footnotes, specimens);
     }
 
+    /** Status 1 is a parse failure, and 0 a document. */
     private header(): void {
-        if (this.bytes.byteLength < headerSize) throw new Error("truncated native result header");
-        for (const [index, expected] of magic.entries()) {
-            const actual = this.u8();
-            if (actual !== expected) {
-                throw new Error(`invalid native result at byte ${index}: expected ${expected}, got ${actual}`);
-            }
-        }
-        if (this.u32() !== this.bytes.byteLength) throw new Error("native result length does not match its header");
-        const status = this.u8();
-        if (status === 1) throw this.error();
-        if (status !== 0) throw new Error(`unsupported native result status ${status}`);
+        this.offset = statusOffset;
+        if (this.u8() === 1) throw this.error();
     }
 
     private error(): ParseError {
-        const code = errorCodes[this.u32()] ?? "internal";
-        const message = this.string();
-        if (this.offset !== this.bytes.byteLength) throw new Error("invalid native result error payload");
-        return new ParseError(code, message);
+        const code = errorCodes[this.u32()]!;
+        return new ParseError(code, this.string());
     }
 
     // ---- Records -----------------------------------------------------------
 
     private record(): Markup {
-        const ordinal = this.u8();
-        const kind = kinds[ordinal];
-        if (kind === undefined || kind === "none")
-            throw new Error(`native result contains unknown node kind ${ordinal}`);
+        const kind = kinds[this.u8()] as NativeKind;
         const id = this.id();
         const extent = this.extent();
         const anchor = this.optional(() => this.string());
@@ -148,8 +128,8 @@ export class Decoder {
                 const nodes = this.nodes(content + metadata);
                 return {
                     ...(base as Base<"document">),
-                    content: nodes.content(content),
-                    metadata: nodes.optional("metadata", metadata) as Metadata | null
+                    content: nodes.take(content),
+                    metadata: nodes.optional(metadata) as Metadata | null
                 };
             }
             case "callout": {
@@ -162,8 +142,8 @@ export class Decoder {
                     ...(base as Base<"callout">),
                     variant,
                     collapsed,
-                    title: title === null ? null : nodes.content(title),
-                    content: nodes.content(content)
+                    title: title === null ? null : nodes.take(title),
+                    content: nodes.take(content)
                 };
             }
             case "paragraph":
@@ -178,12 +158,12 @@ export class Decoder {
             case "directiveLabel":
             case "tableCaption": {
                 const content = this.count();
-                return { ...base, content: this.nodes(content).content(content) } as MarkupValue;
+                return { ...base, content: this.nodes(content).take(content) } as MarkupValue;
             }
             case "heading": {
                 const level = this.int();
                 const content = this.count();
-                return { ...(base as Base<"heading">), level, content: this.nodes(content).content(content) };
+                return { ...(base as Base<"heading">), level, content: this.nodes(content).take(content) };
             }
             case "thematicBreak":
             case "softBreak":
@@ -203,7 +183,7 @@ export class Decoder {
                     variant,
                     delimiter,
                     tight,
-                    items: this.nodes(items).typed("listItem", items) as ListItem[]
+                    items: this.nodes(items).take(items) as ListItem[]
                 };
             }
             case "listItem": {
@@ -218,7 +198,7 @@ export class Decoder {
                     get completed() {
                         return marker !== null && marker !== " ";
                     },
-                    content: this.nodes(content).content(content)
+                    content: this.nodes(content).take(content)
                 };
             }
             case "codeBlock":
@@ -248,18 +228,18 @@ export class Decoder {
                 const nodes = this.nodes(caption + head + content + foot);
                 return {
                     ...(base as Base<"table">),
-                    caption: nodes.optional("tableCaption", caption) as TableCaption | null,
+                    caption: nodes.optional(caption) as TableCaption | null,
                     columns,
-                    head: nodes.typed("tableRow", head) as TableRow[],
-                    content: nodes.typed("tableRow", content) as TableRow[],
-                    foot: nodes.typed("tableRow", foot) as TableRow[]
+                    head: nodes.take(head) as TableRow[],
+                    content: nodes.take(content) as TableRow[],
+                    foot: nodes.take(foot) as TableRow[]
                 };
             }
             case "tableRow": {
                 const cells = this.count();
                 return {
                     ...(base as Base<"tableRow">),
-                    cells: this.nodes(cells).typed("tableCell", cells) as TableCell[]
+                    cells: this.nodes(cells).take(cells) as TableCell[]
                 };
             }
             case "tableCell": {
@@ -270,7 +250,7 @@ export class Decoder {
                     ...(base as Base<"tableCell">),
                     rowspan,
                     colspan,
-                    content: this.nodes(content).content(content)
+                    content: this.nodes(content).take(content)
                 };
             }
             case "directiveBlock": {
@@ -281,8 +261,8 @@ export class Decoder {
                 return {
                     ...(base as Base<"directiveBlock">),
                     name,
-                    label: nodes.optional("directiveLabel", label) as DirectiveLabel | null,
-                    content: nodes.content(content)
+                    label: nodes.optional(label) as DirectiveLabel | null,
+                    content: nodes.take(content)
                 };
             }
             case "directive": {
@@ -291,7 +271,7 @@ export class Decoder {
                 return {
                     ...(base as Base<"directive">),
                     name,
-                    label: this.nodes(label).optional("directiveLabel", label) as DirectiveLabel | null
+                    label: this.nodes(label).optional(label) as DirectiveLabel | null
                 };
             }
             case "crossLink":
@@ -314,7 +294,7 @@ export class Decoder {
                     ...this.inheriting(base as Base<"link">, resource),
                     dest: resource.dest,
                     title: resource.title,
-                    content: this.nodes(content).content(content)
+                    content: this.nodes(content).take(content)
                 };
             }
             case "embedded": {
@@ -326,21 +306,21 @@ export class Decoder {
                     dest: resource.dest,
                     title: resource.title,
                     dimensions,
-                    content: this.nodes(content).content(content)
+                    content: this.nodes(content).take(content)
                 };
             }
             case "cite": {
                 const citations = this.count();
                 return {
                     ...(base as Base<"cite">),
-                    citations: this.nodes(citations).typed("citation", citations) as Citation[]
+                    citations: this.nodes(citations).take(citations) as Citation[]
                 };
             }
             case "definitionList": {
                 const definitions = this.count();
                 return {
                     ...(base as Base<"definitionList">),
-                    definitions: this.nodes(definitions).typed("definition", definitions) as Definition[]
+                    definitions: this.nodes(definitions).take(definitions) as Definition[]
                 };
             }
             case "definition": {
@@ -350,8 +330,8 @@ export class Decoder {
                 const nodes = this.nodes(bodies.reduce((sum, count) => sum + count, term));
                 return {
                     ...(base as Base<"definition">),
-                    term: nodes.content(term),
-                    content: bodies.map((count) => nodes.content(count)),
+                    term: nodes.take(term),
+                    content: bodies.map((count) => nodes.take(count)),
                     compact
                 };
             }
@@ -363,25 +343,25 @@ export class Decoder {
                 const nodes = this.nodes((written === null ? 1 : 0) + prefix + suffix);
                 const referent: CitationReferent = written ?? {
                     kind: "footnote",
-                    target: { kind: "note", footnote: nodes.optional("footnote", 1) as Footnote }
+                    target: { kind: "note", footnote: nodes.optional(1) as Footnote }
                 };
                 return {
                     ...(base as Base<"citation">),
                     referent,
-                    prefix: nodes.content(prefix),
-                    suffix: nodes.content(suffix)
+                    prefix: nodes.take(prefix),
+                    suffix: nodes.take(suffix)
                 };
             }
             case "footnote": {
                 const label = this.optional(() => this.string());
                 const content = this.count();
-                return { ...(base as Base<"footnote">), label, content: this.nodes(content).content(content) };
+                return { ...(base as Base<"footnote">), label, content: this.nodes(content).take(content) };
             }
             case "specimen": {
                 const label = this.optional(() => this.string());
                 const start = this.optional(() => this.int());
                 const content = this.count();
-                return { ...(base as Base<"specimen">), label, start, content: this.nodes(content).content(content) };
+                return { ...(base as Base<"specimen">), label, start, content: this.nodes(content).take(content) };
             }
             case "metadata": {
                 const value = (): MetadataValue | null => this.optional(() => this.metadataValue());
@@ -404,14 +384,9 @@ export class Decoder {
 
     // ---- Definition tables -------------------------------------------------
 
-    /** A table's definitions in source order; each id names a node of `kind`. */
-    private table(kind: "footnote" | "specimen"): (Footnote | Specimen)[] {
-        return this.list(() => {
-            const id = this.id();
-            const node = this.definitions.get(id);
-            if (node?.kind !== kind) throw new Error(`native result ${kind} table names no ${kind} node ${id}`);
-            return node;
-        });
+    /** A table's definitions in source order, by id. */
+    private table(): (Footnote | Specimen)[] {
+        return this.list(() => this.definitions.get(this.id())!);
     }
 
     /**
@@ -445,7 +420,6 @@ export class Decoder {
 
     /** The `count` nodes on top of the stack, handed out in field order. */
     private nodes(count: number): Nodes {
-        if (count > this.stack.length) throw new Error("native result record names more nodes than precede it");
         return new Nodes(this.stack.splice(this.stack.length - count, count));
     }
 
@@ -454,7 +428,6 @@ export class Decoder {
     private resource(): Resource {
         const ordinal = this.u32();
         if (ordinal < this.resources.length) return this.resources[ordinal] as Resource;
-        if (ordinal !== this.resources.length) throw new Error(`native result names unknown resource ${ordinal}`);
         const resource: Resource = {
             dest: this.destination(),
             title: this.optional(() => this.string()),
@@ -472,10 +445,10 @@ export class Decoder {
         const attributes =
             primary.classes.length === 0 && primary.records.length === 0
                 ? inherited
-                : Object.freeze({
-                      classes: Object.freeze([...inherited.classes, ...primary.classes]),
-                      records: Object.freeze([...inherited.records, ...primary.records])
-                  });
+                : {
+                      classes: [...inherited.classes, ...primary.classes],
+                      records: [...inherited.records, ...primary.records]
+                  };
         return { ...base, anchor: base.anchor ?? resource.anchor, attributes };
     }
 
@@ -487,13 +460,13 @@ export class Decoder {
 
     private attributes(): Attributes {
         const classes = this.list(() => this.string());
-        const records = this.list((): AttributeRecord => Object.freeze({ name: this.string(), value: this.string() }));
+        const records = this.list((): AttributeRecord => ({ name: this.string(), value: this.string() }));
         if (classes.length === 0 && records.length === 0) return Attributes.empty;
-        return Object.freeze({ classes: Object.freeze(classes), records: Object.freeze(records) });
+        return { classes, records };
     }
 
     private destination(): Destination {
-        switch (this.branch(2)) {
+        switch (this.branch()) {
             case 0:
                 return { kind: "url", value: this.string() };
             default:
@@ -504,11 +477,11 @@ export class Decoder {
     /** The referent as written, or null for an inline note: its `Footnote`
      * is a node of the record, which the record takes off the stack. */
     private referent(): CitationReferent | null {
-        switch (this.branch(3)) {
+        switch (this.branch()) {
             case 0:
                 return { kind: "bib", key: this.string(), mode: this.index(bibModes) };
             case 1:
-                return this.branch(2) === 0
+                return this.branch() === 0
                     ? { kind: "footnote", target: { kind: "label", value: this.string() } }
                     : null;
             default:
@@ -517,7 +490,7 @@ export class Decoder {
     }
 
     private variant(): OrderedListVariant {
-        switch (this.branch(4)) {
+        switch (this.branch()) {
             case 0:
                 return "decimal";
             case 1:
@@ -530,7 +503,7 @@ export class Decoder {
     }
 
     private delimiter(): OrderedListDelimiter {
-        switch (this.branch(3)) {
+        switch (this.branch()) {
             case 0:
                 return "period";
             case 1:
@@ -549,12 +522,12 @@ export class Decoder {
     }
 
     private metadataValue(): MetadataValue {
-        if (this.branch(2) === 0) return { kind: "scalar", value: this.metadataScalar() };
+        if (this.branch() === 0) return { kind: "scalar", value: this.metadataScalar() };
         return { kind: "list", items: this.list(() => this.metadataListItem()) };
     }
 
     private metadataScalar(): MetadataScalar {
-        switch (this.branch(4)) {
+        switch (this.branch()) {
             case 0:
                 return { kind: "null" };
             case 1:
@@ -567,7 +540,7 @@ export class Decoder {
     }
 
     private metadataListItem(): MetadataListItem {
-        return this.branch(2) === 0 ? { kind: "number", value: this.string() } : { kind: "text", value: this.string() };
+        return this.branch() === 0 ? { kind: "number", value: this.string() } : { kind: "text", value: this.string() };
     }
 
     // ---- Primitives --------------------------------------------------------
@@ -582,34 +555,23 @@ export class Decoder {
     }
 
     private list<T>(read: () => T): T[] {
-        const count = this.count();
-        // Every item occupies at least one byte, so a count the message cannot
-        // hold is rejected before anything is allocated for it.
-        if (count > this.bytes.byteLength - this.offset) throw new Error("native result count exceeds the message");
-        return Array.from({ length: count }, read);
+        return Array.from({ length: this.count() }, read);
     }
 
     private count(): number {
         return this.u32();
     }
 
-    private branch(count: number): number {
-        const branch = this.u8();
-        if (branch >= count) throw new Error(`native result contains invalid branch ${branch}`);
-        return branch;
+    private branch(): number {
+        return this.u8();
     }
 
     private index<T>(values: readonly T[]): T {
-        const index = this.u8();
-        const value = values[index];
-        if (value === undefined) throw new Error(`native result contains invalid enum index ${index}`);
-        return value;
+        return values[this.u8()]!;
     }
 
     private bool(): boolean {
-        const value = this.u8();
-        if (value > 1) throw new Error(`native result contains invalid boolean ${value}`);
-        return value === 1;
+        return this.u8() === 1;
     }
 
     private string(): string {
@@ -618,20 +580,16 @@ export class Decoder {
         return this.utf8.decode(this.bytes.subarray(start, start + length));
     }
 
-    /** Int, which a JavaScript number carries only while it is a safe integer. */
+    /** An i64 Int as a JavaScript number. */
     private int(): number {
         const start = this.take(8);
-        const value = this.view.getInt32(start + 4, true) * 0x1_0000_0000 + this.view.getUint32(start, true);
-        if (!Number.isSafeInteger(value)) throw new Error("native integer exceeds JavaScript integer precision");
-        return value;
+        return this.view.getInt32(start + 4, true) * 0x1_0000_0000 + this.view.getUint32(start, true);
     }
 
-    /** A u64 node id, which a JavaScript number carries exactly below 2^53. */
+    /** A u64 node id as a JavaScript number. */
     private id(): number {
         const start = this.take(8);
-        const value = this.view.getUint32(start + 4, true) * 0x1_0000_0000 + this.view.getUint32(start, true);
-        if (value >= idLimit) throw new Error("native node id is not below 2^53");
-        return value;
+        return this.view.getUint32(start + 4, true) * 0x1_0000_0000 + this.view.getUint32(start, true);
     }
 
     private double(): number {
@@ -653,37 +611,24 @@ export class Decoder {
     /** Advances past `length` bytes and returns where they start. */
     private take(length: number): number {
         const start = this.offset;
-        if (length > this.bytes.byteLength - start) throw new Error("truncated native result");
         this.offset = start + length;
         return start;
     }
 }
 
-/** One record's nodes, handed to its fields in order; each field checks the kinds it accepts. */
+/** One record's nodes, handed to its fields in order. */
 class Nodes {
     private next = 0;
 
     constructor(private readonly nodes: readonly Markup[]) {}
 
-    content(count: number): readonly Markup[] {
-        return this.take(count, (node) => contentKinds.has(node.kind), "content");
-    }
-
-    typed(kind: NativeKind, count: number): readonly Markup[] {
-        return this.take(count, (node) => node.kind === kind, kind);
-    }
-
-    optional(kind: NativeKind, count: number): Markup | null {
-        return count === 0 ? null : (this.typed(kind, 1)[0] as Markup);
-    }
-
-    private take(count: number, accepts: (node: Markup) => boolean, field: string): readonly Markup[] {
-        const taken = this.nodes.slice(this.next, this.next + count);
+    take(count: number): readonly Markup[] {
         this.next += count;
-        for (const node of taken) {
-            if (!accepts(node)) throw new Error(`native result places a ${node.kind} node in a ${field} field`);
-        }
-        return taken;
+        return this.nodes.slice(this.next - count, this.next);
+    }
+
+    optional(count: number): Markup | null {
+        return count === 0 ? null : this.nodes[this.next++]!;
     }
 }
 

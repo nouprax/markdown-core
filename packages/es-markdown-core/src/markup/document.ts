@@ -29,15 +29,14 @@ export interface Document extends MarkupBase<"document"> {
     /**
      * The scope of `node`, computed from the extents and `source`, the text
      * the document was parsed from, with columns in the document's unit.
-     * Null when `node` is not in this document or `source` is shorter than
-     * the document's.
+     * `node` is a node of this document.
      */
-    readonly scope: (node: Markup, source: string) => Scope | null;
+    readonly scope: (node: Markup, source: string) => Scope;
     /**
      * The last node in canonical walk order whose source range holds the byte
-     * at `position`, or null when no node holds it, the position names no
-     * byte of `source` or does not fall on a scalar boundary, or `source` is
-     * shorter than the document's.
+     * at `position` of `source`, the text the document was parsed from, or
+     * null when no node holds it or the position names no byte of `source` or
+     * does not fall on a scalar boundary.
      */
     readonly nodeAt: (position: Position, source: string) => Markup | null;
     /**

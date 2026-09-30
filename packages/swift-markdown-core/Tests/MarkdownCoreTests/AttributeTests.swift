@@ -16,8 +16,8 @@ extension APISuite {
                 .scalar(.number("9007199254740993")), .scalar(.text("first\n\nsecond\n")), .scalar(.text("# prose\n")),
             ]
         )
-        #expect(try scope(of: metadata, in: document, source: source).end.line == 14)
-        #expect(try scope(of: document.content[0], in: document, source: source).start.line == 15)
+        #expect(scope(of: metadata, in: document, source: source).end.line == 14)
+        #expect(scope(of: document.content[0], in: document, source: source).start.line == 15)
         let empty = try #require(Document.parse("---\nunknown: 1\nfree text\n---").metadata)
         let bare = InheritedFields(id: empty.id, extent: empty.extent, anchor: nil, attributes: .empty)
         #expect(empty == Metadata(record: MetadataRecord(bare)))
@@ -33,7 +33,7 @@ extension APISuite {
         #expect(directive.anchor == "id")
         #expect(directive.attributes.classes == ["a", "a", "b}c"])
         #expect(directive.attributes.records == [Record(name: "k", value: "1"), Record(name: "k", value: "2")])
-        let dump = try #require(parsed.dump(directive, in: source))
+        let dump = parsed.dump(directive, in: source)
         #expect(dump.contains("attributes={.a .a .\"b}c\" k=\"1\" k=\"2\"}"))
         #expect(parsed.anchor == nil && parsed.attributes == .empty && parsed.metadata == nil)
     }
@@ -70,7 +70,7 @@ extension APISuite {
             ]
                 == values
         )
-        let dump = try #require(document.dump(in: ""))
+        let dump = document.dump(in: "")
         #expect(dump.contains("subtitle=scalar(number(\"9007199254740993\"))"))
         #expect(dump.contains("date=list([])"))
         var visitor = RecordingWalkingVisitor()
@@ -92,7 +92,7 @@ extension APISuite {
         let link = try #require(paragraph.content[2] as? Link)
         let image = try #require(paragraph.content[4] as? Embedded)
         #expect(code.literal == "x" && code.attributes.classes == ["code"])
-        #expect(try scope(of: code, in: document, source: source).end.column == 10)
+        #expect(scope(of: code, in: document, source: source).end.column == 10)
         #expect(link.anchor == "own")
         #expect(link.attributes.classes == ["same", "same"])
         #expect(link.attributes.records.map(\.value) == ["1", "1", "2"])
@@ -100,8 +100,8 @@ extension APISuite {
         #expect(image.dimensions == Dimensions(width: 20, height: 30))
         #expect(image.attributes.records.suffix(2).map(\.value) == ["50%", "2in"])
         // A reference occurrence keeps its own place, not its definition's.
-        #expect(try scope(of: link, in: document, source: source).end.line == 3)
-        #expect(try scope(of: image, in: document, source: source).end.line == 3)
+        #expect(scope(of: link, in: document, source: source).end.line == 3)
+        #expect(scope(of: image, in: document, source: source).end.line == 3)
     }
 }
 

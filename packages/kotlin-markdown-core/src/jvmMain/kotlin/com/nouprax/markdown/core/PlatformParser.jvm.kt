@@ -24,14 +24,8 @@ private object DesktopNativeLoader {
     fun ensureLoaded() = loaded
 
     private fun load() {
-        val os = System.getProperty("os.name").lowercase()
-        val architecture = System.getProperty("os.arch").lowercase()
-        val platform =
-            when {
-                os.contains("mac") && architecture in setOf("aarch64", "arm64") -> "macos-arm64"
-                os.contains("linux") && architecture in setOf("x86_64", "amd64") -> "linux-x64"
-                else -> throw UnsupportedOperationException("unsupported native platform: $os/$architecture")
-            }
+        // The package bundles one library per operating system it supports.
+        val platform = if (System.getProperty("os.name").lowercase().contains("mac")) "macos-arm64" else "linux-x64"
         val filename = System.mapLibraryName("markdown_core_kotlin")
         val resource = "/com/nouprax/markdown/core/native/$platform/$filename"
         val directory = Files.createTempDirectory("markdown-core-")
@@ -40,9 +34,7 @@ private object DesktopNativeLoader {
         // deleteOnExit removes entries in reverse registration order, so the
         // directory must be registered before its child.
         directory.toFile().deleteOnExit()
-        requireNotNull(DesktopNativeLoader::class.java.getResourceAsStream(resource)) {
-            "native library is missing for $platform"
-        }.use { Files.copy(it, library) }
+        DesktopNativeLoader::class.java.getResourceAsStream(resource).use { Files.copy(it, library) }
         library.toFile().deleteOnExit()
         loadBundledLibrary(library)
     }

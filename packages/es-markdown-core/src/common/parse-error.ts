@@ -1,4 +1,6 @@
-export type ParseErrorCode = "invalidArgument" | "allocationFailed" | "internal";
+/** Why a parse produced no document: `markdown_core_error_code`, whose one
+ * reason is an allocation failure. */
+export type ParseErrorCode = "allocationFailed";
 
 /**
  * A parse failure, and nothing else.

@@ -42,14 +42,14 @@ internal class SourceLines(
     }
 
     /**
-     * The offset of the byte at [position], or null when the position names
-     * no byte of its line or falls inside a scalar.
+     * The offset of the scalar that starts at [position], or null when the
+     * source has no such line or the line no scalar there.
      */
     fun offset(
         position: Position,
         unit: TextUnit,
     ): Int? {
-        if (position.line < 1 || position.column < 1 || position.line > starts.size) return null
+        if (position.line > starts.size) return null
         val line = position.line - 1
         var offset = starts[line]
         val end = if (line + 1 < starts.size) starts[line + 1] else bytes.size
@@ -62,7 +62,7 @@ internal class SourceLines(
             column += columns(offset, next, unit)
             offset = next
         }
-        return if (column == position.column.toLong() && offset < end) offset else null
+        return if (offset < end) offset else null
     }
 
     /** The index of the line holding [offset]: the last line starting at or before it. */

@@ -16,17 +16,14 @@
 const char *bench_engine_name(void) { return "markdown-core"; }
 
 int bench_parse_document(const char *source, size_t length, bench_receipt *receipt) {
-    markdown_core_error *error = NULL;
+    markdown_core_error *error;
     markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, length, &error);
-    const markdown_core_node *root;
 
     if (!document) {
-        markdown_core_error_free(error);
         return 1;
     }
-    root = markdown_core_document_root(document);
     receipt->bytes = length;
-    receipt->root_children = root ? markdown_core_node_child_count(root) : 0;
+    receipt->root_children = markdown_core_node_child_count(markdown_core_document_root(document));
     markdown_core_document_free(document);
     return 0;
 }

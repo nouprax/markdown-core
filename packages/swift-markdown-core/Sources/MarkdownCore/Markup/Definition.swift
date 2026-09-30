@@ -27,7 +27,6 @@ final class DefinitionRecord: MarkupRecord, @unchecked Sendable {
     let ends: [Int]
 
     init(_ fields: InheritedFields, compact: Bool, term: [MarkupRecord], bodies: [[MarkupRecord]]) {
-        precondition(!bodies.isEmpty, "Definition has no bodies")
         self.compact = compact
         var ends = [term.count]
         for body in bodies { ends.append(ends[ends.count - 1] + body.count) }
@@ -53,9 +52,12 @@ final class DefinitionRecord: MarkupRecord, @unchecked Sendable {
 
 extension DefinitionRecord {
     convenience init(from node: OpaquePointer, term: [MarkupRecord], bodies: [[MarkupRecord]]) {
-        var compact = false
-        precondition(markdown_core_node_definition_compact(node, &compact), "Invalid definition")
-        self.init(InheritedFields(from: node), compact: compact, term: term, bodies: bodies)
+        self.init(
+            InheritedFields(from: node),
+            compact: markdown_core_node_definition_compact(node),
+            term: term,
+            bodies: bodies
+        )
     }
 }
 

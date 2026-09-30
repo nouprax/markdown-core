@@ -111,10 +111,9 @@ protocol RecordBacked {
 extension MarkupRecord {
     /// The record behind any node of the closed kind set.
     static func of(_ node: any Markup) -> MarkupRecord {
-        guard let node = node as? any RecordBacked else {
-            preconditionFailure("Markup conformances are limited to the canonical node kinds")
-        }
-        return node.base
+        // swift-format-ignore: NeverForceUnwrap
+        // swiftlint:disable:next force_cast
+        (node as! any RecordBacked).base
     }
 }
 

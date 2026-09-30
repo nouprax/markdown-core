@@ -669,8 +669,6 @@ public final class com/nouprax/markdown/core/Paragraph : com/nouprax/markdown/co
 
 public final class com/nouprax/markdown/core/ParseErrorCode : java/lang/Enum {
 	public static final field ALLOCATION_FAILED Lcom/nouprax/markdown/core/ParseErrorCode;
-	public static final field INTERNAL Lcom/nouprax/markdown/core/ParseErrorCode;
-	public static final field INVALID_ARGUMENT Lcom/nouprax/markdown/core/ParseErrorCode;
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/ParseErrorCode;
 	public static fun values ()[Lcom/nouprax/markdown/core/ParseErrorCode;

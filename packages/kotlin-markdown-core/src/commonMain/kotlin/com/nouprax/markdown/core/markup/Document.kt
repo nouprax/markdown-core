@@ -46,32 +46,27 @@ public class Document internal constructor(
     /**
      * The editor coordinates of [node], computed from the extents and
      * [source], the text this document was parsed from, with columns in the
-     * document's [unit]. Null when the node is not in this document or the
-     * source is shorter than the document's.
+     * document's [unit]. [node] is a node of this document.
      */
     public fun scope(
         node: Markup,
         source: String,
-    ): Scope? {
-        val lines = SourceLines(source)
-        if (!fits(lines)) return null
-        val place = place(node) ?: return null
-        return lines.scope(place.start.toInt(), place.end.toInt(), unit)
+    ): Scope {
+        val place = place(node)
+        return SourceLines(source).scope(place.start.toInt(), place.end.toInt(), unit)
     }
 
     /**
-     * The last node in canonical walk order whose source range holds the byte
-     * at [position], with the column in the document's [unit]. Null when no
-     * node holds it, the position names no byte of [source] or falls inside
-     * a scalar, or the source is shorter than the document's.
+     * The last node in canonical walk order whose source range holds the
+     * scalar that starts at [position] of [source], the text this document was
+     * parsed from, with the column in the document's [unit]. Null when [source]
+     * has no scalar there or no node holds it.
      */
     public fun node(
         position: Position,
         source: String,
     ): Markup? {
-        val lines = SourceLines(source)
-        if (!fits(lines)) return null
-        val offset = lines.offset(position, unit) ?: return null
+        val offset = SourceLines(source).offset(position, unit) ?: return null
         var found: Markup? = null
         val traversal = MarkupTraversal(this, 0)
         while (traversal.next()) {
@@ -82,22 +77,16 @@ public class Document internal constructor(
         return found
     }
 
-    /** Whether [lines] hold the whole document, as the source it was parsed from does. */
-    internal fun fits(lines: SourceLines): Boolean = extent.lead.toLong() + extent.span.toLong() <= lines.bytes.size
-
     /**
-     * The absolute byte range of [target], found by one canonical walk, or
-     * null when the node is not in this document. A node is found by
-     * reference: an equal node of another document is not in this one.
+     * The absolute byte range of [target], a node of this document, found by
+     * one canonical walk. A node is found by reference.
      */
-    internal fun place(target: Markup): Place? {
+    internal fun place(target: Markup): Place {
         val traversal = MarkupTraversal(this, 0)
-        while (traversal.next()) {
-            if (traversal.step == MarkupTraversal.Step.ENTER && traversal.node === target) {
-                return Place(traversal.start, traversal.end)
-            }
+        while (traversal.next() && !(traversal.step == MarkupTraversal.Step.ENTER && traversal.node === target)) {
+            continue
         }
-        return null
+        return Place(traversal.start, traversal.end)
     }
 
     /** The canonical debug dump of this document, with scopes computed from [source] in UTF-8 columns. */

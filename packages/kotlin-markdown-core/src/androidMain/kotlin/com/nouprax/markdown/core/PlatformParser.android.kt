@@ -10,10 +10,10 @@ internal actual fun parsePlatformDocument(
 
 private object AndroidNativeLoader {
     private val loaded: Unit =
-        if (System.getProperty("java.vm.name").orEmpty().contains("Dalvik", ignoreCase = true)) {
+        if (System.getProperty("java.vm.name").contains("Dalvik", ignoreCase = true)) {
             System.loadLibrary("markdown_core_kotlin")
         } else {
-            System.load(requireNotNull(System.getProperty("markdown.core.hostNativeLibrary")))
+            System.load(System.getProperty("markdown.core.hostNativeLibrary"))
         }
 
     fun ensureLoaded() = loaded

@@ -750,12 +750,11 @@ static void payload(properties *p) {
 }
 size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser,
                                       const unsigned char *source, size_t length) {
-    size_t bom = length >= 3 && memcmp(source, "\xef\xbb\xbf", 3) == 0 ? 3 : 0;
     /* The opener is exactly "---" and a line ending: a peek, not a scan. */
-    if (length < bom + 4 || memcmp(source + bom, "---", 3) || !markdown_core_is_line_end(source[bom + 3])) {
+    if (length < 4 || memcmp(source, "---", 3) || !markdown_core_is_line_end(source[3])) {
         return 0;
     }
-    size_t start = next_line(source, bom + 3, length), close = start;
+    size_t start = next_line(source, 3, length), close = start;
     properties p = {.parser = parser, .work = work, .source = source};
     /* THE FENCE NEEDS NO LINE GEOMETRY. It is "---" bracketed by line ends,
      * so the search for it is one `memchr` pass over the dashes, checked at
@@ -803,7 +802,7 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
     }
     size_t consumed = next_line(source, close + 3, length);
     p.metadata = node->as.metadata;
-    node->where.place = (markdown_core_place){(uint32_t)bom, (uint32_t)(close + 3)};
+    node->where.place = (markdown_core_place){0, (uint32_t)(close + 3)};
     payload(&p);
     if (parser->error) {
         markdown_core_parser_release_node(parser, node);

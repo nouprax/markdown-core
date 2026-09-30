@@ -124,43 +124,12 @@ static int set_chunk_bytes(markdown_core_chunk *chunk, const unsigned char *data
 }
 
 const char *markdown_core_elements_get_directive_name(markdown_core_node *node) {
-    node_directive *directive = get_directive(node);
-    if (!directive || !directive->name.len) {
-        return NULL;
-    }
-
-    return markdown_core_chunk_to_cstr(&directive->name);
-}
-
-int markdown_core_directive_has_label(markdown_core_node *node) {
-    node_directive *directive = get_directive(node);
-    return directive && directive->label;
-}
-
-static int directive_name_is_valid(const char *name) {
-    if (!name) {
-        return 0;
-    }
-    size_t raw_len = strlen(name);
-    if (raw_len == 0 || raw_len > INT_MAX) {
-        return 0;
-    }
-    bufsize_t start, length;
-    return scan_name((const unsigned char *)name, (bufsize_t)raw_len, 0, &start, &length) && start == 0 &&
-           length == (bufsize_t)raw_len;
+    node_directive *directive = node->opaque;
+    return directive->name.len ? markdown_core_chunk_to_cstr(&directive->name) : NULL;
 }
 
 int markdown_core_elements_set_directive_name(markdown_core_node *node, const char *name) {
-    node_directive *directive = get_directive(node);
-
-    if (!directive || (name ? !directive_name_is_valid(name) : node->kind != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
-        return 0;
-    }
-
-    if (!markdown_core_chunk_set_cstr(&directive->name, name)) {
-        return 0;
-    }
-    return 1;
+    return markdown_core_chunk_set_cstr(&((node_directive *)node->opaque)->name, name);
 }
 
 static void directive_opaque_alloc(const markdown_core_element *element, markdown_core_node *node) {

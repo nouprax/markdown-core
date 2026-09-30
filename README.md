@@ -28,7 +28,7 @@ import MarkdownCore
 
 let source = "Hello, Markdown."
 let document = try Document.parse(source)
-print(document.dump(in: source) ?? "")
+print(document.dump(in: source))
 ```
 
 The AST is an immutable, `Sendable` value tree with typed visitors and

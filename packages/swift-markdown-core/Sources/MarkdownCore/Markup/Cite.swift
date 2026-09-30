@@ -87,7 +87,6 @@ final class CitationRecord: MarkupRecord, @unchecked Sendable {
         prefix: [MarkupRecord],
         suffix: [MarkupRecord]
     ) {
-        precondition((referent == .note) == (note != nil), "An inline note referent owns exactly its footnote")
         let notes: [MarkupRecord] = note.map { [$0] } ?? []
         self.referent = referent
         prefixCount = prefix.count
@@ -139,12 +138,11 @@ final class CiteRecord: MarkupRecord, @unchecked Sendable {
 }
 
 extension BibMode {
+    /// Indexed by the native value less one.
+    private static let native: [BibMode] = [.normal, .authorInText, .suppressAuthor]
+
     init(from mode: markdown_core_bib_mode) {
-        switch mode {
-        case MARKDOWN_CORE_BIB_MODE_AUTHOR_IN_TEXT: self = .authorInText
-        case MARKDOWN_CORE_BIB_MODE_SUPPRESS_AUTHOR: self = .suppressAuthor
-        default: self = .normal
-        }
+        self = BibMode.native[Int(mode.rawValue) - 1]
     }
 }
 
@@ -156,18 +154,17 @@ extension CitationRecord {
         prefix: [MarkupRecord],
         suffix: [MarkupRecord]
     ) {
-        var native = markdown_core_referent()
-        precondition(markdown_core_citation_referent(citation, &native), "Invalid native citation")
+        let native = markdown_core_citation_referent(citation)
         let referent: Referent
         switch native.kind {
         case MARKDOWN_CORE_REFERENT_BIB:
             referent = .bib(key: native.key.required, mode: BibMode(from: native.mode))
         case MARKDOWN_CORE_REFERENT_FOOTNOTE:
             referent = native.note == nil ? .label(native.label.required) : .note
-        case MARKDOWN_CORE_REFERENT_SPECIMEN:
-            referent = .specimen(label: native.label.required)
+        // A C enum switch is never exhaustive in Swift; the one kind left is
+        // MARKDOWN_CORE_REFERENT_SPECIMEN.
         default:
-            preconditionFailure("Unsupported native citation referent")
+            referent = .specimen(label: native.label.required)
         }
         self.init(InheritedFields(from: citation), referent: referent, note: note, prefix: prefix, suffix: suffix)
     }
@@ -175,7 +172,6 @@ extension CitationRecord {
 
 extension CiteRecord {
     convenience init(from node: OpaquePointer, citations: [MarkupRecord]) {
-        precondition(!citations.isEmpty, "A cite holds at least one citation")
         self.init(InheritedFields(from: node), children: citations)
     }
 }

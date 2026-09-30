@@ -14,10 +14,9 @@ public struct MarkupCollection<Element: Sendable>: RandomAccessCollection, Senda
     public var endIndex: Int { records.count }
     /// The value at a valid position, without copying its descendants.
     public subscript(position: Int) -> Element {
-        guard let value = records[records.startIndex + position].markup as? Element else {
-            preconditionFailure("A relation holds only its declared kind")
-        }
-        return value
+        // swift-format-ignore: NeverForceUnwrap
+        // swiftlint:disable:next force_cast
+        records[records.startIndex + position].markup as! Element
     }
 }
 

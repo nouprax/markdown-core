@@ -11,7 +11,7 @@ import type {
     OrderedListVariant,
     Scope
 } from "../markup/values.js";
-import { fits, placeOf } from "./document-queries.js";
+import { placeOf } from "./document-queries.js";
 import { walkWithPlaces } from "./markup-walker.js";
 import type { MarkupVisitor } from "./markup-visitor.js";
 
@@ -27,13 +27,8 @@ export class MarkupDumper {
     static dump(document: Document, node: Markup, source: string): string;
     static dump(document: Document, nodeOrSource: Markup | string, source?: string): string {
         const root = typeof nodeOrSource === "string" ? document : nodeOrSource;
-        const text = typeof nodeOrSource === "string" ? nodeOrSource : source;
-        if (typeof text !== "string") throw new TypeError("source must be a string");
-        const lines = new SourceLines(text);
-        if (!fits(document, lines)) throw new RangeError("the source is shorter than the document");
         const place = placeOf(document, root);
-        if (place === null) throw new RangeError("the node is not in the document");
-        const state = new State(lines);
+        const state = new State(new SourceLines(typeof nodeOrSource === "string" ? nodeOrSource : source!));
         // A node's walk starts at its own extent, which is relative to the
         // anchor its relation had where it was written.
         state.dump(root, place.start - root.extent.lead);
@@ -554,23 +549,20 @@ class State {
     private start(): void {
         if (this.frames.length === 0) return;
         this.advance();
-        const frame = this.frames[this.frames.length - 1]!;
-        if (frame.remaining <= 0) throw new Error("unexpected dump child");
-        frame.remaining -= 1;
+        this.frames[this.frames.length - 1]!.remaining -= 1;
     }
 
     private end(): void {
         this.advance();
-        if (this.frames.pop()!.remaining !== 0 || this.remainingNodes.pop() !== 0) {
-            throw new Error("incomplete dump output");
-        }
+        this.frames.pop();
+        this.remainingNodes.pop();
     }
 
     private advance(): void {
         const frame = this.frames[this.frames.length - 1]!;
         while (frame.remaining === 0 && frame.index < frame.groups.length) {
             if (frame.index >= 0 && frame.groups[frame.index]!.name !== null) {
-                if (this.remainingNodes.pop() !== 0) throw new Error("incomplete dump group");
+                this.remainingNodes.pop();
             }
             frame.index += 1;
             if (frame.index === frame.groups.length) return;

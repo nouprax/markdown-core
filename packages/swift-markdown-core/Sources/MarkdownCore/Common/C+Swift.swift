@@ -2,26 +2,18 @@ import MarkdownCoreC
 
 extension ParseError {
     init(from error: OpaquePointer?) {
-        guard let error else {
-            self.init(code: .internal, message: "markdown parsing failed")
-            return
-        }
-        let rawCode = markdown_core_error_get_code(error).rawValue
-        let code = ParseErrorCode(rawValue: Int32(rawCode)) ?? .internal
-        self.init(
-            code: code,
-            message: markdown_core_error_get_message(error).required
-        )
+        // swift-format-ignore: NeverForceUnwrap
+        let code = ParseErrorCode(rawValue: Int32(markdown_core_error_get_code(error).rawValue))!
+        self.init(code: code, message: markdown_core_error_get_message(error).required)
     }
 }
 
 extension markdown_core_string {
     var required: String {
-        guard let data else { return "" }
-        // Swift input reaches the native parser as valid UTF-8. This defensive
-        // decoding also remains total if an internal payload violates that invariant.
+        // The bytes are decoded as they are: a payload is never checked for
+        // UTF-8 validity, so no optional conversion stands in for that check.
         // swiftlint:disable:next optional_data_string_conversion
-        return String(decoding: UnsafeBufferPointer(start: data, count: length), as: UTF8.self)
+        String(decoding: UnsafeBufferPointer(start: data, count: length), as: UTF8.self)
     }
 
     // `optionalString` USED TO LIVE HERE and read absence off the pointer.
@@ -45,13 +37,11 @@ extension TextUnit {
 }
 
 extension Flow {
+    /// Indexed by the native value.
+    private static let native: [Flow] = [.none, .left, .center, .right]
+
     init(from flow: markdown_core_flow) {
-        switch flow {
-        case MARKDOWN_CORE_FLOW_LEFT: self = .left
-        case MARKDOWN_CORE_FLOW_CENTER: self = .center
-        case MARKDOWN_CORE_FLOW_RIGHT: self = .right
-        default: self = .none
-        }
+        self = Flow.native[Int(flow.rawValue)]
     }
 }
 

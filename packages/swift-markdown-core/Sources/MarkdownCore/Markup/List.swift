@@ -118,8 +118,9 @@ extension ListRecord {
         switch value.kind {
         case MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD: .period
         case MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS: .parenthesis(closed: value.closed)
-        case MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT: .default
-        default: preconditionFailure("Unsupported native list delimiter \(value.kind)")
+        // A C enum switch is never exhaustive in Swift; the one kind left is
+        // MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT.
+        default: .default
         }
     }
 
@@ -128,6 +129,8 @@ extension ListRecord {
         case MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA: .alpha(lowercased: value.lowercased)
         case MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN: .roman(lowercased: value.lowercased)
         case MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT: .default
+        // A C enum switch is never exhaustive in Swift; the one kind left is
+        // MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL.
         default: .decimal
         }
     }
@@ -177,9 +180,8 @@ final class ListItemRecord: MarkupRecord, @unchecked Sendable {
 
 extension ListItemRecord {
     convenience init(from node: OpaquePointer, content: [MarkupRecord]) {
-        var marker = markdown_core_optional_string()
-        markdown_core_node_list_item_marker(node, &marker)
-        self.init(InheritedFields(from: node), marker: marker.string, content: content)
+        let marker = markdown_core_node_list_item_marker(node).string
+        self.init(InheritedFields(from: node), marker: marker, content: content)
     }
 }
 

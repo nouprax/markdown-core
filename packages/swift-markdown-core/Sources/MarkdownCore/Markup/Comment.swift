@@ -35,9 +35,7 @@ final class CommentRecord: MarkupRecord, @unchecked Sendable {
 
 extension CommentRecord {
     convenience init(from node: OpaquePointer) {
-        var literal = markdown_core_string()
-        markdown_core_node_literal(node, &literal)
-        self.init(InheritedFields(from: node), literal: literal.required)
+        self.init(InheritedFields(from: node), literal: markdown_core_node_literal(node).required)
     }
 }
 

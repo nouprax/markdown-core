@@ -302,14 +302,12 @@ void ts_spec_free(ts_spec_file *file) {
 /* Traversal ------------------------------------------------------------------ */
 
 markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length) {
-    markdown_core_error *error = NULL;
+    markdown_core_error *error;
     markdown_core_document *document = markdown_core_document_parse(bytes, length, &error);
     if (!document) {
-        markdown_core_string message = error ? markdown_core_error_get_message(error) : (markdown_core_string){NULL, 0};
+        markdown_core_string message = markdown_core_error_get_message(error);
         fprintf(stderr, "facade parse failed: ");
-        if (message.data) {
-            fwrite(message.data, 1, message.length, stderr);
-        }
+        fwrite(message.data, 1, message.length, stderr);
         fputc('\n', stderr);
         markdown_core_error_free(error);
         return NULL;
@@ -402,9 +400,7 @@ static void ts_walk_relations(ts_walk_stack *stack, const markdown_core_node *no
         TS_CHAIN(markdown_core_node_cite_citations(node));
         break;
     case MARKDOWN_CORE_KIND_CITATION: {
-        markdown_core_referent referent = {0};
-        (void)markdown_core_citation_referent(node, &referent);
-        TS_RELATION(referent.note, 1);
+        TS_RELATION(markdown_core_citation_referent(node).note, 1);
         TS_CHAIN(markdown_core_citation_prefix(node));
         TS_CHAIN(markdown_core_citation_suffix(node));
         break;
@@ -494,11 +490,9 @@ static int ts_concat_visit(const markdown_core_node *node, ts_ast_range range, v
     (void)range;
     ts_buffer *buffer = (ts_buffer *)context;
     if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_TEXT) {
-        markdown_core_string literal;
-        if (markdown_core_node_literal(node, &literal) && literal.data) {
-            if (ts_buffer_append(buffer, (const char *)literal.data, literal.length) != 0) {
-                return -1;
-            }
+        markdown_core_string literal = markdown_core_node_literal(node);
+        if (literal.length && ts_buffer_append(buffer, (const char *)literal.data, literal.length) != 0) {
+            return -1;
         }
     }
     return 0;

@@ -87,16 +87,14 @@ extension TableRecord {
         var headCount = 0
         var bodyCount = 0
         var footCount = 0
-        precondition(markdown_core_node_table_properties(node, &count, &headCount, &bodyCount, &footCount))
+        markdown_core_node_table_properties(node, &count, &headCount, &bodyCount, &footCount)
         let columns = (0..<count).map { index in
-            var column = markdown_core_table_column()
-            precondition(markdown_core_node_table_column_at(node, index, &column))
+            let column = markdown_core_node_table_column_at(node, index)
             return TableColumn(
                 flow: Flow(from: column.flow),
                 relative: column.relative.has_value ? column.relative.value : nil
             )
         }
-        precondition(headCount + bodyCount + footCount == rows.count)
         self.init(
             InheritedFields(from: node),
             columns: columns,
@@ -184,7 +182,7 @@ extension TableCellRecord {
     convenience init(from node: OpaquePointer, content: [MarkupRecord]) {
         var rowspan: Int64 = 0
         var colspan: Int64 = 0
-        precondition(markdown_core_node_table_cell_spans(node, &rowspan, &colspan))
+        markdown_core_node_table_cell_spans(node, &rowspan, &colspan)
         self.init(InheritedFields(from: node), rowspan: Int(rowspan), colspan: Int(colspan), content: content)
     }
 }

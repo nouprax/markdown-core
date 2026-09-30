@@ -46,7 +46,7 @@ document.dump();
 void [unit, dump, explicitDump, nodeDump, explicitNodeDump];
 const id: number = document.id;
 const extent: Extent = document.extent;
-const scope: Scope | null = document.scope(document.content[0]!, "# typed");
+const scope: Scope = document.scope(document.content[0]!, "# typed");
 const position: Position = { line: 1, column: 3 };
 const hit: Markup | null = document.nodeAt(position, "# typed");
 const equal: boolean = markupEquals(document, Document.parse("# typed"));

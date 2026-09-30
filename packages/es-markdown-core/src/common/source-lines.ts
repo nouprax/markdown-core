@@ -42,8 +42,7 @@ export class SourceLines {
      */
     offset(position: Position, unit: TextUnit): number | null {
         const { line, column } = position;
-        if (!Number.isInteger(line) || !Number.isInteger(column) || line < 1 || column < 1) return null;
-        if (line > this.starts.length) return null;
+        if (line < 1 || line > this.starts.length) return null;
         let offset = this.starts[line - 1]!;
         const end = line < this.starts.length ? this.starts[line]! : this.bytes.length;
         let at = 1;

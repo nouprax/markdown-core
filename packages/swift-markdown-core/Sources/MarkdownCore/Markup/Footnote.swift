@@ -41,9 +41,8 @@ final class FootnoteRecord: MarkupRecord, @unchecked Sendable {
 
 extension FootnoteRecord {
     convenience init(from footnote: OpaquePointer, content: [MarkupRecord]) {
-        var label = markdown_core_optional_string()
-        precondition(markdown_core_footnote_label(footnote, &label), "Invalid native footnote")
-        self.init(InheritedFields(from: footnote), label: label.string, content: content)
+        let label = markdown_core_footnote_label(footnote).string
+        self.init(InheritedFields(from: footnote), label: label, content: content)
     }
 }
 

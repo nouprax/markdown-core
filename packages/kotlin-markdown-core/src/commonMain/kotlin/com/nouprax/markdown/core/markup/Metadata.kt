@@ -24,10 +24,8 @@ public sealed interface MetadataValue {
     ) : MetadataValue
 
     public class List(
-        items: kotlin.collections.List<MetadataListItem>,
+        public val items: kotlin.collections.List<MetadataListItem>,
     ) : MetadataValue {
-        public val items: kotlin.collections.List<MetadataListItem> = items.immutableMap { it }
-
         override fun equals(other: Any?): Boolean = this === other || (other is List && items == other.items)
 
         override fun hashCode(): Int = items.hashCode()

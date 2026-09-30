@@ -14,10 +14,8 @@ void test_cplusplus(test_batch_runner *runner) {
     markdown_core_node *doc = markdown_core_parse_document(md, sizeof(md) - 1);
     markdown_core_node *first = doc->first_child;
     INT_EQ(runner, first->kind, MARKDOWN_CORE_NODE_PARAGRAPH, "libmarkdown_core works with C++");
-    markdown_core_string literal{};
-    OK(runner,
-       markdown_core_node_literal(first->first_child, &literal) && literal.length == 9 &&
-           memcmp(literal.data, "paragraph", 9) == 0,
+    markdown_core_string literal = markdown_core_node_literal(first->first_child);
+    OK(runner, literal.length == 9 && memcmp(literal.data, "paragraph", 9) == 0,
        "parsed literals are readable from C++");
     markdown_core_node_free(doc);
 
@@ -31,7 +29,7 @@ void test_cplusplus(test_batch_runner *runner) {
          * that the headers compile and link there, not the grammar. */
         markdown_core_string name{}, value{};
         INT_EQ(runner, (int)markdown_core_node_attribute_record_count(directive), 2, "universal records in C++");
-        OK(runner, markdown_core_node_attribute_record_at(directive, 0, &name, &value), "record readable in C++");
+        markdown_core_node_attribute_record_at(directive, 0, &name, &value);
         OK(runner, name.length == 5 && memcmp(name.data, "title", 5) == 0, "record order in C++");
         OK(runner, markdown_core_node_anchor(directive).has_value, "anchor readable in C++");
     }

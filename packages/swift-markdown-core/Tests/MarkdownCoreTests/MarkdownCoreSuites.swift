@@ -1,8 +1,8 @@
 import MarkdownCoreC
 import Testing
 
-// `@testable` covers native failure and reserved-value decoding paths that
-// cannot yet be reached by parsing source. Other tests use the public API.
+// `@testable` covers reserved-value decoding paths that cannot yet be reached
+// by parsing source. Other tests use the public API.
 @testable import MarkdownCore
 
 @Suite("api") struct APISuite {
@@ -37,7 +37,7 @@ import Testing
         // A label matches byte for byte: the decomposed spelling is another label.
         #expect(document.specimen(for: "e\u{301}tude") == nil)
         #expect(document.footnote(for: "n")?.id == MarkupID(5))
-        let dump = try #require(document.dump(in: ""))
+        let dump = document.dump(in: "")
         #expect(dump.contains("referent=specimen(label=\"étude\")"))
         #expect(dump.contains("Specimen scope=1:1..1:0 anchor=null attributes={} label=null start=null children=0"))
         var visitor = RecordingWalkingVisitor()
@@ -108,7 +108,7 @@ import Testing
         #expect(mark.content.count == 2)
         #expect(((mark.content[1] as? Emphasis)?.content.first as? Text)?.literal == "b")
         #expect(
-            try scope(of: mark, in: document, source: "==a *b*==")
+            scope(of: mark, in: document, source: "==a *b*==")
                 == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 9))
         )
     }
@@ -156,28 +156,6 @@ import Testing
 }
 
 @Suite("errors") struct ErrorsSuite {
-    @Test("a native error crosses into Swift with its code and message, and nil still answers")
-    func parseErrorFromNative() throws {
-        // THE ONE `@testable` USE. No `String` a caller can hand `Document` is
-        // invalid, so this initializer is unreachable through the published
-        // surface -- but the C entry point rejects a null source with a real
-        // error object, which is the only way to watch a native code and
-        // message actually cross.
-        var native: OpaquePointer?
-        #expect(markdown_core_document_parse(nil, 1, &native) == nil)
-        let error = try #require(native)
-        defer { markdown_core_error_free(error) }
-        let crossed = ParseError(from: error)
-        #expect(crossed.code == .invalidArgument)
-        #expect(crossed.message.contains("must not be null"))
-
-        // And the other arm: a loss the engine could not allocate an error for
-        // still has to answer with something.
-        let fallback = ParseError(from: nil)
-        #expect(fallback.code == .internal)
-        #expect(!fallback.message.isEmpty)
-    }
-
     @Test("a written-but-empty destination is empty, not absent")
     func emptyDestinationIsEmpty() throws {
         // `[a]()` WROTE a destination and wrote nothing in it. The native side
@@ -233,16 +211,16 @@ import Testing
         #expect(document.footnote(for: "a") == footnote)
         #expect(document.footnote(for: "A") == nil)
         #expect(
-            try scope(of: footnote, in: document, source: source)
+            scope(of: footnote, in: document, source: source)
                 == Scope(start: Position(line: 3, column: 1), end: Position(line: 4, column: 0))
         )
         #expect(((footnote.content.first as? Paragraph)?.content.first as? Text)?.literal == "once")
         #expect(
-            try scope(of: later, in: document, source: source)
+            scope(of: later, in: document, source: source)
                 == Scope(start: Position(line: 5, column: 1), end: Position(line: 5, column: 11))
         )
         #expect(((later.content.first as? Paragraph)?.content.first as? Text)?.literal == "twice")
-        let dump = try #require(document.dump(in: source))
+        let dump = document.dump(in: source)
         #expect(dump.hasPrefix("Document scope=1:1..5:11 anchor=null attributes={} children=3\n"))
         let tail = """
             └── Footnote scope=5:1..5:11 anchor=null attributes={} label="a" children=1
@@ -273,7 +251,7 @@ import Testing
         let document = try Document.parse("")
         #expect(document.content.isEmpty)
         #expect(
-            try scope(of: document, in: document, source: "")
+            scope(of: document, in: document, source: "")
                 == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 0))
         )
         #expect(document.dump(in: "") == "Document scope=1:1..1:0 anchor=null attributes={} children=0\n")
@@ -295,14 +273,14 @@ import Testing
         #expect(block.content.allSatisfy { !($0 is DirectiveLabel) })
         #expect(label.content.count == 1)
         #expect(label.content.first is Text)
-        #expect(try #require(document.dump(block, in: source)).contains("DirectiveLabel"))
+        #expect(document.dump(block, in: source).contains("DirectiveLabel"))
 
         // The other field arm: no label is emitted when none was written.
         let written = ":::note\nBody\n:::\n"
         let other = try Document.parse(written)
         let bare = try #require(other.content.first as? DirectiveBlock)
         #expect(bare.label == nil)
-        #expect(try #require(other.dump(bare, in: written)).hasPrefix("DirectiveBlock scope=1:1..3:3 "))
+        #expect(other.dump(bare, in: written).hasPrefix("DirectiveBlock scope=1:1..3:3 "))
     }
 
     @Test("the dump escapes every character JSON cannot carry literally")

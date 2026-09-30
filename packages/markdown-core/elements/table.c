@@ -561,7 +561,7 @@ static int contains_inlines(const markdown_core_element *element, markdown_core_
 }
 
 static void opaque_alloc(const markdown_core_element *self, markdown_core_node *node) {
-    /* A NULL payload makes the table facade accessors fail; no incomplete
+    /* A payload that could not be allocated fails the parse: no incomplete
      * table is returned by a successful parse. */
     if (node->kind == MARKDOWN_CORE_NODE_TABLE) {
         node->opaque = markdown_core_alloc(1, sizeof(markdown_core_table));

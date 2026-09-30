@@ -20,33 +20,47 @@
 static size_t nodes_visited;
 
 static int inspect_node(const markdown_core_node *node, ts_ast_range range, void *context) {
-    markdown_core_string value;
-    markdown_core_optional_string marker;
-    int32_t level;
-    bool flag;
+    int64_t rowspan, colspan;
+    markdown_core_node_kind kind = markdown_core_node_get_kind(node);
 
-    if (!node) {
-        return 0;
-    }
     nodes_visited++;
-    (void)markdown_core_node_get_kind(node);
-    (void)markdown_core_node_kind_name(markdown_core_node_get_kind(node));
+    (void)markdown_core_node_kind_name(kind);
     if (range.start < 0 || range.end < range.start) {
         return -1;
     }
-    (void)markdown_core_node_literal(node, &value);
-    (void)markdown_core_node_heading_level(node, &level);
-    (void)markdown_core_node_list_item_marker(node, &marker);
-    int64_t rowspan, colspan;
-    (void)markdown_core_node_table_cell_spans(node, &rowspan, &colspan);
-    (void)markdown_core_node_directive_properties(node, &marker);
-    (void)markdown_core_node_definition_compact(node, &flag);
+    switch (kind) {
+    case MARKDOWN_CORE_KIND_TEXT:
+    case MARKDOWN_CORE_KIND_CODE:
+    case MARKDOWN_CORE_KIND_HTML:
+    case MARKDOWN_CORE_KIND_HTML_BLOCK:
+    case MARKDOWN_CORE_KIND_COMMENT:
+        (void)markdown_core_node_literal(node);
+        break;
+    case MARKDOWN_CORE_KIND_HEADING:
+        (void)markdown_core_node_heading_level(node);
+        break;
+    case MARKDOWN_CORE_KIND_LIST_ITEM:
+        (void)markdown_core_node_list_item_marker(node);
+        break;
+    case MARKDOWN_CORE_KIND_TABLE_CELL:
+        markdown_core_node_table_cell_spans(node, &rowspan, &colspan);
+        break;
+    case MARKDOWN_CORE_KIND_DIRECTIVE:
+    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
+        (void)markdown_core_node_directive_properties(node);
+        break;
+    case MARKDOWN_CORE_KIND_DEFINITION:
+        (void)markdown_core_node_definition_compact(node);
+        break;
+    default:
+        break;
+    }
     return 0;
 }
 
 static int smoke(const uint8_t *bytes, size_t length, const char *label) {
     markdown_core_document *document;
-    markdown_core_error *error = NULL;
+    markdown_core_error *error;
     uint8_t *first = NULL;
     uint8_t *second = NULL;
     size_t first_length = 0;
@@ -55,11 +69,7 @@ static int smoke(const uint8_t *bytes, size_t length, const char *label) {
 
     document = markdown_core_document_parse(bytes, length, &error);
     if (!document) {
-        /* Parse failures must still produce a well-formed error object. */
-        if (!error) {
-            fprintf(stderr, "%s: parse failed without an error\n", label);
-            return -1;
-        }
+        /* A parse failure carries its reason. */
         if (markdown_core_error_get_message(error).length == 0) {
             fprintf(stderr, "%s: parse error carries no message\n", label);
             markdown_core_error_free(error);
@@ -77,8 +87,10 @@ static int smoke(const uint8_t *bytes, size_t length, const char *label) {
         fprintf(stderr, "%s: a range lies outside the source\n", label);
         goto done;
     }
-    if (!markdown_core_document_dump(document, NULL, bytes, length, &first, &first_length, &error) ||
-        !markdown_core_document_dump(document, NULL, bytes, length, &second, &second_length, &error)) {
+    if (!markdown_core_document_dump(document, markdown_core_document_root(document), bytes, length, &first,
+                                     &first_length, &error) ||
+        !markdown_core_document_dump(document, markdown_core_document_root(document), bytes, length, &second,
+                                     &second_length, &error)) {
         fprintf(stderr, "%s: dump failed\n", label);
         goto done;
     }
@@ -92,7 +104,6 @@ done:
     markdown_core_dump_free(first);
     markdown_core_dump_free(second);
     markdown_core_document_free(document);
-    markdown_core_error_free(error);
     return result;
 }
 

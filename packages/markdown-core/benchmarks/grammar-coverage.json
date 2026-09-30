@@ -2329,7 +2329,7 @@
         {
             "feature": "properties",
             "specification": "docs/specs/dialect/properties.md",
-            "sha256": "5df31e64bd38d6530e85bb7eae6957714c8cbd161917f9f1b486b5eaf2f962a2",
+            "sha256": "45a5609c8d3b947c518f81fc85a297ab793be1bedfc3acd654d5e3ab8e8ec88b",
             "sections": [
                 {
                     "title": "Properties",
@@ -2375,7 +2375,7 @@
                     "title": "Envelope and recovery",
                     "line": 117,
                     "level": 2,
-                    "sha256": "b6744a138b23b7b69b6d525626447d9b87740ed48ceac06b7e7872ee19cc99a2",
+                    "sha256": "4534b0987d644358b78983bce05dc8f245277cf0e30721412a01b6dc7fc40f86",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["metadataempty", "metadata-types", "fallback-noninitial-metadata"]

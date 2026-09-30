@@ -47,7 +47,7 @@ export type NativeKind =
     | "metadata";
 
 /** Indexed by wire ordinal. */
-export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
+export const kinds: readonly (NativeKind | "none")[] = [
     "none",
     "document",
     "callout",
@@ -92,7 +92,7 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "footnote",
     "specimen",
     "metadata"
-]);
+];
 
 type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 type Holds<Claim extends true> = Claim;
@@ -100,41 +100,3 @@ type Holds<Claim extends true> = Claim;
 /** Fails to compile unless the wire kinds are exactly the Markup union's kinds, so every
  * switch or mapped type exhaustive over one is exhaustive over the other. */
 export type NativeKindsAreMarkupKinds = Holds<Exactly<NativeKind, Markup["kind"]>>;
-
-/** The kinds a `[Markup]` field accepts: every kind no field of the contract names as its type. */
-export const contentKinds: ReadonlySet<NativeKind> = new Set([
-    "callout",
-    "paragraph",
-    "heading",
-    "thematicBreak",
-    "list",
-    "codeBlock",
-    "htmlBlock",
-    "formulaBlock",
-    "table",
-    "directiveBlock",
-    "text",
-    "softBreak",
-    "lineBreak",
-    "code",
-    "html",
-    "formula",
-    "emphasis",
-    "strong",
-    "strikethrough",
-    "link",
-    "embedded",
-    "directive",
-    "cite",
-    "comment",
-    "crossLink",
-    "mark",
-    "crossEmbedded",
-    "insertion",
-    "span",
-    "superscript",
-    "subscript",
-    "definitionList",
-    "footnote",
-    "specimen"
-]);

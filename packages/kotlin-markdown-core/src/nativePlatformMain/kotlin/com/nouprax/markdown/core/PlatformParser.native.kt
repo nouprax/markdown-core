@@ -35,9 +35,6 @@ internal actual fun parsePlatformDocument(
             for (index in 0 until Int.SIZE_BYTES) {
                 length = length or (message[LENGTH_OFFSET + index].toLong() shl (index * 8))
             }
-            if (length > Int.MAX_VALUE) {
-                throw ParseException(ParseErrorCode.ALLOCATION_FAILED, "native AST exceeds the Kotlin array limit")
-            }
             message.readBytes(length.toInt())
         } finally {
             markdown_core_wire_free(message)

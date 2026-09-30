@@ -26,7 +26,7 @@ struct DocumentBuilder {
     private var relations: [Relations] = []
     private var records: [MarkupRecord?] = []
     private var definitions: [OpaquePointer: MarkupRecord] = [:]
-    private var resources: [UnsafeRawPointer: SharedResource] = [:]
+    private var resources: [Int: SharedResource] = [:]
 
     init(document: OpaquePointer, root: OpaquePointer, unit: TextUnit) {
         self.document = document
@@ -57,7 +57,6 @@ struct DocumentBuilder {
     private mutating func scan(_ node: OpaquePointer) -> Relations {
         var relations = Relations()
         relations.children = enqueue(chain: markdown_core_node_get_first_child(node))
-        precondition(relations.children.count == markdown_core_node_child_count(node))
         switch markdown_core_node_get_kind(node) {
         case MARKDOWN_CORE_KIND_TABLE:
             relations.caption = enqueue(field: markdown_core_node_table_caption(node))
@@ -77,9 +76,7 @@ struct DocumentBuilder {
         case MARKDOWN_CORE_KIND_CITE:
             relations.citations = enqueue(chain: markdown_core_node_cite_citations(node))
         case MARKDOWN_CORE_KIND_CITATION:
-            var referent = markdown_core_referent()
-            precondition(markdown_core_citation_referent(node, &referent), "Invalid native citation")
-            relations.note = enqueue(field: referent.note)
+            relations.note = enqueue(field: markdown_core_citation_referent(node).note)
             relations.prefix = enqueue(chain: markdown_core_citation_prefix(node))
             relations.suffix = enqueue(chain: markdown_core_citation_suffix(node))
         default:
@@ -110,9 +107,10 @@ struct DocumentBuilder {
 
     /// Moves a built record out of the queue, so its parent alone owns it.
     private mutating func take(_ index: Int) -> MarkupRecord {
-        guard let record = records[index] else { preconditionFailure("a record is owned by one relation") }
+        let record = records[index]
         records[index] = nil
-        return record
+        // swift-format-ignore: NeverForceUnwrap
+        return record!
     }
 
     private mutating func take(_ indices: [Int]) -> [MarkupRecord] {
@@ -126,15 +124,11 @@ struct DocumentBuilder {
     /// The definitions the document's table names, in its order.
     private func table<Node: MarkupRecord>(
         count: Int,
-        at entry: (Int) -> OpaquePointer?,
+        at entry: (Int) -> OpaquePointer,
         as _: Node.Type
     ) -> [Node] {
-        (0..<count).map { index in
-            guard let node = entry(index), let definition = definitions[node] else {
-                preconditionFailure("a definition table names a node of the document")
-            }
-            return unsafeDowncast(definition, to: Node.self)
-        }
+        // swift-format-ignore: NeverForceUnwrap
+        (0..<count).map { unsafeDowncast(definitions[entry($0)]!, to: Node.self) }
     }
 }
 
@@ -222,8 +216,9 @@ extension DocumentBuilder {
         case MARKDOWN_CORE_KIND_TABLE_CAPTION: return TableCaptionRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_TABLE_ROW: return TableRowRecord(from: node, cells: children)
         case MARKDOWN_CORE_KIND_TABLE_CELL: return TableCellRecord(from: node, content: children)
-        case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL: return DirectiveLabelRecord(from: node, content: children)
-        default: preconditionFailure("native parser returned an unknown node kind")
+        // A C enum switch is never exhaustive in Swift; the one kind left is
+        // MARKDOWN_CORE_KIND_DIRECTIVE_LABEL.
+        default: return DirectiveLabelRecord(from: node, content: children)
         }
     }
 }

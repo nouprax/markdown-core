@@ -109,7 +109,7 @@ static const char OOM_CORPUS[] = "^a[**b c**]{}z^ ~a[**b&#32;c**]{}z~ ^a~~b c~~z
                                  "\n"
                                  "<!-- comment -->\n";
 
-static const char OOM_LINE_AND_CORE_CORPUS[] = "\xef\xbb\xbf# bom\r\n"
+static const char OOM_LINE_AND_CORE_CORPUS[] = "# heading\r\n"
                                                "> quote\r"
                                                "\tindented\n"
                                                "<div>\nraw\n</div>\n"
@@ -354,8 +354,8 @@ static int sweep_dump(const oom_case *test) {
         return -1;
     }
     allocation_count = 0;
-    if (!markdown_core_document_dump(document, NULL, (const uint8_t *)test->source, test->length, &output, &length,
-                                     &error)) {
+    if (!markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)test->source,
+                                     test->length, &output, &length, &error)) {
         fprintf(stderr, "%s: counting dump failed\n", test->name);
         markdown_core_error_free(error);
         markdown_core_document_free(document);
@@ -370,8 +370,9 @@ static int sweep_dump(const oom_case *test) {
         failure_fired = 0;
         error = NULL;
         output = NULL;
-        bool dumped = markdown_core_document_dump(document, NULL, (const uint8_t *)test->source, test->length, &output,
-                                                  &length, &error);
+        bool dumped =
+            markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)test->source,
+                                        test->length, &output, &length, &error);
         fail_at = 0;
         if (!failure_fired || dumped || output || !error ||
             markdown_core_error_get_code(error) != MARKDOWN_CORE_ERROR_ALLOCATION_FAILED) {

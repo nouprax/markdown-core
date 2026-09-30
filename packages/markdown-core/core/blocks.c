@@ -1335,7 +1335,7 @@ markdown_core_node *markdown_core_parser_parse(const char *source, size_t length
     markdown_core_parser *parser;
     markdown_core_node *document;
 
-    if ((!source && length != 0) || length > (size_t)(INT32_MAX / 2)) {
+    if (length > (size_t)(INT32_MAX / 2)) {
         return NULL;
     }
     /* The instance's dialect: the given elements, whatever its setup
@@ -2480,11 +2480,6 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     input.data = parser->curline.ptr;
     input.len = parser->curline.size;
     input.alloc = 0;
-
-    // Skip UTF-8 BOM.
-    if (parser->line_number == 0 && input.len >= 3 && memcmp(input.data, "\xef\xbb\xbf", 3) == 0) {
-        parser->offset += 3;
-    }
 
     parser->line_number++;
 

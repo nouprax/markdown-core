@@ -96,15 +96,14 @@ the source the document was parsed from:
 
 ```kotlin
 val document = Document.parse(source)            // TextUnit.UTF16 by default
-val scope = document.scope(node, source)         // Scope?, columns in document.unit
-val hit = document.node(Position(3, 7), source)  // the last node in walk order holding that byte
+val scope = document.scope(node, source)         // Scope, columns in document.unit
+val hit = document.node(Position(3, 7), source)  // the last node in walk order holding that scalar
 ```
 
 `Document.parse(source, unit)` chooses how those queries count columns:
 `TextUnit.UTF16` (the default, as Android `Editable` and Compose
-`TextFieldValue` count) or `TextUnit.UTF8`. A position inside a surrogate pair
-or a UTF-8 sequence names no node. The canonical dump always prints UTF-8
-columns.
+`TextFieldValue` count) or `TextUnit.UTF8`. A position names the start of a
+scalar. The canonical dump always prints UTF-8 columns.
 
 ### Compose
 

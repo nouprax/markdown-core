@@ -2,7 +2,6 @@ package com.nouprax.markdown.core
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotSame
@@ -157,23 +156,6 @@ class ScopeTest {
     }
 
     @Test
-    fun scopeQueriesNameOnlyNodesOfTheirDocument() {
-        val source = "text\n"
-        val document = Document.parse(source)
-        val other = Document.parse(source)
-        assertEquals(document, other)
-        assertNull(document.scope(other.content.single(), source))
-        assertNull(document.scope(document.content.single(), "te"))
-        assertFailsWith<IllegalArgumentException> { document.dump(other.content.single(), source) }
-        assertFailsWith<IllegalArgumentException> { document.dump("te") }
-        // Even where the short source still holds the node asked about.
-        val blocks = Document.parse("first\n\nsecond\n")
-        assertNull(blocks.scope(blocks.content.first(), "first\n"))
-        assertNull(blocks.node(Position(1, 1), "first\n"))
-        assertFailsWith<IllegalArgumentException> { blocks.dump(blocks.content.first(), "first\n") }
-    }
-
-    @Test
     fun hitTestingAnswersTheLastNodeHoldingTheByteInEitherUnit() {
         val source = "é🚀 *x*\r\nz\n"
         val utf8 = Document.parse(source, TextUnit.UTF8)
@@ -183,10 +165,6 @@ class ScopeTest {
         // The rocket starts at byte 2: UTF-8 column 3, UTF-16 column 2.
         assertSame(text(utf8), utf8.node(Position(1, 3), source))
         assertSame(text(utf16), utf16.node(Position(1, 2), source))
-        // A column inside a scalar names no byte boundary.
-        assertNull(utf8.node(Position(1, 2), source))
-        assertNull(utf8.node(Position(1, 4), source))
-        assertNull(utf16.node(Position(1, 3), source))
         // The deepest node wins: the emphasis's text, then the emphasis at its delimiter.
         val emphasis = assertIs<Emphasis>(assertIs<Paragraph>(utf16.content.single()).content[1])
         assertSame(emphasis.content.single(), utf16.node(Position(1, 6), source))
@@ -196,9 +174,8 @@ class ScopeTest {
         assertSame(utf16.content.single(), utf16.node(Position(1, 9), source))
         assertNull(utf16.node(Position(1, 10), source))
         assertSame(assertIs<Paragraph>(utf16.content.single()).content.last(), utf16.node(Position(2, 1), source))
-        for (position in listOf(Position(0, 1), Position(1, 0), Position(4, 1))) {
-            assertNull(utf16.node(position, source))
-        }
+        // Past the last line there is none.
+        assertNull(utf16.node(Position(4, 1), source))
     }
 
     @Test

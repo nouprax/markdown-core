@@ -82,7 +82,8 @@ static uint8_t *dump_of(const markdown_core_document *document, const uint8_t *s
                         size_t *length) {
     uint8_t *output = NULL;
     markdown_core_error *error = NULL;
-    if (!markdown_core_document_dump(document, NULL, source, source_length, &output, length, &error)) {
+    if (!markdown_core_document_dump(document, markdown_core_document_root(document), source, source_length, &output,
+                                     length, &error)) {
         markdown_core_error_free(error);
         return NULL;
     }
@@ -355,7 +356,9 @@ static void run_edits(run *state, const char *where, eh_unit unit, const uint8_t
             if (status != EH_INVALID) {
                 fail(state, "4.8", "%s step %zu: an invalid argument was accepted", where, index + 1);
             }
-            markdown_core_document_free(next);
+            if (next) {
+                markdown_core_document_free(next);
+            }
             /* A subject that accepted it no longer holds the model's text. */
             if (status == EH_OK) {
                 break;

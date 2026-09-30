@@ -87,7 +87,7 @@ function dispatch<Kind extends Markup["kind"]>(
     visitor[node.kind](node, phase);
 }
 
-const none: readonly (readonly Markup[])[] = Object.freeze([]);
+const none: readonly (readonly Markup[])[] = [];
 
 /**
  * Every kind's owned Markup relations in canonical order, each one chain of
