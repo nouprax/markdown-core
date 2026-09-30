@@ -320,7 +320,7 @@ const runtimeExports = [
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-const expectedRuntime = ["Attributes", "Document", "MarkdownCoreError", "MarkupDumper", "markupEquals", "walk"].sort();
+const expectedRuntime = ["Attributes", "Document", "MarkdownCoreError", "MarkdownSession", "MarkupDumper", "markupEquals", "walk"].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }
