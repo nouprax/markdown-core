@@ -46,7 +46,7 @@ extension SpecimenRecord {
     convenience init(from specimen: OpaquePointer, content: [MarkupRecord]) {
         var label = markdown_core_optional_string()
         var start = markdown_core_optional_i64()
-        markdown_core_specimen_properties(specimen, &label, &start)
+        answered(markdown_core_specimen_properties(specimen, &label, &start))
         self.init(
             InheritedFields(from: specimen),
             label: label.string,

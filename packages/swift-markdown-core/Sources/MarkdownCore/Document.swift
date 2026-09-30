@@ -1,24 +1,25 @@
 import MarkdownCoreC
 
-/// Why a parse produced no document.
-///
-/// These are failures of the parse operation itself, not syntax observations.
-public enum ParseErrorCode: Int32, Sendable {
-    /// An allocation failed. The parse is abandoned rather than returning a
-    /// document with something missing from it.
-    case allocationFailed = 2
+/// Why a call of the library failed.
+public enum ErrorCode: Sendable, Hashable {
+    /// An allocation failed, or the source exceeds the engine's 1 GiB
+    /// capacity. The parse is abandoned rather than returning a document with
+    /// something missing from it.
+    case allocationFailed
+    /// The source is too short for the node a scope or dump reads, or a
+    /// position's line or column is below 1.
+    case outOfBounds
+    /// A value was read as another kind. It is the engine's code, shared by
+    /// every binding; typed Swift nodes never reach it.
+    case kindMismatch
 }
 
-/// A parse failure, and nothing else.
-///
-/// It carries no scope: an input the parser could not turn into a document has
-/// no document extent to point at.
-public struct ParseError: Error, Sendable {
+/// The library's one error: a call that cannot answer without crashing or
+/// reading memory it does not own throws this with its ``code``, and nothing
+/// else.
+public struct MarkdownCoreError: Error, Sendable, Hashable {
     /// Which failure it was.
-    public let code: ParseErrorCode
-    /// A fixed English sentence naming the failure. It is for a log, not for
-    /// an end user, and it is not localised.
-    public let message: String
+    public let code: ErrorCode
 }
 
 /// The immutable semantic root returned by a parse.
@@ -77,17 +78,15 @@ public struct Document: Markup {
     ///   - source: the Markdown to parse. It is read as UTF-8.
     ///   - unit: how the document's scope queries count columns.
     /// - Returns: the parsed document.
-    /// - Throws: ``ParseError`` when there is no document to return at all.
+    /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/allocationFailed``
+    ///   when an allocation fails or `source` exceeds 1 GiB of UTF-8.
     public static func parse(_ source: String, unit: TextUnit = .utf16) throws -> Document {
-        var error: OpaquePointer?
+        var document: OpaquePointer?
         var text = source
-        let document = text.withUTF8 { bytes in
-            markdown_core_document_parse_in(bytes.baseAddress, bytes.count, unit.native, &error)
+        let status = text.withUTF8 { bytes in
+            markdown_core_document_parse_in(bytes.baseAddress, bytes.count, unit.native, &document)
         }
-        guard let document else {
-            defer { markdown_core_error_free(error) }
-            throw ParseError(from: error)
-        }
+        guard status == MARKDOWN_CORE_OK, let document else { throw MarkdownCoreError(status) }
         defer { markdown_core_document_free(document) }
 
         var builder = DocumentBuilder(document: document, root: markdown_core_document_root(document), unit: unit)

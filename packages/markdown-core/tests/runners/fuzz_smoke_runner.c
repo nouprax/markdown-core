@@ -19,13 +19,20 @@
 
 static size_t nodes_visited;
 
+/* Reads each node's kind-specific fields; an accessor that refuses a node of
+ * the kind it reads fails the walk. */
 static int inspect_node(const markdown_core_node *node, ts_ast_range range, void *context) {
     int64_t rowspan, colspan;
+    int32_t level;
+    bool flag;
+    markdown_core_string literal;
+    markdown_core_optional_string optional;
+    const char *name;
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
+    markdown_core_status status = markdown_core_node_kind_name(kind, &name);
 
     nodes_visited++;
-    (void)markdown_core_node_kind_name(kind);
-    if (range.start < 0 || range.end < range.start) {
+    if (status != MARKDOWN_CORE_OK || range.start < 0 || range.end < range.start) {
         return -1;
     }
     switch (kind) {
@@ -34,48 +41,46 @@ static int inspect_node(const markdown_core_node *node, ts_ast_range range, void
     case MARKDOWN_CORE_KIND_HTML:
     case MARKDOWN_CORE_KIND_HTML_BLOCK:
     case MARKDOWN_CORE_KIND_COMMENT:
-        (void)markdown_core_node_literal(node);
+        status = markdown_core_node_literal(node, &literal);
         break;
     case MARKDOWN_CORE_KIND_HEADING:
-        (void)markdown_core_node_heading_level(node);
+        status = markdown_core_node_heading_level(node, &level);
         break;
     case MARKDOWN_CORE_KIND_LIST_ITEM:
-        (void)markdown_core_node_list_item_marker(node);
+        status = markdown_core_node_list_item_marker(node, &optional);
         break;
     case MARKDOWN_CORE_KIND_TABLE_CELL:
-        markdown_core_node_table_cell_spans(node, &rowspan, &colspan);
+        status = markdown_core_node_table_cell_spans(node, &rowspan, &colspan);
         break;
     case MARKDOWN_CORE_KIND_DIRECTIVE:
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-        (void)markdown_core_node_directive_properties(node);
+        status = markdown_core_node_directive_properties(node, &optional);
         break;
     case MARKDOWN_CORE_KIND_DEFINITION:
-        (void)markdown_core_node_definition_compact(node);
+        status = markdown_core_node_definition_compact(node, &flag);
         break;
     default:
         break;
     }
-    return 0;
+    return status == MARKDOWN_CORE_OK ? 0 : -1;
 }
 
 static int smoke(const uint8_t *bytes, size_t length, const char *label) {
     markdown_core_document *document;
-    markdown_core_error *error;
+    markdown_core_status status;
     uint8_t *first = NULL;
     uint8_t *second = NULL;
     size_t first_length = 0;
     size_t second_length = 0;
     int result = -1;
 
-    document = markdown_core_document_parse(bytes, length, &error);
-    if (!document) {
-        /* A parse failure carries its reason. */
-        if (markdown_core_error_get_message(error).length == 0) {
-            fprintf(stderr, "%s: parse error carries no message\n", label);
-            markdown_core_error_free(error);
+    status = markdown_core_document_parse(bytes, length, &document);
+    if (status != MARKDOWN_CORE_OK) {
+        /* The one way a parse fails is an allocation. */
+        if (status != MARKDOWN_CORE_ALLOCATION_FAILED) {
+            fprintf(stderr, "%s: parse failed with status %d\n", label, (int)status);
             return -1;
         }
-        markdown_core_error_free(error);
         return 0;
     }
 
@@ -87,10 +92,10 @@ static int smoke(const uint8_t *bytes, size_t length, const char *label) {
         fprintf(stderr, "%s: a range lies outside the source\n", label);
         goto done;
     }
-    if (!markdown_core_document_dump(document, markdown_core_document_root(document), bytes, length, &first,
-                                     &first_length, &error) ||
-        !markdown_core_document_dump(document, markdown_core_document_root(document), bytes, length, &second,
-                                     &second_length, &error)) {
+    if (markdown_core_document_dump(document, markdown_core_document_root(document), bytes, length, &first,
+                                    &first_length) != MARKDOWN_CORE_OK ||
+        markdown_core_document_dump(document, markdown_core_document_root(document), bytes, length, &second,
+                                    &second_length) != MARKDOWN_CORE_OK) {
         fprintf(stderr, "%s: dump failed\n", label);
         goto done;
     }

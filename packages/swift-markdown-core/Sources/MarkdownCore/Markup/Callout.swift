@@ -73,7 +73,7 @@ extension CalloutRecord {
     convenience init(from node: OpaquePointer, title: [MarkupRecord], content: [MarkupRecord]) {
         var variant = markdown_core_optional_string()
         var collapsed = markdown_core_optional_bool()
-        markdown_core_node_callout_properties(node, &variant, &collapsed)
+        answered(markdown_core_node_callout_properties(node, &variant, &collapsed))
         self.init(
             InheritedFields(from: node),
             variant: variant.string,

@@ -16,10 +16,9 @@
 const char *bench_engine_name(void) { return "markdown-core"; }
 
 int bench_parse_document(const char *source, size_t length, bench_receipt *receipt) {
-    markdown_core_error *error;
-    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, length, &error);
+    markdown_core_document *document;
 
-    if (!document) {
+    if (markdown_core_document_parse((const uint8_t *)source, length, &document) != MARKDOWN_CORE_OK) {
         return 1;
     }
     receipt->bytes = length;

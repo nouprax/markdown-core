@@ -41,7 +41,7 @@ removed lifecycle or render APIs.
 The semantic operation is:
 
 ```text
-owned source bytes -> Document | ParseError
+owned source bytes -> Document | ALLOCATION_FAILED
 ```
 
 The facade owns the complete source for the duration of parsing. Internally it
@@ -122,7 +122,7 @@ the document owns the source.
 There is no diagnostic collection on `Document`, no diagnostic code enum, and
 no parser hook for retaining or emitting diagnostics. Grammar near-matches are
 represented only by the resulting AST and source scopes. Transaction failures
-are reported by the single parse error value.
+are reported by the single `ALLOCATION_FAILED` status.
 
 The canonical tree dump is a deterministic debug/verification representation
 of the AST. It is not a Markdown, HTML, XML, CommonMark, LaTeX, manpage, or
@@ -158,9 +158,8 @@ process. OOM state is sticky through the transaction. Once observed, the
 partially built document is destroyed and the consumer receives no document.
 
 Error reporting must itself remain available during OOM. The facade therefore
-uses immutable process-lifetime error values for fixed failures, including
-`MARKDOWN_CORE_ERROR_ALLOCATION_FAILED`. Reading or freeing such an error does
-not allocate.
+reports every failure as a `markdown_core_status` value, including
+`MARKDOWN_CORE_ALLOCATION_FAILED`; reporting a failure does not allocate.
 
 The strict OOM runner injects failure at every allocation in a full-featured
 parse. Every injected failure must produce the terminal result above; any
@@ -180,7 +179,9 @@ Swift, Kotlin, and ECMAScript expose the same concepts:
 - source scopes
 - exhaustive per-node visitors
 - canonical AST debug dumping
-- terminal parse errors
+- one library error carrying a status code: `ALLOCATION_FAILED` from a parse,
+  `OUT_OF_BOUNDS` from a source or position a public call cannot read, and
+  `KIND_MISMATCH` from a C accessor given the wrong kind
 
 They do not expose native handles, parser ownership, mutation, rendering,
 feed/edit/session types, CST nodes, or diagnostic lists.

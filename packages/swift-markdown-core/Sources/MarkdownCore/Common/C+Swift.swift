@@ -1,11 +1,45 @@
 import MarkdownCoreC
 
-extension ParseError {
-    init(from error: OpaquePointer?) {
-        // swift-format-ignore: NeverForceUnwrap
-        let code = ParseErrorCode(rawValue: Int32(markdown_core_error_get_code(error).rawValue))!
-        self.init(code: code, message: markdown_core_error_get_message(error).required)
+extension MarkdownCoreError {
+    /// The error a failed facade call reports. Each code is the C
+    /// `markdown_core_status` of the same value.
+    init(_ status: markdown_core_status) {
+        switch status {
+        case MARKDOWN_CORE_ALLOCATION_FAILED: self.init(code: .allocationFailed)
+        case MARKDOWN_CORE_OUT_OF_BOUNDS: self.init(code: .outOfBounds)
+        // A C enum switch is never exhaustive in Swift; the one failure left
+        // is MARKDOWN_CORE_KIND_MISMATCH.
+        default: self.init(code: .kindMismatch)
+        }
     }
+}
+
+/// Reads the one out-parameter of a facade accessor. The builder asks each
+/// accessor only of the kind it reads, and each `*_at` only below its count,
+/// so the facade always answers.
+func answer<Value>(
+    _ unanswered: Value,
+    _ read: (UnsafeMutablePointer<Value>) -> markdown_core_status
+) -> Value {
+    var value = unanswered
+    answered(read(&value))
+    return value
+}
+
+/// A node, value or view the facade answers through a pointer out-parameter,
+/// `nil` when the relation or field is absent.
+func answer(_ read: (UnsafeMutablePointer<OpaquePointer?>) -> markdown_core_status) -> OpaquePointer? {
+    answer(nil, read)
+}
+
+/// The status of a facade call the binding makes only where it cannot fail.
+func answered(_ status: markdown_core_status) {
+    assert(status == MARKDOWN_CORE_OK, "the facade refused a call the binding makes only where it answers")
+}
+
+/// The literal of a `Text`, `Code`, `HTML`, `HTMLBlock` or `Comment`.
+func nativeLiteral(of node: OpaquePointer) -> String {
+    answer(markdown_core_string()) { markdown_core_node_literal(node, $0) }.required
 }
 
 extension markdown_core_string {

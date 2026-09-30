@@ -33,7 +33,7 @@ final class HTMLBlockRecord: MarkupRecord, @unchecked Sendable {
 
 extension HTMLBlockRecord {
     convenience init(from node: OpaquePointer) {
-        self.init(InheritedFields(from: node), literal: markdown_core_node_literal(node).required)
+        self.init(InheritedFields(from: node), literal: nativeLiteral(of: node))
     }
 }
 

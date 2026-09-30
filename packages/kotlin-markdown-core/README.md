@@ -105,6 +105,22 @@ val hit = document.node(Position(3, 7), source)  // the last node in walk order 
 `TextFieldValue` count) or `TextUnit.UTF8`. A position names the start of a
 scalar. The canonical dump always prints UTF-8 columns.
 
+### Errors
+
+The library throws one exception, `MarkdownCoreException`, whose `code` says
+why:
+
+- `ErrorCode.ALLOCATION_FAILED`: `Document.parse` could not allocate, or the
+  source exceeds 1 GiB of UTF-8, or its tree exceeds a byte array's capacity.
+- `ErrorCode.OUT_OF_BOUNDS`: `scope` or `dump` got a source that ends before
+  the node does, or `node` got a position whose line or column is below 1. A
+  position past the source, or one no node holds, answers `null`.
+- `ErrorCode.KIND_MISMATCH`: the engine's code for a value read as the wrong
+  kind. It is shared by every binding; the typed Kotlin nodes never reach it.
+
+A node of another document is not checked, and the answer for it means
+nothing.
+
 ### Compose
 
 The Compose compiler treats classes from a module it did not compile as

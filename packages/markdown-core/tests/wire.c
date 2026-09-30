@@ -138,6 +138,7 @@ int main(int argc, char **argv) {
     }
     check_shared_resource();
     check_document((const uint8_t *)"", 0, "the empty document");
+    check_document(NULL, 0, "the empty document from a NULL source");
     for (i = 3; i < argc; i++) {
         check_fixture(argv[2], argv[i]);
     }

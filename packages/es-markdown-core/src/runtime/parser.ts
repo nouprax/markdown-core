@@ -1,6 +1,6 @@
 import type { Document } from "../markup/document.js";
 import type { TextUnit } from "../markup/values.js";
-import { ParseError } from "../common/parse-error.js";
+import { MarkdownCoreError } from "../common/markdown-core-error.js";
 import { Decoder, lengthOffset } from "../wire/node-decoder.js";
 import { native, type NativeExports } from "./native.js";
 
@@ -21,7 +21,7 @@ export function parseDocumentWithNative(nativeExports: NativeExports, source: st
         sourcePointer = allocate(nativeExports, Math.max(bytes.length, 1));
         new Uint8Array(nativeExports.memory.buffer, sourcePointer, bytes.length).set(bytes);
         resultPointer = nativeExports.markdown_core_wire_parse(sourcePointer, bytes.length);
-        if (!resultPointer) throw new ParseError("allocationFailed", "failed to allocate native AST result");
+        if (!resultPointer) throw new MarkdownCoreError("allocationFailed");
 
         // Parsing may grow memory, which detaches every pre-call view. Take
         // fresh views, then decode in place without another Wasm call. No
@@ -36,6 +36,6 @@ export function parseDocumentWithNative(nativeExports: NativeExports, source: st
 
 function allocate(nativeExports: NativeExports, size: number): number {
     const pointer = nativeExports.malloc(size);
-    if (!pointer) throw new ParseError("allocationFailed", "failed to allocate WASM memory");
+    if (!pointer) throw new MarkdownCoreError("allocationFailed");
     return pointer;
 }

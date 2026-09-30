@@ -56,11 +56,20 @@ void ts_spec_free(ts_spec_file *file);
 
 /* Traversal -------------------------------------------------------------- */
 
-/* Pre-order callback; return non-zero to abort the walk. */
 /* Parses `bytes` through the public facade -- the one language, the one
- * transaction every consumer runs -- and prints the facade error message to
+ * transaction every consumer runs -- and prints the failure's status to
  * stderr and returns NULL on failure. */
 markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length);
+
+/* A call the test expects to succeed: any other status names the call on
+ * stderr and aborts the runner, so no answer is read from an out-parameter
+ * the call did not write. */
+void ts_require_ok(markdown_core_status status, const char *call);
+#define TS_OK(call) ts_require_ok((call), #call)
+
+/* A node-valued field read through its accessor, which must succeed. */
+typedef markdown_core_status (*ts_node_field)(const markdown_core_node *node, const markdown_core_node **field);
+const markdown_core_node *ts_field(const markdown_core_node *node, ts_node_field accessor);
 
 /* A node's absolute source range in bytes, resolved from the extents by the
  * walk itself rather than by the facade's scope query. */
@@ -68,6 +77,7 @@ typedef struct {
     int64_t start, end;
 } ts_ast_range;
 
+/* Pre-order callback; return non-zero to abort the walk. */
 typedef int (*ts_ast_visit_fn)(const markdown_core_node *node, ts_ast_range range, void *context);
 
 /* Iterative pre-order walk over every owned Markup field in canonical order,

@@ -19,7 +19,7 @@ extension APISuite {
         #expect(insertion.content.count == 2)
         #expect(((insertion.content[1] as? Emphasis)?.content.first as? Text)?.literal == "b")
         #expect(
-            scope(of: insertion, in: document, source: source)
+            try scope(of: insertion, in: document, source: source)
                 == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 9))
         )
     }

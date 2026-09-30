@@ -124,8 +124,9 @@ export class MessageWriter {
         return this.#message(0);
     }
 
-    error(code, message) {
-        return this.u32(code).string(message).#message(1);
+    /** A failure message: its `markdown_core_status` and nothing else. */
+    error(status) {
+        return this.u32(status).#message(1);
     }
 
     #message(status) {

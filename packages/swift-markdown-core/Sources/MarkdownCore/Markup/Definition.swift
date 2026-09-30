@@ -54,7 +54,7 @@ extension DefinitionRecord {
     convenience init(from node: OpaquePointer, term: [MarkupRecord], bodies: [[MarkupRecord]]) {
         self.init(
             InheritedFields(from: node),
-            compact: markdown_core_node_definition_compact(node),
+            compact: answer(false) { markdown_core_node_definition_compact(node, $0) },
             term: term,
             bodies: bodies
         )

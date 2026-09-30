@@ -20,11 +20,13 @@ internal object WireDecoder {
     /** The status of a parse failure; the other status is a document. */
     private const val FAILURE = 1
 
-    /**
-     * The facade's `markdown_core_error_code` of [ParseErrorCode]'s first
-     * entry; the codes number the entries in order from it.
-     */
-    private const val FIRST_ERROR_CODE = 2
+    /** Each failure's code by the value of the facade's `markdown_core_status`. */
+    private val errorCodes =
+        mapOf(
+            1 to ErrorCode.ALLOCATION_FAILED,
+            2 to ErrorCode.OUT_OF_BOUNDS,
+            3 to ErrorCode.KIND_MISMATCH,
+        )
 
     // The contract's enums, in the order of their wire indices.
     private val flavors = listOf(ListFlavor.BULLET, ListFlavor.ORDERED)
@@ -52,8 +54,8 @@ internal object WireDecoder {
             return nodes[0] as Document
         }
 
-        private fun failure(): ParseException =
-            ParseException(ParseErrorCode.entries[count() - FIRST_ERROR_CODE], string())
+        /** A failure's body is its `u32` status code alone. */
+        private fun failure(): MarkdownCoreException = MarkdownCoreException(errorCodes.getValue(count()))
 
         // ---- Records -----------------------------------------------------------
 

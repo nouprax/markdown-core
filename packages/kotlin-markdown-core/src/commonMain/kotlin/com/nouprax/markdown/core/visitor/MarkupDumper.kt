@@ -2,7 +2,11 @@ package com.nouprax.markdown.core
 
 /** Produces the canonical debug tree for immutable Markdown markup. */
 public object MarkupDumper {
-    /** The canonical debug dump of [document], with scopes computed from [source] in UTF-8 columns. */
+    /**
+     * The canonical debug dump of [document], with scopes computed from [source] in UTF-8 columns.
+     *
+     * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when [source] ends before [document] does.
+     */
     public fun dump(
         document: Document,
         source: String,
@@ -12,6 +16,8 @@ public object MarkupDumper {
      * The canonical debug dump of [node], a node of [document], and its owned
      * markup, with scopes computed from [source], the text the document was
      * parsed from, always in UTF-8 columns whatever the document's unit.
+     *
+     * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when [source] ends before [node] does.
      */
     public fun dump(
         document: Document,
@@ -20,6 +26,8 @@ public object MarkupDumper {
     ): String {
         val lines = SourceLines(source)
         val place = document.place(node)
+        // Owned markup lies within its owner, so covering the node covers every line.
+        if (place.end > lines.bytes.size) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
         // A node's walk starts at its own extent, which is relative to the
         // anchor its relation had where it was written.
         return Tree(lines).dump(node, place.start - node.extent.lead)

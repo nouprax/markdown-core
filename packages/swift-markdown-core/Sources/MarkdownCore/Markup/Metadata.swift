@@ -116,16 +116,16 @@ extension MetadataRecord {
     convenience init(from metadata: OpaquePointer) {
         self.init(
             InheritedFields(from: metadata),
-            name: markdown_core_metadata_name(metadata).map { MetadataValue(from: $0) },
-            title: markdown_core_metadata_title(metadata).map { MetadataValue(from: $0) },
-            subtitle: markdown_core_metadata_subtitle(metadata).map { MetadataValue(from: $0) },
-            time: markdown_core_metadata_time(metadata).map { MetadataValue(from: $0) },
-            date: markdown_core_metadata_date(metadata).map { MetadataValue(from: $0) },
-            authors: markdown_core_metadata_authors(metadata).map { MetadataValue(from: $0) },
-            keywords: markdown_core_metadata_keywords(metadata).map { MetadataValue(from: $0) },
-            abstract: markdown_core_metadata_abstract(metadata).map { MetadataValue(from: $0) },
-            state: markdown_core_metadata_state(metadata).map { MetadataValue(from: $0) },
-            comment: markdown_core_metadata_comment(metadata).map { MetadataValue(from: $0) }
+            name: answer { markdown_core_metadata_name(metadata, $0) }.map { MetadataValue(from: $0) },
+            title: answer { markdown_core_metadata_title(metadata, $0) }.map { MetadataValue(from: $0) },
+            subtitle: answer { markdown_core_metadata_subtitle(metadata, $0) }.map { MetadataValue(from: $0) },
+            time: answer { markdown_core_metadata_time(metadata, $0) }.map { MetadataValue(from: $0) },
+            date: answer { markdown_core_metadata_date(metadata, $0) }.map { MetadataValue(from: $0) },
+            authors: answer { markdown_core_metadata_authors(metadata, $0) }.map { MetadataValue(from: $0) },
+            keywords: answer { markdown_core_metadata_keywords(metadata, $0) }.map { MetadataValue(from: $0) },
+            abstract: answer { markdown_core_metadata_abstract(metadata, $0) }.map { MetadataValue(from: $0) },
+            state: answer { markdown_core_metadata_state(metadata, $0) }.map { MetadataValue(from: $0) },
+            comment: answer { markdown_core_metadata_comment(metadata, $0) }.map { MetadataValue(from: $0) }
         )
     }
 }
@@ -133,11 +133,16 @@ extension MetadataRecord {
 extension MetadataValue {
     init(from record: OpaquePointer) {
         if markdown_core_metadata_value_get_kind(record) == MARKDOWN_CORE_METADATA_SCALAR {
-            self = .scalar(MetadataScalar(from: markdown_core_metadata_value_scalar(record)))
+            let scalar = answer(markdown_core_metadata_scalar()) { markdown_core_metadata_value_scalar(record, $0) }
+            self = .scalar(MetadataScalar(from: scalar))
         } else {
             self = .list(
-                (0..<markdown_core_metadata_value_item_count(record)).map { index in
-                    MetadataListItem(from: markdown_core_metadata_value_item_at(record, index))
+                (0..<answer(0) { markdown_core_metadata_value_item_count(record, $0) }).map { index in
+                    MetadataListItem(
+                        from: answer(markdown_core_metadata_list_item()) {
+                            markdown_core_metadata_value_item_at(record, index, $0)
+                        }
+                    )
                 }
             )
         }

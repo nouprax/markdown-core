@@ -142,41 +142,48 @@ static const char *const INPUTS[] = {
 // Every parse goes through the PUBLIC entry, which is the one a consumer
 // races: the dialect has no switches, so there is no other language to race
 // it against.
-static markdown_core_document *parse_document(const char *input, markdown_core_error **error) {
-    return markdown_core_document_parse((const uint8_t *)input, strlen(input), error);
+static markdown_core_status parse_document(const char *input, markdown_core_document **document) {
+    return markdown_core_document_parse((const uint8_t *)input, strlen(input), document);
 }
 
 // Depth-first traversal touching kind, id, extent, child count, and per-kind
-// accessors; returns the node count so results can be sanity-compared.
+// accessors; returns the node count so results can be sanity-compared, or 0
+// when an accessor refuses a node of the kind it reads.
 static size_t traverse(const markdown_core_node *node) {
     size_t visited = 1;
 
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_extent extent = markdown_core_node_extent(node);
-    (void)markdown_core_node_kind_name(kind);
-    if (markdown_core_node_id(node) == 0 || extent.span > UINT32_MAX / 2) {
+    const char *name;
+    if (markdown_core_node_kind_name(kind, &name) != MARKDOWN_CORE_OK || markdown_core_node_id(node) == 0 ||
+        extent.span > UINT32_MAX / 2) {
         return 0;
     }
 
     markdown_core_string value;
     markdown_core_placement mode;
+    int32_t level;
+    markdown_core_status status = MARKDOWN_CORE_OK;
     switch (kind) {
     case MARKDOWN_CORE_KIND_TEXT:
     case MARKDOWN_CORE_KIND_CODE:
     case MARKDOWN_CORE_KIND_HTML:
     case MARKDOWN_CORE_KIND_HTML_BLOCK:
     case MARKDOWN_CORE_KIND_COMMENT:
-        (void)markdown_core_node_literal(node);
+        status = markdown_core_node_literal(node, &value);
         break;
     case MARKDOWN_CORE_KIND_HEADING:
-        (void)markdown_core_node_heading_level(node);
+        status = markdown_core_node_heading_level(node, &level);
         break;
     case MARKDOWN_CORE_KIND_FORMULA:
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
-        markdown_core_node_formula_properties(node, &mode, &value);
+        status = markdown_core_node_formula_properties(node, &mode, &value);
         break;
     default:
         break;
+    }
+    if (status != MARKDOWN_CORE_OK) {
+        return 0;
     }
 
     size_t children = 0;
@@ -198,10 +205,8 @@ static size_t traverse(const markdown_core_node *node) {
 // Parses one input, verifies traversal and dump determinism, frees the
 // document, and hands the caller a malloc'd dump to compare or discard.
 static int parse_and_dump(const char *input, uint8_t **dump_out, size_t *length_out) {
-    markdown_core_error *error;
-    markdown_core_document *document = parse_document(input, &error);
-    if (!document) {
-        markdown_core_error_free(error);
+    markdown_core_document *document;
+    if (parse_document(input, &document) != MARKDOWN_CORE_OK) {
         return 1;
     }
 
@@ -215,11 +220,11 @@ static int parse_and_dump(const char *input, uint8_t **dump_out, size_t *length_
     uint8_t *second = NULL;
     size_t second_length = 0;
     const uint8_t *source = (const uint8_t *)input;
-    if (!markdown_core_document_dump(document, markdown_core_document_root(document), source, strlen(input), &first,
-                                     &first_length, &error) ||
-        !markdown_core_document_dump(document, markdown_core_document_root(document), source, strlen(input), &second,
-                                     &second_length, &error)) {
-        markdown_core_error_free(error);
+    if (markdown_core_document_dump(document, markdown_core_document_root(document), source, strlen(input), &first,
+                                    &first_length) != MARKDOWN_CORE_OK ||
+        markdown_core_document_dump(document, markdown_core_document_root(document), source, strlen(input), &second,
+                                    &second_length) != MARKDOWN_CORE_OK) {
+        markdown_core_dump_free(first);
         markdown_core_document_free(document);
         return 1;
     }

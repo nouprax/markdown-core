@@ -31,7 +31,8 @@ bool markdown_core_publish_tree(markdown_core_parser *parser);
 
 /* The scope of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`; markdown_core_document_scope is this query over a
- * document's tree and unit. */
+ * document's tree and unit, behind its public check that the source covers
+ * the node. False when an allocation failed. */
 bool markdown_core_tree_scope(const markdown_core_node *root, const markdown_core_node *node, const uint8_t *source,
                               size_t length, markdown_core_text_unit unit, markdown_core_scope *scope);
 
@@ -110,11 +111,6 @@ bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *
  * under the same owner, which is how the canonical dump draws its branches. */
 bool markdown_core_walk_has_next(const markdown_core_walk *walk);
 void markdown_core_walk_end(markdown_core_walk *walk);
-
-/* Testable implementation of the public facade transaction. The public entry
- * supplies the default allocator; allocation-failure tests supply an injected
- * allocator and assert the same consumer-visible error contract. */
-markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length, markdown_core_error **error);
 
 #ifdef __cplusplus
 }

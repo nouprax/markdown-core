@@ -15,7 +15,7 @@ import Testing
         #expect(images[0].title == "title")
         let alt = try #require(images[0].content.first as? Emphasis)
         #expect((alt.content.first as? Text)?.literal == "alt")
-        #expect(scope(of: alt, in: document, source: source).end.column == 7)
+        #expect(try scope(of: alt, in: document, source: source).end.column == 7)
         #expect(images[1].content.isEmpty)
         #expect((images[2].content.first as? Text)?.literal == "bad|01")
         var visitor = RecordingWalkingVisitor()

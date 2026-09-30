@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Document, MarkupDumper, markupEquals, walk } from "../dist/index.js";
+import { Document, MarkdownCoreError, MarkupDumper, markupEquals, walk } from "../dist/index.js";
 // Past index.js for the instance itself: the heap is what this asserts about,
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
@@ -388,12 +388,12 @@ test("errors: allocation failure is terminal across the WASM boundary", () => {
     };
     assert.throws(
         () => parseDocumentWithNative(allocationFailure, "text", "utf16"),
-        (error) => error?.name === "ParseError" && error.code === "allocationFailed"
+        (error) => error instanceof MarkdownCoreError && error.code === "allocationFailed"
     );
     assert.equal(parseCalled, false, "the runtime must not parse or fall back after allocation refusal");
 
     const memory = new globalThis.WebAssembly.Memory({ initial: 1 });
-    const result = new MessageWriter().error(2, "out of memory");
+    const result = new MessageWriter().error(1);
     new Uint8Array(memory.buffer, 64, result.length).set(result);
     const frees = [];
     const freedResults = [];
@@ -406,8 +406,7 @@ test("errors: allocation failure is terminal across the WASM boundary", () => {
     };
     assert.throws(
         () => parseDocumentWithNative(nativeFailure, "text", "utf16"),
-        (error) =>
-            error?.name === "ParseError" && error.code === "allocationFailed" && error.message === "out of memory"
+        (error) => error instanceof MarkdownCoreError && error.code === "allocationFailed"
     );
     assert.deepEqual(freedResults, [64]);
     assert.deepEqual(frees, [8]);
@@ -820,13 +819,78 @@ test("ast: the decoder's reference, formula, list and empty-string arms are exer
     assert.equal(list.items.length, 2);
 });
 
-test("errors: a native parse failure keeps its code and message across the WASM boundary", () => {
-    // Allocation failure, the one reason, reaches the consumer as the engine
-    // wrote it.
-    assert.throws(
-        () => decoder(new MessageWriter().error(2, "bad")).decode(),
-        (error) => error.name === "ParseError" && error.code === "allocationFailed" && error.message === "bad"
-    );
+test("errors: a native failure maps its status by value across the WASM boundary", () => {
+    // A failure message is its `markdown_core_status` and nothing else; each
+    // status names one code, by its value, not by position.
+    for (const [status, code] of [
+        [1, "allocationFailed"],
+        [2, "outOfBounds"],
+        [3, "kindMismatch"]
+    ]) {
+        assert.throws(
+            () => decoder(new MessageWriter().error(status)).decode(),
+            (error) =>
+                error instanceof MarkdownCoreError &&
+                error instanceof Error &&
+                error.name === "MarkdownCoreError" &&
+                error.code === code
+        );
+    }
+});
+
+test("errors: scope and dump reject a source that ends before the node", () => {
+    const source = "a\n\n# b\n";
+    const document = Document.parse(source);
+    const heading = document.content[1];
+    const outOfBounds = (error) => error instanceof MarkdownCoreError && error.code === "outOfBounds";
+    // The heading and the document end at byte 6, before the final line
+    // feed: a source of 5 bytes does not cover them, one of 6 does. UTF-16 is
+    // the unit whose columns read the source's bytes.
+    const short = source.slice(0, 5);
+    assert.throws(() => document.scope(heading, short), outOfBounds);
+    assert.throws(() => document.scope(document, short), outOfBounds);
+    assert.throws(() => document.dump(short), outOfBounds);
+    assert.throws(() => document.dump(heading, short), outOfBounds);
+    assert.throws(() => MarkupDumper.dump(document, short), outOfBounds);
+    assert.throws(() => MarkupDumper.dump(document, heading, short), outOfBounds);
+    assert.throws(() => document.scope(heading, ""), outOfBounds);
+    const covering = source.slice(0, 6);
+    assert.deepEqual(document.scope(heading, covering), { start: { line: 3, column: 1 }, end: { line: 3, column: 3 } });
+    assert.match(document.dump(heading, covering), /^Heading scope=3:1..3:3 /);
+    // A node that ends where the short source does is still covered.
+    assert.deepEqual(document.scope(document.content[0], "a"), {
+        start: { line: 1, column: 1 },
+        end: { line: 1, column: 1 }
+    });
+});
+
+test("errors: nodeAt rejects a line or column that is not an integer of at least 1", () => {
+    const source = "é🚀x\n";
+    for (const unit of ["utf16", "utf8"]) {
+        const document = Document.parse(source, { unit });
+        for (const [line, column] of [
+            [0, 1],
+            [1, 0],
+            [-1, 1],
+            [1, -1],
+            [1.5, 2],
+            [1, 1.5],
+            [Number.NaN, 2],
+            [1, Number.NaN],
+            [Number.POSITIVE_INFINITY, 1],
+            [1, Number.POSITIVE_INFINITY]
+        ]) {
+            assert.throws(
+                () => document.nodeAt({ line, column }, source),
+                (error) => error instanceof MarkdownCoreError && error.code === "outOfBounds",
+                `${unit} ${line}:${column}`
+            );
+        }
+        // Integer positions past the source or its lines are real answers.
+        assert.equal(document.nodeAt({ line: 3, column: 1 }, source), null);
+        assert.equal(document.nodeAt({ line: 1, column: 2 ** 40 }, source), null);
+        assert.equal(document.nodeAt({ line: 1, column: 1 }, ""), null);
+    }
 });
 
 test("ast: ids up to 2^53 - 1 and definition tables decode exactly", () => {

@@ -66,7 +66,7 @@ extension EmbeddedRecord {
             resource.fields(of: node),
             dest: resource.dest,
             title: resource.title,
-            dimensions: markdown_core_node_dimensions(node).map { Dimensions($0.pointee) },
+            dimensions: answer(nil) { markdown_core_node_dimensions(node, $0) }.map { Dimensions($0.pointee) },
             content: content
         )
     }

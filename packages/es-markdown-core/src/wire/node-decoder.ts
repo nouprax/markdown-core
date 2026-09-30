@@ -12,7 +12,7 @@ import type { ListItem } from "../markup/list.js";
 import type { Markup } from "../markup/markup.js";
 import type { TableCaption, TableCell, TableColumn, TableRow } from "../markup/table.js";
 import type { Definition } from "../markup/definition-list.js";
-import { ParseError, type ParseErrorCode } from "../common/parse-error.js";
+import { MarkdownCoreError, type ErrorCode } from "../common/markdown-core-error.js";
 import { MarkupDumper } from "../visitor/markup-dumper.js";
 import { nodeAt, scopeOf } from "../visitor/document-queries.js";
 import type {
@@ -46,9 +46,11 @@ const flows: readonly Flow[] = ["none", "left", "center", "right"];
 const placements: readonly Placement[] = ["embedded", "standalone"];
 const bibModes: readonly BibMode[] = ["normal", "authorInText", "suppressAuthor"];
 const flavors: readonly ListFlavor[] = ["bullet", "ordered"];
-/** `markdown_core_error_code` by value. */
-const errorCodes: { readonly [code: number]: ParseErrorCode } = {
-    2: "allocationFailed"
+/** `markdown_core_status` by value; 0, success, is never a failure message's. */
+const errorCodes: { readonly [status: number]: ErrorCode } = {
+    1: "allocationFailed",
+    2: "outOfBounds",
+    3: "kindMismatch"
 };
 
 /** The document's members that are not contract fields: the decoder adds them
@@ -95,15 +97,11 @@ export class Decoder {
         return this.document(root, footnotes, specimens);
     }
 
-    /** Status 1 is a parse failure, and 0 a document. */
+    /** Status 1 is a failure, whose body is its u32 `markdown_core_status`
+     * and nothing else, and 0 a document. */
     private header(): void {
         this.offset = statusOffset;
-        if (this.u8() === 1) throw this.error();
-    }
-
-    private error(): ParseError {
-        const code = errorCodes[this.u32()]!;
-        return new ParseError(code, this.string());
+        if (this.u8() === 1) throw new MarkdownCoreError(errorCodes[this.u32()]!);
     }
 
     // ---- Records -----------------------------------------------------------

@@ -249,6 +249,15 @@ public final class com/nouprax/markdown/core/Emphasis : com/nouprax/markdown/cor
 	public fun getId-cjMMCNQ ()J
 }
 
+public final class com/nouprax/markdown/core/ErrorCode : java/lang/Enum {
+	public static final field ALLOCATION_FAILED Lcom/nouprax/markdown/core/ErrorCode;
+	public static final field KIND_MISMATCH Lcom/nouprax/markdown/core/ErrorCode;
+	public static final field OUT_OF_BOUNDS Lcom/nouprax/markdown/core/ErrorCode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/ErrorCode;
+	public static fun values ()[Lcom/nouprax/markdown/core/ErrorCode;
+}
+
 public final class com/nouprax/markdown/core/Extent {
 	public synthetic fun <init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()I
@@ -405,6 +414,11 @@ public final class com/nouprax/markdown/core/Mark : com/nouprax/markdown/core/Ma
 	public final fun getContent ()Ljava/util/List;
 	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
 	public fun getId-cjMMCNQ ()J
+}
+
+public final class com/nouprax/markdown/core/MarkdownCoreException : java/lang/RuntimeException {
+	public fun <init> (Lcom/nouprax/markdown/core/ErrorCode;)V
+	public final fun getCode ()Lcom/nouprax/markdown/core/ErrorCode;
 }
 
 public abstract class com/nouprax/markdown/core/Markup {
@@ -665,19 +679,6 @@ public final class com/nouprax/markdown/core/Paragraph : com/nouprax/markdown/co
 	public final fun getContent ()Ljava/util/List;
 	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
 	public fun getId-cjMMCNQ ()J
-}
-
-public final class com/nouprax/markdown/core/ParseErrorCode : java/lang/Enum {
-	public static final field ALLOCATION_FAILED Lcom/nouprax/markdown/core/ParseErrorCode;
-	public static fun getEntries ()Lkotlin/enums/EnumEntries;
-	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/ParseErrorCode;
-	public static fun values ()[Lcom/nouprax/markdown/core/ParseErrorCode;
-}
-
-public final class com/nouprax/markdown/core/ParseException : java/lang/RuntimeException {
-	public fun <init> (Lcom/nouprax/markdown/core/ParseErrorCode;Ljava/lang/String;)V
-	public final fun getCode ()Lcom/nouprax/markdown/core/ParseErrorCode;
-	public fun getMessage ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/Placement : java/lang/Enum {

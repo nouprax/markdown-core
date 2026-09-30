@@ -2,6 +2,7 @@ package com.nouprax.markdown.core
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotSame
@@ -176,6 +177,40 @@ class ScopeTest {
         assertSame(assertIs<Paragraph>(utf16.content.single()).content.last(), utf16.node(Position(2, 1), source))
         // Past the last line there is none.
         assertNull(utf16.node(Position(4, 1), source))
+    }
+
+    @Test
+    fun aSourceThatEndsBeforeTheNodeIsOutOfBounds() {
+        // The UTF-16 columns of a short source would read past its bytes.
+        fun outOfBounds(call: () -> Any) =
+            assertEquals(ErrorCode.OUT_OF_BOUNDS, assertFailsWith<MarkdownCoreException> { call() }.code)
+
+        val source = "é🚀 x\n"
+        for ((unit, end) in listOf(TextUnit.UTF8 to 8, TextUnit.UTF16 to 5)) {
+            val document = Document.parse(source, unit)
+            val paragraph = document.content.single()
+            val short = source.dropLast(2)
+            outOfBounds { document.scope(paragraph, short) }
+            outOfBounds { document.dump(short) }
+            outOfBounds { document.dump(paragraph, short) }
+            outOfBounds { MarkupDumper.dump(document, short) }
+            outOfBounds { MarkupDumper.dump(document, paragraph, short) }
+            // A source that covers the node's end is enough, and the node's end is exclusive.
+            assertEquals(Scope(Position(1, 1), Position(1, end)), document.scope(paragraph, source.dropLast(1)))
+        }
+    }
+
+    @Test
+    fun aPositionBelowTheFirstLineOrColumnIsOutOfBounds() {
+        val source = "a\n"
+        val document = Document.parse(source)
+        for (position in listOf(Position(0, 1), Position(1, 0), Position(-1, 1), Position(1, -1))) {
+            val failure = assertFailsWith<MarkdownCoreException> { document.node(position, source) }
+            assertEquals(ErrorCode.OUT_OF_BOUNDS, failure.code)
+        }
+        // Line 1, column 1 is the smallest position; a line past the source holds no node.
+        assertIs<Text>(document.node(Position(1, 1), source))
+        assertNull(document.node(Position(3, 1), source))
     }
 
     @Test

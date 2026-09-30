@@ -280,22 +280,20 @@ static const oom_case OOM_CASES[] = {
     {"element-edges", OOM_ELEMENT_EDGE_CORPUS, sizeof(OOM_ELEMENT_EDGE_CORPUS) - 1},
 };
 
-static markdown_core_document *parse_with_sweep(const oom_case *test, markdown_core_error **error) {
-    return markdown_core_document_parse((const uint8_t *)test->source, test->length, error);
+static markdown_core_status parse_with_sweep(const oom_case *test, markdown_core_document **document) {
+    return markdown_core_document_parse((const uint8_t *)test->source, test->length, document);
 }
 
 static int sweep_case(const oom_case *test) {
-    markdown_core_document *document;
-    markdown_core_error *error = NULL;
+    markdown_core_document *document = NULL;
+    markdown_core_status status;
     unsigned long total;
     unsigned long allocation;
 
     allocation_count = 0;
     fail_at = 0;
-    document = parse_with_sweep(test, &error);
-    if (!document || error) {
+    if (parse_with_sweep(test, &document) != MARKDOWN_CORE_OK) {
         fprintf(stderr, "%s: counting parse failed\n", test->name);
-        markdown_core_document_free(document);
         return -1;
     }
     total = allocation_count;
@@ -309,36 +307,33 @@ static int sweep_case(const oom_case *test) {
         allocation_count = 0;
         fail_at = allocation;
         failure_fired = 0;
-        error = NULL;
-        document = parse_with_sweep(test, &error);
+        document = NULL;
+        status = parse_with_sweep(test, &document);
         fail_at = 0;
         if (!failure_fired) {
             fprintf(stderr, "%s: allocation %lu / %lu was not reached\n", test->name, allocation, total);
             markdown_core_document_free(document);
             return -1;
         }
-        if (document) {
+        if (status == MARKDOWN_CORE_OK || document) {
             fprintf(stderr, "%s: allocation %lu / %lu: OOM returned a document\n", test->name, allocation, total);
             markdown_core_document_free(document);
             return -1;
         }
-        if (!error || markdown_core_error_get_code(error) != MARKDOWN_CORE_ERROR_ALLOCATION_FAILED ||
-            markdown_core_error_get_message(error).length == 0) {
+        if (status != MARKDOWN_CORE_ALLOCATION_FAILED) {
             fprintf(stderr, "%s: allocation %lu / %lu: OOM was not reported to the consumer\n", test->name, allocation,
                     total);
             return -1;
         }
-        markdown_core_error_free(error);
     }
 
     return 0;
 }
 
 /* A dump of a valid document and source refuses each allocation in turn the
- * same way: no output and ALLOCATION_FAILED, never an invalid-argument error. */
+ * same way: no output and ALLOCATION_FAILED, never another status. */
 static int sweep_dump(const oom_case *test) {
-    markdown_core_document *document;
-    markdown_core_error *error = NULL;
+    markdown_core_document *document = NULL;
     uint8_t *output = NULL;
     size_t length = 0;
     unsigned long total;
@@ -347,17 +342,14 @@ static int sweep_dump(const oom_case *test) {
 
     allocation_count = 0;
     fail_at = 0;
-    document = parse_with_sweep(test, &error);
-    if (!document || error) {
+    if (parse_with_sweep(test, &document) != MARKDOWN_CORE_OK) {
         fprintf(stderr, "%s: parse for the dump sweep failed\n", test->name);
-        markdown_core_document_free(document);
         return -1;
     }
     allocation_count = 0;
-    if (!markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)test->source,
-                                     test->length, &output, &length, &error)) {
+    if (markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)test->source,
+                                    test->length, &output, &length) != MARKDOWN_CORE_OK) {
         fprintf(stderr, "%s: counting dump failed\n", test->name);
-        markdown_core_error_free(error);
         markdown_core_document_free(document);
         return -1;
     }
@@ -368,19 +360,16 @@ static int sweep_dump(const oom_case *test) {
         allocation_count = 0;
         fail_at = allocation;
         failure_fired = 0;
-        error = NULL;
         output = NULL;
-        bool dumped =
+        markdown_core_status status =
             markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)test->source,
-                                        test->length, &output, &length, &error);
+                                        test->length, &output, &length);
         fail_at = 0;
-        if (!failure_fired || dumped || output || !error ||
-            markdown_core_error_get_code(error) != MARKDOWN_CORE_ERROR_ALLOCATION_FAILED) {
+        if (!failure_fired || output || status != MARKDOWN_CORE_ALLOCATION_FAILED) {
             fprintf(stderr, "%s: dump allocation %lu / %lu was not reported as OOM\n", test->name, allocation, total);
             free(output);
             result = -1;
         }
-        markdown_core_error_free(error);
     }
     markdown_core_document_free(document);
     return result;

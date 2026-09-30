@@ -15,19 +15,19 @@ import Testing
         for (document, columns) in cases {
             let paragraph = try #require(document.content.first as? Paragraph)
             #expect(
-                scope(of: paragraph.content[0], in: document, source: source)
+                try scope(of: paragraph.content[0], in: document, source: source)
                     == Scope(start: Position(line: 1, column: columns[0]), end: Position(line: 1, column: columns[1]))
             )
             #expect(
-                scope(of: paragraph.content[1], in: document, source: source)
+                try scope(of: paragraph.content[1], in: document, source: source)
                     == Scope(start: Position(line: 1, column: columns[2]), end: Position(line: 1, column: columns[3]))
             )
             #expect(
-                scope(of: paragraph.content[2], in: document, source: source)
+                try scope(of: paragraph.content[2], in: document, source: source)
                     == Scope(start: Position(line: 2, column: 1), end: Position(line: 2, column: 1))
             )
             #expect(
-                scope(of: document, in: document, source: source)
+                try scope(of: document, in: document, source: source)
                     == Scope(start: Position(line: 1, column: 1), end: Position(line: 2, column: 1))
             )
         }
@@ -44,16 +44,45 @@ import Testing
         ]
         for (unit, ids) in expected {
             let document = try Document.parse(source, unit: unit)
-            let found = (1...Int32(ids.count)).map { column in
-                document.node(at: Position(line: 1, column: column), in: source)?.id.value ?? 0
+            let found = try (1...Int32(ids.count)).map { column in
+                try document.node(at: Position(line: 1, column: column), in: source)?.id.value ?? 0
             }
             #expect(found == ids, "\(unit)")
-            #expect(document.node(at: Position(line: 2, column: 1), in: source)?.id.value == 5)
-            #expect(document.node(at: Position(line: 2, column: 2), in: source) == nil)
-            #expect(document.node(at: Position(line: 3, column: 1), in: source) == nil)
-            #expect(document.node(at: Position(line: 0, column: 1), in: source) == nil)
-            #expect(document.node(at: Position(line: 1, column: 0), in: source) == nil)
+            #expect(try document.node(at: Position(line: 2, column: 1), in: source)?.id.value == 5)
+            #expect(try document.node(at: Position(line: 2, column: 2), in: source) == nil)
+            #expect(try document.node(at: Position(line: 3, column: 1), in: source) == nil)
         }
+    }
+
+    @Test(
+        "a line or column below 1 is out of bounds",
+        arguments: [(0, 1), (1, 0), (-1, 1), (1, -1), (Int32.min, Int32.min)] as [(Int32, Int32)]
+    )
+    func positionBelowOne(line: Int32, column: Int32) throws {
+        let source = "a\n"
+        let document = try Document.parse(source)
+        #expect(outOfBounds { try document.node(at: Position(line: line, column: column), in: source) })
+    }
+
+    @Test("a source that ends before the node does is out of bounds for its scope and dump")
+    func shortSource() throws {
+        let source = "a\n\nb\u{E9}\n"
+        let document = try Document.parse(source)
+        let last = try #require(document.content.last as? Paragraph)
+        // The last paragraph ends after "é", byte 6; the document does too,
+        // since its range ends at its last content.
+        for short in ["a\n\nb", "a\n\n", ""] {
+            #expect(outOfBounds { try document.scope(of: last, in: short) })
+            #expect(outOfBounds { try document.dump(last, in: short) })
+            #expect(outOfBounds { try document.dump(in: short) })
+        }
+        // A source that covers the node answers, whatever follows it.
+        let covering = "a\n\nb\u{E9}"
+        #expect(
+            try document.scope(of: last, in: covering)
+                == Scope(start: Position(line: 3, column: 1), end: Position(line: 3, column: 2))
+        )
+        #expect(try document.dump(in: covering) == document.dump(in: source))
     }
 
     @Test("an empty document and a lone line terminator are 1:1..1:0 and hold no byte", arguments: ["", "\n"])
@@ -61,10 +90,20 @@ import Testing
         for unit in [TextUnit.utf8, .utf16] {
             let document = try Document.parse(source, unit: unit)
             #expect(
-                scope(of: document, in: document, source: source)
+                try scope(of: document, in: document, source: source)
                     == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 0))
             )
-            #expect(document.node(at: Position(line: 1, column: 1), in: source) == nil)
+            #expect(try document.node(at: Position(line: 1, column: 1), in: source) == nil)
         }
+    }
+}
+
+/// Whether `call` throws the library's error with ``ErrorCode/outOfBounds``.
+private func outOfBounds(_ call: () throws -> Any?) -> Bool {
+    do {
+        _ = try call()
+        return false
+    } catch {
+        return (error as? MarkdownCoreError)?.code == .outOfBounds
     }
 }

@@ -47,9 +47,11 @@ All integers are little-endian and unaligned.
 The message length counts every byte of the message, the header included, so
 a reader that received only a pointer knows where the message ends.
 
-- Status 1 is a parse failure. The body is `u32` error code (the facade's
-  `markdown_core_error_code`, whose one value is `ALLOCATION_FAILED`, 2) and
-  the `String` message, and the message ends.
+- Status 1 is a failure. The body is one `u32`, the facade's
+  `markdown_core_status` (`ALLOCATION_FAILED` 1, `OUT_OF_BOUNDS` 2,
+  `KIND_MISMATCH` 3), and the message ends. A parse fails only with
+  `ALLOCATION_FAILED`, which also reports a document too large for the
+  message length.
 - Status 0 is a document. The body is a sequence of node records in
   **post-order**, ending with the `Document`'s record, followed by the
   document's definition tables.

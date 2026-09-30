@@ -33,7 +33,7 @@ final class TextRecord: MarkupRecord, @unchecked Sendable {
 
 extension TextRecord {
     convenience init(from node: OpaquePointer) {
-        self.init(InheritedFields(from: node), literal: markdown_core_node_literal(node).required)
+        self.init(InheritedFields(from: node), literal: nativeLiteral(of: node))
     }
 }
 

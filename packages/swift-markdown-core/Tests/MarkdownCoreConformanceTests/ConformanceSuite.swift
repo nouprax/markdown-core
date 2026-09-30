@@ -25,7 +25,7 @@ private typealias Comment = Testing.Comment
             ":plain :empty[]{} :attrs{#kept .a class=\"b a\" k=1 k=2}\n\n| none |\n| ---- |\n| cell |\n",
         ]
         let documents = try sources.map { try Document.parse($0) }
-        let dumps = zip(documents, sources).map { $0.dump(in: $1) }
+        let dumps = try zip(documents, sources).map { try $0.dump(in: $1) }
         let kinds = Set(dumps.flatMap { dumpKinds($0) })
         let expected: Set<String> = [
             "Document", "Callout", "Paragraph", "Heading", "ThematicBreak", "List",
@@ -40,7 +40,7 @@ private typealias Comment = Testing.Comment
         ]
         #expect(kinds == expected)
         for (document, source) in zip(documents, sources) {
-            #expect(document.scope(of: document, in: source).start == Position(line: 1, column: 1))
+            #expect(try document.scope(of: document, in: source).start == Position(line: 1, column: 1))
         }
     }
 
@@ -100,7 +100,10 @@ private typealias Comment = Testing.Comment
         for testCase in manifest.cases {
             let document = try Document.parse(testCase.source)
             // `Testing.Comment`, qualified: the package exports a `Comment` markup kind.
-            #expect(document.dump(in: testCase.source) == testCase.expected, Testing.Comment(rawValue: testCase.name))
+            #expect(
+                try document.dump(in: testCase.source) == testCase.expected,
+                Testing.Comment(rawValue: testCase.name)
+            )
         }
     }
 

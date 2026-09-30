@@ -36,13 +36,13 @@ export class SourceLines {
     }
 
     /**
-     * The offset of the byte at `position`, stepping over its line's scalars
-     * up to the column; null unless the position lands on a byte of the line
-     * at a scalar boundary.
+     * The offset of the byte at `position`, whose line and column are integers
+     * of at least 1, stepping over its line's scalars up to the column; null
+     * unless the position lands on a byte of the line at a scalar boundary.
      */
     offset(position: Position, unit: TextUnit): number | null {
         const { line, column } = position;
-        if (line < 1 || line > this.starts.length) return null;
+        if (line > this.starts.length) return null;
         let offset = this.starts[line - 1]!;
         const end = line < this.starts.length ? this.starts[line]! : this.bytes.length;
         let at = 1;

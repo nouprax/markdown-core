@@ -18,6 +18,18 @@ final enum class com.nouprax.markdown.core/BibMode : kotlin/Enum<com.nouprax.mar
     final fun values(): kotlin/Array<com.nouprax.markdown.core/BibMode> // com.nouprax.markdown.core/BibMode.values|values#static(){}[0]
 }
 
+final enum class com.nouprax.markdown.core/ErrorCode : kotlin/Enum<com.nouprax.markdown.core/ErrorCode> { // com.nouprax.markdown.core/ErrorCode|null[0]
+    enum entry ALLOCATION_FAILED // com.nouprax.markdown.core/ErrorCode.ALLOCATION_FAILED|null[0]
+    enum entry KIND_MISMATCH // com.nouprax.markdown.core/ErrorCode.KIND_MISMATCH|null[0]
+    enum entry OUT_OF_BOUNDS // com.nouprax.markdown.core/ErrorCode.OUT_OF_BOUNDS|null[0]
+
+    final val entries // com.nouprax.markdown.core/ErrorCode.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/ErrorCode> // com.nouprax.markdown.core/ErrorCode.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.nouprax.markdown.core/ErrorCode // com.nouprax.markdown.core/ErrorCode.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.nouprax.markdown.core/ErrorCode> // com.nouprax.markdown.core/ErrorCode.values|values#static(){}[0]
+}
+
 final enum class com.nouprax.markdown.core/Flow : kotlin/Enum<com.nouprax.markdown.core/Flow> { // com.nouprax.markdown.core/Flow|null[0]
     enum entry CENTER // com.nouprax.markdown.core/Flow.CENTER|null[0]
     enum entry LEFT // com.nouprax.markdown.core/Flow.LEFT|null[0]
@@ -51,16 +63,6 @@ final enum class com.nouprax.markdown.core/MarkupVisitPhase : kotlin/Enum<com.no
 
     final fun valueOf(kotlin/String): com.nouprax.markdown.core/MarkupVisitPhase // com.nouprax.markdown.core/MarkupVisitPhase.valueOf|valueOf#static(kotlin.String){}[0]
     final fun values(): kotlin/Array<com.nouprax.markdown.core/MarkupVisitPhase> // com.nouprax.markdown.core/MarkupVisitPhase.values|values#static(){}[0]
-}
-
-final enum class com.nouprax.markdown.core/ParseErrorCode : kotlin/Enum<com.nouprax.markdown.core/ParseErrorCode> { // com.nouprax.markdown.core/ParseErrorCode|null[0]
-    enum entry ALLOCATION_FAILED // com.nouprax.markdown.core/ParseErrorCode.ALLOCATION_FAILED|null[0]
-
-    final val entries // com.nouprax.markdown.core/ParseErrorCode.entries|#static{}entries[0]
-        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/ParseErrorCode> // com.nouprax.markdown.core/ParseErrorCode.entries.<get-entries>|<get-entries>#static(){}[0]
-
-    final fun valueOf(kotlin/String): com.nouprax.markdown.core/ParseErrorCode // com.nouprax.markdown.core/ParseErrorCode.valueOf|valueOf#static(kotlin.String){}[0]
-    final fun values(): kotlin/Array<com.nouprax.markdown.core/ParseErrorCode> // com.nouprax.markdown.core/ParseErrorCode.values|values#static(){}[0]
 }
 
 final enum class com.nouprax.markdown.core/Placement : kotlin/Enum<com.nouprax.markdown.core/Placement> { // com.nouprax.markdown.core/Placement|null[0]
@@ -867,6 +869,13 @@ final class com.nouprax.markdown.core/Mark : com.nouprax.markdown.core/Markup { 
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Mark.id.<get-id>|<get-id>(){}[0]
 }
 
+final class com.nouprax.markdown.core/MarkdownCoreException : kotlin/RuntimeException { // com.nouprax.markdown.core/MarkdownCoreException|null[0]
+    constructor <init>(com.nouprax.markdown.core/ErrorCode) // com.nouprax.markdown.core/MarkdownCoreException.<init>|<init>(com.nouprax.markdown.core.ErrorCode){}[0]
+
+    final val code // com.nouprax.markdown.core/MarkdownCoreException.code|{}code[0]
+        final fun <get-code>(): com.nouprax.markdown.core/ErrorCode // com.nouprax.markdown.core/MarkdownCoreException.code.<get-code>|<get-code>(){}[0]
+}
+
 final class com.nouprax.markdown.core/Metadata : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Metadata|null[0]
     final val abstract // com.nouprax.markdown.core/Metadata.abstract|{}abstract[0]
         final fun <get-abstract>(): com.nouprax.markdown.core/MetadataValue? // com.nouprax.markdown.core/Metadata.abstract.<get-abstract>|<get-abstract>(){}[0]
@@ -909,15 +918,6 @@ final class com.nouprax.markdown.core/Paragraph : com.nouprax.markdown.core/Mark
         final fun <get-extent>(): com.nouprax.markdown.core/Extent // com.nouprax.markdown.core/Paragraph.extent.<get-extent>|<get-extent>(){}[0]
     final val id // com.nouprax.markdown.core/Paragraph.id|{}id[0]
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Paragraph.id.<get-id>|<get-id>(){}[0]
-}
-
-final class com.nouprax.markdown.core/ParseException : kotlin/RuntimeException { // com.nouprax.markdown.core/ParseException|null[0]
-    constructor <init>(com.nouprax.markdown.core/ParseErrorCode, kotlin/String) // com.nouprax.markdown.core/ParseException.<init>|<init>(com.nouprax.markdown.core.ParseErrorCode;kotlin.String){}[0]
-
-    final val code // com.nouprax.markdown.core/ParseException.code|{}code[0]
-        final fun <get-code>(): com.nouprax.markdown.core/ParseErrorCode // com.nouprax.markdown.core/ParseException.code.<get-code>|<get-code>(){}[0]
-    final val message // com.nouprax.markdown.core/ParseException.message|{}message[0]
-        final fun <get-message>(): kotlin/String // com.nouprax.markdown.core/ParseException.message.<get-message>|<get-message>(){}[0]
 }
 
 final class com.nouprax.markdown.core/Position { // com.nouprax.markdown.core/Position|null[0]

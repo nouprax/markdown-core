@@ -9,13 +9,13 @@ import Testing
 
         let heading = try #require(document.content.first as? Heading)
         #expect(heading.level == 2)
-        #expect(document.dump(in: source).hasPrefix("Document scope=1:1..1:11 "))
-        #expect(document.dump(heading, in: source).hasPrefix("Heading scope=1:1..1:11 "))
+        #expect(try document.dump(in: source).hasPrefix("Document scope=1:1..1:11 "))
+        #expect(try document.dump(heading, in: source).hasPrefix("Heading scope=1:1..1:11 "))
         #expect(
-            document.scope(of: heading, in: source)
+            try document.scope(of: heading, in: source)
                 == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 11))
         )
-        #expect(document.node(at: Position(line: 1, column: 4), in: source)?.isEqual(heading.content[0]) == true)
+        #expect(try document.node(at: Position(line: 1, column: 4), in: source)?.isEqual(heading.content[0]) == true)
         #expect(document.content.count == 1)
         #expect(Array(document.content.indices) == [0])
         let blocks: [any Markup] = Array(document.content)

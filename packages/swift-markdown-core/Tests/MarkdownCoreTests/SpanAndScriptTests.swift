@@ -19,7 +19,7 @@ extension APISuite {
         #expect(span.content.count == 2)
         #expect(((span.content[1] as? Emphasis)?.content.first as? Text)?.literal == "b")
         #expect(
-            scope(of: span, in: document, source: source)
+            try scope(of: span, in: document, source: source)
                 == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 9))
         )
     }
@@ -40,7 +40,7 @@ extension APISuite {
         #expect(superscript.content.count == 2)
         #expect(((superscript.content[1] as? Emphasis)?.content.first as? Text)?.literal == "b")
         #expect(
-            scope(of: superscript, in: document, source: source)
+            try scope(of: superscript, in: document, source: source)
                 == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 6))
         )
     }
@@ -61,7 +61,7 @@ extension APISuite {
         #expect(script.content.count == 2)
         #expect(((script.content[1] as? Emphasis)?.content.first as? Text)?.literal == "b")
         #expect(
-            scope(of: script, in: document, source: source)
+            try scope(of: script, in: document, source: source)
                 == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 6))
         )
     }

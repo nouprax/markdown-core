@@ -286,7 +286,7 @@ static int case_hard_link_emph(pc_context *context) {
     root = markdown_core_document_root(context->document);
     paragraph = markdown_core_node_get_first_child(root);
     text = markdown_core_node_get_first_child(paragraph);
-    value = markdown_core_node_literal(text);
+    TS_OK(markdown_core_node_literal(text, &value));
     if (value.length != 4 || memcmp(value.data, "**x ", 4) != 0) {
         fprintf(stderr, "leading text is not the literal '**x '\n");
         return -1;
@@ -296,7 +296,7 @@ static int case_hard_link_emph(pc_context *context) {
         fprintf(stderr, "second inline is not a Link\n");
         return -1;
     }
-    dest = markdown_core_node_destination(link);
+    TS_OK(markdown_core_node_destination(link, &dest));
     if (dest.kind != MARKDOWN_CORE_DESTINATION_URL || dest.url.length != 1 || dest.url.data[0] != 'd') {
         fprintf(stderr, "link destination is not 'd'\n");
         return -1;
@@ -391,14 +391,13 @@ typedef struct pc_dump_job {
     size_t source_length;
     uint8_t *output;
     size_t length;
-    markdown_core_error *error;
-    bool dumped;
+    markdown_core_status status;
 } pc_dump_job;
 
 static PC_THREAD_RESULT pc_dump_entry(void *argument) {
     pc_dump_job *job = (pc_dump_job *)argument;
-    job->dumped = markdown_core_document_dump(job->document, markdown_core_document_root(job->document), job->source,
-                                              job->source_length, &job->output, &job->length, &job->error);
+    job->status = markdown_core_document_dump(job->document, markdown_core_document_root(job->document), job->source,
+                                              job->source_length, &job->output, &job->length);
     PC_THREAD_RETURN;
 }
 
@@ -428,13 +427,13 @@ static int case_dump_deep_nesting(pc_context *context) {
     job.source_length = context->input_length;
     job.output = NULL;
     job.length = 0;
-    job.dumped = false;
+    job.status = MARKDOWN_CORE_ALLOCATION_FAILED;
     if (pc_thread_spawn(&thread, pc_dump_entry, &job, PC_DUMP_STACK_BYTES) != 0) {
         fprintf(stderr, "could not start a %u-byte-stack thread for the dump\n", (unsigned)PC_DUMP_STACK_BYTES);
         return -1;
     }
     pc_thread_join(thread);
-    if (!job.dumped || !job.output || job.length == 0) {
+    if (job.status != MARKDOWN_CORE_OK || !job.output || job.length == 0) {
         fprintf(stderr, "dumping a %u-deep document on a %u-byte stack did not return a dump\n",
                 (unsigned)PC_DUMP_DEPTH, (unsigned)PC_DUMP_STACK_BYTES);
         markdown_core_dump_free(job.output);
@@ -463,7 +462,6 @@ static int case_dump_wide_siblings(pc_context *context) {
     char *cursor;
     uint8_t *output = NULL;
     size_t length = 0;
-    markdown_core_error *error;
     size_t branches = 0, corners = 0, index;
     int result = 0;
     context->input_length = (size_t)PC_DUMP_WIDTH * 3u;
@@ -481,9 +479,9 @@ static int case_dump_wide_siblings(pc_context *context) {
     if (pc_parse(context) != 0) {
         return -1;
     }
-    if (!markdown_core_document_dump(context->document, markdown_core_document_root(context->document),
-                                     (const uint8_t *)context->input, context->input_length, &output, &length,
-                                     &error)) {
+    if (markdown_core_document_dump(context->document, markdown_core_document_root(context->document),
+                                    (const uint8_t *)context->input, context->input_length, &output,
+                                    &length) != MARKDOWN_CORE_OK) {
         fprintf(stderr, "dumping a %u-wide document did not return a dump\n", (unsigned)PC_DUMP_WIDTH);
         return -1;
     }
@@ -846,7 +844,7 @@ static int case_tables(pc_context *context) {
         fprintf(stderr, "leading block is not a paragraph\n");
         return -1;
     }
-    value = markdown_core_node_literal(markdown_core_node_get_first_child(paragraph));
+    TS_OK(markdown_core_node_literal(markdown_core_node_get_first_child(paragraph), &value));
     if (value.length != 3 || memcmp(value.data, "aaa", 3) != 0) {
         fprintf(stderr, "leading paragraph is not the literal 'aaa'\n");
         return -1;
@@ -877,7 +875,8 @@ static int pc_uniform_text_visit(const markdown_core_node *node, ts_ast_range ra
     (void)range;
     pc_uniform_text *check = (pc_uniform_text *)context;
     if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_TEXT) {
-        markdown_core_string value = markdown_core_node_literal(node);
+        markdown_core_string value;
+        TS_OK(markdown_core_node_literal(node, &value));
         check->seen++;
         if (value.length != check->expected_length || memcmp(value.data, check->expected, value.length) != 0) {
             check->mismatch = 1;
@@ -989,11 +988,13 @@ static int pc_payload_seen(pc_reference_payload *total, const void *identity) {
 static size_t pc_attribute_bytes(const markdown_core_attribute_value *attributes) {
     size_t bytes = markdown_core_attribute_value_anchor(attributes).value.length;
     for (size_t i = 0; i < markdown_core_attribute_value_class_count(attributes); i++) {
-        bytes += markdown_core_attribute_value_class_at(attributes, i).length;
+        markdown_core_string value;
+        TS_OK(markdown_core_attribute_value_class_at(attributes, i, &value));
+        bytes += value.length;
     }
     for (size_t i = 0; i < markdown_core_attribute_value_record_count(attributes); i++) {
         markdown_core_string name, value;
-        markdown_core_attribute_value_record_at(attributes, i, &name, &value);
+        TS_OK(markdown_core_attribute_value_record_at(attributes, i, &name, &value));
         bytes += name.length + value.length;
     }
     return bytes;
@@ -1006,7 +1007,9 @@ static int pc_reference_payload_visit(const markdown_core_node *node, ts_ast_ran
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     (void)range;
     if (kind == MARKDOWN_CORE_KIND_LINK || kind == MARKDOWN_CORE_KIND_EMBEDDED) {
-        const markdown_core_resource *identity = markdown_core_node_resource(node);
+        const markdown_core_resource *identity;
+        const markdown_core_attribute_value *inherited;
+        TS_OK(markdown_core_node_resource(node, &identity));
         total->occurrences++;
         total->bytes += pc_attribute_bytes(markdown_core_node_primary_attributes(node));
         if (total->distinct * 2 >= total->capacity) {
@@ -1016,16 +1019,19 @@ static int pc_reference_payload_visit(const markdown_core_node *node, ts_ast_ran
         if (pc_payload_seen(total, identity)) {
             return 0;
         }
-        total->bytes += pc_attribute_bytes(markdown_core_node_inherited_attributes(node));
-        dest = markdown_core_node_destination(node);
-        title = markdown_core_node_title(node);
+        TS_OK(markdown_core_node_inherited_attributes(node, &inherited));
+        total->bytes += pc_attribute_bytes(inherited);
+        TS_OK(markdown_core_node_destination(node, &dest));
+        TS_OK(markdown_core_node_title(node, &title));
         total->bytes += dest.url.length + dest.path.length + (dest.anchor.has_value ? dest.anchor.value.length : 0) +
                         (title.has_value ? title.value.length : 0);
     } else if (kind == MARKDOWN_CORE_KIND_CITE) {
         /* A call's payload is its referent (M4). */
         const markdown_core_node *item;
-        for (item = markdown_core_node_cite_citations(node); item; item = markdown_core_node_get_next_sibling(item)) {
-            markdown_core_referent referent = markdown_core_citation_referent(item);
+        for (item = ts_field(node, markdown_core_node_cite_citations); item;
+             item = markdown_core_node_get_next_sibling(item)) {
+            markdown_core_referent referent;
+            TS_OK(markdown_core_citation_referent(item, &referent));
             total->bytes += referent.label.length + referent.key.length;
         }
     }
@@ -1178,13 +1184,13 @@ static int case_directive_long_label(pc_context *context) {
         fprintf(stderr, "first directive is not a Directive\n");
         return -1;
     }
-    name = markdown_core_node_directive_properties(directive);
+    TS_OK(markdown_core_node_directive_properties(directive, &name));
     if (!name.has_value || name.value.length != 4 || memcmp(name.value.data, "long", 4) != 0 ||
         markdown_core_node_attribute_record_count(directive) != 0) {
         fprintf(stderr, "directive name/attribute properties are wrong\n");
         return -1;
     }
-    label = markdown_core_node_directive_label(directive);
+    label = ts_field(directive, markdown_core_node_directive_label);
     if (!label || markdown_core_node_get_kind(label) != MARKDOWN_CORE_KIND_DIRECTIVE_LABEL ||
         markdown_core_node_get_first_child(directive) != NULL || markdown_core_node_child_count(directive) != 0 ||
         markdown_core_node_get_next_sibling(label) != NULL) {
@@ -1201,7 +1207,7 @@ static int case_directive_long_label(pc_context *context) {
         free(expected);
         return -1;
     }
-    literal = markdown_core_node_literal(label_child);
+    TS_OK(markdown_core_node_literal(label_child, &literal));
     if (literal.length != 1500 || memcmp(literal.data, expected, 1500) != 0) {
         fprintf(stderr, "directive label text is wrong\n");
         free(expected);
@@ -1229,7 +1235,7 @@ static int case_directive_long_attributes(pc_context *context) {
         return -1;
     }
     directive = pc_first_directive(context);
-    name = markdown_core_node_directive_properties(directive);
+    TS_OK(markdown_core_node_directive_properties(directive, &name));
     if (!name.has_value || name.value.length != 4 || memcmp(name.value.data, "long", 4) != 0 ||
         markdown_core_node_attribute_record_count(directive) != 1) {
         fprintf(stderr, "directive name/attribute properties are wrong\n");
@@ -1242,7 +1248,7 @@ static int case_directive_long_attributes(pc_context *context) {
     /* The value is compared where it lives. It used to be compared through a
      * rendered JSON string, which meant a 5000-byte value was also a test of
      * the escaper; Step 7 deleted that round-trip. */
-    markdown_core_node_attribute_record_at(directive, 0, &attribute_name, &attribute_value);
+    TS_OK(markdown_core_node_attribute_record_at(directive, 0, &attribute_name, &attribute_value));
     if (attribute_name.length == 6 && memcmp(attribute_name.data, "data-x", 6) == 0 && attribute_value.length == 5000 &&
         memcmp(attribute_value.data, value, 5000) == 0) {
         result = 0;
@@ -1278,7 +1284,7 @@ static int pc_formula_case(pc_context *context, const char *prefix, const char *
             fprintf(stderr, "first inline is not a Formula\n");
             return -1;
         }
-        markdown_core_node_formula_properties(formula, &mode, &literal);
+        TS_OK(markdown_core_node_formula_properties(formula, &mode, &literal));
         if (mode != MARKDOWN_CORE_PLACEMENT_EMBEDDED || literal.length != expected_length ||
             memcmp(literal.data, expected_literal, expected_length) != 0) {
             fprintf(stderr, "formula literal/mode properties are wrong\n");
@@ -1363,8 +1369,9 @@ static int case_task_marker_runs(pc_context *unused) {
                 const markdown_core_node *list =
                     markdown_core_node_get_first_child(markdown_core_document_root(context.document));
                 const markdown_core_node *item = markdown_core_node_get_first_child(list);
-                if (markdown_core_node_list_item_marker(item).has_value ||
-                    pc_expect_count(&context, MARKDOWN_CORE_KIND_LIST_ITEM, 1, "ListItem") != 0 ||
+                markdown_core_optional_string marker;
+                TS_OK(markdown_core_node_list_item_marker(item, &marker));
+                if (marker.has_value || pc_expect_count(&context, MARKDOWN_CORE_KIND_LIST_ITEM, 1, "ListItem") != 0 ||
                     pc_expect_count(&context, MARKDOWN_CORE_KIND_TEXT, 1, "Text") != 0 ||
                     pc_expect_text(&context, context.input + 2, context.input_length - 3) != 0) {
                     result = -1;

@@ -92,7 +92,9 @@ was parsed from: `document.scope(of: node, in: source)` in the bindings and
 `markdown_core_document_scope` in C. `document.node(at: position, in: source)`
 (`markdown_core_document_node_at`) answers the last node in canonical walk
 order whose source range holds the byte at `position`, or none when no node
-holds it or the position names no byte of the source.
+holds it or the position names no byte of the source. A source that ends
+before the node's range does is `OUT_OF_BOUNDS` for a scope and for the dump,
+and so is a position whose line or column is below 1.
 
 A scope is a function of the byte range alone. Its start is the line holding
 the range's first byte and the columns before that byte on its line, plus

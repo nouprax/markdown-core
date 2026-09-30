@@ -29,20 +29,23 @@ export interface Document extends MarkupBase<"document"> {
     /**
      * The scope of `node`, computed from the extents and `source`, the text
      * the document was parsed from, with columns in the document's unit.
-     * `node` is a node of this document.
+     * `node` is a node of this document. Throws `MarkdownCoreError`
+     * `outOfBounds` when `source` ends before the node does.
      */
     readonly scope: (node: Markup, source: string) => Scope;
     /**
      * The last node in canonical walk order whose source range holds the byte
      * at `position` of `source`, the text the document was parsed from, or
      * null when no node holds it or the position names no byte of `source` or
-     * does not fall on a scalar boundary.
+     * does not fall on a scalar boundary. Throws `MarkdownCoreError`
+     * `outOfBounds` unless the line and column are integers of at least 1.
      */
     readonly nodeAt: (position: Position, source: string) => Markup | null;
     /**
      * The canonical debug dump of the document, or of `node`, a node of this
      * document, with scopes computed from `source` in UTF-8 columns whatever
-     * the document's unit.
+     * the document's unit. Throws `MarkdownCoreError` `outOfBounds` when
+     * `source` ends before the dumped node does.
      */
     readonly dump: {
         (source: string): string;

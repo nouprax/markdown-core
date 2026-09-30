@@ -6,6 +6,22 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Give every public call one error model. A C call that can fail returns a
+  `markdown_core_status` -- `MARKDOWN_CORE_OK`, `ALLOCATION_FAILED`,
+  `OUT_OF_BOUNDS` or `KIND_MISMATCH` -- and writes its result through
+  out-parameters only on success; the heap `markdown_core_error`, its message
+  and `markdown_core_error_code` are removed. Each call checks its arguments
+  once, where they enter: a kind accessor refuses another kind, an `*_at`
+  refuses an index at or past its count, `markdown_core_node_kind_name`
+  refuses a value outside the enum, a scope or dump refuses a source that
+  ends before its node, and `markdown_core_document_node_at` refuses a line
+  or column below 1 and answers a `NULL` node as a result. A source over
+  1 GiB is `ALLOCATION_FAILED`. An MCB3 failure message carries the status
+  code and no message string. Swift replaces `ParseError` with
+  `MarkdownCoreError` and its `ErrorCode`, and `scope(of:in:)`,
+  `node(at:in:)` and both dumps now throw `.outOfBounds` on the same
+  conditions.
+
 - Give every node an id and a raw extent, and compute scopes on request
   (incremental parsing, step 1). `Markup` loses `scope` and gains `id:
   MarkupID`, numbered from 1 in canonical walk order, and `extent: Extent`,

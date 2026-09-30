@@ -154,7 +154,7 @@ extension CitationRecord {
         prefix: [MarkupRecord],
         suffix: [MarkupRecord]
     ) {
-        let native = markdown_core_citation_referent(citation)
+        let native = answer(markdown_core_referent()) { markdown_core_citation_referent(citation, $0) }
         let referent: Referent
         switch native.kind {
         case MARKDOWN_CORE_REFERENT_BIB:

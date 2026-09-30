@@ -1330,14 +1330,10 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
 markdown_core_node *markdown_core_parser_parse(const char *source, size_t length,
                                                const markdown_core_element *const *elements, size_t count,
                                                markdown_core_parser_setup_func setup, void *context) {
-    static const unsigned char empty[] = "";
     markdown_core_dialect_builder builder;
     markdown_core_parser *parser;
     markdown_core_node *document;
 
-    if (length > (size_t)(INT32_MAX / 2)) {
-        return NULL;
-    }
     /* The instance's dialect: the given elements, whatever its setup
      * registers after them, and then nothing more. The builder is gone before
      * the parse begins, so no code the parse runs can hold anything that
@@ -1354,7 +1350,7 @@ markdown_core_node *markdown_core_parser_parse(const char *source, size_t length
         return NULL;
     }
 
-    S_parse_source(parser, source ? (const unsigned char *)source : empty, length);
+    S_parse_source(parser, (const unsigned char *)source, length);
     document = S_finish_parse(parser);
     S_parser_free(parser);
     return document;
@@ -1448,7 +1444,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const
  * is explicit: both GCC and Clang may otherwise outline this per-line step. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
     markdown_core_input_line *S_extend_source_lines(markdown_core_parser *parser, size_t index) {
-    assert(parser->input_length <= (size_t)(INT32_MAX / 2));
+    assert(parser->input_length <= MARKDOWN_CORE_SOURCE_CAPACITY);
     while (index >= parser->input_line_count && parser->input_scanned < parser->input_length) {
         if (parser->input_line_count == parser->input_line_capacity) {
             void *lines = markdown_core_reserve(parser->input_lines, &parser->input_line_capacity,
@@ -1518,10 +1514,7 @@ markdown_core_line_facts *markdown_core_parser_extend_line_facts(markdown_core_p
 }
 
 static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length) {
-    if (length > (size_t)(INT32_MAX / 2)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
+    assert(length <= MARKDOWN_CORE_SOURCE_CAPACITY);
     S_clear_normalized_lines(parser);
     parser->input_source = source;
     parser->input_length = length;

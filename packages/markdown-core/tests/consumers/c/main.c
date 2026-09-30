@@ -4,12 +4,10 @@
 
 int main(void) {
     const char *source = "# installed consumer\n";
-    markdown_core_error *error;
-    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)source, strlen(source), &error);
+    markdown_core_document *document;
     const markdown_core_node *root;
 
-    if (document == NULL) {
-        markdown_core_error_free(error);
+    if (markdown_core_document_parse((const uint8_t *)source, strlen(source), &document) != MARKDOWN_CORE_OK) {
         return 1;
     }
     root = markdown_core_document_root(document);

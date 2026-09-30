@@ -36,8 +36,8 @@ export type { Strong } from "./markup/strong.js";
 export type { Table, TableCaption, TableCell, TableRow, TableColumn } from "./markup/table.js";
 export type { Text } from "./markup/text.js";
 export type { ThematicBreak } from "./markup/thematic-break.js";
-export { ParseError } from "./common/parse-error.js";
-export type { ParseErrorCode } from "./common/parse-error.js";
+export { MarkdownCoreError } from "./common/markdown-core-error.js";
+export type { ErrorCode } from "./common/markdown-core-error.js";
 export { MarkupDumper } from "./visitor/markup-dumper.js";
 export type {
     BibMode,

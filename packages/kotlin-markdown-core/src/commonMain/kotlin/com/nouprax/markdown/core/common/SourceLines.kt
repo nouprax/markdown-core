@@ -24,9 +24,9 @@ internal class SourceLines(
         bytes[index] == LF || (bytes[index] == CR && !(index + 1 < bytes.size && bytes[index + 1] == LF))
 
     /**
-     * A byte range as editor coordinates: the start is the position of its
-     * first byte, and the end the line holding its exclusive end and the
-     * columns from that line's start to it.
+     * A byte range of the source as editor coordinates: the start is the
+     * position of its first byte, and the end the line holding its exclusive
+     * end and the columns from that line's start to it.
      */
     fun scope(
         start: Int,
@@ -42,8 +42,9 @@ internal class SourceLines(
     }
 
     /**
-     * The offset of the scalar that starts at [position], or null when the
-     * source has no such line or the line no scalar there.
+     * The offset of the scalar that starts at [position], whose line and
+     * column are at least 1, or null when the source has no such line or the
+     * line no scalar there.
      */
     fun offset(
         position: Position,

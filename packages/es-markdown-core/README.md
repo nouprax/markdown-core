@@ -153,6 +153,22 @@ line or column. `document.scope(node, source)` and
 and the source the document was parsed from, with columns in the document's
 unit.
 
+## Errors
+
+Every failure is a `MarkdownCoreError`, whose `code` is one `ErrorCode`:
+
+- `"allocationFailed"`: `Document.parse` could not allocate, or the source's
+  UTF-8 exceeds the engine's 1 GiB capacity.
+- `"outOfBounds"`: `scope` or `dump` got a source that ends before the node
+  does, or `nodeAt` got a line or column that is not an integer of at least 1.
+  A position past the source, or one no node holds, is not an error: `nodeAt`
+  returns `null`.
+- `"kindMismatch"`: the engine's status for a value that is not of the kind a
+  call reads. The binding decodes the whole tree into typed values, so none of
+  its calls reports it today; the code keeps the set equal to the engine's.
+
+A node of another document is not checked: pass the document's own nodes.
+
 ## Traverse and Inspect
 
 Source files are grouped into `common` (shared constraints and support),

@@ -13,6 +13,10 @@
  * field in the contract's order, then the node's own record carrying their
  * counts. The walk is an explicit stack, so neither the encoder nor a reader
  * recurses, and no subtree's size is needed before it is written.
+ *
+ * Every accessor is called on a node of the kind the record's switch named,
+ * or with an index below the count it just read, so each answers
+ * MARKDOWN_CORE_OK: the encoder reads its out-parameters and not its status.
  */
 
 /* `failed` says an allocation failed, or the message outgrew a u32 length. */
@@ -28,7 +32,6 @@ enum { WIRE_HEADER_LENGTH = 4 };
 enum { WIRE_STATUS_DOCUMENT = 0, WIRE_STATUS_ERROR = 1 };
 
 static const uint8_t wire_magic[] = {'M', 'C', 'B', '3'};
-static const uint8_t allocation_error_bytes[] = "the document is too large to encode";
 
 static void reserve(wire_buffer *buffer, size_t additional) {
     size_t required;
@@ -146,7 +149,9 @@ static void put_attributes(wire_buffer *buffer, const markdown_core_attribute_va
     put_optional_string(buffer, markdown_core_attribute_value_anchor(attributes));
     put_count(buffer, classes);
     for (index = 0; index < classes && !buffer->failed; ++index) {
-        put_string(buffer, markdown_core_attribute_value_class_at(attributes, index));
+        markdown_core_string value;
+        markdown_core_attribute_value_class_at(attributes, index, &value);
+        put_string(buffer, value);
     }
     put_count(buffer, records);
     for (index = 0; index < records && !buffer->failed; ++index) {
@@ -159,7 +164,8 @@ static void put_attributes(wire_buffer *buffer, const markdown_core_attribute_va
 
 /* Destination: url { value } | cross { path, anchor? }. */
 static void put_destination(wire_buffer *buffer, const markdown_core_node *node) {
-    markdown_core_destination destination = markdown_core_node_destination(node);
+    markdown_core_destination destination;
+    markdown_core_node_destination(node, &destination);
     put_index(buffer, destination.kind, MARKDOWN_CORE_DESTINATION_URL);
     if (destination.kind == MARKDOWN_CORE_DESTINATION_URL) {
         put_string(buffer, destination.url);
@@ -171,7 +177,8 @@ static void put_destination(wire_buffer *buffer, const markdown_core_node *node)
 
 /* Dimensions?: { width: Int, height: Int? }. */
 static void put_dimensions(wire_buffer *buffer, const markdown_core_node *node) {
-    const markdown_core_dimensions *dimensions = markdown_core_node_dimensions(node);
+    const markdown_core_dimensions *dimensions;
+    markdown_core_node_dimensions(node, &dimensions);
     put_bool(buffer, dimensions != NULL);
     if (dimensions != NULL) {
         put_int(buffer, dimensions->width);
@@ -190,7 +197,8 @@ static void put_metadata_value(wire_buffer *buffer, const markdown_core_metadata
     put_index(buffer, kind, MARKDOWN_CORE_METADATA_SCALAR);
     if (kind == MARKDOWN_CORE_METADATA_SCALAR) {
         /* MetadataScalar: null | bool { Bool } | number { String } | text { String }. */
-        markdown_core_metadata_scalar scalar = markdown_core_metadata_value_scalar(value);
+        markdown_core_metadata_scalar scalar;
+        markdown_core_metadata_value_scalar(value, &scalar);
         put_index(buffer, scalar.kind, MARKDOWN_CORE_METADATA_NULL);
         if (scalar.kind == MARKDOWN_CORE_METADATA_BOOL) {
             put_bool(buffer, scalar.value.boolean);
@@ -199,28 +207,36 @@ static void put_metadata_value(wire_buffer *buffer, const markdown_core_metadata
         }
     } else {
         /* MetadataListItem: number { String } | text { String }. */
-        size_t count = markdown_core_metadata_value_item_count(value);
+        size_t count;
         size_t index;
+        markdown_core_metadata_value_item_count(value, &count);
         put_count(buffer, count);
         for (index = 0; index < count && !buffer->failed; ++index) {
-            markdown_core_metadata_list_item item = markdown_core_metadata_value_item_at(value, index);
+            markdown_core_metadata_list_item item;
+            markdown_core_metadata_value_item_at(value, index, &item);
             put_index(buffer, item.kind, MARKDOWN_CORE_METADATA_ITEM_NUMBER);
             put_string(buffer, item.value);
         }
     }
 }
 
+typedef markdown_core_status (*metadata_field)(const markdown_core_node *, const markdown_core_metadata_value **);
+
+/* The ten fields in the contract's order. */
+static const metadata_field metadata_fields[] = {
+    markdown_core_metadata_name,     markdown_core_metadata_title,    markdown_core_metadata_subtitle,
+    markdown_core_metadata_time,     markdown_core_metadata_date,     markdown_core_metadata_authors,
+    markdown_core_metadata_keywords, markdown_core_metadata_abstract, markdown_core_metadata_state,
+    markdown_core_metadata_comment,
+};
+
 static void put_metadata(wire_buffer *buffer, const markdown_core_node *metadata) {
-    put_metadata_value(buffer, markdown_core_metadata_name(metadata));
-    put_metadata_value(buffer, markdown_core_metadata_title(metadata));
-    put_metadata_value(buffer, markdown_core_metadata_subtitle(metadata));
-    put_metadata_value(buffer, markdown_core_metadata_time(metadata));
-    put_metadata_value(buffer, markdown_core_metadata_date(metadata));
-    put_metadata_value(buffer, markdown_core_metadata_authors(metadata));
-    put_metadata_value(buffer, markdown_core_metadata_keywords(metadata));
-    put_metadata_value(buffer, markdown_core_metadata_abstract(metadata));
-    put_metadata_value(buffer, markdown_core_metadata_state(metadata));
-    put_metadata_value(buffer, markdown_core_metadata_comment(metadata));
+    size_t index;
+    for (index = 0; index < sizeof(metadata_fields) / sizeof(*metadata_fields); ++index) {
+        const markdown_core_metadata_value *value;
+        metadata_fields[index](metadata, &value);
+        put_metadata_value(buffer, value);
+    }
 }
 
 /* ---- Shared resources ---------------------------------------------------- */
@@ -280,8 +296,11 @@ static bool grow_resources(wire_resources *resources) {
 /* The `dest` field of a Link or Embedded, which also stands for its `title`:
  * the resource ordinal, followed by the resource the first time it is named. */
 static void put_resource(wire_buffer *buffer, wire_resources *resources, const markdown_core_node *node) {
-    const markdown_core_resource *resource = markdown_core_node_resource(node);
+    const markdown_core_resource *resource;
+    const markdown_core_attribute_value *inherited;
+    markdown_core_optional_string title;
     wire_resource_slot *slot;
+    markdown_core_node_resource(node, &resource);
     if (resources->count + 1 > resources->capacity / 2 && !grow_resources(resources)) {
         buffer->failed = true;
         return;
@@ -299,8 +318,10 @@ static void put_resource(wire_buffer *buffer, wire_resources *resources, const m
     slot->ordinal = (uint32_t)resources->count++;
     put_u32(buffer, slot->ordinal);
     put_destination(buffer, node);
-    put_optional_string(buffer, markdown_core_node_title(node));
-    put_attributes(buffer, markdown_core_node_inherited_attributes(node));
+    markdown_core_node_title(node, &title);
+    put_optional_string(buffer, title);
+    markdown_core_node_inherited_attributes(node, &inherited);
+    put_attributes(buffer, inherited);
 }
 
 /* ---- Node-valued fields -------------------------------------------------- */
@@ -327,6 +348,15 @@ static wire_edge node_edge(wire_edge_shape shape, const markdown_core_node *node
     return edge;
 }
 
+/* A node-valued field read by `accessor`. */
+typedef markdown_core_status (*node_field)(const markdown_core_node *, const markdown_core_node **);
+
+static wire_edge field_edge(wire_edge_shape shape, const markdown_core_node *node, node_field accessor) {
+    const markdown_core_node *field;
+    accessor(node, &field);
+    return node_edge(shape, field);
+}
+
 /* The node-valued fields of `node`, in the contract's field order. This is the
  * one place that knows where each field's nodes live; the walk schedules them
  * and the record counts them from the same answer. */
@@ -335,45 +365,47 @@ static size_t node_edges(const markdown_core_node *node, markdown_core_node_kind
     switch (kind) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
         edges[0] = node_edge(WIRE_EDGE_CHAIN, children);
-        edges[1] = node_edge(WIRE_EDGE_NODE, markdown_core_node_document_metadata(node));
+        edges[1] = field_edge(WIRE_EDGE_NODE, node, markdown_core_node_document_metadata);
         return 2;
     case MARKDOWN_CORE_KIND_CALLOUT:
-        edges[0] = node_edge(WIRE_EDGE_CHAIN, markdown_core_node_callout_title(node));
+        edges[0] = field_edge(WIRE_EDGE_CHAIN, node, markdown_core_node_callout_title);
         edges[1] = node_edge(WIRE_EDGE_CHAIN, children);
         return 2;
     case MARKDOWN_CORE_KIND_TABLE:
         /* head, content and foot are one chain of rows the record partitions. */
-        edges[0] = node_edge(WIRE_EDGE_NODE, markdown_core_node_table_caption(node));
+        edges[0] = field_edge(WIRE_EDGE_NODE, node, markdown_core_node_table_caption);
         edges[1] = node_edge(WIRE_EDGE_CHAIN, children);
         return 2;
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-        edges[0] = node_edge(WIRE_EDGE_NODE, markdown_core_node_directive_label(node));
+        edges[0] = field_edge(WIRE_EDGE_NODE, node, markdown_core_node_directive_label);
         edges[1] = node_edge(WIRE_EDGE_CHAIN, children);
         return 2;
     case MARKDOWN_CORE_KIND_DIRECTIVE:
-        edges[0] = node_edge(WIRE_EDGE_NODE, markdown_core_node_directive_label(node));
+        edges[0] = field_edge(WIRE_EDGE_NODE, node, markdown_core_node_directive_label);
         return 1;
     case MARKDOWN_CORE_KIND_CITE:
-        edges[0] = node_edge(WIRE_EDGE_CHAIN, markdown_core_node_cite_citations(node));
+        edges[0] = field_edge(WIRE_EDGE_CHAIN, node, markdown_core_node_cite_citations);
         return 1;
     case MARKDOWN_CORE_KIND_DEFINITION:
-        edges[0] = node_edge(WIRE_EDGE_CHAIN, markdown_core_node_definition_term(node));
+        edges[0] = field_edge(WIRE_EDGE_CHAIN, node, markdown_core_node_definition_term);
         edges[1].shape = WIRE_EDGE_BODIES;
         edges[1].node = NULL;
-        edges[1].body = markdown_core_node_definition_bodies(node);
+        markdown_core_node_definition_bodies(node, &edges[1].body);
         return 2;
     case MARKDOWN_CORE_KIND_CITATION: {
         /* The referent's inline note, when it owns one, then the affixes. */
-        edges[0] = node_edge(WIRE_EDGE_NODE, markdown_core_citation_referent(node).note);
-        edges[1] = node_edge(WIRE_EDGE_CHAIN, markdown_core_citation_prefix(node));
-        edges[2] = node_edge(WIRE_EDGE_CHAIN, markdown_core_citation_suffix(node));
+        markdown_core_referent referent;
+        markdown_core_citation_referent(node, &referent);
+        edges[0] = node_edge(WIRE_EDGE_NODE, referent.note);
+        edges[1] = field_edge(WIRE_EDGE_CHAIN, node, markdown_core_citation_prefix);
+        edges[2] = field_edge(WIRE_EDGE_CHAIN, node, markdown_core_citation_suffix);
         return 3;
     }
     case MARKDOWN_CORE_KIND_FOOTNOTE:
-        edges[0] = node_edge(WIRE_EDGE_CHAIN, markdown_core_footnote_content(node));
+        edges[0] = field_edge(WIRE_EDGE_CHAIN, node, markdown_core_footnote_content);
         return 1;
     case MARKDOWN_CORE_KIND_SPECIMEN:
-        edges[0] = node_edge(WIRE_EDGE_CHAIN, markdown_core_specimen_content(node));
+        edges[0] = field_edge(WIRE_EDGE_CHAIN, node, markdown_core_specimen_content);
         return 1;
     case MARKDOWN_CORE_KIND_THEMATIC_BREAK:
     case MARKDOWN_CORE_KIND_CODE_BLOCK:
@@ -482,7 +514,8 @@ static void put_table_fields(wire_buffer *buffer, const markdown_core_node *node
     put_count(buffer, columns);
     for (index = 0; index < columns && !buffer->failed; ++index) {
         /* TableColumn { flow: Flow, relative: Double? }. */
-        markdown_core_table_column column = markdown_core_node_table_column_at(node, index);
+        markdown_core_table_column column;
+        markdown_core_node_table_column_at(node, index, &column);
         put_index(buffer, column.flow, MARKDOWN_CORE_FLOW_NONE);
         put_bool(buffer, column.relative.has_value);
         if (column.relative.has_value) {
@@ -500,7 +533,8 @@ enum { WIRE_FOOTNOTE_LABEL = 0, WIRE_FOOTNOTE_NOTE = 1 };
 static void put_citation_fields(wire_buffer *buffer, const markdown_core_node *node, const wire_edge *edges) {
     /* CitationReferent: bib { key, mode: BibMode } | footnote { target: FootnoteTarget } |
      * specimen { label }, where FootnoteTarget is label { value } | note { footnote: Footnote }. */
-    markdown_core_referent referent = markdown_core_citation_referent(node);
+    markdown_core_referent referent;
+    markdown_core_citation_referent(node, &referent);
     put_index(buffer, referent.kind, MARKDOWN_CORE_REFERENT_BIB);
     if (referent.kind == MARKDOWN_CORE_REFERENT_BIB) {
         put_string(buffer, referent.key);
@@ -525,6 +559,7 @@ static void put_record(wire_buffer *buffer, wire_resources *resources, const mar
     wire_edge edges[WIRE_MAX_EDGES];
     markdown_core_string literal;
     markdown_core_optional_string first, second;
+    bool flag;
 
     node_edges(node, kind, edges);
     put_u8(buffer, (uint8_t)kind);
@@ -552,16 +587,20 @@ static void put_record(wire_buffer *buffer, wire_resources *resources, const mar
         put_chain_count(buffer, &edges[1]);
         break;
     }
-    case MARKDOWN_CORE_KIND_HEADING:
-        put_int(buffer, markdown_core_node_heading_level(node));
+    case MARKDOWN_CORE_KIND_HEADING: {
+        int32_t level;
+        markdown_core_node_heading_level(node, &level);
+        put_int(buffer, level);
         put_chain_count(buffer, &edges[0]);
         break;
+    }
     case MARKDOWN_CORE_KIND_LIST:
         put_list_fields(buffer, node);
         put_chain_count(buffer, &edges[0]);
         break;
     case MARKDOWN_CORE_KIND_LIST_ITEM:
-        put_optional_string(buffer, markdown_core_node_list_item_marker(node));
+        markdown_core_node_list_item_marker(node, &first);
+        put_optional_string(buffer, first);
         put_chain_count(buffer, &edges[0]);
         break;
     case MARKDOWN_CORE_KIND_CODE_BLOCK: {
@@ -579,7 +618,8 @@ static void put_record(wire_buffer *buffer, wire_resources *resources, const mar
     case MARKDOWN_CORE_KIND_CODE:
     case MARKDOWN_CORE_KIND_HTML:
     case MARKDOWN_CORE_KIND_COMMENT:
-        put_string(buffer, markdown_core_node_literal(node));
+        markdown_core_node_literal(node, &literal);
+        put_string(buffer, literal);
         break;
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
     case MARKDOWN_CORE_KIND_FORMULA: {
@@ -605,7 +645,7 @@ static void put_record(wire_buffer *buffer, wire_resources *resources, const mar
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE:
-        first = markdown_core_node_directive_properties(node);
+        markdown_core_node_directive_properties(node, &first);
         if (kind == MARKDOWN_CORE_KIND_DIRECTIVE) {
             /* An inline directive's name is required and it has no content. */
             put_string(buffer, first.value);
@@ -619,7 +659,8 @@ static void put_record(wire_buffer *buffer, wire_resources *resources, const mar
     case MARKDOWN_CORE_KIND_CROSS_LINK:
     case MARKDOWN_CORE_KIND_CROSS_EMBEDDED:
         put_destination(buffer, node);
-        put_optional_string(buffer, markdown_core_node_cross_label(node));
+        markdown_core_node_cross_label(node, &first);
+        put_optional_string(buffer, first);
         if (kind == MARKDOWN_CORE_KIND_CROSS_EMBEDDED) {
             put_dimensions(buffer, node);
         }
@@ -635,13 +676,15 @@ static void put_record(wire_buffer *buffer, wire_resources *resources, const mar
     case MARKDOWN_CORE_KIND_DEFINITION:
         put_chain_count(buffer, &edges[0]);
         put_bodies_counts(buffer, &edges[1]);
-        put_bool(buffer, markdown_core_node_definition_compact(node));
+        markdown_core_node_definition_compact(node, &flag);
+        put_bool(buffer, flag);
         break;
     case MARKDOWN_CORE_KIND_CITATION:
         put_citation_fields(buffer, node, edges);
         break;
     case MARKDOWN_CORE_KIND_FOOTNOTE:
-        put_optional_string(buffer, markdown_core_footnote_label(node));
+        markdown_core_footnote_label(node, &first);
+        put_optional_string(buffer, first);
         put_chain_count(buffer, &edges[0]);
         break;
     case MARKDOWN_CORE_KIND_SPECIMEN: {
@@ -797,18 +840,24 @@ static void put_tree(wire_buffer *buffer, const markdown_core_node *root) {
 
 /* The document's footnote and specimen tables: each a count, then the id of
  * every definition in source order. */
-static void put_definitions(wire_buffer *buffer, const markdown_core_document *document) {
-    size_t count = markdown_core_document_footnote_count(document);
+typedef markdown_core_status (*definition_at)(const markdown_core_document *, size_t, const markdown_core_node **);
+
+static void put_definition_table(wire_buffer *buffer, const markdown_core_document *document, size_t count,
+                                 definition_at at) {
     size_t index;
     put_count(buffer, count);
     for (index = 0; index < count && !buffer->failed; ++index) {
-        put_u64(buffer, markdown_core_node_id(markdown_core_document_footnote_at(document, index)));
+        const markdown_core_node *definition;
+        at(document, index, &definition);
+        put_u64(buffer, markdown_core_node_id(definition));
     }
-    count = markdown_core_document_specimen_count(document);
-    put_count(buffer, count);
-    for (index = 0; index < count && !buffer->failed; ++index) {
-        put_u64(buffer, markdown_core_node_id(markdown_core_document_specimen_at(document, index)));
-    }
+}
+
+static void put_definitions(wire_buffer *buffer, const markdown_core_document *document) {
+    put_definition_table(buffer, document, markdown_core_document_footnote_count(document),
+                         markdown_core_document_footnote_at);
+    put_definition_table(buffer, document, markdown_core_document_specimen_count(document),
+                         markdown_core_document_specimen_at);
 }
 
 /* ---- Messages ------------------------------------------------------------ */
@@ -829,11 +878,11 @@ static void seal(wire_buffer *buffer) {
     }
 }
 
-static uint8_t *error_message(markdown_core_error_code code, markdown_core_string message) {
+/* A failure message: the status and nothing else. */
+static uint8_t *error_message(markdown_core_status status) {
     wire_buffer buffer = {0};
     put_header(&buffer, WIRE_STATUS_ERROR);
-    put_u32(&buffer, (uint32_t)code);
-    put_string(&buffer, message);
+    put_u32(&buffer, (uint32_t)status);
     seal(&buffer);
     if (buffer.failed) {
         free(buffer.data);
@@ -843,17 +892,14 @@ static uint8_t *error_message(markdown_core_error_code code, markdown_core_strin
 }
 
 uint8_t *markdown_core_wire_parse(const uint8_t *source, size_t length) {
-    markdown_core_error *error;
+    markdown_core_document *document;
     /* Extents are bytes whatever the unit; the unit only counts scope queries,
      * which the bindings answer themselves. */
-    markdown_core_document *document = markdown_core_document_parse(source, length, &error);
+    markdown_core_status status = markdown_core_document_parse(source, length, &document);
     wire_buffer buffer = {0};
-    markdown_core_string text;
 
-    if (document == NULL) {
-        uint8_t *message = error_message(markdown_core_error_get_code(error), markdown_core_error_get_message(error));
-        markdown_core_error_free(error);
-        return message;
+    if (status != MARKDOWN_CORE_OK) {
+        return error_message(status);
     }
 
     put_header(&buffer, WIRE_STATUS_DOCUMENT);
@@ -866,9 +912,7 @@ uint8_t *markdown_core_wire_parse(const uint8_t *source, size_t length) {
     }
 
     free(buffer.data);
-    text.data = allocation_error_bytes;
-    text.length = sizeof(allocation_error_bytes) - 1;
-    return error_message(MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, text);
+    return error_message(MARKDOWN_CORE_ALLOCATION_FAILED);
 }
 
 void markdown_core_wire_free(uint8_t *message) { free(message); }

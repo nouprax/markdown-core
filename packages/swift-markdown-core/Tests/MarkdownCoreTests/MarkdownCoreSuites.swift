@@ -37,7 +37,7 @@ import Testing
         // A label matches byte for byte: the decomposed spelling is another label.
         #expect(document.specimen(for: "e\u{301}tude") == nil)
         #expect(document.footnote(for: "n")?.id == MarkupID(5))
-        let dump = document.dump(in: "")
+        let dump = try document.dump(in: "")
         #expect(dump.contains("referent=specimen(label=\"étude\")"))
         #expect(dump.contains("Specimen scope=1:1..1:0 anchor=null attributes={} label=null start=null children=0"))
         var visitor = RecordingWalkingVisitor()
@@ -108,7 +108,7 @@ import Testing
         #expect(mark.content.count == 2)
         #expect(((mark.content[1] as? Emphasis)?.content.first as? Text)?.literal == "b")
         #expect(
-            scope(of: mark, in: document, source: "==a *b*==")
+            try scope(of: mark, in: document, source: "==a *b*==")
                 == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 9))
         )
     }
@@ -179,7 +179,7 @@ import Testing
         #expect(callout.title == nil)
         #expect(callout.content.count == 1)
         #expect(
-            document.dump(in: "> quote\n")
+            try document.dump(in: "> quote\n")
                 == "Document scope=1:1..1:7 anchor=null attributes={} children=1\n"
                 + "└── Callout scope=1:1..1:7 anchor=null attributes={} variant=null collapsed=null children=1\n"
                 + "    └── Paragraph scope=1:3..1:7 anchor=null attributes={} children=1\n"
@@ -211,16 +211,16 @@ import Testing
         #expect(document.footnote(for: "a") == footnote)
         #expect(document.footnote(for: "A") == nil)
         #expect(
-            scope(of: footnote, in: document, source: source)
+            try scope(of: footnote, in: document, source: source)
                 == Scope(start: Position(line: 3, column: 1), end: Position(line: 4, column: 0))
         )
         #expect(((footnote.content.first as? Paragraph)?.content.first as? Text)?.literal == "once")
         #expect(
-            scope(of: later, in: document, source: source)
+            try scope(of: later, in: document, source: source)
                 == Scope(start: Position(line: 5, column: 1), end: Position(line: 5, column: 11))
         )
         #expect(((later.content.first as? Paragraph)?.content.first as? Text)?.literal == "twice")
-        let dump = document.dump(in: source)
+        let dump = try document.dump(in: source)
         #expect(dump.hasPrefix("Document scope=1:1..5:11 anchor=null attributes={} children=3\n"))
         let tail = """
             └── Footnote scope=5:1..5:11 anchor=null attributes={} label="a" children=1
@@ -251,10 +251,10 @@ import Testing
         let document = try Document.parse("")
         #expect(document.content.isEmpty)
         #expect(
-            scope(of: document, in: document, source: "")
+            try scope(of: document, in: document, source: "")
                 == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 0))
         )
-        #expect(document.dump(in: "") == "Document scope=1:1..1:0 anchor=null attributes={} children=0\n")
+        #expect(try document.dump(in: "") == "Document scope=1:1..1:0 anchor=null attributes={} children=0\n")
     }
 }
 
@@ -273,14 +273,14 @@ import Testing
         #expect(block.content.allSatisfy { !($0 is DirectiveLabel) })
         #expect(label.content.count == 1)
         #expect(label.content.first is Text)
-        #expect(document.dump(block, in: source).contains("DirectiveLabel"))
+        #expect(try document.dump(block, in: source).contains("DirectiveLabel"))
 
         // The other field arm: no label is emitted when none was written.
         let written = ":::note\nBody\n:::\n"
         let other = try Document.parse(written)
         let bare = try #require(other.content.first as? DirectiveBlock)
         #expect(bare.label == nil)
-        #expect(other.dump(bare, in: written).hasPrefix("DirectiveBlock scope=1:1..3:3 "))
+        #expect(try other.dump(bare, in: written).hasPrefix("DirectiveBlock scope=1:1..3:3 "))
     }
 
     @Test("the dump escapes every character JSON cannot carry literally")
@@ -307,5 +307,19 @@ import Testing
         #expect(walkingVisitor.entered == walkingVisitor.exited)
         #expect(walkingVisitor.entered > 20_000)
         for _ in 0..<2_000 { #expect(try Document.parse("# Copy\n\n- [x] item\n").content.count == 2) }
+    }
+}
+
+@Suite("errors") struct ErrorSuite {
+    @Test("each C status maps to the error code of the same name")
+    func statusCodes() {
+        let cases: [(markdown_core_status, ErrorCode)] = [
+            (MARKDOWN_CORE_ALLOCATION_FAILED, .allocationFailed),
+            (MARKDOWN_CORE_OUT_OF_BOUNDS, .outOfBounds),
+            (MARKDOWN_CORE_KIND_MISMATCH, .kindMismatch),
+        ]
+        for (status, code) in cases {
+            #expect(MarkdownCoreError(status).code == code)
+        }
     }
 }

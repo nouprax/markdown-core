@@ -14,8 +14,8 @@ extern "C" {
  * the installed facade, include/markdown_core.h.
  *
  * Parses `source` and returns one caller-owned message: a document, or a parse
- * failure encoded as an error message. A result too large to encode is an
- * error message as well. NULL means not even an error message could be
+ * failure encoded as an error message carrying its markdown_core_status. A
+ * result too large to encode is an ALLOCATION_FAILED error message. NULL means not even an error message could be
  * allocated. The message borrows nothing; release it with
  * markdown_core_wire_free. */
 uint8_t *markdown_core_wire_parse(const uint8_t *source, size_t length);

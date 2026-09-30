@@ -5,7 +5,10 @@ internal actual fun parsePlatformDocument(
     unit: TextUnit,
 ): Document {
     AndroidNativeLoader.ensureLoaded()
-    return WireDecoder.decode(JniParser.parsePayload(source), unit)
+    return WireDecoder.decode(
+        JniParser.parsePayload(source) ?: throw MarkdownCoreException(ErrorCode.ALLOCATION_FAILED),
+        unit,
+    )
 }
 
 private object AndroidNativeLoader {
@@ -20,6 +23,10 @@ private object AndroidNativeLoader {
 }
 
 private object JniParser {
+    /**
+     * The MCB3 message for [source], or null when the engine could not
+     * allocate it or it exceeds a byte array's capacity.
+     */
     @JvmSynthetic
-    external fun parsePayload(source: ByteArray): ByteArray
+    external fun parsePayload(source: ByteArray): ByteArray?
 }

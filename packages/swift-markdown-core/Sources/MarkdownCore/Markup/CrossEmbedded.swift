@@ -45,8 +45,8 @@ extension CrossEmbeddedRecord {
         self.init(
             InheritedFields(from: node),
             dest: Destination(from: node),
-            label: markdown_core_node_cross_label(node).string,
-            dimensions: markdown_core_node_dimensions(node).map { Dimensions($0.pointee) }
+            label: answer(markdown_core_optional_string()) { markdown_core_node_cross_label(node, $0) }.string,
+            dimensions: answer(nil) { markdown_core_node_dimensions(node, $0) }.map { Dimensions($0.pointee) }
         )
     }
 }

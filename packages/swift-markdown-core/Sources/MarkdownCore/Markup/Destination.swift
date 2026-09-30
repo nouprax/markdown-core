@@ -31,12 +31,12 @@ struct SharedResource {
         by node: OpaquePointer,
         in resources: inout [Int: SharedResource]
     ) -> SharedResource {
-        let key = Int(bitPattern: markdown_core_node_resource(node))
+        let key = Int(bitPattern: answer { markdown_core_node_resource(node, $0) })
         if let known = resources[key] { return known }
-        let inherited = markdown_core_node_inherited_attributes(node)
+        let inherited = answer { markdown_core_node_inherited_attributes(node, $0) }
         let resource = SharedResource(
             dest: Destination(from: node),
-            title: markdown_core_node_title(node).string,
+            title: answer(markdown_core_optional_string()) { markdown_core_node_title(node, $0) }.string,
             anchor: markdown_core_attribute_value_anchor(inherited).string,
             attributes: Attributes(from: inherited)
         )
@@ -59,7 +59,7 @@ struct SharedResource {
 
 extension Destination {
     init(from node: OpaquePointer) {
-        let destination = markdown_core_node_destination(node)
+        let destination = answer(markdown_core_destination()) { markdown_core_node_destination(node, $0) }
         if destination.kind == MARKDOWN_CORE_DESTINATION_URL {
             self = .url(destination.url.required)
         } else {

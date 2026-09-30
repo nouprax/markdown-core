@@ -38,7 +38,7 @@ extension FormulaBlockRecord {
         // varies (Q29).
         var mode = MARKDOWN_CORE_PLACEMENT_STANDALONE
         var literal = markdown_core_string()
-        markdown_core_node_formula_properties(node, &mode, &literal)
+        answered(markdown_core_node_formula_properties(node, &mode, &literal))
         self.init(InheritedFields(from: node), literal: literal.required)
     }
 }

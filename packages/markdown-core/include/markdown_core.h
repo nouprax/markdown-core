@@ -33,15 +33,22 @@
  * afterwards. Node handles and `markdown_core_string`s borrow from the owning document
  * and end with it.
  *
- * Errors: a markdown_core_error returned through an out-parameter is an
- * immutable, library-owned process-lifetime value. It requires no allocation,
- * including when it reports allocation failure. markdown_core_error_free is a
- * no-op release function. Dump buffers are owned by the caller and released
- * with markdown_core_dump_free.
+ * Errors: every call that can fail returns a markdown_core_status and hands
+ * its answer out through out-parameters, which it writes only when it returns
+ * MARKDOWN_CORE_OK. A call that cannot fail returns its answer. Nothing a
+ * failure reports is allocated, so an allocation failure is reported like any
+ * other. Dump buffers are owned by the caller and released with
+ * markdown_core_dump_free.
  *
- * Calls: every argument is the caller's to get right. A node accessor reads
- * the fields of the kind it names, an index is below its count, and a node
- * belongs to the document it is asked about; nothing here checks that.
+ * Calls: every argument is the caller's to get right, and a call that would
+ * read or write memory it does not own for a wrong one reports it instead.
+ * A kind-specific accessor answers MARKDOWN_CORE_KIND_MISMATCH for a node (or
+ * metadata value) of another kind, an `_at` accessor answers
+ * MARKDOWN_CORE_OUT_OF_BOUNDS for an index at or past its count, and a scope
+ * query answers MARKDOWN_CORE_OUT_OF_BOUNDS for a source too short for what it
+ * reads. Pointer arguments are not checked for NULL, except that a source of
+ * length 0 may be NULL and `*_free(NULL)` does nothing. A node belongs to the
+ * document it is asked about; nothing checks that.
  *
  * No process-global lifecycle or shared mutable parser state exists: this
  * contract is complete, and bindings must not rely on undocumented
@@ -69,7 +76,22 @@ typedef struct markdown_core_document markdown_core_document;
 #define MARKDOWN_CORE_NODE_TYPEDEF
 typedef struct markdown_core_node markdown_core_node;
 #endif
-typedef struct markdown_core_error markdown_core_error;
+
+/** What a call that can fail answers. MARKDOWN_CORE_OK is success; every other
+ * value names the one reason there is no answer, and the value is the status
+ * code of an MCB3 failure message (docs/architecture/wire-format.md).
+ *
+ * - ALLOCATION_FAILED: an allocation failed, or the input exceeds the
+ *   capacity the library can represent.
+ * - OUT_OF_BOUNDS: an index, position or source length names something that
+ *   is not there.
+ * - KIND_MISMATCH: the node or value is not of the kind the accessor reads. */
+typedef enum markdown_core_status {
+    MARKDOWN_CORE_OK = 0,
+    MARKDOWN_CORE_ALLOCATION_FAILED = 1,
+    MARKDOWN_CORE_OUT_OF_BOUNDS = 2,
+    MARKDOWN_CORE_KIND_MISMATCH = 3,
+} markdown_core_status;
 
 /** A read-only run of UTF-8 bytes that this library owns.
  *
@@ -126,8 +148,8 @@ typedef struct markdown_core_extent {
 
 /** Metadata is a leaf node owned by Document.metadata.
  * Ten optional fields hold values; list items retain order and numbers their exact
- * spelling. Every returned handle and string borrows the document. Field
- * accessors return NULL when the field is absent; an explicit null is a
+ * spelling. Every returned handle and string borrows the document. A field
+ * accessor answers NULL when the field is absent; an explicit null is a
  * present scalar. `_scalar` reads a scalar value, and `_item_count` and
  * `_item_at` a list value. */
 typedef struct markdown_core_metadata_value markdown_core_metadata_value;
@@ -157,33 +179,44 @@ typedef struct markdown_core_metadata_list_item {
     markdown_core_string value;
 } markdown_core_metadata_list_item;
 
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_document_metadata(const markdown_core_node *node);
-MARKDOWN_CORE_API const markdown_core_metadata_value *markdown_core_metadata_name(const markdown_core_node *metadata);
-MARKDOWN_CORE_API const markdown_core_metadata_value *markdown_core_metadata_title(const markdown_core_node *metadata);
-MARKDOWN_CORE_API const markdown_core_metadata_value *
-markdown_core_metadata_subtitle(const markdown_core_node *metadata);
-MARKDOWN_CORE_API const markdown_core_metadata_value *markdown_core_metadata_time(const markdown_core_node *metadata);
-MARKDOWN_CORE_API const markdown_core_metadata_value *markdown_core_metadata_date(const markdown_core_node *metadata);
-MARKDOWN_CORE_API const markdown_core_metadata_value *
-markdown_core_metadata_authors(const markdown_core_node *metadata);
-MARKDOWN_CORE_API const markdown_core_metadata_value *
-markdown_core_metadata_keywords(const markdown_core_node *metadata);
-MARKDOWN_CORE_API const markdown_core_metadata_value *
-markdown_core_metadata_abstract(const markdown_core_node *metadata);
-MARKDOWN_CORE_API const markdown_core_metadata_value *markdown_core_metadata_state(const markdown_core_node *metadata);
-MARKDOWN_CORE_API const markdown_core_metadata_value *
-markdown_core_metadata_comment(const markdown_core_node *metadata);
+/** The document's Metadata node, or NULL when the source wrote none.
+ * KIND_MISMATCH unless `node` is a Document. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_document_metadata(const markdown_core_node *node,
+                                                                            const markdown_core_node **metadata);
+/** A field of a Metadata node. KIND_MISMATCH unless `metadata` is a Metadata
+ * node. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_metadata_name(const markdown_core_node *metadata,
+                                                                   const markdown_core_metadata_value **value);
+MARKDOWN_CORE_API markdown_core_status markdown_core_metadata_title(const markdown_core_node *metadata,
+                                                                    const markdown_core_metadata_value **value);
+MARKDOWN_CORE_API markdown_core_status markdown_core_metadata_subtitle(const markdown_core_node *metadata,
+                                                                       const markdown_core_metadata_value **value);
+MARKDOWN_CORE_API markdown_core_status markdown_core_metadata_time(const markdown_core_node *metadata,
+                                                                   const markdown_core_metadata_value **value);
+MARKDOWN_CORE_API markdown_core_status markdown_core_metadata_date(const markdown_core_node *metadata,
+                                                                   const markdown_core_metadata_value **value);
+MARKDOWN_CORE_API markdown_core_status markdown_core_metadata_authors(const markdown_core_node *metadata,
+                                                                      const markdown_core_metadata_value **value);
+MARKDOWN_CORE_API markdown_core_status markdown_core_metadata_keywords(const markdown_core_node *metadata,
+                                                                       const markdown_core_metadata_value **value);
+MARKDOWN_CORE_API markdown_core_status markdown_core_metadata_abstract(const markdown_core_node *metadata,
+                                                                       const markdown_core_metadata_value **value);
+MARKDOWN_CORE_API markdown_core_status markdown_core_metadata_state(const markdown_core_node *metadata,
+                                                                    const markdown_core_metadata_value **value);
+MARKDOWN_CORE_API markdown_core_status markdown_core_metadata_comment(const markdown_core_node *metadata,
+                                                                      const markdown_core_metadata_value **value);
 MARKDOWN_CORE_API markdown_core_metadata_value_kind
 markdown_core_metadata_value_get_kind(const markdown_core_metadata_value *value);
-MARKDOWN_CORE_API markdown_core_metadata_scalar
-markdown_core_metadata_value_scalar(const markdown_core_metadata_value *value);
-MARKDOWN_CORE_API size_t markdown_core_metadata_value_item_count(const markdown_core_metadata_value *value);
-MARKDOWN_CORE_API markdown_core_metadata_list_item
-markdown_core_metadata_value_item_at(const markdown_core_metadata_value *value, size_t index);
-
-/* Why an operation produced nothing. An allocation failure is the one reason:
- * the value keeps the number it has always had on the wire. */
-typedef enum markdown_core_error_code { MARKDOWN_CORE_ERROR_ALLOCATION_FAILED = 2 } markdown_core_error_code;
+/** KIND_MISMATCH unless `value` is a scalar. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_metadata_value_scalar(const markdown_core_metadata_value *value,
+                                                                           markdown_core_metadata_scalar *scalar);
+/** KIND_MISMATCH unless `value` is a list; `_item_at` answers OUT_OF_BOUNDS
+ * for an index at or past the count. */
+MARKDOWN_CORE_API markdown_core_status
+markdown_core_metadata_value_item_count(const markdown_core_metadata_value *value, size_t *count);
+MARKDOWN_CORE_API markdown_core_status markdown_core_metadata_value_item_at(const markdown_core_metadata_value *value,
+                                                                            size_t index,
+                                                                            markdown_core_metadata_list_item *item);
 
 /* A node's kind. The value IS the wire kind every binding decodes, and it is
  * the kind's `ordinal` in the canonical AST contract: a new kind takes the next
@@ -331,17 +364,17 @@ typedef struct markdown_core_optional_string {
  * malformed sequence is parsed like any other input. There are no options:
  * every feature of the dialect is recognized on every call. The document
  * counts columns in UTF-8 bytes.
- * The returned document owns every node and every `markdown_core_string`
- * handed out of it, and `*error` is set to NULL. When an allocation fails,
- * NULL is returned and `*error` says so.
+ * `*document` receives the document, which owns every node and every
+ * `markdown_core_string` handed out of it. ALLOCATION_FAILED when an
+ * allocation fails or `length` exceeds the 1 GiB a document can hold.
  */
-MARKDOWN_CORE_API markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
-                                                                       markdown_core_error **error);
+MARKDOWN_CORE_API markdown_core_status markdown_core_document_parse(const uint8_t *source, size_t length,
+                                                                    markdown_core_document **document);
 /** Parses as markdown_core_document_parse does, into a document that counts
  * columns in `unit`. */
-MARKDOWN_CORE_API markdown_core_document *markdown_core_document_parse_in(const uint8_t *source, size_t length,
-                                                                          markdown_core_text_unit unit,
-                                                                          markdown_core_error **error);
+MARKDOWN_CORE_API markdown_core_status markdown_core_document_parse_in(const uint8_t *source, size_t length,
+                                                                       markdown_core_text_unit unit,
+                                                                       markdown_core_document **document);
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
 MARKDOWN_CORE_API markdown_core_text_unit markdown_core_document_unit(const markdown_core_document *document);
 
@@ -359,26 +392,27 @@ MARKDOWN_CORE_API markdown_core_extent markdown_core_node_extent(const markdown_
 
 /** SCOPE QUERIES. Each takes the source the document was parsed from and
  * computes absolute positions from the extents in one walk of the document,
- * with columns in the document's text unit. A scope query takes a node of the
- * document and returns false when it cannot allocate. */
-MARKDOWN_CORE_API bool markdown_core_document_scope(const markdown_core_document *document,
-                                                    const markdown_core_node *node, const uint8_t *source,
-                                                    size_t length, markdown_core_scope *scope);
-/** The last node in canonical walk order whose source range holds the byte
- * at `position`, or NULL when no node holds it or the position names no
- * byte of the source. */
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_node_at(const markdown_core_document *document,
-                                                                           markdown_core_position position,
-                                                                           const uint8_t *source, size_t length);
-/** A parse failure. There is NO document, and there is no scope: an input the
- * parser could not turn into a document has no extent to point at. The value
- * is immutable and library-owned; `markdown_core_error_free` is a no-op. */
-MARKDOWN_CORE_API markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error);
-MARKDOWN_CORE_API markdown_core_string markdown_core_error_get_message(const markdown_core_error *error);
-MARKDOWN_CORE_API void markdown_core_error_free(markdown_core_error *error);
-
+ * with columns in the document's text unit. Each answers ALLOCATION_FAILED
+ * when it cannot allocate.
+ *
+ * `markdown_core_document_scope` computes the scope of `node`, a node of the
+ * document. OUT_OF_BOUNDS when `length` ends before the node does. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_document_scope(const markdown_core_document *document,
+                                                                    const markdown_core_node *node,
+                                                                    const uint8_t *source, size_t length,
+                                                                    markdown_core_scope *scope);
+/** `*node` receives the last node in canonical walk order whose source range
+ * holds the byte at `position`, or NULL when no node holds it or the position
+ * names no byte of the source. OUT_OF_BOUNDS when the line or the column is
+ * below 1. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_document_node_at(const markdown_core_document *document,
+                                                                      markdown_core_position position,
+                                                                      const uint8_t *source, size_t length,
+                                                                      const markdown_core_node **node);
 MARKDOWN_CORE_API markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *node);
-MARKDOWN_CORE_API const char *markdown_core_node_kind_name(markdown_core_node_kind kind);
+/** The kind's name in the canonical AST. OUT_OF_BOUNDS for a value that is
+ * not a markdown_core_node_kind. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_kind_name(markdown_core_node_kind kind, const char **name);
 
 /** A directive's `label` is a separate node-valued field and is not part of
  * its child sequence. For a `DirectiveBlock`, these functions traverse only
@@ -390,70 +424,89 @@ MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_first_child(c
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node);
 MARKDOWN_CORE_API size_t markdown_core_node_child_count(const markdown_core_node *node);
 
-MARKDOWN_CORE_API int32_t markdown_core_node_heading_level(const markdown_core_node *node);
-/** `variant` and `delimiter` have meaning only for an ordered list, when
- * `start.has_value` is true. Bullet lists have no ordered-marker properties. */
-MARKDOWN_CORE_API void markdown_core_node_list_properties(const markdown_core_node *node,
-                                                          markdown_core_list_flavor *flavor,
-                                                          markdown_core_optional_i64 *start,
-                                                          markdown_core_ordered_list_variant *variant,
-                                                          markdown_core_ordered_list_delimiter *delimiter, bool *tight);
-MARKDOWN_CORE_API markdown_core_optional_string markdown_core_node_list_item_marker(const markdown_core_node *node);
-/** `info` and `language` are OPTIONAL: a fence with nothing but whitespace
- * after it wrote no info string, and an indented block has no fence to write
- * one on. `language` is the info string's first word and is present exactly
- * when `info` is. */
-MARKDOWN_CORE_API void markdown_core_node_code_block_properties(const markdown_core_node *node,
-                                                                markdown_core_optional_string *info,
-                                                                markdown_core_optional_string *language,
-                                                                markdown_core_string *literal, bool *fenced,
-                                                                bool *closed);
+/** KIND ACCESSORS. Each reads the fields of the kinds it names and answers
+ * KIND_MISMATCH for a node of any other kind. */
+/** A `Heading`. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level);
+/** A `List`. `variant` and `delimiter` have meaning only for an ordered list,
+ * when `start.has_value` is true. Bullet lists have no ordered-marker
+ * properties. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_list_properties(
+    const markdown_core_node *node, markdown_core_list_flavor *flavor, markdown_core_optional_i64 *start,
+    markdown_core_ordered_list_variant *variant, markdown_core_ordered_list_delimiter *delimiter, bool *tight);
+/** A `ListItem`. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_list_item_marker(const markdown_core_node *node,
+                                                                           markdown_core_optional_string *marker);
+/** A `CodeBlock`. `info` and `language` are OPTIONAL: a fence with nothing
+ * but whitespace after it wrote no info string, and an indented block has no
+ * fence to write one on. `language` is the info string's first word and is
+ * present exactly when `info` is. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_code_block_properties(const markdown_core_node *node,
+                                                                                markdown_core_optional_string *info,
+                                                                                markdown_core_optional_string *language,
+                                                                                markdown_core_string *literal,
+                                                                                bool *fenced, bool *closed);
 /** The literal of a `Text`, `Code`, `HTML`, `HTMLBlock`, or `Comment` node.
  * A comment's literal excludes its delimiters and keeps every byte between
  * them, line endings and indentation included. */
-MARKDOWN_CORE_API markdown_core_string markdown_core_node_literal(const markdown_core_node *node);
-MARKDOWN_CORE_API void markdown_core_node_formula_properties(const markdown_core_node *node,
-                                                             markdown_core_placement *mode,
-                                                             markdown_core_string *literal);
-/** The node's children are its rows, in head/content/foot order. These counts
- * partition that single owned chain; row membership is a table fact. */
-MARKDOWN_CORE_API void markdown_core_node_table_properties(const markdown_core_node *node, size_t *column_count,
-                                                           size_t *head_count, size_t *content_count,
-                                                           size_t *foot_count);
-MARKDOWN_CORE_API markdown_core_table_column markdown_core_node_table_column_at(const markdown_core_node *node,
-                                                                                size_t index);
-/** The independently owned caption field, or NULL when the table has none. */
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_table_caption(const markdown_core_node *node);
-MARKDOWN_CORE_API void markdown_core_node_table_cell_spans(const markdown_core_node *node, int64_t *rowspan,
-                                                           int64_t *colspan);
-/** A directive's name is absent only for a nameless DirectiveBlock. There is no `mode`: an inline `Directive` is
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_literal(const markdown_core_node *node,
+                                                                  markdown_core_string *literal);
+/** A `Formula` or `FormulaBlock`. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_formula_properties(const markdown_core_node *node,
+                                                                             markdown_core_placement *mode,
+                                                                             markdown_core_string *literal);
+/** A `Table`. The node's children are its rows, in head/content/foot order.
+ * These counts partition that single owned chain; row membership is a table
+ * fact. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_table_properties(const markdown_core_node *node,
+                                                                           size_t *column_count, size_t *head_count,
+                                                                           size_t *content_count, size_t *foot_count);
+/** A `Table`'s column; OUT_OF_BOUNDS for an index at or past the column
+ * count. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_table_column_at(const markdown_core_node *node, size_t index,
+                                                                          markdown_core_table_column *column);
+/** A `Table`'s independently owned caption field, or NULL when it has none. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_table_caption(const markdown_core_node *node,
+                                                                        const markdown_core_node **caption);
+/** A `TableCell`. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_table_cell_spans(const markdown_core_node *node,
+                                                                           int64_t *rowspan, int64_t *colspan);
+/** A `Directive` or `DirectiveBlock`. A directive's name is absent only for a
+ * nameless DirectiveBlock. There is no `mode`: an inline `Directive` is
  * always embedded and a `DirectiveBlock` always standalone, so the value was
  * implied by the kind and four surfaces had to keep a constant in step (Q29). */
-MARKDOWN_CORE_API markdown_core_optional_string markdown_core_node_directive_properties(const markdown_core_node *node);
-/** Definition collections preserve the term/body boundary. Body cursors are
- * borrowed collection roots, not Markup nodes. All pointers live with Document. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_directive_properties(const markdown_core_node *node,
+                                                                               markdown_core_optional_string *name);
+/** A `Definition`. Definition collections preserve the term/body boundary.
+ * Body cursors are borrowed collection roots, not Markup nodes. All pointers
+ * live with Document. */
 typedef struct markdown_core_definition_body markdown_core_definition_body;
-MARKDOWN_CORE_API bool markdown_core_node_definition_compact(const markdown_core_node *node);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_definition_term(const markdown_core_node *node);
-MARKDOWN_CORE_API const markdown_core_definition_body *
-markdown_core_node_definition_bodies(const markdown_core_node *node);
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_definition_compact(const markdown_core_node *node,
+                                                                             bool *compact);
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_definition_term(const markdown_core_node *node,
+                                                                          const markdown_core_node **term);
+MARKDOWN_CORE_API markdown_core_status
+markdown_core_node_definition_bodies(const markdown_core_node *node, const markdown_core_definition_body **bodies);
 MARKDOWN_CORE_API const markdown_core_definition_body *
 markdown_core_definition_body_next(const markdown_core_definition_body *body);
 MARKDOWN_CORE_API const markdown_core_node *
 markdown_core_definition_body_content(const markdown_core_definition_body *body);
 /** Universal fields. Classes and records retain source order and duplicates;
- * absent attributes have zero counts. */
+ * absent attributes have zero counts. An `_at` accessor answers OUT_OF_BOUNDS
+ * for an index at or past its count. */
 MARKDOWN_CORE_API markdown_core_optional_string markdown_core_node_anchor(const markdown_core_node *node);
 MARKDOWN_CORE_API size_t markdown_core_node_attribute_class_count(const markdown_core_node *node);
-MARKDOWN_CORE_API markdown_core_string markdown_core_node_attribute_class_at(const markdown_core_node *node,
-                                                                             size_t index);
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_attribute_class_at(const markdown_core_node *node,
+                                                                             size_t index, markdown_core_string *value);
 MARKDOWN_CORE_API size_t markdown_core_node_attribute_record_count(const markdown_core_node *node);
-MARKDOWN_CORE_API void markdown_core_node_attribute_record_at(const markdown_core_node *node, size_t index,
-                                                              markdown_core_string *name, markdown_core_string *value);
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_attribute_record_at(const markdown_core_node *node,
+                                                                              size_t index, markdown_core_string *name,
+                                                                              markdown_core_string *value);
 /** Immutable normalized merge inputs, borrowed for the document lifetime.
  * The primary contribution comes from the occurrence, and the inherited
- * contribution of a `Link` or `Embedded` from its resource. An empty
- * contribution does not distinguish direct syntax from a reference occurrence.
+ * contribution of a `Link` or `Embedded` from its resource; the inherited
+ * accessor answers KIND_MISMATCH for any other kind. An empty contribution
+ * does not distinguish direct syntax from a reference occurrence.
  * Their identities let a binding decode each value once using its own native
  * ownership and collection conventions.
  * Node accessors above read merge(primary, inherited): primary nonempty anchor
@@ -462,37 +515,40 @@ MARKDOWN_CORE_API void markdown_core_node_attribute_record_at(const markdown_cor
 typedef struct markdown_core_attribute_value markdown_core_attribute_value;
 MARKDOWN_CORE_API const markdown_core_attribute_value *
 markdown_core_node_primary_attributes(const markdown_core_node *node);
-MARKDOWN_CORE_API const markdown_core_attribute_value *
-markdown_core_node_inherited_attributes(const markdown_core_node *node);
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_inherited_attributes(
+    const markdown_core_node *node, const markdown_core_attribute_value **attributes);
 MARKDOWN_CORE_API markdown_core_optional_string
 markdown_core_attribute_value_anchor(const markdown_core_attribute_value *attributes);
 MARKDOWN_CORE_API size_t markdown_core_attribute_value_class_count(const markdown_core_attribute_value *attributes);
-MARKDOWN_CORE_API markdown_core_string
-markdown_core_attribute_value_class_at(const markdown_core_attribute_value *attributes, size_t index);
+MARKDOWN_CORE_API markdown_core_status markdown_core_attribute_value_class_at(
+    const markdown_core_attribute_value *attributes, size_t index, markdown_core_string *value);
 MARKDOWN_CORE_API size_t markdown_core_attribute_value_record_count(const markdown_core_attribute_value *attributes);
-MARKDOWN_CORE_API void markdown_core_attribute_value_record_at(const markdown_core_attribute_value *attributes,
-                                                               size_t index, markdown_core_string *name,
-                                                               markdown_core_string *value);
+MARKDOWN_CORE_API markdown_core_status
+markdown_core_attribute_value_record_at(const markdown_core_attribute_value *attributes, size_t index,
+                                        markdown_core_string *name, markdown_core_string *value);
 /** The borrowed dimensions of an `Embedded` or `CrossEmbedded`, valid for the
  * document lifetime, or NULL when none were authored. Dimension values have
  * no node identity. */
-MARKDOWN_CORE_API const markdown_core_dimensions *markdown_core_node_dimensions(const markdown_core_node *node);
-/** The directive's optional `DirectiveLabel` field. The returned node is not
- * a directive child; its own children are the label's inline content. NULL
- * means no label. */
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_label(const markdown_core_node *node);
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_dimensions(const markdown_core_node *node,
+                                                                     const markdown_core_dimensions **dimensions);
+/** A `Directive`'s or `DirectiveBlock`'s optional `DirectiveLabel` field. The
+ * returned node is not a directive child; its own children are the label's
+ * inline content. NULL means no label. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_directive_label(const markdown_core_node *node,
+                                                                          const markdown_core_node **label);
 /** A `Callout`'s metadata (M3). Every `>` container is a callout: `variant`
  * is the authored type as written, absent when the container has no metadata
  * line, and `collapsed` is its fold marker, absent when no `+` or `-` was
  * authored, false for `+` (the callout opens expanded) and true for `-`.
  */
-MARKDOWN_CORE_API void markdown_core_node_callout_properties(const markdown_core_node *node,
-                                                             markdown_core_optional_string *variant,
-                                                             markdown_core_optional_bool *collapsed);
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_callout_properties(const markdown_core_node *node,
+                                                                             markdown_core_optional_string *variant,
+                                                                             markdown_core_optional_bool *collapsed);
 /** The first node of a `Callout`'s `title`: a node-valued field whose inline
  * nodes follow by `markdown_core_node_get_next_sibling` and are never callout
  * children. A present title holds at least one node, so NULL means no title. */
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_callout_title(const markdown_core_node *node);
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_callout_title(const markdown_core_node *node,
+                                                                        const markdown_core_node **title);
 /** The tagged `Destination` value of a `Link`, `Embedded`, `CrossLink`, or `CrossEmbedded`: a value, not
  * a node, so it has no scope and no children, and a branch's fields exist
  * only in that branch. `MARKDOWN_CORE_DESTINATION_URL` fills `url` and zeroes
@@ -519,15 +575,18 @@ typedef struct markdown_core_destination {
     markdown_core_optional_string anchor;
 } markdown_core_destination;
 
-MARKDOWN_CORE_API markdown_core_destination markdown_core_node_destination(const markdown_core_node *node);
-/** The raw label of CrossLink or remaining raw prefix of CrossEmbedded after
- * a valid dimension suffix. Absent if no separator was authored. A size-only
- * CrossEmbedded label is present and empty. */
-MARKDOWN_CORE_API markdown_core_optional_string markdown_core_node_cross_label(const markdown_core_node *node);
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_destination(const markdown_core_node *node,
+                                                                      markdown_core_destination *destination);
+/** The raw label of a `CrossLink` or remaining raw prefix of a
+ * `CrossEmbedded` after a valid dimension suffix. Absent if no separator was
+ * authored. A size-only CrossEmbedded label is present and empty. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_cross_label(const markdown_core_node *node,
+                                                                      markdown_core_optional_string *label);
 
 /** The OPTIONAL title of a `Link` or `Embedded`: `[a](/u)` wrote no title and
  * `[a](/u "")` wrote an empty one. */
-MARKDOWN_CORE_API markdown_core_optional_string markdown_core_node_title(const markdown_core_node *node);
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_title(const markdown_core_node *node,
+                                                                markdown_core_optional_string *title);
 
 /** The resource a `Link` or `Embedded` reads its destination and title from, as
  * an opaque identity (M2). Two nodes answer the same pointer exactly when they
@@ -544,7 +603,8 @@ MARKDOWN_CORE_API markdown_core_optional_string markdown_core_node_title(const m
 #define MARKDOWN_CORE_RESOURCE_TYPEDEF
 typedef struct markdown_core_resource markdown_core_resource;
 #endif
-MARKDOWN_CORE_API const markdown_core_resource *markdown_core_node_resource(const markdown_core_node *node);
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_resource(const markdown_core_node *node,
+                                                                   const markdown_core_resource **resource);
 /** Citation items and document definitions are Markup nodes reached through
  * their typed owning relations. The accessors below read kind-specific fields. */
 
@@ -578,58 +638,70 @@ typedef struct markdown_core_referent {
 
 /** The first item of a `Cite`; a cite holds at least one item, and the items
  * follow by `markdown_core_node_get_next_sibling` in source order. */
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_cite_citations(const markdown_core_node *node);
-MARKDOWN_CORE_API markdown_core_referent markdown_core_citation_referent(const markdown_core_node *citation);
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_cite_citations(const markdown_core_node *node,
+                                                                         const markdown_core_node **citations);
+/** A `Citation`'s referent. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_citation_referent(const markdown_core_node *citation,
+                                                                       markdown_core_referent *referent);
 /** The first node of an item's `prefix` or `suffix`, the inline nodes
  * following by `markdown_core_node_get_next_sibling`, or NULL when the affix
  * is empty. */
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_citation_prefix(const markdown_core_node *citation);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_citation_suffix(const markdown_core_node *citation);
+MARKDOWN_CORE_API markdown_core_status markdown_core_citation_prefix(const markdown_core_node *citation,
+                                                                     const markdown_core_node **prefix);
+MARKDOWN_CORE_API markdown_core_status markdown_core_citation_suffix(const markdown_core_node *citation,
+                                                                     const markdown_core_node **suffix);
 
 /** THE DOCUMENT'S DEFINITION TABLES. Every `Footnote` -- a definition or an
  * inline note -- and every `Specimen` stays in the tree where it was written;
- * the document lists them in source order. `_for` returns the first one whose
- * label equals `label` byte for byte, or NULL. */
+ * the document lists them in source order. `_at` answers OUT_OF_BOUNDS for an
+ * index at or past the count. `_for` returns the first one whose label equals
+ * `label` byte for byte, or NULL. */
 MARKDOWN_CORE_API size_t markdown_core_document_footnote_count(const markdown_core_document *document);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_footnote_at(const markdown_core_document *document,
-                                                                               size_t index);
+MARKDOWN_CORE_API markdown_core_status markdown_core_document_footnote_at(const markdown_core_document *document,
+                                                                          size_t index,
+                                                                          const markdown_core_node **footnote);
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_footnote_for(const markdown_core_document *document,
                                                                                 markdown_core_string label);
 MARKDOWN_CORE_API size_t markdown_core_document_specimen_count(const markdown_core_document *document);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_specimen_at(const markdown_core_document *document,
-                                                                               size_t index);
+MARKDOWN_CORE_API markdown_core_status markdown_core_document_specimen_at(const markdown_core_document *document,
+                                                                          size_t index,
+                                                                          const markdown_core_node **specimen);
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_specimen_for(const markdown_core_document *document,
                                                                                 markdown_core_string label);
-/** The label: a definition's label under the reference-label normalization
- * -- full Unicode case fold, trimmed, internal whitespace collapsed --
- * WITHOUT the caret, exactly the `label` of every `footnote` referent that
- * names it; absent for an inline note.
+/** A `Footnote`'s label: a definition's label under the reference-label
+ * normalization -- full Unicode case fold, trimmed, internal whitespace
+ * collapsed -- WITHOUT the caret, exactly the `label` of every `footnote`
+ * referent that names it; absent for an inline note.
  *
  * NORMATIVE: a label is compared with memcmp over its bytes. It is never case
  * mapped, never NFC/NFD normalized, never re-encoded, and never used as a key
  * in a language map whose equality has an opinion about Unicode. */
-MARKDOWN_CORE_API markdown_core_optional_string markdown_core_footnote_label(const markdown_core_node *footnote);
-/** The first node of the footnote's block content, the rest following by
+MARKDOWN_CORE_API markdown_core_status markdown_core_footnote_label(const markdown_core_node *footnote,
+                                                                    markdown_core_optional_string *label);
+/** The first node of a `Footnote`'s block content, the rest following by
  * `markdown_core_node_get_next_sibling`, or NULL when the content is empty. */
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_footnote_content(const markdown_core_node *footnote);
+MARKDOWN_CORE_API markdown_core_status markdown_core_footnote_content(const markdown_core_node *footnote,
+                                                                      const markdown_core_node **content);
 
-/** A specimen is a block where it was written. An anonymous definition has no
- * label, and an absent start means no explicit counter reset. Display numbers
- * are not stored in the AST. */
-MARKDOWN_CORE_API void markdown_core_specimen_properties(const markdown_core_node *specimen,
-                                                         markdown_core_optional_string *label,
-                                                         markdown_core_optional_i64 *start);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_specimen_content(const markdown_core_node *specimen);
+/** A `Specimen` is a block where it was written. An anonymous definition has
+ * no label, and an absent start means no explicit counter reset. Display
+ * numbers are not stored in the AST. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_specimen_properties(const markdown_core_node *specimen,
+                                                                         markdown_core_optional_string *label,
+                                                                         markdown_core_optional_i64 *start);
+MARKDOWN_CORE_API markdown_core_status markdown_core_specimen_content(const markdown_core_node *specimen,
+                                                                      const markdown_core_node **content);
 
 /** Allocates the canonical file-tree dump of `node`, a node of `document`,
  * with scopes computed from `source`, the source the document was parsed
- * from, always in UTF-8 columns. On success `*output` and `*length` hold the
- * dump, which markdown_core_dump_free releases, and `*error` is NULL; when an
- * allocation fails, false is returned and `*error` says so. */
-MARKDOWN_CORE_API bool markdown_core_document_dump(const markdown_core_document *document,
-                                                   const markdown_core_node *node, const uint8_t *source,
-                                                   size_t source_length, uint8_t **output, size_t *length,
-                                                   markdown_core_error **error);
+ * from, always in UTF-8 columns. `*output` and `*length` receive the dump,
+ * which markdown_core_dump_free releases. ALLOCATION_FAILED when an
+ * allocation fails; OUT_OF_BOUNDS when `source_length` ends before the node
+ * does. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_document_dump(const markdown_core_document *document,
+                                                                   const markdown_core_node *node,
+                                                                   const uint8_t *source, size_t source_length,
+                                                                   uint8_t **output, size_t *length);
 MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
 
 #ifdef __cplusplus

@@ -15,7 +15,8 @@ nodes' extents and the source the document was parsed from, so every dump
 takes the document and that source, and a node dump names a node of that
 document for focused subtree inspection:
 
-- Swift: `document.dump(in: source)` and `document.dump(node, in: source)`.
+- Swift: `try document.dump(in: source)` and
+  `try document.dump(node, in: source)`.
 - Kotlin: `document.dump(source)` and `document.dump(node, source)`, or
   `MarkupDumper.dump(document, source)` and
   `MarkupDumper.dump(document, node, source)`.

@@ -149,12 +149,15 @@ private func deepTreeFailures(depth: Int) -> [String] {
 
     // Scope lookup and hit testing, whose walks are as deep as the tree.
     let column = Int32(depth * 2 + 1)
-    let scope = document.scope(of: leaf, in: source)
+    let scope = try? document.scope(of: leaf, in: source)
     check(
         scope == Scope(start: Position(line: 1, column: column), end: Position(line: 1, column: column + 3)),
         "leaf scope"
     )
-    check(document.node(at: Position(line: 1, column: column + 1), in: source)?.isEqual(leaf) == true, "hit test")
+    check(
+        (try? document.node(at: Position(line: 1, column: column + 1), in: source)?.isEqual(leaf)) == true,
+        "hit test"
+    )
     check(document.description == "Document(id=1)", "description")
     check(leaf.description == "Text(id=\(depth * 2 + 3))", "leaf description")
     return failures + deepReleaseFailures(source: source)

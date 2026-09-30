@@ -1,3 +1,4 @@
+import { MarkdownCoreError } from "../common/markdown-core-error.js";
 import { SourceLines } from "../common/source-lines.js";
 import type { Document } from "../markup/document.js";
 import type { Markup } from "../markup/markup.js";
@@ -21,15 +22,23 @@ export function placeOf(root: Markup, target: Markup): Place {
 }
 
 /** `Document.scope`: one walk for the node's range, then a scan of the source
- * for its lines, with columns in the document's unit. */
+ * for its lines, with columns in the document's unit. The public boundary:
+ * `outOfBounds` when `source` ends before the node does. */
 export function scopeOf(document: Document, node: Markup, source: string): Scope {
     const place = placeOf(document, node);
-    return new SourceLines(source).scope(place.start, place.end, document.unit);
+    const lines = new SourceLines(source);
+    if (place.end > lines.bytes.length) throw new MarkdownCoreError("outOfBounds");
+    return lines.scope(place.start, place.end, document.unit);
 }
 
 /** `Document.nodeAt`: the position's byte offset, then one walk that keeps
- * the last node holding it. */
+ * the last node holding it. The public boundary: `outOfBounds` unless the line
+ * and column are integers of at least 1. */
 export function nodeAt(document: Document, position: Position, source: string): Markup | null {
+    const { line, column } = position;
+    if (!(Number.isInteger(line) && line >= 1 && Number.isInteger(column) && column >= 1)) {
+        throw new MarkdownCoreError("outOfBounds");
+    }
     const offset = new SourceLines(source).offset(position, document.unit);
     if (offset === null) return null;
     let found: Markup | null = null;

@@ -8,14 +8,22 @@ internal actual fun parsePlatformDocument(
     unit: TextUnit,
 ): Document {
     DesktopNativeLoader.ensureLoaded()
-    return WireDecoder.decode(JniParser.parsePayload(source), unit)
+    return WireDecoder.decode(
+        JniParser.parsePayload(source) ?: throw MarkdownCoreException(ErrorCode.ALLOCATION_FAILED),
+        unit,
+    )
 }
 
 private object JniParser {
-    // Kotlin `internal` is public bytecode on the JVM. Hide the raw payload
-    // method from Java source while keeping it available for JNI registration.
+    /**
+     * The MCB3 message for [source], or null when the engine could not
+     * allocate it or it exceeds a byte array's capacity.
+     *
+     * Kotlin `internal` is public bytecode on the JVM, so @JvmSynthetic hides
+     * this raw method from Java source while JNI registration still finds it.
+     */
     @JvmSynthetic
-    external fun parsePayload(source: ByteArray): ByteArray
+    external fun parsePayload(source: ByteArray): ByteArray?
 }
 
 private object DesktopNativeLoader {

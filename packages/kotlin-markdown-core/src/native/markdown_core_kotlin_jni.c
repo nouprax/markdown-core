@@ -3,20 +3,16 @@
 #include <jni.h>
 #include <stdint.h>
 
-static void throw_new(JNIEnv *environment, const char *class_name, const char *message) {
-    jclass error_class = (*environment)->FindClass(environment, class_name);
-    if (error_class != NULL) {
-        (*environment)->ThrowNew(environment, error_class, message);
-        (*environment)->DeleteLocalRef(environment, error_class);
-    }
-}
-
+/* The MCB3 message's u32 length, which counts the whole message. */
 static uint32_t message_length(const uint8_t *message) {
     return (uint32_t)message[4] | (uint32_t)message[5] << 8 | (uint32_t)message[6] << 16 | (uint32_t)message[7] << 24;
 }
 
-/* Returns the MCB3 message (docs/architecture/wire-format.md) for `source`;
- * the Kotlin decoder owns everything after the copy. */
+/* Returns the MCB3 message (docs/architecture/wire-format.md) for `source`.
+ * NULL with no exception pending means ALLOCATION_FAILED: the engine could not
+ * allocate the message, or it is longer than a JVM array can hold. NULL with an
+ * exception pending is the JVM's own failure to allocate. The Kotlin decoder
+ * owns everything after the copy. */
 static jbyteArray JNICALL native_parse(JNIEnv *environment, jobject receiver, jbyteArray source) {
     jbyte *source_bytes;
     jsize source_length;
@@ -38,14 +34,16 @@ static jbyteArray JNICALL native_parse(JNIEnv *environment, jobject receiver, jb
         (*environment)->ReleaseByteArrayElements(environment, source, source_bytes, JNI_ABORT);
     }
     if (message == NULL) {
-        throw_new(environment, "java/lang/OutOfMemoryError", "native AST message allocation failed");
         return NULL;
     }
     length = message_length(message);
-    /* NULL leaves the JVM's OutOfMemoryError pending. */
-    result = (*environment)->NewByteArray(environment, (jsize)length);
-    if (result != NULL) {
-        (*environment)->SetByteArrayRegion(environment, result, 0, (jsize)length, (const jbyte *)message);
+    result = NULL;
+    if (length <= INT32_MAX) {
+        /* NULL leaves the JVM's OutOfMemoryError pending. */
+        result = (*environment)->NewByteArray(environment, (jsize)length);
+        if (result != NULL) {
+            (*environment)->SetByteArrayRegion(environment, result, 0, (jsize)length, (const jbyte *)message);
+        }
     }
     markdown_core_wire_free(message);
     return result;

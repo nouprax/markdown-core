@@ -100,10 +100,7 @@ private class MessageWriter {
 
     fun document(): ByteArray = message(0)
 
-    fun error(
-        code: Int,
-        message: String,
-    ): ByteArray = u32(code).string(message).message(1)
+    fun error(code: Int): ByteArray = u32(code).message(1)
 
     private fun message(status: Int): ByteArray {
         val header =
@@ -122,12 +119,13 @@ private fun decode(writer: MessageWriter): Document = WireDecoder.decode(writer.
 
 class WireDecoderTest {
     @Test
-    fun parseFailuresKeepTheirCodeAcrossTheWire() {
-        // The facade's error code and message reach the consumer as written.
+    fun failuresKeepTheirCodeAcrossTheWire() {
+        // Each `markdown_core_status` value reaches the consumer as the code of that value.
         fun failure(code: Int) =
-            assertFailsWith<ParseException> { WireDecoder.decode(MessageWriter().error(code, "bad"), TextUnit.UTF16) }
-        assertEquals(ParseErrorCode.ALLOCATION_FAILED, failure(2).code)
-        assertEquals("bad", failure(2).message)
+            assertFailsWith<MarkdownCoreException> { WireDecoder.decode(MessageWriter().error(code), TextUnit.UTF16) }
+        assertEquals(ErrorCode.ALLOCATION_FAILED, failure(1).code)
+        assertEquals(ErrorCode.OUT_OF_BOUNDS, failure(2).code)
+        assertEquals(ErrorCode.KIND_MISMATCH, failure(3).code)
     }
 
     @Test

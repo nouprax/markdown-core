@@ -15,6 +15,8 @@ import {
     type Position,
     type Scope,
     type TextUnit,
+    type ErrorCode,
+    MarkdownCoreError,
     MarkupDumper,
     markupEquals,
     walk,
@@ -49,6 +51,21 @@ const extent: Extent = document.extent;
 const scope: Scope = document.scope(document.content[0]!, "# typed");
 const position: Position = { line: 1, column: 3 };
 const hit: Markup | null = document.nodeAt(position, "# typed");
+try {
+    document.scope(document.content[0]!, "");
+} catch (error) {
+    if (error instanceof MarkdownCoreError) {
+        const code: ErrorCode = error.code;
+        const message: string = error.message;
+        void [code, message];
+    }
+}
+const codes: readonly ErrorCode[] = ["allocationFailed", "outOfBounds", "kindMismatch"];
+// @ts-expect-error the codes are closed
+const unknownCode: ErrorCode = "invalidArgument";
+// @ts-expect-error an error's code is readonly
+new MarkdownCoreError("outOfBounds").code = "kindMismatch";
+void [codes, unknownCode];
 const equal: boolean = markupEquals(document, Document.parse("# typed"));
 const footnotes: readonly Footnote[] = document.footnotes;
 const specimens: readonly Specimen[] = document.specimens;

@@ -19,7 +19,7 @@ extension APISuite {
                 body: [],
                 foot: []
             )
-            let dump = document(holding: [table]).dump(in: "")
+            let dump = try document(holding: [table]).dump(in: "")
             #expect(dump.contains("columns=[none:\(expected)]"))
         }
     }
@@ -56,11 +56,11 @@ extension APISuite {
             ["enter:Heading", "enter:Paragraph", "enter:ThematicBreak"].contains($0)
         }
         #expect(kinds == ["enter:Heading", "enter:Paragraph", "enter:ThematicBreak"])
-        let dump = root.dump(table, in: "")
+        let dump = try root.dump(table, in: "")
         #expect(dump.contains("columns=[left:0.1,none:null] children=3"))
         #expect(dump.contains("TableFoot children=1"))
         let empty = TableRecord(fields(2), columns: columns, caption: nil, head: [], body: [], foot: [])
-        let bare = document(holding: [empty]).dump(in: "")
+        let bare = try document(holding: [empty]).dump(in: "")
         #expect(bare.contains("TableHead children=0\n"))
         #expect(bare.contains("TableFoot children=0\n"))
     }

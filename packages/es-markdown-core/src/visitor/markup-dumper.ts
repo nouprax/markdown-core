@@ -1,5 +1,6 @@
 import type { Attributes } from "../markup/attributes.js";
 import type { Dimensions } from "../common/constraints.js";
+import { MarkdownCoreError } from "../common/markdown-core-error.js";
 import { SourceLines } from "../common/source-lines.js";
 import type { Document } from "../markup/document.js";
 import type { MetadataValue } from "../markup/metadata.js";
@@ -20,15 +21,20 @@ export class MarkupDumper {
     private constructor() {}
 
     /** Returns the canonical debug dump of `document`, with scopes computed
-     * from `source`, the text it was parsed from, in UTF-8 columns. */
+     * from `source`, the text it was parsed from, in UTF-8 columns. Throws
+     * `MarkdownCoreError` `outOfBounds` when `source` ends before the
+     * document does. */
     static dump(document: Document, source: string): string;
     /** Returns the canonical debug dump of `node`, a node of `document`, and
-     * its owned markup. */
+     * its owned markup. Throws `MarkdownCoreError` `outOfBounds` when `source`
+     * ends before the node does. */
     static dump(document: Document, node: Markup, source: string): string;
     static dump(document: Document, nodeOrSource: Markup | string, source?: string): string {
         const root = typeof nodeOrSource === "string" ? document : nodeOrSource;
         const place = placeOf(document, root);
-        const state = new State(new SourceLines(typeof nodeOrSource === "string" ? nodeOrSource : source!));
+        const lines = new SourceLines(typeof nodeOrSource === "string" ? nodeOrSource : source!);
+        if (place.end > lines.bytes.length) throw new MarkdownCoreError("outOfBounds");
+        const state = new State(lines);
         // A node's walk starts at its own extent, which is relative to the
         // anchor its relation had where it was written.
         state.dump(root, place.start - root.extent.lead);

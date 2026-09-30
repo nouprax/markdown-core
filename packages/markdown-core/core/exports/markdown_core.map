@@ -25,9 +25,6 @@ MARKDOWN_CORE_1.0 {
     markdown_core_document_specimen_for;
     markdown_core_document_unit;
     markdown_core_dump_free;
-    markdown_core_error_free;
-    markdown_core_error_get_code;
-    markdown_core_error_get_message;
     markdown_core_footnote_content;
     markdown_core_footnote_label;
     markdown_core_metadata_abstract;

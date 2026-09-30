@@ -47,13 +47,18 @@ public class Document internal constructor(
      * The editor coordinates of [node], computed from the extents and
      * [source], the text this document was parsed from, with columns in the
      * document's [unit]. [node] is a node of this document.
+     *
+     * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when [source]
+     *   ends before [node] does.
      */
     public fun scope(
         node: Markup,
         source: String,
     ): Scope {
         val place = place(node)
-        return SourceLines(source).scope(place.start.toInt(), place.end.toInt(), unit)
+        val lines = SourceLines(source)
+        if (place.end > lines.bytes.size) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
+        return lines.scope(place.start.toInt(), place.end.toInt(), unit)
     }
 
     /**
@@ -61,11 +66,15 @@ public class Document internal constructor(
      * scalar that starts at [position] of [source], the text this document was
      * parsed from, with the column in the document's [unit]. Null when [source]
      * has no scalar there or no node holds it.
+     *
+     * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when the line or
+     *   the column of [position] is below 1.
      */
     public fun node(
         position: Position,
         source: String,
     ): Markup? {
+        if (position.line < 1 || position.column < 1) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
         val offset = SourceLines(source).offset(position, unit) ?: return null
         var found: Markup? = null
         val traversal = MarkupTraversal(this, 0)
@@ -89,10 +98,18 @@ public class Document internal constructor(
         return Place(traversal.start, traversal.end)
     }
 
-    /** The canonical debug dump of this document, with scopes computed from [source] in UTF-8 columns. */
+    /**
+     * The canonical debug dump of this document, with scopes computed from [source] in UTF-8 columns.
+     *
+     * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when [source] ends before this document does.
+     */
     public fun dump(source: String): String = MarkupDumper.dump(this, this, source)
 
-    /** The canonical debug dump of [node], a node of this document, with scopes computed from [source]. */
+    /**
+     * The canonical debug dump of [node], a node of this document, with scopes computed from [source].
+     *
+     * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when [source] ends before [node] does.
+     */
     public fun dump(
         node: Markup,
         source: String,
@@ -103,6 +120,10 @@ public class Document internal constructor(
          * Parses [source] as the one Markdown Core dialect. There is nothing to
          * configure: every feature is recognized on every call. [unit] is how
          * the document's scope queries count columns.
+         *
+         * @throws MarkdownCoreException [ErrorCode.ALLOCATION_FAILED] when the
+         *   engine cannot allocate, or [source] exceeds 1 GiB of UTF-8 or its
+         *   tree a byte array's capacity.
          */
         @JvmOverloads
         public fun parse(

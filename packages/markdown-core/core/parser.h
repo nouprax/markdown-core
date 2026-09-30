@@ -730,6 +730,12 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
                                               markdown_core_definition_collection *collection,
                                               markdown_core_node *definition);
 
+/* THE LONGEST SOURCE A PARSE TAKES: offsets are int32, and every buffer
+ * derived from the source stays under half of that. The public parse entry
+ * (markdown_core_document_parse_in) refuses a longer one; below it, `length`
+ * is within this bound. */
+#define MARKDOWN_CORE_SOURCE_CAPACITY ((size_t)(INT32_MAX / 2))
+
 /* The engine has one parse operation. It parses with the dialect `elements`
  * names, in that order; the composition root that chooses the product's
  * dialect lives with the elements (markdown-core-elements.h), so the engine

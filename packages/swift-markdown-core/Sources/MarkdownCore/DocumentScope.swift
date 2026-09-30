@@ -8,11 +8,14 @@ extension Document {
     /// - Parameters:
     ///   - node: a node of this document.
     ///   - source: the source the document was parsed from.
-    public func scope(of node: some Markup, in source: String) -> Scope {
+    /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when
+    ///   `source` ends before `node` does.
+    public func scope(of node: some Markup, in source: String) throws -> Scope {
         let range = place(of: MarkupRecord.of(node))
         var text = source
-        return text.withUTF8 { bytes in
-            SourceLines(bytes).scope(from: range.start, to: range.end, in: bytes, unit: unit)
+        return try text.withUTF8 { bytes in
+            guard range.end <= bytes.count else { throw MarkdownCoreError(code: .outOfBounds) }
+            return SourceLines(bytes).scope(from: range.start, to: range.end, in: bytes, unit: unit)
         }
     }
 
@@ -24,7 +27,10 @@ extension Document {
     ///   - source: the source the document was parsed from.
     /// - Returns: the node, or `nil` when no node holds the byte or the
     ///   position names no byte of the source at a scalar boundary.
-    public func node(at position: Position, in source: String) -> (any Markup)? {
+    /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when the
+    ///   position's line or column is below 1.
+    public func node(at position: Position, in source: String) throws -> (any Markup)? {
+        guard position.line >= 1, position.column >= 1 else { throw MarkdownCoreError(code: .outOfBounds) }
         var text = source
         return text.withUTF8 { bytes in
             guard let offset = SourceLines(bytes).offset(of: position, in: bytes, unit: unit) else { return nil }
@@ -39,18 +45,25 @@ extension Document {
 
     /// The canonical dump of the document, with scopes computed from `source`,
     /// the source the document was parsed from, in UTF-8 columns.
-    public func dump(in source: String) -> String {
-        dump(self, in: source)
+    ///
+    /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when
+    ///   `source` ends before the document does.
+    public func dump(in source: String) throws -> String {
+        try dump(self, in: source)
     }
 
     /// The canonical dump of `node` and everything under it, with scopes
     /// computed from `source`, the source the document was parsed from, in
     /// UTF-8 columns.
-    public func dump(_ node: some Markup, in source: String) -> String {
+    ///
+    /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when
+    ///   `source` ends before `node` does.
+    public func dump(_ node: some Markup, in source: String) throws -> String {
         let target = MarkupRecord.of(node)
         let range = place(of: target)
         var text = source
-        return text.withUTF8 { bytes in
+        return try text.withUTF8 { bytes in
+            guard range.end <= bytes.count else { throw MarkdownCoreError(code: .outOfBounds) }
             // A node's walk starts at its own extent, which is relative to the
             // anchor its relation had where it was written.
             return MarkupDumper.render(
@@ -126,11 +139,10 @@ struct SourceLines {
         )
     }
 
-    /// The offset of the byte at `position`, stepping over its line's scalars
-    /// up to the column; `nil` unless the position lands on a byte of the line
-    /// at a scalar boundary.
+    /// The offset of the byte at `position`, whose line and column are at
+    /// least 1, stepping over its line's scalars up to the column; `nil`
+    /// unless the position lands on a byte of the line at a scalar boundary.
     func offset(of position: Position, in bytes: UnsafeBufferPointer<UInt8>, unit: TextUnit) -> Int? {
-        guard position.line >= 1, position.column >= 1 else { return nil }
         let line = Int(position.line) - 1
         guard line < starts.count else { return nil }
         var offset = starts[line]

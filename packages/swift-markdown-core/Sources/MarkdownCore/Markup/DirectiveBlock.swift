@@ -58,7 +58,7 @@ final class DirectiveBlockRecord: MarkupRecord, @unchecked Sendable {
 
 extension DirectiveBlockRecord {
     convenience init(from node: OpaquePointer, label: DirectiveLabelRecord?, content: [MarkupRecord]) {
-        let name = markdown_core_node_directive_properties(node).string
+        let name = answer(markdown_core_optional_string()) { markdown_core_node_directive_properties(node, $0) }.string
         self.init(InheritedFields(from: node), name: name, label: label, content: content)
     }
 }

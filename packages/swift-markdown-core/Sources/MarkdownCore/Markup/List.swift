@@ -102,7 +102,7 @@ extension ListRecord {
         var variant = markdown_core_ordered_list_variant()
         var delimiter = markdown_core_ordered_list_delimiter()
         var tight = false
-        markdown_core_node_list_properties(node, &flavor, &start, &variant, &delimiter, &tight)
+        answered(markdown_core_node_list_properties(node, &flavor, &start, &variant, &delimiter, &tight))
         self.init(
             InheritedFields(from: node),
             flavor: flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? .ordered : .bullet,
@@ -180,7 +180,7 @@ final class ListItemRecord: MarkupRecord, @unchecked Sendable {
 
 extension ListItemRecord {
     convenience init(from node: OpaquePointer, content: [MarkupRecord]) {
-        let marker = markdown_core_node_list_item_marker(node).string
+        let marker = answer(markdown_core_optional_string()) { markdown_core_node_list_item_marker(node, $0) }.string
         self.init(InheritedFields(from: node), marker: marker, content: content)
     }
 }

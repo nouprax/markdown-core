@@ -41,7 +41,7 @@ final class FootnoteRecord: MarkupRecord, @unchecked Sendable {
 
 extension FootnoteRecord {
     convenience init(from footnote: OpaquePointer, content: [MarkupRecord]) {
-        let label = markdown_core_footnote_label(footnote).string
+        let label = answer(markdown_core_optional_string()) { markdown_core_footnote_label(footnote, $0) }.string
         self.init(InheritedFields(from: footnote), label: label, content: content)
     }
 }

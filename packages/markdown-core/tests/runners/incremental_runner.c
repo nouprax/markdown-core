@@ -81,10 +81,8 @@ static bool stopped(const run *state) { return state->stop_at_failure && state->
 static uint8_t *dump_of(const markdown_core_document *document, const uint8_t *source, size_t source_length,
                         size_t *length) {
     uint8_t *output = NULL;
-    markdown_core_error *error = NULL;
-    if (!markdown_core_document_dump(document, markdown_core_document_root(document), source, source_length, &output,
-                                     length, &error)) {
-        markdown_core_error_free(error);
+    if (markdown_core_document_dump(document, markdown_core_document_root(document), source, source_length, &output,
+                                    length) != MARKDOWN_CORE_OK) {
         return NULL;
     }
     return output;
@@ -281,8 +279,9 @@ typedef struct locate {
 
 static int visit_locate(const markdown_core_node *node, ts_ast_range range, void *context) {
     locate *search = (locate *)context;
-    if (strcmp(markdown_core_node_kind_name(markdown_core_node_get_kind(node)), search->kind) == 0 &&
-        range.start == (int64_t)search->at) {
+    const char *name;
+    TS_OK(markdown_core_node_kind_name(markdown_core_node_get_kind(node), &name));
+    if (strcmp(name, search->kind) == 0 && range.start == (int64_t)search->at) {
         search->found = true;
         return 1;
     }

@@ -41,7 +41,7 @@ extension CrossLinkRecord {
         self.init(
             InheritedFields(from: node),
             dest: Destination(from: node),
-            label: markdown_core_node_cross_label(node).string
+            label: answer(markdown_core_optional_string()) { markdown_core_node_cross_label(node, $0) }.string
         )
     }
 }

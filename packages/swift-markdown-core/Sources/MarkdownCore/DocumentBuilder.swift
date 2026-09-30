@@ -59,26 +59,27 @@ struct DocumentBuilder {
         relations.children = enqueue(chain: markdown_core_node_get_first_child(node))
         switch markdown_core_node_get_kind(node) {
         case MARKDOWN_CORE_KIND_TABLE:
-            relations.caption = enqueue(field: markdown_core_node_table_caption(node))
+            relations.caption = enqueue(field: answer { markdown_core_node_table_caption(node, $0) })
         case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_DIRECTIVE:
-            relations.label = enqueue(field: markdown_core_node_directive_label(node))
+            relations.label = enqueue(field: answer { markdown_core_node_directive_label(node, $0) })
         case MARKDOWN_CORE_KIND_CALLOUT:
-            relations.title = enqueue(chain: markdown_core_node_callout_title(node))
+            relations.title = enqueue(chain: answer { markdown_core_node_callout_title(node, $0) })
         case MARKDOWN_CORE_KIND_DEFINITION:
-            relations.term = enqueue(chain: markdown_core_node_definition_term(node))
-            var body = markdown_core_node_definition_bodies(node)
+            relations.term = enqueue(chain: answer { markdown_core_node_definition_term(node, $0) })
+            var body = answer { markdown_core_node_definition_bodies(node, $0) }
             while let current = body {
                 relations.bodies.append(enqueue(chain: markdown_core_definition_body_content(current)))
                 body = markdown_core_definition_body_next(current)
             }
         case MARKDOWN_CORE_KIND_DOCUMENT:
-            relations.metadata = enqueue(field: markdown_core_node_document_metadata(node))
+            relations.metadata = enqueue(field: answer { markdown_core_node_document_metadata(node, $0) })
         case MARKDOWN_CORE_KIND_CITE:
-            relations.citations = enqueue(chain: markdown_core_node_cite_citations(node))
+            relations.citations = enqueue(chain: answer { markdown_core_node_cite_citations(node, $0) })
         case MARKDOWN_CORE_KIND_CITATION:
-            relations.note = enqueue(field: markdown_core_citation_referent(node).note)
-            relations.prefix = enqueue(chain: markdown_core_citation_prefix(node))
-            relations.suffix = enqueue(chain: markdown_core_citation_suffix(node))
+            let referent = answer(markdown_core_referent()) { markdown_core_citation_referent(node, $0) }
+            relations.note = enqueue(field: referent.note)
+            relations.prefix = enqueue(chain: answer { markdown_core_citation_prefix(node, $0) })
+            relations.suffix = enqueue(chain: answer { markdown_core_citation_suffix(node, $0) })
         default:
             break
         }
@@ -124,11 +125,13 @@ struct DocumentBuilder {
     /// The definitions the document's table names, in its order.
     private func table<Node: MarkupRecord>(
         count: Int,
-        at entry: (Int) -> OpaquePointer,
+        at entry: (Int) -> OpaquePointer?,
         as _: Node.Type
     ) -> [Node] {
+        // Every index is below the count, so each entry is a definition built
+        // from the tree.
         // swift-format-ignore: NeverForceUnwrap
-        (0..<count).map { unsafeDowncast(definitions[entry($0)]!, to: Node.self) }
+        (0..<count).map { unsafeDowncast(definitions[entry($0)!]!, to: Node.self) }
     }
 }
 
@@ -148,12 +151,12 @@ extension DocumentBuilder {
                 content: children,
                 footnotes: table(
                     count: markdown_core_document_footnote_count(document),
-                    at: { markdown_core_document_footnote_at(document, $0) },
+                    at: { index in answer { markdown_core_document_footnote_at(document, index, $0) } },
                     as: FootnoteRecord.self
                 ),
                 specimens: table(
                     count: markdown_core_document_specimen_count(document),
-                    at: { markdown_core_document_specimen_at(document, $0) },
+                    at: { index in answer { markdown_core_document_specimen_at(document, index, $0) } },
                     as: SpecimenRecord.self
                 )
             )

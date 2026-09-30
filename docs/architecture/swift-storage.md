@@ -56,7 +56,11 @@ absolute byte range, and converts it with the source's line starts to lines
 and columns in the document's unit; `node(at:in:)` converts the position to a
 byte offset and returns the last node in walk order that holds it. Both
 mirror the C engine's rule exactly. The dump computes its scopes the same
-way, always in UTF-8 columns.
+way, always in UTF-8 columns. Each checks its argument once, at the public
+function, and throws `MarkdownCoreError` with `.outOfBounds` as C does: a
+scope or dump whose source ends before the node does, and a position whose
+line or column is below 1. The `SourceLines` helpers beneath them assume that
+check.
 
 Tests cover canonical dumps, fresh-parse ids numbered 1 through n in walk
 order, deep equality, both units' scopes and hit testing, the definition

@@ -302,17 +302,26 @@ void ts_spec_free(ts_spec_file *file) {
 /* Traversal ------------------------------------------------------------------ */
 
 markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length) {
-    markdown_core_error *error;
-    markdown_core_document *document = markdown_core_document_parse(bytes, length, &error);
-    if (!document) {
-        markdown_core_string message = markdown_core_error_get_message(error);
-        fprintf(stderr, "facade parse failed: ");
-        fwrite(message.data, 1, message.length, stderr);
-        fputc('\n', stderr);
-        markdown_core_error_free(error);
+    markdown_core_document *document;
+    markdown_core_status status = markdown_core_document_parse(bytes, length, &document);
+    if (status != MARKDOWN_CORE_OK) {
+        fprintf(stderr, "facade parse failed with status %d\n", (int)status);
         return NULL;
     }
     return document;
+}
+
+void ts_require_ok(markdown_core_status status, const char *call) {
+    if (status != MARKDOWN_CORE_OK) {
+        fprintf(stderr, "%s answered status %d\n", call, (int)status);
+        abort();
+    }
+}
+
+const markdown_core_node *ts_field(const markdown_core_node *node, ts_node_field accessor) {
+    const markdown_core_node *field;
+    ts_require_ok(accessor(node, &field), "a node-valued field accessor");
+    return field;
 }
 
 /* One pending step of the walk: `count` nodes of one relation from `first`,
@@ -375,13 +384,13 @@ static void ts_walk_relations(ts_walk_stack *stack, const markdown_core_node *no
     const markdown_core_node *children = markdown_core_node_get_first_child(node);
     switch (markdown_core_node_get_kind(node)) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
-        TS_RELATION(markdown_core_node_document_metadata(node), 1);
+        TS_RELATION(ts_field(node, markdown_core_node_document_metadata), 1);
         TS_CHAIN(children);
         break;
     case MARKDOWN_CORE_KIND_TABLE: {
         size_t columns, head = 0, content = 0, foot = 0;
-        (void)markdown_core_node_table_properties(node, &columns, &head, &content, &foot);
-        TS_RELATION(markdown_core_node_table_caption(node), 1);
+        TS_OK(markdown_core_node_table_properties(node, &columns, &head, &content, &foot));
+        TS_RELATION(ts_field(node, markdown_core_node_table_caption), 1);
         TS_RELATION(children, head);
         TS_RELATION(ts_chain_skip(children, head), content);
         TS_RELATION(ts_chain_skip(children, head + content), foot);
@@ -389,29 +398,33 @@ static void ts_walk_relations(ts_walk_stack *stack, const markdown_core_node *no
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE:
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-        TS_RELATION(markdown_core_node_directive_label(node), 1);
+        TS_RELATION(ts_field(node, markdown_core_node_directive_label), 1);
         TS_CHAIN(children);
         break;
     case MARKDOWN_CORE_KIND_CALLOUT:
-        TS_CHAIN(markdown_core_node_callout_title(node));
+        TS_CHAIN(ts_field(node, markdown_core_node_callout_title));
         TS_CHAIN(children);
         break;
     case MARKDOWN_CORE_KIND_CITE:
-        TS_CHAIN(markdown_core_node_cite_citations(node));
+        TS_CHAIN(ts_field(node, markdown_core_node_cite_citations));
         break;
     case MARKDOWN_CORE_KIND_CITATION: {
-        TS_RELATION(markdown_core_citation_referent(node).note, 1);
-        TS_CHAIN(markdown_core_citation_prefix(node));
-        TS_CHAIN(markdown_core_citation_suffix(node));
+        markdown_core_referent referent;
+        TS_OK(markdown_core_citation_referent(node, &referent));
+        TS_RELATION(referent.note, 1);
+        TS_CHAIN(ts_field(node, markdown_core_citation_prefix));
+        TS_CHAIN(ts_field(node, markdown_core_citation_suffix));
         break;
     }
-    case MARKDOWN_CORE_KIND_DEFINITION:
-        TS_CHAIN(markdown_core_node_definition_term(node));
-        for (const markdown_core_definition_body *body = markdown_core_node_definition_bodies(node); body;
-             body = markdown_core_definition_body_next(body)) {
+    case MARKDOWN_CORE_KIND_DEFINITION: {
+        const markdown_core_definition_body *body;
+        TS_CHAIN(ts_field(node, markdown_core_node_definition_term));
+        TS_OK(markdown_core_node_definition_bodies(node, &body));
+        for (; body; body = markdown_core_definition_body_next(body)) {
             TS_CHAIN(markdown_core_definition_body_content(body));
         }
         break;
+    }
     default:
         TS_CHAIN(children);
         break;
@@ -490,7 +503,8 @@ static int ts_concat_visit(const markdown_core_node *node, ts_ast_range range, v
     (void)range;
     ts_buffer *buffer = (ts_buffer *)context;
     if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_TEXT) {
-        markdown_core_string literal = markdown_core_node_literal(node);
+        markdown_core_string literal;
+        TS_OK(markdown_core_node_literal(node, &literal));
         if (literal.length && ts_buffer_append(buffer, (const char *)literal.data, literal.length) != 0) {
             return -1;
         }

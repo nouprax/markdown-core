@@ -28,7 +28,6 @@ static void usage(FILE *stream) {
 
 static uint8_t *dump_example(const ts_spec_case *test_case, size_t *dump_length) {
     markdown_core_document *document;
-    markdown_core_error *error = NULL;
     uint8_t *dump = NULL;
 
     document = ts_ast_parse((const uint8_t *)test_case->markdown, test_case->markdown_length);
@@ -36,10 +35,9 @@ static uint8_t *dump_example(const ts_spec_case *test_case, size_t *dump_length)
         return NULL;
     }
     const uint8_t *source = (const uint8_t *)test_case->markdown;
-    if (!markdown_core_document_dump(document, markdown_core_document_root(document), source,
-                                     test_case->markdown_length, &dump, dump_length, &error)) {
+    if (markdown_core_document_dump(document, markdown_core_document_root(document), source, test_case->markdown_length,
+                                    &dump, dump_length) != MARKDOWN_CORE_OK) {
         fprintf(stderr, "example %d: dump failed\n", test_case->example);
-        markdown_core_error_free(error);
         markdown_core_document_free(document);
         return NULL;
     }
@@ -48,13 +46,12 @@ static uint8_t *dump_example(const ts_spec_case *test_case, size_t *dump_length)
     {
         uint8_t *second = NULL;
         size_t second_length = 0;
-        if (!markdown_core_document_dump(document, markdown_core_document_root(document), source,
-                                         test_case->markdown_length, &second, &second_length, &error) ||
+        if (markdown_core_document_dump(document, markdown_core_document_root(document), source,
+                                        test_case->markdown_length, &second, &second_length) != MARKDOWN_CORE_OK ||
             second_length != *dump_length || memcmp(dump, second, second_length) != 0) {
             fprintf(stderr, "example %d: dump is not deterministic\n", test_case->example);
             markdown_core_dump_free(second);
             markdown_core_dump_free(dump);
-            markdown_core_error_free(error);
             markdown_core_document_free(document);
             return NULL;
         }

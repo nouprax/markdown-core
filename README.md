@@ -28,7 +28,7 @@ import MarkdownCore
 
 let source = "Hello, Markdown."
 let document = try Document.parse(source)
-print(document.dump(in: source))
+print(try document.dump(in: source))
 ```
 
 The AST is an immutable, `Sendable` value tree with typed visitors and
@@ -93,10 +93,11 @@ find_package(markdown-core CONFIG REQUIRED)
 target_link_libraries(my-app PRIVATE markdown-core::markdown-core)
 ```
 
-Include `<markdown_core.h>` and call `markdown_core_document_parse`. Release
-successful parses with `markdown_core_document_free`; node and string views
-borrow from that document. Release errors and allocated dumps with
-`markdown_core_error_free` and `markdown_core_dump_free`.
+Include `<markdown_core.h>` and call `markdown_core_document_parse`. Every
+call that can fail returns a `markdown_core_status` and writes its result
+through an out-parameter only on `MARKDOWN_CORE_OK`. Release a parsed document
+with `markdown_core_document_free`; node and string views borrow from that
+document. Release an allocated dump with `markdown_core_dump_free`.
 
 Independent parses may run concurrently. Read-only access to a document is
 safe while it remains alive. See the [public C header](packages/markdown-core/include/markdown_core.h)
