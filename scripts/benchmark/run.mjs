@@ -137,11 +137,14 @@ const ENGINES = {
  * engine, measured per step rather than per stage. */
 export const EDIT_RUNNER = "packages/markdown-core/benchmarks/markdown_core_edit_runner";
 
+/* The stage runners: the binaries the baseline is rebuilt for, since the
+ * stage gate is the one comparison made against it. */
+const STAGE_RUNNERS = Object.fromEntries(
+    Object.entries(ENGINES).map(([engine, definition]) => [engine, definition.runner])
+);
+
 /* Every binary that contributes measured instructions. */
-const MEASURED_BINARIES = {
-    ...Object.fromEntries(Object.entries(ENGINES).map(([engine, definition]) => [engine, definition.runner])),
-    "markdown-core edits": EDIT_RUNNER
-};
+const MEASURED_BINARIES = { ...STAGE_RUNNERS, "markdown-core edits": EDIT_RUNNER };
 
 function fail(message) {
     console.error(`benchmark: ${message}`);
@@ -752,7 +755,7 @@ const discardForeignTree = (buildDir, profile, versions) => discardTree(buildDir
 
 const stampTree = (buildDir, profile, versions) => markTree(buildDir, stampOf(profile, versions));
 
-function buildRunners(profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions, sourceRoot = root) {
+function buildRunners(profile, runners, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions, sourceRoot) {
     discardForeignTree(profile.binaryDir, profile, versions);
     run(
         "cmake",
@@ -769,8 +772,8 @@ function buildRunners(profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions,
         ],
         { env: buildEnvironment(), cwd: sourceRoot }
     );
-    // Independent benchmarks may use adapters that do not compile against the
-    // selected base revision. Build only this measurement's registered runners.
+    // Build only the requested runners: a base revision builds the stage
+    // runners alone, since no other harness is compared against it.
     run(
         "cmake",
         [
@@ -778,15 +781,15 @@ function buildRunners(profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions,
             profile.binaryDir,
             "--parallel",
             "--target",
-            ...Object.values(MEASURED_BINARIES).map((runner) => path.basename(runner))
+            ...Object.values(runners).map((runner) => path.basename(runner))
         ],
         { env: buildEnvironment(), cwd: sourceRoot }
     );
     stampTree(profile.binaryDir, profile, versions);
 }
 
-/* Rebuild the requested base with this run's harness, preset and references.
- * Only engine source comes from the base. The current corpus is generated once
+/* Rebuild the requested base's stage runners with this run's harness, preset
+ * and references. Only engine source comes from the base. The current corpus is generated once
  * and passed byte-for-byte to both binaries, even when a PR changes its corpus. */
 function buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions) {
     if (!options.baselineRef) return null;
@@ -805,9 +808,9 @@ function buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir,
     fs.cpSync(BENCHMARKS, path.join(source, "packages/markdown-core/benchmarks"), { recursive: true });
     fs.copyFileSync(path.join(root, "CMakePresets.json"), path.join(source, "CMakePresets.json"));
     const built = { ...profile, binaryDir: path.join(directory, "build") };
-    buildRunners(built, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions, source);
+    buildRunners(built, STAGE_RUNNERS, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions, source);
     verifyStageSymbols(built);
-    verifyBuildProvenance(built, versions);
+    verifyBuildProvenance(built, STAGE_RUNNERS, versions);
     const compiled = Object.fromEntries(
         [["markdown-core", "libmarkdown-core-public-static"]].map(([engine, target]) => [
             engine,
@@ -828,7 +831,7 @@ function buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir,
     );
     if (JSON.stringify(libraries) !== JSON.stringify(versions.libraries))
         fail("baseline uses different runtime libraries");
-    return { revision, profile: built, directory, compiled, binaries: runnerIdentity(built), cases: [] };
+    return { revision, profile: built, directory, compiled, binaries: runnerIdentity(built, STAGE_RUNNERS), cases: [] };
 }
 
 /**
@@ -847,11 +850,11 @@ function buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir,
  * would see a single producer and wave through a binary built by two
  * compilers -- which is exactly the mixed tree this exists to catch.
  */
-function verifyBuildProvenance(profile, versions) {
+function verifyBuildProvenance(profile, runners, versions) {
     /* `gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0` -> the part .comment also
      * carries, so the two spellings are compared on what they share. */
     const identity = versions.compiler.replace(/^\S+\s+/u, "").trim();
-    for (const [engine, runner] of Object.entries(MEASURED_BINARIES)) {
+    for (const [engine, runner] of Object.entries(runners)) {
         const binary = path.join(profile.binaryDir, runner);
         const readelf = spawnSync("readelf", ["-p", ".comment", binary], { encoding: "utf8" });
         if (readelf.status !== 0) {
@@ -1034,9 +1037,9 @@ function corpusDigest(documents) {
 }
 
 /** The exact bytes measured, so a report's numbers can be traced to a binary. */
-function runnerIdentity(profile) {
+function runnerIdentity(profile, runners) {
     const identity = {};
-    for (const [engine, runner] of Object.entries(MEASURED_BINARIES)) {
+    for (const [engine, runner] of Object.entries(runners)) {
         const binary = path.join(profile.binaryDir, runner);
         identity[engine] = {
             sha256: crypto.createHash("sha256").update(fs.readFileSync(binary)).digest("hex"),
@@ -1418,9 +1421,9 @@ export function prepareBuild(options) {
      * measurement that takes minutes. There is no flag to get it wrong with. */
     const cmarkBuildDir = buildCmark(profile, cmark, options.out, versions);
     const gfmBuildDir = buildCmarkGfm(profile, gfm, options.out, versions);
-    buildRunners(profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions);
+    buildRunners(profile, MEASURED_BINARIES, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions, root);
     verifyStageSymbols(profile);
-    verifyBuildProvenance(profile, versions);
+    verifyBuildProvenance(profile, MEASURED_BINARIES, versions);
     /* The report's central claim is that both engines met the same compiler
      * with the same flags. The two trees are configured separately, so that is
      * checked against what they each recorded rather than assumed from having
@@ -1500,7 +1503,7 @@ export function prepareBuild(options) {
             .join(" ")
     };
     versions.architecture = process.arch;
-    const binaries = runnerIdentity(profile);
+    const binaries = runnerIdentity(profile, MEASURED_BINARIES);
 
     const baseline = buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions);
     return { profile, cmark, gfm, versions, binaries, baseline };

@@ -155,8 +155,8 @@ extension MetadataScalar {
         case MARKDOWN_CORE_METADATA_NULL: self = .null
         case MARKDOWN_CORE_METADATA_BOOL: self = .bool(scalar.value.boolean)
         case MARKDOWN_CORE_METADATA_NUMBER: self = .number(scalar.value.string.required)
-        // A C enum switch is never exhaustive in Swift; the one kind left is
-        // MARKDOWN_CORE_METADATA_TEXT.
+        // A C enum switch is never exhaustive in Swift; the one kind
+        // left is MARKDOWN_CORE_METADATA_TEXT.
         default: self = .text(scalar.value.string.required)
         }
     }

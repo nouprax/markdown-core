@@ -118,8 +118,8 @@ extension ListRecord {
         switch value.kind {
         case MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD: .period
         case MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PARENTHESIS: .parenthesis(closed: value.closed)
-        // A C enum switch is never exhaustive in Swift; the one kind left is
-        // MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT.
+        // A C enum switch is never exhaustive in Swift; the one kind
+        // left is MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT.
         default: .default
         }
     }
@@ -129,8 +129,8 @@ extension ListRecord {
         case MARKDOWN_CORE_ORDERED_LIST_VARIANT_ALPHA: .alpha(lowercased: value.lowercased)
         case MARKDOWN_CORE_ORDERED_LIST_VARIANT_ROMAN: .roman(lowercased: value.lowercased)
         case MARKDOWN_CORE_ORDERED_LIST_VARIANT_DEFAULT: .default
-        // A C enum switch is never exhaustive in Swift; the one kind left is
-        // MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL.
+        // A C enum switch is never exhaustive in Swift; the one kind
+        // left is MARKDOWN_CORE_ORDERED_LIST_VARIANT_DECIMAL.
         default: .decimal
         }
     }

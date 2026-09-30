@@ -219,8 +219,8 @@ extension DocumentBuilder {
         case MARKDOWN_CORE_KIND_TABLE_CAPTION: return TableCaptionRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_TABLE_ROW: return TableRowRecord(from: node, cells: children)
         case MARKDOWN_CORE_KIND_TABLE_CELL: return TableCellRecord(from: node, content: children)
-        // A C enum switch is never exhaustive in Swift; the one kind left is
-        // MARKDOWN_CORE_KIND_DIRECTIVE_LABEL.
+        // A C enum switch is never exhaustive in Swift; the one kind
+        // left is MARKDOWN_CORE_KIND_DIRECTIVE_LABEL.
         default: return DirectiveLabelRecord(from: node, content: children)
         }
     }

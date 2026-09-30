@@ -161,8 +161,8 @@ extension CitationRecord {
             referent = .bib(key: native.key.required, mode: BibMode(from: native.mode))
         case MARKDOWN_CORE_REFERENT_FOOTNOTE:
             referent = native.note == nil ? .label(native.label.required) : .note
-        // A C enum switch is never exhaustive in Swift; the one kind left is
-        // MARKDOWN_CORE_REFERENT_SPECIMEN.
+        // A C enum switch is never exhaustive in Swift; the one kind
+        // left is MARKDOWN_CORE_REFERENT_SPECIMEN.
         default:
             referent = .specimen(label: native.label.required)
         }
