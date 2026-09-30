@@ -513,7 +513,8 @@
                     "destination.cross.current-document",
                     "destination.cross.anchor.null",
                     "destination.cross.anchor.value"
-                ]
+                ],
+                "orders": []
             }
         },
         {
@@ -587,7 +588,8 @@
                     "listItem.marker.value",
                     "listItem.marker.custom",
                     "codeBlock.fenced.false"
-                ]
+                ],
+                "orders": []
             }
         },
         {
@@ -605,7 +607,8 @@
                     "metadata.scalar.text",
                     "metadata.list.empty",
                     "metadata.list.populated"
-                ]
+                ],
+                "orders": []
             }
         },
         {
@@ -614,7 +617,8 @@
             "expected": "properties-empty.ast",
             "coverage": {
                 "kinds": ["Document", "Metadata"],
-                "states": ["document.metadata.present", "document.metadata.empty"]
+                "states": ["document.metadata.present", "document.metadata.empty"],
+                "orders": []
             }
         },
         {
@@ -629,7 +633,8 @@
                     "metadata.scalar.number",
                     "metadata.scalar.text",
                     "metadata.list.populated"
-                ]
+                ],
+                "orders": []
             }
         },
         {
@@ -638,7 +643,8 @@
             "expected": "properties-forms.ast",
             "coverage": {
                 "kinds": ["Document", "Paragraph", "Text", "Metadata"],
-                "states": ["document.metadata.present", "metadata.fields.populated", "metadata.scalar.text"]
+                "states": ["document.metadata.present", "metadata.fields.populated", "metadata.scalar.text"],
+                "orders": []
             }
         },
         {
@@ -647,7 +653,8 @@
             "expected": "properties-lists.ast",
             "coverage": {
                 "kinds": ["Document", "Paragraph", "Text", "Metadata"],
-                "states": ["document.metadata.present", "metadata.fields.populated", "metadata.list.populated"]
+                "states": ["document.metadata.present", "metadata.fields.populated", "metadata.list.populated"],
+                "orders": []
             }
         },
         {
@@ -709,7 +716,8 @@
                     "crossEmbedded.label.null",
                     "crossEmbedded.label.empty",
                     "crossEmbedded.label.value"
-                ]
+                ],
+                "orders": []
             }
         },
         {
@@ -1092,7 +1100,8 @@
                     "tableCell.content.empty",
                     "tableRow.cells.empty",
                     "table.foot.populated"
-                ]
+                ],
+                "orders": []
             }
         },
         {
@@ -1113,7 +1122,8 @@
                     "Citation",
                     "Footnote"
                 ],
-                "states": ["citation.referent.footnote.label"]
+                "states": ["citation.referent.footnote.label"],
+                "orders": []
             }
         }
     ]
