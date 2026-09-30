@@ -8,11 +8,22 @@ JSON, XML, a renderer, or a serialization/transport API.
 
 The complete reviewed `.ast` golden corpus and its v1 coverage manifest live
 only at `specs/canonical-ast/`. C, Swift, Kotlin, and ES conformance targets
-enumerate that same non-empty manifest. Swift, Kotlin, and ES each export
-`MarkupDumper` and implement this tree format independently over their public
-immutable AST; they never call the native C dump or another binding output.
-Every platform `Markup` also offers `dump()`, which delegates to
-`MarkupDumper.dump(markup)` and therefore supports focused subtree inspection.
+enumerate that same non-empty manifest. Swift, Kotlin, and ES each implement
+this tree format independently over their public immutable AST; they never
+call the native C dump or another binding output. Scopes are computed from the
+nodes' extents and the source the document was parsed from, so every dump
+takes the document and that source, and a node dump names a node of that
+document for focused subtree inspection:
+
+- Swift: `document.dump(in: source)` and `document.dump(node, in: source)`.
+- Kotlin: `document.dump(source)` and `document.dump(node, source)`, or
+  `MarkupDumper.dump(document, source)` and
+  `MarkupDumper.dump(document, node, source)`.
+- ES: `MarkupDumper.dump(document, source)` and
+  `MarkupDumper.dump(document, node, source)`.
+- C: `markdown_core_document_dump(document, node, source, length, ...)`, where
+  a null node dumps the whole document.
+
 Dump text is never used to construct production AST values.
 
 The API is public, but the text remains a human-readable debug contract,
