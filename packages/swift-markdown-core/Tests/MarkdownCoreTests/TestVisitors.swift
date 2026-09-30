@@ -141,8 +141,9 @@ func dumped(_ source: String) throws -> String {
 }
 
 /// The scope of `node` in `document`, parsed from `source`.
-func scope(of node: some Markup, in document: Document, source: String) throws -> Scope {
-    try #require(document.scope(of: node, in: source))
+func scope(of node: any Markup, in document: Document, source: String) throws -> Scope {
+    let scope = document.scope(of: node, in: source)
+    return try #require(scope)
 }
 
 /// A hand-built record's inherited fields: no source range and no attributes.
