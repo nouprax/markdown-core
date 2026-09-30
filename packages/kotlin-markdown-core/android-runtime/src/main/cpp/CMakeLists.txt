@@ -41,7 +41,6 @@ add_library(
     "${MARKDOWN_CORE_ELEMENTS_DIR}/formula_scanners.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/heading_scanners.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/html_scanners.c"
-    "${MARKDOWN_CORE_ELEMENTS_DIR}/identity.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/link_scanners.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/table_scanners.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/text_scanners.c"

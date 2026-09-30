@@ -40,7 +40,6 @@ const elements = [
     "formula_scanners.c",
     "heading_scanners.c",
     "html_scanners.c",
-    "identity.c",
     "link_scanners.c",
     "table_scanners.c",
     "text_scanners.c",

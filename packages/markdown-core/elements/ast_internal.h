@@ -31,10 +31,6 @@ struct markdown_core_document {
  * structure, when an allocation failed. Nothing reads a place after this. */
 bool markdown_core_publish_tree(markdown_core_parser *parser);
 
-/* Whether two nodes of one kind hold equal scalars: every field of their
- * values but the id, the extent and the node-valued fields (identity.c). */
-bool markdown_core_scalars_equal(const markdown_core_node *a, const markdown_core_node *b);
-
 /* The scope of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`; markdown_core_document_scope is this query over a
  * document's tree and unit, behind its public check that the source covers
