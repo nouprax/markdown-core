@@ -56,7 +56,11 @@ private class Tree(
             connect(traversal.level, traversal.more)
             val node = traversal.node
             if (node == null) {
-                output.append(traversal.group).append(" children=").append(traversal.count).append('\n')
+                output
+                    .append(traversal.group)
+                    .append(" children=")
+                    .append(traversal.count)
+                    .append('\n')
             } else {
                 node(node, traversal.start, traversal.end)
             }
@@ -364,7 +368,10 @@ private fun destination(value: Destination): String =
 
 private fun referent(value: CitationReferent): String =
     when (value) {
-        is CitationReferent.Bib -> "bib(key=${escaped(value.key)},mode=${value.mode.token()})"
+        is CitationReferent.Bib -> {
+            "bib(key=${escaped(value.key)},mode=${value.mode.token()})"
+        }
+
         is CitationReferent.Footnote -> {
             when (val target = value.target) {
                 is FootnoteTarget.Label -> "footnote(label=${escaped(target.value)})"
@@ -372,7 +379,9 @@ private fun referent(value: CitationReferent): String =
             }
         }
 
-        is CitationReferent.Specimen -> "specimen(label=${escaped(value.label)})"
+        is CitationReferent.Specimen -> {
+            "specimen(label=${escaped(value.label)})"
+        }
     }
 
 private fun BibMode.token(): String =

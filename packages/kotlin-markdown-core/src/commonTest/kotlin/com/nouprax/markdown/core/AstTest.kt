@@ -189,7 +189,9 @@ class AstTest {
             kinds,
         )
         assertTrue(
-            documents.zip(sources).all { (document, source) -> document.scope(document, source)?.start == Position(1, 1) },
+            documents.zip(sources).all { (document, source) ->
+                document.scope(document, source)?.start == Position(1, 1)
+            },
         )
     }
 
@@ -206,7 +208,18 @@ class AstTest {
         assertEquals(1, table.head.size)
         assertEquals(1, table.content.size)
         assertTrue(table.foot.isEmpty())
-        assertEquals(5, document.scope(table.head.single().cells.single(), source)?.start?.line)
+        assertEquals(
+            5,
+            document
+                .scope(
+                    table.head
+                        .single()
+                        .cells
+                        .single(),
+                    source,
+                )?.start
+                ?.line,
+        )
         val paragraph = document.content[3] as Paragraph
         val link = paragraph.content[0] as Link
         val image = paragraph.content[2] as Embedded

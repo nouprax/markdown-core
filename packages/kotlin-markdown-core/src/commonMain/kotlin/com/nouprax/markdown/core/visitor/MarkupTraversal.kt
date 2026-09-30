@@ -108,7 +108,7 @@ internal class MarkupTraversal(
             if (frame.index < relation.nodes.size) {
                 val child = relation.nodes[frame.index++]
                 val direct = relation.group == null
-                val more = frame.index < relation.nodes.size || direct && frame.next <= frame.lastDrawn
+                val more = frame.index < relation.nodes.size || (direct && frame.next <= frame.lastDrawn)
                 enter(child, frame.anchor, frame.level + if (direct) 1 else 2, more)
                 frame.anchor = end
                 return true

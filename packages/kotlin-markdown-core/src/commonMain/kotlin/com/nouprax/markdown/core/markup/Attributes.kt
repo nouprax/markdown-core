@@ -14,7 +14,7 @@ public class Attributes(
     public val records: kotlin.collections.List<Record> = records.immutableMap { it }
 
     override fun equals(other: Any?): Boolean =
-        this === other || other is Attributes && classes == other.classes && records == other.records
+        this === other || (other is Attributes && classes == other.classes && records == other.records)
 
     override fun hashCode(): Int = 31 * classes.hashCode() + records.hashCode()
 

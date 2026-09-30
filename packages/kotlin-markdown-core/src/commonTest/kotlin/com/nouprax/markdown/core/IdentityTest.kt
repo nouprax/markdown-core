@@ -173,8 +173,8 @@ class ScopeTest {
         val source = "é🚀 *x*\r\nz\n"
         val utf8 = Document.parse(source, TextUnit.UTF8)
         val utf16 = Document.parse(source, TextUnit.UTF16)
-        fun text(document: Document): Markup =
-            assertIs<Paragraph>(document.content.single()).content.first()
+
+        fun text(document: Document): Markup = assertIs<Paragraph>(document.content.single()).content.first()
         // The rocket starts at byte 2: UTF-8 column 3, UTF-16 column 2.
         assertSame(text(utf8), utf8.node(Position(1, 3), source))
         assertSame(text(utf16), utf16.node(Position(1, 2), source))

@@ -21,7 +21,7 @@ internal class SourceLines(
     }
 
     private fun endsLine(index: Int): Boolean =
-        bytes[index] == LF || bytes[index] == CR && !(index + 1 < bytes.size && bytes[index + 1] == LF)
+        bytes[index] == LF || (bytes[index] == CR && !(index + 1 < bytes.size && bytes[index + 1] == LF))
 
     /**
      * A byte range as editor coordinates: the start is the position of its

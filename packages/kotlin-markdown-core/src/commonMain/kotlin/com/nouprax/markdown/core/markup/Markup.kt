@@ -61,8 +61,14 @@ public sealed class Markup {
      */
     internal fun relations(): kotlin.collections.List<Relation> =
         when (this) {
-            is Document -> listOfNotNull(metadata?.let { Relation(null, listOf(it)) }, Relation(null, content))
-            is Callout -> listOfNotNull(title?.let { Relation("Title", it) }, Relation(null, content))
+            is Document -> {
+                listOfNotNull(metadata?.let { Relation(null, listOf(it)) }, Relation(null, content))
+            }
+
+            is Callout -> {
+                listOfNotNull(title?.let { Relation("Title", it) }, Relation(null, content))
+            }
+
             is Table -> {
                 listOfNotNull(
                     caption?.let { Relation(null, listOf(it)) },
@@ -71,9 +77,19 @@ public sealed class Markup {
                     Relation("TableFoot", foot),
                 )
             }
-            is DirectiveBlock -> listOfNotNull(label?.let { Relation(null, listOf(it)) }, Relation(null, content))
-            is Directive -> listOfNotNull(label?.let { Relation(null, listOf(it)) })
-            is Cite -> listOf(Relation(null, citations))
+
+            is DirectiveBlock -> {
+                listOfNotNull(label?.let { Relation(null, listOf(it)) }, Relation(null, content))
+            }
+
+            is Directive -> {
+                listOfNotNull(label?.let { Relation(null, listOf(it)) })
+            }
+
+            is Cite -> {
+                listOf(Relation(null, citations))
+            }
+
             is Citation -> {
                 val note = ((referent as? CitationReferent.Footnote)?.target as? FootnoteTarget.Note)?.footnote
                 listOfNotNull(
@@ -82,31 +98,100 @@ public sealed class Markup {
                     Relation("CitationSuffix", suffix),
                 )
             }
-            is Definition -> listOf(Relation("DefinitionTerm", term)) + content.map { Relation("DefinitionBody", it) }
-            is List -> listOf(Relation(null, items))
-            is TableRow -> listOf(Relation(null, cells))
-            is DefinitionList -> listOf(Relation(null, definitions))
-            is Paragraph -> listOf(Relation(null, content))
-            is Heading -> listOf(Relation(null, content))
-            is ListItem -> listOf(Relation(null, content))
-            is TableCaption -> listOf(Relation(null, content))
-            is TableCell -> listOf(Relation(null, content))
-            is DirectiveLabel -> listOf(Relation(null, content))
-            is Emphasis -> listOf(Relation(null, content))
-            is Strong -> listOf(Relation(null, content))
-            is Strikethrough -> listOf(Relation(null, content))
-            is Mark -> listOf(Relation(null, content))
-            is Insertion -> listOf(Relation(null, content))
-            is Span -> listOf(Relation(null, content))
-            is Superscript -> listOf(Relation(null, content))
-            is Subscript -> listOf(Relation(null, content))
-            is Link -> listOf(Relation(null, content))
-            is Embedded -> listOf(Relation(null, content))
-            is Footnote -> listOf(Relation(null, content))
-            is Specimen -> listOf(Relation(null, content))
+
+            is Definition -> {
+                listOf(Relation("DefinitionTerm", term)) + content.map { Relation("DefinitionBody", it) }
+            }
+
+            is List -> {
+                listOf(Relation(null, items))
+            }
+
+            is TableRow -> {
+                listOf(Relation(null, cells))
+            }
+
+            is DefinitionList -> {
+                listOf(Relation(null, definitions))
+            }
+
+            is Paragraph -> {
+                listOf(Relation(null, content))
+            }
+
+            is Heading -> {
+                listOf(Relation(null, content))
+            }
+
+            is ListItem -> {
+                listOf(Relation(null, content))
+            }
+
+            is TableCaption -> {
+                listOf(Relation(null, content))
+            }
+
+            is TableCell -> {
+                listOf(Relation(null, content))
+            }
+
+            is DirectiveLabel -> {
+                listOf(Relation(null, content))
+            }
+
+            is Emphasis -> {
+                listOf(Relation(null, content))
+            }
+
+            is Strong -> {
+                listOf(Relation(null, content))
+            }
+
+            is Strikethrough -> {
+                listOf(Relation(null, content))
+            }
+
+            is Mark -> {
+                listOf(Relation(null, content))
+            }
+
+            is Insertion -> {
+                listOf(Relation(null, content))
+            }
+
+            is Span -> {
+                listOf(Relation(null, content))
+            }
+
+            is Superscript -> {
+                listOf(Relation(null, content))
+            }
+
+            is Subscript -> {
+                listOf(Relation(null, content))
+            }
+
+            is Link -> {
+                listOf(Relation(null, content))
+            }
+
+            is Embedded -> {
+                listOf(Relation(null, content))
+            }
+
+            is Footnote -> {
+                listOf(Relation(null, content))
+            }
+
+            is Specimen -> {
+                listOf(Relation(null, content))
+            }
+
             is ThematicBreak, is CodeBlock, is HTMLBlock, is FormulaBlock, is Text, is SoftBreak, is LineBreak, is Code,
             is HTML, is Comment, is CrossLink, is CrossEmbedded, is Formula, is Metadata,
-            -> emptyList()
+            -> {
+                emptyList()
+            }
         }
 
     /** The inherited fields and the kind's scalar fields; relations are compared by [equals]. */
@@ -115,60 +200,178 @@ public sealed class Markup {
         if (anchor != other.anchor || attributes != other.attributes) return false
         return when (this) {
             // The unit only chooses how scopes are counted; it is not a field of the contract.
-            is Document -> other is Document
-            is Callout -> other is Callout && variant == other.variant && collapsed == other.collapsed
-            is Paragraph -> other is Paragraph
-            is Heading -> other is Heading && level == other.level
-            is ThematicBreak -> other is ThematicBreak
+            is Document -> {
+                other is Document
+            }
+
+            is Callout -> {
+                other is Callout && variant == other.variant && collapsed == other.collapsed
+            }
+
+            is Paragraph -> {
+                other is Paragraph
+            }
+
+            is Heading -> {
+                other is Heading && level == other.level
+            }
+
+            is ThematicBreak -> {
+                other is ThematicBreak
+            }
+
             is List -> {
                 other is List && flavor == other.flavor && start == other.start &&
                     variant == other.variant && delimiter == other.delimiter && tight == other.tight
             }
-            is ListItem -> other is ListItem && marker == other.marker
+
+            is ListItem -> {
+                other is ListItem && marker == other.marker
+            }
+
             is CodeBlock -> {
                 other is CodeBlock && info == other.info && language == other.language &&
                     literal == other.literal && fenced == other.fenced && closed == other.closed
             }
-            is HTMLBlock -> other is HTMLBlock && literal == other.literal
-            is FormulaBlock -> other is FormulaBlock && literal == other.literal
-            is Table -> other is Table && columns == other.columns
-            is TableCaption -> other is TableCaption
-            is TableRow -> other is TableRow
-            is TableCell -> other is TableCell && rowspan == other.rowspan && colspan == other.colspan
-            is DirectiveBlock -> other is DirectiveBlock && name == other.name
-            is DirectiveLabel -> other is DirectiveLabel
-            is Text -> other is Text && literal == other.literal
-            is SoftBreak -> other is SoftBreak
-            is LineBreak -> other is LineBreak
-            is Code -> other is Code && literal == other.literal
-            is HTML -> other is HTML && literal == other.literal
-            is Comment -> other is Comment && literal == other.literal
-            is CrossLink -> other is CrossLink && dest == other.dest && label == other.label
+
+            is HTMLBlock -> {
+                other is HTMLBlock && literal == other.literal
+            }
+
+            is FormulaBlock -> {
+                other is FormulaBlock && literal == other.literal
+            }
+
+            is Table -> {
+                other is Table && columns == other.columns
+            }
+
+            is TableCaption -> {
+                other is TableCaption
+            }
+
+            is TableRow -> {
+                other is TableRow
+            }
+
+            is TableCell -> {
+                other is TableCell && rowspan == other.rowspan && colspan == other.colspan
+            }
+
+            is DirectiveBlock -> {
+                other is DirectiveBlock && name == other.name
+            }
+
+            is DirectiveLabel -> {
+                other is DirectiveLabel
+            }
+
+            is Text -> {
+                other is Text && literal == other.literal
+            }
+
+            is SoftBreak -> {
+                other is SoftBreak
+            }
+
+            is LineBreak -> {
+                other is LineBreak
+            }
+
+            is Code -> {
+                other is Code && literal == other.literal
+            }
+
+            is HTML -> {
+                other is HTML && literal == other.literal
+            }
+
+            is Comment -> {
+                other is Comment && literal == other.literal
+            }
+
+            is CrossLink -> {
+                other is CrossLink && dest == other.dest && label == other.label
+            }
+
             is CrossEmbedded -> {
                 other is CrossEmbedded && dest == other.dest && label == other.label &&
                     dimensions == other.dimensions
             }
-            is Formula -> other is Formula && mode == other.mode && literal == other.literal
-            is Emphasis -> other is Emphasis
-            is Strong -> other is Strong
-            is Strikethrough -> other is Strikethrough
-            is Mark -> other is Mark
-            is Insertion -> other is Insertion
-            is Span -> other is Span
-            is Superscript -> other is Superscript
-            is Subscript -> other is Subscript
-            is DefinitionList -> other is DefinitionList
-            is Definition -> other is Definition && compact == other.compact
-            is Link -> other is Link && dest == other.dest && title == other.title
+
+            is Formula -> {
+                other is Formula && mode == other.mode && literal == other.literal
+            }
+
+            is Emphasis -> {
+                other is Emphasis
+            }
+
+            is Strong -> {
+                other is Strong
+            }
+
+            is Strikethrough -> {
+                other is Strikethrough
+            }
+
+            is Mark -> {
+                other is Mark
+            }
+
+            is Insertion -> {
+                other is Insertion
+            }
+
+            is Span -> {
+                other is Span
+            }
+
+            is Superscript -> {
+                other is Superscript
+            }
+
+            is Subscript -> {
+                other is Subscript
+            }
+
+            is DefinitionList -> {
+                other is DefinitionList
+            }
+
+            is Definition -> {
+                other is Definition && compact == other.compact
+            }
+
+            is Link -> {
+                other is Link && dest == other.dest && title == other.title
+            }
+
             is Embedded -> {
                 other is Embedded && dest == other.dest && title == other.title &&
                     dimensions == other.dimensions
             }
-            is Directive -> other is Directive && name == other.name
-            is Cite -> other is Cite
-            is Citation -> other is Citation && sameReferent(referent, other.referent)
-            is Footnote -> other is Footnote && label == other.label
-            is Specimen -> other is Specimen && label == other.label && start == other.start
+
+            is Directive -> {
+                other is Directive && name == other.name
+            }
+
+            is Cite -> {
+                other is Cite
+            }
+
+            is Citation -> {
+                other is Citation && sameReferent(referent, other.referent)
+            }
+
+            is Footnote -> {
+                other is Footnote && label == other.label
+            }
+
+            is Specimen -> {
+                other is Specimen && label == other.label && start == other.start
+            }
+
             is Metadata -> {
                 other is Metadata && name == other.name && title == other.title &&
                     subtitle == other.subtitle && time == other.time && date == other.date &&
