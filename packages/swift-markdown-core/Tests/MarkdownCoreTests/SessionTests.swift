@@ -28,19 +28,19 @@ import Testing
 
     @Test("an unchanged node keeps its value and id, and an edited paragraph continues its id")
     func identity() throws {
-        let session = try MarkdownSession("first\n\nsecond\n")
+        let session = try MarkdownSession("first\n\nsecond paragraph\n")
         let before = session.document
         let first = try #require(before.content[0] as? Paragraph)
         let second = try #require(before.content[1] as? Paragraph)
-        // "second" is units 7..<13.
+        // "second" is units 7..<13; the paragraph's " paragraph" survives the edit.
         let after = try session.edit([TextEdit(7..<13, with: "changed")])
-        #expect(session.text == "first\n\nchanged\n")
+        #expect(session.text == "first\n\nchanged paragraph\n")
         let unchanged = try #require(after.content[0] as? Paragraph)
         #expect(unchanged == first)
         let edited = try #require(after.content[1] as? Paragraph)
         #expect(edited.id == second.id)
         #expect(edited != second)
-        #expect((edited.content.first as? Text)?.literal == "changed")
+        #expect((edited.content.first as? Text)?.literal == "changed paragraph")
     }
 
     @Test("a batch is in coordinates of the text before it, listed in any order")

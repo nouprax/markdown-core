@@ -956,7 +956,10 @@ uint8_t *markdown_core_wire_session_edit(markdown_core_session *session, const s
     for (size_t index = 0; index < count; ++index) {
         const size_t *edit = &edits[index * 3];
         batch[index] = (markdown_core_text_edit){edit[0], edit[1], texts, edit[2]};
-        texts += edit[2];
+        /* With no bytes at all, `texts` may be NULL: only a text moves it. */
+        if (edit[2]) {
+            texts += edit[2];
+        }
     }
     const markdown_core_document *document = NULL;
     markdown_core_status status = markdown_core_session_edit(session, batch, count, &document);

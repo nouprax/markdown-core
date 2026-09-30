@@ -87,7 +87,7 @@ markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len)
 markdown_core_node *markdown_core_parse_document_with_setup(const char *source, size_t length,
                                                             markdown_core_parser_setup_func setup, void *context) {
     markdown_core_node_pool pool = {0};
-    markdown_core_revision revision = {&pool, NULL, NULL, 0, 0};
+    markdown_core_revision revision = {.pool = &pool};
     markdown_core_node *root = markdown_core_parse_revision(source, length, setup, context, &revision);
     markdown_core_node_pool_dispose(&pool);
     return root;
