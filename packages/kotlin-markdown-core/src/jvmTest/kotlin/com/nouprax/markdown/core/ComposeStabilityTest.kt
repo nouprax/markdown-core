@@ -1,6 +1,5 @@
 package com.nouprax.markdown.core
 
-import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -10,8 +9,9 @@ class ComposeStabilityTest {
     @Test
     fun theStabilityConfigurationListsTheAstTypes() {
         val listed =
-            File("compose-stability.conf")
-                .readLines()
+            checkNotNull(javaClass.getResource("/compose-stability.conf"))
+                .readText()
+                .lines()
                 .map { it.trim() }
                 .filter { it.isNotEmpty() && !it.startsWith("//") }
                 .toSet()
