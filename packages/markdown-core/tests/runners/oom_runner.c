@@ -334,10 +334,61 @@ static int sweep_case(const oom_case *test) {
     return 0;
 }
 
+/* A dump of a valid document and source refuses each allocation in turn the
+ * same way: no output and ALLOCATION_FAILED, never an invalid-argument error. */
+static int sweep_dump(const oom_case *test) {
+    markdown_core_document *document;
+    markdown_core_error *error = NULL;
+    uint8_t *output = NULL;
+    size_t length = 0;
+    unsigned long total;
+    unsigned long allocation;
+    int result = 0;
+
+    allocation_count = 0;
+    fail_at = 0;
+    document = parse_with_sweep(test, &error);
+    if (!document || error) {
+        fprintf(stderr, "%s: parse for the dump sweep failed\n", test->name);
+        markdown_core_document_free(document);
+        return -1;
+    }
+    allocation_count = 0;
+    if (!markdown_core_document_dump(document, NULL, (const uint8_t *)test->source, test->length, &output, &length,
+                                     &error)) {
+        fprintf(stderr, "%s: counting dump failed\n", test->name);
+        markdown_core_error_free(error);
+        markdown_core_document_free(document);
+        return -1;
+    }
+    free(output);
+    total = allocation_count;
+
+    for (allocation = 1; result == 0 && allocation <= total; allocation++) {
+        allocation_count = 0;
+        fail_at = allocation;
+        failure_fired = 0;
+        error = NULL;
+        output = NULL;
+        bool dumped = markdown_core_document_dump(document, NULL, (const uint8_t *)test->source, test->length, &output,
+                                                  &length, &error);
+        fail_at = 0;
+        if (!failure_fired || dumped || output || !error ||
+            markdown_core_error_get_code(error) != MARKDOWN_CORE_ERROR_ALLOCATION_FAILED) {
+            fprintf(stderr, "%s: dump allocation %lu / %lu was not reported as OOM\n", test->name, allocation, total);
+            free(output);
+            result = -1;
+        }
+        markdown_core_error_free(error);
+    }
+    markdown_core_document_free(document);
+    return result;
+}
+
 static int case_strict_oom(void) {
     size_t index;
     for (index = 0; index < sizeof(OOM_CASES) / sizeof(OOM_CASES[0]); index++) {
-        if (sweep_case(&OOM_CASES[index]) != 0) {
+        if (sweep_case(&OOM_CASES[index]) != 0 || sweep_dump(&OOM_CASES[index]) != 0) {
             return -1;
         }
     }

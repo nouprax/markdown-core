@@ -937,28 +937,32 @@ static bool tree_fits(const markdown_core_node *root, size_t length) {
 }
 
 /* The absolute range of `target` in the tree `root`, found by one canonical
- * walk. False when the node is not in the tree or the walk could not run. */
-static bool tree_place(const markdown_core_node *root, const markdown_core_node *target, markdown_core_place *place) {
+ * walk. `*found` says whether the node is in the tree; false when the walk
+ * could not allocate its frames. */
+static bool tree_place(const markdown_core_node *root, const markdown_core_node *target, markdown_core_place *place,
+                       bool *found) {
     markdown_core_walk walk;
     markdown_core_walk_item item;
-    bool found = false;
+    *found = false;
     markdown_core_walk_begin(&walk, root);
-    while (!found && markdown_core_walk_next(&walk, &item)) {
+    while (!*found && markdown_core_walk_next(&walk, &item)) {
         if (item.node == target) {
             *place = item.place;
-            found = true;
+            *found = true;
         }
     }
+    bool ran = !walk.failed;
     markdown_core_walk_end(&walk);
-    return found;
+    return ran;
 }
 
 bool markdown_core_tree_scope(const markdown_core_node *root, const markdown_core_node *node, const uint8_t *source,
                               size_t length, markdown_core_text_unit unit, markdown_core_scope *scope) {
     markdown_core_place place;
     source_lines lines;
-    if (!node || !scope || (!source && length) || !tree_fits(root, length) || !tree_place(root, node, &place) ||
-        !source_lines_read(&lines, source, length)) {
+    bool found;
+    if (!node || !scope || (!source && length) || !tree_fits(root, length) || !tree_place(root, node, &place, &found) ||
+        !found || !source_lines_read(&lines, source, length)) {
         return false;
     }
     *scope = source_scope(&lines, source, place, unit);
@@ -2345,7 +2349,16 @@ bool markdown_core_document_dump(const markdown_core_document *document, const m
     }
     node = node ? node : document ? document->root : NULL;
     if (!document || !document->root || !output || !length || (!source && source_length) ||
-        !tree_fits(document->root, source_length) || !tree_place(document->root, node, &place)) {
+        !tree_fits(document->root, source_length)) {
+        set_error(error, &ERROR_INVALID_DUMP);
+        return false;
+    }
+    bool found;
+    if (!tree_place(document->root, node, &place, &found)) {
+        set_error(error, &ERROR_DUMP_ALLOCATION);
+        return false;
+    }
+    if (!found) {
         set_error(error, &ERROR_INVALID_DUMP);
         return false;
     }
