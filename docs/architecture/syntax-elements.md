@@ -183,7 +183,7 @@ every table projected from it. The engine writes no construct's grammar of its
 own; the dialect is only the elements and their projections.
 
 A dialect has two types for its two states. The engine's parser instance
-(`markdown_core_parser_new`) starts a builder
+(`markdown_core_parser_create`) starts a builder
 (`markdown_core_dialect_builder`) from the element list it is given and names
 no element itself. The product's composition root
 (`markdown_core_core_parser`, with the elements) is the one site that gives it

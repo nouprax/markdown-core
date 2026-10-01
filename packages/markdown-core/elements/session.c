@@ -55,7 +55,7 @@ static void session_close(markdown_core_session *session) {
     }
     markdown_core_node_pool_dispose(&session->pool);
     markdown_core_text_tree_dispose(&session->text);
-    markdown_core_parser_free(session->parser);
+    markdown_core_parser_destroy(session->parser);
 }
 
 /* Opens a zeroed session in place: makes its parser, parses the source,

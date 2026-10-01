@@ -174,8 +174,8 @@ typedef struct markdown_core_instance {
     markdown_core_dialect dialect;
 } markdown_core_instance;
 
-markdown_core_parser *markdown_core_parser_new(const markdown_core_element *const *elements, size_t count,
-                                               markdown_core_parser_setup_func setup, void *context) {
+markdown_core_parser *markdown_core_parser_create(const markdown_core_element *const *elements, size_t count,
+                                                  markdown_core_parser_setup_func setup, void *context) {
     markdown_core_dialect_builder builder;
     markdown_core_dialect_sizes sizes;
 
@@ -205,7 +205,9 @@ markdown_core_parser *markdown_core_parser_new(const markdown_core_element *cons
     return instance ? &instance->parser : NULL;
 }
 
-void markdown_core_parser_free(markdown_core_parser *parser) { markdown_core_free((markdown_core_instance *)parser); }
+void markdown_core_parser_destroy(markdown_core_parser *parser) {
+    markdown_core_free((markdown_core_instance *)parser);
+}
 
 /* Begins a transaction that continues `revision` and borrows its pool. */
 static void S_parse_begin(markdown_core_parser *parser, markdown_core_revision *revision) {

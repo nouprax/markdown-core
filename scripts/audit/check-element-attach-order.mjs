@@ -142,7 +142,7 @@ for (const file of cSources(pkg)) {
         if (end < 0 || /^\s*\{/.test(source.slice(end))) continue;
         dialectAttachSites.push({ file: path.relative(pkg, file), function: enclosingFunction(source, match.index) });
     }
-    for (const match of source.matchAll(/\bmarkdown_core_parser_new\s*\(/g)) {
+    for (const match of source.matchAll(/\bmarkdown_core_parser_create\s*\(/g)) {
         const end = endOfArguments(source, source.indexOf("(", match.index));
         if (end < 0 || /^\s*\{/.test(source.slice(end))) continue;
         engineInstanceSites.push({ file: path.relative(pkg, file), function: enclosingFunction(source, match.index) });

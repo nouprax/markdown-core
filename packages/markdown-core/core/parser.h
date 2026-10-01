@@ -771,8 +771,8 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
  * lifetime (dialect.h). `context` is handed to setup and carried on the
  * parser for element hooks. NULL when setup returns false or the instance
  * could not be allocated. */
-markdown_core_parser *markdown_core_parser_new(const markdown_core_element *const *elements, size_t count,
-                                               markdown_core_parser_setup_func setup, void *context);
+markdown_core_parser *markdown_core_parser_create(const markdown_core_element *const *elements, size_t count,
+                                                  markdown_core_parser_setup_func setup, void *context);
 /* One parse transaction: reads `source` as what `revision` says the parse
  * continues, with the storage it lends (above), and returns the published
  * tree, or NULL when the transaction fails. The transaction's state is
@@ -780,7 +780,7 @@ markdown_core_parser *markdown_core_parser_new(const markdown_core_element *cons
  * at a time, each as the first. */
 markdown_core_node *markdown_core_parser_parse(markdown_core_parser *parser, const char *source, size_t length,
                                                markdown_core_revision *revision);
-void markdown_core_parser_free(markdown_core_parser *parser);
+void markdown_core_parser_destroy(markdown_core_parser *parser);
 
 #ifdef __cplusplus
 }
