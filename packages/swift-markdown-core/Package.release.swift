@@ -42,6 +42,8 @@ let package = Package(
                 "core/references.c",
                 "core/map.c",
                 "core/text_tree.c",
+                "core/summed_tree.c",
+                "core/checkpoints.c",
                 "core/houdini_html_u.c",
                 "core/markdown_core_ctype.c",
                 "elements/code.c",

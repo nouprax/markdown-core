@@ -19,6 +19,8 @@ const core = [
     "references.c",
     "map.c",
     "text_tree.c",
+    "summed_tree.c",
+    "checkpoints.c",
     "houdini_html_u.c",
     "markdown_core_ctype.c"
 ].map((file) => path.join(root, "packages/markdown-core/core", file));
