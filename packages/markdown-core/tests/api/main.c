@@ -8508,7 +8508,8 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
             bytes[position] = (unsigned char)value;
             bytes[sizeof(bytes) - 1] = '\n';
             markdown_core_parser input = {0};
-            input.input_source = bytes;
+            input.input_piece = bytes;
+            input.input_piece_end = sizeof(bytes);
             input.input_length = sizeof(bytes);
             input.input_first_line = 1;
             markdown_core_input_line *first = markdown_core_parser_source_line(&input, 1);
@@ -8529,7 +8530,8 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
     }
     static const unsigned char source[] = "a\0b\r\nc\rd\nlast";
     markdown_core_parser parser = {0};
-    parser.input_source = source;
+    parser.input_piece = source;
+    parser.input_piece_end = sizeof(source) - 1;
     parser.input_length = sizeof(source) - 1;
     parser.input_first_line = 7;
     static const size_t starts[] = {0, 5, 7, 9}, ends[] = {3, 6, 8, 13}, next[] = {5, 7, 9, 13};

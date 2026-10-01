@@ -147,8 +147,26 @@ struct markdown_core_parser {
     size_t block_input_count, block_input_capacity, block_input_cursor;
     /* Geometry and grammar facts for the active immutable input. The driver
      * and lookahead extend one index; a source byte is scanned for line
-     * geometry once, whether the input is the document or a mapped cell. */
-    const unsigned char *input_source;
+     * geometry once, whether the input is the document or a mapped cell.
+     * `input_scanned` is the index's high-water mark: no decision of the
+     * parse has read a byte at or past it.
+     *
+     * THE INPUT'S BYTES are pieces read in source order: one piece -- the
+     * document a fresh parse reads, or a cell's content -- or the pieces of a
+     * session's text (`input_text`) from where the parse starts reading. The
+     * scanner holds the piece bytes [input_piece_start, input_piece_end) of
+     * the input are in. A line inside one piece is read where it is; a line
+     * that crosses into the next piece is copied once, with its terminator,
+     * into `input_copies`, which live until the input ends. */
+    const unsigned char *input_piece;
+    size_t input_piece_start, input_piece_end;
+    /* The pieces the scanner has entered, in order: a line within one piece
+     * is read through the piece that holds its first byte. */
+    struct markdown_core_input_piece *input_pieces;
+    size_t input_piece_count, input_piece_capacity;
+    const markdown_core_text_tree *input_text;
+    markdown_core_text_cursor input_cursor;
+    struct markdown_core_input_copy *input_copies;
     size_t input_length, input_scanned;
     struct markdown_core_input_line *input_lines;
     struct markdown_core_normalized_line *normalized_lines;
@@ -162,9 +180,9 @@ struct markdown_core_parser {
     bool input_mapped;
     int input_first_line;
     size_t input_line_work;
-    /* A complete candidate may consume through a later source boundary. The
-     * source driver advances to it after the current line has finished. */
-    const unsigned char *claimed_cursor;
+    /* A complete candidate may consume through a later source line,
+     * `claimed_line` (0 for none). The source driver advances to it after the
+     * current line has finished. */
     int claimed_line;
     bufsize_t claimed_last_end;
     /* The last open block after a line is fully processed */
@@ -299,14 +317,6 @@ struct markdown_core_parser {
     /* The lines the block-start lookahead visited plus the prefix bytes each
      * visit matched itself, for its linearity gate. */
     size_t block_lookahead_work;
-    /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
-     * cursor to the first byte of the next raw line before it hands each line
-     * to `S_process_line`, so a block start whose grammar needs a later line --
-     * the `%%` block comment's closer -- can look ahead without consuming
-     * anything (see markdown_core_parser_lookahead_begin). NULL until the
-     * first line is processed; `cursor == end` once the input has run out. */
-    const unsigned char *lookahead_cursor;
-    const unsigned char *lookahead_end;
     /* The input's last line as the block parser will see it, normalized once
      * and reused by every lookahead that reaches it: it has no terminator of
      * its own in the source, and a line handed to the prefix matchers must
@@ -564,6 +574,9 @@ typedef struct markdown_core_input_line {
 
 typedef struct markdown_core_line_facts {
     struct markdown_core_normalized_line *normalized;
+    /* A line that crosses from one piece into the next: its bytes and
+     * terminator, copied once (the input's bytes). */
+    const unsigned char *copy;
     /* Table grammar search facts under one matched container prefix. */
     const struct markdown_core_node *table_container;
     int table_offset;
@@ -591,7 +604,6 @@ typedef struct markdown_core_line_facts {
     int run_end;
     /* Only NUL-bearing lines need this count; it occupies former padding. */
     uint32_t nul_count;
-    const unsigned char *run_end_cursor;
 } markdown_core_line_facts;
 /* The index is a contiguous prefix. Its next record already owns this line's
  * continuation; at the frontier the scanner owns it. No newline bytes need
@@ -600,6 +612,30 @@ static inline size_t markdown_core_input_line_next(const markdown_core_parser *p
                                                    const markdown_core_input_line *line) {
     const markdown_core_input_line *next = line + 1;
     return next < parser->input_lines + parser->input_line_count ? next->start : parser->input_scanned;
+}
+
+typedef struct markdown_core_input_piece {
+    size_t start;
+    const unsigned char *bytes;
+} markdown_core_input_piece;
+
+/* THE BYTES OF AN INDEXED LINE, from its first byte through its terminator:
+ * its copy when it crosses pieces, else the piece holding its first byte. */
+static inline const unsigned char *markdown_core_input_line_bytes(const markdown_core_parser *parser,
+                                                                  const markdown_core_input_line *line) {
+    if (line->facts && parser->input_facts[line->facts - 1].copy) {
+        return parser->input_facts[line->facts - 1].copy;
+    }
+    size_t low = 0, high = parser->input_piece_count;
+    while (high - low > 1) {
+        size_t middle = low + (high - low) / 2;
+        if (parser->input_pieces[middle].start <= line->start) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    return parser->input_pieces[low].bytes + (line->start - parser->input_pieces[low].start);
 }
 
 /* Returned pointers are borrowed until the next request that grows the
@@ -614,6 +650,12 @@ static inline markdown_core_input_line *markdown_core_parser_source_line(markdow
     return index < parser->input_line_count ? &parser->input_lines[index]
                                             : markdown_core_parser_extend_source_lines(parser, index);
 }
+
+/* THE BYTES OF LINES `first` THROUGH `last`, terminators included, read
+ * contiguously from the returned pointer (the start of line `first`): where
+ * they are in the input when one piece holds them, or a copy that lives
+ * until the input ends. Both lines must be indexed. NULL on failure. */
+const unsigned char *markdown_core_parser_input_view(markdown_core_parser *parser, int first, int last);
 
 /* Optional state is sparse within the input index: properties and ordinary
  * driver visits need only geometry unless they normalize a NUL-bearing line.
@@ -649,7 +691,7 @@ typedef struct {
     markdown_core_parser *parser;
     struct markdown_core_node *parent;
     int depth;
-    const unsigned char *cursor;
+    /* The next line the lookahead offers. */
     int line;
     int run_start;
     bufsize_t saved_offset;

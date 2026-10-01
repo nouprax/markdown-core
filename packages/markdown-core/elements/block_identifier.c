@@ -116,7 +116,7 @@ bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_w
         !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(parser, owner)) {
         return false;
     }
-    bool followed_by_boundary = parser->lookahead_cursor == parser->lookahead_end;
+    bool followed_by_boundary = !markdown_core_parser_source_line(parser, parser->line_number + 1);
     if (!followed_by_boundary) {
         markdown_core_block_lookahead lookahead;
         markdown_core_chunk next;

@@ -90,9 +90,8 @@ static void publish_document(const markdown_core_element_instance *self, markdow
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
-static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   const unsigned char *source, size_t length) {
-    return markdown_core_properties_parse(self->state, parser, source, length);
+static void read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    markdown_core_properties_parse(self->state, parser);
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
