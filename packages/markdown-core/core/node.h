@@ -544,7 +544,8 @@ static inline markdown_core_bytes *markdown_core_bytes_take(markdown_core_node_p
     if (bytes) {
         bytes->refs = 1;
         bytes->data = buffer->ptr;
-        *buffer = (markdown_core_strbuf)MARKDOWN_CORE_BUF_INIT();
+        markdown_core_strbuf empty = MARKDOWN_CORE_BUF_INIT();
+        *buffer = empty;
     }
     return bytes;
 }

@@ -84,7 +84,9 @@ static inline bool markdown_core_iter_push(markdown_core_iter *iter, markdown_co
         iter->event = MARKDOWN_CORE_EVENT_DONE;
         return false;
     }
-    path->frames[path->count++] = (markdown_core_iter_frame){node, 0};
+    markdown_core_iter_frame *frame = &path->frames[path->count++];
+    frame->node = node;
+    frame->at = 0;
     iter->node = node;
     return true;
 }
